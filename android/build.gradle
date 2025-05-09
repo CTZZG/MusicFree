@@ -19,9 +19,11 @@ buildscript {
     }
     dependencies {
         classpath("com.android.tools.build:gradle:${rootProject.ext.agpVersion}")
-        // 由于 settings.gradle 中使用了 includeBuild, 此处不再需要从远程仓库声明 RNGP
-        // classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${rootProject.ext.kotlinVersion}")
+        // 尝试重新添加，但不指定版本，期望它从 includeBuild 解析
+        // 这是为了解决 "Plugin with id 'com.facebook.react.rootproject' not found."
+        // 因为 apply plugin: "com.facebook.react.rootproject" 需要这个插件在 classpath 中。
+        classpath("com.facebook.react:react-native-gradle-plugin")
     }
 }
 
