@@ -15,31 +15,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 安装 JDK 11
-      - name: Setup JDK 11
+      # 2. 安装 JDK 17（支持 classfile version 61.0）
+      - name: Setup JDK 17
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: '17'
 
-      # 3. 安装 Android SDK（API 34 + Build Tools 34.0.0）
+      # 3. 安装 Android SDK：API 34 + Build Tools 34.0.0
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+        uses: google-github-actions/setup-android@v2
         with:
           api-level: 34
-          build-tools: '34.0.0'
-          ndk: false
+          build-tools-version: '34.0.0'
+          # 如果需要安装 NDK，可加上：
+          # ndk-version: '21.4.7075529'
 
       # 4. 动态生成 keystore 和 keystore.properties
       - name: Generate release keystore & keystore.properties
         run: |
-          # 随机生成 store & key 密码
           STOREPASS=$(openssl rand -hex 12)
           KEYPASS=$(openssl rand -hex 12)
           KEYALIAS=github
           KEYSTORE=release.keystore
 
-          # 生成 keystore 文件
           keytool -genkeypair \
             -alias $KEYALIAS \
             -keyalg RSA -keysize 2048 -validity 10000 \
@@ -48,7 +47,6 @@ jobs:
             -keypass $KEYPASS \
             -dname "CN=GitHub Actions, OU=CI, O=YourOrg, L=City, ST=State, C=US"
 
-          # 写入 keystore.properties 供 build.gradle 调用
           cat > android/app/keystore.properties <<EOF
             storePassword=$STOREPASS
             keyPassword=$KEYPASS
@@ -56,7 +54,7 @@ jobs:
             storeFile=$(pwd)/$KEYSTORE
           EOF
 
-      # 5. 调用 Gradle 打包 release APK
+      # 5. 打包 release APK
       - name: Build Release APK
         working-directory: android
         run: |
