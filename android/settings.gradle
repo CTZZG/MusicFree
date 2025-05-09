@@ -8,11 +8,16 @@ pluginManagement {
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     }
-    // 这个 includeBuild 是让 RNGP 对 pluginManagement 可见的关键
     includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
-dependencyResolutionManagement { // 这个块可以提前，因为它配置的是依赖解析
+// plugins 块应该紧跟在 pluginManagement 之后（或者 buildscript 之后，如果你有的话）
+plugins {
+    id("com.facebook.react.settings")
+}
+
+// 现在可以放置其他的配置了
+dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
@@ -30,12 +35,6 @@ dependencyResolutionManagement { // 这个块可以提前，因为它配置的�
 
 rootProject.name = 'MusicFree'
 include ':app'
-
-// 通过这个 plugins 块，应用由上面 includeBuild 提供的 RNGP 中的 "com.facebook.react.settings" 插件
-// 这个插件会负责 React Native 项目的进一步配置
-plugins {
-    id("com.facebook.react.settings")
-}
 
 // 这个 extensions.configure 块应该在 plugins { id("com.facebook.react.settings") } 之后
 // 因为它是对该插件提供的扩展进行配置的
