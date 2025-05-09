@@ -45,6 +45,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Cache Node.js modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm # 或者 node_modules，取决于你的偏好和 npm 版本
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
       - name: 安装 Node.js 依赖并生成 package-lock.json
         run: npm ci # 使用 npm install 来生成或更新 package-lock.json
 
