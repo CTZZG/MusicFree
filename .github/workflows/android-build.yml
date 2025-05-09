@@ -41,21 +41,21 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: 安装 Node.js 依赖并生成 package-lock.json
-        run: npm install # 使用 npm install 来生成或更新 package-lock.json
+        run: npm ci # 使用 npm install 来生成或更新 package-lock.json
 
-      - name: 提交 package-lock.json (如果发生变化)
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add package-lock.json
+      # - name: 提交 package-lock.json (如果发生变化)
+        # run: |
+          # git config --global user.name 'github-actions[bot]'
+          # git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # git add package-lock.json
           # 检查是否有暂存的更改
-          if git diff --staged --quiet; then
-            echo "package-lock.json 未发生变化，无需提交。"
-          else
-            git commit -m "chore: 更新 package-lock.json [skip ci]"
-            git push
-            echo "package-lock.json 已提交。"
-          fi
+          # if git diff --staged --quiet; then
+            # echo "package-lock.json 未发生变化，无需提交。"
+          # else
+            # git commit -m "chore: 更新 package-lock.json [skip ci]"
+            # git push
+            # echo "package-lock.json 已提交。"
+          # fi
         # [skip ci] 通常用于告知一些CI系统跳过本次提交触发的构建，但具体效果取决于您的CI配置
 
       - name: 获取应用版本号
