@@ -8,9 +8,12 @@ pluginManagement {
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     }
+    // 这个 includeBuild 是关键，它使得 @react-native/gradle-plugin 对 pluginManagement 可见
     includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
+// 通过这个 plugins 块，应用来自 @react-native/gradle-plugin 的 "com.facebook.react.settings" 插件
+// 这个插件会进一步配置 React Native 项目，可能包括隐式应用 "com.facebook.react.rootproject" 的逻辑
 plugins {
     id("com.facebook.react.settings")
 }
@@ -42,24 +45,17 @@ extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
 rootProject.name = 'MusicFree'
 include ':app'
 
-// Expo 相关的 autolinking
-// 尝试更可靠地定位 autolinking.gradle 文件
 try {
-    // 获取 expo 包的根目录
     def expoPackageJsonPath = ["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()
     def expoRootDir = new File(expoPackageJsonPath).getParentFile()
-    // 构建 autolinking.gradle 的路径
     def expoAutolinkingFile = new File(expoRootDir, "scripts/autolinking.gradle")
 
     if (expoAutolinkingFile.exists()) {
         println "应用 Expo autolinking.gradle from: " + expoAutolinkingFile.getAbsolutePath()
         apply from: expoAutolinkingFile
-        useExpoModules() // 确保在 apply from 之后调用
+        useExpoModules()
     } else {
         println "警告: 未找到 Expo autolinking.gradle 文件 at " + expoAutolinkingFile.getAbsolutePath()
-        // 在这种情况下，useExpoModules() 可能会失败，因为它的定义可能就在那个 gradle 文件里
-        // 或者，如果 expo-modules-core 作为 gradle 插件被引入，它可能会在那里定义。
-        // 但通常 Expo 项目依赖这个 autolinking.gradle。
     }
 } catch (Exception e) {
     println "错误: 应用 Expo autolinking.gradle 失败: " + e.getMessage()
