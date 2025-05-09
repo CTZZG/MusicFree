@@ -9,7 +9,7 @@ on:
 jobs:
   build-android:
     # 仅在PR合并且标题以 "release: " 开头，或者手动触发时运行
-    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.title, 'release: ')) || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.title, 'release: ') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -55,7 +55,7 @@ jobs:
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -dname "CN=MusicFree Workflow, OU=Dev, O=GitHub Actions, L=CI, ST=CI, C=US" # 您可以自定义这些 DName 信息
+            -dname "CN=MusicFree Workflow, OU=Dev, O=GitHub Actions, L=CI, ST=CI, C=US"
 
           echo "创建 keystore.properties..."
           echo "RELEASE_STORE_FILE=../../release.jks" > android/keystore.properties
