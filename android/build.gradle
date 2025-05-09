@@ -12,7 +12,7 @@ buildscript {
 
         // !!! 新增或修改这里 !!!
         // 请将 "X.Y.Z" 替换为您在 node_modules/@react-native/gradle-plugin/package.json 中找到的实际版本号
-        reactNativeGradlePluginVersion = "0.73.7" // 这是一个示例版本，请务必替换为您的实际版本
+        reactNativeGradlePluginVersion = "0.76.5" // 这是一个示例版本，请务必替换为您的实际版本
     }
     repositories {
         google()
