@@ -11,12 +11,10 @@ pluginManagement {
     includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
-// 将 react.settings 插件的 plugins {} 块提前
 plugins {
     id("com.facebook.react.settings")
 }
 
-// 然后是 dependencyResolutionManagement
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
@@ -27,7 +25,6 @@ dependencyResolutionManagement {
     }
 }
 
-// React Native 扩展配置，这个可以跟在 plugins {} 块后面
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
   def command = [
     'node',
@@ -46,10 +43,24 @@ rootProject.name = 'MusicFree'
 include ':app'
 
 // Expo 相关的 autolinking
-def expoPackageJsonFile = new File(new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()).getParentFile(), "../scripts/autolinking.gradle")
-if (expoPackageJsonFile.exists()) {
-    apply from: expoPackageJsonFile
-} else {
-    println "警告: 未找到 Expo autolinking.gradle 文件 at " + expoPackageJsonFile.getAbsolutePath()
+// 尝试更可靠地定位 autolinking.gradle 文件
+try {
+    // 获取 expo 包的根目录
+    def expoPackageJsonPath = ["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()
+    def expoRootDir = new File(expoPackageJsonPath).getParentFile()
+    // 构建 autolinking.gradle 的路径
+    def expoAutolinkingFile = new File(expoRootDir, "scripts/autolinking.gradle")
+
+    if (expoAutolinkingFile.exists()) {
+        println "应用 Expo autolinking.gradle from: " + expoAutolinkingFile.getAbsolutePath()
+        apply from: expoAutolinkingFile
+        useExpoModules() // 确保在 apply from 之后调用
+    } else {
+        println "警告: 未找到 Expo autolinking.gradle 文件 at " + expoAutolinkingFile.getAbsolutePath()
+        // 在这种情况下，useExpoModules() 可能会失败，因为它的定义可能就在那个 gradle 文件里
+        // 或者，如果 expo-modules-core 作为 gradle 插件被引入，它可能会在那里定义。
+        // 但通常 Expo 项目依赖这个 autolinking.gradle。
+    }
+} catch (Exception e) {
+    println "错误: 应用 Expo autolinking.gradle 失败: " + e.getMessage()
 }
-useExpoModules()
