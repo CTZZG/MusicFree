@@ -8,10 +8,7 @@ on:
 
 jobs:
   build-android:
-    # 仅在PR合并且标题以 "release: " 开头，或者手动触发时运行
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.title, 'release: ') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-latest # 直接指定运行环境
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -19,15 +16,15 @@ jobs:
       - name: 设置 Node.js 环境
         uses: actions/setup-node@v4
         with:
-          node-version: '18' # 与您的 package.json 中的 engines.node 版本保持一致
+          node-version: '18'
 
       - name: 设置 Java (JDK) 环境
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin' # 或其他您偏好的JDK发行版
-          java-version: '17' # 根据您的项目需求选择合适的JDK版本
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: 配置 Gradle 缓存 (可选，但推荐)
+      - name: 配置 Gradle 缓存
         uses: actions/cache@v4
         with:
           path: |
@@ -40,11 +37,11 @@ jobs:
       - name: 安装 Node.js 依赖
         run: npm ci
 
-      - name: 获取应用版本号 (从 package.json)
+      - name: 获取应用版本号
         id: get_version
         run: echo "APP_VERSION=$(node -p -e 'require("./package.json").version')" >> $GITHUB_ENV
 
-      - name: 动态生成签名密钥库 (release.jks) 和 keystore.properties
+      - name: 动态生成签名密钥库和 keystore.properties
         run: |
           echo "动态生成签名密钥..."
           keytool -genkey -v \
