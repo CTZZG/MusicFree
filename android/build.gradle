@@ -1,3 +1,5 @@
+// android/build.gradle
+
 buildscript {
     ext {
         buildToolsVersion = "35.0.0"
@@ -6,6 +8,7 @@ buildscript {
         targetSdkVersion = 30
         ndkVersion = "26.1.10909125"
         kotlinVersion = "1.9.24"
+        agpVersion = "8.2.0" // 请根据需要调整此版本
     }
     repositories {
         maven { url 'https://maven.aliyun.com/repository/public' }
@@ -15,9 +18,11 @@ buildscript {
         maven { url 'https://jitpack.io' }
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
-        classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath("com.android.tools.build:gradle:${rootProject.ext.agpVersion}")
+        // 由于 settings.gradle 中使用了 includeBuild, 此处不再需要从远程仓库声明 RNGP
+        // classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${rootProject.ext.kotlinVersion}")
     }
 }
+
 apply plugin: "com.facebook.react.rootproject"
