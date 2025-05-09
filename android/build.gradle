@@ -1,15 +1,13 @@
 // android/build.gradle
-
 buildscript {
     ext {
         buildToolsVersion = "35.0.0"
         minSdkVersion = 24
         compileSdkVersion = 35
-        targetSdkVersion = 30
+        targetSdkVersion = 30 // Consider updating this to 34 or 35 if targeting newer Android
         ndkVersion = "26.1.10909125"
         kotlinVersion = "1.9.24"
         agpVersion = "8.2.0"
-        // reactNativeGradlePluginVersion = "0.76.5" // 这一行可以保留也可以移除，因为我们不再在 buildscript 中直接依赖它
     }
     repositories {
         google()
@@ -21,24 +19,5 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle:${rootProject.ext.agpVersion}")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${rootProject.ext.kotlinVersion}")
-        // React Native Gradle Plugin 的 classpath 由 settings.gradle 处理
     }
 }
-
-// 移除 apply plugin: "com.facebook.react.rootproject"
-
-// !!! 移除下面的 allprojects 块 !!!
-// allprojects {
-//     repositories {
-//         google()
-//         mavenCentral()
-//         maven { url 'https://maven.aliyun.com/repository/public' }
-//         maven { url 'https://jitpack.io' }
-//         maven {
-//             url "$rootDir/../node_modules/react-native/android"
-//         }
-//         maven {
-//             url "$rootDir/../node_modules/jsc-android/dist"
-//         }
-//     }
-// }
