@@ -8,12 +8,10 @@ pluginManagement {
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     }
-    // 这个 includeBuild 是关键，它使得 @react-native/gradle-plugin 对 pluginManagement 可见
-    includeBuild("../node_modules/@react-native/gradle-plugin")
+    includeBuild("../node_modules/@react-native/gradle-plugin") // RNGP 从本地 node_modules 加载
 }
 
-// 通过这个 plugins 块，应用来自 @react-native/gradle-plugin 的 "com.facebook.react.settings" 插件
-// 这个插件会进一步配置 React Native 项目，可能包括隐式应用 "com.facebook.react.rootproject" 的逻辑
+// 应用由 RNGP 提供的 settings 插件，它会进行很多 React Native 相关的项目配置
 plugins {
     id("com.facebook.react.settings")
 }
@@ -25,26 +23,40 @@ dependencyResolutionManagement {
         mavenCentral()
         maven { url 'https://jitpack.io' }
         maven { url 'https://maven.aliyun.com/repository/public' }
+        // 对于 React Native 0.73+，这里也建议包含本地 Maven 仓库
+        maven {
+            url "$rootDir/../node_modules/react-native/android"
+        }
+        maven {
+            url "$rootDir/../node_modules/jsc-android/dist"
+        }
+        // 如果您使用了 Hermes，可能还需要
+        // maven {
+        //     url "$rootDir/../node_modules/hermes-engine/android"
+        // }
     }
 }
 
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
-  def command = [
-    'node',
-    '--no-warnings',
-    '--eval',
-    'require(require.resolve(\'expo-modules-autolinking\', { paths: [require.resolve(\'expo/package.json\')] }))(process.argv.slice(1))',
-    'react-native-config',
-    '--json',
-    '--platform',
-    'android'
-  ].toList()
-  ex.autolinkLibrariesFromCommand(command)
+// React Native 扩展配置 (通常由 com.facebook.react.settings 插件处理，但您的项目中显式配置了)
+// 这个 extensions.configure 块应该在 plugins { id("com.facebook.react.settings") } 之后，因为它配置的是该插件提供的扩展
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    def command = [
+            'node',
+            '--no-warnings',
+            '--eval',
+            'require(require.resolve(\'expo-modules-autolinking\', { paths: [require.resolve(\'expo/package.json\')] }))(process.argv.slice(1))',
+            'react-native-config',
+            '--json',
+            '--platform',
+            'android'
+    ].toList()
+    ex.autolinkLibrariesFromCommand(command)
 }
 
 rootProject.name = 'MusicFree'
 include ':app'
 
+// Expo 相关的 autolinking
 try {
     def expoPackageJsonPath = ["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()
     def expoRootDir = new File(expoPackageJsonPath).getParentFile()
