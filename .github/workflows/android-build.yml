@@ -50,11 +50,11 @@ jobs:
 
           # 写入 keystore.properties 供 build.gradle 调用
           cat > android/app/keystore.properties <<EOF
-storePassword=$STOREPASS
-keyPassword=$KEYPASS
-keyAlias=$KEYALIAS
-storeFile=$(pwd)/$KEYSTORE
-EOF
+            storePassword=$STOREPASS
+            keyPassword=$KEYPASS
+            keyAlias=$KEYALIAS
+            storeFile=$(pwd)/$KEYSTORE
+          EOF
 
       # 5. 调用 Gradle 打包 release APK
       - name: Build Release APK
