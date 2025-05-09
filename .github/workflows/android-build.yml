@@ -90,7 +90,7 @@ jobs:
 
       - name: 构建 Release APK
         working-directory: ./android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: 查找构建的 APK 文件
         id: find_apk
