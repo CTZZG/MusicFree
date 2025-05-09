@@ -30,6 +30,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: 清理 Gradle 缓存 (如果需要)
+        run: |
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.gradle/wrapper
+
       - name: 配置 Gradle 缓存
         uses: actions/cache@v4
         with:
@@ -96,7 +101,9 @@ jobs:
 
       - name: 构建 Release APK
         working-directory: ./android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: |
+          ./gradlew cleanBuildCache
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: 查找构建的 APK 文件
         id: find_apk
