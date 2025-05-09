@@ -8,12 +8,15 @@ buildscript {
         targetSdkVersion = 30
         ndkVersion = "26.1.10909125"
         kotlinVersion = "1.9.24"
-        agpVersion = "8.2.0" // 请根据项目需求和 Gradle 兼容性调整
+        agpVersion = "8.2.0" // AGP 版本
+
+        // !!! 新增或修改这里 !!!
+        // 请将 "X.Y.Z" 替换为您在 node_modules/@react-native/gradle-plugin/package.json 中找到的实际版本号
+        reactNativeGradlePluginVersion = "0.73.7" // 这是一个示例版本，请务必替换为您的实际版本
     }
     repositories {
         google()
         mavenCentral()
-        // 阿里云镜像应该可以帮助加速下载，但确保 google() 和 mavenCentral() 也在，以防万一
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         maven { url 'https://jitpack.io' }
@@ -22,26 +25,26 @@ buildscript {
         classpath("com.android.tools.build:gradle:${rootProject.ext.agpVersion}")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${rootProject.ext.kotlinVersion}")
 
-        // 重新添加 RNGP 到 classpath，但不指定版本。
-        // Gradle 应该通过 settings.gradle 中的 includeBuild("../node_modules/@react-native/gradle-plugin")
-        // 来解析这个依赖到本地的插件。
-        // 这是为了解决 "Could not find com.facebook.react:react-native-gradle-plugin:."
-        classpath("com.facebook.react:react-native-gradle-plugin")
+        // 明确指定 RNGP 的版本，期望 Gradle 能通过 includeBuild 优先使用本地版本，
+        // 或者在某些配置下，它可能需要这个版本信息来辅助解析。
+        classpath("com.facebook.react:react-native-gradle-plugin:${rootProject.ext.reactNativeGradlePluginVersion}")
     }
 }
 
-// 确保这个 apply plugin 在 buildscript.dependencies 之后
-// 它现在应该能够找到在 classpath 中（通过 includeBuild 间接提供）的插件
+// 这个 apply 仍然是需要的，因为它应用的是在 classpath 中找到的插件
 apply plugin: "com.facebook.react.rootproject"
 
-// allprojects 块用于为所有项目（包括 :app 和通过 includeBuild 引入的项目）配置仓库
-// 这对于那些不在 settings.gradle 的 dependencyResolutionManagement 中管理的依赖（如 RNGP 内部的某些依赖）可能有用
 allprojects {
     repositories {
         google()
         mavenCentral()
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://jitpack.io' }
-        // 确保这里也包含了 RNGP 插件本身可能依赖的仓库（尽管它本身是从本地加载的）
+        maven {
+            url "$rootDir/../node_modules/react-native/android"
+        }
+        maven {
+            url "$rootDir/../node_modules/jsc-android/dist"
+        }
     }
 }
