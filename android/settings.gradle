@@ -12,13 +12,7 @@ pluginManagement {
     includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
-// 通过这个 plugins 块，应用由上面 includeBuild 提供的 RNGP 中的 "com.facebook.react.settings" 插件
-// 这个插件会负责 React Native 项目的进一步配置
-plugins {
-    id("com.facebook.react.settings")
-}
-
-dependencyResolutionManagement {
+dependencyResolutionManagement { // 这个块可以提前，因为它配置的是依赖解析
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
@@ -34,8 +28,17 @@ dependencyResolutionManagement {
     }
 }
 
+rootProject.name = 'MusicFree'
+include ':app'
+
+// 通过这个 plugins 块，应用由上面 includeBuild 提供的 RNGP 中的 "com.facebook.react.settings" 插件
+// 这个插件会负责 React Native 项目的进一步配置
+plugins {
+    id("com.facebook.react.settings")
+}
+
 // 这个 extensions.configure 块应该在 plugins { id("com.facebook.react.settings") } 之后
-// 因为它是对该插件提供的扩展进行配置
+// 因为它是对该插件提供的扩展进行配置的
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
   def command = [
     'node',
@@ -50,9 +53,7 @@ extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
   ex.autolinkLibrariesFromCommand(command)
 }
 
-rootProject.name = 'MusicFree'
-include ':app'
-
+// Expo Autolinking 相关的逻辑可以放在最后
 try {
     def expoPackageJsonPath = ["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()
     def expoRootDir = new File(expoPackageJsonPath).getParentFile()
@@ -61,7 +62,7 @@ try {
     if (expoAutolinkingFile.exists()) {
         println "应用 Expo autolinking.gradle from: " + expoAutolinkingFile.getAbsolutePath()
         apply from: expoAutolinkingFile
-        useExpoModules()
+        useExpoModules() // 这个调用通常在 apply from expoAutolinkingFile 之后
     } else {
         println "警告: 未找到 Expo autolinking.gradle 文件 at " + expoAutolinkingFile.getAbsolutePath()
     }
