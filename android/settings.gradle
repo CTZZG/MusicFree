@@ -4,27 +4,30 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        gradlePluginPortal() // 标准的Gradle插件仓库
-        maven { url 'https://maven.aliyun.com/repository/public' } // 您的阿里云镜像
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' } // 您的阿里云镜像
+        gradlePluginPortal()
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     }
-    // 您原来的 includeBuild 保持不变，但通常这类本地构建源的声明位置可能略有不同，不过放在这里应该也能工作
     includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
+// 将 react.settings 插件的 plugins {} 块提前
+plugins {
+    id("com.facebook.react.settings")
+}
+
+// 然后是 dependencyResolutionManagement
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS) // 推荐设置，强制所有依赖声明在此处
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()             // 对于 Android 和 Google 相关库（如 ExoPlayer）是必须的
-        mavenCentral()       // 大多数 Java/Android 库的中央仓库
-        maven { url 'https://jitpack.io' } // 根据您的 android/build.gradle，您需要 jitpack
-        maven { url 'https://maven.aliyun.com/repository/public' } // 您的阿里云镜像
-        // 如果还有其他自定义仓库，请在此处添加
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
     }
 }
 
-// 您原来的 React Native 相关配置
-plugins { id("com.facebook.react.settings") }
+// React Native 扩展配置，这个可以跟在 plugins {} 块后面
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
   def command = [
     'node',
@@ -42,20 +45,11 @@ extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
 rootProject.name = 'MusicFree'
 include ':app'
 
-// 注意：这个 includeBuild 最好放在 pluginManagement 块内，或者作为顶级声明。
-// 如果 pluginManagement 中已经有了，这里可能可以移除，或者保持观察其行为。
-// 为保持与您原结构的相似性，暂时保留，但理想情况下应统一管理。
-// includeBuild('../node_modules/@react-native/gradle-plugin')
-// 经过测试，如果 pluginManagement 中已经 includeBuild 了，这里重复可能会导致警告或错误，建议移除下面这行，
-// 因为 pluginManagement 中的 includeBuild 已经处理了 @react-native/gradle-plugin。
-// 如果移除后出现问题，再加回来。目前看来 pluginManagement 中的更规范。
-
 // Expo 相关的 autolinking
-// 确保 File 构造函数能正确找到 expo/package.json
 def expoPackageJsonFile = new File(new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()).getParentFile(), "../scripts/autolinking.gradle")
 if (expoPackageJsonFile.exists()) {
     apply from: expoPackageJsonFile
 } else {
     println "警告: 未找到 Expo autolinking.gradle 文件 at " + expoPackageJsonFile.getAbsolutePath()
 }
-useExpoModules() // 调用 Expo 模块
+useExpoModules()
