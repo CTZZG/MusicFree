@@ -156,7 +156,6 @@ android {
     }
 
 
-
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
@@ -186,5 +185,7 @@ dependencies {
     implementation 'com.facebook.fresco:animated-gif:2.5.0'
     // https://mvnrepository.com/artifact/net.jthink/jaudiotagger
     implementation 'net.jthink:jaudiotagger:2.2.5'
+    // ExoPlayer core and ALAC extension for Apple Lossless support
+    implementation "com.google.android.exoplayer:exoplayer:2.19.1"
+    implementation "com.google.android.exoplayer:extension-alac:2.19.1"
 }
-
