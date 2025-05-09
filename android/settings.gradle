@@ -11,12 +11,29 @@ pluginManagement {
     includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
-// plugins 块应该紧跟在 pluginManagement 之后（或者 buildscript 之后，如果你有的话）
+// 1. 首先应用 RNGP 的 settings 插件
 plugins {
     id("com.facebook.react.settings")
 }
 
-// 现在可以放置其他的配置了
+// 2. 然后配置 RNGP 的扩展
+// 这个 extensions.configure 块应该在 plugins { id("com.facebook.react.settings") } 之后
+// 因为它是对该插件提供的扩展进行配置的
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
+  def command = [
+    'node',
+    '--no-warnings',
+    '--eval',
+    'require(require.resolve(\'expo-modules-autolinking\', { paths: [require.resolve(\'expo/package.json\')] }))(process.argv.slice(1))',
+    'react-native-config',
+    '--json',
+    '--platform',
+    'android'
+  ].toList()
+  ex.autolinkLibrariesFromCommand(command) // 这个是 Expo 用来配置 RNGP 的一种方式
+}
+
+// 3. 接着是标准的项目配置
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
@@ -36,23 +53,9 @@ dependencyResolutionManagement {
 rootProject.name = 'MusicFree'
 include ':app'
 
-// 这个 extensions.configure 块应该在 plugins { id("com.facebook.react.settings") } 之后
-// 因为它是对该插件提供的扩展进行配置的
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
-  def command = [
-    'node',
-    '--no-warnings',
-    '--eval',
-    'require(require.resolve(\'expo-modules-autolinking\', { paths: [require.resolve(\'expo/package.json\')] }))(process.argv.slice(1))',
-    'react-native-config',
-    '--json',
-    '--platform',
-    'android'
-  ].toList()
-  ex.autolinkLibrariesFromCommand(command)
-}
 
-// Expo Autolinking 相关的逻辑可以放在最后
+// 4. 最后应用 Expo 特有的 autolinking.gradle
+// 确保这个 apply from 不会覆盖或破坏上面 RNGP 的配置
 try {
     def expoPackageJsonPath = ["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()
     def expoRootDir = new File(expoPackageJsonPath).getParentFile()
@@ -61,7 +64,7 @@ try {
     if (expoAutolinkingFile.exists()) {
         println "应用 Expo autolinking.gradle from: " + expoAutolinkingFile.getAbsolutePath()
         apply from: expoAutolinkingFile
-        useExpoModules() // 这个调用通常在 apply from expoAutolinkingFile 之后
+        useExpoModules()
     } else {
         println "警告: 未找到 Expo autolinking.gradle 文件 at " + expoAutolinkingFile.getAbsolutePath()
     }
