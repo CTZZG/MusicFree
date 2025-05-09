@@ -35,7 +35,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: 安装 Node.js 依赖
-        run: npm ci
+        run: npm install
 
       - name: 获取应用版本号
         id: get_version
