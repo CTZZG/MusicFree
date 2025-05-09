@@ -1,0 +1,71 @@
+name: Android CI – Build APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 安装 JDK 11
+      - name: Setup JDK 11
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      # 3. 安装 Android SDK（API 34 + Build Tools 34.0.0）
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          build-tools: '34.0.0'
+          ndk: false
+
+      # 4. 动态生成 keystore 和 keystore.properties
+      - name: Generate release keystore & keystore.properties
+        run: |
+          # 随机生成 store & key 密码
+          STOREPASS=$(openssl rand -hex 12)
+          KEYPASS=$(openssl rand -hex 12)
+          KEYALIAS=github
+          KEYSTORE=release.keystore
+
+          # 生成 keystore 文件
+          keytool -genkeypair \
+            -alias $KEYALIAS \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore $KEYSTORE \
+            -storepass $STOREPASS \
+            -keypass $KEYPASS \
+            -dname "CN=GitHub Actions, OU=CI, O=YourOrg, L=City, ST=State, C=US"
+
+          # 写入 keystore.properties 供 build.gradle 调用
+          cat > android/app/keystore.properties <<EOF
+storePassword=$STOREPASS
+keyPassword=$KEYPASS
+keyAlias=$KEYALIAS
+storeFile=$(pwd)/$KEYSTORE
+EOF
+
+      # 5. 调用 Gradle 打包 release APK
+      - name: Build Release APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease
+
+      # 6. 上传产物
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-release.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
