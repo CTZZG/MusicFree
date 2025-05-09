@@ -88,8 +88,11 @@ jobs:
       - name: 赋予 Gradle Wrapper 执行权限
         run: chmod +x ./android/gradlew
 
-      - name: 查看 RNGP 版本
-        run: cat node_modules/@react-native/gradle-plugin/package.json | grep version
+      - name: 检查 RNGP 路径和内容
+        run: |
+          echo "RNGP Path: $(pwd)/node_modules/@react-native/gradle-plugin"
+          ls -la node_modules/@react-native/gradle-plugin
+          cat node_modules/@react-native/gradle-plugin/package.json || echo "RNGP package.json not found"
 
       - name: 构建 Release APK
         working-directory: ./android
