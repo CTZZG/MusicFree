@@ -1,69 +1,92 @@
-name: Android CI – Build APK
+name: 自动构建安卓应用
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动触发
+  pull_request:
+    types:
+      - closed # 当 Pull Request 关闭时触发
 
 jobs:
-  build:
+  build-android:
+    # 仅在PR合并且标题以 "release: " 开头，或者手动触发时运行
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.title, 'release: ')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 检出代码
-      - name: Checkout repository
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      # 2. 安装 JDK 17（支持 classfile version 61.0）
-      - name: Setup JDK 17
-        uses: actions/setup-java@v3
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          node-version: '18' # 与您的 package.json 中的 engines.node 版本保持一致
 
-      # 3. 安装 Android SDK：API 34 + Build Tools 34.0.0
-      - name: Setup Android SDK
-        uses: google-github-actions/setup-android@v2
+      - name: 设置 Java (JDK) 环境
+        uses: actions/setup-java@v4
         with:
-          api-level: 34
-          build-tools-version: '34.0.0'
-          # 如果需要安装 NDK，可加上：
-          # ndk-version: '21.4.7075529'
+          distribution: 'temurin' # 或其他您偏好的JDK发行版
+          java-version: '17' # 根据您的项目需求选择合适的JDK版本
 
-      # 4. 动态生成 keystore 和 keystore.properties
-      - name: Generate release keystore & keystore.properties
+      - name: 配置 Gradle 缓存 (可选，但推荐)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: 安装 Node.js 依赖
+        run: npm ci
+
+      - name: 获取应用版本号 (从 package.json)
+        id: get_version
+        run: echo "APP_VERSION=$(node -p -e 'require("./package.json").version')" >> $GITHUB_ENV
+
+      - name: 动态生成签名密钥库 (release.jks) 和 keystore.properties
         run: |
-          STOREPASS=$(openssl rand -hex 12)
-          KEYPASS=$(openssl rand -hex 12)
-          KEYALIAS=github
-          KEYSTORE=release.keystore
+          echo "动态生成签名密钥..."
+          keytool -genkey -v \
+            -keystore release.jks \
+            -storepass "${{ secrets.RELEASE_STORE_PASSWORD }}" \
+            -alias "${{ secrets.RELEASE_KEY_ALIAS }}" \
+            -keypass "${{ secrets.RELEASE_KEY_PASSWORD }}" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=MusicFree Workflow, OU=Dev, O=GitHub Actions, L=CI, ST=CI, C=US" # 您可以自定义这些 DName 信息
 
-          keytool -genkeypair \
-            -alias $KEYALIAS \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -keystore $KEYSTORE \
-            -storepass $STOREPASS \
-            -keypass $KEYPASS \
-            -dname "CN=GitHub Actions, OU=CI, O=YourOrg, L=City, ST=State, C=US"
+          echo "创建 keystore.properties..."
+          echo "RELEASE_STORE_FILE=../../release.jks" > android/keystore.properties
+          echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> android/keystore.properties
+          echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> android/keystore.properties
+          echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> android/keystore.properties
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
 
-          cat > android/app/keystore.properties <<EOF
-            storePassword=$STOREPASS
-            keyPassword=$KEYPASS
-            keyAlias=$KEYALIAS
-            storeFile=$(pwd)/$KEYSTORE
-          EOF
+      - name: 赋予 Gradle Wrapper 执行权限
+        run: chmod +x ./android/gradlew
 
-      # 5. 打包 release APK
-      - name: Build Release APK
-        working-directory: android
+      - name: 构建 Release APK
+        working-directory: ./android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: 查找构建的 APK 文件
+        id: find_apk
         run: |
-          chmod +x ./gradlew
-          ./gradlew assembleRelease
+          APK_PATH=$(find ./android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          echo "APK_PATH=${APK_PATH}" >> $GITHUB_ENV
+          if [ -z "${APK_PATH}" ]; then
+            echo "错误：未找到构建的 APK 文件。"
+            exit 1
+          fi
 
-      # 6. 上传产物
-      - name: Upload Release APK
+      - name: 上传构建产物 (APK)
         uses: actions/upload-artifact@v4
         with:
-          name: app-release.apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: MusicFree-v${{ env.APP_VERSION }}-${{ github.sha }}
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
