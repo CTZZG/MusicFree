@@ -89,7 +89,7 @@ jobs:
             -dname "CN=MusicFree Workflow, OU=Dev, O=GitHub Actions, L=CI, ST=CI, C=US"
 
           echo "创建 keystore.properties..."
-          echo "RELEASE_STORE_FILE=../../release.jks" > android/keystore.properties
+          echo "RELEASE_STORE_FILE=../release.jks" > android/keystore.properties
           echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> android/keystore.properties
           echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> android/keystore.properties
           echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> android/keystore.properties
