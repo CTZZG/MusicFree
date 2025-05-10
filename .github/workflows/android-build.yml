@@ -123,6 +123,16 @@ jobs:
       - name: 赋予 Gradle Wrapper 执行权限
         run: chmod +x ./android/gradlew
 
+      - name: 检查 react-native-track-player 的依赖
+        working-directory: ./android
+        run: |
+          echo "--- 正在输出 react-native-track-player 的依赖树 (针对 release 构建配置) ---"
+          ./gradlew :react-native-track-player:dependencies --configuration releaseCompileClasspath --console=plain || echo "获取 react-native-track-player 依赖失败，可能是模块名不匹配或配置问题。"
+          echo "--- 正在输出 app 模块的依赖树 (针对 release 构建配置, 可以看到最终解析的版本) ---"
+          ./gradlew app:dependencies --configuration releaseCompileClasspath --console=plain || echo "获取 app 模块依赖失败。"
+          echo "--- react-native-track-player/android/build.gradle 内容 ---"
+          cat ../node_modules/react-native-track-player/android/build.gradle || echo "无法读取 react-native-track-player/android/build.gradle"
+
       - name: 检查 RNGP 路径和内容
         run: |
           echo "RNGP Path: $(pwd)/node_modules/@react-native/gradle-plugin"
