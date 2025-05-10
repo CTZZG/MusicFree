@@ -89,7 +89,7 @@ def jscFlavor = 'org.webkit:android-jsc:+'
 
 // !! Add lines
 def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('android/keystore.properties')
+def keystorePropertiesFile = rootProject.file('keystore.properties')
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
