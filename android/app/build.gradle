@@ -176,13 +176,7 @@ dependencies {
     implementation("com.facebook.react:react-android")
 
     // 确保 androidx.media3 版本为 react-native-track-player 依赖的 1.2.1
-    def mediaVersion = "1.6.1"
-    implementation "androidx.media3:media3-exoplayer:$mediaVersion"
-    implementation "androidx.media3:media3-session:$mediaVersion"
-    implementation "androidx.media3:media3-datasource:$mediaVersion"
-    implementation "androidx.media3:media3-decoder:$mediaVersion"
-    implementation "androidx.media3:media3-extractor:$mediaVersion"
-    implementation 'org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1'
+    implementation "com.google.android.exoplayer:extension-ffmpeg:2.19.0"
     
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
