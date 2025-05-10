@@ -75,28 +75,22 @@ jobs:
         id: get_version
         run: echo "APP_VERSION=$(node -p -e 'require("./package.json").version')" >> $GITHUB_ENV
 
-      - name: 动态生成签名密钥库和 keystore.properties
+      - name: 设置签名密钥 (从 Secrets)
+        if: env.ANDROID_RELEASE_KEYSTORE_BASE64 != '' # 仅当 Secret存在时执行
         run: |
-          echo "动态生成签名密钥..."
-          keytool -genkey -v \
-            -keystore release.jks \
-            -storepass "${{ secrets.RELEASE_STORE_PASSWORD }}" \
-            -alias "${{ secrets.RELEASE_KEY_ALIAS }}" \
-            -keypass "${{ secrets.RELEASE_STORE_PASSWORD }}" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=MusicFree Workflow, OU=Dev, O=GitHub Actions, L=CI, ST=CI, C=US"
+          echo "从 Secrets 创建签名密钥库..."
+          echo "${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
 
-          echo "创建 keystore.properties..."
-          echo "RELEASE_STORE_FILE=../../release.jks" > android/keystore.properties
-          echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> android/keystore.properties
-          echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> android/keystore.properties
-          echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> android/keystore.properties
+          echo "从 Secrets 创建 keystore.properties..."
+          echo "RELEASE_STORE_FILE=../../release.jks" > android/keystore.properties # 路径相对于 android 目录
+          echo "RELEASE_STORE_PASSWORD=${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}" >> android/keystore.properties
+          echo "RELEASE_KEY_ALIAS=${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}" >> android/keystore.properties
+          echo "RELEASE_KEY_PASSWORD=${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}" >> android/keystore.properties
         env:
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
 
       - name: 验证 keystore 文件和 properties 文件
         run: |
