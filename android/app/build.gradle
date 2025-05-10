@@ -175,6 +175,18 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // 确保 androidx.media3 版本为 react-native-track-player 依赖的 1.2.1
+    def mediaVersion = "1.2.1"
+    implementation "androidx.media3:media3-exoplayer:$mediaVersion"
+    implementation "androidx.media3:media3-exoplayer-dash:$mediaVersion" // 如果需要 DASH
+    implementation "androidx.media3:media3-exoplayer-hls:$mediaVersion"   // 如果需要 HLS
+    implementation "androidx.media3:media3-session:$mediaVersion"       // 对于后台播放和媒体控制
+    implementation "androidx.media3:media3-ui:$mediaVersion"            // 如果你使用ExoPlayer的UI组件（在这个项目中可能不是直接使用）
+    implementation "androidx.media3:media3-common:$mediaVersion"
+    implementation "androidx.media3:media3-datasource:$mediaVersion"
+    implementation "androidx.media3:media3-decoder:$mediaVersion"
+    implementation "androidx.media3:media3-extractor:$mediaVersion" // 这个模块对多种容器格式（包括MP4/M4A）很重要
+    
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
@@ -185,6 +197,6 @@ dependencies {
     implementation project(':react-native-fs')
     implementation 'com.facebook.fresco:animated-gif:2.5.0'
     // https://mvnrepository.com/artifact/net.jthink/jaudiotagger
-    implementation 'net.jthink:jaudiotagger:2.2.5'
+    implementation 'org.jthink.jaudiotagger:jaudiotagger:3.0.1'
 }
 
