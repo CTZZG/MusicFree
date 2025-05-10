@@ -176,12 +176,11 @@ dependencies {
     implementation("com.facebook.react:react-android")
 
     // 确保 androidx.media3 版本为 react-native-track-player 依赖的 1.2.1
-    def mediaVersion = "1.2.1"
+    def mediaVersion = "1.6.1"
     implementation "androidx.media3:media3-exoplayer:$mediaVersion"
     implementation "androidx.media3:media3-exoplayer-dash:$mediaVersion" // 如果需要 DASH
     implementation "androidx.media3:media3-exoplayer-hls:$mediaVersion"   // 如果需要 HLS
     implementation "androidx.media3:media3-session:$mediaVersion"       // 对于后台播放和媒体控制
-    implementation "androidx.media3:media3-ui:$mediaVersion"            // 如果你使用ExoPlayer的UI组件（在这个项目中可能不是直接使用）
     implementation "androidx.media3:media3-common:$mediaVersion"
     implementation "androidx.media3:media3-datasource:$mediaVersion"
     implementation "androidx.media3:media3-decoder:$mediaVersion"
