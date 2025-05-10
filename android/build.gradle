@@ -2,36 +2,22 @@ buildscript {
     ext {
         buildToolsVersion = "35.0.0"
         minSdkVersion = 24
-        compileSdkVersion = 35 // Android Gradle Plugin 8.x 要求 compileSdk 至少为 34
-        targetSdkVersion = 30 // 注意：targetSdk 30 已经很旧了，Google Play要求更高，但这里先按你的设置
+        compileSdkVersion = 35
+        targetSdkVersion = 30
         ndkVersion = "26.1.10909125"
         kotlinVersion = "1.9.24"
-        // 为 AGP (Android Gradle Plugin) 添加版本变量
-        // React Native 0.76.x 通常与 AGP 8.x 配合较好
-        agpVersion = "8.2.2" // 你可以根据需要调整，但要与 RN 和 Gradle 版本兼容
     }
     repositories {
-        google()
-        mavenCentral() // Maven Central 通常应放在前面
         maven { url 'https://maven.aliyun.com/repository/public' }
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' } // 这个是针对Gradle插件的，放这里没错
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        google()
+        mavenCentral()
         maven { url 'https://jitpack.io' }
     }
     dependencies {
-        // 使用在 ext 中定义的 agpVersion
-        classpath("com.android.tools.build:gradle:${rootProject.ext.agpVersion}")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${rootProject.ext.kotlinVersion}")
-        // 注意：移除了 "com.facebook.react:react-native-gradle-plugin"
-        // 它现在通过 settings.gradle 的 pluginManagement 来处理
+        classpath("com.android.tools.build:gradle")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
     }
 }
-
-// 移除 apply plugin: "com.facebook.react.rootproject"
-// 新的 RNGP 不需要这个
-
-// 移除 allprojects 块，仓库配置移到 settings.gradle 的 dependencyResolutionManagement 中
-// allprojects {
-//     repositories {
-//         // ...
-//     }
-// }
+apply plugin: "com.facebook.react.rootproject"
