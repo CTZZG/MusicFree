@@ -140,19 +140,20 @@ jobs:
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: 查找构建的 APK 文件
+      - name: 确保 Release APK 文件存在
         id: find_apk
         run: |
-          APK_PATH=$(find ./android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
-          echo "APK_PATH=${APK_PATH}" >> $GITHUB_ENV
-          if [ -z "${APK_PATH}" ]; then
-            echo "错误：未找到构建的 APK 文件。"
+          if ! ls ./android/app/build/outputs/apk/release/*.apk 1> /dev/null 2>&1; then
+            echo "错误：未找到任何 .apk 文件在 ./android/app/build/outputs/apk/release/ 目录下。"
+            ls -R ./android/app/build/outputs/apk/ # 帮助调试
             exit 1
           fi
+          echo "找到的 Release APKs:"
+          ls -lA ./android/app/build/outputs/apk/release/*.apk
 
-      - name: 上传构建产物 (APK)
+      - name: 上传所有构建产物 (APKs)
         uses: actions/upload-artifact@v4
         with:
-          name: MusicFree-v${{ env.APP_VERSION }}-${{ github.sha }}
-          path: ${{ env.APK_PATH }}
+          name: MusicFree-v${{ env.APP_VERSION }}-${{ github.sha }}-All-APKs
+          path: ./android/app/build/outputs/apk/release/*.apk # 使用通配符匹配所有 .apk 文件
           if-no-files-found: error
