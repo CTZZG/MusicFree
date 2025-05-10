@@ -89,7 +89,7 @@ jobs:
             -dname "CN=MusicFree Workflow, OU=Dev, O=GitHub Actions, L=CI, ST=CI, C=US"
 
           echo "创建 keystore.properties..."
-          echo "RELEASE_STORE_FILE=../release.jks" > android/keystore.properties
+          echo "RELEASE_STORE_FILE=../../release.jks" > android/keystore.properties
           echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" >> android/keystore.properties
           echo "RELEASE_KEY_ALIAS=${{ secrets.RELEASE_KEY_ALIAS }}" >> android/keystore.properties
           echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> android/keystore.properties
@@ -98,6 +98,34 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
 
+      - name: 验证 keystore 文件和 properties 文件
+        run: |
+          echo "当前工作目录 (pwd): $(pwd)"
+          echo "--- 项目根目录内容 ---"
+          ls -lA
+          echo "--- android 目录内容 ---"
+          ls -lA android
+          echo "--- android/keystore.properties 内容 ---"
+          cat android/keystore.properties
+          echo "--- 检查 release.jks 是否在项目根目录 ---"
+          if [ -f "release.jks" ]; then
+            echo "release.jks 存在于 $(pwd)/release.jks"
+          else
+            echo "release.jks 不存在于 $(pwd)/release.jks"
+          fi
+          echo "--- 检查 release.jks 是否在 android 目录 ---"
+          if [ -f "android/release.jks" ]; then
+            echo "release.jks 存在于 $(pwd)/android/release.jks"
+          else
+            echo "release.jks 不存在于 $(pwd)/android/release.jks"
+          fi
+          echo "--- 检查 release.jks 是否在 android/app 目录 ---"
+          if [ -f "android/app/release.jks" ]; then
+            echo "release.jks 存在于 $(pwd)/android/app/release.jks"
+          else
+            echo "release.jks 不存在于 $(pwd)/android/app/release.jks"
+          fi
+      
       - name: 赋予 Gradle Wrapper 执行权限
         run: chmod +x ./android/gradlew
 
