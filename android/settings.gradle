@@ -1,28 +1,6 @@
-pluginManagement { // 这个块应该在文件顶部
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal() // Gradle插件的官方仓库
-        maven { url 'https://maven.aliyun.com/repository/public' }
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-    }
-    // 通过 includeBuild 告知 Gradle 在哪里可以找到 React Native Gradle Plugin 的源码
-    // 这是现代 RNGP 的推荐做法
-    includeBuild("../node_modules/@react-native/gradle-plugin")
-}
-
-// 应用 React Native Gradle Plugin 的 settings 插件
-// 这个插件会负责很多底层的项目配置
-plugins {
-    id("com.facebook.react.settings")
-}
-
-// 配置 React Native Gradle Plugin 的扩展
-// 这个必须在 plugins { id("com.facebook.react.settings") } 之后
-// 因为它是对该插件提供的 ReactSettingsExtension 进行配置
-extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
-  // 这是 Expo 用来配置 RNGP 以实现自动链接库的方式
-  // 它会执行一个 Node.js 脚本来获取需要链接的库的信息
+pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
+plugins { id("com.facebook.react.settings") }
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
   def command = [
     'node',
     '--no-warnings',
@@ -35,53 +13,9 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
   ].toList()
   ex.autolinkLibrariesFromCommand(command)
 }
-
-// 统一管理项目依赖的仓库
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS) // 推荐设置，强制所有依赖都从这里声明的仓库获取
-    repositories {
-        google()
-        mavenCentral()
-        maven { url 'https://jitpack.io' }
-        maven { url 'https://maven.aliyun.com/repository/public' }
-        // React Native 本地 Maven 仓库
-        maven {
-            url "$rootDir/../node_modules/react-native/android"
-        }
-        // JSC Android 本地 Maven 仓库
-        maven {
-            url "$rootDir/../node_modules/jsc-android/dist"
-        }
-    }
-}
-
 rootProject.name = 'MusicFree'
 include ':app'
+includeBuild('../node_modules/@react-native/gradle-plugin')
 
-// 移除多余的 includeBuild，pluginManagement 中的已经足够
-// includeBuild('../node_modules/@react-native/gradle-plugin') // 这行是多余的
-
-// 应用 Expo 特有的 autolinking.gradle 脚本
-// 确保这个 apply from 不会覆盖或破坏上面 RNGP 的配置
-// Expo 的脚本通常设计为与 RNGP 协同工作
-try {
-    def expoPackageJsonPath = ["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim()
-    if (expoPackageJsonPath != null && !expoPackageJsonPath.isEmpty()) {
-        def expoRootDir = new File(expoPackageJsonPath).getParentFile()
-        def expoAutolinkingFile = new File(expoRootDir, "scripts/autolinking.gradle")
-
-        if (expoAutolinkingFile.exists()) {
-            println "应用 Expo autolinking.gradle from: " + expoAutolinkingFile.getAbsolutePath()
-            apply from: expoAutolinkingFile
-            useExpoModules() // 这个方法由 Expo 的 autolinking.gradle 提供
-        } else {
-            println "警告: 未找到 Expo autolinking.gradle 文件 at " + expoAutolinkingFile.getAbsolutePath()
-        }
-    } else {
-         println "警告: 无法解析 Expo package.json 路径"
-    }
-} catch (Exception e) {
-    println "错误: 应用 Expo autolinking.gradle 失败: " + e.getMessage()
-    // 可以选择抛出异常使构建失败，或者仅打印警告
-    // throw new GradleException("应用 Expo autolinking.gradle 失败", e)
-}
+apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
+useExpoModules()
