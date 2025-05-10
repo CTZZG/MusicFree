@@ -8,3 +8,7 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+-keep class com.google.android.exoplayer2.** { *; }
+-keep interface com.google.android.exoplayer2.** { *; }
+-keep class com.google.android.exoplayer2.ext.ffmpeg.** { *; }
+-keep interface com.google.android.exoplayer2.ext.ffmpeg.** { *; }
