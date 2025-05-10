@@ -178,13 +178,11 @@ dependencies {
     // 确保 androidx.media3 版本为 react-native-track-player 依赖的 1.2.1
     def mediaVersion = "1.6.1"
     implementation "androidx.media3:media3-exoplayer:$mediaVersion"
-    implementation "androidx.media3:media3-exoplayer-dash:$mediaVersion" // 如果需要 DASH
-    implementation "androidx.media3:media3-exoplayer-hls:$mediaVersion"   // 如果需要 HLS
-    implementation "androidx.media3:media3-session:$mediaVersion"       // 对于后台播放和媒体控制
-    implementation "androidx.media3:media3-common:$mediaVersion"
+    implementation "androidx.media3:media3-session:$mediaVersion"
     implementation "androidx.media3:media3-datasource:$mediaVersion"
     implementation "androidx.media3:media3-decoder:$mediaVersion"
-    implementation "androidx.media3:media3-extractor:$mediaVersion" // 这个模块对多种容器格式（包括MP4/M4A）很重要
+    implementation "androidx.media3:media3-extractor:$mediaVersion"
+    implementation 'org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1'
     
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
