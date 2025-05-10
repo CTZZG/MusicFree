@@ -110,7 +110,6 @@ jobs:
       - name: 构建 Release APK
         working-directory: ./android
         run: |
-          ./gradlew cleanBuildCache
           ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: 查找构建的 APK 文件
