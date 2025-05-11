@@ -10,6 +10,7 @@ import Network from "@/core/network";
 import { ImgAsset } from "@/constants/assetsConst";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { Linking, Platform } from "react-native";
+import DeviceInfo from 'react-native-device-info';
 import Theme from "@/core/theme";
 import LyricManager from "@/core/lyricManager";
 import Toast from "@/utils/toast";
@@ -115,6 +116,10 @@ async function _bootstrap() {
               Capability.SkipToNext,
               Capability.SkipToPrevious,
           ];
+    const appName = DeviceInfo.getApplicationName(); // 通常是 "MusicFree"
+    const appVersion = DeviceInfo.getVersion();
+    const platformName = Platform.OS === 'android' ? 'Android' : 'iOS';
+    const customUserAgentCore = `${appName}/${platformName}`;
     await RNTrackPlayer.updateOptions({
         icon: ImgAsset.logoTransparent,
         progressUpdateEventInterval: 1,
@@ -126,6 +131,7 @@ async function _bootstrap() {
         capabilities: capabilities,
         compactCapabilities: capabilities,
         notificationCapabilities: [...capabilities, Capability.SeekTo],
+        userAgent: customUserAgentCore, // <--- 添加这一行
     });
     logger.mark('播放器初始化完成');
     trace('播放器初始化完成');
