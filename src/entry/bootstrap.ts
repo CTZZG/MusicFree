@@ -1,5 +1,8 @@
 import { check, PERMISSIONS, request } from "react-native-permissions";
 import RNTrackPlayer, { AppKilledPlaybackBehavior, Capability } from "react-native-track-player";
+import { Platform } from 'react-native'; // 确保引入 Platform
+import DeviceInfo from 'react-native-device-info'; // 确保引入 DeviceInfo
+import { getAppUserAgent } from '@/utils/userAgentHelper'; // 引入上面创建的函数
 import "react-native-get-random-values";
 import Config from "@/core/config.ts";
 import pathConst from "@/constants/pathConst";
@@ -10,7 +13,6 @@ import Network from "@/core/network";
 import { ImgAsset } from "@/constants/assetsConst";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { Linking, Platform } from "react-native";
-import DeviceInfo from 'react-native-device-info';
 import Theme from "@/core/theme";
 import LyricManager from "@/core/lyricManager";
 import Toast from "@/utils/toast";
@@ -116,21 +118,8 @@ async function _bootstrap() {
               Capability.SkipToNext,
               Capability.SkipToPrevious,
           ];
-    // 添加自定义UA
-    const appName = await DeviceInfo.getApplicationName();
-    const appVersion = DeviceInfo.getVersion();
-    const platformOS = Platform.OS;
-    const platformVersion = Platform.Version;
-    const deviceName = await DeviceInfo.getDeviceName();
-    const manufacturer = await DeviceInfo.getManufacturer();
-    let userAgentString;
-    if (platformOS === 'android') {
-        userAgentString = `Mozilla/5.0 (Linux; Android ${platformVersion}; Mobile; rv:112.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 ${appName}/${appVersion}`;
-    } else if (platformOS === 'ios') {
-        userAgentString = `Mozilla/5.0 (iPhone; CPU iPhone OS ${String(platformVersion).replace('.', '_')} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1 ${appName}/${appVersion}`;
-    } else {
-        userAgentString = `${appName}/${appVersion}`;
-    }
+    
+    const desiredUA = getAppUserAgent(); // <--- 获取期望的 UA
     
     await RNTrackPlayer.updateOptions({
         icon: ImgAsset.logoTransparent,
@@ -143,7 +132,7 @@ async function _bootstrap() {
         capabilities: capabilities,
         compactCapabilities: capabilities,
         notificationCapabilities: [...capabilities, Capability.SeekTo],
-        userAgent: userAgentString, // <--- 添加这一行，发送自定义UA
+        userAgent: desiredUA, // <--- 设置全局 User-Agent
     });
     logger.mark('播放器初始化完成');
     trace('播放器初始化完成');
