@@ -1,6 +1,5 @@
 import { check, PERMISSIONS, request } from "react-native-permissions";
 import RNTrackPlayer, { AppKilledPlaybackBehavior, Capability } from "react-native-track-player";
-import { Platform } from 'react-native'; // 确保引入 Platform
 import DeviceInfo from 'react-native-device-info'; // 确保引入 DeviceInfo
 import { getAppUserAgent } from '@/utils/userAgentHelper'; // 引入上面创建的函数
 import "react-native-get-random-values";
