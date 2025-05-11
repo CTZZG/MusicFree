@@ -116,10 +116,22 @@ async function _bootstrap() {
               Capability.SkipToNext,
               Capability.SkipToPrevious,
           ];
-    const appName = DeviceInfo.getApplicationName(); // 通常是 "MusicFree"
+    // 添加自定义UA
+    const appName = await DeviceInfo.getApplicationName();
     const appVersion = DeviceInfo.getVersion();
-    const platformName = Platform.OS === 'android' ? 'Android' : 'iOS';
-    const customUserAgentCore = `${appName}/${platformName}`;
+    const platformOS = Platform.OS;
+    const platformVersion = Platform.Version;
+    const deviceName = await DeviceInfo.getDeviceName();
+    const manufacturer = await DeviceInfo.getManufacturer();
+    let userAgentString;
+    if (platformOS === 'android') {
+        userAgentString = `Mozilla/5.0 (Linux; Android ${platformVersion}; Mobile; rv:112.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 ${appName}/${appVersion}`;
+    } else if (platformOS === 'ios') {
+        userAgentString = `Mozilla/5.0 (iPhone; CPU iPhone OS ${String(platformVersion).replace('.', '_')} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1 ${appName}/${appVersion}`;
+    } else {
+        userAgentString = `${appName}/${appVersion}`;
+    }
+    
     await RNTrackPlayer.updateOptions({
         icon: ImgAsset.logoTransparent,
         progressUpdateEventInterval: 1,
@@ -131,7 +143,7 @@ async function _bootstrap() {
         capabilities: capabilities,
         compactCapabilities: capabilities,
         notificationCapabilities: [...capabilities, Capability.SeekTo],
-        userAgent: customUserAgentCore, // <--- 添加这一行
+        userAgent: userAgentString, // <--- 添加这一行，发送自定义UA
     });
     logger.mark('播放器初始化完成');
     trace('播放器初始化完成');
