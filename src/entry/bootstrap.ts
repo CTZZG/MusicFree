@@ -23,7 +23,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { Linking, Platform } from "react-native";
 import { PERMISSIONS, check, request } from "react-native-permissions";
 import RNTrackPlayer, { AppKilledPlaybackBehavior, Capability } from "react-native-track-player";
-
+import { getAppUserAgent } from "@/utils/userAgentHelper"; // <--- 新增导入
 
 // 依赖管理
 musicHistory.injectDependencies(Config);
@@ -39,7 +39,7 @@ async function bootstrapImpl() {
                 `SplashScreen.preventAutoHideAsync() succeeded: ${result}`,
             ),
         )
-        .catch(console.warn); // it's good to explicitly catch and inspect any error
+        .catch(console.warn);
     const logger = perfLogger();
     // 1. 检查权限
     if (Platform.OS === 'android' && Platform.Version >= 30) {
@@ -68,17 +68,10 @@ async function bootstrapImpl() {
     }
     logger.mark('权限检查完成');
 
-    // 2. 数据初始化
-    /** 初始化路径 */
     await setupFolder();
     trace('文件夹初始化完成');
     logger.mark('文件夹初始化完成');
 
-
-
-
-
-    // 加载配置
     await Promise.all([
         Config.setup().then(() => {
             logger.mark('Config');
@@ -93,7 +86,6 @@ async function bootstrapImpl() {
     trace('配置初始化完成');
     logger.mark('配置初始化完成');
 
-    // 加载插件
     try {
         await RNTrackPlayer.setupPlayer({
             maxCacheSize:
@@ -123,6 +115,9 @@ async function bootstrapImpl() {
             Capability.SkipToNext,
             Capability.SkipToPrevious,
         ];
+
+    const desiredUA = getAppUserAgent(); // <--- 获取期望的 UA
+
     await RNTrackPlayer.updateOptions({
         icon: ImgAsset.logoTransparent,
         progressUpdateEventInterval: 1,
@@ -134,6 +129,7 @@ async function bootstrapImpl() {
         capabilities: capabilities,
         compactCapabilities: capabilities,
         notificationCapabilities: [...capabilities, Capability.SeekTo],
+        userAgent: desiredUA, // <--- 设置全局 User-Agent
     });
     logger.mark('播放器初始化完成');
     trace('播放器初始化完成');
@@ -155,7 +151,6 @@ async function bootstrapImpl() {
     logger.mark('主题初始化完成');
 
     await lyricManager.setup();
-
     logger.mark('歌词初始化完成');
 
     extraMakeup();
@@ -164,7 +159,6 @@ async function bootstrapImpl() {
     });
 }
 
-/** 初始化 */
 async function setupFolder() {
     await Promise.all([
         checkAndCreateDir(pathConst.dataPath),
@@ -187,14 +181,11 @@ export default async function () {
     } catch (e) {
         errorLog('初始化出错', e);
     }
-    // 隐藏开屏动画
     console.log('HIDE');
     await SplashScreen.hideAsync();
 }
 
-/** 不需要阻塞的 */
 async function extraMakeup() {
-    // 自动更新
     try {
         if (Config.getConfig('basic.autoUpdatePlugin')) {
             const lastUpdated = PersistStatus.get('app.pluginUpdateTime') || 0;
@@ -205,7 +196,6 @@ async function extraMakeup() {
                 for (let i = 0; i < plugins.length; ++i) {
                     const srcUrl = plugins[i].instance.srcUrl;
                     if (srcUrl) {
-                        // 静默失败
                         await PluginManager.installPluginFromUrl(srcUrl).catch(emptyFunction);
                     }
                 }
@@ -214,7 +204,6 @@ async function extraMakeup() {
     } catch { }
 
     async function handleLinkingUrl(url: string) {
-        // 插件
         try {
             if (url.startsWith('musicfree://install/')) {
                 const plugins = url
@@ -245,7 +234,6 @@ async function extraMakeup() {
                         Toast.warn(e?.message ?? '无法识别此插件');
                     });
             } else if (supportLocalMediaType.some(it => url.endsWith(it))) {
-                // 本地播放
                 const musicItem = await PluginManager.getByHash(
                     localPluginHash,
                 )?.instance?.importMusicItem?.(url);
@@ -257,7 +245,6 @@ async function extraMakeup() {
         } catch { }
     }
 
-    // 开启监听
     Linking.addEventListener('url', data => {
         if (data.url) {
             handleLinkingUrl(data.url);
@@ -273,9 +260,7 @@ async function extraMakeup() {
     }
 }
 
-
 function bindEvents() {
-    // 下载事件
     downloader.on(DownloaderEvent.DownloadError, (reason) => {
         if (reason === DownloadFailReason.NetworkOffline) {
             Toast.warn("当前无网络连接，请等待网络恢复后重试");
