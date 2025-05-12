@@ -175,6 +175,9 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // 添加ffmpeg扩展
+    implementation 'org.jellyfin.exoplayer:exoplayer-ffmpeg-extension:2.19.0+1'
+    
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
@@ -185,7 +188,7 @@ dependencies {
     implementation project(':react-native-fs')
     implementation 'com.facebook.fresco:animated-gif:2.5.0'
     // https://mvnrepository.com/artifact/net.jthink/jaudiotagger
-    implementation 'net.jthink:jaudiotagger:2.2.5'
+    implementation 'net.jthink:jaudiotagger:3.0.1'
     implementation 'androidx.core:core-splashscreen:1.0.0'
 }
 
