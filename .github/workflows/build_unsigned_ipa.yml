@@ -2,10 +2,10 @@
 name: Build MusicFree (React Native) Unsigned IPA
 
 on:
-  push:
-    branches:
-      - main # 你可以修改为你的主分支名，例如 master
   workflow_dispatch: # 允许手动触发
+  pull_request:
+    types:
+      - closed # 当 Pull Request 关闭时触发
 
 jobs:
   build_unsigned_ipa:
