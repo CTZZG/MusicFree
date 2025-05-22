@@ -27,7 +27,7 @@ jobs:
       - name: Setup Ruby and Bundler
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '>=2.6.10' # 根据 Gemfile
+          ruby-version: '>=3.0.1' # 根据 Gemfile
           bundler-cache: true # 会自动运行 bundle install 并缓存 gems
 
       - name: Install Cocoapods
