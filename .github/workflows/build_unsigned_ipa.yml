@@ -25,13 +25,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn' # 缓存 yarn 依赖
+      
+      - name: Setup Yarn
+        uses: threeal/setup-yarn-action@v2.0.0
 
       - name: 设置 Ruby 环境 (用于 CocoaPods)
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.0' # <--- 修改点：明确指定 Ruby 版本
           bundler-cache: true # 会自动运行 bundle install 并缓存 gems
+
+      - name: alias yarn.cmd to yarn
+        run: alias yarn.cmd="yarn"
 
       - name: 安装 JavaScript 依赖
         run: yarn install; yarn ios:build
