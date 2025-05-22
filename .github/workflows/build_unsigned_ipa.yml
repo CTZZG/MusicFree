@@ -15,7 +15,7 @@ jobs:
     env:
       XCODE_WORKSPACE_NAME: MusicFree.xcworkspace
       XCODE_SCHEME_NAME: MusicFree # 根据你的项目，这通常是正确的 Scheme 名称
-      NODE_VERSION: '18' # 与你之前参考的经验保持一致
+      NODE_VERSION: '22' # 与你之前参考的经验保持一致
 
     steps:
       - name: 检出代码
