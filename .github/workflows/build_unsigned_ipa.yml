@@ -1,144 +1,86 @@
-# GitHub Action 工作流：构建 MusicFree (React Native) 未签名的 IPA 包
-name: Build MusicFree (React Native) Unsigned IPA
+name: Build Unsigned IPA
 
 on:
   workflow_dispatch: # 允许手动触发
-  pull_request:
-    types:
-      - closed # 当 Pull Request 关闭时触发
+  push:
+    branches:
+      - main # 或者你的主分支
 
 jobs:
-  build_unsigned_ipa:
-    name: Build Unsigned IPA
-    runs-on: macos-latest # iOS 构建需要 macOS 环境
-
-    env:
-      XCODE_WORKSPACE_NAME: MusicFree.xcworkspace
-      XCODE_SCHEME_NAME: MusicFree # 根据你的项目，这通常是正确的 Scheme 名称
-      NODE_VERSION: '22' # 与你之前参考的经验保持一致
+  build-ios:
+    name: Build MusicFree IPA
+    runs-on: macos-latest # iOS 构建必须在 macOS 环境
 
     steps:
-      - name: 检出代码
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 设置 Node.js 环境
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'yarn' # 缓存 yarn 依赖
+          node-version: '18' # 根据 package.json 的 engines.node
+          cache: 'npm'
 
-      - name: 设置 Ruby 环境 (用于 CocoaPods)
+      - name: Install JavaScript dependencies
+        run: npm ci # 使用 ci 而不是 install 以确保使用 package-lock.json
+
+      - name: Setup Ruby and Bundler
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.0' # <--- 修改点：明确指定 Ruby 版本
+          ruby-version: '>=2.6.10' # 根据 Gemfile
           bundler-cache: true # 会自动运行 bundle install 并缓存 gems
 
-      - name: 安装 JavaScript 依赖
-        run: yarn install --frozen-lockfile
-
-      - name: Clean Pods
+      - name: Install Cocoapods
         working-directory: ./ios
-        run: |
-          rm -rf Pods
-          rm -f Podfile.lock
-          pod cache clean --all # 清理 CocoaPods 缓存
-          # bundle exec pod deintegrate # 如果需要更彻底的清理
-          
-      - name: 安装 iOS Pods
-        working-directory: ./ios # CocoaPods 相关命令在 ios 目录下执行
-        # bundle exec 确保使用的是 Gemfile 中定义的 CocoaPods 版本
-        # 增加 --verbose 参数可以看到更详细的 pod install 输出，方便调试
-        run: bundle exec pod install --repo-update --verbose
+        run: pod install --repo-update
 
-      # 调试步骤：列出 Xcode Workspace 和 Schemes，有助于确认配置是否正确
-      - name: 列出 Xcode Workspace 和 Schemes (调试)
-        # if: always() # 暂时注释掉 always，如果 pod install 失败，后面步骤也没有意义
-        working-directory: ./ios
+      - name: Create ExportOptions.plist for Ad-Hoc export without signing
         run: |
-          echo "--- Contents of ios directory AFTER pod install ---"
-          ls -la
-          echo "--- Verifying presence of ${{ env.XCODE_WORKSPACE_NAME }} ---"
-          if [ -d "${{ env.XCODE_WORKSPACE_NAME }}" ]; then
-            echo "${{ env.XCODE_WORKSPACE_NAME }} found."
-            echo "--- Listing schemes for ${{ env.XCODE_WORKSPACE_NAME }} ---"
-            xcodebuild -list -workspace "${{ env.XCODE_WORKSPACE_NAME }}"
-          else
-            echo "ERROR: ${{ env.XCODE_WORKSPACE_NAME }} NOT FOUND in ./ios directory after pod install!"
-            exit 1 # 如果工作区文件未找到，则明确失败
-          fi
+          cat > ExportOptions.plist <<EOL
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>ad-hoc</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict/>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <false/>
+          </dict>
+          </plist>
+          EOL
+        working-directory: ./ios
 
-      - name: 清理 Xcode 项目 (可选，但推荐)
-        working-directory: ./ios
+      - name: Build and Archive iOS App
+        env:
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }} # 即使不签名，有时Xcode仍会尝试访问钥匙串
         run: |
-          echo "Attempting to clean with Workspace: ${{ env.XCODE_WORKSPACE_NAME }} and Scheme: ${{ env.XCODE_SCHEME_NAME }}"
-          xcodebuild clean \
-            -workspace "${{ env.XCODE_WORKSPACE_NAME }}" \
-            -scheme "${{ env.XCODE_SCHEME_NAME }}" \
-            -configuration Release
-
-      - name: 构建 iOS Archive (不签名)
-        working-directory: ./ios
-        run: |
-          echo "Attempting to archive with Workspace: ${{ env.XCODE_WORKSPACE_NAME }} and Scheme: ${{ env.XCODE_SCHEME_NAME }}"
           xcodebuild archive \
-            -workspace "${{ env.XCODE_WORKSPACE_NAME }}" \
-            -scheme "${{ env.XCODE_SCHEME_NAME }}" \
-            -configuration Release \
+            -workspace ios/MusicFree.xcworkspace \
+            -scheme MusicFreeNew \
             -sdk iphoneos \
-            -archivePath "../build/ios/archive/${{ env.XCODE_SCHEME_NAME }}.xcarchive" \
-            CODE_SIGN_IDENTITY="" \
+            -configuration Release \
+            -archivePath build/MusicFree.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            EXPANDED_CODE_SIGN_IDENTITY=""
 
-      - name: 定位 .app 文件路径
-        id: find_app
+      - name: Export IPA
         run: |
-          ARCHIVE_PATH_ABS="${{ github.workspace }}/build/ios/archive/${{ env.XCODE_SCHEME_NAME }}.xcarchive"
-          echo "Searching for .app in: ${ARCHIVE_PATH_ABS}/Products/Applications/"
-          APP_PATH_IN_ARCHIVE=$(find "${ARCHIVE_PATH_ABS}/Products/Applications/" -name "*.app" -type d -maxdepth 1 | head -n 1)
-          
-          if [ -z "$APP_PATH_IN_ARCHIVE" ]; then
-            echo "错误：在 ${ARCHIVE_PATH_ABS}/Products/Applications/ 中未找到 .app 文件包。"
-            echo "--- Listing contents of ${ARCHIVE_PATH_ABS}/Products/Applications/ (if exists) ---"
-            ls -R "${ARCHIVE_PATH_ABS}/Products/Applications/" || echo "Archive Products/Applications 目录不存在或无法访问."
-            echo "--- Listing contents of ${ARCHIVE_PATH_ABS} (if exists) ---"
-            ls -R "${ARCHIVE_PATH_ABS}" || echo "Archive 目录不存在或无法访问."
-            exit 1
-          fi
-          echo "APP_FULL_PATH=${APP_PATH_IN_ARCHIVE}" >> $GITHUB_ENV
-          echo ".app 文件路径 (绝对路径): ${APP_PATH_IN_ARCHIVE}"
+          xcodebuild -exportArchive \
+            -archivePath build/MusicFree.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ios/ExportOptions.plist
 
-      - name: 创建未签名的 IPA 包
-        run: |
-          APP_NAME_NO_EXT=$(basename "${{ env.APP_FULL_PATH }}" .app)
-          IPA_FILENAME="${APP_NAME_NO_EXT}-unsigned-${{ github.run_number }}.ipa"
-          IPA_OUTPUT_PATH="${{ github.workspace }}/${IPA_FILENAME}" 
-
-          echo "将要创建的 IPA 文件名: $IPA_FILENAME"
-          echo "源 .app 路径 (绝对路径): ${{ env.APP_FULL_PATH }}"
-
-          mkdir -p "${{ github.workspace }}/Payload"
-          cp -R "${{ env.APP_FULL_PATH }}" "${{ github.workspace }}/Payload/"
-
-          cd "${{ github.workspace }}"
-          zip -qr "$IPA_FILENAME" Payload/
-
-          echo "IPA_OUTPUT_PATH=${IPA_OUTPUT_PATH}" >> $GITHUB_ENV
-          echo "未签名的 IPA 包创建完成: ${IPA_OUTPUT_PATH}"
-
-      - name: 上传未签名的 IPA 构建产物
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: musicfree-rn-unsigned-ipa
-          path: ${{ env.IPA_OUTPUT_PATH }}
-          if-no-files-found: error
-
-      - name: 清理工作区 (可选, 但推荐)
-        if: always()
-        run: |
-          echo "开始清理工作区..."
-          rm -rf "${{ github.workspace }}/Payload"
-          if [ -n "${{ env.IPA_OUTPUT_PATH }}" ] && [ -f "${{ env.IPA_OUTPUT_PATH }}" ]; then
-            rm -f "${{ env.IPA_OUTPUT_PATH }}"
-          fi
-          echo "清理完成"
+          name: MusicFree-IPA
+          path: build/ipa/*.ipa # 通常IPA文件名会是你的 Target 名称，这里用通配符
+          if-no-files-found: error # 如果没有找到IPA文件则报错
