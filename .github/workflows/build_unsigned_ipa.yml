@@ -34,7 +34,7 @@ jobs:
           bundler-cache: true # 会自动运行 bundle install 并缓存 gems
 
       - name: 安装 JavaScript 依赖
-        run: yarn install
+        run: yarn install; yarn ios:build
 
       - name: Clean Pods
         working-directory: ./ios
