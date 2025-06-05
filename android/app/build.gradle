@@ -176,8 +176,12 @@ dependencies {
     implementation("com.facebook.react:react-android")
 
     // 添加ffmpeg扩展
-    implementation 'org.jellyfin.exoplayer:exoplayer-ffmpeg-extension:2.19.0+1'
-
+    //implementation 'org.jellyfin.exoplayer:exoplayer-ffmpeg-extension:2.19.0+1'
+    implementation files('libs/androidx-media-lib-decoder-ffmpeg-release.aar')
+    def media3VersionForFfmpeg = "1.7.1"
+    implementation "androidx.media3:media3-decoder:${media3VersionForFfmpeg}"
+    implementation "androidx.media3:media3-exoplayer:${media3VersionForFfmpeg}"
+    
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
