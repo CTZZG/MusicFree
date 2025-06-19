@@ -176,7 +176,35 @@ dependencies {
     implementation("com.facebook.react:react-android")
 
     // 添加ffmpeg扩展
-    implementation 'com.github.CTZZG.jellyfin-androidx-media:exoplayer-ffmpeg-extension:7adb7db6a8'
+    implementation('com.github.CTZZG.jellyfin-androidx-media:exoplayer-ffmpeg-extension:7adb7db6a8') {
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-workmanager'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-transformer'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-ui'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-extractor'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-mediasession'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-database'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-ima'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-leanback'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-okhttp'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-smoothstreaming'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-container'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-cast'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-rtsp'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-rtmp'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-hls'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-cronet'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-dash'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-effect'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-datasource'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-core'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-robolectricutils'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'extension-media2'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-decoder'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-testutils'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-common'
+        exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-muxer'
+    }
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
