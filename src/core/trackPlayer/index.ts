@@ -39,6 +39,7 @@ import minDistance from '@/utils/minDistance';
 import { IPluginManager } from '@/types/core/pluginManager';
 import { getAppUserAgent } from '@/utils/userAgentHelper'; // <--- 新增UA统一导入
 import { ImgAsset } from '@/constants/assetsConst';
+import { resolveImportedAssetOrPath } from '@/utils/fileUtils';
 
 
 
@@ -470,7 +471,7 @@ class TrackPlayer extends EventEmitter<{
                 ...musicItem,
                 url: TrackPlayer.proposedAudioUrl,
                 userAgent: getAppUserAgent(), // <--- 设置UA
-                artwork: musicItem.artwork?.trim()?.length ? musicItem.artwork : ImgAsset.albumDefault,
+                artwork: resolveImportedAssetOrPath(musicItem.artwork?.trim()?.length ? musicItem.artwork : ImgAsset.albumDefault) as unknown as any,
             }, this.getFakeNextTrack()]);
 
             this.emit(TrackPlayerEvents.ProgressChanged, { position: 0, duration: musicItem.duration || 0 });
@@ -750,6 +751,7 @@ class TrackPlayer extends EventEmitter<{
     /**************** 辅助函数 -- 设置内部状态 ****************/
 
     private setCurrentMusic(musicItem?: IMusic.IMusicItem | null) {
+        // 设置UI内部状态的musicitem
         if (!musicItem) {
             this.currentIndex = -1;
             getDefaultStore().set(currentMusicAtom, null);
@@ -758,6 +760,9 @@ class TrackPlayer extends EventEmitter<{
 
             this.emit(TrackPlayerEvents.CurrentMusicChanged, null);
             return;
+        }
+        if (typeof musicItem.artwork !== 'string') {
+            musicItem.artwork = ImgAsset.albumDefault;
         }
         this.currentIndex = this.getMusicIndexInPlayList(musicItem);
         getDefaultStore().set(currentMusicAtom, musicItem);
@@ -800,11 +805,12 @@ class TrackPlayer extends EventEmitter<{
 
     // 设置音源
     private async setTrackSource(track: Track, autoPlay = true) {
-        if (!track.artwork?.trim()?.length) {
-            track.artwork = ImgAsset.albumDefault;
+        const clonedTrack = this.patchMediaArtwork(track);
+        if (!clonedTrack) {
+            return;
         }
         track.userAgent = getAppUserAgent(); // <--- 确保设置UA
-        await ReactNativeTrackPlayer.setQueue([track, this.getFakeNextTrack()]);
+        await ReactNativeTrackPlayer.setQueue([clonedTrack, this.getFakeNextTrack()]);
         PersistStatus.set('music.musicItem', track as IMusic.IMusicItem);
         PersistStatus.set('music.progress', 0);
         if (autoPlay) {
@@ -897,10 +903,8 @@ class TrackPlayer extends EventEmitter<{
             return produce(track, _ => {
                 _.url = TrackPlayer.fakeAudioUrl;
                 _.$ = internalFakeSoundKey;
-                if (!_.artwork?.trim()?.length) {
-                    _.artwork = undefined;
-                }
                 _.userAgent = appUA;
+                _.artwork = resolveImportedAssetOrPath(ImgAsset.albumDefault) as unknown as any;
             });
         } else {
             // 只有列表长度为0时才会出现的特殊情况
@@ -983,6 +987,20 @@ class TrackPlayer extends EventEmitter<{
         }
 
         return null;
+    }
+
+
+    private patchMediaArtwork(track: Track) {
+        // Bug: React native track player 在设置音频时，artwork不能为null，并且部分情况下artwork不能为ImageSource类型
+        if (!track) {
+            return null;
+        }
+        return {
+            ...track,
+            artwork: resolveImportedAssetOrPath(
+                track.artwork?.trim()?.length ? track.artwork : ImgAsset.albumDefault,
+            ) as unknown as any,
+        }
     }
 
 }
