@@ -198,7 +198,7 @@ configurations.all {
 
             def localAarFile = project.files("libs/exoplayer-extension-ffmpeg-release.aar")
 
-            substitute originalModule with project.dependency(localAarFile)
+            substitute originalModule with project.dependencies.create(localAarFile)
         }
     }
 }
