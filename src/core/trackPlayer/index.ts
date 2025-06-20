@@ -698,7 +698,6 @@ class TrackPlayer extends EventEmitter<{
                 const playingState = (
                     await ReactNativeTrackPlayer.getPlaybackState()
                 ).state;
-                trackToPlay.userAgent = getAppUserAgent(); // <--- 设置UA
                 await this.setTrackSource(
                     this.mergeTrackSource(musicItem, newSource) as unknown as Track,
                     !musicIsPaused(playingState),
