@@ -188,21 +188,5 @@ dependencies {
     implementation 'net.jthink:jaudiotagger:2.2.5'
     implementation 'androidx.core:core-splashscreen:1.0.0'
 
-    implementation "mylocal.libs:local-ffmpeg-jni:1.0"
-}
-
-configurations.all {
-    resolutionStrategy {
-        dependencySubstitution { DependencySubstitutions substitutions ->
-            // 定义要被替换的 JitPack 模块
-            def originalSelector = substitutions.module("com.github.CTZZG.jellyfin-androidx-media:exoplayer-ffmpeg-extension:v2.19.1")
-
-            // 定义替换后的模块 (指向你的本地 AAR，通过 flatDir 解析)
-            // GAV 必须与上面 dependencies 中声明的完全一致
-            def replacementSelector = substitutions.module("mylocal.libs:local-ffmpeg-jni:1.0")
-
-            // 执行替换
-            substitutions.substitute(originalSelector).using(replacementSelector).because("Using local AAR (local-ffmpeg-jni-1.0.aar) with JNI libs")
-        }
-    }
+    api(name: 'exoplayer-ffmpeg-extension-v2.19.1', ext: 'aar')
 }
