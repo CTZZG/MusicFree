@@ -5,6 +5,11 @@ apply plugin: "com.facebook.react"
 import com.android.build.OutputFile
 import groovy.json.JsonSlurper
 
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -57,11 +62,6 @@ react {
     /* Autolinking */
     autolinkLibrariesWithApp()
 
-    //
-    // Added by install-expo-modules
-    entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", rootDir.getAbsoluteFile().getParentFile().getAbsolutePath(), "android", "absolute"].execute(null, rootDir).text.trim())
-    cliFile = new File(["node", "--print", "require.resolve('@expo/cli')"].execute(null, rootDir).text.trim())
-    bundleCommand = "export:embed"
     //
     // Added by install-expo-modules
     entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", rootDir.getAbsoluteFile().getParentFile().getAbsolutePath(), "android", "absolute"].execute(null, rootDir).text.trim())
@@ -187,5 +187,18 @@ dependencies {
     // https://mvnrepository.com/artifact/net.jthink/jaudiotagger
     implementation 'net.jthink:jaudiotagger:2.2.5'
     implementation 'androidx.core:core-splashscreen:1.0.0'
+
+    implementation files('libs/exoplayer-extension-ffmpeg-release.aar')
 }
 
+configurations.all {
+    resolutionStrategy {
+        dependencySubstitution {
+            def originalModule = module("com.github.CTZZG.jellyfin-androidx-media:exoplayer-ffmpeg-extension:v2.19.1")
+
+            def localAarFile = project.files("libs/exoplayer-extension-ffmpeg-release.aar")
+
+            substitute originalModule with project.dependency(localAarFile)
+        }
+    }
+}
