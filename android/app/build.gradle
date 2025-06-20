@@ -188,17 +188,21 @@ dependencies {
     implementation 'net.jthink:jaudiotagger:2.2.5'
     implementation 'androidx.core:core-splashscreen:1.0.0'
 
-    implementation files('libs/exoplayer-extension-ffmpeg-release.aar')
+    implementation "local.musicfree.ffmpeg:exoplayer-ffmpeg-local:1.0"
 }
 
 configurations.all {
     resolutionStrategy {
-        dependencySubstitution {
-            def originalModule = module("com.github.CTZZG.jellyfin-androidx-media:exoplayer-ffmpeg-extension:v2.19.1")
+        dependencySubstitution { DependencySubstitutions substitutions ->
+            // 定义要被替换的 JitPack 模块
+            def originalSelector = substitutions.module("com.github.CTZZG.jellyfin-androidx-media:exoplayer-ffmpeg-extension:v2.19.1")
 
-            def localAarFile = project.files("libs/exoplayer-extension-ffmpeg-release.aar")
+            // 定义替换后的模块 (指向你的本地 AAR，通过 flatDir 解析)
+            // GAV 必须与上面 dependencies 中声明的一致，并且 flatDir 能根据此找到 libs/exoplayer-ffmpeg-local-1.0.aar
+            def replacementSelector = substitutions.module("local.musicfree.ffmpeg:exoplayer-ffmpeg-local:1.0")
 
-            substitute originalModule with project.dependencies.create(localAarFile)
+            // 执行替换
+            substitutions.substitute(originalSelector).using(replacementSelector).because("Using local AAR with JNI libs")
         }
     }
 }
