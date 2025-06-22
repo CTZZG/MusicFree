@@ -472,7 +472,7 @@ class TrackPlayer extends EventEmitter<{
                 ...musicItem,
                 url: TrackPlayer.proposedAudioUrl,
                 userAgent: getAppUserAgent(), // <--- 设置UA
-                artwork: resolveImportedAssetOrPath(musicItem.artwork?.trim()?.length ? musicItem.artwork : ImgAsset.albumDefault) as unknown as any,
+                artwork: resolveImportedAssetOrPath(musicItem.artwork?.trim?.()?.length ? musicItem.artwork : ImgAsset.albumDefault) as unknown as any,
             }, this.getFakeNextTrack()]);
 
             this.emit(TrackPlayerEvents.ProgressChanged, { position: 0, duration: musicItem.duration || 0 });
@@ -998,7 +998,7 @@ class TrackPlayer extends EventEmitter<{
         return {
             ...track,
             artwork: resolveImportedAssetOrPath(
-                track.artwork?.trim()?.length ? track.artwork : ImgAsset.albumDefault,
+                track.artwork?.trim?.()?.length ? track.artwork : ImgAsset.albumDefault,
             ) as unknown as any,
         }
     }
