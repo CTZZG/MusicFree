@@ -334,10 +334,11 @@ class TrackPlayer extends EventEmitter<{
     }
 
     addNext(musicItem: IMusic.IMusicItem | IMusic.IMusicItem[]): void {
+        const shouldAutoPlay = this.isPlayListEmpty() || !this.currentMusic;
+
         this.add(musicItem, this.currentIndex + 1);
 
-        const shouldAutoPlay = this.isPlayListEmpty(); // <--- 应该是判断添加前是否为空，或者第一个添加的自动播放
-        if (shouldAutoPlay && this.playList.length > 0) { // <--- 修正逻辑
+        if (shouldAutoPlay) {
             this.play(Array.isArray(musicItem) ? musicItem[0] : musicItem);
         }
     }
