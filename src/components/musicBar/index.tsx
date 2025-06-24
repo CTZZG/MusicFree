@@ -16,8 +16,11 @@ function CircularPlayBtn() {
     const progress = useProgress();
     const musicState = useMusicState();
     const colors = useColors();
+    const musicItem = useCurrentMusic();
 
     const isPaused = musicIsPaused(musicState);
+
+    const displayDuration = (progress.duration > 0) ? progress.duration : (musicItem?.duration ?? 0);
 
     return (
         <CircularProgressBase
@@ -25,9 +28,7 @@ function CircularPlayBtn() {
             inActiveStrokeWidth={rpx(2)}
             inActiveStrokeOpacity={0.2}
             value={
-                progress?.duration
-                    ? (100 * progress.position) / progress.duration
-                    : 0
+                displayDuration ? (100 * progress.position) / displayDuration : 0
             }
             duration={100}
             radius={rpx(36)}
