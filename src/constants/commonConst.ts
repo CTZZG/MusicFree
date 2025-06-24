@@ -58,6 +58,8 @@ export const supportLocalMediaType = [
     '.aac',
     '.ape',
     '.opus',
+    '.dsf',
+    '.dff',
 ];
 
 const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);

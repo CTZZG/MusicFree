@@ -94,6 +94,26 @@
               <data android:pathPattern=".*\\.WAV" />
           </intent-filter>
           <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.dsf" />
+                <data android:pathPattern=".*\\.DSF" />
+                <data android:pathPattern=".*\\.dff" />
+                <data android:pathPattern=".*\\.DFF" />
+          </intent-filter>
+          <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.wma" />
+                <data android:pathPattern=".*\\.WMA" />
+          </intent-filter>
+          <intent-filter>
               <action android:name="android.intent.action.VIEW" />
               <category android:name="android.intent.category.DEFAULT" />
               <category android:name="android.intent.category.BROWSABLE" />
@@ -128,6 +148,26 @@
               <data android:mimeType="*/*" />
               <data android:pathPattern=".*\\.wav" />
               <data android:pathPattern=".*\\.WAV" />
+          </intent-filter>
+          <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.dsf" />
+                <data android:pathPattern=".*\\.DSF" />
+                <data android:pathPattern=".*\\.dff" />
+                <data android:pathPattern=".*\\.DFF" />
+          </intent-filter>
+          <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.wma" />
+                <data android:pathPattern=".*\\.WMA" />
           </intent-filter>
           <!-- 处理JavaScript文件 -->
           <intent-filter>

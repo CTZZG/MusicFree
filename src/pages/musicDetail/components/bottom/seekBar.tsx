@@ -4,7 +4,7 @@ import rpx from '@/utils/rpx';
 import Slider from '@react-native-community/slider';
 import timeformat from '@/utils/timeformat';
 import { fontSizeConst } from '@/constants/uiConst';
-import TrackPlayer, { useProgress } from '@/core/trackPlayer';
+import TrackPlayer, { useProgress, useCurrentMusic } from '@/core/trackPlayer';
 
 interface ITimeLabelProps {
     time: number;
@@ -18,8 +18,10 @@ function TimeLabel(props: ITimeLabelProps) {
 
 export default function SeekBar() {
     const progress = useProgress(1000);
+    const musicItem = useCurrentMusic();
     const [tmpProgress, setTmpProgress] = useState<number | null>(null);
     const slidingRef = useRef(false);
+    const displayDuration = (progress.duration > 0) ? progress.duration : (musicItem?.duration ?? 0);
 
     return (
         <View style={style.wrapper}>
@@ -30,7 +32,7 @@ export default function SeekBar() {
                 maximumTrackTintColor={'#999999'}
                 thumbTintColor={'#dddddd'}
                 minimumValue={0}
-                maximumValue={progress.duration}
+                maximumValue={displayDuration}
                 onSlidingStart={() => {
                     slidingRef.current = true;
                 }}
@@ -42,14 +44,14 @@ export default function SeekBar() {
                 onSlidingComplete={val => {
                     slidingRef.current = false;
                     setTmpProgress(null);
-                    if (val >= progress.duration - 2) {
-                        val = progress.duration - 2;
+                    if (val >= displayDuration - 2) {
+                        val = displayDuration - 2;
                     }
                     TrackPlayer.seekTo(val);
                 }}
                 value={progress.position}
             />
-            <TimeLabel time={progress.duration} />
+            <TimeLabel time={displayDuration} />
         </View>
     );
 }
