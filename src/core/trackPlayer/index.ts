@@ -1,26 +1,26 @@
-import { getCurrentDialog, showDialog } from '@/components/dialogs/useDialog';
+import { getCurrentDialog, showDialog } from "@/components/dialogs/useDialog";
 import {
     internalFakeSoundKey,
     sortIndexSymbol,
     timeStampSymbol,
-} from '@/constants/commonConst';
-import { MusicRepeatMode } from '@/constants/repeatModeConst';
-import delay from '@/utils/delay';
-import getUrlExt from '@/utils/getUrlExt';
-import { errorLog, trace } from '@/utils/log';
-import { createMediaIndexMap } from '@/utils/mediaIndexMap';
+} from "@/constants/commonConst";
+import { MusicRepeatMode } from "@/constants/repeatModeConst";
+import delay from "@/utils/delay";
+import getUrlExt from "@/utils/getUrlExt";
+import { errorLog, trace } from "@/utils/log";
+import { createMediaIndexMap } from "@/utils/mediaIndexMap";
 import {
     getLocalPath,
     isSameMediaItem,
-} from '@/utils/mediaUtils';
-import Network from '@/utils/network';
-import PersistStatus from '@/utils/persistStatus';
-import { getQualityOrder } from '@/utils/qualities';
-import { musicIsPaused } from '@/utils/trackUtils';
-import EventEmitter from 'eventemitter3';
-import { produce } from 'immer';
-import { atom, getDefaultStore, useAtomValue } from 'jotai';
-import shuffle from 'lodash.shuffle';
+} from "@/utils/mediaUtils";
+import Network from "@/utils/network";
+import PersistStatus from "@/utils/persistStatus";
+import { getQualityOrder } from "@/utils/qualities";
+import { musicIsPaused } from "@/utils/trackUtils";
+import EventEmitter from "eventemitter3";
+import { produce } from "immer";
+import { atom, getDefaultStore, useAtomValue } from "jotai";
+import shuffle from "lodash.shuffle";
 import ReactNativeTrackPlayer, {
     Event,
     State,
@@ -28,8 +28,8 @@ import ReactNativeTrackPlayer, {
     TrackMetadataBase,
     usePlaybackState,
     useProgress,
-} from 'react-native-track-player';
-import LocalMusicSheet from '../localMusicSheet';
+} from "react-native-track-player";
+import LocalMusicSheet from "../localMusicSheet";
 
 import { TrackPlayerEvents } from '@/core.defination/trackPlayer';
 import type { IAppConfig } from '@/types/core/config';
@@ -45,7 +45,7 @@ import { resolveImportedAssetOrPath } from '@/utils/fileUtils';
 
 const currentMusicAtom = atom<IMusic.IMusicItem | null>(null);
 const repeatModeAtom = atom<MusicRepeatMode>(MusicRepeatMode.QUEUE);
-const qualityAtom = atom<IMusic.IQualityKey>('standard');
+const qualityAtom = atom<IMusic.IQualityKey>("standard");
 const playListAtom = atom<IMusic.IMusicItem[]>([]);
 
 
@@ -133,9 +133,9 @@ class TrackPlayer extends EventEmitter<{
         const progress = PersistStatus.get('music.progress');
         let track = PersistStatus.get('music.musicItem'); // <--- 改为 let
         const quality =
-            PersistStatus.get('music.quality') ||
-            this.configService.getConfig('basic.defaultPlayQuality') ||
-            'standard';
+            PersistStatus.get("music.quality") ||
+            this.configService.getConfig("basic.defaultPlayQuality") ||
+            "standard";
 
         // 状态恢复
         if (rate) {
@@ -154,7 +154,7 @@ class TrackPlayer extends EventEmitter<{
         }
 
         if (track && this.isInPlayList(track)) {
-            if (!this.configService.getConfig('basic.autoPlayWhenAppStart')) {
+            if (!this.configService.getConfig("basic.autoPlayWhenAppStart")) {
                 track.isInit = true;
             }
             // 添加 UA
@@ -193,7 +193,7 @@ class TrackPlayer extends EventEmitter<{
                         evt.lastIndex === 0 &&
                         evt.track?.url === TrackPlayer.fakeAudioUrl
                     ) {
-                        trace('队列末尾，播放下一首');
+                        trace("队列末尾，播放下一首");
                         this.emit(TrackPlayerEvents.PlayEnd);
                         if (
                             this.repeatMode ===
@@ -211,7 +211,7 @@ class TrackPlayer extends EventEmitter<{
             ReactNativeTrackPlayer.addEventListener(
                 Event.PlaybackError,
                 async e => {
-                    errorLog('播放出错', e.message);
+                    errorLog("播放出错", e.message);
                     // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
                     const currentTrack =
                         await ReactNativeTrackPlayer.getActiveTrack();
@@ -230,9 +230,9 @@ class TrackPlayer extends EventEmitter<{
                         currentTrack?.url !== TrackPlayer.fakeAudioUrl && currentTrack?.url !== TrackPlayer.proposedAudioUrl &&
                         (await ReactNativeTrackPlayer.getActiveTrackIndex()) === 0 &&
                         e.message &&
-                        e.message !== 'android-io-file-not-found'
+                        e.message !== "android-io-file-not-found"
                     ) {
-                        trace('播放出错', {
+                        trace("播放出错", {
                             message: e.message,
                             code: e.code,
                         });
@@ -415,7 +415,7 @@ class TrackPlayer extends EventEmitter<{
             const localPath = getLocalPath(musicItem);
             if (
                 Network.isCellular &&
-                !this.configService.getConfig('basic.useCelluarNetworkPlay') &&
+                !this.configService.getConfig("basic.useCelluarNetworkPlay") &&
                 !LocalMusicSheet.isLocalMusic(musicItem) &&
                 !localPath
             ) {
@@ -484,8 +484,8 @@ class TrackPlayer extends EventEmitter<{
             const plugin = this.pluginManagerService.getByName(musicItem.platform);
             // 5.2 获取音质排序
             const qualityOrder = getQualityOrder(
-                this.configService.getConfig('basic.defaultPlayQuality') ?? 'standard',
-                this.configService.getConfig('basic.playQualityOrder') ?? 'asc',
+                this.configService.getConfig("basic.defaultPlayQuality") ?? "standard",
+                this.configService.getConfig("basic.playQualityOrder") ?? "asc",
             );
             // 5.3 插件返回音源
             let source: IPlugin.IMediaSourceResult | null = null;
@@ -525,11 +525,11 @@ class TrackPlayer extends EventEmitter<{
                 // 5.4 没有返回源
                 if (!source && !musicItem.url) {
                     // 插件失效的情况
-                    if (this.configService.getConfig('basic.tryChangeSourceWhenPlayFail')) {
+                    if (this.configService.getConfig("basic.tryChangeSourceWhenPlayFail")) {
                         // 重试
                         const similarMusic = await this.getSimilarMusic(
                             musicItem,
-                            'music',
+                            "music",
                             () => !this.isCurrentMusic(musicItem),
                         );
 
@@ -566,14 +566,14 @@ class TrackPlayer extends EventEmitter<{
                     source = {
                         url: musicItem.url,
                     };
-                    this.setQuality('standard');
+                    this.setQuality("standard");
                 }
             }
 
             // 6. 特殊类型源
-            if (getUrlExt(source.url) === '.m3u8') {
+            if (getUrlExt(source.url) === ".m3u8") {
                 // @ts-ignore
-                source.type = 'hls';
+                source.type = "hls";
             }
             // 7. 合并结果
             track = this.mergeTrackSource(musicItem, source) as IMusic.IMusicItem;
@@ -583,7 +583,7 @@ class TrackPlayer extends EventEmitter<{
             // 8. 新增历史记录
             this.musicHistoryService.addMusic(musicItem);
 
-            trace('获取音源成功', track);
+            trace("获取音源成功", track);
             // 9. 设置音源
             await this.setTrackSource(track as Track);
 
@@ -593,8 +593,8 @@ class TrackPlayer extends EventEmitter<{
                 info =
                     (await plugin?.methods?.getMusicInfo?.(musicItem)) ?? null;
                 if (
-                    (typeof info?.url === 'string' && info.url.trim() === '') ||
-                    (info?.url && typeof info.url !== 'string')
+                    (typeof info?.url === "string" && info.url.trim() === "") ||
+                    (info?.url && typeof info.url !== "string")
                 ) {
                     delete info.url;
                 }
@@ -614,20 +614,20 @@ class TrackPlayer extends EventEmitter<{
             const message = e?.message;
             if (
                 message ===
-                'The player is not initialized. Call setupPlayer first.'
+                "The player is not initialized. Call setupPlayer first."
             ) {
                 await ReactNativeTrackPlayer.setupPlayer();
                 this.play(musicItem, forcePlay);
             } else if (message === PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY) {
-                if (getCurrentDialog()?.name !== 'SimpleDialog') {
-                    showDialog('SimpleDialog', {
-                        title: '流量提醒',
+                if (getCurrentDialog()?.name !== "SimpleDialog") {
+                    showDialog("SimpleDialog", {
+                        title: "流量提醒",
                         content:
-                            '当前非WIFI环境，侧边栏设置中打开【使用移动网络播放】功能后可继续播放',
+                            "当前非WIFI环境，侧边栏设置中打开【使用移动网络播放】功能后可继续播放",
                     });
                 }
             } else if (message === PlayFailReason.INVALID_SOURCE) {
-                trace('音源为空，播放失败');
+                trace("音源为空，播放失败");
                 await this.handlePlayFail();
             } else if (message === PlayFailReason.PLAY_LIST_IS_EMPTY) {
                 // 队列是空的，不应该出现这种情况
@@ -649,8 +649,8 @@ class TrackPlayer extends EventEmitter<{
         this.setCurrentMusic(null);
 
         await ReactNativeTrackPlayer.reset();
-        PersistStatus.set('music.musicItem', undefined);
-        PersistStatus.set('music.progress', 0);
+        PersistStatus.set("music.musicItem", undefined);
+        PersistStatus.set("music.progress", 0);
     }
 
     async skipToNext(): Promise<void> {
@@ -755,13 +755,13 @@ class TrackPlayer extends EventEmitter<{
         if (!musicItem) {
             this.currentIndex = -1;
             getDefaultStore().set(currentMusicAtom, null);
-            PersistStatus.set('music.musicItem', undefined);
-            PersistStatus.set('music.progress', 0);
+            PersistStatus.set("music.musicItem", undefined);
+            PersistStatus.set("music.progress", 0);
 
             this.emit(TrackPlayerEvents.CurrentMusicChanged, null);
             return;
         }
-        if (typeof musicItem.artwork !== 'string') {
+        if (typeof musicItem.artwork !== "string") {
             musicItem.artwork = ImgAsset.albumDefault;
         }
         this.currentIndex = this.getMusicIndexInPlayList(musicItem);
@@ -795,12 +795,12 @@ class TrackPlayer extends EventEmitter<{
             this.getFakeNextTrack(),
         );
         // 记录
-        PersistStatus.set('music.repeatMode', mode);
+        PersistStatus.set("music.repeatMode", mode);
     }
 
     private setQuality(quality: IMusic.IQualityKey) {
         getDefaultStore().set(qualityAtom, quality);
-        PersistStatus.set('music.quality', quality);
+        PersistStatus.set("music.quality", quality);
     }
 
     // 设置音源
@@ -811,8 +811,8 @@ class TrackPlayer extends EventEmitter<{
         }
         track.userAgent = getAppUserAgent(); // <--- 确保设置UA
         await ReactNativeTrackPlayer.setQueue([clonedTrack, this.getFakeNextTrack()]);
-        PersistStatus.set('music.musicItem', track as IMusic.IMusicItem);
-        PersistStatus.set('music.progress', 0);
+        PersistStatus.set("music.musicItem", track as IMusic.IMusicItem);
+        PersistStatus.set("music.progress", 0);
         if (autoPlay) {
             await ReactNativeTrackPlayer.play();
         }
@@ -829,7 +829,7 @@ class TrackPlayer extends EventEmitter<{
         this.playListIndexMap = createMediaIndexMap(newPlayList);
 
         if (persist) {
-            PersistStatus.set('music.playList', newPlayList);
+            PersistStatus.set("music.playList", newPlayList);
         }
 
         this.currentIndex = this.getMusicIndexInPlayList(this.currentMusic);
@@ -855,7 +855,7 @@ class TrackPlayer extends EventEmitter<{
             }
         }
         return queue;
-    }
+    };
 
     private mergeTrackSource(
         mediaItem: ICommon.IMediaBase,
@@ -918,7 +918,7 @@ class TrackPlayer extends EventEmitter<{
 
     private async handlePlayFail() {
         // 如果自动跳转下一曲, 500s后自动跳转
-        if (!this.configService.getConfig('basic.autoStopWhenError')) {
+        if (!this.configService.getConfig("basic.autoStopWhenError")) {
             await delay(500);
             await this.skipToNext();
         }
@@ -933,7 +933,7 @@ class TrackPlayer extends EventEmitter<{
  */
     private async getSimilarMusic<T extends ICommon.SupportMediaType>(
         musicItem: IMusic.IMusicItem,
-        type: T = 'music' as T,
+        type: T = "music" as T,
         abortFunction?: () => boolean,
     ): Promise<ICommon.SupportMediaItemBase[T] | null> {
         const keyword = musicItem.alias || musicItem.title;
@@ -1000,7 +1000,7 @@ class TrackPlayer extends EventEmitter<{
             artwork: resolveImportedAssetOrPath(
                 track.artwork?.trim?.()?.length ? track.artwork : ImgAsset.albumDefault,
             ) as unknown as any,
-        }
+        };
     }
 
 }
@@ -1018,11 +1018,11 @@ export { State as MusicState, useProgress };
 
 enum PlayFailReason {
     /** 禁止移动网络播放 */
-    FORBID_CELLUAR_NETWORK_PLAY = 'FORBID_CELLUAR_NETWORK_PLAY',
+    FORBID_CELLUAR_NETWORK_PLAY = "FORBID_CELLUAR_NETWORK_PLAY",
     /** 播放列表为空 */
-    PLAY_LIST_IS_EMPTY = 'PLAY_LIST_IS_EMPTY',
+    PLAY_LIST_IS_EMPTY = "PLAY_LIST_IS_EMPTY",
     /** 无效源 */
-    INVALID_SOURCE = 'INVALID_SOURCE',
+    INVALID_SOURCE = "INVALID_SOURCE",
     /** 非当前音乐 */
 }
 
