@@ -27,7 +27,7 @@ import { Linking, Platform } from "react-native";
 import { PERMISSIONS, check, request } from "react-native-permissions";
 import RNTrackPlayer, { AppKilledPlaybackBehavior, Capability } from "react-native-track-player";
 import bootstrapAtom from "./bootstrap.atom";
-
+import playbackServiceObserver from "@/core/trackPlayer/playbackServiceObserver";
 
 // 依赖管理
 musicHistory.injectDependencies(Config);
@@ -201,6 +201,9 @@ export async function initTrackPlayer(logger?: IPerfLogger) {
     logger?.mark("播放列表初始化完成");
 
     await lyricManager.setup();
+
+    // [新增] 设置播放服务观察者，用于和插件通信
+    playbackServiceObserver.setupPlaybackObserver();
 
     logger?.mark("歌词初始化完成");
 }

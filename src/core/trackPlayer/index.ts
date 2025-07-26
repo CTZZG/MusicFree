@@ -411,6 +411,10 @@ class TrackPlayer extends EventEmitter<{
             if (!musicItem) {
                 throw new Error(PlayFailReason.PLAY_LIST_IS_EMPTY);
             }
+
+            // [新增] 检查 musicItem 上是否有 _currentTime 属性
+            const seekToTime = (musicItem as any)?._currentTime;
+
             // 1. 移动网络禁止播放
             const localPath = getLocalPath(musicItem);
             if (
@@ -448,7 +452,7 @@ class TrackPlayer extends EventEmitter<{
                         await ReactNativeTrackPlayer.getPlaybackState()
                     ).state;
                     if (currentState === State.Stopped) {
-                        await this.setTrackSource(currentTrack);
+                        await this.setTrackSource(currentTrack, true, seekToTime);
                     }
                     if (currentState !== State.Playing) {
                         // 2.1.2 恢复播放
@@ -585,7 +589,7 @@ class TrackPlayer extends EventEmitter<{
 
             trace("获取音源成功", track);
             // 9. 设置音源
-            await this.setTrackSource(track as Track);
+            await this.setTrackSource(track as Track, true, seekToTime);
 
             // 10. 获取补充信息
             let info: Partial<IMusic.IMusicItem> | null = null;
@@ -804,7 +808,7 @@ class TrackPlayer extends EventEmitter<{
     }
 
     // 设置音源
-    private async setTrackSource(track: Track, autoPlay = true) {
+    private async setTrackSource(track: Track, autoPlay = true, seekTo?: number) {
         const clonedTrack = this.patchMediaArtwork(track);
         if (!clonedTrack) {
             return;
@@ -815,6 +819,12 @@ class TrackPlayer extends EventEmitter<{
         PersistStatus.set("music.progress", 0);
         if (autoPlay) {
             await ReactNativeTrackPlayer.play();
+        }
+        // [新增] 在开始播放后跳转到指定时间
+        if (typeof seekTo === "number" && seekTo > 0) {
+            // 增加一个短暂延迟，确保播放器准备好接收 seek 命令
+            await delay(100); 
+            await ReactNativeTrackPlayer.seekTo(seekTo);
         }
     }
 

@@ -1,4 +1,17 @@
 declare namespace IPlugin {
+    export type IPlaybackStateChangeEvent = "track-change" | "play" | "pause" | "stop" | "progress";
+
+    export interface IPlaybackStateChangeData {
+        currentTime?: number;
+        duration?: number;
+    }
+
+    export interface IPlaybackStateChangeParams {
+        musicItem: IMusic.IMusicItem;
+        event: IPlaybackStateChangeEvent;
+        data?: IPlaybackStateChangeData;
+    }
+
     export interface IMediaSourceResult {
         headers?: Record<string, string>;
         /** 兜底播放 */
@@ -141,6 +154,8 @@ declare namespace IPlugin {
             musicItem: IMusic.IMusicItem,
             page?: number
         ) => Promise<ICommon.PaginationResponse<IMedia.IComment>>;
+        /** [新增] 播放状态改变时的回调 */
+        onPlaybackStateChange?: (params: IPlaybackStateChangeParams) => Promise<void>;
     }
 
     export interface IPluginInstance extends IPluginDefine {
