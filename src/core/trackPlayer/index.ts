@@ -170,13 +170,17 @@ class TrackPlayer extends EventEmitter<{
 
                     if (isSameMediaItem(this.currentMusic, track)) {
                         await this.setTrackSource(track as Track, false);
+                        if (progress) {
+                            // 异步
+                            this.seekTo(progress);
+                        }
                     }
                 });
             this.setCurrentMusic(track);
 
             if (progress) {
                 // 异步
-                ReactNativeTrackPlayer.seekTo(progress);
+                this.seekTo(progress);
             }
         }
 
@@ -446,7 +450,7 @@ class TrackPlayer extends EventEmitter<{
                     }
                     if (forcePlay) {
                         // 2.1.1 强制重新开始
-                        await ReactNativeTrackPlayer.seekTo(0);
+                        await this.seekTo(0);
                     }
                     const currentState = (
                         await ReactNativeTrackPlayer.getPlaybackState()
@@ -708,7 +712,7 @@ class TrackPlayer extends EventEmitter<{
                     !musicIsPaused(playingState),
                 );
 
-                await ReactNativeTrackPlayer.seekTo(progress.position ?? 0);
+                await this.seekTo(progress.position ?? 0);
                 this.setQuality(newQuality);
             }
             return true;
@@ -745,10 +749,14 @@ class TrackPlayer extends EventEmitter<{
         }
     }
 
+    async seekTo(progress: number) {
+        PersistStatus.set("music.progress", progress);
+        return ReactNativeTrackPlayer.seekTo(progress);
+    }
+
     getProgress = ReactNativeTrackPlayer.getProgress;
     getRate = ReactNativeTrackPlayer.getRate;
     setRate = ReactNativeTrackPlayer.setRate;
-    seekTo = ReactNativeTrackPlayer.seekTo;
     reset = ReactNativeTrackPlayer.reset;
 
 
