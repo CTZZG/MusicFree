@@ -30,6 +30,7 @@ import bootstrapAtom from "./bootstrap.atom";
 import playbackServiceObserver from "@/core/trackPlayer/playbackServiceObserver";
 
 // 依赖管理
+PluginManager.injectDependencies(Config);
 musicHistory.injectDependencies(Config);
 TrackPlayer.injectDependencies(Config, musicHistory, PluginManager);
 downloader.injectDependencies(Config, PluginManager);
