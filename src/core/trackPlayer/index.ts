@@ -179,7 +179,6 @@ class TrackPlayer extends EventEmitter<{
             this.setCurrentMusic(track);
 
             if (progress) {
-                // 异步
                 this.seekTo(progress);
             }
         }

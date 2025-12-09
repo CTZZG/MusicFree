@@ -54,7 +54,7 @@ export default function MusicItem(props: IMusicItemProps) {
             {Left ? <Left /> : null}
             {index !== undefined ? (
                 <ListItem.ListItemText
-                    width={rpx(82)}
+                    width={rpx(86)}
                     position="none"
                     fixedWidth
                     fontColor={highlight ? "primary" : "text"}

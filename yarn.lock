@@ -2080,6 +2080,138 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
+"@microsoft/applicationinsights-analytics-js@3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-analytics-js/-/applicationinsights-analytics-js-3.3.10.tgz#6ad105935b29281fd6e74180404d22b683f2b4a4"
+  integrity sha512-hr4ATKap4aLZ9X4/Rt6KT/l31vHeTrPIMrfl6P/GfMZ+gzh2EhYjjmEB1gtgLYor/D/huiMaUkakRQRGp0V/1Q==
+  dependencies:
+    "@microsoft/applicationinsights-common" "3.3.10"
+    "@microsoft/applicationinsights-core-js" "3.3.10"
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/applicationinsights-cfgsync-js@3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-cfgsync-js/-/applicationinsights-cfgsync-js-3.3.10.tgz#58b3f90ea892bf7ff94500b94b89733238966626"
+  integrity sha512-YROIPKDgRTxZyAJ3v2fu56qaI+o1D/XgTIVuGP91AilGGWu3sUDL+/3KBNBGTtZlgW1e/psUhEjfHWxVS7degA==
+  dependencies:
+    "@microsoft/applicationinsights-common" "3.3.10"
+    "@microsoft/applicationinsights-core-js" "3.3.10"
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-async" ">= 0.5.4 < 2.x"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/applicationinsights-channel-js@3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-channel-js/-/applicationinsights-channel-js-3.3.10.tgz#9a81371f2143b537ee977e9748829d85532d5780"
+  integrity sha512-iolFLz1ocWAzIQqHIEjjov3gNTPkgFQ4ArHnBcJEYoffOGWlJt6copaevS5YPI5rHzmbySsengZ8cLJJBBrXzQ==
+  dependencies:
+    "@microsoft/applicationinsights-common" "3.3.10"
+    "@microsoft/applicationinsights-core-js" "3.3.10"
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-async" ">= 0.5.4 < 2.x"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/applicationinsights-common@3.3.10", "@microsoft/applicationinsights-common@^3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-common/-/applicationinsights-common-3.3.10.tgz#81e3a58f253cd3508a655ead74287f7f1445cced"
+  integrity sha512-RVIenPIvNgZCbjJdALvLM4rNHgAFuHI7faFzHCgnI6S2WCUNGHeXlQTs9EUUrL+n2TPp9/cd0KKMILU5VVyYiA==
+  dependencies:
+    "@microsoft/applicationinsights-core-js" "3.3.10"
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/applicationinsights-core-js@3.3.10", "@microsoft/applicationinsights-core-js@^3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-core-js/-/applicationinsights-core-js-3.3.10.tgz#a30ab61c1b33c82226479b9adfbaf3bc4c85cff9"
+  integrity sha512-5yKeyassZTq2l+SAO4npu6LPnbS++UD+M+Ghjm9uRzoBwD8tumFx0/F8AkSVqbniSREd+ztH/2q2foewa2RZyg==
+  dependencies:
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-async" ">= 0.5.4 < 2.x"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/applicationinsights-dependencies-js@3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-dependencies-js/-/applicationinsights-dependencies-js-3.3.10.tgz#8e34238e2566b3a94840acb2650a0c5a693e7a44"
+  integrity sha512-KtYz18c0O5VJmsztyLgnNISQ3gfZh3XaBvDrSQ8QdBzvoE6QkfQx1lLkKFvshXvWkz2aL8BxgV2B43WcX9niLg==
+  dependencies:
+    "@microsoft/applicationinsights-common" "3.3.10"
+    "@microsoft/applicationinsights-core-js" "3.3.10"
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-async" ">= 0.5.4 < 2.x"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/applicationinsights-properties-js@3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-properties-js/-/applicationinsights-properties-js-3.3.10.tgz#104cfef1c3828676a7fa13ac24fe5b689bfd7072"
+  integrity sha512-1pt1CCgT9MfG3YthRBhhzIStksgCMea3ctLfWDGA5414kGEMzp3xB986sC52XNzE/B6/PY8nTxATBxNEITeDVA==
+  dependencies:
+    "@microsoft/applicationinsights-common" "3.3.10"
+    "@microsoft/applicationinsights-core-js" "3.3.10"
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/applicationinsights-react-native@^4.3.8":
+  version "4.3.8"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-react-native/-/applicationinsights-react-native-4.3.8.tgz#c5f4fec26ddfd60532654d68cd7445e6cc222e98"
+  integrity sha512-VL8DZvT9TbU7nGzt7LFHnrqX9J0S9DngdF/vNoZpl8eYfeRcwVjUcobcnoxYiMorRpfkAm07aQSxi4WfULz4vg==
+  dependencies:
+    "@microsoft/applicationinsights-common" "^3.3.10"
+    "@microsoft/applicationinsights-core-js" "^3.3.10"
+    "@microsoft/applicationinsights-shims" "^3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-utils" ">= 0.11.3 < 2.x"
+
+"@microsoft/applicationinsights-shims@3.0.1", "@microsoft/applicationinsights-shims@^3.0.1":
+  version "3.0.1"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-shims/-/applicationinsights-shims-3.0.1.tgz#3865b73ace8405b9c4618cc5c571f2fe3876f06f"
+  integrity sha512-DKwboF47H1nb33rSUfjqI6ryX29v+2QWcTrRvcQDA32AZr5Ilkr7whOOSsD1aBzwqX0RJEIP1Z81jfE3NBm/Lg==
+  dependencies:
+    "@nevware21/ts-utils" ">= 0.9.4 < 2.x"
+
+"@microsoft/applicationinsights-web@^3.3.10":
+  version "3.3.10"
+  resolved "https://registry.npmmirror.com/@microsoft/applicationinsights-web/-/applicationinsights-web-3.3.10.tgz#57c3267dc54dc5494e80218a6f97ae314469a384"
+  integrity sha512-okQ2BPYlEnlAjSK80vXdpDB37Yl+LR/TULiLffqUEFAyr5YvnsOViEOus+uS9stOz+YhaU7sWNFAjFO31k2cBg==
+  dependencies:
+    "@microsoft/applicationinsights-analytics-js" "3.3.10"
+    "@microsoft/applicationinsights-cfgsync-js" "3.3.10"
+    "@microsoft/applicationinsights-channel-js" "3.3.10"
+    "@microsoft/applicationinsights-common" "3.3.10"
+    "@microsoft/applicationinsights-core-js" "3.3.10"
+    "@microsoft/applicationinsights-dependencies-js" "3.3.10"
+    "@microsoft/applicationinsights-properties-js" "3.3.10"
+    "@microsoft/applicationinsights-shims" "3.0.1"
+    "@microsoft/dynamicproto-js" "^2.0.3"
+    "@nevware21/ts-async" ">= 0.5.4 < 2.x"
+    "@nevware21/ts-utils" ">= 0.11.8 < 2.x"
+
+"@microsoft/dynamicproto-js@^2.0.3":
+  version "2.0.3"
+  resolved "https://registry.npmmirror.com/@microsoft/dynamicproto-js/-/dynamicproto-js-2.0.3.tgz#ae2b408061e3ff01a97078429fc768331e239256"
+  integrity sha512-JTWTU80rMy3mdxOjjpaiDQsTLZ6YSGGqsjURsY6AUQtIj0udlF/jYmhdLZu8693ZIC0T1IwYnFa0+QeiMnziBA==
+  dependencies:
+    "@nevware21/ts-utils" ">= 0.10.4 < 2.x"
+
+"@nevware21/ts-async@>= 0.5.4 < 2.x":
+  version "0.5.4"
+  resolved "https://registry.npmmirror.com/@nevware21/ts-async/-/ts-async-0.5.4.tgz#52f8449dd0b3b16aa317a18b4662f6fb13a135f1"
+  integrity sha512-IBTyj29GwGlxfzXw2NPnzty+w0Adx61Eze1/lknH/XIVdxtF9UnOpk76tnrHXWa6j84a1RR9hsOcHQPFv9qJjA==
+  dependencies:
+    "@nevware21/ts-utils" ">= 0.11.6 < 2.x"
+
+"@nevware21/ts-utils@>= 0.10.4 < 2.x", "@nevware21/ts-utils@>= 0.11.3 < 2.x", "@nevware21/ts-utils@>= 0.11.6 < 2.x", "@nevware21/ts-utils@>= 0.11.8 < 2.x", "@nevware21/ts-utils@>= 0.9.4 < 2.x":
+  version "0.12.5"
+  resolved "https://registry.npmmirror.com/@nevware21/ts-utils/-/ts-utils-0.12.5.tgz#fe33c10d11ae8b724ccaaa31d2d0109d18601da6"
+  integrity sha512-JPQZWPKQJjj7kAftdEZL0XDFfbMgXCGiUAZe0d7EhLC3QlXTlZdSckGqqRIQ2QNl0VTEZyZUvRBw6Ednw089Fw==
+
 "@nicolo-ribaudo/eslint-scope-5-internals@5.1.1-v1":
   version "5.1.1-v1"
   resolved "https://registry.npmmirror.com/@nicolo-ribaudo/eslint-scope-5-internals/-/eslint-scope-5-internals-5.1.1-v1.tgz"
@@ -3663,6 +3795,11 @@ babel-plugin-transform-flow-enums@^0.0.2:
   dependencies:
     "@babel/plugin-syntax-flow" "^7.12.1"
 
+babel-plugin-transform-inline-environment-variables@^0.4.4:
+  version "0.4.4"
+  resolved "https://registry.npmmirror.com/babel-plugin-transform-inline-environment-variables/-/babel-plugin-transform-inline-environment-variables-0.4.4.tgz#974245008b3cbbd646bd81707af147aea3acca43"
+  integrity sha512-bJILBtn5a11SmtR2j/3mBOjX4K3weC6cq+NNZ7hG22wCAqpc3qtj/iN7dSe9HDiS46lgp1nHsQgeYrea/RUe+g==
+
 babel-plugin-transform-remove-console@^6.9.4:
   version "6.9.4"
   resolved "https://registry.npmmirror.com/babel-plugin-transform-remove-console/-/babel-plugin-transform-remove-console-6.9.4.tgz"
@@ -4757,7 +4894,17 @@ dotenv-expand@~11.0.6:
   dependencies:
     dotenv "^16.4.5"
 
-dotenv@^16.4.5, dotenv@~16.4.5:
+dotenv@^16.4.5:
+  version "16.6.1"
+  resolved "https://registry.npmmirror.com/dotenv/-/dotenv-16.6.1.tgz#773f0e69527a8315c7285d5ee73c4459d20a8020"
+  integrity sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==
+
+dotenv@^17.2.3:
+  version "17.2.3"
+  resolved "https://registry.npmmirror.com/dotenv/-/dotenv-17.2.3.tgz#ad995d6997f639b11065f419a22fabf567cdb9a2"
+  integrity sha512-JVUnt+DUIzu87TABbhPmNfVdBDt18BLOWjMUFJMSi/Qqg7NTYtabbvSNJGOJ7afbRuv9D/lngizHtP7QyLQ+9w==
+
+dotenv@~16.4.5:
   version "16.4.7"
   resolved "https://registry.npmmirror.com/dotenv/-/dotenv-16.4.7.tgz"
   integrity sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==
@@ -5350,6 +5497,11 @@ expo-haptics@~14.0.1:
   version "14.0.1"
   resolved "https://registry.npmmirror.com/expo-haptics/-/expo-haptics-14.0.1.tgz"
   integrity sha512-V81FZ7xRUfqM6uSI6FA1KnZ+QpEKnISqafob/xEfcx1ymwhm4V3snuLWWFjmAz+XaZQTqlYa8z3QbqEXz7G63w==
+
+expo-image@~2.0.7:
+  version "2.0.7"
+  resolved "https://registry.npmmirror.com/expo-image/-/expo-image-2.0.7.tgz#087ca651e3dcd2e92efdda11a6c9e3ad6fddc127"
+  integrity sha512-kv40OIJOkItwznhdqFmKxTMC5O8GkpyTf8ng7Py4Hy6IBiH59dkeP6vUZQhzPhJOm5v1kZK4XldbskBosqzOug==
 
 expo-keep-awake@~14.0.1, expo-keep-awake@~14.0.3:
   version "14.0.3"
@@ -8792,11 +8944,6 @@ react-native-device-info@^14.1.1:
   resolved "https://registry.npmmirror.com/react-native-device-info/-/react-native-device-info-14.1.1.tgz"
   integrity sha512-lXFpe6DJmzbQXNLWxlMHP2xuTU5gwrKAvI8dCAZuERhW9eOXSubOQIesk9lIBnsi9pI19GMrcpJEvs4ARPRYmw==
 
-react-native-fast-image@^8.6.3:
-  version "8.6.3"
-  resolved "https://registry.npmmirror.com/react-native-fast-image/-/react-native-fast-image-8.6.3.tgz"
-  integrity sha512-Sdw4ESidXCXOmQ9EcYguNY2swyoWmx53kym2zRsvi+VeFCHEdkO+WG1DK+6W81juot40bbfLNhkc63QnWtesNg==
-
 react-native-fs@^2.20.0:
   version "2.20.0"
   resolved "https://registry.npmmirror.com/react-native-fs/-/react-native-fs-2.20.0.tgz"
@@ -8823,7 +8970,7 @@ react-native-get-random-values@^1.11.0:
 
 react-native-image-colors@^2.5.0:
   version "2.5.1"
-  resolved "https://registry.npmjs.org/react-native-image-colors/-/react-native-image-colors-2.5.1.tgz"
+  resolved "https://registry.npmmirror.com/react-native-image-colors/-/react-native-image-colors-2.5.1.tgz#b77929883a899adffead538565de2b9ae0cec933"
   integrity sha512-7+M1pu9Q1TDEGSbXfSwFIFUoGW1Ffmwfjbx2QQM895C2gvOzUsdwSS1ae856l6vvj7UWFbGZr1LpQi0VK6Xl4w==
   dependencies:
     node-vibrant "^4.0.3"
@@ -9072,15 +9219,6 @@ recyclerlistview@4.2.1:
   version "4.2.1"
   resolved "https://registry.npmmirror.com/recyclerlistview/-/recyclerlistview-4.2.1.tgz"
   integrity sha512-NtVYjofwgUCt1rEsTp6jHQg/47TWjnO92TU2kTVgJ9wsc/ely4HnizHHa+f/dI7qaw4+zcSogElrLjhMltN2/g==
-  dependencies:
-    lodash.debounce "4.0.8"
-    prop-types "15.8.1"
-    ts-object-utils "0.0.5"
-
-recyclerlistview@^4.2.3:
-  version "4.2.3"
-  resolved "https://registry.npmmirror.com/recyclerlistview/-/recyclerlistview-4.2.3.tgz"
-  integrity sha512-STR/wj/FyT8EMsBzzhZ1l2goYirMkIgfV3gYEPxI3Kf3lOnu6f7Dryhyw7/IkQrgX5xtTcDrZMqytvteH9rL3g==
   dependencies:
     lodash.debounce "4.0.8"
     prop-types "15.8.1"

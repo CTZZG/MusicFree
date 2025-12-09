@@ -1,6 +1,6 @@
 {
   "name": "MusicFree",
-  "version": "0.6.3-beta.0",
+  "version": "0.6.3-beta.1",
   "private": true,
   "license": "AGPL",
   "author": {
@@ -22,6 +22,8 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@microsoft/applicationinsights-react-native": "^4.3.8",
+    "@microsoft/applicationinsights-web": "^3.3.10",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-clipboard/clipboard": "^1.15.0",
     "@react-native-community/netinfo": "11.4.1",
@@ -38,13 +40,13 @@
     "compare-versions": "^6.1.1",
     "crypto-js": "^4.2.0",
     "dayjs": "^1.11.19",
-    "deepmerge": "^4.3.1",
     "eventemitter3": "^5.0.1",
     "expo": "^52.0.0",
     "expo-asset": "~11.0.5",
     "expo-document-picker": "~13.0.1",
     "expo-file-system": "~18.0.6",
     "expo-haptics": "~14.0.1",
+    "expo-image": "~2.0.7",
     "expo-keep-awake": "~14.0.1",
     "expo-splash-screen": "~0.29.18",
     "he": "^1.2.0",
@@ -62,7 +64,6 @@
     "react-native-background-timer": "^2.4.1",
     "react-native-circular-progress-indicator": "^4.4.2",
     "react-native-device-info": "^14.1.1",
-    "react-native-fast-image": "^8.6.3",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "~2.25.0",
     "react-native-get-random-values": "^1.11.0",
@@ -82,7 +83,6 @@
     "react-native-track-player": "github:CTZZG/react-native-track-player#v4.1.1",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-webview": "^13.13.5",
-    "recyclerlistview": "^4.2.3",
     "webdav": "^5.7.0"
   },
   "devDependencies": {
@@ -110,7 +110,9 @@
     "@types/react-test-renderer": "^18.0.0",
     "babel-jest": "^29.6.3",
     "babel-plugin-module-resolver": "^5.0.2",
+    "babel-plugin-transform-inline-environment-variables": "^0.4.4",
     "babel-plugin-transform-remove-console": "^6.9.4",
+    "dotenv": "^17.2.3",
     "eslint": "^8.19.0",
     "eslint-config-prettier": "^9.1.0",
     "husky": "^9.1.4",

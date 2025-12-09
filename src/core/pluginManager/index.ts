@@ -608,6 +608,10 @@ class PluginManager implements IPluginManager, IInjectable {
         }
         return null;
     }
+
+    getPluginsCount() {
+        return this.getPlugins().length;
+    }
 }
 
 const pluginManager = new PluginManager();
