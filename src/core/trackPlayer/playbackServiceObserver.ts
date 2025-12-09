@@ -1,6 +1,6 @@
 import TrackPlayer from "@/core/trackPlayer";
 import PluginManager from "@/core/pluginManager";
-import { TrackPlayerEvents } from "@/core.defination/trackPlayer";
+import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import RNTrackPlayer, { Event, State } from "react-native-track-player";
 
 let previousMusicItem: IMusic.IMusicItem | null = null;

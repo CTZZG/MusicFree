@@ -141,6 +141,8 @@ jobs:
 
       - name: 构建 Release APK
         working-directory: ./android
+        env:
+          NODE_ENV: production
         run: |
           ./gradlew assembleRelease --no-daemon --stacktrace
 
