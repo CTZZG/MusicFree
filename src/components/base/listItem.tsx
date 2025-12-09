@@ -1,5 +1,6 @@
 import React, { ReactNode } from "react";
 import {
+    Insets,
     StyleProp,
     StyleSheet,
     TextProps,
@@ -139,6 +140,7 @@ interface IListItemIconProps {
     contentStyle?: StyleProp<TextStyle>;
     onPress?: () => void;
     color?: string;
+     hitSlop?: null | Insets | number | undefined;
 }
 
 function ListItemIcon(props: IListItemIconProps) {
@@ -152,6 +154,7 @@ function ListItemIcon(props: IListItemIconProps) {
         contentStyle,
         onPress,
         color,
+        hitSlop,
     } = props;
 
     const colors = useColors();
@@ -175,7 +178,7 @@ function ListItemIcon(props: IListItemIconProps) {
     );
 
     return onPress ? (
-        <TouchableOpacity onPress={onPress}>{innerContent}</TouchableOpacity>
+        <TouchableOpacity hitSlop={hitSlop} onPress={onPress}>{innerContent}</TouchableOpacity>
     ) : (
         innerContent
     );

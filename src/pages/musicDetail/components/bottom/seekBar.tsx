@@ -1,10 +1,10 @@
-import React, { useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import rpx from '@/utils/rpx';
-import Slider from '@react-native-community/slider';
-import timeformat from '@/utils/timeformat';
-import { fontSizeConst } from '@/constants/uiConst';
-import TrackPlayer, { useProgress, useCurrentMusic } from '@/core/trackPlayer';
+import React, { useRef, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import rpx from "@/utils/rpx";
+import Slider from "@react-native-community/slider";
+import timeformat from "@/utils/timeformat";
+import { fontSizeConst } from "@/constants/uiConst";
+import TrackPlayer, { useProgress, useCurrentMusic } from "@/core/trackPlayer";
 
 interface ITimeLabelProps {
     time: number;

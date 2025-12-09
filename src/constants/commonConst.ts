@@ -41,6 +41,7 @@ export const StorageKeys = {
     LocalMusicSheet: "local-music-sheet",
 };
 
+/** @deprecated */
 export const CacheControl = {
     Cache: "cache",
     NoCache: "no-cache",
@@ -48,18 +49,18 @@ export const CacheControl = {
 };
 
 export const supportLocalMediaType = [
-    '.mp3',
-    '.flac',
-    '.wma',
-    '.wav',
-    '.m4a',
-    '.ogg',
-    '.acc',
-    '.aac',
-    '.ape',
-    '.opus',
-    '.dsf',
-    '.dff',
+    ".mp3",
+    ".flac",
+    ".wma",
+    ".wav",
+    ".m4a",
+    ".ogg",
+    ".acc",
+    ".aac",
+    ".ape",
+    ".opus",
+    ".dsf",
+    ".dff",
 ];
 
 const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);

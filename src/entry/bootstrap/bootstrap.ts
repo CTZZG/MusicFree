@@ -180,7 +180,7 @@ export async function initTrackPlayer(logger?: IPerfLogger) {
         ];
     await RNTrackPlayer.updateOptions({
         icon: ImgAsset.logoTransparent,
-        progressUpdateEventInterval: 1,
+        progressUpdateEventInterval: 0.5,
         android: {
             alwaysPauseOnInterruption: true,
             appKilledPlaybackBehavior:

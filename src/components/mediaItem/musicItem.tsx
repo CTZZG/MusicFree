@@ -93,6 +93,10 @@ export default function MusicItem(props: IMusicItemProps) {
             {showMoreIcon ? (
                 <ListItem.ListItemIcon
                     width={rpx(48)}
+                    hitSlop={{
+                        left: rpx(24),
+                        right: rpx(24),
+                    }}
                     position="none"
                     icon="ellipsis-vertical"
                     onPress={() => {

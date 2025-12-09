@@ -4,7 +4,6 @@ import {
     sortIndexSymbol,
     timeStampSymbol,
 } from "@/constants/commonConst";
-import { MusicRepeatMode } from "@/constants/repeatModeConst";
 import delay from "@/utils/delay";
 import getUrlExt from "@/utils/getUrlExt";
 import { errorLog, trace } from "@/utils/log";
@@ -31,15 +30,15 @@ import ReactNativeTrackPlayer, {
 } from "react-native-track-player";
 import LocalMusicSheet from "../localMusicSheet";
 
-import { TrackPlayerEvents } from '@/core.defination/trackPlayer';
-import type { IAppConfig } from '@/types/core/config';
-import type { IMusicHistory } from '@/types/core/musicHistory';
-import { ITrackPlayer } from '@/types/core/trackPlayer/index';
-import minDistance from '@/utils/minDistance';
-import { IPluginManager } from '@/types/core/pluginManager';
-import { getAppUserAgent } from '@/utils/userAgentHelper'; // <--- 新增UA统一导入
-import { ImgAsset } from '@/constants/assetsConst';
-import { resolveImportedAssetOrPath } from '@/utils/fileUtils';
+import { MusicRepeatMode, TrackPlayerEvents } from "@/constants/trackPlayerConst";
+import type { IAppConfig } from "@/types/core/config";
+import type { IMusicHistory } from "@/types/core/musicHistory";
+import { ITrackPlayer } from "@/types/core/trackPlayer/index";
+import minDistance from "@/utils/minDistance";
+import { IPluginManager } from "@/types/core/pluginManager";
+import { getAppUserAgent } from "@/utils/userAgentHelper"; // <--- 新增UA统一导入
+import { ImgAsset } from "@/constants/assetsConst";
+import { resolveImportedAssetOrPath } from "@/utils/fileUtils";
 
 
 
@@ -127,16 +126,17 @@ class TrackPlayer extends EventEmitter<{
 
 
     async setupTrackPlayer() {
-        const rate = PersistStatus.get('music.rate');
-        const musicQueue = PersistStatus.get('music.playList');
-        const repeatMode = PersistStatus.get('music.repeatMode');
-        const progress = PersistStatus.get('music.progress');
-        let track = PersistStatus.get('music.musicItem'); // <--- 改为 let
+        const rate = PersistStatus.get("music.rate");
+        const musicQueue = PersistStatus.get("music.playList");
+        const repeatMode = PersistStatus.get("music.repeatMode");
+        const progress = PersistStatus.get("music.progress");
+        let track = PersistStatus.get("music.musicItem"); // <--- 改为 let
         const quality =
             PersistStatus.get("music.quality") ||
             this.configService.getConfig("basic.defaultPlayQuality") ||
             "standard";
 
+        ReactNativeTrackPlayer.setVolume(1);
         // 状态恢复
         if (rate) {
             ReactNativeTrackPlayer.setRate(+rate / 100);

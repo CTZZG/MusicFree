@@ -12,6 +12,7 @@ export interface ILanguageData {
     "common.selectAll": string; // 全选
     "common.unselectAll": string; // 全不选
     "common.save": string; // 保存
+    "common.notSave": string; // 不保存
     "common.download": string; // 下载
     "common.play": string; // 播放
     "common.delete": string; // 删除
@@ -67,6 +68,8 @@ export interface ILanguageData {
     "home.myPlaylists": string; // 我的歌单
     "home.starredPlaylists": string; // 我喜欢的歌单
     "home.newPlaylist.a11y": string; // 新建歌单
+    "home.managePlaylists.a11y": string; // 管理歌单
+    "home.playlistManagement.a11y": string; // 歌单管理
     "home.importPlaylist.a11y": string; // 导入歌单
     "home.myPlaylistsCount.a11y": string; // 我的歌单数量
     "home.starredPlaylistsCount.a11y": string; // 我喜欢的歌单数量
@@ -107,6 +110,7 @@ export interface ILanguageData {
     "musicListEditor.selectMusicCount": string; // 选择的音乐数量
     "musicListEditor.addToNextPlay": string; // 添加到下一曲
     "musicListEditor.addToSheet": string; // 添加到歌单
+    "musicSheetEditor.selectSheetCount": string; // 选择的歌单数量
 
     // 权限设置相关
     "permissionSetting.title": string; // 权限设置
@@ -307,7 +311,6 @@ export interface ILanguageData {
     "basicSettings.plugin": string; // 插件
     "basicSettings.autoUpdatePlugin": string; // 软件启动时自动更新插件
     "basicSettings.notCheckPluginVersion": string; // 安装插件时不校验版本
-    "basicSettings.lazyLoadPlugin": string; // 启用插件懒加载（实验性功能）
     
     "basicSettings.playback": string; // 播放
     "basicSettings.notInterrupt": string; // 允许与其他应用同时播放
@@ -362,6 +365,15 @@ export interface ILanguageData {
     "basicSettings.developer.devLog": string; // 调试面板
     "basicSettings.developer.viewErrorLog": string; // 查看错误日志
     "basicSettings.developer.clearLog": string; // 清空日志
+
+    // 编辑歌单信息弹窗
+    "editMusicSheetInfo.title": string; // 编辑歌单信息
+    "editMusicSheetInfo.changeCoverImageButton": string; // 更换封面
+    "editMusicSheetInfo.resetCoverImageButton": string; // 恢复默认
+    "editMusicSheetInfo.sheetName": string; // 歌单名
+    "editMusicSheetInfo.changeSheetName": string; // 修改歌单名
+    "editMusicSheetInfo.toast.success": string; // 更新歌单信息成功
+    "editMusicSheetInfo.toast.defaultSheetRenameFail": string; // 默认歌单名称不可修改
     
     // 对话框相关 - 缓存设置
     "dialog.setCacheTitle": string; // 设置缓存
@@ -423,6 +435,8 @@ export interface ILanguageData {
     "dialog.markdownDialog.openExternalLink": string; // Markdown对话框打开外部链接
     "dialog.markdownDialog.clickToShowImage": string; // 点击展示图片
     "dialog.markdownDialog.loadFailed": string; // 图片加载失败
+    "dialog.simpleDialog.hasUnsavedChange.title": string; // 未保存的更改
+    "dialog.simpleDialog.hasUnsavedChange.content": string; // 未保存的更改提示
 
     // 面板相关 - 播放列表
     "panel.playList.title": string; // 播放列表
@@ -444,9 +458,8 @@ export interface ILanguageData {
     "panel.associateLrc.toast.fail": string; // 关联歌词失败
     "panel.associateLrc.toast.unlinkSuccess": string; // 取消关联歌词成功
     "panel.createMusicSheet.title": string; // 新建歌单
-    "panel.editMusicSheetInfo.title": string; // 编辑歌单信息
-    "panel.editMusicSheetInfo.sheetName": string; // 歌单名
-    "panel.editMusicSheetInfo.toast.updateSuccess": string; // 更新歌单信息成功    // 面板相关 - 图片查看器
+    
+    // 面板相关 - 图片查看器
     "panel.imageViewer.saveImage": string; // 保存图片
     "panel.imageViewer.saveImageSuccess": string; // 图片已保存
     "panel.imageViewer.saveImageFail": string; // 保存图片失败
