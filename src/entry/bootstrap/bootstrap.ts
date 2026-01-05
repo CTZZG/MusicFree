@@ -47,7 +47,6 @@ async function bootstrapImpl() {
             ),
         )
         .catch(console.warn);
-    telemetry.setup().catch(console.warn);
 
     const bootstrapTimestamp: Record<string, number> = {};
     const bootstrapMetrics: Record<string, number> = {};
@@ -354,6 +353,7 @@ function bindEvents() {
 
 export default async function () {
     try {
+        await telemetry.setup().catch(console.warn);
         const startTime = Date.now();
         telemetry.logEvent("App.Bootstrap.Start");
         getDefaultStore().set(bootstrapAtom, {
