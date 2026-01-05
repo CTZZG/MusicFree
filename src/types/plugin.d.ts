@@ -154,6 +154,10 @@ declare namespace IPlugin {
             musicItem: IMusic.IMusicItem,
             page?: number
         ) => Promise<ICommon.PaginationResponse<IMedia.IComment>>;
+        /** 同步歌单 */
+        syncMusicSheet?: (
+            sheetItem: IMusic.IMusicSheetItem,
+        ) => Promise<boolean>;
         /** [新增] 播放状态改变时的回调 */
         onPlaybackStateChange?: (params: IPlaybackStateChangeParams) => Promise<void>;
     }

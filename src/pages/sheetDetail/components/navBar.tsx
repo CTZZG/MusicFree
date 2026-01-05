@@ -6,6 +6,8 @@ import MusicSheet, { useSheetItem } from "@/core/musicSheet";
 import { ROUTE_PATH, useNavigate, useParams } from "@/core/router";
 import { default as Toast, default as toast } from "@/utils/toast";
 import { useNavigation } from "@react-navigation/native";
+import pluginManager, { Plugin } from "@/core/pluginManager";
+import { showPanel } from "@/components/panels/usePanel";
 import React from "react";
 
 export default function () {
@@ -97,6 +99,39 @@ export default function () {
                             });
                         },
                     },
+
+                    {
+                        icon: "arrow-path",
+                        title: t("sheetDetail.syncPlaylist"),
+                        onPress() {
+                            const plugins =
+                                pluginManager.getSortedPluginsWithAbility(
+                                    "syncMusicSheet",
+                                );
+                            if (plugins.length === 0) {
+                                Toast.warn(t("noPlugin.titleWithType", { type: t("sheetDetail.syncPlaylist") }));
+                                return;
+                            }
+                            showPanel("SimpleSelect", {
+                                header: t("sheetDetail.syncPlaylist"),
+                                candidates: plugins.map(p => ({
+                                    title: p.name,
+                                    value: p,
+                                })),
+                                async onPress(item) {
+                                    const plugin = item.value as Plugin;
+                                    const success = await plugin.methods.syncMusicSheet?.(
+                                        musicSheet,
+                                    );
+                                    if (success) {
+                                        Toast.success(t("toast.syncSuccess"));
+                                    } else {
+                                        Toast.warn(t("toast.syncFail"));
+                                    }
+                                },
+                            });
+                        },
+                    },
                 ]}
                 actions={[
                     {
@@ -110,7 +145,7 @@ export default function () {
                     },
                 ]}>
                 {t("common.sheet")}
-            </AppBar>
+            </AppBar >
         </>
     );
 }

@@ -37,7 +37,7 @@ axios.defaults.timeout = 2000;
 axios.interceptors.response.use((response) => {
     // 统一setcookie格式，nodejs环境是数组，移动端环境都放在第一个元素
     const setCookie = response.headers["set-cookie"];
-    if(setCookie && setCookie.length === 1) {
+    if (setCookie && setCookie.length === 1) {
         const splitedCookie = setCookie[0].split(",");
         response.headers["set-cookie"] = splitedCookie;
         response.headers["x-set-cookie"] = setCookie;
@@ -481,10 +481,8 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             const deprecatedLrcUrl = lrcSource?.lrc || musicItem.lrc;
 
             // 本地的文件名
-            let filename: string | undefined = `${pathConst.lrcCachePath
-            }${nanoid()}.lrc`;
-            let filenameTrans: string | undefined = `${pathConst.lrcCachePath
-            }${nanoid()}.lrc`;
+            let filename: string | undefined = `${pathConst.lrcCachePath}${nanoid()}.lrc`;
+            let filenameTrans: string | undefined = `${pathConst.lrcCachePath}${nanoid()}.lrc`;
 
             // 旧版本兼容
             if (!(rawLrc || translation)) {
@@ -811,6 +809,24 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         }
     }
 
+    /** 同步歌单 */
+    async syncMusicSheet(sheetItem: IMusic.IMusicSheetItem): Promise<boolean> {
+        await this.ensurePluginIsMounted();
+        if (!this.plugin.instance.syncMusicSheet) {
+            return false;
+        }
+        try {
+            return (await this.plugin.instance.syncMusicSheet(sheetItem)) ?? false;
+        } catch (e: any) {
+            devLog("error", "同步歌单失败", e, e?.message);
+            return false;
+        }
+    }
+
+    async onPlaybackStateChange(_playbackState: any) {
+
+    }
+
     async getMusicComments(
         musicItem: IMusic.IMusicItem,
         page?: number
@@ -872,7 +888,7 @@ export class Plugin {
         if (!lazyProps) {
             // 如果没有懒加载，直接挂载并初始化
             this.mountPlugin(funcCode!, pluginPath);
-            this.methods = new PluginMethodsWrapper(this, async () => {});
+            this.methods = new PluginMethodsWrapper(this, async () => { });
         } else {
             // 使用懒加载参数初始化
             this.name = lazyProps.name;
@@ -1085,7 +1101,7 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
                 CryptoJs.MD5(fileStat.originalFilepath).toString(
                     CryptoJs.enc.Hex,
                 ) || nanoid();
-        } catch(e) {
+        } catch (e) {
             id = CryptoJs.MD5(urlLike).toString(
                 CryptoJs.enc.Hex,
             ) || nanoid();
