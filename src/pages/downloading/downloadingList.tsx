@@ -3,7 +3,12 @@ import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
 import { sizeFormatter } from "@/utils/fileUtils";
-import { DownloadFailReason, DownloadStatus, useDownloadQueue, useDownloadTask } from "@/core/downloader";
+import downloader, {
+    DownloadFailReason,
+    DownloadStatus,
+    useDownloadQueue,
+    useDownloadTask,
+} from "@/core/downloader";
 import { FlashList } from "@shopify/flash-list";
 import { useI18N } from "@/core/i18n";
 
@@ -44,13 +49,54 @@ function DownloadingListItem(props: DownloadingListItemProps) {
         description = t("downloading.downloadStatus.pending");
     } else if (status === DownloadStatus.Preparing) {
         description = t("downloading.downloadStatus.preparing");
+    } else if (status === DownloadStatus.Paused) {
+        description = t("downloading.downloadStatus.paused");
     }
 
-    return <ListItem withHorizontalPadding>
+    const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
+    const canPause =
+        canUseNativeControls && status === DownloadStatus.Downloading;
+    const canResume = canUseNativeControls && status === DownloadStatus.Paused;
+    const canRetry = status === DownloadStatus.Error;
+    const canRemove = status !== DownloadStatus.Completed;
+
+    return <ListItem withHorizontalPadding rightPadding={rpx(4)}>
         <ListItem.Content
             title={musicItem.title}
             description={description}
         />
+        {canRetry ? (
+            <ListItem.ListItemIcon
+                icon="arrow-path"
+                position="right"
+                onPress={() => downloader.retry(musicItem)}
+            />
+        ) : null}
+        {canPause ? (
+            <ListItem.ListItemIcon
+                icon="pause"
+                position="right"
+                onPress={() => {
+                    void downloader.pause(musicItem);
+                }}
+            />
+        ) : null}
+        {canResume ? (
+            <ListItem.ListItemIcon
+                icon="play"
+                position="right"
+                onPress={() => {
+                    void downloader.resume(musicItem);
+                }}
+            />
+        ) : null}
+        {canRemove ? (
+            <ListItem.ListItemIcon
+                icon="trash-outline"
+                position="right"
+                onPress={() => downloader.remove(musicItem)}
+            />
+        ) : null}
     </ListItem>;
 
 }

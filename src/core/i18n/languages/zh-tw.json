@@ -122,6 +122,7 @@
     "downloading.downloadStatus.completed": "下載完成",
     "downloading.downloadStatus.downloadProgress": "下載中: {progress} / {totalSize}",
     "downloading.downloadStatus.pending": "等待下載",
+    "downloading.downloadStatus.paused": "已暫停",
     "downloading.downloadStatus.preparing": "正在獲取音樂資源連結",
     "artistDetail.fansCount": "粉絲數: {count}",
     "artistDetail.menu.batchEditMusic": "批量編輯歌曲",

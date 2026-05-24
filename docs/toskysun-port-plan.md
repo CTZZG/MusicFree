@@ -28,6 +28,7 @@ Last updated: 2026-05-24
 - [x] 2026-05-24: esbuild syntax check passed again after trimming metadata types so unported native download/mflac APIs are not declared as available.
 - [x] 2026-05-24: Round 3 Android native download package passed text checks: copied package uses `fun.upup.musicfree`, no `fun.xwj` imports remain, and Kotlin braces are balanced.
 - [x] 2026-05-24: esbuild syntax check passed for the `NativeDownload` JS wrapper and downloader integration. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
+- [x] 2026-05-24: esbuild syntax check passed for download pause/resume/cancel/retry UI integration and downloader task-state changes. i18n JSON parse checks passed.
 
 ## Round 1
 
@@ -81,7 +82,7 @@ Entry notes:
 
 - [x] Port native Android download queue.
 - [x] Port download progress events into the existing JS downloader.
-- [ ] Port pause, resume, cancel, and retry controls into the UI/task model.
+- [x] Port pause, resume, cancel, and retry controls into the UI/task model.
 - [x] Port download notification lifecycle.
 - [x] Integrate metadata writing after native download completion through the existing Round 2 metadata manager.
 - [ ] Evaluate mflac handling against CTZZG's private track-player support before enabling proxy/decrypt behavior.
@@ -92,6 +93,7 @@ Implementation notes:
 - `Mp3UtilPackage` now registers both `Mp3UtilModule` and `NativeDownloadModule`.
 - `src/native/mp3Util/index.ts` exposes a guarded `NativeDownload` bridge and emitter; desktop/unsupported runtimes still fall back safely.
 - `src/core/downloader.ts` now prefers native downloading when available and falls back to the old `react-native-fs` path when it is not.
+- `src/pages/downloading/downloadingList.tsx` now exposes per-task pause, resume, cancel/remove, and retry actions where supported by the current task state.
 - This round intentionally did not enable Toskysun's mflac proxy/decrypt path; CTZZG's private player support should be tested first.
 
 ## Later / Optional

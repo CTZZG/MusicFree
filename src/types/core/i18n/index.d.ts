@@ -167,6 +167,7 @@ export interface ILanguageData {
     "downloading.downloadStatus.completed": string; // 下载完成
     "downloading.downloadStatus.downloadProgress": string; // 下载进度
     "downloading.downloadStatus.pending": string; // 等待中
+    "downloading.downloadStatus.paused": string; // 已暂停
     "downloading.downloadStatus.preparing": string; // 准备中
 
     // 艺术家详情相关

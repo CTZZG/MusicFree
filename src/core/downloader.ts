@@ -45,6 +45,8 @@ export enum DownloadStatus {
     Preparing,
     // 下载中
     Downloading,
+    // 已暂停
+    Paused,
     // 下载完成
     Completed,
     // 下载失败
@@ -306,17 +308,33 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         musicItem: IMusic.IMusicItem,
         task: INativeDownloadTaskStatus,
     ) {
+        if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
+            return;
+        }
+
+        let status = DownloadStatus.Downloading;
+        switch (task.status) {
+            case 'PENDING':
+            case 'PREPARING':
+                status = DownloadStatus.Preparing;
+                break;
+            case 'DOWNLOADING':
+                status = DownloadStatus.Downloading;
+                break;
+            case 'PAUSED':
+                status = DownloadStatus.Paused;
+                break;
+            case 'COMPLETED':
+                status = DownloadStatus.Completed;
+                break;
+            case 'ERROR':
+            case 'CANCELED':
+                status = DownloadStatus.Error;
+                break;
+        }
+
         this.updateDownloadTask(musicItem, {
-            status:
-                task.status === 'PENDING' || task.status === 'PREPARING'
-                    ? DownloadStatus.Preparing
-                    : task.status === 'DOWNLOADING'
-                    ? DownloadStatus.Downloading
-                    : task.status === 'COMPLETED'
-                    ? DownloadStatus.Completed
-                    : task.status === 'ERROR' || task.status === 'CANCELED'
-                    ? DownloadStatus.Error
-                    : DownloadStatus.Downloading,
+            status,
             downloadedSize:
                 typeof task.downloaded === 'number'
                     ? task.downloaded
@@ -368,7 +386,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     const progress = items.find(
                         (item: any) => item?.taskId === taskId,
                     );
-                    if (!progress) {
+                    if (!progress || !downloadTasks.has(taskId)) {
                         return;
                     }
                     this.updateDownloadTask(musicItem, {
@@ -544,6 +562,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return;
         }
 
+        if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
+            return;
+        }
+
         // 预处理完成，可以开始处理下一个任务
         this.downloadNextPendingTask();
 
@@ -615,6 +637,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 await promise;
             }
 
+            if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
+                throw new Error('Download task removed');
+            }
+
             // 下载完成，移动文件
             await copyFile(cacheDownloadPath, targetDownloadPath);
 
@@ -639,7 +665,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
             this.markTaskAsCompleted(musicItem);
         } catch (e: any) {
-            this.markTaskAsError(musicItem, DownloadFailReason.Unknown, e);
+            if (downloadTasks.has(getMediaUniqueKey(musicItem))) {
+                this.markTaskAsError(musicItem, DownloadFailReason.Unknown, e);
+            }
         }
 
         // 清理工作
@@ -660,6 +688,72 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             );
             getDefaultStore().set(downloadQueueAtom, newDownloadQueue);
         }
+    }
+
+    isNativeDownloadControlAvailable() {
+        return this.canUseNativeDownload();
+    }
+
+    async pause(musicItem: IMusic.IMusicItem) {
+        if (!this.canUseNativeDownload()) {
+            return false;
+        }
+        const key = getMediaUniqueKey(musicItem);
+        const task = downloadTasks.get(key);
+        if (
+            !task ||
+            (task.status !== DownloadStatus.Preparing &&
+                task.status !== DownloadStatus.Downloading)
+        ) {
+            return false;
+        }
+
+        const paused = await Mp3Util.pauseDownloadTask(key).catch(() => false);
+        if (paused && downloadTasks.has(key)) {
+            this.updateDownloadTask(musicItem, {
+                status: DownloadStatus.Paused,
+            });
+        }
+        return paused;
+    }
+
+    async resume(musicItem: IMusic.IMusicItem) {
+        if (!this.canUseNativeDownload()) {
+            return false;
+        }
+        const key = getMediaUniqueKey(musicItem);
+        const task = downloadTasks.get(key);
+        if (!task || task.status !== DownloadStatus.Paused) {
+            return false;
+        }
+
+        const resumed = await Mp3Util.resumeDownloadTask(key).catch(
+            () => false,
+        );
+        if (resumed && downloadTasks.has(key)) {
+            this.updateDownloadTask(musicItem, {
+                status: DownloadStatus.Preparing,
+            });
+        }
+        return resumed;
+    }
+
+    retry(musicItem: IMusic.IMusicItem) {
+        const key = getMediaUniqueKey(musicItem);
+        const task = downloadTasks.get(key);
+        if (!task || task.status !== DownloadStatus.Error) {
+            return false;
+        }
+
+        const quality = task.quality;
+        downloadTasks.delete(key);
+        const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+        getDefaultStore().set(
+            downloadQueueAtom,
+            downloadQueue.filter(item => !isSameMediaItem(item, musicItem)),
+        );
+        this.download(musicItem, quality);
+        return true;
     }
 
     download(
@@ -736,12 +830,30 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             task.status === DownloadStatus.Pending ||
             task.status === DownloadStatus.Error
         ) {
+            void Mp3Util.removeDownloadTask(key).catch(() => {});
             downloadTasks.delete(key);
             const downloadQueue = getDefaultStore().get(downloadQueueAtom);
             const newDownloadQueue = downloadQueue.filter(
                 item => !isSameMediaItem(item, musicItem),
             );
             getDefaultStore().set(downloadQueueAtom, newDownloadQueue);
+            return true;
+        }
+        if (
+            task.status === DownloadStatus.Preparing ||
+            task.status === DownloadStatus.Downloading ||
+            task.status === DownloadStatus.Paused
+        ) {
+            void Mp3Util.cancelDownloadTask(key).catch(() => {});
+            void Mp3Util.removeDownloadTask(key).catch(() => {});
+            this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+            downloadTasks.delete(key);
+            const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+            const newDownloadQueue = downloadQueue.filter(
+                item => !isSameMediaItem(item, musicItem),
+            );
+            getDefaultStore().set(downloadQueueAtom, newDownloadQueue);
+            this.downloadNextPendingTask();
             return true;
         }
         return false;

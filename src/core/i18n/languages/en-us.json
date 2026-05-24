@@ -122,6 +122,7 @@
     "downloading.downloadStatus.completed": "Download completed",
     "downloading.downloadStatus.downloadProgress": "Downloading: {progress} / {totalSize}",
     "downloading.downloadStatus.pending": "Waiting to download",
+    "downloading.downloadStatus.paused": "Paused",
     "downloading.downloadStatus.preparing": "Getting music resource link",
     "artistDetail.fansCount": "Fans: {count}",
     "artistDetail.menu.batchEditMusic": "Batch Edit Songs",
