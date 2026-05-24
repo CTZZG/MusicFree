@@ -14,8 +14,8 @@ Last updated: 2026-05-24
 
 - [x] Compared CTZZG `dev-apk2` with Toskysun `master`.
 - [x] Confirmed CTZZG uses `github:CTZZG/react-native-track-player#v4.1.1`.
-- [x] Confirmed the local workspace is a zip-style checkout with an empty `.git` history and all files currently untracked.
-- [ ] Create or restore a real git baseline before large native/download migrations.
+- [x] Confirmed the local workspace started as a zip-style checkout with an empty `.git` history and all files untracked.
+- [x] Created git branch `codex/round3-native-download` and committed baseline `5f9c9c6 Baseline after round 2 migration` before native/download migrations.
 
 ## Verification Log
 
@@ -24,8 +24,10 @@ Last updated: 2026-05-24
 - [x] 2026-05-24: esbuild syntax check passed for Round 2 lyric parser/decrypter files and `lyricManager`. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
 - [x] 2026-05-24: esbuild syntax check passed for Round 2 file naming and metadata primitives. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
 - [x] 2026-05-24: Native `LyricUtilModule.kt` QRC/Kuwo port passed text checks: braces are balanced and no Toskysun desktop lyric/native-event dependencies were introduced.
-- [ ] 2026-05-24: Android Gradle/Kotlin compile is still pending because this machine has no `JAVA_HOME`/`java` on `PATH`.
+- [ ] 2026-05-24: Android Gradle/Kotlin compile is still pending because this machine has no `JAVA_HOME`/`java` on `PATH`; `android\gradlew.bat :app:compileDebugKotlin --dry-run` stops at that environment error.
 - [x] 2026-05-24: esbuild syntax check passed again after trimming metadata types so unported native download/mflac APIs are not declared as available.
+- [x] 2026-05-24: Round 3 Android native download package passed text checks: copied package uses `fun.upup.musicfree`, no `fun.xwj` imports remain, and Kotlin braces are balanced.
+- [x] 2026-05-24: esbuild syntax check passed for the `NativeDownload` JS wrapper and downloader integration. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
 
 ## Round 1
 
@@ -75,13 +77,22 @@ Entry notes:
 - CTZZG currently has `Mp3UtilModule.kt` but no `NativeDownload` module or Android download package.
 - Toskysun's native download queue requires the Android `download` package, `NativeDownloadModule`, notification manager, JS native wrapper changes, and downloader rewrite.
 - Toskysun's mflac support is tied to native `Mp3UtilModule.kt` additions plus `nanohttpd`/`okhttp`; keep this separate from the native queue so CTZZG's private track-player support can be evaluated first.
-- Do not start this round until Android can compile locally (`JAVA_HOME`/`java` available) and a real git baseline exists.
+- Proceed with static-checkable native queue pieces after the git baseline; full Android compile remains blocked until `JAVA_HOME`/`java` is available.
 
-- [ ] Port native Android download queue.
-- [ ] Port download progress, pause, resume, cancel, and retry events.
-- [ ] Port download notification lifecycle.
-- [ ] Integrate metadata writing after download completion.
+- [x] Port native Android download queue.
+- [x] Port download progress events into the existing JS downloader.
+- [ ] Port pause, resume, cancel, and retry controls into the UI/task model.
+- [x] Port download notification lifecycle.
+- [x] Integrate metadata writing after native download completion through the existing Round 2 metadata manager.
 - [ ] Evaluate mflac handling against CTZZG's private track-player support before enabling proxy/decrypt behavior.
+
+Implementation notes:
+
+- Android `NativeDownloadModule` and its queue/database/executor/notification helpers were ported under `fun.upup.musicfree.download`.
+- `Mp3UtilPackage` now registers both `Mp3UtilModule` and `NativeDownloadModule`.
+- `src/native/mp3Util/index.ts` exposes a guarded `NativeDownload` bridge and emitter; desktop/unsupported runtimes still fall back safely.
+- `src/core/downloader.ts` now prefers native downloading when available and falls back to the old `react-native-fs` path when it is not.
+- This round intentionally did not enable Toskysun's mflac proxy/decrypt path; CTZZG's private player support should be tested first.
 
 ## Later / Optional
 

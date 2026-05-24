@@ -5,7 +5,12 @@ import {
 import pathConst from '@/constants/pathConst';
 import {IAppConfig} from '@/types/core/config';
 import {IInjectable} from '@/types/infra';
-import {addFileScheme, escapeCharacter, mkdirR} from '@/utils/fileUtils';
+import {
+    addFileScheme,
+    escapeCharacter,
+    mkdirR,
+    removeFileScheme,
+} from '@/utils/fileUtils';
 import {errorLog} from '@/utils/log';
 import {patchMediaExtra} from '@/utils/mediaExtra';
 import {getMediaUniqueKey, isSameMediaItem} from '@/utils/mediaUtils';
@@ -21,6 +26,10 @@ import {nanoid} from 'nanoid';
 import path from 'path-browserify';
 import {useEffect, useState} from 'react';
 import {copyFile, downloadFile, exists, unlink} from 'react-native-fs';
+import Mp3Util, {
+    INativeDownloadTaskStatus,
+    NativeDownloadEmitter,
+} from '@/native/mp3Util';
 import LocalMusicSheet from './localMusicSheet';
 import {IPluginManager} from '@/types/core/pluginManager';
 import musicMetadataManager from './musicMetadataManager';
@@ -81,6 +90,8 @@ interface IDownloadTaskInfo {
     fileSize?: number;
     // 已下载大小
     downloadedSize?: number;
+    // 原生下载器格式化进度
+    progressText?: string;
     // 音乐信息
     musicItem: IMusic.IMusicItem;
     // 如果下载失败，下载失败的原因
@@ -284,6 +295,151 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         );
     }
 
+    private canUseNativeDownload() {
+        return (
+            !!NativeDownloadEmitter &&
+            !!Mp3Util?.isNativeDownloadAvailable?.()
+        );
+    }
+
+    private updateFromNativeTask(
+        musicItem: IMusic.IMusicItem,
+        task: INativeDownloadTaskStatus,
+    ) {
+        this.updateDownloadTask(musicItem, {
+            status:
+                task.status === 'PENDING' || task.status === 'PREPARING'
+                    ? DownloadStatus.Preparing
+                    : task.status === 'DOWNLOADING'
+                    ? DownloadStatus.Downloading
+                    : task.status === 'COMPLETED'
+                    ? DownloadStatus.Completed
+                    : task.status === 'ERROR' || task.status === 'CANCELED'
+                    ? DownloadStatus.Error
+                    : DownloadStatus.Downloading,
+            downloadedSize:
+                typeof task.downloaded === 'number'
+                    ? task.downloaded
+                    : undefined,
+            fileSize:
+                typeof task.total === 'number' && task.total > 0
+                    ? task.total
+                    : undefined,
+            progressText: task.progressText,
+        });
+    }
+
+    private async downloadFileWithNative(
+        musicItem: IMusic.IMusicItem,
+        url: string,
+        destinationPath: string,
+        headers?: Record<string, string>,
+    ) {
+        if (!this.canUseNativeDownload()) {
+            throw new Error('NativeDownload is not available');
+        }
+
+        const taskId = getMediaUniqueKey(musicItem);
+        await Mp3Util.removeDownloadTask(taskId).catch(() => {});
+
+        return new Promise<void>((resolve, reject) => {
+            let settled = false;
+            let progressSubscription: {remove: () => void} | undefined;
+            let statusSubscription: {remove: () => void} | undefined;
+            const cleanup = () => {
+                progressSubscription?.remove();
+                statusSubscription?.remove();
+            };
+            const settle = (callback: () => void) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cleanup();
+                callback();
+            };
+
+            progressSubscription = NativeDownloadEmitter!.addListener(
+                'NativeDownloadProgressBatch',
+                (event: any) => {
+                    const items = Array.isArray(event?.items)
+                        ? event.items
+                        : [];
+                    const progress = items.find(
+                        (item: any) => item?.taskId === taskId,
+                    );
+                    if (!progress) {
+                        return;
+                    }
+                    this.updateDownloadTask(musicItem, {
+                        status: DownloadStatus.Downloading,
+                        downloadedSize:
+                            typeof progress.downloaded === 'number'
+                                ? progress.downloaded
+                                : undefined,
+                        fileSize:
+                            typeof progress.total === 'number' &&
+                            progress.total > 0
+                                ? progress.total
+                                : undefined,
+                        progressText:
+                            typeof progress.progressText === 'string'
+                                ? progress.progressText
+                                : undefined,
+                    });
+                },
+            );
+
+            statusSubscription = NativeDownloadEmitter!.addListener(
+                'NativeDownloadTaskStatusChanged',
+                (task: INativeDownloadTaskStatus) => {
+                    if (task?.taskId !== taskId) {
+                        return;
+                    }
+                    this.updateFromNativeTask(musicItem, task);
+                    if (task.status === 'COMPLETED') {
+                        settle(resolve);
+                    } else if (
+                        task.status === 'ERROR' ||
+                        task.status === 'CANCELED'
+                    ) {
+                        settle(() =>
+                            reject(
+                                new Error(
+                                    task.error ||
+                                        `Native download ${task.status}`,
+                                ),
+                            ),
+                        );
+                    }
+                },
+            );
+
+            Mp3Util.addDownloadTask({
+                taskId,
+                url,
+                destinationPath: removeFileScheme(destinationPath),
+                headers: headers ?? {},
+                title: musicItem.title || 'MusicFree',
+                description: musicItem.artist || '正在下载音乐文件...',
+                coverUrl:
+                    typeof musicItem.artwork === 'string'
+                        ? musicItem.artwork
+                        : null,
+            })
+                .then(added => {
+                    if (!added) {
+                        settle(() =>
+                            reject(new Error('Native download task rejected')),
+                        );
+                    }
+                })
+                .catch(error => {
+                    settle(() => reject(error));
+                });
+        });
+    }
+
     private async downloadNextPendingTask() {
         const maxDownloadCount = Math.max(
             1,
@@ -425,32 +581,40 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return;
         }
 
-        // 下载
-        const {promise} = downloadFile({
-            fromUrl: url ?? '',
-            toFile: cacheDownloadPath,
-            headers: headers,
-            background: true,
-            begin: res => {
-                this.updateDownloadTask(musicItem, {
-                    status: DownloadStatus.Downloading,
-                    downloadedSize: 0,
-                    fileSize: res.contentLength,
-                    jobId: res.jobId,
-                });
-            },
-            progress: res => {
-                this.updateDownloadTask(musicItem, {
-                    status: DownloadStatus.Downloading,
-                    downloadedSize: res.bytesWritten,
-                    fileSize: res.contentLength,
-                    jobId: res.jobId,
-                });
-            },
-        });
-
         try {
-            await promise;
+            if (this.canUseNativeDownload()) {
+                await this.downloadFileWithNative(
+                    musicItem,
+                    url,
+                    cacheDownloadPath,
+                    headers,
+                );
+            } else {
+                const {promise} = downloadFile({
+                    fromUrl: url ?? '',
+                    toFile: cacheDownloadPath,
+                    headers: headers,
+                    background: true,
+                    begin: res => {
+                        this.updateDownloadTask(musicItem, {
+                            status: DownloadStatus.Downloading,
+                            downloadedSize: 0,
+                            fileSize: res.contentLength,
+                            jobId: res.jobId,
+                        });
+                    },
+                    progress: res => {
+                        this.updateDownloadTask(musicItem, {
+                            status: DownloadStatus.Downloading,
+                            downloadedSize: res.bytesWritten,
+                            fileSize: res.contentLength,
+                            jobId: res.jobId,
+                        });
+                    },
+                });
+                await promise;
+            }
+
             // 下载完成，移动文件
             await copyFile(cacheDownloadPath, targetDownloadPath);
 
@@ -479,7 +643,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
 
         // 清理工作
-        await unlink(cacheDownloadPath);
+        try {
+            if (await exists(cacheDownloadPath)) {
+                await unlink(cacheDownloadPath);
+            }
+        } catch {}
         this.downloadNextPendingTask();
 
         // 如果任务状态是完成，则从队列中移除

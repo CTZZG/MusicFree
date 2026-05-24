@@ -190,6 +190,7 @@ dependencies {
     // https://mvnrepository.com/artifact/net.jthink/jaudiotagger
     implementation 'net.jthink:jaudiotagger:2.2.5'
     implementation 'androidx.core:core-splashscreen:1.0.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
 
     api(name: 'exoplayer-ffmpeg-extension-v2.19.1', ext: 'aar')
 }
