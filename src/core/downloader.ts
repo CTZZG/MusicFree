@@ -14,6 +14,7 @@ import {
 import {errorLog} from '@/utils/log';
 import {patchMediaExtra} from '@/utils/mediaExtra';
 import {getMediaUniqueKey, isSameMediaItem} from '@/utils/mediaUtils';
+import {hasEncryptedMediaSource} from '@/utils/mflac';
 import network from '@/utils/network';
 import {
     DEFAULT_FILE_NAMING_CONFIG,
@@ -74,6 +75,8 @@ export enum DownloadFailReason {
     NotAllowToDownloadInCellular = 'not-allow-to-download-in-cellular',
     /** 无法获取到媒体源 */
     FailToFetchSource = 'no-valid-source',
+    /** 加密媒体暂未支持 */
+    EncryptedMediaUnsupported = 'encrypted-media-unsupported',
     /** 没有文件写入的权限 */
     NoWritePermission = 'no-write-permission',
     Unknown = 'unknown',
@@ -502,6 +505,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         let url = musicItem.url;
         let headers = musicItem.headers;
+        let ekey: string | undefined = musicItem.ekey;
+        let foundEncryptedSource = false;
 
         const plugin = this.pluginManagerService.getByName(musicItem.platform);
 
@@ -529,14 +534,27 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                         if (!data?.url) {
                             continue;
                         }
+                        if (hasEncryptedMediaSource(data.url, data.ekey)) {
+                            foundEncryptedSource = true;
+                            data = null;
+                            continue;
+                        }
                         break;
                     } catch {}
                 }
                 url = data?.url ?? url;
                 headers = data?.headers;
+                ekey = data?.ekey;
             }
             if (!url) {
-                throw new Error(DownloadFailReason.FailToFetchSource);
+                throw new Error(
+                    foundEncryptedSource
+                        ? DownloadFailReason.EncryptedMediaUnsupported
+                        : DownloadFailReason.FailToFetchSource,
+                );
+            }
+            if (hasEncryptedMediaSource(url, ekey)) {
+                throw new Error(DownloadFailReason.EncryptedMediaUnsupported);
             }
         } catch (e: any) {
             /** 无法下载，跳过 */
@@ -554,6 +572,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 this.markTaskAsError(
                     musicItem,
                     DownloadFailReason.FailToFetchSource,
+                    e,
+                );
+            } else if (
+                e.message === DownloadFailReason.EncryptedMediaUnsupported
+            ) {
+                this.markTaskAsError(
+                    musicItem,
+                    DownloadFailReason.EncryptedMediaUnsupported,
                     e,
                 );
             } else {

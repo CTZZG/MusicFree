@@ -118,6 +118,7 @@
     "downloading.title": "正在下載",
     "downloading.downloadFailReason.noWritePermission": "沒有寫入文件的權限",
     "downloading.downloadFailReason.failToFetchSource": "獲取音樂源失敗",
+    "downloading.downloadFailReason.encryptedMediaUnsupported": "暫不支援加密音源下載",
     "downloading.downloadFailReason.unknown": "未知錯誤",
     "downloading.downloadStatus.completed": "下載完成",
     "downloading.downloadStatus.downloadProgress": "下載中: {progress} / {totalSize}",

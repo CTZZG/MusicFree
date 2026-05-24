@@ -12,6 +12,7 @@ import {
     getLocalPath,
     isSameMediaItem,
 } from "@/utils/mediaUtils";
+import { hasEncryptedMediaSource } from "@/utils/mflac";
 import Network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
@@ -164,6 +165,9 @@ class TrackPlayer extends EventEmitter<{
             this.pluginManagerService.getByMedia(track)
                 ?.methods.getMediaSource(track, quality)
                 .then(async newSource => {
+                    if (this.isUnsupportedEncryptedSource(newSource)) {
+                        return;
+                    }
                     track.url = newSource?.url || track.url;
                     track.headers = newSource?.headers || track.headers;
                     track.userAgent = getAppUserAgent();
@@ -498,11 +502,15 @@ class TrackPlayer extends EventEmitter<{
             let source: IPlugin.IMediaSourceResult | null = null;
             for (let quality of qualityOrder) {
                 if (this.isCurrentMusic(musicItem)) {
-                    source =
+                    const candidate =
                         (await plugin?.methods?.getMediaSource(
                             musicItem,
                             quality,
                         )) ?? null;
+                    if (this.isUnsupportedEncryptedSource(candidate)) {
+                        continue;
+                    }
+                    source = candidate;
                     // 5.3.1 获取到真实源
                     if (source) {
                         this.setQuality(quality);
@@ -525,7 +533,10 @@ class TrackPlayer extends EventEmitter<{
                         const directSource =
                             musicItem.source[quality] ??
                             (legacyQuality ? musicItem.source[legacyQuality] : undefined);
-                        if (directSource?.url) {
+                        if (
+                            directSource?.url &&
+                            !this.isUnsupportedEncryptedSource(directSource)
+                        ) {
                             source = directSource;
                             this.setQuality(quality);
 
@@ -550,11 +561,19 @@ class TrackPlayer extends EventEmitter<{
 
                             for (let quality of qualityOrder) {
                                 if (this.isCurrentMusic(musicItem)) {
-                                    source =
+                                    const candidate =
                                         (await similarMusicPlugin?.methods?.getMediaSource(
                                             similarMusic,
                                             quality,
                                         )) ?? null;
+                                    if (
+                                        this.isUnsupportedEncryptedSource(
+                                            candidate,
+                                        )
+                                    ) {
+                                        continue;
+                                    }
+                                    source = candidate;
                                     // 5.4.1 获取到真实源
                                     if (source) {
                                         this.setQuality(quality);
@@ -576,9 +595,14 @@ class TrackPlayer extends EventEmitter<{
                 } else {
                     source = {
                         url: musicItem.url,
+                        ekey: musicItem.ekey,
                     };
                     this.setQuality("192k");
                 }
+            }
+
+            if (this.isUnsupportedEncryptedSource(source)) {
+                throw new Error(PlayFailReason.INVALID_SOURCE);
             }
 
             // 6. 特殊类型源
@@ -704,6 +728,9 @@ class TrackPlayer extends EventEmitter<{
                 newQuality,
             );
             if (!newSource?.url) {
+                throw new Error(PlayFailReason.INVALID_SOURCE);
+            }
+            if (this.isUnsupportedEncryptedSource(newSource)) {
                 throw new Error(PlayFailReason.INVALID_SOURCE);
             }
             if (this.isCurrentMusic(musicItem)) {
@@ -892,6 +919,12 @@ class TrackPlayer extends EventEmitter<{
             : mediaItem;
         merged.userAgent = getAppUserAgent(); // <--- 确保UA
         return merged;
+    }
+
+    private isUnsupportedEncryptedSource(
+        source?: {url?: string | null; ekey?: string | null} | null,
+    ) {
+        return hasEncryptedMediaSource(source?.url, source?.ekey);
     }
 
     private sortByTimestampAndIndex(array: any[], newArray = false) {

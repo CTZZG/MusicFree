@@ -29,6 +29,7 @@ Last updated: 2026-05-24
 - [x] 2026-05-24: Round 3 Android native download package passed text checks: copied package uses `fun.upup.musicfree`, no `fun.xwj` imports remain, and Kotlin braces are balanced.
 - [x] 2026-05-24: esbuild syntax check passed for the `NativeDownload` JS wrapper and downloader integration. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
 - [x] 2026-05-24: esbuild syntax check passed for download pause/resume/cancel/retry UI integration and downloader task-state changes. i18n JSON parse checks passed.
+- [x] 2026-05-24: Checked CTZZG's pinned `react-native-track-player` fork commit `6344bd1`; it enables ExoPlayer extension renderers for normal formats but has no QMCv2/mflac decrypt or local proxy implementation. Added esbuild-checked guards so encrypted `.mflac`/`.mgg`/`.mmp4` sources are skipped for playback and rejected clearly for download until native decrypt/proxy is ported.
 
 ## Round 1
 
@@ -85,7 +86,7 @@ Entry notes:
 - [x] Port pause, resume, cancel, and retry controls into the UI/task model.
 - [x] Port download notification lifecycle.
 - [x] Integrate metadata writing after native download completion through the existing Round 2 metadata manager.
-- [ ] Evaluate mflac handling against CTZZG's private track-player support before enabling proxy/decrypt behavior.
+- [x] Evaluate mflac handling against CTZZG's private track-player support before enabling proxy/decrypt behavior.
 
 Implementation notes:
 
@@ -94,7 +95,8 @@ Implementation notes:
 - `src/native/mp3Util/index.ts` exposes a guarded `NativeDownload` bridge and emitter; desktop/unsupported runtimes still fall back safely.
 - `src/core/downloader.ts` now prefers native downloading when available and falls back to the old `react-native-fs` path when it is not.
 - `src/pages/downloading/downloadingList.tsx` now exposes per-task pause, resume, cancel/remove, and retry actions where supported by the current task state.
-- This round intentionally did not enable Toskysun's mflac proxy/decrypt path; CTZZG's private player support should be tested first.
+- CTZZG's private player fork does not replace Toskysun's QMCv2 decrypt/proxy path. This round intentionally does not enable the proxy; instead, encrypted sources are blocked with a clear download status so the app does not save encrypted data under a normal audio extension.
+- To actually support encrypted mflac playback/download later, port Toskysun's `Mp3UtilModule.kt` QMCv2 decrypt/proxy section plus `org.nanohttpd:nanohttpd`, then verify on Android with a real JDK/device build.
 
 ## Later / Optional
 

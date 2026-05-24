@@ -118,6 +118,7 @@
     "downloading.title": "Downloading",
     "downloading.downloadFailReason.noWritePermission": "No write permission",
     "downloading.downloadFailReason.failToFetchSource": "Failed to fetch music source",
+    "downloading.downloadFailReason.encryptedMediaUnsupported": "Encrypted source downloads are not supported yet",
     "downloading.downloadFailReason.unknown": "Unknown error",
     "downloading.downloadStatus.completed": "Download completed",
     "downloading.downloadStatus.downloadProgress": "Downloading: {progress} / {totalSize}",

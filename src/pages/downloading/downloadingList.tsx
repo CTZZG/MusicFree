@@ -32,6 +32,8 @@ function DownloadingListItem(props: DownloadingListItemProps) {
             description = t("downloading.downloadFailReason.noWritePermission");
         } else if (reason === DownloadFailReason.FailToFetchSource) {
             description = t("downloading.downloadFailReason.failToFetchSource");
+        } else if (reason === DownloadFailReason.EncryptedMediaUnsupported) {
+            description = t("downloading.downloadFailReason.encryptedMediaUnsupported");
         } else {
             description = t("downloading.downloadFailReason.unknown");
         }
