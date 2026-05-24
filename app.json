@@ -1,0 +1,7 @@
+{
+  "name": "MusicFree",
+  "displayName": "MusicFree",
+  "plugins": [
+    "expo-asset"
+  ]
+}
