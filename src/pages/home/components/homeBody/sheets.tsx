@@ -106,8 +106,12 @@ export default function Sheets() {
                     <IconButton name='ellipsis-vertical' sizeType="normal" onPress={() => {
                         showPanel("SimpleSelect", {
                             header: i18n.t("home.playlistManagement.a11y"),
-                            height: rpx(360),
+                            height: rpx(480),
                             candidates: [{
+                                title: i18n.t("home.playById.a11y"),
+                                icon: "identification",
+                                value: "playById",
+                            }, {
                                 title: i18n.t("home.managePlaylists.a11y"),
                                 icon: "pencil-square",
                                 value: "manageSheets",
@@ -117,7 +121,9 @@ export default function Sheets() {
                                 value: "importSheets",
                             }],
                             onPress(item) {
-                                if (item.value === "manageSheets") {
+                                if (item.value === "playById") {
+                                    showPanel("PlayById");
+                                } else if (item.value === "manageSheets") {
                                     navigate(ROUTE_PATH.SHEET_EDITOR, {
                                         sheetType: index === 0 ? "local" : "starred",
                                     });

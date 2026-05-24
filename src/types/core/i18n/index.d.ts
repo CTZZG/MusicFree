@@ -71,6 +71,7 @@ export interface ILanguageData {
     "home.managePlaylists.a11y": string; // 管理歌单
     "home.playlistManagement.a11y": string; // 歌单管理
     "home.importPlaylist.a11y": string; // 导入歌单
+    "home.playById.a11y": string; // 通过ID播放
     "home.myPlaylistsCount.a11y": string; // 我的歌单数量
     "home.starredPlaylistsCount.a11y": string; // 我喜欢的歌单数量
     "home.songCount": string; // 歌曲数量
@@ -514,6 +515,19 @@ export interface ILanguageData {
 
     // 面板相关 - 音质设置
     "panel.musicQuality.title": string; // 设置音质
+
+    // 面板相关 - 通过ID播放
+    "panel.playById.title": string; // 通过ID播放
+    "panel.playById.selectPlugin": string; // 选择插件
+    "panel.playById.inputLabel": string; // 输入ID
+    "panel.playById.placeholder": string; // 输入提示
+    "panel.playById.hint": string; // 使用提示
+    "panel.playById.qqHint": string; // QQ音乐提示
+    "panel.playById.selectPluginFirst": string; // 请先选择插件
+    "panel.playById.inputIdFirst": string; // 请先输入ID
+    "panel.playById.unknownArtist": string; // 未知歌手
+    "panel.playById.playingNow": string; // 开始播放
+    "panel.playById.fetchFailed": string; // 获取歌曲信息失败
 
     // 面板相关 - 搜索歌词
     "panel.searchLrc.unnamed": string; // 未命名

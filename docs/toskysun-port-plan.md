@@ -30,6 +30,7 @@ Last updated: 2026-05-24
 - [x] 2026-05-24: esbuild syntax check passed for the `NativeDownload` JS wrapper and downloader integration. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
 - [x] 2026-05-24: esbuild syntax check passed for download pause/resume/cancel/retry UI integration and downloader task-state changes. i18n JSON parse checks passed.
 - [x] 2026-05-24: Checked CTZZG's pinned `react-native-track-player` fork commit `6344bd1`; it enables ExoPlayer extension renderers for normal formats but has no QMCv2/mflac decrypt or local proxy implementation. Added esbuild-checked guards so encrypted `.mflac`/`.mgg`/`.mmp4` sources are skipped for playback and rejected clearly for download until native decrypt/proxy is ported.
+- [x] 2026-05-24: esbuild syntax check passed for the Round 4 play-by-ID panel, panel registry, and home sheet-menu integration. i18n JSON parse checks passed.
 
 ## Round 1
 
@@ -98,9 +99,22 @@ Implementation notes:
 - CTZZG's private player fork does not replace Toskysun's QMCv2 decrypt/proxy path. This round intentionally does not enable the proxy; instead, encrypted sources are blocked with a clear download status so the app does not save encrypted data under a normal audio extension.
 - To actually support encrypted mflac playback/download later, port Toskysun's `Mp3UtilModule.kt` QMCv2 decrypt/proxy section plus `org.nanohttpd:nanohttpd`, then verify on Android with a real JDK/device build.
 
+## Round 4
+
+Goal: port small plugin-facing workflow improvements that help test and use the new media-source compatibility layer without touching native playback internals.
+
+- [x] Port play-by-ID panel.
+- [x] Add a home sheet-menu entry for play-by-ID while keeping CTZZG's existing compact `+` / overflow menu layout.
+- [x] Limit plugin choices to enabled plugins that can resolve media sources.
+- [x] Add zh-CN, zh-TW, and en-US copy plus i18n type entries.
+
+Implementation notes:
+
+- `src/components/panels/types/playById.tsx` builds a broad id payload (`id`, `songid`, `songmid`, `mid`, `hash`, `copyrightId`) so QQ/Kugou/Migu-style plugins can resolve by their preferred key.
+- If a plugin supports `getMusicInfo`, the panel hydrates title/artist/album/artwork before playback; otherwise it falls back to a minimal playable item and lets `TrackPlayer.play` resolve the media source.
+
 ## Later / Optional
 
-- [ ] Play-by-ID panel.
 - [ ] Quality translation settings panel.
 - [ ] Music metadata settings panel.
 - [ ] Mini lyric / song detail enhancements.
