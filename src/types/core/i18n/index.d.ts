@@ -344,6 +344,7 @@ export interface ILanguageData {
     "basicSettings.downloadQualityOrder": string; // 默认下载音质缺失时
     "basicSettings.downloadQualityOrder.asc": string; // 下载更高音质
     "basicSettings.downloadQualityOrder.desc": string; // 下载更低音质
+    "basicSettings.metadataSettings": string; // 音乐标签设置
 
     "basicSettings.network": string; // 网络
     "basicSettings.useCelluarNetworkPlay": string; // 使用移动网络播放
@@ -536,6 +537,25 @@ export interface ILanguageData {
     "panel.qualityTranslation.deleteSuccess": string; // 删除成功
     "panel.qualityTranslation.deleteBuiltinTitle": string; // 删除内置音质标题
     "panel.qualityTranslation.deleteBuiltinContent": string; // 删除内置音质说明
+
+    // 面板相关 - 音乐标签设置
+    "panel.musicMetadataSettings.title": string; // 音乐标签设置
+    "panel.musicMetadataSettings.section.basic": string; // 基础
+    "panel.musicMetadataSettings.section.lyric": string; // 歌词
+    "panel.musicMetadataSettings.section.actions": string; // 操作
+    "panel.musicMetadataSettings.writeMetadata": string; // 下载时写入音乐标签
+    "panel.musicMetadataSettings.writeCover": string; // 写入封面
+    "panel.musicMetadataSettings.writeLyric": string; // 写入歌词
+    "panel.musicMetadataSettings.enableWordByWord": string; // 保留逐字歌词
+    "panel.musicMetadataSettings.resetDefault": string; // 恢复默认
+    "panel.musicMetadataSettings.saveSuccess": string; // 保存成功
+    "panel.musicMetadataSettings.resetSuccess": string; // 恢复默认成功
+    "panel.musicMetadataSettings.emptyLyricOrder": string; // 歌词顺序为空
+    "panel.musicMetadataSettings.currentLyricOrder": string; // 当前歌词顺序
+    "panel.musicMetadataSettings.noLyricOrder": string; // 未选择歌词内容
+    "panel.musicMetadataSettings.lyric.original": string; // 原文歌词
+    "panel.musicMetadataSettings.lyric.translation": string; // 翻译歌词
+    "panel.musicMetadataSettings.lyric.romanization": string; // 音译歌词
 
     // 面板相关 - 通过ID播放
     "panel.playById.title": string; // 通过ID播放

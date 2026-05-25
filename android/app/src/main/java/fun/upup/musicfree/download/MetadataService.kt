@@ -15,7 +15,11 @@ object MetadataService {
             val file = File(filePath)
             if (!file.exists()) return false
             val audioFile = AudioFileIO.read(file)
-            val tag = audioFile.tag ?: audioFile.createDefaultTag()
+            var tag = audioFile.tag
+            if (tag == null) {
+                tag = audioFile.createDefaultTag()
+                audioFile.tag = tag
+            }
 
             metadata["title"]?.let { tag.setField(FieldKey.TITLE, it) }
             metadata["artist"]?.let { tag.setField(FieldKey.ARTIST, it) }

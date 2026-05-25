@@ -1,6 +1,6 @@
-import Color from "color";
+import Color, { type ColorInstance } from "color";
 
-export function grayRate(color: string | Color) {
+export function grayRate(color: string | ColorInstance) {
     let _color = typeof color === "string" ? Color(color) : color;
 
     return (
@@ -13,7 +13,7 @@ export function grayRate(color: string | Color) {
     );
 }
 
-export function grayLevelCode(color: string | Color) {
+export function grayLevelCode(color: string | ColorInstance) {
     const gray = grayRate(color);
     console.log(gray);
     if (gray < 96) {

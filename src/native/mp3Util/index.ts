@@ -1,4 +1,4 @@
-import {NativeEventEmitter, NativeModules} from 'react-native';
+import { NativeEventEmitter, NativeModules } from "react-native";
 
 export interface IBasicMeta {
     album?: string;
@@ -11,6 +11,26 @@ export interface IBasicMeta {
 export interface IWritableMeta extends IBasicMeta {
     lyric?: string;
     comment?: string;
+    albumArtist?: string;
+    composer?: string;
+    year?: string;
+    genre?: string;
+    trackNumber?: string;
+    totalTracks?: string;
+    discNumber?: string;
+    totalDiscs?: string;
+    isrc?: string;
+    language?: string;
+    encoder?: string;
+    bpm?: string;
+    mood?: string;
+    rating?: string;
+    publisher?: string;
+    originalArtist?: string;
+    originalAlbum?: string;
+    originalYear?: string;
+    url?: string;
+    compilation?: boolean;
 }
 
 interface IMp3Util {
@@ -20,20 +40,26 @@ interface IMp3Util {
     /** 读取内嵌歌词 */
     getLyric: (mediaPath: string) => Promise<string>;
     /** 写入meta信息 */
-    setMediaTag: (filePath: string, meta: IWritableMeta) => Promise<void>;
+    setMediaTag: (filePath: string, meta: IWritableMeta) => Promise<boolean>;
+    setMediaCover?: (filePath: string, coverPath: string) => Promise<boolean>;
+    setMediaTagWithCover?: (
+        filePath: string,
+        meta: IWritableMeta,
+        coverPath?: string | null,
+    ) => Promise<boolean>;
     getMediaTag: (filePath: string) => Promise<IWritableMeta>;
 }
 
 export interface INativeDownloadTaskStatus {
     taskId: string;
     status:
-        | 'PENDING'
-        | 'PREPARING'
-        | 'DOWNLOADING'
-        | 'PAUSED'
-        | 'COMPLETED'
-        | 'CANCELED'
-        | 'ERROR';
+        | "PENDING"
+        | "PREPARING"
+        | "DOWNLOADING"
+        | "PAUSED"
+        | "COMPLETED"
+        | "CANCELED"
+        | "ERROR";
     downloaded: number;
     total: number;
     progressText?: string;
@@ -81,7 +107,7 @@ interface INativeDownloadMethods {
     setDownloadMaxConcurrency: (max: number) => Promise<boolean>;
 }
 
-const {Mp3Util: NativeMp3Util, NativeDownload: NativeDownloadModule} =
+const { Mp3Util: NativeMp3Util, NativeDownload: NativeDownloadModule } =
     NativeModules;
 
 export const NativeDownloadEmitter = NativeDownloadModule
@@ -95,15 +121,15 @@ const NativeDownloadBridge: INativeDownloadMethods = {
 
     async addDownloadTask(params) {
         if (!NativeDownloadModule?.addDownloadTask) {
-            throw new Error('NativeDownload.addDownloadTask not available');
+            throw new Error("NativeDownload.addDownloadTask not available");
         }
         return NativeDownloadModule.addDownloadTask({
             taskId: params.taskId,
             url: params.url,
             destinationPath: params.destinationPath,
             headers: params.headers ?? {},
-            title: params.title ?? 'MusicFree',
-            description: params.description ?? '正在下载音乐文件...',
+            title: params.title ?? "MusicFree",
+            description: params.description ?? "正在下载音乐文件...",
             coverUrl: params.coverUrl ?? null,
             extraJson: params.extraJson ?? null,
         });

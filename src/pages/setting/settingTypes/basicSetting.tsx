@@ -404,6 +404,19 @@ export default function BasicSetting() {
                         desc: t("basicSettings.downloadQualityOrder.desc"),
                     },
                 ),
+                {
+                    title: t("basicSettings.metadataSettings"),
+                    right: (
+                        <ThemeText
+                            fontSize="subTitle"
+                            style={styles.centerText}>
+                            {t("common.setting")}
+                        </ThemeText>
+                    ),
+                    onPress() {
+                        showPanel("MusicMetadataSettingsPanel");
+                    },
+                },
             ],
         },
         {

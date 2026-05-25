@@ -20,6 +20,7 @@ import TimingClose from "./timingClose";
 import ImageViewer from "./imageViewer";
 import MusicComment from "./musicComment";
 import MusicItemLyricOptions from "./musicItemLyricOptions";
+import MusicMetadataSettings from "./musicMetadataSettings";
 
 export default {
     /** 加入歌单 */
@@ -46,6 +47,8 @@ export default {
     PlayRate,
     /** 音质管理 */
     QualityTranslationPanel: QualityTranslation,
+    /** 音乐标签设置 */
+    MusicMetadataSettingsPanel: MusicMetadataSettings,
     /** 歌单tag */
     SheetTags,
     /** 搜索歌词 */

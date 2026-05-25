@@ -7,9 +7,12 @@ import android.net.Uri
 import com.facebook.react.bridge.*
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 
 class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
@@ -17,6 +20,264 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     private fun isContentUri(uri: Uri?): Boolean {
         return uri?.scheme?.equals("content", ignoreCase = true) == true
+    }
+
+    private fun downloadImageBytes(imageUrl: String): ByteArray? {
+        return try {
+            val url = URL(imageUrl)
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 15000
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
+
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                connection.inputStream.use { inputStream ->
+                    val buffer = ByteArrayOutputStream()
+                    val data = ByteArray(4096)
+                    var bytesRead: Int
+                    while (inputStream.read(data).also { bytesRead = it } != -1) {
+                        buffer.write(data, 0, bytesRead)
+                    }
+                    buffer.toByteArray()
+                }
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("Mp3UtilModule", "Failed to download image: ${e.message}")
+            null
+        }
+    }
+
+    private fun getOptionalString(meta: ReadableMap, key: String): String? {
+        if (!meta.hasKey(key) || meta.isNull(key)) {
+            return null
+        }
+
+        return when (meta.getType(key)) {
+            ReadableType.String -> meta.getString(key)
+            ReadableType.Number -> {
+                val value = meta.getDouble(key)
+                if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+            }
+            ReadableType.Boolean -> meta.getBoolean(key).toString()
+            else -> null
+        }
+    }
+
+    private fun getOptionalBoolean(meta: ReadableMap, key: String): Boolean? {
+        if (!meta.hasKey(key) || meta.isNull(key)) {
+            return null
+        }
+
+        return when (meta.getType(key)) {
+            ReadableType.Boolean -> meta.getBoolean(key)
+            ReadableType.Number -> meta.getDouble(key) != 0.0
+            ReadableType.String -> {
+                val value = meta.getString(key)?.lowercase()
+                value == "1" || value == "true" || value == "yes"
+            }
+            else -> null
+        }
+    }
+
+    private fun setOptionalTagField(
+        tag: org.jaudiotagger.tag.Tag,
+        meta: ReadableMap,
+        metaKey: String,
+        fieldKey: FieldKey,
+    ) {
+        getOptionalString(meta, metaKey)?.let { tag.setField(fieldKey, it) }
+    }
+
+    private fun applyMediaTagFields(tag: org.jaudiotagger.tag.Tag, meta: ReadableMap) {
+        setOptionalTagField(tag, meta, "title", FieldKey.TITLE)
+        setOptionalTagField(tag, meta, "artist", FieldKey.ARTIST)
+        setOptionalTagField(tag, meta, "album", FieldKey.ALBUM)
+        setOptionalTagField(tag, meta, "lyric", FieldKey.LYRICS)
+        setOptionalTagField(tag, meta, "comment", FieldKey.COMMENT)
+
+        setOptionalTagField(tag, meta, "albumArtist", FieldKey.ALBUM_ARTIST)
+        setOptionalTagField(tag, meta, "composer", FieldKey.COMPOSER)
+        setOptionalTagField(tag, meta, "year", FieldKey.YEAR)
+        setOptionalTagField(tag, meta, "genre", FieldKey.GENRE)
+        setOptionalTagField(tag, meta, "trackNumber", FieldKey.TRACK)
+        setOptionalTagField(tag, meta, "totalTracks", FieldKey.TRACK_TOTAL)
+        setOptionalTagField(tag, meta, "discNumber", FieldKey.DISC_NO)
+        setOptionalTagField(tag, meta, "totalDiscs", FieldKey.DISC_TOTAL)
+        setOptionalTagField(tag, meta, "isrc", FieldKey.ISRC)
+        setOptionalTagField(tag, meta, "language", FieldKey.LANGUAGE)
+        setOptionalTagField(tag, meta, "encoder", FieldKey.ENCODER)
+        setOptionalTagField(tag, meta, "bpm", FieldKey.BPM)
+        setOptionalTagField(tag, meta, "mood", FieldKey.MOOD)
+        setOptionalTagField(tag, meta, "rating", FieldKey.RATING)
+        setOptionalTagField(tag, meta, "publisher", FieldKey.RECORD_LABEL)
+        setOptionalTagField(tag, meta, "originalArtist", FieldKey.ORIGINAL_ARTIST)
+        setOptionalTagField(tag, meta, "originalAlbum", FieldKey.ORIGINAL_ALBUM)
+        setOptionalTagField(tag, meta, "originalYear", FieldKey.ORIGINAL_YEAR)
+        setOptionalTagField(tag, meta, "url", FieldKey.URL_OFFICIAL_RELEASE_SITE)
+
+        getOptionalBoolean(meta, "compilation")?.let { isCompilation ->
+            tag.setField(FieldKey.IS_COMPILATION, if (isCompilation) "1" else "0")
+        }
+    }
+
+    private fun readCoverBytes(coverPath: String): ByteArray? {
+        return when {
+            coverPath.startsWith("/") || coverPath.startsWith("file://") -> {
+                val coverFile = File(
+                    if (coverPath.startsWith("file://")) {
+                        Uri.parse(coverPath).path ?: coverPath
+                    } else {
+                        coverPath
+                    }
+                )
+                if (coverFile.exists()) coverFile.readBytes() else null
+            }
+            coverPath.startsWith("http://") || coverPath.startsWith("https://") -> {
+                downloadImageBytes(coverPath)
+            }
+            else -> null
+        }
+    }
+
+    private fun setCoverArtImageIOFree(tag: org.jaudiotagger.tag.Tag, coverBytes: ByteArray, fileExtension: String): Boolean {
+        return try {
+            val mimeType = detectImageMimeTypeByBytes(coverBytes)
+            when (fileExtension) {
+                "mp3" -> setCoverForMp3(tag, coverBytes, mimeType)
+                "flac" -> setCoverForFlac(tag, coverBytes, mimeType)
+                else -> false
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("Mp3UtilModule", "Failed to set cover art: ${e.message}", e)
+            false
+        }
+    }
+
+    private fun setCoverForMp3(tag: org.jaudiotagger.tag.Tag, coverBytes: ByteArray, mimeType: String): Boolean {
+        return try {
+            when (tag) {
+                is org.jaudiotagger.tag.id3.ID3v24Tag -> {
+                    val apicFrame = org.jaudiotagger.tag.id3.framebody.FrameBodyAPIC()
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_TEXT_ENCODING, 0.toByte())
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_MIME_TYPE, mimeType)
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_PICTURE_TYPE, 3.toByte())
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_DESCRIPTION, "")
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_PICTURE_DATA, coverBytes)
+
+                    val frame = org.jaudiotagger.tag.id3.ID3v24Frame(org.jaudiotagger.tag.id3.ID3v24Frames.FRAME_ID_ATTACHED_PICTURE)
+                    frame.body = apicFrame
+                    tag.setFrame(frame)
+                    true
+                }
+                is org.jaudiotagger.tag.id3.ID3v23Tag -> {
+                    val apicFrame = org.jaudiotagger.tag.id3.framebody.FrameBodyAPIC()
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_TEXT_ENCODING, 0.toByte())
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_MIME_TYPE, mimeType)
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_PICTURE_TYPE, 3.toByte())
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_DESCRIPTION, "")
+                    apicFrame.setObjectValue(org.jaudiotagger.tag.datatype.DataTypes.OBJ_PICTURE_DATA, coverBytes)
+
+                    val frame = org.jaudiotagger.tag.id3.ID3v23Frame(org.jaudiotagger.tag.id3.ID3v23Frames.FRAME_ID_V3_ATTACHED_PICTURE)
+                    frame.body = apicFrame
+                    tag.setFrame(frame)
+                    true
+                }
+                else -> false
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("Mp3UtilModule", "Failed to set MP3 cover: ${e.message}", e)
+            false
+        }
+    }
+
+    private fun setCoverForFlac(tag: org.jaudiotagger.tag.Tag, coverBytes: ByteArray, mimeType: String): Boolean {
+        return try {
+            when (tag) {
+                is org.jaudiotagger.tag.flac.FlacTag -> {
+                    tag.deleteArtworkField()
+
+                    try {
+                        val bitmapOptions = BitmapFactory.Options().apply {
+                            inJustDecodeBounds = true
+                        }
+                        BitmapFactory.decodeByteArray(coverBytes, 0, coverBytes.size, bitmapOptions)
+
+                        val imageWidth = if (bitmapOptions.outWidth > 0) bitmapOptions.outWidth else 0
+                        val imageHeight = if (bitmapOptions.outHeight > 0) bitmapOptions.outHeight else 0
+                        val colourDepth = if (mimeType == "image/png") 32 else 24
+
+                        val pictureBlock = org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture(
+                            coverBytes,
+                            coverBytes.size,
+                            mimeType,
+                            "",
+                            imageWidth,
+                            imageHeight,
+                            colourDepth,
+                            0
+                        )
+
+                        try {
+                            val pictureTypeField = pictureBlock.javaClass.getDeclaredField("pictureType")
+                            pictureTypeField.isAccessible = true
+                            pictureTypeField.set(pictureBlock, 3)
+                        } catch (_: Exception) {
+                        }
+
+                        tag.addField(pictureBlock)
+                        return true
+                    } catch (e: Exception) {
+                        android.util.Log.w("Mp3UtilModule", "Direct FLAC picture block failed: ${e.message}")
+                    }
+
+                    try {
+                        val base64Cover = android.util.Base64.encodeToString(coverBytes, android.util.Base64.NO_WRAP)
+                        tag.setField(FieldKey.COVER_ART, base64Cover)
+                        return true
+                    } catch (e: Exception) {
+                        android.util.Log.w("Mp3UtilModule", "Base64 FLAC cover failed: ${e.message}")
+                    }
+
+                    false
+                }
+                else -> false
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("Mp3UtilModule", "Failed to set FLAC cover: ${e.message}", e)
+            false
+        }
+    }
+
+    private fun detectImageMimeTypeByBytes(imageBytes: ByteArray): String {
+        return when {
+            imageBytes.size >= 3 &&
+                imageBytes[0] == 0xFF.toByte() &&
+                imageBytes[1] == 0xD8.toByte() &&
+                imageBytes[2] == 0xFF.toByte() -> "image/jpeg"
+            imageBytes.size >= 8 &&
+                imageBytes[0] == 0x89.toByte() &&
+                imageBytes[1] == 0x50.toByte() &&
+                imageBytes[2] == 0x4E.toByte() &&
+                imageBytes[3] == 0x47.toByte() -> "image/png"
+            imageBytes.size >= 4 &&
+                imageBytes[0] == 0x47.toByte() &&
+                imageBytes[1] == 0x49.toByte() &&
+                imageBytes[2] == 0x46.toByte() &&
+                imageBytes[3] == 0x38.toByte() -> "image/gif"
+            imageBytes.size >= 12 &&
+                imageBytes[0] == 0x52.toByte() &&
+                imageBytes[1] == 0x49.toByte() &&
+                imageBytes[2] == 0x46.toByte() &&
+                imageBytes[3] == 0x46.toByte() &&
+                imageBytes[8] == 0x57.toByte() &&
+                imageBytes[9] == 0x45.toByte() &&
+                imageBytes[10] == 0x42.toByte() &&
+                imageBytes[11] == 0x50.toByte() -> "image/webp"
+            else -> "image/jpeg"
+        }
     }
 
     @ReactMethod
@@ -148,12 +409,12 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             val file = File(filePath)
             if (file.exists()) {
                 val audioFile = AudioFileIO.read(file)
-                val tag = audioFile.tag
-                meta.getString("title")?.let { tag.setField(FieldKey.TITLE, it) }
-                meta.getString("artist")?.let { tag.setField(FieldKey.ARTIST, it) }
-                meta.getString("album")?.let { tag.setField(FieldKey.ALBUM, it) }
-                meta.getString("lyric")?.let { tag.setField(FieldKey.LYRICS, it) }
-                meta.getString("comment")?.let { tag.setField(FieldKey.COMMENT, it) }
+                var tag = audioFile.tag
+                if (tag == null) {
+                    tag = audioFile.createDefaultTag()
+                    audioFile.tag = tag
+                }
+                applyMediaTagFields(tag, meta)
                 audioFile.commit()
                 promise.resolve(true)
             } else {
@@ -170,7 +431,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             val file = File(filePath)
             if (file.exists()) {
                 val audioFile = AudioFileIO.read(file)
-                val tag = audioFile.tag
+                val tag = audioFile.tag ?: audioFile.createDefaultTag()
 
                 val properties = Arguments.createMap().apply {
                     putString("title", tag.getFirst(FieldKey.TITLE))
@@ -178,11 +439,100 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                     putString("album", tag.getFirst(FieldKey.ALBUM))
                     putString("lyric", tag.getFirst(FieldKey.LYRICS))
                     putString("comment", tag.getFirst(FieldKey.COMMENT))
+                    putString("albumArtist", tag.getFirst(FieldKey.ALBUM_ARTIST))
+                    putString("composer", tag.getFirst(FieldKey.COMPOSER))
+                    putString("year", tag.getFirst(FieldKey.YEAR))
+                    putString("genre", tag.getFirst(FieldKey.GENRE))
+                    putString("trackNumber", tag.getFirst(FieldKey.TRACK))
+                    putString("totalTracks", tag.getFirst(FieldKey.TRACK_TOTAL))
+                    putString("discNumber", tag.getFirst(FieldKey.DISC_NO))
+                    putString("totalDiscs", tag.getFirst(FieldKey.DISC_TOTAL))
+                    putString("isrc", tag.getFirst(FieldKey.ISRC))
+                    putString("language", tag.getFirst(FieldKey.LANGUAGE))
+                    putString("encoder", tag.getFirst(FieldKey.ENCODER))
+                    putString("bpm", tag.getFirst(FieldKey.BPM))
+                    putString("mood", tag.getFirst(FieldKey.MOOD))
+                    putString("rating", tag.getFirst(FieldKey.RATING))
+                    putString("publisher", tag.getFirst(FieldKey.RECORD_LABEL))
+                    putString("originalArtist", tag.getFirst(FieldKey.ORIGINAL_ARTIST))
+                    putString("originalAlbum", tag.getFirst(FieldKey.ORIGINAL_ALBUM))
+                    putString("originalYear", tag.getFirst(FieldKey.ORIGINAL_YEAR))
+                    putString("url", tag.getFirst(FieldKey.URL_OFFICIAL_RELEASE_SITE))
+                    val compilationValue = tag.getFirst(FieldKey.IS_COMPILATION)
+                    putBoolean("compilation", compilationValue == "1" || compilationValue?.lowercase() == "true")
                 }
                 promise.resolve(properties)
             } else {
                 promise.reject("Error", "File Not Found")
             }
+        } catch (e: Exception) {
+            promise.reject("Error", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setMediaCover(filePath: String, coverPath: String, promise: Promise) {
+        try {
+            val file = File(filePath)
+            if (!file.exists()) {
+                promise.reject("Error", "Music file not found")
+                return
+            }
+
+            val coverBytes = readCoverBytes(coverPath)
+            if (coverBytes == null || coverBytes.isEmpty()) {
+                promise.reject("Error", "Failed to read cover image")
+                return
+            }
+
+            val audioFile = AudioFileIO.read(file)
+            var tag = audioFile.tag
+            if (tag == null) {
+                tag = audioFile.createDefaultTag()
+                audioFile.tag = tag
+            }
+
+            tag.deleteArtworkField()
+            val success = setCoverArtImageIOFree(tag, coverBytes, file.extension.lowercase())
+            if (success) {
+                audioFile.commit()
+                promise.resolve(true)
+            } else {
+                promise.reject("Error", "Failed to set cover art for this file format")
+            }
+        } catch (e: Exception) {
+            promise.reject("Error", "Failed to set cover: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun setMediaTagWithCover(filePath: String, meta: ReadableMap, coverPath: String?, promise: Promise) {
+        try {
+            val file = File(filePath)
+            if (!file.exists()) {
+                promise.reject("Error", "File Not Exist")
+                return
+            }
+
+            val audioFile = AudioFileIO.read(file)
+            var tag = audioFile.tag
+            if (tag == null) {
+                tag = audioFile.createDefaultTag()
+                audioFile.tag = tag
+            }
+
+            applyMediaTagFields(tag, meta)
+
+            if (!coverPath.isNullOrEmpty()) {
+                val coverBytes = readCoverBytes(coverPath)
+                if (coverBytes != null && coverBytes.isNotEmpty()) {
+                    tag.deleteArtworkField()
+                    setCoverArtImageIOFree(tag, coverBytes, file.extension.lowercase())
+                }
+            }
+
+            audioFile.commit()
+            promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("Error", e.message)
         }

@@ -32,6 +32,7 @@ Last updated: 2026-05-25
 - [x] 2026-05-24: Checked CTZZG's pinned `react-native-track-player` fork commit `6344bd1`; it enables ExoPlayer extension renderers for normal formats but has no QMCv2/mflac decrypt or local proxy implementation. Added esbuild-checked guards so encrypted `.mflac`/`.mgg`/`.mmp4` sources are skipped for playback and rejected clearly for download until native decrypt/proxy is ported.
 - [x] 2026-05-24: esbuild syntax check passed for the Round 4 play-by-ID panel, panel registry, and home sheet-menu integration. i18n JSON parse checks passed.
 - [x] 2026-05-25: esbuild syntax check passed for the Round 5 quality-management panel, panel registry, and basic-settings entry. i18n JSON parse checks passed, and language JSON keys now match `ILanguageData`.
+- [x] 2026-05-25: Round 6 metadata settings and native tag bridge passed esbuild checks, language JSON key consistency checks, and full `npx tsc --noEmit --pretty false`. Android `:app:compileDebugKotlin` passed after adding the MP3/FLAC cover/tag bridge.
 
 ## Round 1
 
@@ -114,8 +115,6 @@ Implementation notes:
 - `src/components/panels/types/playById.tsx` builds a broad id payload (`id`, `songid`, `songmid`, `mid`, `hash`, `copyrightId`) so QQ/Kugou/Migu-style plugins can resolve by their preferred key.
 - If a plugin supports `getMusicInfo`, the panel hydrates title/artist/album/artwork before playback; otherwise it falls back to a minimal playable item and lets `TrackPlayer.play` resolve the media source.
 
-## Later / Optional
-
 ## Round 5
 
 Goal: expose the quality key/label/abbreviation customization that Round 1 already made available in the data model.
@@ -131,9 +130,25 @@ Implementation notes:
 - `src/components/panels/types/qualityTranslation.tsx` writes `basic.qualityKeysList`, `basic.qualityTranslations`, and `basic.qualityAbbreviations`.
 - Existing playback/download quality selectors already read from `getQualityKeys()` and `getQualityText(...)`, so the panel takes effect without changing the private player or downloader core.
 
+## Round 6
+
+Goal: expose download-time music metadata controls and complete the native Android bridge needed by those controls.
+
+- [x] Add music metadata settings panel.
+- [x] Add entry under basic download settings.
+- [x] Wire settings to existing download metadata config.
+- [x] Add native Android cover/tag bridge for MP3/FLAC cover writing and extended tag fields.
+- [x] Add zh-CN, zh-TW, and en-US copy plus i18n type entries.
+- [x] Fix the existing `color` package type usage so full TypeScript checking can pass.
+
+Implementation notes:
+
+- `MusicMetadataSettingsPanel` controls `basic.writeMetadata`, `basic.writeMetadataCover`, `basic.writeMetadataLyric`, `basic.lyricOrder`, and `basic.enableWordByWordLyric`.
+- `Mp3UtilModule` now exposes `setMediaCover` and `setMediaTagWithCover`; cover writing currently targets MP3/FLAC. Unsupported cover formats still keep text tag writing intact through `setMediaTagWithCover`.
+- Full TypeScript checking now passes after removing the ignored temporary Toskysun reference clone from `tmp/` and fixing `src/utils/colorUtil.ts`.
+
 ## Later / Optional
 
-- [ ] Music metadata settings panel.
 - [ ] Mini lyric / song detail enhancements.
 - [ ] Announcement dialog/service.
 
