@@ -34,4 +34,3 @@ data class ProgressSnapshot(
     val percent: Int,
     val progressText: String,
 )
-

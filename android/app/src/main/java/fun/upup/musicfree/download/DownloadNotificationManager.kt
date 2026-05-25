@@ -297,4 +297,3 @@ class DownloadNotificationManager(
         private const val SUMMARY_NOTIFICATION_ID = 2_000_000_001
     }
 }
-

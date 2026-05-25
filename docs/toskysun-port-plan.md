@@ -31,6 +31,7 @@ Last updated: 2026-05-24
 - [x] 2026-05-24: esbuild syntax check passed for download pause/resume/cancel/retry UI integration and downloader task-state changes. i18n JSON parse checks passed.
 - [x] 2026-05-24: Checked CTZZG's pinned `react-native-track-player` fork commit `6344bd1`; it enables ExoPlayer extension renderers for normal formats but has no QMCv2/mflac decrypt or local proxy implementation. Added esbuild-checked guards so encrypted `.mflac`/`.mgg`/`.mmp4` sources are skipped for playback and rejected clearly for download until native decrypt/proxy is ported.
 - [x] 2026-05-24: esbuild syntax check passed for the Round 4 play-by-ID panel, panel registry, and home sheet-menu integration. i18n JSON parse checks passed.
+- [x] 2026-05-25: esbuild syntax check passed for the Round 5 quality-management panel, panel registry, and basic-settings entry. i18n JSON parse checks passed, and language JSON keys now match `ILanguageData`.
 
 ## Round 1
 
@@ -115,7 +116,23 @@ Implementation notes:
 
 ## Later / Optional
 
-- [ ] Quality translation settings panel.
+## Round 5
+
+Goal: expose the quality key/label/abbreviation customization that Round 1 already made available in the data model.
+
+- [x] Port quality-management panel.
+- [x] Add entry under basic playback settings.
+- [x] Allow adding custom quality keys, reordering keys, editing display labels, editing abbreviations, deleting keys, and restoring built-ins.
+- [x] Add zh-CN, zh-TW, and en-US copy plus i18n type entries.
+- [x] Fix pre-existing i18n gaps for playlist sync keys in zh-TW/en-US while auditing language consistency.
+
+Implementation notes:
+
+- `src/components/panels/types/qualityTranslation.tsx` writes `basic.qualityKeysList`, `basic.qualityTranslations`, and `basic.qualityAbbreviations`.
+- Existing playback/download quality selectors already read from `getQualityKeys()` and `getQualityText(...)`, so the panel takes effect without changing the private player or downloader core.
+
+## Later / Optional
+
 - [ ] Music metadata settings panel.
 - [ ] Mini lyric / song detail enhancements.
 - [ ] Announcement dialog/service.

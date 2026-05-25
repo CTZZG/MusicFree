@@ -424,4 +424,3 @@ class DownloadManager(
         }
     }
 }
-

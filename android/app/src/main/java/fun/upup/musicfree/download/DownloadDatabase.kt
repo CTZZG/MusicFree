@@ -154,4 +154,3 @@ class DownloadDatabase(context: Context) :
         private const val TABLE_TASKS = "download_tasks"
     }
 }
-

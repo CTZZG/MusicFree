@@ -238,4 +238,3 @@ class NativeDownloadModule(
         const val EVENT_QUEUE_DRAINED = "NativeDownloadQueueDrained"
     }
 }
-

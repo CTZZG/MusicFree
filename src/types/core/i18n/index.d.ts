@@ -329,6 +329,8 @@ export interface ILanguageData {
     "basicSettings.tempRemoteDuck.pause": string; // 暂停播放
     "basicSettings.tempRemoteDuck.lowerVolume": string; // 降低音量
     "basicSettings.tempRemoteDuck.volumeDecreaseLevel": string; // 音量降低幅度
+    "basicSettings.qualityManagement": string; // 音质管理
+    "basicSettings.qualityManagement.custom": string; // 自定义
     "basicSettings.defaultPlayQuality": string; // 默认播放音质
     "basicSettings.playQualityOrder": string; // 默认播放音质缺失时
     "basicSettings.playQualityOrder.asc": string; // 播放更高音质
@@ -515,6 +517,25 @@ export interface ILanguageData {
 
     // 面板相关 - 音质设置
     "panel.musicQuality.title": string; // 设置音质
+
+    // 面板相关 - 音质管理
+    "panel.qualityTranslation.title": string; // 音质管理
+    "panel.qualityTranslation.description": string; // 音质管理说明
+    "panel.qualityTranslation.customKeyPlaceholder": string; // 自定义音质键提示
+    "panel.qualityTranslation.builtin": string; // 内置
+    "panel.qualityTranslation.labelLabel": string; // 标签
+    "panel.qualityTranslation.abbrLabel": string; // 缩写
+    "panel.qualityTranslation.resetDefault": string; // 恢复默认
+    "panel.qualityTranslation.saveSuccess": string; // 保存成功
+    "panel.qualityTranslation.resetTitle": string; // 恢复默认标题
+    "panel.qualityTranslation.resetContent": string; // 恢复默认说明
+    "panel.qualityTranslation.resetSuccess": string; // 恢复默认成功
+    "panel.qualityTranslation.emptyList": string; // 空音质列表
+    "panel.qualityTranslation.addInvalid": string; // 添加失败
+    "panel.qualityTranslation.addDuplicate": string; // 重复音质键
+    "panel.qualityTranslation.deleteSuccess": string; // 删除成功
+    "panel.qualityTranslation.deleteBuiltinTitle": string; // 删除内置音质标题
+    "panel.qualityTranslation.deleteBuiltinContent": string; // 删除内置音质说明
 
     // 面板相关 - 通过ID播放
     "panel.playById.title": string; // 通过ID播放

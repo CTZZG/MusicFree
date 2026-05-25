@@ -8,6 +8,7 @@ import CreateMusicSheet from "./createMusicSheet";
 import PlayById from "./playById";
 import PlayList from "./playList";
 import PlayRate from "./playRate";
+import QualityTranslation from "./qualityTranslation";
 import SearchLrc from "./searchLrc";
 import SetFontSize from "./setFontSize";
 import SetLyricOffset from "./setLyricOffset";
@@ -43,6 +44,8 @@ export default {
     MusicQuality,
     /** 播放速度 */
     PlayRate,
+    /** 音质管理 */
+    QualityTranslationPanel: QualityTranslation,
     /** 歌单tag */
     SheetTags,
     /** 搜索歌词 */

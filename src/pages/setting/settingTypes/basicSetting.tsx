@@ -313,6 +313,19 @@ export default function BasicSetting() {
                         }
                     ),
                 ] : []),
+                {
+                    title: t("basicSettings.qualityManagement"),
+                    right: (
+                        <ThemeText
+                            fontSize="subTitle"
+                            style={styles.centerText}>
+                            {t("basicSettings.qualityManagement.custom")}
+                        </ThemeText>
+                    ),
+                    onPress() {
+                        showPanel("QualityTranslationPanel");
+                    },
+                },
                 createRadio(
                     t("basicSettings.defaultPlayQuality"),
                     "basic.defaultPlayQuality",
