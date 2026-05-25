@@ -1,6 +1,6 @@
 # Toskysun Feature Port Plan
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 ## Scope
 
@@ -24,7 +24,7 @@ Last updated: 2026-05-24
 - [x] 2026-05-24: esbuild syntax check passed for Round 2 lyric parser/decrypter files and `lyricManager`. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
 - [x] 2026-05-24: esbuild syntax check passed for Round 2 file naming and metadata primitives. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
 - [x] 2026-05-24: Native `LyricUtilModule.kt` QRC/Kuwo port passed text checks: braces are balanced and no Toskysun desktop lyric/native-event dependencies were introduced.
-- [ ] 2026-05-24: Android Gradle/Kotlin compile is still pending because this machine has no `JAVA_HOME`/`java` on `PATH`; `android\gradlew.bat :app:compileDebugKotlin --dry-run` stops at that environment error.
+- [x] 2026-05-25: Installed and configured Temurin JDK 17 plus Android SDK command-line tools, platform-tools 37.0.0, Android 35, Build Tools 35.0.0/34.0.0, and NDK 26.1.10909125. `android\gradlew.bat :app:compileDebugKotlin --console=plain --stacktrace --no-daemon` passed in 10m 34s; remaining output is third-party/native deprecation warnings plus Expo's expected `NODE_ENV` notice.
 - [x] 2026-05-24: esbuild syntax check passed again after trimming metadata types so unported native download/mflac APIs are not declared as available.
 - [x] 2026-05-24: Round 3 Android native download package passed text checks: copied package uses `fun.upup.musicfree`, no `fun.xwj` imports remain, and Kotlin braces are balanced.
 - [x] 2026-05-24: esbuild syntax check passed for the `NativeDownload` JS wrapper and downloader integration. The only warning was the expected missing `@react-native/typescript-config` base config because `node_modules` is not installed in this workspace.
@@ -81,7 +81,7 @@ Entry notes:
 - CTZZG currently has `Mp3UtilModule.kt` but no `NativeDownload` module or Android download package.
 - Toskysun's native download queue requires the Android `download` package, `NativeDownloadModule`, notification manager, JS native wrapper changes, and downloader rewrite.
 - Toskysun's mflac support is tied to native `Mp3UtilModule.kt` additions plus `nanohttpd`/`okhttp`; keep this separate from the native queue so CTZZG's private track-player support can be evaluated first.
-- Proceed with static-checkable native queue pieces after the git baseline; full Android compile remains blocked until `JAVA_HOME`/`java` is available.
+- Proceed with static-checkable native queue pieces after the git baseline; as of 2026-05-25, the local JDK/Android SDK setup is available and `:app:compileDebugKotlin` passes.
 
 - [x] Port native Android download queue.
 - [x] Port download progress events into the existing JS downloader.
