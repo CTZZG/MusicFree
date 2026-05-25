@@ -36,6 +36,40 @@ export default function PluginList() {
 
     const navigator = useNavigation<any>();
 
+    function showPluginInstallResults(
+        successResults: IInstallPluginResult[],
+        failResults: IInstallPluginResult[],
+    ) {
+        if (!failResults.length) {
+            Toast.success(t("toast.installPluginSuccess"));
+            return;
+        }
+
+        Toast.warn(
+            successResults.length
+                ? t("toast.partialPluginInstallFailed")
+                : t("toast.allPluginInstallFailed"),
+            {
+                type: "warn",
+                actionText: t("common.view"),
+                onActionClick: () => {
+                    showDialog("SimpleDialog", {
+                        title: t("pluginSetting.menu.pluginInstallFailedDialogTitle"),
+                        content: t("pluginSetting.pluginInstallFailedDialogContent", {
+                            detail: failResults.map(it => {
+                                const pluginSource =
+                                    it.pluginUrl ?? it.pluginName ?? "";
+                                return `${pluginSource}\n${t("pluginSetting.failReason", {
+                                    reason: it.message ?? "",
+                                })}`;
+                            }).join("\n-----\n"),
+                        }),
+                    });
+                },
+            },
+        );
+    }
+
     const menuOptions: IOption[] = [
         {
             icon: "bookmark-square",
@@ -81,19 +115,24 @@ export default function PluginList() {
             }
             setLoading(true);
 
-            await Promise.all(
+            const installResults = await Promise.all(
                 results.assets.map(async it => {
-                    await PluginManager.installPluginFromLocalFile(it.uri, {
+                    const result = await PluginManager.installPluginFromLocalFile(it.uri, {
                         notCheckVersion: Config.getConfig(
                             "basic.notCheckPluginVersion",
                         ),
                         useExpoFs: true,
                     });
+                    return {
+                        ...result,
+                        pluginUrl: result.pluginUrl ?? it.name ?? it.uri,
+                    };
                 }),
             );
-            // 初步过滤
 
-            Toast.success(t("toast.installPluginSuccess"));
+            const successResults = installResults.filter(it => it.success);
+            const failResults = installResults.filter(it => !it.success);
+            showPluginInstallResults(successResults, failResults);
         } catch (e: any) {
             trace("插件安装失败", e?.message);
             Toast.warn(t("toast.installPluginFail", {

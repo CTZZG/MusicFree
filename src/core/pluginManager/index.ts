@@ -254,7 +254,9 @@ class PluginManager implements IPluginManager, IInjectable {
             }
             return {
                 success: false,
-                message: "插件无法解析",
+                message: plugin.errorMessage
+                    ? `插件无法解析: ${plugin.errorMessage}`
+                    : "插件无法解析",
             };
         }
         return {
@@ -345,7 +347,9 @@ class PluginManager implements IPluginManager, IInjectable {
                 }
                 return {
                     success: false,
-                    message: "插件无法解析",
+                    message: plugin.errorMessage
+                        ? `插件无法解析: ${plugin.errorMessage}`
+                        : "插件无法解析",
                     pluginUrl: url,
                 };
             } else {

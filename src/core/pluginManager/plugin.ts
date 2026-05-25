@@ -1081,6 +1081,8 @@ export class Plugin {
     public state: PluginState = PluginState.Initializing;
     /** 插件出错时的原因 */
     public errorReason?: PluginErrorReason;
+    /** 插件解析或初始化失败时的原始错误信息 */
+    public errorMessage?: string;
     /** 插件的实例 */
     public instance: IPlugin.IPluginDefine = { platform: "" };
     /** 插件路径 */
@@ -1132,8 +1134,9 @@ export class Plugin {
             try {
                 const funcCode = await loadFuncCode();
                 this.mountPlugin(funcCode, this.lazyProps.path);
-            } catch {
+            } catch (e: any) {
                 this.state = PluginState.Error;
+                this.errorMessage = e?.message;
                 this.errorReason = this.errorReason ?? PluginErrorReason.CannotParse;
             }
         }
@@ -1204,6 +1207,7 @@ export class Plugin {
         } catch (e: any) {
             this.state = PluginState.Error;
             this.errorReason = e?.errorReason ?? PluginErrorReason.CannotParse;
+            this.errorMessage = e?.message;
 
             errorLog(`${pluginPath}插件无法解析 `, {
                 errorReason: this.errorReason,
