@@ -29,9 +29,15 @@ export default function MiniLyric(props: IMiniLyricProps) {
         return currentLyricItem?.romanization;
     }, [currentLyricItem, showTranslation]);
 
-    const primaryLine = lyricState.loading
-        ? t("common.loading")
-        : currentLyricItem?.lrc || t("lyric.noLyric");
+    const primaryLine = useMemo(() => {
+        if (lyricState.loading) {
+            return t("common.loading");
+        }
+        if (!lyricState.lyrics.length) {
+            return t("lyric.noLyric");
+        }
+        return currentLyricItem?.lrc?.trim() ? currentLyricItem.lrc : " ";
+    }, [currentLyricItem, lyricState.loading, lyricState.lyrics.length, t]);
 
     return (
         <Pressable
