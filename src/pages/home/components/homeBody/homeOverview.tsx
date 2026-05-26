@@ -1,6 +1,5 @@
 import FastImage from "@/components/base/fastImage";
 import Icon, { IIconName } from "@/components/base/icon.tsx";
-import IconButton from "@/components/base/iconButton";
 import ThemeText from "@/components/base/themeText";
 import { showPanel } from "@/components/panels/usePanel";
 import { ImgAsset } from "@/constants/assetsConst";
@@ -18,10 +17,7 @@ import type { Plugin } from "@/core/pluginManager";
 import useHomeDiscovery, {
     IHomeDiscoveryPreview,
 } from "./useHomeDiscovery";
-import useHomeOverview, {
-    HomeCapabilityKey,
-    IHomeSourceItem,
-} from "./useHomeOverview";
+import useHomeOverview from "./useHomeOverview";
 
 function formatTime(value?: number) {
     const seconds = Math.max(0, Math.floor(value ?? 0));
@@ -50,10 +46,6 @@ function getMusicDescription(musicItem?: IMusic.IMusicItem | null) {
     return [musicItem.artist, musicItem.platform].filter(Boolean).join(" · ");
 }
 
-function getCapabilityLabel(capability: HomeCapabilityKey) {
-    return i18n.t(`home.sourceCapability.${capability}` as any);
-}
-
 function formatPluginNames(plugins: Plugin[]) {
     const names = plugins.slice(0, 2).map(plugin => plugin.name);
     const suffix = plugins.length > 2 ? ` +${plugins.length - 2}` : "";
@@ -62,19 +54,16 @@ function formatPluginNames(plugins: Plugin[]) {
 
 export default function HomeOverview() {
     const data = useHomeOverview();
-    const discoveryPreview = useHomeDiscovery(
-        data.recommendPlugins,
-        data.topListPlugins,
-    );
+    const discoveryPreview = useHomeDiscovery(data.topListPlugins);
 
     return (
         <ScrollView
             style={styles.wrapper}
             contentContainerStyle={styles.contentContainer}
             showsVerticalScrollIndicator={false}>
-            <SourceChips
-                sources={data.sourceChips}
-                searchableCount={data.searchablePlugins.length}
+            <Discovery
+                topListPlugins={data.topListPlugins}
+                preview={discoveryPreview}
             />
             <ContinueListening
                 currentMusic={data.currentMusic}
@@ -84,86 +73,12 @@ export default function HomeOverview() {
                 duration={data.progress.duration}
             />
             <RecentListening musics={data.recentMusics} />
-            <MusicSources
-                sources={data.sources}
-                enabledPluginCount={data.enabledPlugins.length}
-            />
-            <QuickAccess favoriteSheet={data.favoriteSheet} />
-            <Discovery
-                recommendPlugins={data.recommendPlugins}
-                topListPlugins={data.topListPlugins}
-                searchablePlugins={data.searchablePlugins}
-                preview={discoveryPreview}
-            />
+            <QuickAccess />
             <MyMusic
                 favoriteSheet={data.favoriteSheet}
                 userSheets={data.userSheets}
                 starredSheets={data.starredSheets}
-                localCount={data.localMusicList.length}
-                downloadCount={data.downloadQueue.length}
             />
-        </ScrollView>
-    );
-}
-
-function SourceChips(props: {
-    sources: IHomeSourceItem[];
-    searchableCount: number;
-}) {
-    const { sources, searchableCount } = props;
-    const colors = useColors();
-    const { t } = useI18N();
-    const navigate = useNavigate();
-
-    return (
-        <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.sourceChipContainer}>
-            {sources.map(source => {
-                const isAll = source.key === "all";
-                const label = isAll
-                    ? `${t("home.allSources")} ${searchableCount}`
-                    : source.name;
-                return (
-                    <Pressable
-                        key={source.key}
-                        style={[
-                            styles.sourceChip,
-                            {
-                                backgroundColor: isAll
-                                    ? Color(colors.primary)
-                                        .alpha(0.16)
-                                        .toString()
-                                    : colors.card,
-                                borderColor: isAll
-                                    ? Color(colors.primary)
-                                        .alpha(0.5)
-                                        .toString()
-                                    : Color(colors.text).alpha(0.08).toString(),
-                            },
-                        ]}
-                        onPress={() => {
-                            if (isAll) {
-                                navigate(ROUTE_PATH.SEARCH_PAGE);
-                            } else if (source.isLocal) {
-                                navigate(ROUTE_PATH.LOCAL);
-                            } else {
-                                navigate(ROUTE_PATH.SEARCH_PAGE, {
-                                    pluginHash: source.pluginHash,
-                                });
-                            }
-                        }}>
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="description"
-                            fontWeight={isAll ? "semibold" : "medium"}
-                            color={isAll ? colors.primary : colors.text}>
-                            {label}
-                        </ThemeText>
-                    </Pressable>
-                );
-            })}
         </ScrollView>
     );
 }
@@ -382,127 +297,7 @@ function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
     );
 }
 
-function MusicSources(props: {
-    sources: IHomeSourceItem[];
-    enabledPluginCount: number;
-}) {
-    const { sources, enabledPluginCount } = props;
-    const colors = useColors();
-    const { t } = useI18N();
-    const navigate = useNavigate();
-
-    return (
-        <Section
-            title={t("home.musicSources")}
-            subtitle={t("home.enabledSourceCount", {
-                count: enabledPluginCount,
-            })}>
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.sourceCards}>
-                {sources.slice(0, 8).map(source => (
-                    <Pressable
-                        key={source.key}
-                        style={[
-                            styles.sourceCard,
-                            { backgroundColor: colors.card },
-                        ]}
-                        onPress={() => {
-                            if (source.isLocal) {
-                                navigate(ROUTE_PATH.LOCAL);
-                            } else {
-                                navigate(ROUTE_PATH.SEARCH_PAGE, {
-                                    pluginHash: source.pluginHash,
-                                });
-                            }
-                        }}>
-                        <View style={styles.sourceCardHeader}>
-                            <View
-                                style={[
-                                    styles.sourceIcon,
-                                    {
-                                        backgroundColor: Color(colors.primary)
-                                            .alpha(0.12)
-                                            .toString(),
-                                    },
-                                ]}>
-                                <Icon
-                                    name={
-                                        source.isLocal
-                                            ? "folder-music-outline"
-                                            : "javascript"
-                                    }
-                                    color={colors.primary}
-                                    size={rpx(34)}
-                                />
-                            </View>
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="subTitle"
-                                fontWeight="bold"
-                                style={styles.sourceName}>
-                                {source.name}
-                            </ThemeText>
-                        </View>
-                        <View style={styles.capabilityWrap}>
-                            {source.capabilities.slice(0, 4).map(capability => (
-                                <View
-                                    key={capability}
-                                    style={[
-                                        styles.capabilityTag,
-                                        {
-                                            backgroundColor: Color(colors.text)
-                                                .alpha(0.07)
-                                                .toString(),
-                                        },
-                                    ]}>
-                                    <ThemeText
-                                        fontSize="tag"
-                                        fontColor="textSecondary">
-                                        {getCapabilityLabel(capability)}
-                                    </ThemeText>
-                                </View>
-                            ))}
-                        </View>
-                    </Pressable>
-                ))}
-                <Pressable
-                    style={[
-                        styles.sourceCard,
-                        styles.manageSourceCard,
-                        {
-                            borderColor: Color(colors.text)
-                                .alpha(0.12)
-                                .toString(),
-                        },
-                    ]}
-                    onPress={() =>
-                        navigate(ROUTE_PATH.SETTING, {
-                            type: "plugin",
-                        })
-                    }>
-                    <Icon
-                        name="cog-8-tooth"
-                        size={rpx(38)}
-                        color={colors.text}
-                    />
-                    <ThemeText
-                        fontSize="subTitle"
-                        fontWeight="semibold"
-                        style={styles.manageSourceText}>
-                        {t("home.manageSources")}
-                    </ThemeText>
-                </Pressable>
-            </ScrollView>
-        </Section>
-    );
-}
-
-function QuickAccess(props: {
-    favoriteSheet: IMusic.IMusicSheetItemBase | null;
-}) {
-    const { favoriteSheet } = props;
+function QuickAccess() {
     const colors = useColors();
     const { t } = useI18N();
     const navigate = useNavigate();
@@ -511,86 +306,100 @@ function QuickAccess(props: {
         key: string;
         icon: IIconName;
         title: string;
+        accent: string;
         action: () => void;
     }[] = [
-        {
-            key: "search",
-            icon: "magnifying-glass",
-            title: t("common.search"),
-            action: () => navigate(ROUTE_PATH.SEARCH_PAGE),
-        },
         {
             key: "history",
             icon: "clock-outline",
             title: t("home.playHistory"),
+            accent: "#64A7FF",
             action: () => navigate(ROUTE_PATH.HISTORY),
         },
         {
             key: "local",
             icon: "folder-music-outline",
             title: t("home.localMusic"),
+            accent: "#8EDB7C",
             action: () => navigate(ROUTE_PATH.LOCAL),
         },
         {
             key: "download",
             icon: "arrow-down-tray",
             title: t("common.download"),
+            accent: "#70D7D7",
             action: () => navigate(ROUTE_PATH.DOWNLOADING),
         },
         {
-            key: "topList",
-            icon: "trophy",
-            title: t("home.topList"),
-            action: () => navigate(ROUTE_PATH.TOP_LIST),
-        },
-        {
             key: "recommend",
-            icon: "fire",
+            icon: "fire-outline",
             title: t("home.recommendSheet"),
+            accent: "#FF8E7D",
             action: () => navigate(ROUTE_PATH.RECOMMEND_SHEETS),
         },
         {
-            key: "sheet",
+            key: "sheetManage",
             icon: "playlist",
-            title: t("common.sheet"),
-            action: () => {
-                if (favoriteSheet) {
-                    navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, {
-                        id: favoriteSheet.id,
-                    });
-                }
-            },
+            title: t("home.managePlaylists.short"),
+            accent: "#A88BFF",
+            action: () =>
+                navigate(ROUTE_PATH.SHEET_EDITOR, {
+                    sheetType: "local",
+                }),
+        },
+        {
+            key: "sourceManage",
+            icon: "cog-8-tooth",
+            title: t("home.manageSources.short"),
+            accent: "#F4B85F",
+            action: () =>
+                navigate(ROUTE_PATH.SETTING, {
+                    type: "plugin",
+                }),
         },
         {
             key: "playById",
             icon: "identification",
             title: t("home.playById.short"),
+            accent: "#A2B3C7",
             action: () => showPanel("PlayById"),
         },
     ];
 
     return (
         <Section title={t("home.quickAccess")}>
-            <View style={styles.quickGrid}>
-                {quickItems.map((item, index) => (
+            <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.quickContainer}>
+                {quickItems.map(item => (
                     <Pressable
                         key={item.key}
                         style={[
                             styles.quickItem,
                             {
                                 backgroundColor: colors.card,
+                                borderColor: Color(colors.text)
+                                    .alpha(0.06)
+                                    .toString(),
                             },
-                            index % 4 === 3 ? null : styles.quickItemMarginRight,
-                            index < quickItems.length - 4
-                                ? styles.quickItemMarginBottom
-                                : null,
                         ]}
                         onPress={item.action}>
-                        <Icon
-                            name={item.icon}
-                            color={colors.text}
-                            size={rpx(36)}
-                        />
+                        <View
+                            style={[
+                                styles.quickIconBox,
+                                {
+                                    backgroundColor: Color(item.accent)
+                                        .alpha(0.16)
+                                        .toString(),
+                                },
+                            ]}>
+                            <Icon
+                                name={item.icon}
+                                color={item.accent}
+                                size={rpx(32)}
+                            />
+                        </View>
                         <ThemeText
                             numberOfLines={1}
                             fontSize="description"
@@ -600,45 +409,23 @@ function QuickAccess(props: {
                         </ThemeText>
                     </Pressable>
                 ))}
-            </View>
+            </ScrollView>
         </Section>
     );
 }
 
 function Discovery(props: {
-    recommendPlugins: Plugin[];
     topListPlugins: Plugin[];
-    searchablePlugins: Plugin[];
     preview: IHomeDiscoveryPreview;
 }) {
-    const { recommendPlugins, topListPlugins, searchablePlugins, preview } =
-        props;
+    const { topListPlugins, preview } = props;
     const colors = useColors();
     const { t } = useI18N();
     const navigate = useNavigate();
 
     const previewItems = useMemo(
-        () => [
-            ...preview.recommendSheets.map((item, index) => ({
-                key: `recommend-${preview.recommendPluginHash}-${
-                    item.id ?? index
-                }`,
-                type: t("home.recommendSheet"),
-                pluginHash: preview.recommendPluginHash,
-                pluginName: preview.recommendPluginName,
-                title: item.title ?? i18n.t("common.unknownName"),
-                desc: item.artist ?? preview.recommendPluginName ?? "",
-                cover: item.coverImg ?? item.artwork,
-                action: () => {
-                    if (preview.recommendPluginHash) {
-                        navigate(ROUTE_PATH.PLUGIN_SHEET_DETAIL, {
-                            pluginHash: preview.recommendPluginHash,
-                            sheetInfo: item,
-                        });
-                    }
-                },
-            })),
-            ...preview.topLists.map((item, index) => ({
+        () =>
+            preview.topLists.map((item, index) => ({
                 key: `top-${preview.topListPluginHash}-${item.id ?? index}`,
                 type: t("home.topList"),
                 pluginHash: preview.topListPluginHash,
@@ -655,58 +442,33 @@ function Discovery(props: {
                     }
                 },
             })),
-        ],
         [navigate, preview, t],
     );
 
-    const cards = useMemo(
-        () =>
-            [
-                recommendPlugins.length
-                    ? {
-                        key: "recommend",
-                        icon: "fire" as IIconName,
-                        title: t("home.recommendSheet"),
-                        desc: formatPluginNames(recommendPlugins),
-                        action: () => navigate(ROUTE_PATH.RECOMMEND_SHEETS),
-                    }
-                    : null,
-                topListPlugins.length
-                    ? {
-                        key: "topList",
-                        icon: "trophy" as IIconName,
-                        title: t("home.topList"),
-                        desc: formatPluginNames(topListPlugins),
-                        action: () => navigate(ROUTE_PATH.TOP_LIST),
-                    }
-                    : null,
-                searchablePlugins.length
-                    ? {
-                        key: "sourceSearch",
-                        icon: "magnifying-glass" as IIconName,
-                        title: t("home.multiSourceSearch"),
-                        desc: t("home.sourceSupportedCount", {
-                            count: searchablePlugins.length,
-                        }),
-                        action: () => navigate(ROUTE_PATH.SEARCH_PAGE),
-                    }
-                    : null,
-            ].filter(Boolean) as {
-                key: string;
-                icon: IIconName;
-                title: string;
-                desc: string;
-                action: () => void;
-            }[],
-        [navigate, recommendPlugins, searchablePlugins, t, topListPlugins],
-    );
-
-    if (!cards.length && !previewItems.length && !preview.loading) {
+    if (!topListPlugins.length && !previewItems.length && !preview.loading) {
         return null;
     }
 
     return (
-        <Section title={t("home.discovery")}>
+        <Section
+            title={t("home.discovery")}
+            right={
+                <Pressable
+                    style={styles.sectionTextButton}
+                    onPress={() => navigate(ROUTE_PATH.TOP_LIST)}>
+                    <ThemeText
+                        fontSize="description"
+                        fontWeight="semibold"
+                        color={colors.primary}>
+                        {t("common.view")}
+                    </ThemeText>
+                    <Icon
+                        name="chevron-right"
+                        size={rpx(26)}
+                        color={colors.primary}
+                    />
+                </Pressable>
+            }>
             {previewItems.length || preview.loading ? (
                 <ScrollView
                     horizontal
@@ -718,7 +480,8 @@ function Discovery(props: {
                             style={[
                                 styles.discoveryPreviewCard,
                                 { backgroundColor: colors.card },
-                            ]}>
+                            ]}
+                            onPress={item.action}>
                             <FastImage
                                 source={item.cover}
                                 placeholderSource={ImgAsset.albumDefault}
@@ -780,61 +543,54 @@ function Discovery(props: {
                     ) : null}
                 </ScrollView>
             ) : null}
-            {cards.length ? (
-                <View
+            {!previewItems.length && !preview.loading && topListPlugins.length ? (
+                <Pressable
                     style={[
-                        styles.discoveryGrid,
-                        previewItems.length ? styles.discoveryGridSpacing : null,
-                    ]}>
-                    {cards.map((card, index) => (
-                        <Pressable
-                            key={card.key}
-                            style={[
-                                styles.discoveryCard,
-                                {
-                                    backgroundColor: colors.card,
-                                },
-                                index % 2 === 0
-                                    ? styles.discoveryCardMarginRight
-                                    : null,
-                                index < cards.length - 2
-                                    ? styles.discoveryCardMarginBottom
-                                    : null,
-                            ]}
-                            onPress={card.action}>
-                            <View
-                                style={[
-                                    styles.discoveryIcon,
-                                    {
-                                        backgroundColor: Color(colors.primary)
-                                            .alpha(0.13)
-                                            .toString(),
-                                    },
-                                ]}>
-                                <Icon
-                                    name={card.icon}
-                                    size={rpx(34)}
-                                    color={colors.primary}
-                                />
-                            </View>
-                            <View style={styles.discoveryText}>
-                                <ThemeText
-                                    numberOfLines={1}
-                                    fontSize="subTitle"
-                                    fontWeight="bold">
-                                    {card.title}
-                                </ThemeText>
-                                <ThemeText
-                                    numberOfLines={1}
-                                    fontSize="tag"
-                                    fontColor="textSecondary"
-                                    style={styles.smallTextMargin}>
-                                    {card.desc}
-                                </ThemeText>
-                            </View>
-                        </Pressable>
-                    ))}
-                </View>
+                        styles.discoveryFallback,
+                        {
+                            backgroundColor: colors.card,
+                            borderColor: Color(colors.text)
+                                .alpha(0.06)
+                                .toString(),
+                        },
+                    ]}
+                    onPress={() => navigate(ROUTE_PATH.TOP_LIST)}>
+                    <View
+                        style={[
+                            styles.discoveryIcon,
+                            {
+                                backgroundColor: Color(colors.primary)
+                                    .alpha(0.13)
+                                    .toString(),
+                            },
+                        ]}>
+                        <Icon
+                            name="trophy"
+                            size={rpx(34)}
+                            color={colors.primary}
+                        />
+                    </View>
+                    <View style={styles.discoveryText}>
+                        <ThemeText
+                            numberOfLines={1}
+                            fontSize="subTitle"
+                            fontWeight="bold">
+                            {t("home.topList")}
+                        </ThemeText>
+                        <ThemeText
+                            numberOfLines={1}
+                            fontSize="tag"
+                            fontColor="textSecondary"
+                            style={styles.smallTextMargin}>
+                            {formatPluginNames(topListPlugins)}
+                        </ThemeText>
+                    </View>
+                    <Icon
+                        name="chevron-right"
+                        size={rpx(30)}
+                        color={colors.textSecondary}
+                    />
+                </Pressable>
             ) : null}
         </Section>
     );
@@ -844,232 +600,174 @@ function MyMusic(props: {
     favoriteSheet: IMusic.IMusicSheetItemBase | null;
     userSheets: IMusic.IMusicSheetItemBase[];
     starredSheets: IMusic.IMusicSheetItem[];
-    localCount: number;
-    downloadCount: number;
 }) {
-    const {
-        favoriteSheet,
-        userSheets,
-        starredSheets,
-        localCount,
-        downloadCount,
-    } = props;
+    const { favoriteSheet, userSheets, starredSheets } = props;
     const colors = useColors();
     const { t } = useI18N();
     const navigate = useNavigate();
 
-    const previewSheets: IMusic.IMusicSheetItemBase[] = [
-        ...(favoriteSheet ? [favoriteSheet] : []),
-        ...userSheets,
-    ].slice(0, 4);
-    const previewStarredSheets =
-        previewSheets.length < 4
-            ? starredSheets.slice(0, 4 - previewSheets.length)
-            : [];
+    const rows: {
+        key: string;
+        icon: IIconName;
+        title: string;
+        desc: string;
+        accent: string;
+        action: () => void;
+    }[] = [
+        {
+            key: "favorite",
+            icon: "heart",
+            title: t("home.favoriteSheet"),
+            desc: t("home.songCount", {
+                count: favoriteSheet?.worksNum ?? 0,
+            }),
+            accent: "#FF8FA3",
+            action: () => {
+                if (favoriteSheet) {
+                    navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, {
+                        id: favoriteSheet.id,
+                    });
+                }
+            },
+        },
+        {
+            key: "localSheets",
+            icon: "playlist",
+            title: t("home.myPlaylists"),
+            desc: t("home.playlistCount", {
+                count: userSheets.length,
+            }),
+            accent: "#A88BFF",
+            action: () =>
+                navigate(ROUTE_PATH.SHEET_EDITOR, {
+                    sheetType: "local",
+                }),
+        },
+        {
+            key: "starredSheets",
+            icon: "bookmark-square",
+            title: t("home.starredPlaylists"),
+            desc: t("home.playlistCount", {
+                count: starredSheets.length,
+            }),
+            accent: "#7DD3B8",
+            action: () =>
+                navigate(ROUTE_PATH.SHEET_EDITOR, {
+                    sheetType: "starred",
+                }),
+        },
+    ];
 
     return (
         <Section
             title={t("home.myMusic")}
             right={
                 <View style={styles.myMusicActions}>
-                    <IconButton
-                        name="plus"
-                        sizeType="normal"
+                    <Pressable
+                        style={[
+                            styles.headerIconAction,
+                            {
+                                backgroundColor: Color(colors.text)
+                                    .alpha(0.07)
+                                    .toString(),
+                            },
+                        ]}
                         onPress={() => showPanel("CreateMusicSheet")}
-                    />
-                    <IconButton
-                        name="ellipsis-vertical"
-                        sizeType="normal"
-                        onPress={() => {
-                            showPanel("SimpleSelect", {
-                                header: i18n.t("home.playlistManagement.a11y"),
-                                height: rpx(480),
-                                candidates: [
-                                    {
-                                        title: i18n.t("home.playById.a11y"),
-                                        icon: "identification",
-                                        value: "playById",
-                                    },
-                                    {
-                                        title: i18n.t(
-                                            "home.managePlaylists.a11y",
-                                        ),
-                                        icon: "pencil-square",
-                                        value: "manageSheets",
-                                    },
-                                    {
-                                        title: i18n.t(
-                                            "home.importPlaylist.a11y",
-                                        ),
-                                        icon: "inbox-arrow-down",
-                                        value: "importSheets",
-                                    },
-                                ],
-                                onPress(item) {
-                                    if (item.value === "playById") {
-                                        showPanel("PlayById");
-                                    } else if (item.value === "manageSheets") {
-                                        navigate(ROUTE_PATH.SHEET_EDITOR, {
-                                            sheetType: "local",
-                                        });
-                                    } else if (item.value === "importSheets") {
-                                        showPanel("ImportMusicSheet");
-                                    }
-                                },
-                            });
-                        }}
-                    />
+                        accessibilityLabel={t("home.newPlaylist.a11y")}>
+                        <Icon
+                            name="plus"
+                            size={rpx(28)}
+                            color={colors.text}
+                        />
+                    </Pressable>
+                    <Pressable
+                        style={[
+                            styles.headerTextAction,
+                            {
+                                backgroundColor: Color(colors.primary)
+                                    .alpha(0.16)
+                                    .toString(),
+                            },
+                        ]}
+                        onPress={() => showPanel("ImportMusicSheet")}
+                        accessibilityLabel={t("home.importPlaylist.a11y")}>
+                        <Icon
+                            name="inbox-arrow-down"
+                            size={rpx(26)}
+                            color={colors.primary}
+                        />
+                        <ThemeText
+                            numberOfLines={1}
+                            fontSize="description"
+                            fontWeight="semibold"
+                            color={colors.primary}
+                            style={styles.headerTextActionLabel}>
+                            {t("home.import.short")}
+                        </ThemeText>
+                    </Pressable>
                 </View>
             }>
-            <View style={styles.musicStats}>
-                <StatCard
-                    icon="heart"
-                    title={t("home.favoriteSheet")}
-                    value={t("home.songCount", {
-                        count: favoriteSheet?.worksNum ?? 0,
-                    })}
-                    onPress={() => {
-                        if (favoriteSheet) {
-                            navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, {
-                                id: favoriteSheet.id,
-                            });
-                        }
-                    }}
-                />
-                <StatCard
-                    icon="folder-music-outline"
-                    title={t("home.localMusicShort")}
-                    value={t("home.songCount", { count: localCount })}
-                    onPress={() => navigate(ROUTE_PATH.LOCAL)}
-                />
-                <StatCard
-                    icon="bookmark-square"
-                    title={t("home.starredShort")}
-                    value={t("home.playlistCount", {
-                        count: starredSheets.length,
-                    })}
-                    onPress={() =>
-                        navigate(ROUTE_PATH.SHEET_EDITOR, {
-                            sheetType: "starred",
-                        })
-                    }
-                />
-                <StatCard
-                    icon="arrow-down-tray"
-                    title={t("common.download")}
-                    value={t("home.downloadQueueCount", {
-                        count: downloadCount,
-                    })}
-                    onPress={() => navigate(ROUTE_PATH.DOWNLOADING)}
-                />
-            </View>
             <View
                 style={[
-                    styles.sheetPreview,
+                    styles.myMusicList,
                     {
                         backgroundColor: colors.card,
                     },
                 ]}>
-                {previewSheets.map(sheet => (
-                    <SheetPreviewRow
-                        key={`${sheet.platform ?? "local"}-${sheet.id}`}
-                        title={sheet.title ?? i18n.t("common.unknownName")}
-                        desc={t("home.songCount", { count: sheet.worksNum ?? 0 })}
-                        cover={sheet.coverImg ?? sheet.artwork}
-                        icon={
-                            sheet.id === favoriteSheet?.id
-                                ? "heart"
-                                : "playlist"
-                        }
-                        onPress={() =>
-                            navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, {
-                                id: sheet.id,
-                            })
-                        }
-                    />
-                ))}
-                {previewStarredSheets.map(sheet => (
-                    <SheetPreviewRow
-                        key={`${sheet.platform ?? "starred"}-${sheet.id}`}
-                        title={sheet.title ?? i18n.t("common.unknownName")}
-                        desc={sheet.artist ?? sheet.platform ?? ""}
-                        cover={sheet.coverImg ?? sheet.artwork}
-                        icon="bookmark-square"
-                        onPress={() =>
-                            navigate(ROUTE_PATH.PLUGIN_SHEET_DETAIL, {
-                                sheetInfo: sheet,
-                            })
-                        }
-                    />
+                {rows.map((row, index) => (
+                    <Pressable
+                        key={row.key}
+                        style={[
+                            styles.myMusicRow,
+                            index < rows.length - 1
+                                ? {
+                                    borderBottomColor: Color(colors.text)
+                                        .alpha(0.06)
+                                        .toString(),
+                                    borderBottomWidth: StyleSheet.hairlineWidth,
+                                }
+                                : null,
+                        ]}
+                        onPress={row.action}>
+                        <View
+                            style={[
+                                styles.myMusicRowIcon,
+                                {
+                                    backgroundColor: Color(row.accent)
+                                        .alpha(0.18)
+                                        .toString(),
+                                },
+                            ]}>
+                            <Icon
+                                name={row.icon}
+                                size={rpx(30)}
+                                color={row.accent}
+                            />
+                        </View>
+                        <View style={styles.myMusicRowText}>
+                            <ThemeText
+                                numberOfLines={1}
+                                fontSize="subTitle"
+                                fontWeight="semibold">
+                                {row.title}
+                            </ThemeText>
+                            <ThemeText
+                                numberOfLines={1}
+                                fontSize="description"
+                                fontColor="textSecondary"
+                                style={styles.smallTextMargin}>
+                                {row.desc}
+                            </ThemeText>
+                        </View>
+                        <Icon
+                            name="chevron-right"
+                            size={rpx(30)}
+                            color={colors.textSecondary}
+                        />
+                    </Pressable>
                 ))}
             </View>
         </Section>
-    );
-}
-
-function StatCard(props: {
-    icon: IIconName;
-    title: string;
-    value: string;
-    onPress: () => void;
-}) {
-    const { icon, title, value, onPress } = props;
-    const colors = useColors();
-
-    return (
-        <Pressable
-            style={[styles.statCard, { backgroundColor: colors.card }]}
-            onPress={onPress}>
-            <Icon name={icon} size={rpx(30)} color={colors.text} />
-            <ThemeText
-                numberOfLines={1}
-                fontSize="tag"
-                fontWeight="semibold"
-                style={styles.statTitle}>
-                {title}
-            </ThemeText>
-            <ThemeText
-                numberOfLines={1}
-                fontSize="tag"
-                fontColor="textSecondary"
-                style={styles.statValue}>
-                {value}
-            </ThemeText>
-        </Pressable>
-    );
-}
-
-function SheetPreviewRow(props: {
-    title: string;
-    desc: string;
-    cover?: string;
-    icon: IIconName;
-    onPress: () => void;
-}) {
-    const { title, desc, cover, icon, onPress } = props;
-    const colors = useColors();
-
-    return (
-        <Pressable style={styles.sheetRow} onPress={onPress}>
-            <FastImage
-                source={cover}
-                placeholderSource={ImgAsset.albumDefault}
-                style={styles.sheetCover}
-            />
-            <View style={styles.sheetRowText}>
-                <ThemeText numberOfLines={1} fontWeight="semibold">
-                    {title}
-                </ThemeText>
-                <ThemeText
-                    numberOfLines={1}
-                    fontSize="description"
-                    fontColor="textSecondary"
-                    style={styles.smallTextMargin}>
-                    {desc}
-                </ThemeText>
-            </View>
-            <Icon name={icon} size={rpx(30)} color={colors.textSecondary} />
-        </Pressable>
     );
 }
 
@@ -1141,21 +839,6 @@ const styles = StyleSheet.create({
     contentContainer: {
         paddingBottom: rpx(36),
     },
-    sourceChipContainer: {
-        paddingHorizontal: rpx(24),
-        paddingTop: rpx(8),
-        paddingBottom: rpx(14),
-    },
-    sourceChip: {
-        height: rpx(54),
-        minWidth: rpx(96),
-        paddingHorizontal: rpx(22),
-        borderRadius: rpx(27),
-        borderWidth: StyleSheet.hairlineWidth,
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: rpx(12),
-    },
     section: {
         marginTop: rpx(20),
     },
@@ -1176,6 +859,11 @@ const styles = StyleSheet.create({
     },
     sectionSubtitle: {
         marginTop: rpx(8),
+    },
+    sectionTextButton: {
+        minHeight: rpx(48),
+        flexDirection: "row",
+        alignItems: "center",
     },
     continueCard: {
         marginHorizontal: rpx(24),
@@ -1288,84 +976,28 @@ const styles = StyleSheet.create({
     smallTextMargin: {
         marginTop: rpx(8),
     },
-    sourceCards: {
+    quickContainer: {
         paddingHorizontal: rpx(24),
-    },
-    sourceCard: {
-        width: rpx(246),
-        minHeight: rpx(142),
-        borderRadius: rpx(18),
-        padding: rpx(16),
-        marginRight: rpx(14),
-    },
-    sourceCardHeader: {
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    sourceIcon: {
-        width: rpx(52),
-        height: rpx(52),
-        borderRadius: rpx(14),
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    sourceName: {
-        flex: 1,
-        minWidth: 0,
-        marginLeft: rpx(12),
-    },
-    capabilityWrap: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        marginTop: rpx(16),
-    },
-    capabilityTag: {
-        height: rpx(34),
-        borderRadius: rpx(17),
-        paddingHorizontal: rpx(10),
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: rpx(8),
-        marginBottom: rpx(8),
-    },
-    manageSourceCard: {
-        borderWidth: StyleSheet.hairlineWidth,
-        backgroundColor: "transparent",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    manageSourceText: {
-        marginTop: rpx(12),
-    },
-    quickGrid: {
-        paddingHorizontal: rpx(24),
-        flexDirection: "row",
-        flexWrap: "wrap",
     },
     quickItem: {
-        width: rpx(165),
-        height: rpx(96),
+        width: rpx(136),
+        height: rpx(112),
+        borderRadius: rpx(18),
+        borderWidth: StyleSheet.hairlineWidth,
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: rpx(14),
+    },
+    quickIconBox: {
+        width: rpx(52),
+        height: rpx(52),
         borderRadius: rpx(16),
         alignItems: "center",
         justifyContent: "center",
     },
-    quickItemMarginRight: {
-        marginRight: rpx(14),
-    },
-    quickItemMarginBottom: {
-        marginBottom: rpx(14),
-    },
     quickText: {
-        marginTop: rpx(10),
-        maxWidth: rpx(132),
-    },
-    discoveryGrid: {
-        paddingHorizontal: rpx(24),
-        flexDirection: "row",
-        flexWrap: "wrap",
-    },
-    discoveryGridSpacing: {
-        marginTop: rpx(16),
+        marginTop: rpx(12),
+        maxWidth: rpx(112),
     },
     discoveryPreviewContainer: {
         paddingHorizontal: rpx(24),
@@ -1400,19 +1032,14 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
     },
-    discoveryCard: {
-        width: rpx(343),
+    discoveryFallback: {
+        marginHorizontal: rpx(24),
         minHeight: rpx(116),
         borderRadius: rpx(18),
-        padding: rpx(16),
+        borderWidth: StyleSheet.hairlineWidth,
+        padding: rpx(18),
         flexDirection: "row",
         alignItems: "center",
-    },
-    discoveryCardMarginRight: {
-        marginRight: rpx(16),
-    },
-    discoveryCardMarginBottom: {
-        marginBottom: rpx(16),
     },
     discoveryIcon: {
         width: rpx(58),
@@ -1430,42 +1057,44 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
     },
-    musicStats: {
-        paddingHorizontal: rpx(24),
-        flexDirection: "row",
-        marginBottom: rpx(14),
+    headerIconAction: {
+        width: rpx(52),
+        height: rpx(52),
+        borderRadius: rpx(26),
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: rpx(10),
     },
-    statCard: {
-        width: rpx(156),
-        minHeight: rpx(104),
-        borderRadius: rpx(16),
-        marginRight: rpx(12),
-        padding: rpx(14),
+    headerTextAction: {
+        height: rpx(52),
+        borderRadius: rpx(26),
+        paddingHorizontal: rpx(16),
+        flexDirection: "row",
+        alignItems: "center",
         justifyContent: "center",
     },
-    statTitle: {
-        marginTop: rpx(10),
+    headerTextActionLabel: {
+        marginLeft: rpx(8),
     },
-    statValue: {
-        marginTop: rpx(8),
-    },
-    sheetPreview: {
+    myMusicList: {
         marginHorizontal: rpx(24),
         borderRadius: rpx(18),
         overflow: "hidden",
     },
-    sheetRow: {
+    myMusicRow: {
         minHeight: rpx(104),
-        paddingHorizontal: rpx(14),
+        paddingHorizontal: rpx(16),
         flexDirection: "row",
         alignItems: "center",
     },
-    sheetCover: {
-        width: rpx(72),
-        height: rpx(72),
-        borderRadius: rpx(14),
+    myMusicRowIcon: {
+        width: rpx(54),
+        height: rpx(54),
+        borderRadius: rpx(16),
+        alignItems: "center",
+        justifyContent: "center",
     },
-    sheetRowText: {
+    myMusicRowText: {
         flex: 1,
         minWidth: 0,
         marginLeft: rpx(14),

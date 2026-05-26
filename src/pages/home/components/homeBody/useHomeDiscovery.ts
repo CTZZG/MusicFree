@@ -2,9 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { Plugin } from "@/core/pluginManager";
 
 export interface IHomeDiscoveryPreview {
-    recommendPluginHash?: string;
-    recommendPluginName?: string;
-    recommendSheets: IMusic.IMusicSheetItemBase[];
     topListPluginHash?: string;
     topListPluginName?: string;
     topLists: IMusic.IMusicSheetItemBase[];
@@ -13,7 +10,6 @@ export interface IHomeDiscoveryPreview {
 }
 
 const defaultState: IHomeDiscoveryPreview = {
-    recommendSheets: [],
     topLists: [],
     loading: false,
     hasError: false,
@@ -23,21 +19,17 @@ function flattenTopLists(groups: IMusic.IMusicSheetGroupItem[]) {
     return groups.flatMap(group => group.data ?? []);
 }
 
-export default function useHomeDiscovery(
-    recommendPlugins: Plugin[],
-    topListPlugins: Plugin[],
-) {
-    const recommendPlugin = recommendPlugins[0] ?? null;
+export default function useHomeDiscovery(topListPlugins: Plugin[]) {
     const topListPlugin = topListPlugins[0] ?? null;
-    const recommendPluginHash = recommendPlugin?.hash;
     const topListPluginHash = topListPlugin?.hash;
+    const topListPluginName = topListPlugin?.name;
 
     const [state, setState] = useState<IHomeDiscoveryPreview>(defaultState);
 
     useEffect(() => {
         let canceled = false;
 
-        if (!recommendPlugin && !topListPlugin) {
+        if (!topListPlugin) {
             setState(defaultState);
             return () => {
                 canceled = true;
@@ -46,33 +38,14 @@ export default function useHomeDiscovery(
 
         setState({
             ...defaultState,
-            recommendPluginHash,
-            recommendPluginName: recommendPlugin?.name,
             topListPluginHash,
-            topListPluginName: topListPlugin?.name,
+            topListPluginName,
             loading: true,
         });
 
         async function query() {
-            let recommendSheets: IMusic.IMusicSheetItemBase[] = [];
             let topLists: IMusic.IMusicSheetItemBase[] = [];
             let hasError = false;
-
-            if (recommendPlugin) {
-                try {
-                    const result =
-                        await recommendPlugin.methods.getRecommendSheetsByTag(
-                            {
-                                id: "",
-                                title: "",
-                            },
-                            1,
-                        );
-                    recommendSheets = (result?.data ?? []).slice(0, 6);
-                } catch {
-                    hasError = true;
-                }
-            }
 
             if (topListPlugin) {
                 try {
@@ -85,11 +58,8 @@ export default function useHomeDiscovery(
 
             if (!canceled) {
                 setState({
-                    recommendPluginHash,
-                    recommendPluginName: recommendPlugin?.name,
-                    recommendSheets,
                     topListPluginHash,
-                    topListPluginName: topListPlugin?.name,
+                    topListPluginName,
                     topLists,
                     loading: false,
                     hasError,
@@ -102,7 +72,7 @@ export default function useHomeDiscovery(
         return () => {
             canceled = true;
         };
-    }, [recommendPlugin, recommendPluginHash, topListPlugin, topListPluginHash]);
+    }, [topListPlugin, topListPluginHash, topListPluginName]);
 
     return useMemo(() => state, [state]);
 }

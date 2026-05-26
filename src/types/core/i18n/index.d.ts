@@ -69,8 +69,10 @@ export interface ILanguageData {
     "home.starredPlaylists": string; // 我喜欢的歌单
     "home.newPlaylist.a11y": string; // 新建歌单
     "home.managePlaylists.a11y": string; // 管理歌单
+    "home.managePlaylists.short": string; // 歌单管理
     "home.playlistManagement.a11y": string; // 歌单管理
     "home.importPlaylist.a11y": string; // 导入歌单
+    "home.import.short": string; // 导入
     "home.playById.a11y": string; // 通过ID播放
     "home.myPlaylistsCount.a11y": string; // 我的歌单数量
     "home.starredPlaylistsCount.a11y": string; // 我喜欢的歌单数量
@@ -82,6 +84,7 @@ export interface ILanguageData {
     "home.musicSources": string; // 音乐源
     "home.enabledSourceCount": string; // 已启用插件源数量
     "home.manageSources": string; // 管理音乐源
+    "home.manageSources.short": string; // 音乐源
     "home.quickAccess": string; // 快捷入口
     "home.discovery": string; // 发现
     "home.myMusic": string; // 我的音乐

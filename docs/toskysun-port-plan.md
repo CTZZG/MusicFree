@@ -263,20 +263,21 @@ Implementation notes:
 Goal: redesign the home page around playback continuity, multi-source visibility, discovery, and personal library access instead of making playlists the only central object.
 
 - [x] Create an isolated branch for the home-page redesign experiment.
-- [x] Add a home overview data layer for current playback, recent history, enabled plugins, plugin capabilities, playlists, local music, and download queue state.
-- [x] Replace the old `Operations + Sheets` portrait home layout with a source-aware overview.
+- [x] Add a home overview data layer for current playback, recent history, chart-capable plugins, playlists, and starred sheets.
+- [x] Replace the old `Operations + Sheets` portrait home layout with a playback-aware overview.
 - [x] Use the same overview in landscape mode so the old playlist-first layout does not reappear after rotation.
-- [x] Add compact source chips for all-source search, per-plugin search, and local music.
-- [x] Add continue-listening, recent-played, music-source, quick-access, discovery, and personal-library sections.
+- [x] Add continue-listening, recent-played, quick-access, discovery, and personal-library sections.
 - [x] Keep discovery network-light for the first implementation: use local plugin capability data and existing recommendation/chart routes instead of fetching every source on startup.
-- [x] Add source-scoped discovery previews that lazily fetch only the first recommendation-capable source and the first chart-capable source.
+- [x] Add chart discovery previews that lazily fetch only the first chart-capable source.
 - [x] Preserve playlist creation, playlist management, playlist import, and play-by-ID entry points.
+- [x] Refine the home layout after device feedback: remove repeated source/search/local/download surfaces, keep discovery focused on charts, move source management into quick access, and make personal music list-style with create/import actions.
 
 Implementation notes:
 
-- `useHomeOverview` aggregates existing local state instead of adding new persistence: TrackPlayer state/progress, music history, plugin manager, local music sheet, music sheets, starred sheets, and downloader queue.
-- The home page now makes enabled plugin sources visible through capability tags such as search, source, lyrics, charts, recommendation, album, and artist.
-- Discovery preview intentionally limits itself to one recommendation source and one chart source on app launch. A later round can add manual refresh, source selection, and cache TTL controls.
+- `useHomeOverview` aggregates existing local state instead of adding new persistence: TrackPlayer state/progress, music history, plugin manager, music sheets, and starred sheets.
+- The first home iteration made enabled plugin sources visible through capability tags, but device testing showed it duplicated the top search and quick local entry. The refined layout keeps plugin management as a quick entry instead of a full home section.
+- Discovery preview now focuses on chart/top-list content only; recommended playlists stay as a direct quick entry and multi-source search stays in the top search bar.
+- Discovery preview intentionally limits itself to one chart source on app launch. A later round can add manual refresh, source selection, and cache TTL controls.
 - React Native / Expo / React major upgrades remain a separate spike after the home redesign stabilizes.
 
 ## Later / Optional
