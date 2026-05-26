@@ -36,6 +36,8 @@ interface IPersistStatus {
     "app.scheduleCloseTime": number;
     /** 歌词-是否启用翻译 */
     "lyric.showTranslation": boolean;
+    /** 歌词-是否启用音译 */
+    "lyric.showRomanization": boolean;
     /** 歌词-详情页字体大小 */
     "lyric.detailFontSize": number;
 }

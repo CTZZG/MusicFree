@@ -3,7 +3,6 @@ import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import { iconSizeConst } from "@/constants/uiConst";
 import TranslationIcon from "@/assets/icons/translation.svg";
-import { useAppConfig } from "@/core/appConfig";
 import useColors from "@/hooks/useColors";
 import Toast from "@/utils/toast";
 import { hidePanel, showPanel } from "@/components/panels/usePanel";
@@ -21,11 +20,15 @@ interface ILyricOperationsProps {
 export default function LyricOperations(props: ILyricOperationsProps) {
     const { scrollToCurrentLrcItem } = props;
 
-    const detailFontSize = useAppConfig("lyric.detailFontSize");
+    const detailFontSize = PersistStatus.useValue("lyric.detailFontSize", 1);
 
-    const { hasTranslation } = useLyricState();
+    const { hasTranslation, hasRomanization } = useLyricState();
     const showTranslation = PersistStatus.useValue(
         "lyric.showTranslation",
+        false,
+    );
+    const showRomanization = PersistStatus.useValue(
+        "lyric.showRomanization",
         false,
     );
     const colors = useColors();
@@ -108,6 +111,28 @@ export default function LyricOperations(props: ILyricOperationsProps) {
                     PersistStatus.set(
                         "lyric.showTranslation",
                         !showTranslation,
+                    );
+                    scrollToCurrentLrcItem();
+                }}
+            />
+            <Icon
+                name="language"
+                size={iconSizeConst.normal}
+                opacity={!hasRomanization ? 0.2 : showRomanization ? 1 : 0.5}
+                color={
+                    showRomanization && hasRomanization
+                        ? colors.primary
+                        : "white"
+                }
+                onPress={() => {
+                    if (!hasRomanization) {
+                        Toast.warn("当前歌曲无音译");
+                        return;
+                    }
+
+                    PersistStatus.set(
+                        "lyric.showRomanization",
+                        !showRomanization,
                     );
                     scrollToCurrentLrcItem();
                 }}

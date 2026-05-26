@@ -734,6 +734,9 @@ function LyricSetting() {
      *     "lyric.widthPercent": number;
      *     "lyric.fontSize": number;
      *     "lyric.detailFontSize": number;
+     *     "lyric.detailSecondaryFontScale": number;
+     *     "lyric.statusBarShowTranslation": boolean;
+     *     "lyric.statusBarShowRomanization": boolean;
      *     "lyric.autoSearchLyric": boolean;
      */
     const showStatusBarLyric = useAppConfig("lyric.showStatusBarLyric");
@@ -744,6 +747,9 @@ function LyricSetting() {
     const backgroundColor = useAppConfig("lyric.backgroundColor");
     const widthPercent = useAppConfig("lyric.widthPercent");
     const fontSize = useAppConfig("lyric.fontSize");
+    const detailSecondaryFontScale = useAppConfig("lyric.detailSecondaryFontScale");
+    const statusBarShowTranslation = useAppConfig("lyric.statusBarShowTranslation");
+    const statusBarShowRomanization = useAppConfig("lyric.statusBarShowRomanization");
     const enableAutoSearchLyric = useAppConfig("lyric.autoSearchLyric");
 
 
@@ -796,6 +802,18 @@ function LyricSetting() {
         },
     );
 
+    const statusBarTranslation = createSwitch(
+        t("basicSettings.lyric.statusBarShowTranslation"),
+        "lyric.statusBarShowTranslation",
+        statusBarShowTranslation ?? false,
+    );
+
+    const statusBarRomanization = createSwitch(
+        t("basicSettings.lyric.statusBarShowRomanization"),
+        "lyric.statusBarShowRomanization",
+        statusBarShowRomanization ?? false,
+    );
+
     const alignStatusBarLyric = createRadio(
         t("basicSettings.lyric.align"),
         "lyric.align",
@@ -817,6 +835,19 @@ function LyricSetting() {
         },
     );
 
+    const detailSecondaryScale = createRadio(
+        t("basicSettings.lyric.detailSecondaryFontScale"),
+        "lyric.detailSecondaryFontScale",
+        [0.65, 0.75, 0.85, 1],
+        detailSecondaryFontScale ?? 0.75,
+        {
+            "0.65": "65%",
+            "0.75": "75%",
+            "0.85": "85%",
+            "1": "100%",
+        },
+    );
+
     return (
         <View>
             <ListItem
@@ -832,6 +863,27 @@ function LyricSetting() {
                 onPress={openStatusBarLyric.onPress}>
                 <ListItem.Content title={openStatusBarLyric.title} />
                 {openStatusBarLyric.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={statusBarTranslation.onPress}>
+                <ListItem.Content title={statusBarTranslation.title} />
+                {statusBarTranslation.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={statusBarRomanization.onPress}>
+                <ListItem.Content title={statusBarRomanization.title} />
+                {statusBarRomanization.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={detailSecondaryScale.onPress}>
+                <ListItem.Content title={detailSecondaryScale.title} />
+                {detailSecondaryScale.right}
             </ListItem>
             <View style={lyricStyles.sliderContainer}>
                 <ThemeText>{t("basicSettings.lyric.leftRightDistance")}</ThemeText>

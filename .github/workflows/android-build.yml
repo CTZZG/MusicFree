@@ -1,162 +1,175 @@
-name: 自动构建安卓应用
+name: Android Release Build
 
 on:
-  workflow_dispatch: # 允许手动触发
-  pull_request:
-    types:
-      - closed # 当 Pull Request 关闭时触发
+    workflow_dispatch:
+        inputs:
+            version_name:
+                description: Optional version name for artifact labels
+                required: false
+                type: string
+    push:
+        tags:
+            - 'v*'
+    pull_request:
+        types:
+            - closed
+
+permissions:
+    contents: write
+
+concurrency:
+    group: android-build-${{ github.ref }}
+    cancel-in-progress: false
 
 jobs:
-  build-android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-        with:
-          # 如果您希望提交到特定的分支，可以在这里指定
-          # ref: ${{ github.head_ref || github.ref_name }} # 尝试获取PR分支或当前触发分支
-          # 为了确保提交到主分支（或其他您定义的主开发分支），您可能需要更复杂的逻辑或固定分支名
-          # 如果是PR合并触发的，通常是提交到合并的目标分支
-          token: ${{ secrets.GITHUB_TOKEN }} # 确保有权限推送
-
-      - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: 设置 Yarn Classic
-        run: npm install -g yarn@1.22.22
-
-      - name: 配置 GitHub Git 依赖访问
-        run: |
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "git@github.com:"
-
-      - name: 设置 Java (JDK) 环境
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: 清理 Gradle 缓存 (如果需要)
-        run: |
-          rm -rf ~/.gradle/caches
-          rm -rf ~/.gradle/wrapper
-
-      - name: 配置 Gradle 缓存
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Cache Node.js modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm # 或者 node_modules，取决于你的偏好和 npm 版本
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: 安装 Node.js 依赖
-        run: npm ci
-
-      - name: 获取应用版本号
-        id: get_version
-        run: echo "APP_VERSION=$(node -p -e 'require("./package.json").version')" >> $GITHUB_ENV
-
-      - name: 设置签名密钥 (从 Secrets)
-        if: env.ANDROID_RELEASE_KEYSTORE_BASE64 != '' # 仅当 Secret存在时执行
-        run: |
-          echo "从 Secrets 创建签名密钥库..."
-          echo "${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
-
-          echo "从 Secrets 创建 keystore.properties..."
-          echo "RELEASE_STORE_FILE=../../release.jks" > android/keystore.properties # 路径相对于 android 目录
-          echo "RELEASE_STORE_PASSWORD=${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}" >> android/keystore.properties
-          echo "RELEASE_KEY_ALIAS=${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}" >> android/keystore.properties
-          echo "RELEASE_KEY_PASSWORD=${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}" >> android/keystore.properties
+    build-android:
+        name: Build Android APK
+        runs-on: ubuntu-latest
+        if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
         env:
-          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
-          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
-          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
-          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+            NODE_VERSION: '22'
+            JAVA_VERSION: '17'
+            NODE_ENV: production
+            ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 验证 keystore 文件和 properties 文件
-        run: |
-          echo "当前工作目录 (pwd): $(pwd)"
-          echo "--- 项目根目录内容 ---"
-          ls -lA
-          echo "--- android 目录内容 ---"
-          ls -lA android
-          echo "--- android/keystore.properties 内容 ---"
-          if [ -f "android/keystore.properties" ]; then
-            cat android/keystore.properties
-          else
-            echo "android/keystore.properties 不存在，将构建未签名 Release APK。"
-          fi
-          echo "--- 检查 release.jks 是否在项目根目录 ---"
-          if [ -f "release.jks" ]; then
-            echo "release.jks 存在于 $(pwd)/release.jks"
-          else
-            echo "release.jks 不存在于 $(pwd)/release.jks"
-          fi
-          echo "--- 检查 release.jks 是否在 android 目录 ---"
-          if [ -f "android/release.jks" ]; then
-            echo "release.jks 存在于 $(pwd)/android/release.jks"
-          else
-            echo "release.jks 不存在于 $(pwd)/android/release.jks"
-          fi
-          echo "--- 检查 release.jks 是否在 android/app 目录 ---"
-          if [ -f "android/app/release.jks" ]; then
-            echo "release.jks 存在于 $(pwd)/android/app/release.jks"
-          else
-            echo "release.jks 不存在于 $(pwd)/android/app/release.jks"
-          fi
-      
-      - name: 赋予 Gradle Wrapper 执行权限
-        run: chmod +x ./android/gradlew
+            - name: Configure GitHub dependency access
+              run: |
+                  git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
+                  git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "git@github.com:"
 
-      - name: 检查 react-native-track-player 的依赖
-        working-directory: ./android
-        run: |
-          echo "--- 正在输出 react-native-track-player 的依赖树 (针对 release 构建配置) ---"
-          ./gradlew :react-native-track-player:dependencies --configuration releaseCompileClasspath --console=plain || echo "获取 react-native-track-player 依赖失败，可能是模块名不匹配或配置问题。"
-          echo "--- 正在输出 app 模块的依赖树 (针对 release 构建配置, 可以看到最终解析的版本) ---"
-          ./gradlew app:dependencies --configuration releaseCompileClasspath --console=plain || echo "获取 app 模块依赖失败。"
-          echo "--- react-native-track-player/android/build.gradle 内容 ---"
-          cat ../node_modules/react-native-track-player/android/build.gradle || echo "无法读取 react-native-track-player/android/build.gradle"
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: npm
+                  cache-dependency-path: package-lock.json
 
-      - name: 检查 RNGP 路径和内容
-        run: |
-          echo "RNGP Path: $(pwd)/node_modules/@react-native/gradle-plugin"
-          ls -la node_modules/@react-native/gradle-plugin
-          cat node_modules/@react-native/gradle-plugin/package.json || echo "RNGP package.json not found"
+            - name: Setup Java
+              uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: ${{ env.JAVA_VERSION }}
+                  cache: gradle
 
-      - name: 构建 Release APK
-        working-directory: ./android
-        env:
-          NODE_ENV: production
-        run: |
-          ./gradlew assembleRelease --no-daemon --stacktrace
+            - name: Install dependencies
+              run: npm ci
 
-      - name: 确保 Release APK 文件存在
-        id: find_apk
-        run: |
-          if ! ls ./android/app/build/outputs/apk/release/*.apk 1> /dev/null 2>&1; then
-            echo "错误：未找到任何 .apk 文件在 ./android/app/build/outputs/apk/release/ 目录下。"
-            ls -R ./android/app/build/outputs/apk/ # 帮助调试
-            exit 1
-          fi
-          echo "找到的 Release APKs:"
-          ls -lA ./android/app/build/outputs/apk/release/*.apk
+            - name: Generate build metadata
+              run: |
+                  INPUT_VERSION="${{ inputs.version_name }}"
+                  PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+                  APP_VERSION="${INPUT_VERSION:-$PACKAGE_VERSION}"
+                  SHORT_SHA="${GITHUB_SHA::7}"
+                  BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
-      - name: 上传所有构建产物 (APKs)
-        uses: actions/upload-artifact@v4
-        with:
-          name: MusicFree-v${{ env.APP_VERSION }}-${{ github.sha }}-All-APKs
-          path: ./android/app/build/outputs/apk/release/*.apk # 使用通配符匹配所有 .apk 文件
-          if-no-files-found: error
+                  {
+                    echo "APP_VERSION=$APP_VERSION"
+                    echo "PACKAGE_VERSION=$PACKAGE_VERSION"
+                    echo "SHORT_SHA=$SHORT_SHA"
+                    echo "BUILD_DATE=$BUILD_DATE"
+                  } >> "$GITHUB_ENV"
+
+                  {
+                    echo "App version: $APP_VERSION"
+                    echo "Package version: $PACKAGE_VERSION"
+                    echo "Commit: $GITHUB_SHA"
+                    echo "Short SHA: $SHORT_SHA"
+                    echo "Ref: $GITHUB_REF_NAME"
+                    echo "Build date: $BUILD_DATE"
+                    echo "Node: ${{ env.NODE_VERSION }}"
+                    echo "Java: ${{ env.JAVA_VERSION }}"
+                  } > android-build-info.txt
+
+            - name: Setup signing key
+              if: env.ANDROID_RELEASE_KEYSTORE_BASE64 != ''
+              env:
+                  ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+                  ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+                  ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+              run: |
+                  echo "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > release.jks
+                  {
+                    echo "RELEASE_STORE_FILE=../../release.jks"
+                    echo "RELEASE_STORE_PASSWORD=$ANDROID_RELEASE_STORE_PASSWORD"
+                    echo "RELEASE_KEY_ALIAS=$ANDROID_RELEASE_KEY_ALIAS"
+                    echo "RELEASE_KEY_PASSWORD=$ANDROID_RELEASE_KEY_PASSWORD"
+                  } > android/keystore.properties
+
+            - name: Validate signing setup
+              run: |
+                  if [ -f android/keystore.properties ] && [ -f release.jks ]; then
+                    echo "Release signing is configured."
+                  else
+                    echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
+                  fi
+
+            - name: Prepare Gradle
+              run: chmod +x ./android/gradlew
+
+            - name: Restore Metro cache
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      /tmp/metro-*
+                      ~/.metro
+                  key: ${{ runner.os }}-metro-${{ hashFiles('package-lock.json', 'metro.config.js', 'babel.config.js') }}
+                  restore-keys: |
+                      ${{ runner.os }}-metro-
+
+            - name: Build release APKs
+              working-directory: ./android
+              run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+            - name: Collect APKs
+              run: |
+                  mkdir -p dist
+                  shopt -s nullglob
+                  apks=(android/app/build/outputs/apk/release/*.apk)
+                  if [ ${#apks[@]} -eq 0 ]; then
+                    echo "No release APKs were found."
+                    find android/app/build/outputs/apk -type f -name '*.apk' -print || true
+                    exit 1
+                  fi
+
+                  for apk in "${apks[@]}"; do
+                    base="$(basename "$apk" .apk)"
+                    cp "$apk" "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-${base}.apk"
+                  done
+
+                  cp android-build-info.txt dist/android-build-info.txt
+                  ls -lh dist
+
+            - name: Upload APK artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: MusicFree-Android-${{ env.APP_VERSION }}-${{ env.SHORT_SHA }}
+                  path: dist/*
+                  if-no-files-found: error
+
+            - name: Publish GitHub release assets
+              if: startsWith(github.ref, 'refs/tags/')
+              uses: softprops/action-gh-release@v2
+              with:
+                  files: dist/*.apk
+                  generate_release_notes: true
+
+            - name: Build summary
+              run: |
+                  {
+                    echo "## Android build"
+                    echo
+                    echo "- App version: ${APP_VERSION}"
+                    echo "- Package version: ${PACKAGE_VERSION}"
+                    echo "- Commit: ${GITHUB_SHA}"
+                    echo "- Build date: ${BUILD_DATE}"
+                    echo "- Signing: $([ -f android/keystore.properties ] && echo configured || echo unsigned)"
+                    echo
+                    echo "### Artifacts"
+                    ls -1 dist | sed 's/^/- /'
+                  } >> "$GITHUB_STEP_SUMMARY"

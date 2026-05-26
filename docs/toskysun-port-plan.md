@@ -227,19 +227,36 @@ Implementation notes:
 
 Goal: upgrade the lyric experience without destabilizing the detail page.
 
-- [ ] Port richer lyric display options such as romanization/sub-line ordering and size ratios.
-- [ ] Evaluate word-by-word lyric animation separately from the current stable cover-page gesture path.
-- [ ] Add desktop-lyric options that fit CTZZG's current native support.
-- [ ] Verify long-press/tap interactions on Android after lyric UI changes.
+- [x] Port richer lyric display options such as romanization/sub-line ordering and size ratios.
+- [x] Evaluate word-by-word lyric animation separately from the current stable cover-page gesture path.
+- [x] Add desktop-lyric options that fit CTZZG's current native support.
+- [x] Verify long-press/tap interactions on Android after lyric UI changes.
+
+Implementation notes:
+
+- Detail lyrics now render original, translation, and romanization as separate lines using the existing `LyricParser` data instead of flattening everything into one text block.
+- The detail lyric toolbar adds an Android-safe romanization toggle; translation and romanization display remain opt-in so older lyric pages keep their familiar density.
+- `basic.lyricOrder` is reused for display ordering, while `lyric.detailSecondaryFontScale` controls secondary-line size.
+- Desktop/status-bar lyrics now have independent translation and romanization switches, using the current native multi-line text support without replacing the CTZZG native lyric container.
+- Word-by-word lyric animation is intentionally deferred: parsed word timing is already preserved, but porting Toskysun's Reanimated renderer would be a larger gesture/scrolling risk.
+- Cover-page tap/long-press code was left untouched; compile checks passed and a device smoke test is still recommended after installing the next APK.
 
 ## Round 12
 
 Goal: make the GitHub Actions Android release workflow closer to a reproducible release pipeline.
 
-- [ ] Add manual/tag release inputs and build metadata.
-- [ ] Improve npm/Gradle/Metro cache usage.
-- [ ] Preserve signing-secret handling and current private dependency assumptions.
-- [ ] Upload release APK artifacts with clearer names and build summaries.
+- [x] Add manual/tag release inputs and build metadata.
+- [x] Improve npm/Gradle/Metro cache usage.
+- [x] Preserve signing-secret handling and current private dependency assumptions.
+- [x] Upload release APK artifacts with clearer names and build summaries.
+
+Implementation notes:
+
+- `.github/workflows/android-build.yml` now supports manual runs with an optional artifact version label, tag pushes matching `v*`, and merged PR builds.
+- The workflow uses `actions/setup-node` npm cache, `actions/setup-java` Gradle cache, and a Metro cache restore step instead of deleting Gradle caches on every run.
+- GitHub token rewrite rules remain in place for the private `react-native-track-player` dependency, and signing still uses the existing Android keystore secrets.
+- Release APKs are collected under `dist/`, renamed with app version and short SHA, uploaded as a single clear artifact, and attached to GitHub Releases on tag builds.
+- A job summary records version, package version, commit, build date, signing status, and artifact names.
 
 ## Later / Optional
 

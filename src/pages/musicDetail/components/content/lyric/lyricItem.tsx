@@ -1,8 +1,14 @@
 import React, { memo } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { fontSizeConst } from "@/constants/uiConst";
+
+interface ILyricLine {
+    key: string;
+    text: string;
+    primary: boolean;
+}
 
 interface ILyricItemComponentProps {
     // 行号
@@ -13,19 +19,42 @@ interface ILyricItemComponentProps {
     highlight?: boolean;
     // 文本
     text?: string;
+    // 多行歌词
+    lines?: ILyricLine[];
     // 字体大小
     fontSize?: number;
+    // 副行字号比例
+    secondaryFontScale?: number;
 
     onLayout?: (index: number, height: number) => void;
 }
 
 function _LyricItemComponent(props: ILyricItemComponentProps) {
-    const { light, highlight, text, onLayout, index, fontSize } = props;
+    const {
+        light,
+        highlight,
+        text,
+        lines,
+        onLayout,
+        index,
+        fontSize,
+        secondaryFontScale = 0.75,
+    } = props;
 
     const colors = useColors();
+    const displayLines = lines?.length
+        ? lines
+        : [
+            {
+                key: "text",
+                text: text ?? "",
+                primary: true,
+            },
+        ];
+    const primaryFontSize = fontSize || fontSizeConst.content;
 
     return (
-        <Text
+        <View
             onLayout={({ nativeEvent }) => {
                 if (index !== undefined) {
                     onLayout?.(index, nativeEvent.layout.height);
@@ -33,21 +62,30 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
             }}
             style={[
                 lyricStyles.item,
-                {
-                    fontSize: fontSize || fontSizeConst.content,
-                },
                 highlight
                     ? [
                         lyricStyles.highlightItem,
-                        {
-                            color: colors.primary,
-                        },
                     ]
                     : null,
                 light ? lyricStyles.draggingItem : null,
             ]}>
-            {text}
-        </Text>
+            {displayLines.map(line => (
+                <Text
+                    key={line.key}
+                    style={[
+                        lyricStyles.line,
+                        {
+                            color: highlight ? colors.primary : "white",
+                            fontSize: line.primary
+                                ? primaryFontSize
+                                : primaryFontSize * secondaryFontScale,
+                        },
+                        line.primary ? null : lyricStyles.secondaryLine,
+                    ]}>
+                    {line.text}
+                </Text>
+            ))}
+        </View>
     );
 }
 // 歌词
@@ -57,8 +95,10 @@ const LyricItemComponent = memo(
         prev.light === curr.light &&
         prev.highlight === curr.highlight &&
         prev.text === curr.text &&
+        prev.lines === curr.lines &&
         prev.index === curr.index &&
-        prev.fontSize === curr.fontSize,
+        prev.fontSize === curr.fontSize &&
+        prev.secondaryFontScale === curr.secondaryFontScale,
 );
 
 export default LyricItemComponent;
@@ -68,13 +108,21 @@ const lyricStyles = StyleSheet.create({
         opacity: 1,
     },
     item: {
-        color: "white",
         opacity: 0.6,
         paddingHorizontal: rpx(64),
         paddingVertical: rpx(24),
         width: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    line: {
+        width: "100%",
         textAlign: "center",
         textAlignVertical: "center",
+    },
+    secondaryLine: {
+        marginTop: rpx(6),
+        opacity: 0.82,
     },
     draggingItem: {
         opacity: 0.9,

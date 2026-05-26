@@ -374,6 +374,9 @@ export interface ILanguageData {
     "basicSettings.lyric.topBottomDistance": string; // 上下距离
     "basicSettings.lyric.width": string; // 歌词宽度
     "basicSettings.lyric.fontSize": string; // 字体大小
+    "basicSettings.lyric.detailSecondaryFontScale": string; // 详情页副行字号
+    "basicSettings.lyric.statusBarShowTranslation": string; // 桌面歌词显示翻译
+    "basicSettings.lyric.statusBarShowRomanization": string; // 桌面歌词显示音译
     "basicSettings.lyric.textColor": string; // 文本颜色
     "basicSettings.lyric.backgroundColor": string; // 文本背景色
 

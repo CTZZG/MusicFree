@@ -19,8 +19,17 @@ import { IconButtonWithGesture } from "@/components/base/iconButton.tsx";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import lyricManager, { useCurrentLyricItem, useLyricState } from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
+import { useAppConfig } from "@/core/appConfig";
 
 const ITEM_HEIGHT = rpx(92);
+
+type LyricLineType = "original" | "translation" | "romanization";
+
+interface IDetailLyricLine {
+    key: LyricLineType;
+    text: string;
+    primary: boolean;
+}
 
 interface IItemHeights {
     blankHeight?: number;
@@ -38,16 +47,91 @@ const fontSizeMap = {
     3: rpx(42),
 } as Record<number, number>;
 
+const defaultDetailLyricOrder: LyricLineType[] = [
+    "original",
+    "translation",
+    "romanization",
+];
+
+function normalizeDetailLyricOrder(order?: LyricLineType[]) {
+    const displayOrder: LyricLineType[] = [];
+    [...(order ?? []), ...defaultDetailLyricOrder].forEach(type => {
+        if (!displayOrder.includes(type)) {
+            displayOrder.push(type);
+        }
+    });
+    return displayOrder;
+}
+
+function getLyricLineText(item: IParsedLrcItem, type: LyricLineType) {
+    if (type === "original") {
+        return item.lrc;
+    }
+    if (type === "translation") {
+        return item.translation ?? "";
+    }
+    return item.romanization ?? "";
+}
+
+function buildDetailLyricLines(
+    item: IParsedLrcItem,
+    order: LyricLineType[],
+    showTranslation: boolean,
+    hasTranslation: boolean,
+    showRomanization: boolean,
+    hasRomanization: boolean,
+) {
+    const enabled = {
+        original: true,
+        translation: showTranslation && hasTranslation,
+        romanization: showRomanization && hasRomanization,
+    } as Record<LyricLineType, boolean>;
+    const orderedLines = order
+        .filter(type => enabled[type])
+        .map(type => ({
+            key: type,
+            text: getLyricLineText(item, type),
+        }))
+        .filter(line => line.key === "original" || line.text.trim().length);
+
+    if (!orderedLines.length) {
+        orderedLines.push({
+            key: "original",
+            text: item.lrc,
+        });
+    }
+
+    const hasOriginal = orderedLines.some(
+        line => line.key === "original" && line.text.trim().length,
+    );
+
+    return orderedLines.map((line, index) => ({
+        ...line,
+        primary: line.key === "original" || (!hasOriginal && index === 0),
+    })) as IDetailLyricLine[];
+}
+
 export default function Lyric(props: IProps) {
     const { onTurnPageClick } = props;
 
-    const { loading, meta, lyrics, hasTranslation } =
+    const { loading, meta, lyrics, hasTranslation, hasRomanization } =
         useLyricState();
     const currentLrcItem = useCurrentLyricItem();
     const showTranslation = PersistStatus.useValue(
         "lyric.showTranslation",
         false,
     );
+    const showRomanization = PersistStatus.useValue(
+        "lyric.showRomanization",
+        false,
+    );
+    const configuredLyricOrder = useAppConfig("basic.lyricOrder");
+    const lyricOrder = useMemo(
+        () => normalizeDetailLyricOrder(configuredLyricOrder),
+        [configuredLyricOrder],
+    );
+    const secondaryFontScale =
+        useAppConfig("lyric.detailSecondaryFontScale") ?? 0.75;
     const fontSizeKey = PersistStatus.useValue("lyric.detailFontSize", 1);
     const fontSizeStyle = useMemo(
         () => ({
@@ -295,18 +379,27 @@ export default function Lyric(props: IProps) {
                             data={lyrics}
                             initialNumToRender={30}
                             overScrollMode="never"
-                            extraData={currentLrcItem}
+                            extraData={{
+                                currentLrcItem,
+                                showTranslation,
+                                showRomanization,
+                                secondaryFontScale,
+                                lyricOrder,
+                            }}
                             renderItem={({ item, index }) => {
-                                let text = item.lrc;
-                                if (showTranslation && hasTranslation) {
-                                    text += `\n${item?.translation ?? ""}`;
-                                }
-
                                 return (
                                     <LyricItemComponent
                                         index={index}
-                                        text={text}
+                                        lines={buildDetailLyricLines(
+                                            item,
+                                            lyricOrder,
+                                            !!showTranslation,
+                                            hasTranslation,
+                                            !!showRomanization,
+                                            hasRomanization,
+                                        )}
                                         fontSize={fontSizeStyle.fontSize}
+                                        secondaryFontScale={secondaryFontScale}
                                         onLayout={handleLyricItemLayout}
                                         light={draggingIndex === index}
                                         highlight={
