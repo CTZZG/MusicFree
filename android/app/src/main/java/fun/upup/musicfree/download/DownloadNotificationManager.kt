@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -22,6 +23,7 @@ class DownloadNotificationManager(
     private val activeDownloadingIds = ConcurrentHashMap.newKeySet<String>()
     private val progressSnapshots = ConcurrentHashMap<String, ProgressSnapshot>()
     private val taskTitles = ConcurrentHashMap<String, String>()
+    private val postedNotificationIds = ConcurrentHashMap.newKeySet<Int>()
 
     init {
         ensureChannel()
@@ -34,22 +36,39 @@ class DownloadNotificationManager(
             DownloadTaskStatus.PENDING,
             DownloadTaskStatus.PREPARING,
             DownloadTaskStatus.DOWNLOADING,
-            -> activeDownloadingIds.add(task.taskId)
+            -> {
+                activeDownloadingIds.add(task.taskId)
+                val snapshot = progressSnapshots[task.taskId] ?: ProgressSnapshot(
+                    taskId = task.taskId,
+                    downloaded = task.downloadedBytes,
+                    total = task.totalBytes,
+                    percent = calculatePercent(task.downloadedBytes, task.totalBytes),
+                    progressText = buildProgressText(task.downloadedBytes, task.totalBytes),
+                )
+                progressSnapshots[task.taskId] = snapshot
+                postProgress(task, snapshot)
+            }
             DownloadTaskStatus.COMPLETED -> {
                 activeDownloadingIds.remove(task.taskId)
                 progressSnapshots.remove(task.taskId)
                 postCompleted(task)
+                taskTitles.remove(task.taskId)
             }
             DownloadTaskStatus.ERROR -> {
                 activeDownloadingIds.remove(task.taskId)
                 progressSnapshots.remove(task.taskId)
                 postError(task)
+                taskTitles.remove(task.taskId)
             }
-            DownloadTaskStatus.PAUSED,
-            DownloadTaskStatus.CANCELED,
-            -> {
+            DownloadTaskStatus.PAUSED -> {
                 activeDownloadingIds.remove(task.taskId)
                 progressSnapshots.remove(task.taskId)
+                postPaused(task)
+            }
+            DownloadTaskStatus.CANCELED -> {
+                activeDownloadingIds.remove(task.taskId)
+                progressSnapshots.remove(task.taskId)
+                taskTitles.remove(task.taskId)
                 cancelTaskNotification(task.taskId)
             }
         }
@@ -89,8 +108,78 @@ class DownloadNotificationManager(
         cancelSummaryNotification()
     }
 
+    fun refresh(tasks: List<DownloadTask>) {
+        activeDownloadingIds.toList().forEach { taskId ->
+            cancelTaskNotification(taskId)
+        }
+        cancelSummaryNotification()
+        activeDownloadingIds.clear()
+        progressSnapshots.clear()
+        taskTitles.clear()
+        for (task in tasks) {
+            when (task.status) {
+                DownloadTaskStatus.PENDING,
+                DownloadTaskStatus.PREPARING,
+                DownloadTaskStatus.DOWNLOADING,
+                DownloadTaskStatus.PAUSED,
+                -> onTaskStatusChanged(task)
+                else -> Unit
+            }
+        }
+    }
+
+    fun clearAllNotifications() {
+        val ids = postedNotificationIds.toList()
+        for (id in ids) {
+            try {
+                notificationManagerCompat.cancel(id)
+            } catch (_: Exception) {
+            }
+        }
+        activeDownloadingIds.clear()
+        progressSnapshots.clear()
+        taskTitles.clear()
+        postedNotificationIds.clear()
+        cancelSummaryNotification()
+    }
+
+    fun cancelNotification(taskId: String) {
+        activeDownloadingIds.remove(taskId)
+        progressSnapshots.remove(taskId)
+        taskTitles.remove(taskId)
+        cancelTaskNotification(taskId)
+        updateSummaryNotification()
+    }
+
+    fun areNotificationsEnabled(): Boolean {
+        if (!canPostNotifications()) return false
+        if (!notificationManagerCompat.areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = manager.getNotificationChannel(CHANNEL_ID)
+            if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
+                return false
+            }
+        }
+        return true
+    }
+
+    fun openNotificationSettings() {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, appContext.packageName)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.parse("package:${appContext.packageName}")
+            }
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        appContext.startActivity(intent)
+    }
+
     private fun postProgress(task: DownloadTask, snapshot: ProgressSnapshot) {
-        if (!canPostNotifications()) return
+        if (!areNotificationsEnabled()) return
         val title = taskTitles[task.taskId] ?: task.title.ifBlank { "MusicFree" }
         val builder = baseBuilder(
             icon = R.drawable.ic_download,
@@ -116,7 +205,7 @@ class DownloadNotificationManager(
     }
 
     private fun postCompleted(task: DownloadTask) {
-        if (!canPostNotifications()) return
+        if (!areNotificationsEnabled()) return
         val title = taskTitles[task.taskId] ?: task.title.ifBlank { "MusicFree" }
         val builder = baseBuilder(
             icon = R.drawable.ic_download_done,
@@ -133,7 +222,7 @@ class DownloadNotificationManager(
     }
 
     private fun postError(task: DownloadTask) {
-        if (!canPostNotifications()) return
+        if (!areNotificationsEnabled()) return
         val title = taskTitles[task.taskId] ?: task.title.ifBlank { "MusicFree" }
         val reason = task.errorMessage?.takeIf { it.isNotBlank() } ?: "未知错误"
         val builder = baseBuilder(
@@ -150,8 +239,25 @@ class DownloadNotificationManager(
         notify(taskNotificationId(task.taskId), builder)
     }
 
+    private fun postPaused(task: DownloadTask) {
+        if (!areNotificationsEnabled()) return
+        val title = taskTitles[task.taskId] ?: task.title.ifBlank { "MusicFree" }
+        val builder = baseBuilder(
+            icon = R.drawable.ic_download,
+            title = "下载已暂停",
+            text = title,
+        )
+            .setOnlyAlertOnce(true)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setProgress(0, 0, false)
+        notify(taskNotificationId(task.taskId), builder)
+    }
+
     private fun updateSummaryNotification() {
-        if (!canPostNotifications()) return
+        if (!areNotificationsEnabled()) return
         val activeTaskIds = activeDownloadingIds.toList()
         if (activeTaskIds.size <= 1) {
             cancelSummaryNotification()
@@ -203,17 +309,18 @@ class DownloadNotificationManager(
     }
 
     private fun cancelTaskNotification(taskId: String) {
-        if (!canPostNotifications()) return
         try {
-            notificationManagerCompat.cancel(taskNotificationId(taskId))
+            val notificationId = taskNotificationId(taskId)
+            notificationManagerCompat.cancel(notificationId)
+            postedNotificationIds.remove(notificationId)
         } catch (_: Exception) {
         }
     }
 
     private fun cancelSummaryNotification() {
-        if (!canPostNotifications()) return
         try {
             notificationManagerCompat.cancel(SUMMARY_NOTIFICATION_ID)
+            postedNotificationIds.remove(SUMMARY_NOTIFICATION_ID)
         } catch (_: Exception) {
         }
     }
@@ -270,8 +377,22 @@ class DownloadNotificationManager(
     private fun notify(notificationId: Int, builder: NotificationCompat.Builder) {
         try {
             notificationManagerCompat.notify(notificationId, builder.build())
+            postedNotificationIds.add(notificationId)
         } catch (_: SecurityException) {
         } catch (_: Exception) {
+        }
+    }
+
+    private fun calculatePercent(downloaded: Long, total: Long): Int {
+        if (downloaded <= 0L || total <= 0L) return 0
+        return ((downloaded * 100L) / total).toInt().coerceIn(0, 100)
+    }
+
+    private fun buildProgressText(downloaded: Long, total: Long): String {
+        return when {
+            downloaded <= 0L -> "正在准备下载..."
+            total > 0L -> "${formatFileSize(downloaded)} / ${formatFileSize(total)}"
+            else -> "已下载 ${formatFileSize(downloaded)}"
         }
     }
 

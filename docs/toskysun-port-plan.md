@@ -34,6 +34,7 @@ Last updated: 2026-05-26
 - [x] 2026-05-25: esbuild syntax check passed for the Round 5 quality-management panel, panel registry, and basic-settings entry. i18n JSON parse checks passed, and language JSON keys now match `ILanguageData`.
 - [x] 2026-05-25: Round 6 metadata settings and native tag bridge passed esbuild checks, language JSON key consistency checks, and full `npx tsc --noEmit --pretty false`. Android `:app:compileDebugKotlin` passed after adding the MP3/FLAC cover/tag bridge.
 - [x] 2026-05-26: Round 7 music-detail enhancements passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, and Android `assembleRelease`.
+- [x] 2026-05-26: Round 8 download notification/permission lifecycle passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, and Android `assembleRelease` from the `android/` Gradle root.
 
 ## Round 1
 
@@ -166,6 +167,61 @@ Implementation notes:
 - `MiniLyric` intentionally uses the current CTZZG lyric state and simple `Pressable` handling instead of porting Toskysun's masked/reanimated lyric renderer wholesale.
 - `SongInfo` only jumps to artist detail when the current plugin supplies full singer metadata. If that metadata is absent, the artist text is displayed but not treated as a fake artist id.
 - `ArtistSelectPanel` resolves the plugin by platform before navigating, so multi-artist songs stay compatible with the existing artist-detail route.
+
+## Round 8
+
+Goal: complete the Android download notification and permission lifecycle around the native download queue.
+
+- [x] Add Android 13+ notification permission checks and request flow for downloads.
+- [x] Detect app/channel-level notification blocking through the native download bridge.
+- [x] Add native methods to open notification settings, clear notifications, cancel a single notification, and refresh active download notifications.
+- [x] Refresh native download notifications when the app returns to the foreground.
+- [x] Add a notification-permission entry to the permissions page.
+- [x] Surface common download task failure reasons through user-facing toasts.
+- [x] Keep the native download queue and CTZZG private `react-native-track-player` fork untouched.
+
+Implementation notes:
+
+- `notificationPermissionManager` owns Android notification permission state, settings fallback, and permission-copy i18n.
+- `downloadNotificationManager` coordinates JS lifecycle state while native code remains responsible for actual progress/completed/error notifications.
+- `notificationLifecycleManager` refreshes active notifications after app foreground transitions, which helps Android restore visible progress after permission/settings changes.
+- Native notification cancellation is now separate from native download task removal, so clearing notification UI does not accidentally delete download tasks.
+
+## Round 9
+
+Goal: extend downloaded-file metadata writing to match the broader playback format goals.
+
+- [ ] Audit Toskysun's OGG/extended metadata implementation against CTZZG's private player fork.
+- [ ] Add OGG cover/lyric/metadata writing where Android libraries and file formats allow it.
+- [ ] Preserve existing MP3/FLAC metadata behavior and fail gracefully for unsupported formats.
+- [ ] Add focused Android/Kotlin verification for the metadata bridge.
+
+## Round 10
+
+Goal: make plugin import and lazy loading more controllable for Android compatibility.
+
+- [ ] Add a user-facing lazy-load plugin switch.
+- [ ] Add plugin cache clearing and import diagnostics.
+- [ ] Add safer Android import failure details for syntax/runtime errors.
+- [ ] Evaluate optional Babel transpilation at import time for ES10+ plugin syntax.
+
+## Round 11
+
+Goal: upgrade the lyric experience without destabilizing the detail page.
+
+- [ ] Port richer lyric display options such as romanization/sub-line ordering and size ratios.
+- [ ] Evaluate word-by-word lyric animation separately from the current stable cover-page gesture path.
+- [ ] Add desktop-lyric options that fit CTZZG's current native support.
+- [ ] Verify long-press/tap interactions on Android after lyric UI changes.
+
+## Round 12
+
+Goal: make the GitHub Actions Android release workflow closer to a reproducible release pipeline.
+
+- [ ] Add manual/tag release inputs and build metadata.
+- [ ] Improve npm/Gradle/Metro cache usage.
+- [ ] Preserve signing-secret handling and current private dependency assumptions.
+- [ ] Upload release APK artifacts with clearer names and build summaries.
 
 ## Later / Optional
 

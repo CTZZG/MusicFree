@@ -196,6 +196,29 @@ class DownloadManager(
         }
     }
 
+    fun areNotificationsEnabled(): Boolean {
+        return notificationManager.areNotificationsEnabled()
+    }
+
+    fun openNotificationSettings() {
+        notificationManager.openNotificationSettings()
+    }
+
+    fun clearNotifications() {
+        notificationManager.clearAllNotifications()
+    }
+
+    fun cancelNotification(taskId: String) {
+        notificationManager.cancelNotification(taskId)
+    }
+
+    fun refreshNotifications() {
+        val snapshot = synchronized(lock) {
+            tasks.values.map { it.copy() }
+        }
+        notificationManager.refresh(snapshot)
+    }
+
     fun shutdown() {
         try {
             runningTasks.values.forEach {

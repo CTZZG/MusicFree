@@ -122,8 +122,19 @@ export interface ILanguageData {
     "permissionSetting.floatWindowPermissionDescription": string; // 悬浮窗权限说明
     "permissionSetting.fileReadWritePermission": string; // 文件读写权限
     "permissionSetting.fileReadWritePermissionDescription": string; // 文件读写权限说明
+    "permissionSetting.notificationPermission": string; // 通知权限
+    "permissionSetting.notificationPermissionDescription": string; // 通知权限说明
     "permissionSetting.ignoreBatteryOptimization": string; // 忽略电池优化
     "permissionSetting.ignoreBatteryOptimizationDescription": string; // 忽略电池优化说明
+    "notificationPermission.dialog.title": string; // 通知权限
+    "notificationPermission.dialog.content": string; // 通知权限说明
+    "notificationPermission.dialog.cancel": string; // 暂不开启
+    "notificationPermission.dialog.ok": string; // 开启权限
+    "notificationPermission.toast.enabled": string; // 通知权限已开启
+    "notificationPermission.toast.disabled": string; // 通知权限未开启
+    "notificationPermission.toast.requestFailed": string; // 请求通知权限失败
+    "notificationPermission.status.enabled": string; // 通知权限已开启
+    "notificationPermission.status.disabled": string; // 通知权限未开启
 
     // 推荐歌单相关
     "recommendSheet.title": string; // 推荐歌单

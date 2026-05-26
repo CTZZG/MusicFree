@@ -9,11 +9,13 @@ import bootstrapAtom from "./bootstrap.atom";
 import { initTrackPlayer } from "./bootstrap";
 import { showDialog } from "@/components/dialogs/useDialog";
 import i18n from "@/core/i18n";
+import { useAppLifecycleNotifications } from "@/core/notificationLifecycleManager";
 
 export function BootstrapComponent() {
     const bootstrapState = useAtomValue(bootstrapAtom);
 
     useListenOrientationChange();
+    useAppLifecycleNotifications();
     useCheckUpdate();
 
     const followSystem = useAppConfig("theme.followSystem");

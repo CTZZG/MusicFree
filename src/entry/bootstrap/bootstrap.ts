@@ -11,6 +11,7 @@ import LocalMusicSheet from "@/core/localMusicSheet";
 import lyricManager from "@/core/lyricManager";
 import musicHistory from "@/core/musicHistory";
 import MusicSheet from "@/core/musicSheet";
+import downloadNotificationManager from "@/core/downloadNotificationManager";
 import PluginManager from "@/core/pluginManager";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
@@ -346,6 +347,28 @@ function bindEvents() {
         }
     });
 
+    downloader.on(DownloaderEvent.DownloadTaskError, reason => {
+        const reasonMap: Record<DownloadFailReason, string> = {
+            [DownloadFailReason.NetworkOffline]:
+                "当前无网络连接，请等待网络恢复后重试",
+            [DownloadFailReason.NotAllowToDownloadInCellular]:
+                "当前非WIFI环境，已停止下载",
+            [DownloadFailReason.FailToFetchSource]: i18n.t(
+                "downloading.downloadFailReason.failToFetchSource",
+            ),
+            [DownloadFailReason.EncryptedMediaUnsupported]: i18n.t(
+                "downloading.downloadFailReason.encryptedMediaUnsupported",
+            ),
+            [DownloadFailReason.NoWritePermission]: i18n.t(
+                "downloading.downloadFailReason.noWritePermission",
+            ),
+            [DownloadFailReason.Unknown]: i18n.t(
+                "downloading.downloadFailReason.unknown",
+            ),
+        };
+        Toast.warn(reasonMap[reason] ?? reasonMap[DownloadFailReason.Unknown]);
+    });
+
     downloader.on(DownloaderEvent.DownloadQueueCompleted, () => {
         Toast.success("下载任务已完成");
     });
@@ -360,6 +383,7 @@ export default async function () {
             "state": "Loading",
         });
         await bootstrapImpl();
+        await downloadNotificationManager.initialize().catch(() => {});
         bindEvents();
         getDefaultStore().set(bootstrapAtom, {
             "state": "Done",

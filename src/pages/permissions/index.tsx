@@ -5,6 +5,7 @@ import ThemeSwitch from "@/components/base/switch";
 import ThemeText from "@/components/base/themeText";
 import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
 import globalStyle from "@/constants/globalStyle";
+import downloadNotificationManager from "@/core/downloadNotificationManager";
 import { useI18N } from "@/core/i18n";
 import LyricUtil from "@/native/lyricUtil";
 import NativeUtils from "@/native/utils";
@@ -12,7 +13,11 @@ import rpx from "@/utils/rpx";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, StyleSheet } from "react-native";
 
-type IPermissionTypes = "floatingWindow" | "fileStorage" | "batteryOptimization";
+type IPermissionTypes =
+    | "floatingWindow"
+    | "fileStorage"
+    | "batteryOptimization"
+    | "notification";
 
 export default function Permissions() {
     const appState = useRef(AppState.currentState);
@@ -22,6 +27,7 @@ export default function Permissions() {
         floatingWindow: false,
         fileStorage: false,
         batteryOptimization: false,
+        notification: false,
     });
     const { t } = useI18N();
 
@@ -36,6 +42,10 @@ export default function Permissions() {
         }
         if (!type || type === "batteryOptimization") {
             updates.batteryOptimization = await NativeUtils.isIgnoringBatteryOptimizations();
+        }
+        if (!type || type === "notification") {
+            updates.notification =
+                await downloadNotificationManager.checkNotificationPermission();
         }
 
         setPermissions(prev => ({ ...prev, ...updates }));
@@ -108,6 +118,27 @@ export default function Permissions() {
                     value={permissions.fileStorage}
                     onValueChange={() => {
                         NativeUtils.requestStoragePermission();
+                    }}
+                />
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="big"
+                onPress={() => {
+                    downloadNotificationManager
+                        .requestNotificationPermission()
+                        .then(() => checkPermission("notification"));
+                }}>
+                <ListItem.Content
+                    title={t("permissionSetting.notificationPermission")}
+                    description={t("permissionSetting.notificationPermissionDescription")}
+                />
+                <ThemeSwitch
+                    value={permissions.notification}
+                    onValueChange={() => {
+                        downloadNotificationManager
+                            .requestNotificationPermission()
+                            .then(() => checkPermission("notification"));
                     }}
                 />
             </ListItem>

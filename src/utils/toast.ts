@@ -1,6 +1,9 @@
 import { IToastConfig, showToast } from "@/components/base/toast";
 
-function success(message: string, config?: IToastConfig) {
+type IToastOptions = Omit<IToastConfig, "message" | "type"> &
+    Partial<Pick<IToastConfig, "type">>;
+
+function success(message: string, config?: IToastOptions) {
     showToast({
         message,
         ...config,
@@ -8,7 +11,7 @@ function success(message: string, config?: IToastConfig) {
     });
 }
 
-function warn(message: string, config?: IToastConfig) {
+function warn(message: string, config?: IToastOptions) {
     showToast({
         message,
         ...config,

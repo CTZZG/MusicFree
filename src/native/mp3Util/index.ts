@@ -105,6 +105,11 @@ interface INativeDownloadMethods {
     ) => Promise<INativeDownloadTaskStatus | null>;
     getAllDownloadTasks: () => Promise<INativeDownloadTaskStatus[]>;
     setDownloadMaxConcurrency: (max: number) => Promise<boolean>;
+    areDownloadNotificationsEnabled: () => Promise<boolean>;
+    openDownloadNotificationSettings: () => Promise<boolean>;
+    clearDownloadNotifications: () => Promise<boolean>;
+    cancelDownloadNotification: (taskId: string) => Promise<boolean>;
+    refreshDownloadNotifications: () => Promise<boolean>;
 }
 
 const { Mp3Util: NativeMp3Util, NativeDownload: NativeDownloadModule } =
@@ -182,6 +187,41 @@ const NativeDownloadBridge: INativeDownloadMethods = {
             return false;
         }
         return NativeDownloadModule.setDownloadMaxConcurrency(max);
+    },
+
+    async areDownloadNotificationsEnabled() {
+        if (!NativeDownloadModule?.areDownloadNotificationsEnabled) {
+            return false;
+        }
+        return NativeDownloadModule.areDownloadNotificationsEnabled();
+    },
+
+    async openDownloadNotificationSettings() {
+        if (!NativeDownloadModule?.openDownloadNotificationSettings) {
+            return false;
+        }
+        return NativeDownloadModule.openDownloadNotificationSettings();
+    },
+
+    async clearDownloadNotifications() {
+        if (!NativeDownloadModule?.clearDownloadNotifications) {
+            return false;
+        }
+        return NativeDownloadModule.clearDownloadNotifications();
+    },
+
+    async cancelDownloadNotification(taskId) {
+        if (!NativeDownloadModule?.cancelDownloadNotification) {
+            return false;
+        }
+        return NativeDownloadModule.cancelDownloadNotification(taskId);
+    },
+
+    async refreshDownloadNotifications() {
+        if (!NativeDownloadModule?.refreshDownloadNotifications) {
+            return false;
+        }
+        return NativeDownloadModule.refreshDownloadNotifications();
     },
 };
 

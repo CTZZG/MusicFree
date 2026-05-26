@@ -1,43 +1,44 @@
 import {
     internalSerializeKey,
     supportLocalMediaType,
-} from '@/constants/commonConst';
-import pathConst from '@/constants/pathConst';
-import {IAppConfig} from '@/types/core/config';
-import {IInjectable} from '@/types/infra';
+} from "@/constants/commonConst";
+import pathConst from "@/constants/pathConst";
+import { IAppConfig } from "@/types/core/config";
+import { IInjectable } from "@/types/infra";
 import {
     addFileScheme,
     escapeCharacter,
     mkdirR,
     removeFileScheme,
-} from '@/utils/fileUtils';
-import {errorLog} from '@/utils/log';
-import {patchMediaExtra} from '@/utils/mediaExtra';
-import {getMediaUniqueKey, isSameMediaItem} from '@/utils/mediaUtils';
-import {hasEncryptedMediaSource} from '@/utils/mflac';
-import network from '@/utils/network';
+} from "@/utils/fileUtils";
+import { errorLog } from "@/utils/log";
+import { patchMediaExtra } from "@/utils/mediaExtra";
+import { getMediaUniqueKey, isSameMediaItem } from "@/utils/mediaUtils";
+import { hasEncryptedMediaSource } from "@/utils/mflac";
+import network from "@/utils/network";
 import {
     DEFAULT_FILE_NAMING_CONFIG,
     generateFileNameFromConfig,
-} from '@/utils/fileNamingFormatter';
-import {getQualityOrder} from '@/utils/qualities';
-import EventEmitter from 'eventemitter3';
-import {atom, getDefaultStore, useAtomValue} from 'jotai';
-import {nanoid} from 'nanoid';
-import path from 'path-browserify';
-import {useEffect, useState} from 'react';
-import {copyFile, downloadFile, exists, unlink} from 'react-native-fs';
+} from "@/utils/fileNamingFormatter";
+import { getQualityOrder } from "@/utils/qualities";
+import EventEmitter from "eventemitter3";
+import { atom, getDefaultStore, useAtomValue } from "jotai";
+import { nanoid } from "nanoid";
+import path from "path-browserify";
+import { useEffect, useState } from "react";
+import { copyFile, downloadFile, exists, unlink } from "react-native-fs";
 import Mp3Util, {
     INativeDownloadTaskStatus,
     NativeDownloadEmitter,
-} from '@/native/mp3Util';
-import LocalMusicSheet from './localMusicSheet';
-import {IPluginManager} from '@/types/core/pluginManager';
-import musicMetadataManager from './musicMetadataManager';
+} from "@/native/mp3Util";
+import LocalMusicSheet from "./localMusicSheet";
+import { IPluginManager } from "@/types/core/pluginManager";
+import musicMetadataManager from "./musicMetadataManager";
+import downloadNotificationManager from "./downloadNotificationManager";
 import type {
     IDownloadMetadataConfig,
     IDownloadTaskMetadata,
-} from '@/types/metadata';
+} from "@/types/metadata";
 
 export enum DownloadStatus {
     // 等待下载
@@ -56,30 +57,30 @@ export enum DownloadStatus {
 
 export enum DownloaderEvent {
     // 某次下载行为出错
-    DownloadError = 'download-error',
+    DownloadError = "download-error",
 
     // 下载任务更新
-    DownloadTaskUpdate = 'download-task-update',
+    DownloadTaskUpdate = "download-task-update",
 
     // 下载某个音乐时出错
-    DownloadTaskError = 'download-task-error',
+    DownloadTaskError = "download-task-error",
 
     // 下载完成
-    DownloadQueueCompleted = 'download-queue-completed',
+    DownloadQueueCompleted = "download-queue-completed",
 }
 
 export enum DownloadFailReason {
     /** 无网络 */
-    NetworkOffline = 'network-offline',
+    NetworkOffline = "network-offline",
     /** 设置-禁止在移动网络下下载 */
-    NotAllowToDownloadInCellular = 'not-allow-to-download-in-cellular',
+    NotAllowToDownloadInCellular = "not-allow-to-download-in-cellular",
     /** 无法获取到媒体源 */
-    FailToFetchSource = 'no-valid-source',
+    FailToFetchSource = "no-valid-source",
     /** 加密媒体暂未支持 */
-    EncryptedMediaUnsupported = 'encrypted-media-unsupported',
+    EncryptedMediaUnsupported = "encrypted-media-unsupported",
     /** 没有文件写入的权限 */
-    NoWritePermission = 'no-write-permission',
-    Unknown = 'unknown',
+    NoWritePermission = "no-write-permission",
+    Unknown = "unknown",
 }
 
 interface IDownloadTaskInfo {
@@ -151,7 +152,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         musicItem: IMusic.IMusicItem,
         quality?: IMusic.IQualityKey,
     ) {
-        const type = this.configService.getConfig('basic.fileNamingType');
+        const type = this.configService.getConfig("basic.fileNamingType");
         if (!type) {
             return Downloader.generateLegacyFilename(musicItem);
         }
@@ -159,16 +160,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         const config: IFileNaming.IFileNamingConfig = {
             type,
             preset:
-                this.configService.getConfig('basic.fileNamingPreset') ??
+                this.configService.getConfig("basic.fileNamingPreset") ??
                 DEFAULT_FILE_NAMING_CONFIG.preset,
             custom:
-                this.configService.getConfig('basic.fileNamingCustom') ??
+                this.configService.getConfig("basic.fileNamingCustom") ??
                 DEFAULT_FILE_NAMING_CONFIG.custom,
             showQuality:
-                this.configService.getConfig('basic.fileNamingShowQuality') ??
+                this.configService.getConfig("basic.fileNamingShowQuality") ??
                 DEFAULT_FILE_NAMING_CONFIG.showQuality,
             maxLength:
-                this.configService.getConfig('basic.fileNamingMaxLength') ??
+                this.configService.getConfig("basic.fileNamingMaxLength") ??
                 DEFAULT_FILE_NAMING_CONFIG.maxLength,
             keepExtension: DEFAULT_FILE_NAMING_CONFIG.keepExtension,
         };
@@ -177,8 +178,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             musicItem,
             config,
             quality ??
-                this.configService.getConfig('basic.defaultDownloadQuality') ??
-                'standard',
+                this.configService.getConfig("basic.defaultDownloadQuality") ??
+                "standard",
         );
 
         return result.filename || Downloader.generateLegacyFilename(musicItem);
@@ -231,19 +232,19 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             /^https?\:\/\/.+\.([^\?\.]+?$)|(?:([^\.]+?)\?.+$)/,
         );
         if (regResult) {
-            return regResult[1] ?? regResult[2] ?? 'mp3';
+            return regResult[1] ?? regResult[2] ?? "mp3";
         } else {
-            return 'mp3';
+            return "mp3";
         }
     }
 
     /** 获取下载路径 */
     private getDownloadPath(fileName: string) {
         const dlPath =
-            this.configService.getConfig('basic.downloadPath') ??
+            this.configService.getConfig("basic.downloadPath") ??
             pathConst.downloadMusicPath;
-        if (!dlPath.endsWith('/')) {
-            return `${dlPath}/${fileName ?? ''}`;
+        if (!dlPath.endsWith("/")) {
+            return `${dlPath}/${fileName ?? ""}`;
         }
         return fileName ? dlPath + fileName : dlPath;
     }
@@ -251,8 +252,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     /** 获取缓存的下载路径 */
     private getCacheDownloadPath(fileName: string) {
         const cachePath = pathConst.downloadCachePath;
-        if (!cachePath.endsWith('/')) {
-            return `${cachePath}/${fileName ?? ''}`;
+        if (!cachePath.endsWith("/")) {
+            return `${cachePath}/${fileName ?? ""}`;
         }
         return fileName ? cachePath + fileName : cachePath;
     }
@@ -260,23 +261,23 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private getMetadataConfig(): IDownloadMetadataConfig {
         return {
             enabled:
-                this.configService.getConfig('basic.writeMetadata') ?? false,
+                this.configService.getConfig("basic.writeMetadata") ?? false,
             writeCover:
-                this.configService.getConfig('basic.writeMetadataCover') ??
+                this.configService.getConfig("basic.writeMetadataCover") ??
                 true,
             writeLyric:
-                this.configService.getConfig('basic.writeMetadataLyric') ??
+                this.configService.getConfig("basic.writeMetadataLyric") ??
                 true,
             fetchExtendedInfo:
-                this.configService.getConfig('basic.writeMetadataExtended') ??
+                this.configService.getConfig("basic.writeMetadataExtended") ??
                 false,
-            lyricOrder: this.configService.getConfig('basic.lyricOrder') ?? [
-                'romanization',
-                'original',
-                'translation',
+            lyricOrder: this.configService.getConfig("basic.lyricOrder") ?? [
+                "romanization",
+                "original",
+                "translation",
             ],
             enableWordByWord:
-                this.configService.getConfig('basic.enableWordByWordLyric') ??
+                this.configService.getConfig("basic.enableWordByWordLyric") ??
                 false,
         };
     }
@@ -289,7 +290,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             musicItem,
             filePath,
             coverUrl:
-                typeof musicItem.artwork === 'string'
+                typeof musicItem.artwork === "string"
                     ? musicItem.artwork
                     : undefined,
         };
@@ -317,33 +318,33 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         let status = DownloadStatus.Downloading;
         switch (task.status) {
-            case 'PENDING':
-            case 'PREPARING':
-                status = DownloadStatus.Preparing;
-                break;
-            case 'DOWNLOADING':
-                status = DownloadStatus.Downloading;
-                break;
-            case 'PAUSED':
-                status = DownloadStatus.Paused;
-                break;
-            case 'COMPLETED':
-                status = DownloadStatus.Completed;
-                break;
-            case 'ERROR':
-            case 'CANCELED':
-                status = DownloadStatus.Error;
-                break;
+        case "PENDING":
+        case "PREPARING":
+            status = DownloadStatus.Preparing;
+            break;
+        case "DOWNLOADING":
+            status = DownloadStatus.Downloading;
+            break;
+        case "PAUSED":
+            status = DownloadStatus.Paused;
+            break;
+        case "COMPLETED":
+            status = DownloadStatus.Completed;
+            break;
+        case "ERROR":
+        case "CANCELED":
+            status = DownloadStatus.Error;
+            break;
         }
 
         this.updateDownloadTask(musicItem, {
             status,
             downloadedSize:
-                typeof task.downloaded === 'number'
+                typeof task.downloaded === "number"
                     ? task.downloaded
                     : undefined,
             fileSize:
-                typeof task.total === 'number' && task.total > 0
+                typeof task.total === "number" && task.total > 0
                     ? task.total
                     : undefined,
             progressText: task.progressText,
@@ -357,16 +358,21 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         headers?: Record<string, string>,
     ) {
         if (!this.canUseNativeDownload()) {
-            throw new Error('NativeDownload is not available');
+            throw new Error("NativeDownload is not available");
         }
 
         const taskId = getMediaUniqueKey(musicItem);
+        await downloadNotificationManager.prepareForDownload();
+        await downloadNotificationManager.showDownloadNotification(
+            taskId,
+            musicItem,
+        );
         await Mp3Util.removeDownloadTask(taskId).catch(() => {});
 
         return new Promise<void>((resolve, reject) => {
             let settled = false;
-            let progressSubscription: {remove: () => void} | undefined;
-            let statusSubscription: {remove: () => void} | undefined;
+            let progressSubscription: { remove: () => void } | undefined;
+            let statusSubscription: { remove: () => void } | undefined;
             const cleanup = () => {
                 progressSubscription?.remove();
                 statusSubscription?.remove();
@@ -381,7 +387,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             };
 
             progressSubscription = NativeDownloadEmitter!.addListener(
-                'NativeDownloadProgressBatch',
+                "NativeDownloadProgressBatch",
                 (event: any) => {
                     const items = Array.isArray(event?.items)
                         ? event.items
@@ -395,35 +401,64 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     this.updateDownloadTask(musicItem, {
                         status: DownloadStatus.Downloading,
                         downloadedSize:
-                            typeof progress.downloaded === 'number'
+                            typeof progress.downloaded === "number"
                                 ? progress.downloaded
                                 : undefined,
                         fileSize:
-                            typeof progress.total === 'number' &&
+                            typeof progress.total === "number" &&
                             progress.total > 0
                                 ? progress.total
                                 : undefined,
                         progressText:
-                            typeof progress.progressText === 'string'
+                            typeof progress.progressText === "string"
                                 ? progress.progressText
                                 : undefined,
+                    });
+                    void downloadNotificationManager.updateProgress(taskId, {
+                        downloadedSize:
+                            typeof progress.downloaded === "number"
+                                ? progress.downloaded
+                                : 0,
+                        fileSize:
+                            typeof progress.total === "number"
+                                ? progress.total
+                                : 0,
+                        progress:
+                            typeof progress.percent === "number"
+                                ? progress.percent
+                                : 0,
                     });
                 },
             );
 
             statusSubscription = NativeDownloadEmitter!.addListener(
-                'NativeDownloadTaskStatusChanged',
+                "NativeDownloadTaskStatusChanged",
                 (task: INativeDownloadTaskStatus) => {
                     if (task?.taskId !== taskId) {
                         return;
                     }
                     this.updateFromNativeTask(musicItem, task);
-                    if (task.status === 'COMPLETED') {
+                    if (task.status === "COMPLETED") {
+                        void downloadNotificationManager.showCompleted(
+                            taskId,
+                            musicItem,
+                            task.destinationPath ?? destinationPath,
+                        );
                         settle(resolve);
                     } else if (
-                        task.status === 'ERROR' ||
-                        task.status === 'CANCELED'
+                        task.status === "ERROR" ||
+                        task.status === "CANCELED"
                     ) {
+                        if (task.status === "CANCELED") {
+                            void downloadNotificationManager.cancelNotification(
+                                taskId,
+                            );
+                        } else {
+                            void downloadNotificationManager.showError(
+                                taskId,
+                                task.error ?? "unknown error",
+                            );
+                        }
                         settle(() =>
                             reject(
                                 new Error(
@@ -441,17 +476,17 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 url,
                 destinationPath: removeFileScheme(destinationPath),
                 headers: headers ?? {},
-                title: musicItem.title || 'MusicFree',
-                description: musicItem.artist || '正在下载音乐文件...',
+                title: musicItem.title || "MusicFree",
+                description: musicItem.artist || "正在下载音乐文件...",
                 coverUrl:
-                    typeof musicItem.artwork === 'string'
+                    typeof musicItem.artwork === "string"
                         ? musicItem.artwork
                         : null,
             })
                 .then(added => {
                     if (!added) {
                         settle(() =>
-                            reject(new Error('Native download task rejected')),
+                            reject(new Error("Native download task rejected")),
                         );
                     }
                 })
@@ -465,7 +500,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         const maxDownloadCount = Math.max(
             1,
             Math.min(
-                +(this.configService.getConfig('basic.maxDownload') || 3),
+                +(this.configService.getConfig("basic.maxDownload") || 3),
                 10,
             ),
         );
@@ -515,12 +550,12 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 const qualityOrder = getQualityOrder(
                     nextTask.quality ??
                         this.configService.getConfig(
-                            'basic.defaultDownloadQuality',
+                            "basic.defaultDownloadQuality",
                         ) ??
-                        'standard',
+                        "standard",
                     this.configService.getConfig(
-                        'basic.downloadQualityOrder',
-                    ) ?? 'asc',
+                        "basic.downloadQualityOrder",
+                    ) ?? "asc",
                 );
                 let data: IPlugin.IMediaSourceResult | null = null;
                 for (let quality of qualityOrder) {
@@ -558,7 +593,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             }
         } catch (e: any) {
             /** 无法下载，跳过 */
-            errorLog('下载失败-无法获取下载链接', {
+            errorLog("下载失败-无法获取下载链接", {
                 item: {
                     id: musicItem.id,
                     title: musicItem.title,
@@ -598,8 +633,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         // 下载逻辑
         // 识别文件后缀
         let extension = this.getExtensionName(url);
-        if (supportLocalMediaType.every(item => item !== '.' + extension)) {
-            extension = 'mp3';
+        if (supportLocalMediaType.every(item => item !== "." + extension)) {
+            extension = "mp3";
         }
 
         // 缓存下载地址
@@ -638,8 +673,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     headers,
                 );
             } else {
-                const {promise} = downloadFile({
-                    fromUrl: url ?? '',
+                const { promise } = downloadFile({
+                    fromUrl: url ?? "",
                     toFile: cacheDownloadPath,
                     headers: headers,
                     background: true,
@@ -664,14 +699,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             }
 
             if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
-                throw new Error('Download task removed');
+                throw new Error("Download task removed");
             }
 
             // 下载完成，移动文件
             await copyFile(cacheDownloadPath, targetDownloadPath);
 
             this.writeMetadataToFile(musicItem, targetDownloadPath).catch(e => {
-                errorLog('元数据写入失败，但不影响下载完成', {
+                errorLog("元数据写入失败，但不影响下载完成", {
                     musicItem: musicItem.title,
                     error: e instanceof Error ? e.message : String(e),
                 });
@@ -796,7 +831,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         if (
             network.isCellular &&
-            !this.configService.getConfig('basic.useCelluarNetworkDownload')
+            !this.configService.getConfig("basic.useCelluarNetworkDownload")
         ) {
             this.emit(
                 DownloaderEvent.DownloadError,
@@ -857,6 +892,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             task.status === DownloadStatus.Error
         ) {
             void Mp3Util.removeDownloadTask(key).catch(() => {});
+            void downloadNotificationManager.cancelNotification(key);
             downloadTasks.delete(key);
             const downloadQueue = getDefaultStore().get(downloadQueueAtom);
             const newDownloadQueue = downloadQueue.filter(
@@ -872,6 +908,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         ) {
             void Mp3Util.cancelDownloadTask(key).catch(() => {});
             void Mp3Util.removeDownloadTask(key).catch(() => {});
+            void downloadNotificationManager.cancelNotification(key);
             this.downloadingCount = Math.max(0, this.downloadingCount - 1);
             downloadTasks.delete(key);
             const downloadQueue = getDefaultStore().get(downloadQueueAtom);

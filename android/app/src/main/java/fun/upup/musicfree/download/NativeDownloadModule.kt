@@ -151,6 +151,55 @@ class NativeDownloadModule(
         }
     }
 
+    @ReactMethod
+    fun areDownloadNotificationsEnabled(promise: Promise) {
+        try {
+            promise.resolve(manager.areNotificationsEnabled())
+        } catch (error: Exception) {
+            promise.reject("NotificationPermissionError", error)
+        }
+    }
+
+    @ReactMethod
+    fun openDownloadNotificationSettings(promise: Promise) {
+        try {
+            manager.openNotificationSettings()
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("OpenNotificationSettingsError", error)
+        }
+    }
+
+    @ReactMethod
+    fun clearDownloadNotifications(promise: Promise) {
+        try {
+            manager.clearNotifications()
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("ClearNotificationError", error)
+        }
+    }
+
+    @ReactMethod
+    fun cancelDownloadNotification(taskId: String, promise: Promise) {
+        try {
+            manager.cancelNotification(taskId)
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("CancelNotificationError", error)
+        }
+    }
+
+    @ReactMethod
+    fun refreshDownloadNotifications(promise: Promise) {
+        try {
+            manager.refreshNotifications()
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("RefreshNotificationError", error)
+        }
+    }
+
     @Suppress("UNUSED_PARAMETER")
     @ReactMethod
     fun addListener(eventName: String) {
