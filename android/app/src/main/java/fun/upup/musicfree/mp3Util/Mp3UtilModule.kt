@@ -142,6 +142,37 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
         }
     }
 
+    private data class ImageInfo(
+        val width: Int,
+        val height: Int,
+        val colourDepth: Int,
+    )
+
+    private fun readImageInfo(coverBytes: ByteArray, mimeType: String): ImageInfo {
+        val bitmapOptions = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeByteArray(coverBytes, 0, coverBytes.size, bitmapOptions)
+        return ImageInfo(
+            width = if (bitmapOptions.outWidth > 0) bitmapOptions.outWidth else 0,
+            height = if (bitmapOptions.outHeight > 0) bitmapOptions.outHeight else 0,
+            colourDepth = if (mimeType == "image/png") 32 else 24,
+        )
+    }
+
+    private fun setCoverForOgg(filePath: String, coverBytes: ByteArray): Boolean {
+        val mimeType = detectImageMimeTypeByBytes(coverBytes)
+        val imageInfo = readImageInfo(coverBytes, mimeType)
+        return OggCoverWriter.writeCover(
+            filePath,
+            coverBytes,
+            mimeType,
+            imageInfo.width,
+            imageInfo.height,
+            imageInfo.colourDepth,
+        )
+    }
+
     private fun setCoverArtImageIOFree(tag: org.jaudiotagger.tag.Tag, coverBytes: ByteArray, fileExtension: String): Boolean {
         return try {
             val mimeType = detectImageMimeTypeByBytes(coverBytes)
@@ -485,6 +516,15 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                 return
             }
 
+            if (file.extension.equals("ogg", ignoreCase = true)) {
+                if (setCoverForOgg(filePath, coverBytes)) {
+                    promise.resolve(true)
+                } else {
+                    promise.reject("Error", "Failed to set cover art for OGG file")
+                }
+                return
+            }
+
             val audioFile = AudioFileIO.read(file)
             var tag = audioFile.tag
             if (tag == null) {
@@ -526,6 +566,15 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             if (!coverPath.isNullOrEmpty()) {
                 val coverBytes = readCoverBytes(coverPath)
                 if (coverBytes != null && coverBytes.isNotEmpty()) {
+                    if (file.extension.equals("ogg", ignoreCase = true)) {
+                        audioFile.commit()
+                        if (!setCoverForOgg(filePath, coverBytes)) {
+                            android.util.Log.w("Mp3UtilModule", "Failed to set OGG cover; text metadata was written")
+                        }
+                        promise.resolve(true)
+                        return
+                    }
+
                     tag.deleteArtworkField()
                     setCoverArtImageIOFree(tag, coverBytes, file.extension.lowercase())
                 }

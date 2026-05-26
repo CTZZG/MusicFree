@@ -35,6 +35,7 @@ Last updated: 2026-05-26
 - [x] 2026-05-25: Round 6 metadata settings and native tag bridge passed esbuild checks, language JSON key consistency checks, and full `npx tsc --noEmit --pretty false`. Android `:app:compileDebugKotlin` passed after adding the MP3/FLAC cover/tag bridge.
 - [x] 2026-05-26: Round 7 music-detail enhancements passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, and Android `assembleRelease`.
 - [x] 2026-05-26: Round 8 download notification/permission lifecycle passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, and Android `assembleRelease` from the `android/` Gradle root.
+- [x] 2026-05-26: Round 9 OGG metadata path passed `npx tsc --noEmit --pretty false`, Android `:app:compileReleaseKotlin`, and Android `assembleRelease`.
 
 ## Round 1
 
@@ -191,10 +192,18 @@ Implementation notes:
 
 Goal: extend downloaded-file metadata writing to match the broader playback format goals.
 
-- [ ] Audit Toskysun's OGG/extended metadata implementation against CTZZG's private player fork.
-- [ ] Add OGG cover/lyric/metadata writing where Android libraries and file formats allow it.
-- [ ] Preserve existing MP3/FLAC metadata behavior and fail gracefully for unsupported formats.
-- [ ] Add focused Android/Kotlin verification for the metadata bridge.
+- [x] Audit Toskysun's OGG/extended metadata implementation against CTZZG's private player fork.
+- [x] Add OGG cover/lyric/metadata writing where Android libraries and file formats allow it.
+- [x] Preserve existing MP3/FLAC metadata behavior and fail gracefully for unsupported formats.
+- [x] Add focused Android/Kotlin verification for the metadata bridge.
+
+Implementation notes:
+
+- Added `OggCoverWriter`, a pure Kotlin Vorbis comment writer that injects `METADATA_BLOCK_PICTURE` without relying on jaudiotagger's OGG artwork path.
+- `Mp3UtilModule.setMediaCover` now writes OGG Vorbis cover art directly through `OggCoverWriter`.
+- `Mp3UtilModule.setMediaTagWithCover` commits text tags first, then writes OGG cover art; if OGG cover writing fails, text metadata still survives.
+- MP3 and FLAC cover/tag behavior stays on the existing Round 6 code path.
+- Opus and MP4/M4A cover writing remain intentionally unsupported until a verified native writer is added for those container formats.
 
 ## Round 10
 
