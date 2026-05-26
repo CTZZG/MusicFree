@@ -378,6 +378,8 @@
     "dialog.simpleDialog.hasUnsavedChange.content": "您有未保存的更改，是否要先保存？",
     "panel.playList.title": "播放列表",
     "panel.playList.count": " ({count}首)",
+    "panel.artistSelect.title": "选择歌手",
+    "panel.artistSelect.description": "这首歌包含多个歌手，选择要查看的歌手。",
     "panel.searchLrc.inputPlaceholder": "输入歌曲名称",
     "panel.searchLrc.toast.settingSuccess": "设置成功~",
     "panel.searchLrc.toast.failToSearch": "设置失败！",

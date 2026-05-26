@@ -1,6 +1,6 @@
 # Toskysun Feature Port Plan
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 ## Scope
 
@@ -33,6 +33,7 @@ Last updated: 2026-05-25
 - [x] 2026-05-24: esbuild syntax check passed for the Round 4 play-by-ID panel, panel registry, and home sheet-menu integration. i18n JSON parse checks passed.
 - [x] 2026-05-25: esbuild syntax check passed for the Round 5 quality-management panel, panel registry, and basic-settings entry. i18n JSON parse checks passed, and language JSON keys now match `ILanguageData`.
 - [x] 2026-05-25: Round 6 metadata settings and native tag bridge passed esbuild checks, language JSON key consistency checks, and full `npx tsc --noEmit --pretty false`. Android `:app:compileDebugKotlin` passed after adding the MP3/FLAC cover/tag bridge.
+- [x] 2026-05-26: Round 7 music-detail enhancements passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, and Android `assembleRelease`.
 
 ## Round 1
 
@@ -147,9 +148,28 @@ Implementation notes:
 - `Mp3UtilModule` now exposes `setMediaCover` and `setMediaTagWithCover`; cover writing currently targets MP3/FLAC. Unsupported cover formats still keep text tag writing intact through `setMediaTagWithCover`.
 - Full TypeScript checking now passes after removing the ignored temporary Toskysun reference clone from `tmp/` and fixing `src/utils/colorUtil.ts`.
 
+## Round 7
+
+Goal: port the lower-risk music-detail experience improvements from Toskysun without reintroducing Android gesture crashes.
+
+- [x] Add song title, artist, platform, and album information below the cover.
+- [x] Add clickable artist navigation when plugins provide `singerList`.
+- [x] Add multi-artist selection panel for songs with more than one artist.
+- [x] Add clickable album navigation using plugin album identifiers when available.
+- [x] Add a compact mini lyric preview on the cover page.
+- [x] Keep cover tap / long-press implemented with React Native `Pressable` instead of Toskysun's `Gesture.Race`.
+- [x] Add zh-CN, zh-TW, and en-US copy plus i18n type entries.
+
+Implementation notes:
+
+- `AlbumCover` keeps the Android-safe long-press guard from the prior crash fix, and only opens the image viewer when artwork is a non-empty string.
+- `MiniLyric` intentionally uses the current CTZZG lyric state and simple `Pressable` handling instead of porting Toskysun's masked/reanimated lyric renderer wholesale.
+- `SongInfo` only jumps to artist detail when the current plugin supplies full singer metadata. If that metadata is absent, the artist text is displayed but not treated as a fake artist id.
+- `ArtistSelectPanel` resolves the plugin by platform before navigating, so multi-artist songs stay compatible with the existing artist-detail route.
+
 ## Later / Optional
 
-- [ ] Mini lyric / song detail enhancements.
+- [x] Mini lyric / song detail enhancements.
 - [ ] Announcement dialog/service.
 
 ## Do Not Port Directly

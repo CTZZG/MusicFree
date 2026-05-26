@@ -18,6 +18,7 @@ import SimpleInput from "./simpleInput";
 import SimpleSelect from "./simpleSelect";
 import TimingClose from "./timingClose";
 import ImageViewer from "./imageViewer";
+import ArtistSelectPanel from "./artistSelectPanel";
 import MusicComment from "./musicComment";
 import MusicItemLyricOptions from "./musicItemLyricOptions";
 import MusicMetadataSettings from "./musicMetadataSettings";
@@ -65,6 +66,8 @@ export default {
     SetLyricOffset,
     /** 图片阅读器 */
     ImageViewer,
+    /** 歌手选择 */
+    ArtistSelectPanel,
     /** 音乐评论 */
     MusicComment,
     /** 歌词操作 */

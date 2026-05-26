@@ -378,6 +378,8 @@
     "dialog.simpleDialog.hasUnsavedChange.content": "You have unsaved changes. Save them first?",
     "panel.playList.title": "Play List",
     "panel.playList.count": " ({count} songs)",
+    "panel.artistSelect.title": "Select Artist",
+    "panel.artistSelect.description": "This song has multiple artists. Choose one to view.",
     "panel.searchLrc.inputPlaceholder": "Enter song name",
     "panel.searchLrc.toast.settingSuccess": "Settings saved successfully~",
     "panel.searchLrc.toast.failToSearch": "Settings failed!",
