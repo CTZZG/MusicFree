@@ -18,6 +18,7 @@ import History from "@/pages/history";
 import SetCustomTheme from "@/pages/setCustomTheme";
 import Permissions from "@/pages/permissions";
 import SheetEditor from "@/pages/sheetEditor";
+import SheetBrowser from "@/pages/sheetBrowser";
 
 import { ROUTE_PATH } from "@/core/router/index.ts";
 import EditMusicSheetInfo from "@/pages/editMusicSheetInfo";
@@ -111,6 +112,10 @@ export const routes: Array<IRoutes> = [
     {
         path: ROUTE_PATH.SHEET_EDITOR,
         component: SheetEditor,
+    },
+    {
+        path: ROUTE_PATH.SHEET_BROWSER,
+        component: SheetBrowser,
     },
     {
         path: ROUTE_PATH.EDIT_MUSIC_SHEET_INFO,

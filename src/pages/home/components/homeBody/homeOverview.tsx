@@ -639,7 +639,7 @@ function MyMusic(props: {
             }),
             accent: "#A88BFF",
             action: () =>
-                navigate(ROUTE_PATH.SHEET_EDITOR, {
+                navigate(ROUTE_PATH.SHEET_BROWSER, {
                     sheetType: "local",
                 }),
         },
@@ -652,7 +652,7 @@ function MyMusic(props: {
             }),
             accent: "#7DD3B8",
             action: () =>
-                navigate(ROUTE_PATH.SHEET_EDITOR, {
+                navigate(ROUTE_PATH.SHEET_BROWSER, {
                     sheetType: "starred",
                 }),
         },

@@ -13,18 +13,28 @@ import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import { FlashList } from "@shopify/flash-list";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Pressable } from "react-native-gesture-handler";
 
-export default function Sheets() {
-    const [index, setIndex] = useState(0);
+interface ISheetsProps {
+    initialSheetType?: "local" | "starred";
+}
+
+export default function Sheets(props: ISheetsProps) {
+    const { initialSheetType } = props;
+    const initialIndex = initialSheetType === "starred" ? 1 : 0;
+    const [index, setIndex] = useState(initialIndex);
     const colors = useColors();
     const navigate = useNavigate();
 
     const allSheets = useSheetsBase();
     const staredSheets = useStarredSheets();
     const { t } = useI18N();
+
+    useEffect(() => {
+        setIndex(initialIndex);
+    }, [initialIndex]);
 
     const selectedTabTextStyle = useMemo(() => {
         return [

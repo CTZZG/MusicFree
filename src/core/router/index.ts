@@ -48,6 +48,8 @@ export const ROUTE_PATH = {
     PERMISSIONS: "permissions",
     /** 歌单编辑 */
     SHEET_EDITOR: "sheet-editor",
+    /** 歌单浏览 */
+    SHEET_BROWSER: "sheet-browser",
     /** 编辑歌单详情 */
     EDIT_MUSIC_SHEET_INFO: "edit-music-sheet-info",
 } as const;
@@ -115,6 +117,9 @@ interface RouterParams extends RouterParamsBase {
     "sheet-editor": {
         sheetType: "local" | "starred";
     };
+    "sheet-browser": {
+        sheetType?: "local" | "starred";
+    };
     "edit-music-sheet-info": {
         musicSheet: IMusic.IMusicSheetItem;
     };
@@ -138,7 +143,7 @@ export function useNavigate() {
     ) {
         navigation.navigate(route, params);
     },
-    []);
+    [navigation]);
 
     return navigate;
 }
