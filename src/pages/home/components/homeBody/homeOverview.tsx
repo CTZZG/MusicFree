@@ -15,6 +15,9 @@ import React, { ReactNode, useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { DimensionValue } from "react-native";
 import type { Plugin } from "@/core/pluginManager";
+import useHomeDiscovery, {
+    IHomeDiscoveryPreview,
+} from "./useHomeDiscovery";
 import useHomeOverview, {
     HomeCapabilityKey,
     IHomeSourceItem,
@@ -59,6 +62,10 @@ function formatPluginNames(plugins: Plugin[]) {
 
 export default function HomeOverview() {
     const data = useHomeOverview();
+    const discoveryPreview = useHomeDiscovery(
+        data.recommendPlugins,
+        data.topListPlugins,
+    );
 
     return (
         <ScrollView
@@ -86,6 +93,7 @@ export default function HomeOverview() {
                 recommendPlugins={data.recommendPlugins}
                 topListPlugins={data.topListPlugins}
                 searchablePlugins={data.searchablePlugins}
+                preview={discoveryPreview}
             />
             <MyMusic
                 favoriteSheet={data.favoriteSheet}
@@ -136,7 +144,9 @@ function SourceChips(props: {
                             },
                         ]}
                         onPress={() => {
-                            if (source.isLocal) {
+                            if (isAll) {
+                                navigate(ROUTE_PATH.SEARCH_PAGE);
+                            } else if (source.isLocal) {
                                 navigate(ROUTE_PATH.LOCAL);
                             } else {
                                 navigate(ROUTE_PATH.SEARCH_PAGE, {
@@ -599,11 +609,55 @@ function Discovery(props: {
     recommendPlugins: Plugin[];
     topListPlugins: Plugin[];
     searchablePlugins: Plugin[];
+    preview: IHomeDiscoveryPreview;
 }) {
-    const { recommendPlugins, topListPlugins, searchablePlugins } = props;
+    const { recommendPlugins, topListPlugins, searchablePlugins, preview } =
+        props;
     const colors = useColors();
     const { t } = useI18N();
     const navigate = useNavigate();
+
+    const previewItems = useMemo(
+        () => [
+            ...preview.recommendSheets.map((item, index) => ({
+                key: `recommend-${preview.recommendPluginHash}-${
+                    item.id ?? index
+                }`,
+                type: t("home.recommendSheet"),
+                pluginHash: preview.recommendPluginHash,
+                pluginName: preview.recommendPluginName,
+                title: item.title ?? i18n.t("common.unknownName"),
+                desc: item.artist ?? preview.recommendPluginName ?? "",
+                cover: item.coverImg ?? item.artwork,
+                action: () => {
+                    if (preview.recommendPluginHash) {
+                        navigate(ROUTE_PATH.PLUGIN_SHEET_DETAIL, {
+                            pluginHash: preview.recommendPluginHash,
+                            sheetInfo: item,
+                        });
+                    }
+                },
+            })),
+            ...preview.topLists.map((item, index) => ({
+                key: `top-${preview.topListPluginHash}-${item.id ?? index}`,
+                type: t("home.topList"),
+                pluginHash: preview.topListPluginHash,
+                pluginName: preview.topListPluginName,
+                title: item.title ?? i18n.t("common.unknownName"),
+                desc: item.description ?? preview.topListPluginName ?? "",
+                cover: item.coverImg ?? item.artwork,
+                action: () => {
+                    if (preview.topListPluginHash) {
+                        navigate(ROUTE_PATH.TOP_LIST_DETAIL, {
+                            pluginHash: preview.topListPluginHash,
+                            topList: item,
+                        });
+                    }
+                },
+            })),
+        ],
+        [navigate, preview, t],
+    );
 
     const cards = useMemo(
         () =>
@@ -647,62 +701,141 @@ function Discovery(props: {
         [navigate, recommendPlugins, searchablePlugins, t, topListPlugins],
     );
 
-    if (!cards.length) {
+    if (!cards.length && !previewItems.length && !preview.loading) {
         return null;
     }
 
     return (
         <Section title={t("home.discovery")}>
-            <View style={styles.discoveryGrid}>
-                {cards.map((card, index) => (
-                    <Pressable
-                        key={card.key}
-                        style={[
-                            styles.discoveryCard,
-                            {
-                                backgroundColor: colors.card,
-                            },
-                            index % 2 === 0
-                                ? styles.discoveryCardMarginRight
-                                : null,
-                            index < cards.length - 2
-                                ? styles.discoveryCardMarginBottom
-                                : null,
-                        ]}
-                        onPress={card.action}>
-                        <View
+            {previewItems.length || preview.loading ? (
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.discoveryPreviewContainer}>
+                    {previewItems.map(item => (
+                        <Pressable
+                            key={item.key}
                             style={[
-                                styles.discoveryIcon,
-                                {
-                                    backgroundColor: Color(colors.primary)
-                                        .alpha(0.13)
-                                        .toString(),
-                                },
+                                styles.discoveryPreviewCard,
+                                { backgroundColor: colors.card },
                             ]}>
-                            <Icon
-                                name={card.icon}
-                                size={rpx(34)}
-                                color={colors.primary}
+                            <FastImage
+                                source={item.cover}
+                                placeholderSource={ImgAsset.albumDefault}
+                                style={styles.discoveryPreviewCover}
                             />
-                        </View>
-                        <View style={styles.discoveryText}>
+                            <View style={styles.discoveryPreviewMeta}>
+                                <View
+                                    style={[
+                                        styles.platformBadge,
+                                        {
+                                            backgroundColor: Color(
+                                                colors.primary,
+                                            )
+                                                .alpha(0.14)
+                                                .toString(),
+                                        },
+                                    ]}>
+                                    <ThemeText
+                                        numberOfLines={1}
+                                        fontSize="tag"
+                                        color={colors.primary}>
+                                        {item.type}
+                                    </ThemeText>
+                                </View>
+                                <ThemeText
+                                    numberOfLines={1}
+                                    fontSize="tag"
+                                    fontColor="textSecondary"
+                                    style={styles.discoverySourceName}>
+                                    {item.pluginName}
+                                </ThemeText>
+                            </View>
                             <ThemeText
                                 numberOfLines={1}
                                 fontSize="subTitle"
-                                fontWeight="bold">
-                                {card.title}
+                                fontWeight="bold"
+                                style={styles.discoveryPreviewTitle}>
+                                {item.title}
                             </ThemeText>
                             <ThemeText
                                 numberOfLines={1}
                                 fontSize="tag"
-                                fontColor="textSecondary"
-                                style={styles.smallTextMargin}>
-                                {card.desc}
+                                fontColor="textSecondary">
+                                {item.desc}
+                            </ThemeText>
+                        </Pressable>
+                    ))}
+                    {preview.loading && !previewItems.length ? (
+                        <View
+                            style={[
+                                styles.discoveryPreviewCard,
+                                styles.discoveryLoadingCard,
+                                { backgroundColor: colors.card },
+                            ]}>
+                            <ThemeText fontSize="description">
+                                {t("common.loading")}
                             </ThemeText>
                         </View>
-                    </Pressable>
-                ))}
-            </View>
+                    ) : null}
+                </ScrollView>
+            ) : null}
+            {cards.length ? (
+                <View
+                    style={[
+                        styles.discoveryGrid,
+                        previewItems.length ? styles.discoveryGridSpacing : null,
+                    ]}>
+                    {cards.map((card, index) => (
+                        <Pressable
+                            key={card.key}
+                            style={[
+                                styles.discoveryCard,
+                                {
+                                    backgroundColor: colors.card,
+                                },
+                                index % 2 === 0
+                                    ? styles.discoveryCardMarginRight
+                                    : null,
+                                index < cards.length - 2
+                                    ? styles.discoveryCardMarginBottom
+                                    : null,
+                            ]}
+                            onPress={card.action}>
+                            <View
+                                style={[
+                                    styles.discoveryIcon,
+                                    {
+                                        backgroundColor: Color(colors.primary)
+                                            .alpha(0.13)
+                                            .toString(),
+                                    },
+                                ]}>
+                                <Icon
+                                    name={card.icon}
+                                    size={rpx(34)}
+                                    color={colors.primary}
+                                />
+                            </View>
+                            <View style={styles.discoveryText}>
+                                <ThemeText
+                                    numberOfLines={1}
+                                    fontSize="subTitle"
+                                    fontWeight="bold">
+                                    {card.title}
+                                </ThemeText>
+                                <ThemeText
+                                    numberOfLines={1}
+                                    fontSize="tag"
+                                    fontColor="textSecondary"
+                                    style={styles.smallTextMargin}>
+                                    {card.desc}
+                                </ThemeText>
+                            </View>
+                        </Pressable>
+                    ))}
+                </View>
+            ) : null}
         </Section>
     );
 }
@@ -1230,6 +1363,42 @@ const styles = StyleSheet.create({
         paddingHorizontal: rpx(24),
         flexDirection: "row",
         flexWrap: "wrap",
+    },
+    discoveryGridSpacing: {
+        marginTop: rpx(16),
+    },
+    discoveryPreviewContainer: {
+        paddingHorizontal: rpx(24),
+    },
+    discoveryPreviewCard: {
+        width: rpx(232),
+        minHeight: rpx(318),
+        borderRadius: rpx(18),
+        padding: rpx(14),
+        marginRight: rpx(14),
+    },
+    discoveryPreviewCover: {
+        width: rpx(204),
+        height: rpx(204),
+        borderRadius: rpx(14),
+    },
+    discoveryPreviewMeta: {
+        marginTop: rpx(14),
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    discoverySourceName: {
+        flex: 1,
+        minWidth: 0,
+        marginLeft: rpx(8),
+    },
+    discoveryPreviewTitle: {
+        marginTop: rpx(12),
+        marginBottom: rpx(8),
+    },
+    discoveryLoadingCard: {
+        alignItems: "center",
+        justifyContent: "center",
     },
     discoveryCard: {
         width: rpx(343),
