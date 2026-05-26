@@ -17,15 +17,30 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import StatusBar from "@/components/base/statusBar";
 import NoPlugin from "../../components/base/noPlugin";
 import { useI18N } from "@/core/i18n";
+import { useParams } from "@/core/router";
+import useSearch from "./hooks/useSearch";
 
 export default function () {
     const [pageStatus, setPageStatus] = useAtom(pageStatusAtom);
     const setQuery = useSetAtom(queryAtom);
     const setSearchResultsState = useSetAtom(searchResultsAtom);
     const { t } = useI18N();
+    const params = useParams<"search-page">();
+    const search = useSearch();
 
     useEffect(() => {
         setSearchResultsState(initSearchResults);
+        const initialQuery = params?.initialQuery?.trim();
+        if (initialQuery) {
+            setQuery(initialQuery);
+            setPageStatus(PageStatus.SEARCHING);
+            void search(
+                initialQuery,
+                1,
+                params?.initialSearchType,
+                params?.pluginHash,
+            );
+        }
         return () => {
             setPageStatus(PageStatus.EDITING);
             setQuery("");

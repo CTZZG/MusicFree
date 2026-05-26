@@ -60,7 +60,13 @@ type RouterParamsBase = Record<RoutePaths, any>;
 interface RouterParams extends RouterParamsBase {
     home: undefined;
     "music-detail": undefined;
-    "search-page": undefined;
+    "search-page":
+        | undefined
+        | {
+              initialQuery?: string;
+              initialSearchType?: ICommon.SupportMediaType;
+              pluginHash?: string;
+          };
     "local-sheet-detail": {
         id: string;
     };
@@ -111,7 +117,7 @@ interface RouterParams extends RouterParamsBase {
     };
     "edit-music-sheet-info": {
         musicSheet: IMusic.IMusicSheetItem;
-    }
+    };
 }
 
 /** 路由参数Hook */

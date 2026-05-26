@@ -1,15 +1,24 @@
 import React, { useCallback, useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+    Pressable,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import Icon from "@/components/base/icon.tsx";
 import Tag from "@/components/base/tag";
 import { showPanel } from "@/components/panels/usePanel";
-import { fontSizeConst, fontWeightConst, iconSizeConst } from "@/constants/uiConst";
+import {
+    fontSizeConst,
+    fontWeightConst,
+    iconSizeConst,
+} from "@/constants/uiConst";
 import MusicSheet, { useFavorite } from "@/core/musicSheet";
 import pluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useCurrentMusic } from "@/core/trackPlayer";
 import rpx from "@/utils/rpx";
-import { getCoverLeftMargin } from "./index";
 
 interface ISongInfoProps {
     showHeart?: boolean;
@@ -21,6 +30,9 @@ interface ISingerInfo {
     name: string;
     avatar?: string;
 }
+
+const INFO_MAX_WIDTH = rpx(500);
+const INFO_HORIZONTAL_GUTTER = rpx(48);
 
 function getSingerList(musicItem: IMusic.IMusicItem | null): ISingerInfo[] {
     const item = musicItem as any;
@@ -40,13 +52,45 @@ function getSingerList(musicItem: IMusic.IMusicItem | null): ISingerInfo[] {
         }));
 }
 
+function getAlbumIdentity(musicItem: IMusic.IMusicItem) {
+    const item = musicItem as any;
+    const albumId =
+        item.albumid ??
+        item.albumId ??
+        item.album_id ??
+        item.albumMID ??
+        item.albummid ??
+        item.album_mid;
+    const albumMID = item.albummid ?? item.albumMID ?? item.album_mid;
+    const normalizedId =
+        albumId === undefined || albumId === null ? "" : String(albumId).trim();
+    const normalizedMID =
+        albumMID === undefined || albumMID === null
+            ? ""
+            : String(albumMID).trim();
+
+    return {
+        id: normalizedId,
+        albumMID: normalizedMID,
+    };
+}
+
 export default function SongInfo(props: ISongInfoProps) {
     const { showHeart = false } = props;
     const musicItem = useCurrentMusic();
     const isFavorite = useFavorite(musicItem);
     const navigate = useNavigate();
+    const { width: windowWidth } = useWindowDimensions();
 
     const singerList = useMemo(() => getSingerList(musicItem), [musicItem]);
+    const infoWidth = useMemo(
+        () =>
+            Math.min(
+                INFO_MAX_WIDTH,
+                Math.max(rpx(280), windowWidth - INFO_HORIZONTAL_GUTTER),
+            ),
+        [windowWidth],
+    );
 
     const handleArtistPress = useCallback(() => {
         if (!musicItem?.artist || singerList.length === 0) {
@@ -88,28 +132,31 @@ export default function SongInfo(props: ISongInfoProps) {
             return;
         }
 
-        const item = musicItem as any;
-        const albumItem: IAlbum.IAlbumItem = {
-            id: String(
-                item.albumid ||
-                    item.albumId ||
-                    item.album_id ||
-                    item.albumMID ||
-                    item.albummid ||
-                    item.album_mid ||
-                    musicItem.album,
-            ),
-            albumMID: item.albummid || item.albumMID || item.album_mid,
-            title: musicItem.album,
-            platform: musicItem.platform,
-            artwork: musicItem.artwork,
-            artist: musicItem.artist,
-            description: "",
-            musicList: [],
-        };
+        const plugin = pluginManager.getByMedia(musicItem);
+        const albumIdentity = getAlbumIdentity(musicItem);
 
-        navigate(ROUTE_PATH.ALBUM_DETAIL, {
-            albumItem,
+        if (albumIdentity.id && plugin?.methods?.getAlbumInfo) {
+            const albumItem: IAlbum.IAlbumItem = {
+                id: albumIdentity.id,
+                albumMID: albumIdentity.albumMID,
+                title: musicItem.album,
+                platform: musicItem.platform,
+                artwork: musicItem.artwork,
+                artist: musicItem.artist,
+                description: "",
+                musicList: [],
+            };
+
+            navigate(ROUTE_PATH.ALBUM_DETAIL, {
+                albumItem,
+            });
+            return;
+        }
+
+        navigate(ROUTE_PATH.SEARCH_PAGE, {
+            initialQuery: musicItem.album,
+            initialSearchType: "album",
+            pluginHash: plugin?.methods?.search ? plugin.hash : undefined,
         });
     }, [musicItem, navigate]);
 
@@ -118,7 +165,7 @@ export default function SongInfo(props: ISongInfoProps) {
     }
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { width: infoWidth }]}>
             <View style={styles.titleRow}>
                 <Text numberOfLines={2} style={styles.title}>
                     {musicItem.title || "--"}
@@ -182,8 +229,7 @@ export default function SongInfo(props: ISongInfoProps) {
 
 const styles = StyleSheet.create({
     container: {
-        width: "100%",
-        paddingHorizontal: getCoverLeftMargin(),
+        alignSelf: "center",
         paddingVertical: rpx(18),
         alignItems: "flex-start",
     },

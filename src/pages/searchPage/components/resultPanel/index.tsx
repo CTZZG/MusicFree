@@ -10,6 +10,7 @@ import results from "./results";
 import { fontWeightConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
 import { useI18N } from "@/core/i18n";
+import { useParams } from "@/core/router";
 
 const routes = results;
 
@@ -26,7 +27,12 @@ const getRouterScene = (
 const renderScene = getRouterScene(routes);
 
 function ResultPanel() {
-    const [index, setIndex] = useState(0);
+    const params = useParams<"search-page">();
+    const initialIndex = Math.max(
+        routes.findIndex(route => route.key === params?.initialSearchType),
+        0,
+    );
+    const [index, setIndex] = useState(initialIndex);
     const colors = useColors();
     const { t } = useI18N();
 
@@ -62,7 +68,9 @@ function ResultPanel() {
                                 color,
                                 textAlign: "center",
                             }}>
-                            {route.i18nKey ? t(route.i18nKey as any) : route.title}
+                            {route.i18nKey
+                                ? t(route.i18nKey as any)
+                                : route.title}
                         </Text>
                     )}
                     indicatorStyle={{
