@@ -36,6 +36,7 @@ Last updated: 2026-05-26
 - [x] 2026-05-26: Round 7 music-detail enhancements passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, and Android `assembleRelease`.
 - [x] 2026-05-26: Round 8 download notification/permission lifecycle passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, and Android `assembleRelease` from the `android/` Gradle root.
 - [x] 2026-05-26: Round 9 OGG metadata path passed `npx tsc --noEmit --pretty false`, Android `:app:compileReleaseKotlin`, and Android `assembleRelease`.
+- [x] 2026-05-26: Round 10 plugin lazy-load/import controls passed `npx tsc --noEmit --pretty false`, zh-CN/zh-TW/en-US JSON parse checks, `node -c` syntax checks for both gdmusic plugin builds, and Android `assembleRelease`.
 
 ## Round 1
 
@@ -209,10 +210,18 @@ Implementation notes:
 
 Goal: make plugin import and lazy loading more controllable for Android compatibility.
 
-- [ ] Add a user-facing lazy-load plugin switch.
-- [ ] Add plugin cache clearing and import diagnostics.
-- [ ] Add safer Android import failure details for syntax/runtime errors.
-- [ ] Evaluate optional Babel transpilation at import time for ES10+ plugin syntax.
+- [x] Add a user-facing lazy-load plugin switch.
+- [x] Add plugin cache clearing and import diagnostics.
+- [x] Add safer Android import failure details for syntax/runtime errors.
+- [x] Evaluate optional Babel transpilation at import time for ES10+ plugin syntax.
+
+Implementation notes:
+
+- `basic.lazyLoadPlugin` now controls whether startup uses cached plugin metadata or parses plugin files immediately.
+- Basic settings exposes a plugin lazy-load switch plus a lazy-load cache clearing action with the current cache entry count.
+- Corrupted plugin cache entries are discarded automatically and the plugin file is parsed directly instead of failing the whole plugin setup.
+- Plugin parse/version errors now include clearer `Error.name`, message, and an estimated line/column from Android `Function(...)` stack traces where available.
+- On-device Babel transpilation remains intentionally disabled for now: adding Babel to the mobile runtime would increase bundle size and make plugin import slower/riskier. The safer path is to keep import diagnostics clear and distribute Android-compatible plugin builds.
 
 ## Round 11
 

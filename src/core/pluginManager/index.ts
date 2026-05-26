@@ -111,18 +111,34 @@ class PluginManager implements IPluginManager, IInjectable {
                     // 如果存在缓存信息
                     let plugin: Plugin;
                     let isLazyLoad = false;
+                    const lazyLoadPlugin =
+                        this.appConfigService.getConfig("basic.lazyLoadPlugin") !==
+                        false;
                     if (
+                        lazyLoadPlugin &&
                         pluginCacheStore.contains(pluginFileItem.path)
                     ) {
                         isLazyLoad = true;
-                        const lazyProps = safeParse(pluginCacheStore.getString(pluginFileItem.path));
-                        lazyProps.loadFuncCode = async () =>
-                            await readFile(pluginFileItem.path, "utf8");
-                        plugin = new Plugin(
-                            null,
-                            pluginFileItem.path,
-                            lazyProps,
+                        const lazyProps = safeParse(
+                            pluginCacheStore.getString(pluginFileItem.path),
                         );
+                        if (lazyProps?.name && lazyProps?.hash) {
+                            lazyProps.loadFuncCode = async () =>
+                                await readFile(pluginFileItem.path, "utf8");
+                            plugin = new Plugin(
+                                null,
+                                pluginFileItem.path,
+                                lazyProps,
+                            );
+                        } else {
+                            isLazyLoad = false;
+                            pluginCacheStore.delete(pluginFileItem.path);
+                            const funcCode = await readFile(
+                                pluginFileItem.path,
+                                "utf8",
+                            );
+                            plugin = new Plugin(funcCode, pluginFileItem.path);
+                        }
                     } else {
                         const funcCode = await readFile(
                             pluginFileItem.path,
@@ -619,6 +635,14 @@ class PluginManager implements IPluginManager, IInjectable {
 
     getPluginsCount() {
         return this.getPlugins().length;
+    }
+
+    clearPluginCache() {
+        pluginCacheStore.clearAll();
+    }
+
+    getPluginCacheCount() {
+        return pluginCacheStore.getAllKeys().length;
     }
 }
 

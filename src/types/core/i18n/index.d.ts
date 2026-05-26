@@ -330,6 +330,8 @@ export interface ILanguageData {
     "basicSettings.plugin": string; // 插件
     "basicSettings.autoUpdatePlugin": string; // 软件启动时自动更新插件
     "basicSettings.notCheckPluginVersion": string; // 安装插件时不校验版本
+    "basicSettings.lazyLoadPlugin": string; // 启用插件懒加载
+    "basicSettings.clearPluginCache": string; // 清除插件懒加载缓存
 
     "basicSettings.playback": string; // 播放
     "basicSettings.notInterrupt": string; // 允许与其他应用同时播放
@@ -407,6 +409,8 @@ export interface ILanguageData {
     "dialog.clearLyricCacheContent": string; // 清除歌词缓存确认内容
     "dialog.clearImageCacheTitle": string; // 清除图片缓存
     "dialog.clearImageCacheContent": string; // 清除图片缓存确认内容
+    "dialog.clearPluginCacheTitle": string; // 清除插件懒加载缓存
+    "dialog.clearPluginCacheContent": string; // 清除插件懒加载缓存确认内容
     "dialog.errorLogTitle": string; // 错误日志
     "dialog.errorLogNoRecord": string; // 暂无记录
     "dialog.errorLogKnow": string; // 我知道了
@@ -418,6 +422,7 @@ export interface ILanguageData {
 
     // 提示消息相关 - 缓存和日志
     "toast.cacheSetSuccess": string; // 设置成功
+    "toast.pluginCacheCleared": string; // 插件缓存已清除
     "toast.musicCacheCleared": string; // 已清除音乐缓存
     "toast.lyricCacheCleared": string; // 已清除歌词缓存
     "toast.imageCacheCleared": string; // 已清除图片缓存

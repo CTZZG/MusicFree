@@ -9,6 +9,7 @@ import { SortType } from "@/constants/commonConst.ts";
 import pathConst from "@/constants/pathConst";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { useI18N } from "@/core/i18n";
+import PluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import LyricUtil, { NativeTextAlignment } from "@/native/lyricUtil";
@@ -126,6 +127,7 @@ export default function BasicSetting() {
     const maxHistoryLen = useAppConfig("basic.maxHistoryLen");
     const autoUpdatePlugin = useAppConfig("basic.autoUpdatePlugin");
     const notCheckPluginVersion = useAppConfig("basic.notCheckPluginVersion");
+    const lazyLoadPlugin = useAppConfig("basic.lazyLoadPlugin");
     const associateLyricType = useAppConfig("basic.associateLyricType");
     const showExitOnNotification = useAppConfig("basic.showExitOnNotification");
     const musicOrderInLocalSheet = useAppConfig("basic.musicOrderInLocalSheet");
@@ -148,12 +150,17 @@ export default function BasicSetting() {
     const navigate = useNavigate();
 
     const [cacheSize, refreshCacheSize] = useCacheSize();
+    const [pluginCacheCount, setPluginCacheCount] = useState(0);
+    const refreshPluginCacheCount = useCallback(() => {
+        setPluginCacheCount(PluginManager.getPluginCacheCount());
+    }, []);
 
     const sectionListRef = useRef<SectionList | null>(null);
     // const titleListRef = useRef<FlatList | null>(null);
 
     useEffect(() => {
         refreshCacheSize();
+        refreshPluginCacheCount();
     }, []);
 
     const basicOptions = [
@@ -265,6 +272,30 @@ export default function BasicSetting() {
                     "basic.notCheckPluginVersion",
                     notCheckPluginVersion ?? false,
                 ),
+                createSwitch(
+                    t("basicSettings.lazyLoadPlugin"),
+                    "basic.lazyLoadPlugin",
+                    lazyLoadPlugin ?? true,
+                ),
+                {
+                    title: t("basicSettings.clearPluginCache"),
+                    right: (
+                        <ThemeText style={styles.centerText}>
+                            {pluginCacheCount}
+                        </ThemeText>
+                    ),
+                    onPress() {
+                        showDialog("SimpleDialog", {
+                            title: t("dialog.clearPluginCacheTitle"),
+                            content: t("dialog.clearPluginCacheContent"),
+                            async onOk() {
+                                PluginManager.clearPluginCache();
+                                refreshPluginCacheCount();
+                                Toast.success(t("toast.pluginCacheCleared"));
+                            },
+                        });
+                    },
+                },
             ],
         },
         {

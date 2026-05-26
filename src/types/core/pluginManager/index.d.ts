@@ -192,5 +192,19 @@ export interface IPluginManager {
      * @returns 替代插件实例或null
      */
     getAlternativePlugin(plugin: Plugin): Plugin | null;
-}
 
+    /**
+     * 获取插件数量
+     */
+    getPluginsCount(): number;
+
+    /**
+     * 清理插件懒加载缓存
+     */
+    clearPluginCache(): void;
+
+    /**
+     * 获取当前插件懒加载缓存数量
+     */
+    getPluginCacheCount(): number;
+}

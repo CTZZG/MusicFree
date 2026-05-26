@@ -165,6 +165,30 @@ const _console = {
 
 const appVersion = deviceInfoModule.getVersion();
 
+function getAnonymousStackLocation(stack?: string) {
+    if (!stack) {
+        return null;
+    }
+    const match = stack.match(/<anonymous>:(\d+):(\d+)/);
+    if (!match) {
+        return null;
+    }
+    const generatedLine = Number(match[1]);
+    const column = Number(match[2]);
+    const pluginLine = Math.max(1, generatedLine - 4);
+    return `位置(估算): 第 ${pluginLine} 行, 第 ${column} 列`;
+}
+
+function formatPluginErrorMessage(error: any) {
+    const name = error?.name;
+    const message = error?.message ?? String(error ?? "未知错误");
+    const title = name && !String(message).startsWith(name)
+        ? `${name}: ${message}`
+        : String(message);
+    const location = getAnonymousStackLocation(error?.stack);
+    return location ? `${title}\n${location}` : title;
+}
+
 function formatAuthUrl(url: string) {
     const urlObj = new URL(url);
 
@@ -1136,9 +1160,12 @@ export class Plugin {
                 this.mountPlugin(funcCode, this.lazyProps.path);
             } catch (e: any) {
                 this.state = PluginState.Error;
-                this.errorMessage = e?.message;
+                this.errorMessage = formatPluginErrorMessage(e);
                 this.errorReason = this.errorReason ?? PluginErrorReason.CannotParse;
             }
+        }
+        if (this.state === PluginState.Error) {
+            throw new Error(this.errorMessage || "插件加载失败");
         }
     }
 
@@ -1207,11 +1234,11 @@ export class Plugin {
         } catch (e: any) {
             this.state = PluginState.Error;
             this.errorReason = e?.errorReason ?? PluginErrorReason.CannotParse;
-            this.errorMessage = e?.message;
+            this.errorMessage = formatPluginErrorMessage(e);
 
             errorLog(`${pluginPath}插件无法解析 `, {
                 errorReason: this.errorReason,
-                message: e?.message,
+                message: this.errorMessage,
                 stack: e?.stack,
             });
             _instance = e?.instance ?? {
@@ -1264,11 +1291,15 @@ export class Plugin {
             _instance.appVersion &&
             !satisfies(DeviceInfo.getVersion(), _instance.appVersion)
         ) {
-            throw {
-                instance: _instance,
-                state: PluginState.Error,
-                errorReason: PluginErrorReason.VersionNotMatch,
+            const error = new Error(
+                `插件要求应用版本 ${_instance.appVersion}，当前版本 ${DeviceInfo.getVersion()}`,
+            ) as Error & {
+                instance?: IPlugin.IPluginDefine;
+                errorReason?: PluginErrorReason;
             };
+            error.instance = _instance;
+            error.errorReason = PluginErrorReason.VersionNotMatch;
+            throw error;
         }
         return true;
     }
