@@ -258,6 +258,26 @@ Implementation notes:
 - Release APKs are collected under `dist/`, renamed with app version and short SHA, uploaded as a single clear artifact, and attached to GitHub Releases on tag builds.
 - A job summary records version, package version, commit, build date, signing status, and artifact names.
 
+## Round 13
+
+Goal: redesign the home page around playback continuity, multi-source visibility, discovery, and personal library access instead of making playlists the only central object.
+
+- [x] Create an isolated branch for the home-page redesign experiment.
+- [x] Add a home overview data layer for current playback, recent history, enabled plugins, plugin capabilities, playlists, local music, and download queue state.
+- [x] Replace the old `Operations + Sheets` portrait home layout with a source-aware overview.
+- [x] Use the same overview in landscape mode so the old playlist-first layout does not reappear after rotation.
+- [x] Add compact source chips for all-source search, per-plugin search, and local music.
+- [x] Add continue-listening, recent-played, music-source, quick-access, discovery, and personal-library sections.
+- [x] Keep discovery network-light for the first implementation: use local plugin capability data and existing recommendation/chart routes instead of fetching every source on startup.
+- [x] Preserve playlist creation, playlist management, playlist import, and play-by-ID entry points.
+
+Implementation notes:
+
+- `useHomeOverview` aggregates existing local state instead of adding new persistence: TrackPlayer state/progress, music history, plugin manager, local music sheet, music sheets, starred sheets, and downloader queue.
+- The home page now makes enabled plugin sources visible through capability tags such as search, source, lyrics, charts, recommendation, album, and artist.
+- The first Round 13 implementation intentionally avoids automatic recommend/top-list API calls on app launch. A later round can add cached, source-scoped discovery content with per-source failure isolation.
+- React Native / Expo / React major upgrades remain a separate spike after the home redesign stabilizes.
+
 ## Later / Optional
 
 - [x] Mini lyric / song detail enhancements.

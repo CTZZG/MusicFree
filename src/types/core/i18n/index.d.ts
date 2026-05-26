@@ -76,6 +76,35 @@ export interface ILanguageData {
     "home.starredPlaylistsCount.a11y": string; // 我喜欢的歌单数量
     "home.songCount": string; // 歌曲数量
     "home.clickToSearch": string; // 点击搜索
+    "home.allSources": string; // 全部源
+    "home.continueListening": string; // 继续听
+    "home.recentListening": string; // 最近播放
+    "home.musicSources": string; // 音乐源
+    "home.enabledSourceCount": string; // 已启用插件源数量
+    "home.manageSources": string; // 管理音乐源
+    "home.quickAccess": string; // 快捷入口
+    "home.discovery": string; // 发现
+    "home.myMusic": string; // 我的音乐
+    "home.startSearch": string; // 开始搜索
+    "home.scanLocal": string; // 扫描本地
+    "home.playById.short": string; // 播放ID
+    "home.multiSourceSearch": string; // 多源搜索
+    "home.sourceSupportedCount": string; // 可搜索源数量
+    "home.favoriteSheet": string; // 我喜欢
+    "home.localMusicShort": string; // 本地
+    "home.starredShort": string; // 收藏
+    "home.playlistCount": string; // 歌单数量
+    "home.downloadQueueCount": string; // 下载队列数量
+    "home.sourceCapability.search": string; // 搜索
+    "home.sourceCapability.source": string; // 音源
+    "home.sourceCapability.lyric": string; // 歌词
+    "home.sourceCapability.wordLyric": string; // 逐字
+    "home.sourceCapability.topList": string; // 榜单
+    "home.sourceCapability.recommend": string; // 推荐
+    "home.sourceCapability.album": string; // 专辑
+    "home.sourceCapability.artist": string; // 歌手
+    "home.sourceCapability.import": string; // 导入
+    "home.sourceCapability.comment": string; // 评论
 
     // 对话框相关
     "dialog.deleteSheetTitle": string; // 删除歌单
