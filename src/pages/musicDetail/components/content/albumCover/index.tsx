@@ -1,12 +1,11 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import rpx from "@/utils/rpx";
 import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
 import useOrientation from "@/hooks/useOrientation";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useCurrentMusic } from "@/core/trackPlayer";
 import globalStyle from "@/constants/globalStyle";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import Operations from "./operations";
 import { showPanel } from "@/components/panels/usePanel.ts";
 
@@ -19,6 +18,7 @@ export default function AlbumCover(props: IProps) {
 
     const musicItem = useCurrentMusic();
     const orientation = useOrientation();
+    const longPressTriggeredRef = useRef(false);
 
     const artworkStyle = useMemo(() => {
         if (orientation === "vertical") {
@@ -34,27 +34,30 @@ export default function AlbumCover(props: IProps) {
         }
     }, [orientation]);
 
-    const longPress = Gesture.LongPress()
-        .onStart(() => {
-            if (musicItem?.artwork) {
-                showPanel("ImageViewer", {
-                    url: musicItem.artwork,
-                });
-            }
-        })
-        .runOnJS(true);
+    const handlePress = useCallback(() => {
+        if (longPressTriggeredRef.current) {
+            longPressTriggeredRef.current = false;
+            return;
+        }
+        onTurnPageClick?.();
+    }, [onTurnPageClick]);
 
-    const tap = Gesture.Tap()
-        .onStart(() => {
-            onTurnPageClick?.();
-        })
-        .runOnJS(true);
-
-    const combineGesture = Gesture.Race(tap, longPress);
+    const handleLongPress = useCallback(() => {
+        longPressTriggeredRef.current = true;
+        const artwork = musicItem?.artwork;
+        if (typeof artwork === "string" && artwork.trim().length > 0) {
+            showPanel("ImageViewer", {
+                url: artwork,
+            });
+        }
+    }, [musicItem?.artwork]);
 
     return (
         <>
-            <GestureDetector gesture={combineGesture}>
+            <Pressable
+                delayLongPress={500}
+                onPress={handlePress}
+                onLongPress={handleLongPress}>
                 <View style={globalStyle.fullCenter}>
                     <FastImage
                         style={artworkStyle}
@@ -62,7 +65,7 @@ export default function AlbumCover(props: IProps) {
                         placeholderSource={ImgAsset.albumDefault}
                     />
                 </View>
-            </GestureDetector>
+            </Pressable>
             <Operations />
         </>
     );

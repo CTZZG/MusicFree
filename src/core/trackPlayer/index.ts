@@ -173,18 +173,17 @@ class TrackPlayer extends EventEmitter<{
                     track.userAgent = getAppUserAgent();
 
                     if (isSameMediaItem(this.currentMusic, track)) {
-                        await this.setTrackSource(track as Track, false);
-                        if (progress) {
-                            // 异步
-                            this.seekTo(progress);
-                        }
+                        await this.setTrackSource(
+                            track as Track,
+                            false,
+                            this.normalizeProgress(progress),
+                        );
                     }
+                })
+                .catch(err => {
+                    errorLog("恢复播放源失败", err?.message ?? err);
                 });
             this.setCurrentMusic(track);
-
-            if (progress) {
-                this.seekTo(progress);
-            }
         }
 
         if (!this.serviceInited) {
@@ -419,8 +418,7 @@ class TrackPlayer extends EventEmitter<{
                 throw new Error(PlayFailReason.PLAY_LIST_IS_EMPTY);
             }
 
-            // [新增] 检查 musicItem 上是否有 _currentTime 属性
-            const seekToTime = (musicItem as any)?._currentTime;
+            const seekToTime = this.resolveResumeSeekTime(musicItem);
 
             // 1. 移动网络禁止播放
             const localPath = getLocalPath(musicItem);
@@ -486,7 +484,7 @@ class TrackPlayer extends EventEmitter<{
                 artwork: resolveImportedAssetOrPath(musicItem.artwork?.trim?.()?.length ? musicItem.artwork : ImgAsset.albumDefault) as unknown as any,
             }, this.getFakeNextTrack()]);
 
-            this.emit(TrackPlayerEvents.ProgressChanged, { position: 0, duration: musicItem.duration || 0 });
+            this.emit(TrackPlayerEvents.ProgressChanged, { position: seekToTime ?? 0, duration: musicItem.duration || 0 });
 
             // 5. 获取音源
             let track: IMusic.IMusicItem;
@@ -845,24 +843,54 @@ class TrackPlayer extends EventEmitter<{
         PersistStatus.set("music.quality", quality);
     }
 
+    private normalizeProgress(progress?: number | null) {
+        return typeof progress === "number" && Number.isFinite(progress) && progress > 0
+            ? progress
+            : undefined;
+    }
+
+    private resolveResumeSeekTime(musicItem: IMusic.IMusicItem) {
+        const itemCurrentTime = this.normalizeProgress((musicItem as any)?._currentTime);
+        if (itemCurrentTime) {
+            return itemCurrentTime;
+        }
+
+        const progress = this.normalizeProgress(PersistStatus.get("music.progress"));
+        if (!progress) {
+            return undefined;
+        }
+
+        const persistedMusic = PersistStatus.get("music.musicItem");
+        if (persistedMusic && !isSameMediaItem(musicItem, persistedMusic)) {
+            return undefined;
+        }
+
+        return progress;
+    }
+
     // 设置音源
     private async setTrackSource(track: Track, autoPlay = true, seekTo?: number) {
         const clonedTrack = this.patchMediaArtwork(track);
         if (!clonedTrack) {
             return;
         }
+        const initialProgress = this.normalizeProgress(seekTo) ?? 0;
         track.userAgent = getAppUserAgent(); // <--- 确保设置UA
         await ReactNativeTrackPlayer.setQueue([clonedTrack, this.getFakeNextTrack()]);
         PersistStatus.set("music.musicItem", track as IMusic.IMusicItem);
-        PersistStatus.set("music.progress", 0);
+        PersistStatus.set("music.progress", initialProgress);
+        this.emit(TrackPlayerEvents.ProgressChanged, {
+            position: initialProgress,
+            duration: Number(track.duration) || 0,
+        });
         if (autoPlay) {
             await ReactNativeTrackPlayer.play();
         }
         // [新增] 在开始播放后跳转到指定时间
-        if (typeof seekTo === "number" && seekTo > 0) {
+        if (initialProgress > 0) {
             // 增加一个短暂延迟，确保播放器准备好接收 seek 命令
-            await delay(100); 
-            await ReactNativeTrackPlayer.seekTo(seekTo);
+            await delay(100);
+            await this.seekTo(initialProgress);
         }
     }
 

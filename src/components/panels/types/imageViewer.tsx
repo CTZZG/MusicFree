@@ -1,5 +1,6 @@
 import React from "react";
-import { Image, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
+import { Image } from "expo-image";
 import rpx, { vh, vw } from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import useOrientation from "@/hooks/useOrientation.ts";
@@ -31,15 +32,14 @@ export default function ImageViewer(props: IImageViewerProps) {
                             width: vw(100),
                             minHeight: vw(100),
                             maxHeight: vh(100),
-                            resizeMode: "cover",
                         }
                         : {
                             maxWidth: vw(80),
                             height: vh(60),
                             minWidth: vh(60),
-                            resizeMode: "cover",
                         }
                 }
+                contentFit="contain"
                 source={{
                     uri: url,
                 }}
