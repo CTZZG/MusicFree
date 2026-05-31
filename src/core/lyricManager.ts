@@ -47,12 +47,36 @@ const currentLyricItemAtom = atom<IParsedLrcItem | null>(null);
 const currentPositionMsAtom = atom<number>(0);
 
 let currentPositionMsShared: SharedValue<number> | null = null;
+const LYRIC_REQUEST_TIMEOUT_MS = 25000;
 
 export function getCurrentPositionMsShared() {
     if (!currentPositionMsShared) {
         currentPositionMsShared = makeMutable(0);
     }
     return currentPositionMsShared;
+}
+
+function withTimeout<T>(
+    promise: T | Promise<T>,
+    timeoutMs: number,
+    message: string,
+): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(message));
+        }, timeoutMs);
+
+        Promise.resolve(promise).then(
+            result => {
+                clearTimeout(timer);
+                resolve(result);
+            },
+            error => {
+                clearTimeout(timer);
+                reject(error);
+            },
+        );
+    });
 }
 
 class LyricManager implements IInjectable {
@@ -360,9 +384,14 @@ class LyricManager implements IInjectable {
                 this.setLyricAsLoadingState();
 
                 lrcSource =
-                    (await this.pluginManager
-                        .getByMedia(currentMusicItem)
-                        ?.methods?.getLyric(currentMusicItem)) ?? null;
+                    (await withTimeout(
+                        this.pluginManager
+                            .getByMedia(currentMusicItem)
+                            ?.methods?.getLyric(currentMusicItem) ??
+                            Promise.resolve(null),
+                        LYRIC_REQUEST_TIMEOUT_MS,
+                        "获取歌词超时",
+                    )) ?? null;
             }
 
             // 切换到其他歌曲了, 直接返回
@@ -378,7 +407,11 @@ class LyricManager implements IInjectable {
                 // 重置歌词状态
                 this.setLyricAsLoadingState();
 
-                lrcSource = await this.searchSimilarLyric(currentMusicItem);
+                lrcSource = await withTimeout(
+                    this.searchSimilarLyric(currentMusicItem),
+                    LYRIC_REQUEST_TIMEOUT_MS,
+                    "自动搜索歌词超时",
+                );
             }
 
             // 切换到其他歌曲了, 直接返回
@@ -488,9 +521,11 @@ class LyricManager implements IInjectable {
                 continue;
             }
 
-            const results = await plugin.methods
-                .search(keyword, 1, "lyric")
-                .catch(() => null);
+            const results = (await withTimeout(
+                plugin.methods.search(keyword, 1, "lyric"),
+                LYRIC_REQUEST_TIMEOUT_MS,
+                "搜索歌词超时",
+            ).catch(() => null)) as IPlugin.ISearchResult<"lyric"> | null;
 
             // 取前两个
             const firstTwo = results?.data?.slice(0, 2) || [];
@@ -522,9 +557,11 @@ class LyricManager implements IInjectable {
         }
 
         if (minDistanceMusicItem && targetPlugin) {
-            return await targetPlugin.methods
-                .getLyric(minDistanceMusicItem)
-                .catch(() => null);
+            return await withTimeout(
+                targetPlugin.methods.getLyric(minDistanceMusicItem),
+                LYRIC_REQUEST_TIMEOUT_MS,
+                "获取匹配歌词超时",
+            ).catch(() => null);
         }
 
         return null;

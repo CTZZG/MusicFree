@@ -90,8 +90,9 @@ function flattenWordsToCharacters(words: ILyric.IWordData[]) {
 function MiniAnimatedCharacter(props: {
     word: ILyric.IWordData;
     fontSize: number;
+    lineHeight: number;
 }) {
-    const { word, fontSize } = props;
+    const { word, fontSize, lineHeight } = props;
     const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
     const wordStartTime = word.startTime;
     const wordDuration = word.duration;
@@ -124,6 +125,7 @@ function MiniAnimatedCharacter(props: {
                 styles.activeCharacter,
                 {
                     fontSize,
+                    lineHeight,
                 },
                 animatedStyle,
             ]}>
@@ -167,14 +169,11 @@ function MiniWordByWordLine(props: {
     }
 
     return (
-        <Text
-            numberOfLines={1}
+        <View
             style={[
-                styles.activeLine,
+                styles.activeWordLine,
                 {
-                    fontSize,
                     height: lineHeight,
-                    lineHeight,
                 },
             ]}>
             {characters.map((word, index) => (
@@ -182,9 +181,10 @@ function MiniWordByWordLine(props: {
                     key={`${word.startTime}-${index}`}
                     word={word}
                     fontSize={fontSize}
+                    lineHeight={lineHeight}
                 />
             ))}
-        </Text>
+        </View>
     );
 }
 
@@ -391,6 +391,12 @@ const styles = StyleSheet.create({
             width: 0,
             height: 0,
         },
+    },
+    activeWordLine: {
+        width: "100%",
+        flexDirection: "row",
+        alignItems: "center",
+        overflow: "hidden",
     },
     contextLine: {
         width: "100%",
