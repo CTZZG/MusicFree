@@ -53,6 +53,14 @@ const defaultDetailLyricOrder: LyricLineType[] = [
     "romanization",
 ];
 
+const detailAlignSet = new Set(["left", "center", "right"]);
+
+function normalizeDetailAlign(value: unknown) {
+    return detailAlignSet.has(value as string)
+        ? (value as "left" | "center" | "right")
+        : "center";
+}
+
 function normalizeDetailLyricOrder(order?: LyricLineType[]) {
     const displayOrder: LyricLineType[] = [];
     [...(order ?? []), ...defaultDetailLyricOrder].forEach(type => {
@@ -133,6 +141,9 @@ export default function Lyric(props: IProps) {
     const secondaryFontScale =
         useAppConfig("lyric.detailSecondaryFontScale") ?? 0.75;
     const fontSizeKey = PersistStatus.useValue("lyric.detailFontSize", 1);
+    const detailAlign = normalizeDetailAlign(
+        PersistStatus.useValue("lyric.detailAlign", "center"),
+    );
     const fontSizeStyle = useMemo(
         () => ({
             fontSize: fontSizeMap[fontSizeKey!],
@@ -385,6 +396,7 @@ export default function Lyric(props: IProps) {
                                 showRomanization,
                                 secondaryFontScale,
                                 lyricOrder,
+                                detailAlign,
                             }}
                             renderItem={({ item, index }) => {
                                 return (
@@ -400,6 +412,7 @@ export default function Lyric(props: IProps) {
                                         )}
                                         fontSize={fontSizeStyle.fontSize}
                                         secondaryFontScale={secondaryFontScale}
+                                        textAlign={detailAlign}
                                         onLayout={handleLyricItemLayout}
                                         light={draggingIndex === index}
                                         highlight={

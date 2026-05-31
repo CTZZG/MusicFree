@@ -3,6 +3,7 @@ import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import rpx from "@/utils/rpx";
 import ListItem from "../base/listItem";
 
+import { ImgAsset } from "@/constants/assetsConst";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { showPanel } from "../panels/usePanel";
 import TitleAndTag from "./titleAndTag";
@@ -20,7 +21,8 @@ interface IMusicItemProps {
     itemPaddingRight?: number;
     left?: () => JSX.Element;
     containerStyle?: StyleProp<ViewStyle>;
-    highlight?: boolean
+    highlight?: boolean;
+    showArtwork?: boolean;
 }
 export default function MusicItem(props: IMusicItemProps) {
     const {
@@ -34,6 +36,7 @@ export default function MusicItem(props: IMusicItemProps) {
         left: Left,
         containerStyle,
         highlight = false,
+        showArtwork = false,
     } = props;
 
     return (
@@ -52,6 +55,13 @@ export default function MusicItem(props: IMusicItemProps) {
                 }
             }}>
             {Left ? <Left /> : null}
+            {!Left && showArtwork ? (
+                <ListItem.ListItemImage
+                    uri={musicItem.artwork}
+                    fallbackImg={ImgAsset.albumDefault}
+                    contentStyle={styles.artwork}
+                />
+            ) : null}
             {index !== undefined ? (
                 <ListItem.ListItemText
                     width={rpx(86)}
@@ -112,6 +122,11 @@ export default function MusicItem(props: IMusicItemProps) {
 }
 
 const styles = StyleSheet.create({
+    artwork: {
+        width: rpx(68),
+        height: rpx(68),
+        borderRadius: rpx(12),
+    },
     icon: {
         marginRight: rpx(6),
     },

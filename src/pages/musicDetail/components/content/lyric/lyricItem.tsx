@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import type { TextStyle } from "react-native";
 import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { fontSizeConst } from "@/constants/uiConst";
@@ -25,6 +26,8 @@ interface ILyricItemComponentProps {
     fontSize?: number;
     // 副行字号比例
     secondaryFontScale?: number;
+    // 对齐方式
+    textAlign?: NonNullable<TextStyle["textAlign"]>;
 
     onLayout?: (index: number, height: number) => void;
 }
@@ -39,6 +42,7 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
         index,
         fontSize,
         secondaryFontScale = 0.75,
+        textAlign = "center",
     } = props;
 
     const colors = useColors();
@@ -79,6 +83,7 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
                             fontSize: line.primary
                                 ? primaryFontSize
                                 : primaryFontSize * secondaryFontScale,
+                            textAlign,
                         },
                         line.primary ? null : lyricStyles.secondaryLine,
                     ]}>
@@ -98,7 +103,8 @@ const LyricItemComponent = memo(
         prev.lines === curr.lines &&
         prev.index === curr.index &&
         prev.fontSize === curr.fontSize &&
-        prev.secondaryFontScale === curr.secondaryFontScale,
+        prev.secondaryFontScale === curr.secondaryFontScale &&
+        prev.textAlign === curr.textAlign,
 );
 
 export default LyricItemComponent;
@@ -117,7 +123,6 @@ const lyricStyles = StyleSheet.create({
     },
     line: {
         width: "100%",
-        textAlign: "center",
         textAlignVertical: "center",
     },
     secondaryLine: {

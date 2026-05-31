@@ -12,6 +12,7 @@ import useOrientation from "@/hooks/useOrientation";
 import HeartIcon from "../heartIcon";
 import Icon from "@/components/base/icon.tsx";
 import lyricManager, { useLyricState } from "@/core/lyricManager";
+import { useI18N } from "@/core/i18n";
 
 interface ILyricOperationsProps {
     scrollToCurrentLrcItem: () => void;
@@ -21,6 +22,7 @@ export default function LyricOperations(props: ILyricOperationsProps) {
     const { scrollToCurrentLrcItem } = props;
 
     const detailFontSize = PersistStatus.useValue("lyric.detailFontSize", 1);
+    const detailAlign = PersistStatus.useValue("lyric.detailAlign", "center");
 
     const { hasTranslation, hasRomanization } = useLyricState();
     const showTranslation = PersistStatus.useValue(
@@ -33,6 +35,7 @@ export default function LyricOperations(props: ILyricOperationsProps) {
     );
     const colors = useColors();
     const orientation = useOrientation();
+    const { t } = useI18N();
 
     return (
         <View style={styles.container}>
@@ -47,6 +50,42 @@ export default function LyricOperations(props: ILyricOperationsProps) {
                         onSelectChange(value) {
                             PersistStatus.set("lyric.detailFontSize", value);
                             scrollToCurrentLrcItem();
+                        },
+                    });
+                }}
+            />
+            <Icon
+                name="bars-3"
+                size={iconSizeConst.normal}
+                color={detailAlign === "center" ? "white" : colors.primary}
+                onPress={() => {
+                    showPanel("SimpleSelect", {
+                        header: t("basicSettings.lyric.align"),
+                        height: rpx(360),
+                        candidates: [
+                            {
+                                title: t("basicSettings.lyric.align.left"),
+                                icon: "bars-3",
+                                value: "left",
+                            },
+                            {
+                                title: t("basicSettings.lyric.align.center"),
+                                icon: "bars-3",
+                                value: "center",
+                            },
+                            {
+                                title: t("basicSettings.lyric.align.right"),
+                                icon: "bars-3",
+                                value: "right",
+                            },
+                        ],
+                        onPress(item) {
+                            PersistStatus.set(
+                                "lyric.detailAlign",
+                                item.value as "left" | "center" | "right",
+                            );
+                            scrollToCurrentLrcItem();
+                            hidePanel();
                         },
                     });
                 }}
