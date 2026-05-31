@@ -1,5 +1,11 @@
 import React, { memo } from "react";
-import { SectionList, SectionListProps, StyleSheet, View } from "react-native";
+import {
+    RefreshControl,
+    SectionList,
+    SectionListProps,
+    StyleSheet,
+    View,
+} from "react-native";
 import rpx from "@/utils/rpx";
 import { IPluginTopListResult } from "../store/atoms";
 import { RequestStateCode } from "@/constants/commonConst";
@@ -7,13 +13,23 @@ import Loading from "@/components/base/loading";
 import TopListItem from "@/components/mediaItem/topListItem";
 import ThemeText from "@/components/base/themeText";
 import ListEmpty from "@/components/base/listEmpty";
+import useColors from "@/hooks/useColors";
 
 interface IBoardPanelProps {
     hash: string;
-    topListData: IPluginTopListResult;
+    topListData?: IPluginTopListResult;
+    onRefresh?: () => void;
 }
 function BoardPanel(props: IBoardPanelProps) {
-    const { hash, topListData } = props ?? {};
+    const { hash, topListData, onRefresh } = props ?? {};
+    const colors = useColors();
+    const requestState =
+        topListData?.state ?? RequestStateCode.PENDING_FIRST_PAGE;
+    const isLoading =
+        requestState === RequestStateCode.LOADING ||
+        requestState === RequestStateCode.PENDING_REST_PAGE;
+    const hasExistingData = !!topListData?.data?.length;
+    const isRefreshing = isLoading && hasExistingData;
 
     const renderItem: SectionListProps<IMusic.IMusicSheetItemBase>["renderItem"] =
         ({ item }) => {
@@ -31,13 +47,25 @@ function BoardPanel(props: IBoardPanelProps) {
             );
         };
 
-    return topListData?.state !== RequestStateCode.FINISHED ? (
+    return isLoading && !hasExistingData ? (
         <Loading />
     ) : (
         <SectionList
             renderItem={renderItem}
             renderSectionHeader={renderSectionHeader}
-            ListEmptyComponent={<ListEmpty state={topListData?.state} />}
+            ListEmptyComponent={
+                <ListEmpty state={requestState} onRetry={onRefresh} />
+            }
+            refreshControl={
+                onRefresh ? (
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
+                    />
+                ) : undefined
+            }
             sections={topListData?.data || []}
         />
     );
@@ -45,7 +73,10 @@ function BoardPanel(props: IBoardPanelProps) {
 
 export default memo(
     BoardPanel,
-    (prev, curr) => prev.topListData === curr.topListData,
+    (prev, curr) =>
+        prev.hash === curr.hash &&
+        prev.topListData === curr.topListData &&
+        prev.onRefresh === curr.onRefresh,
 );
 
 const style = StyleSheet.create({

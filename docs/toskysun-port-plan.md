@@ -284,11 +284,18 @@ Implementation notes:
 
 Goal: turn the Round 13 discovery preview into a useful, source-aware discovery hub without adding heavy startup network work.
 
-- [ ] Add a fuller chart/discovery entry that can browse chart-capable plugins beyond the one lightweight home preview.
-- [ ] Add source selection, refresh, empty/error states, and cache TTL controls for discovery data.
-- [ ] Keep the home page network-light: the home overview should show previews and routes, while deeper discovery fetches happen after user intent.
-- [ ] Reuse existing top-list/recommendation routes where possible instead of adding a parallel content model.
+- [x] Add a fuller chart/discovery entry that can browse chart-capable plugins beyond the one lightweight home preview.
+- [x] Add source selection, refresh, empty/error states, and cache TTL controls for discovery data.
+- [x] Keep the home page network-light: the home overview should show previews and routes, while deeper discovery fetches happen after user intent.
+- [x] Reuse existing top-list/recommendation routes where possible instead of adding a parallel content model.
 - [ ] Verify behavior with multiple enabled sources, disabled sources, and plugins without top-list support.
+
+Implementation notes:
+
+- The existing top-list route now acts as the deeper chart discovery hub instead of introducing a parallel discovery page.
+- Top-list data is cached for 30 minutes per plugin source and can be force-refreshed through pull-to-refresh or retry.
+- Error and empty states now render through `ListEmpty` instead of getting stuck on an indefinite loading spinner.
+- The Round 13 home discovery preview passes its source hash into the top-list route so opening "view" lands on the relevant plugin tab.
 
 ## Round 15
 

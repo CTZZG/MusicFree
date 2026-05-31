@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import rpx from "@/utils/rpx";
 import PluginManager from "@/core/pluginManager";
@@ -8,14 +8,32 @@ import BoardPanelWrapper from "./boardPanelWrapper";
 import useColors from "@/hooks/useColors";
 import NoPlugin from "@/components/base/noPlugin";
 import i18n from "@/core/i18n";
+import { useParams } from "@/core/router";
 
 export default function TopListBody() {
-    const routes = PluginManager.getSortedPluginsWithAbility("getTopLists").map(_ => ({
-        key: _.hash,
-        title: _.name,
-    }));
-    const [index, setIndex] = useState(0);
+    const params = useParams<"top-list">();
+    const routes = useMemo(
+        () =>
+            PluginManager.getSortedPluginsWithAbility("getTopLists").map(_ => ({
+                key: _.hash,
+                title: _.name,
+            })),
+        [],
+    );
+    const initialIndex = useMemo(
+        () =>
+            Math.max(
+                0,
+                routes.findIndex(route => route.key === params?.initialPluginHash),
+            ),
+        [params?.initialPluginHash, routes],
+    );
+    const [index, setIndex] = useState(initialIndex);
     const colors = useColors();
+
+    useEffect(() => {
+        setIndex(initialIndex);
+    }, [initialIndex]);
 
     const renderScene = useCallback(
         (props: { route: { key: string } }) => (
@@ -45,14 +63,15 @@ export default function TopListBody() {
                     renderLabel={({ route, focused, color }) => (
                         <Text
                             numberOfLines={1}
-                            style={{
-                                width: rpx(160),
-                                fontWeight: focused
-                                    ? fontWeightConst.bolder
-                                    : fontWeightConst.medium,
-                                color,
-                                textAlign: "center",
-                            }}>
+                            style={[
+                                styles.tabLabel,
+                                {
+                                    fontWeight: focused
+                                        ? fontWeightConst.bolder
+                                        : fontWeightConst.medium,
+                                    color,
+                                },
+                            ]}>
                             {route.title}
                         </Text>
                     )}
@@ -77,5 +96,9 @@ const styles = StyleSheet.create({
     },
     tabStyle: {
         width: "auto",
+    },
+    tabLabel: {
+        width: rpx(160),
+        textAlign: "center",
     },
 });

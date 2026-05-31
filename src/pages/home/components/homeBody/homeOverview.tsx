@@ -455,7 +455,11 @@ function Discovery(props: {
             right={
                 <Pressable
                     style={styles.sectionTextButton}
-                    onPress={() => navigate(ROUTE_PATH.TOP_LIST)}>
+                    onPress={() =>
+                        navigate(ROUTE_PATH.TOP_LIST, {
+                            initialPluginHash: preview.topListPluginHash,
+                        })
+                    }>
                     <ThemeText
                         fontSize="description"
                         fontWeight="semibold"
@@ -554,7 +558,11 @@ function Discovery(props: {
                                 .toString(),
                         },
                     ]}
-                    onPress={() => navigate(ROUTE_PATH.TOP_LIST)}>
+                    onPress={() =>
+                        navigate(ROUTE_PATH.TOP_LIST, {
+                            initialPluginHash: topListPlugins[0]?.hash,
+                        })
+                    }>
                     <View
                         style={[
                             styles.discoveryIcon,

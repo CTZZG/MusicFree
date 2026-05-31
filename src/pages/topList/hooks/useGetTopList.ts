@@ -5,21 +5,37 @@ import { useAtom } from "jotai";
 import { useCallback } from "react";
 import { pluginsTopListAtom } from "../store/atoms";
 
+const TOP_LIST_CACHE_TTL = 30 * 60 * 1000;
+
+interface IGetTopListOptions {
+    force?: boolean;
+}
+
 export default function useGetTopList() {
     const [pluginsTopList, setPluginsTopList] = useAtom(pluginsTopListAtom);
 
     const getTopList = useCallback(
-        async (pluginHash: string) => {
+        async (pluginHash: string, options: IGetTopListOptions = {}) => {
             try {
-                // 有数据/加载中直接返回
+                const currentTopList = pluginsTopList[pluginHash];
+                const cacheIsFresh =
+                    currentTopList?.updatedAt &&
+                    Date.now() - currentTopList.updatedAt < TOP_LIST_CACHE_TTL;
+
                 if (
-                    pluginsTopList[pluginHash]?.data?.length ||
-                    pluginsTopList[pluginHash]?.state ===
-                        RequestStateCode.PENDING_REST_PAGE
+                    !options.force &&
+                    currentTopList?.state === RequestStateCode.FINISHED &&
+                    cacheIsFresh
                 ) {
                     return;
                 }
-                // 获取plugin
+
+                if (
+                    currentTopList?.state === RequestStateCode.PENDING_REST_PAGE
+                ) {
+                    return;
+                }
+
                 const plugin = PluginManager.getByHash(pluginHash);
                 if (!plugin) {
                     return;
@@ -29,7 +45,8 @@ export default function useGetTopList() {
                     produce(draft => {
                         draft[pluginHash] = {
                             state: RequestStateCode.PENDING_REST_PAGE,
-                            data: [],
+                            data: draft[pluginHash]?.data ?? [],
+                            updatedAt: draft[pluginHash]?.updatedAt,
                         };
                     }),
                 );
@@ -39,18 +56,23 @@ export default function useGetTopList() {
                         draft[pluginHash] = {
                             data: result,
                             state: RequestStateCode.FINISHED,
+                            updatedAt: Date.now(),
                         };
                     }),
                 );
             } catch {
                 setPluginsTopList(
                     produce(draft => {
-                        draft[pluginHash].state = RequestStateCode.ERROR;
+                        draft[pluginHash] = {
+                            data: draft[pluginHash]?.data ?? [],
+                            updatedAt: draft[pluginHash]?.updatedAt,
+                            state: RequestStateCode.ERROR,
+                        };
                     }),
                 );
             }
         },
-        [pluginsTopList],
+        [pluginsTopList, setPluginsTopList],
     );
 
     return getTopList;

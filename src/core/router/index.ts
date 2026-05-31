@@ -106,6 +106,11 @@ interface RouterParams extends RouterParamsBase {
         ) => Promise<boolean>; // true会自动关闭，false会停在当前页面
         matchExtension?: (path: string) => boolean;
     };
+    "top-list":
+        | undefined
+        | {
+              initialPluginHash?: string;
+          };
     "top-list-detail": {
         pluginHash: string;
         topList: IMusic.IMusicSheetItemBase;
