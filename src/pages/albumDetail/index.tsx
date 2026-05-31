@@ -5,9 +5,10 @@ import MusicSheetPage from "@/components/musicSheetPage";
 import { useI18N } from "@/core/i18n";
 
 export default function AlbumDetail() {
-    const { albumItem: originalAlbumItem } = useParams<"album-detail">();
+    const { albumItem: originalAlbumItem, pluginHash } =
+        useParams<"album-detail">();
     const [requestStateCode, albumItem, musicList, getAlbumDetail] =
-        useAlbumDetail(originalAlbumItem);
+        useAlbumDetail(originalAlbumItem, pluginHash);
     const { t } = useI18N();
 
     return (

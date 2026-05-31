@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function usePluginSheetMusicList(
     originalSheetItem: IMusic.IMusicSheetItem | null,
+    pluginHash?: string,
 ) {
     const currentPageRef = useRef(1);
+    const didRequestFirstPageRef = useRef(false);
 
     const [requestState, setRequestState] = useState<RequestStateCode>(RequestStateCode.IDLE);
     const [sheetItem, setSheetItem] = useState<IMusic.IMusicSheetItem | null>(
@@ -30,9 +32,19 @@ export default function usePluginSheetMusicList(
                 } else {
                     setRequestState(RequestStateCode.PENDING_REST_PAGE);
                 }
-                const result = await PluginManager.getByMedia(
-                    originalSheetItem as any,
-                )?.methods?.getMusicSheetInfo?.(
+                const plugin =
+                    (pluginHash
+                        ? PluginManager.getByHash(pluginHash)
+                        : undefined) ??
+                    PluginManager.getByMedia(originalSheetItem as any);
+                if (!plugin) {
+                    if (originalSheetItem.musicList?.length) {
+                        setRequestState(RequestStateCode.FINISHED);
+                        return;
+                    }
+                    throw new Error();
+                }
+                const result = await plugin?.methods?.getMusicSheetInfo?.(
                     originalSheetItem,
                     currentPageRef.current,
                 );
@@ -65,12 +77,16 @@ export default function usePluginSheetMusicList(
                 setRequestState(RequestStateCode.ERROR);
             }
         },
-        [requestState],
+        [originalSheetItem, pluginHash, requestState],
     );
 
     useEffect(() => {
+        if (didRequestFirstPageRef.current) {
+            return;
+        }
+        didRequestFirstPageRef.current = true;
         getSheetDetail();
-    }, []);
+    }, [getSheetDetail]);
 
     return [requestState, sheetItem, musicList, getSheetDetail] as const;
 }

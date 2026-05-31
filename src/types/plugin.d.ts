@@ -38,7 +38,7 @@ declare namespace IPlugin {
     ) => Promise<ISearchResult<T>>;
 
     type IGetArtistWorksFunc = <T extends IArtist.ArtistMediaType>(
-        artistItem: IArtist.IArtistItem,
+        artistItem: IArtist.IArtistItemBase,
         page: number,
         type: T,
     ) => Promise<ISearchResult<T>>;

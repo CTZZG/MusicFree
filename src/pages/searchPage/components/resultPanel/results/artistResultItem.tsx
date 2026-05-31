@@ -6,7 +6,7 @@ import TitleAndTag from "@/components/mediaItem/titleAndTag";
 import { useI18N } from "@/core/i18n";
 
 interface IArtistResultsProps {
-    item: IArtist.IArtistItem;
+    item: IArtist.IArtistItemBase;
     index: number;
     pluginHash: string;
 }

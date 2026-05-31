@@ -5,10 +5,13 @@ import usePluginSheetMusicList from "./hooks/usePluginSheetMusicList";
 import i18n from "@/core/i18n";
 
 export default function PluginSheetDetail() {
-    const { sheetInfo } = useParams<"plugin-sheet-detail">();
+    const { pluginHash, sheetInfo } = useParams<"plugin-sheet-detail">();
 
     const [requestState, sheetItem, musicList, getSheetDetail] =
-        usePluginSheetMusicList(sheetInfo as IMusic.IMusicSheetItem);
+        usePluginSheetMusicList(
+            sheetInfo as IMusic.IMusicSheetItem,
+            pluginHash,
+        );
     return (
         <MusicSheetPage
             canStar

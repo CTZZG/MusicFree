@@ -73,10 +73,11 @@ interface RouterParams extends RouterParamsBase {
         id: string;
     };
     "album-detail": {
-        albumItem: IAlbum.IAlbumItem;
+        albumItem: ICommon.WithMusicList<IAlbum.IAlbumItemBase>;
+        pluginHash?: string;
     };
     "artist-detail": {
-        artistItem: IArtist.IArtistItem;
+        artistItem: IArtist.IArtistItemBase;
         pluginHash: string;
     };
     setting: {

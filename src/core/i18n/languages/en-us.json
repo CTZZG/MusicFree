@@ -145,6 +145,7 @@
     "searchPage.history": "History",
     "searchPage.artistResultWorksNum": "{count} works",
     "searchPage.comingSoon": "Coming Soon",
+    "searchPage.albumDetailFallback": "This source cannot open album details directly. Searching the album instead.",
     "searchPage.sourceEmptyResult": "No results from {source}",
     "searchPage.sourceLoadFailed": "{source} failed to load",
     "topList.title": "Charts",

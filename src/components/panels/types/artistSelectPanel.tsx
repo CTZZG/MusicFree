@@ -35,15 +35,13 @@ export default function ArtistSelectPanel(props: IArtistSelectPanelProps) {
 
     const handleArtistPress = (singer: ISingerInfo) => {
         const plugin = pluginManager.getByName(platform);
-        const artistItem: IArtist.IArtistItem = {
+        const artistItem: IArtist.IArtistItemBase = {
             id: String(singer.id),
             singerMID: singer.mid,
             name: singer.name,
             platform,
             avatar: singer.avatar || "",
             worksNum: 0,
-            musicList: [] as any,
-            albumList: [] as any,
         };
 
         hidePanel();

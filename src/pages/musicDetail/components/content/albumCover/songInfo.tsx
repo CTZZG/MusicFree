@@ -107,15 +107,13 @@ export default function SongInfo(props: ISongInfoProps) {
 
         if (singerList.length === 1) {
             const singer = singerList[0];
-            const artistItem: IArtist.IArtistItem = {
+            const artistItem: IArtist.IArtistItemBase = {
                 id: String(singer.id),
                 singerMID: singer.mid,
                 name: singer.name,
                 platform: musicItem.platform,
                 avatar: singer.avatar || "",
                 worksNum: 0,
-                musicList: [] as any,
-                albumList: [] as any,
             };
 
             navigate(ROUTE_PATH.ARTIST_DETAIL, {
@@ -152,6 +150,7 @@ export default function SongInfo(props: ISongInfoProps) {
 
             navigate(ROUTE_PATH.ALBUM_DETAIL, {
                 albumItem,
+                pluginHash: plugin.hash,
             });
             return;
         }

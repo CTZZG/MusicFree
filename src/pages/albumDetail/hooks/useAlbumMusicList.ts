@@ -3,9 +3,11 @@ import PluginManager from "@/core/pluginManager";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function useAlbumDetail(
-    originalAlbumItem: IAlbum.IAlbumItem | null,
+    originalAlbumItem: ICommon.WithMusicList<IAlbum.IAlbumItemBase> | null,
+    pluginHash?: string,
 ) {
     const currentPageRef = useRef(1);
+    const didRequestFirstPageRef = useRef(false);
 
     const [requestState, setRequestState] = useState<RequestStateCode>(RequestStateCode.IDLE);
     const [albumItem, setAlbumItem] = useState<IAlbum.IAlbumItemBase | null>(
@@ -31,9 +33,19 @@ export default function useAlbumDetail(
                 } else {
                     setRequestState(RequestStateCode.PENDING_REST_PAGE);
                 }
-                const result = await PluginManager.getByMedia(
-                    originalAlbumItem,
-                )?.methods?.getAlbumInfo?.(
+                const plugin =
+                    (pluginHash
+                        ? PluginManager.getByHash(pluginHash)
+                        : undefined) ??
+                    PluginManager.getByMedia(originalAlbumItem);
+                if (!plugin) {
+                    if (originalAlbumItem.musicList?.length) {
+                        setRequestState(RequestStateCode.FINISHED);
+                        return;
+                    }
+                    throw new Error();
+                }
+                const result = await plugin?.methods?.getAlbumInfo?.(
                     originalAlbumItem,
                     currentPageRef.current,
                 );
@@ -66,12 +78,16 @@ export default function useAlbumDetail(
                 setRequestState(RequestStateCode.ERROR);
             }
         },
-        [requestState],
+        [originalAlbumItem, pluginHash, requestState],
     );
 
     useEffect(() => {
+        if (didRequestFirstPageRef.current) {
+            return;
+        }
+        didRequestFirstPageRef.current = true;
         getAlbumDetail();
-    }, []);
+    }, [getAlbumDetail]);
 
     return [requestState, albumItem, musicList, getAlbumDetail] as const;
 }

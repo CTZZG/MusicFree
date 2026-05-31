@@ -1,10 +1,12 @@
 import React from "react";
 import AlbumItem from "@/components/mediaItem/albumItem";
+import { useParams } from "@/core/router";
 
 interface IAlbumContentProps {
-    item: IAlbum.IAlbumItem;
+    item: ICommon.WithMusicList<IAlbum.IAlbumItemBase>;
 }
 export default function AlbumContentItem(props: IAlbumContentProps) {
     const { item } = props;
-    return <AlbumItem albumItem={item} />;
+    const { pluginHash } = useParams<"artist-detail">();
+    return <AlbumItem albumItem={item} pluginHash={pluginHash} />;
 }

@@ -145,6 +145,7 @@
     "searchPage.history": "历史记录",
     "searchPage.artistResultWorksNum": "{count} 个作品",
     "searchPage.comingSoon": "敬请期待",
+    "searchPage.albumDetailFallback": "当前来源无法直接打开专辑详情，已按专辑搜索",
     "searchPage.sourceEmptyResult": "{source} 暂无搜索结果",
     "searchPage.sourceLoadFailed": "{source} 加载失败",
     "topList.title": "榜单",

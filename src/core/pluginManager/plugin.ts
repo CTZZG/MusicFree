@@ -880,7 +880,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
     /** 查询作者信息 */
     async getArtistWorks<T extends IArtist.ArtistMediaType>(
-        artistItem: IArtist.IArtistItem,
+        artistItem: IArtist.IArtistItemBase,
         page: number,
         type: T,
     ): Promise<IPlugin.ISearchResult<T>> {

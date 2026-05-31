@@ -11,7 +11,7 @@ export default function useQueryArtist(pluginHash: string) {
 
     const queryArtist = useCallback(
         async (
-            artist: IArtist.IArtistItem,
+            artist: IArtist.IArtistItemBase,
             page?: number,
             type: IArtist.ArtistMediaType = "music",
         ) => {
@@ -63,7 +63,7 @@ export default function useQueryArtist(pluginHash: string) {
                 );
             }
         },
-        [queryResults],
+        [pluginHash, queryResults, setQueryResults],
     );
 
     return queryArtist;

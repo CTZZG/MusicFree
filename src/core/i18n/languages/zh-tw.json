@@ -145,6 +145,7 @@
     "searchPage.history": "歷史紀錄",
     "searchPage.artistResultWorksNum": "{count} 個作品",
     "searchPage.comingSoon": "敬請期待",
+    "searchPage.albumDetailFallback": "目前來源無法直接開啟專輯詳情，已按專輯搜尋",
     "searchPage.sourceEmptyResult": "{source} 暫無搜尋結果",
     "searchPage.sourceLoadFailed": "{source} 加載失敗",
     "topList.title": "榜單",

@@ -181,6 +181,7 @@ export interface ILanguageData {
     "searchPage.history": string; // 历史记录
     "searchPage.artistResultWorksNum": string; // 艺术家作品数量
     "searchPage.comingSoon": string; // 敬请期待
+    "searchPage.albumDetailFallback": string; // 专辑详情不可用时回退搜索
     "searchPage.sourceEmptyResult": string; // 某来源无搜索结果
     "searchPage.sourceLoadFailed": string; // 某来源加载失败
 
