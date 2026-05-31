@@ -372,6 +372,45 @@ Goal: run a controlled React Native / Expo / React major-upgrade spike instead o
 - [ ] Verify Android build, playback, download, plugin import, lyrics, notifications, and file permissions before deciding whether the spike is mergeable.
 - [ ] Decide whether the upgrade is merge-ready, needs more native-player work, or should remain deferred.
 
+## Toskysun Pixel Audit Backlog
+
+Reference snapshot: Toskysun/MusicFree `f463f57` (`0.6.52`, React Native `0.79.6`, Expo `53`, React `19`), audited on 2026-05-31.
+
+This pass is a source/component-level pixel audit: components, layout logic, settings, native bridges, and user-visible states were compared so practical improvements can be planned. A true screenshot-level parity pass still needs both APKs installed with the same plugins, songs, theme, and playback state, then captured across home, search, detail cover, full lyric, mini lyric, downloads, and settings.
+
+### Merge Into Round 16
+
+- [ ] Rework the word-by-word lyric renderer toward Toskysun's optimized shape: line-level active-character derived values, smooth highlight sweep, optional float animation, and identical wrapping between active/static lines.
+- [ ] Add lyric display switches for word-by-word on/off, word float animation, pure-white highlight mode, and breathing dots for empty lyric lines.
+- [ ] Extend mini lyric with translation/romanization support, dynamic line heights, compact mode behavior, and current-line glow/soft fade, while keeping the Android-safe no-`MaskedView` fallback during navigation transitions.
+- [ ] Add a cover style option (`square` / `circle`) and test Android-safe rotating circular album art without changing the stable cover tap/long-press path.
+- [ ] Create a visual regression checklist for playback detail: cover page, mini lyric, full lyric alignment, blank lyric lines, lyric settings sheet, gesture return, and bottom-player restore.
+
+### Merge Into Round 17
+
+- [ ] Add optional sidecar lyric-file download (`.lrc` / `.txt`) after successful music download, using the existing lyric manager and metadata settings.
+- [ ] Add a per-track download status/progress indicator in lists or action sheets where it helps users distinguish waiting, downloading, paused, failed, completed, and metadata-writing states.
+- [ ] Evaluate Toskysun's mflac decrypt/proxy path against CTZZG's private `react-native-track-player` fork in an isolated experiment; keep encrypted mflac/QMC disabled unless native decrypt/proxy passes real-device playback and download tests.
+- [ ] Add local/download format diagnostics for special containers, so users can see whether FLAC, OGG, Opus, M4A/MP4, mflac, QMC, and plugin-provided URLs are playable, downloadable, taggable, or blocked.
+
+### Merge Into Round 18
+
+- [ ] Add app build-info / app-meta diagnostics so APK version, git SHA, build time, signing state, and dependency baseline can be checked from the app or support logs.
+- [ ] Decide whether to add an announcement dialog/service; if added, use a CTZZG-owned announcement source, cached reads, opt-out/ignore support, and no Toskysun remote endpoint.
+- [ ] Add a keyboard-avoidance setting only if real-device dialogs/input panels still overlap on common Android keyboards.
+- [ ] Consider an "open playback detail on launch" setting after resume, bottom-player tap, lyric loading, and background restore are stable.
+
+### Merge Into Round 19
+
+- [ ] Use Toskysun's current framework baseline (`RN 0.79.6`, `Expo 53`, `React 19`) as one concrete upgrade target candidate, but re-check official compatibility before starting the spike.
+- [ ] Keep CTZZG's private `react-native-track-player` fork pinned during the first upgrade attempt; do not switch to Toskysun's public player dependency just to match package versions.
+
+### Already Covered Or Lower Priority
+
+- Current multi-source search already has source state, source-scoped navigation, artwork, quality badges, duration, platform tags, and gdmusic fallbacks; only spacing and visual regression checks remain.
+- Current home redesign is intentionally more personalized than Toskysun's playlist-first shape; future work should polish discovery and continue-listening states rather than revert the information architecture.
+- Current Android mini lyric avoids software `MaskedView` because device testing exposed black flashes during native-stack return gestures; this stability choice should override visual parity.
+
 ## Later / Optional
 
 - [x] Mini lyric / song detail enhancements.
@@ -384,3 +423,6 @@ Goal: run a controlled React Native / Expo / React major-upgrade spike instead o
 - [ ] React Native `0.79`, Expo `53`, React `19` upgrade.
 - [ ] Android package name, signing, app icon, or manifest wholesale replacement.
 - [ ] Removal of CTZZG's extra audio-format support.
+- [ ] Toskysun remote announcement URLs.
+- [ ] Android software `MaskedView` for mini lyric transitions unless the black-flash regression is proven fixed.
+- [ ] mflac/QMC native proxy/decrypt as an enabled default before CTZZG private-player validation.
