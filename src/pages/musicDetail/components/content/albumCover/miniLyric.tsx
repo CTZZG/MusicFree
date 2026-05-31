@@ -263,6 +263,64 @@ export default function MiniLyric(props: IMiniLyricProps) {
         return null;
     }
 
+    const lyricContent = (
+        <View style={styles.contentContainer}>
+            <Animated.View style={[styles.lyricsWrapper, animatedListStyle]}>
+                {lyrics.map((item, index) => {
+                    const isActive = index === currentIndex;
+                    const text = getLyricText(item);
+                    const distance = Math.abs(index - currentIndex);
+                    const opacity =
+                        distance === 0
+                            ? 1
+                            : distance === 1
+                              ? 0.48
+                              : distance === 2
+                                ? 0.28
+                                : 0.16;
+
+                    return (
+                        <View
+                            key={`${item.time}-${index}`}
+                            style={[
+                                styles.lyricGroup,
+                                {
+                                    height: groupHeight,
+                                    opacity,
+                                },
+                            ]}>
+                            {isActive ? (
+                                <MiniWordByWordLine
+                                    item={item}
+                                    nextItem={lyrics[index + 1]}
+                                    compact={compact}
+                                />
+                            ) : text ? (
+                                <Text
+                                    numberOfLines={1}
+                                    style={[
+                                        styles.contextLine,
+                                        {
+                                            height: lineHeight,
+                                            lineHeight,
+                                        },
+                                    ]}>
+                                    {text}
+                                </Text>
+                            ) : (
+                                <View
+                                    style={{
+                                        height: lineHeight,
+                                    }}
+                                />
+                            )}
+                        </View>
+                    );
+                })}
+            </Animated.View>
+        </View>
+    );
+
     return (
         <Pressable
             onPress={onPress}
@@ -275,69 +333,13 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 },
                 pressed ? styles.pressed : null,
             ]}>
-            <MaskedView
-                style={styles.maskedView}
-                androidRenderingMode={
-                    Platform.OS === "android" ? "software" : undefined
-                }
-                maskElement={maskElement}>
-                <View style={styles.contentContainer}>
-                    <Animated.View
-                        style={[styles.lyricsWrapper, animatedListStyle]}>
-                        {lyrics.map((item, index) => {
-                            const isActive = index === currentIndex;
-                            const text = getLyricText(item);
-                            const distance = Math.abs(index - currentIndex);
-                            const opacity =
-                                distance === 0
-                                    ? 1
-                                    : distance === 1
-                                      ? 0.48
-                                      : distance === 2
-                                        ? 0.28
-                                        : 0.16;
-
-                            return (
-                                <View
-                                    key={`${item.time}-${index}`}
-                                    style={[
-                                        styles.lyricGroup,
-                                        {
-                                            height: groupHeight,
-                                            opacity,
-                                        },
-                                    ]}>
-                                    {isActive ? (
-                                        <MiniWordByWordLine
-                                            item={item}
-                                            nextItem={lyrics[index + 1]}
-                                            compact={compact}
-                                        />
-                                    ) : text ? (
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[
-                                                styles.contextLine,
-                                                {
-                                                    height: lineHeight,
-                                                    lineHeight,
-                                                },
-                                            ]}>
-                                            {text}
-                                        </Text>
-                                    ) : (
-                                        <View
-                                            style={{
-                                                height: lineHeight,
-                                            }}
-                                        />
-                                    )}
-                                </View>
-                            );
-                        })}
-                    </Animated.View>
-                </View>
-            </MaskedView>
+            {Platform.OS === "android" ? (
+                lyricContent
+            ) : (
+                <MaskedView style={styles.maskedView} maskElement={maskElement}>
+                    {lyricContent}
+                </MaskedView>
+            )}
         </Pressable>
     );
 }

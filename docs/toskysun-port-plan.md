@@ -317,11 +317,15 @@ Implementation notes:
 
 ## Round 16
 
-Goal: continue the Toskysun-inspired playback and lyric polish after the stable Round 11 foundation.
+Goal: finish the playback-detail and lyric work before adding more feature surface.
 
 - [x] Refine the album-cover lyric preview layout, line count, blur/highlight, and blank-line behavior based on device testing.
 - [x] Improve the full lyric page controls, including alignment picker placement, lyric density, and secondary-line readability.
-- [x] Evaluate word-by-word lyric animation as a separate opt-in path so it does not destabilize the current scroll/gesture behavior.
+- [x] Add word-by-word lyric rendering for timed lyric formats.
+- [ ] Verify that word-by-word rendering advances by character/word on real Android devices instead of lighting up the whole line at once.
+- [ ] Keep the mini lyric preview stable during native-stack gesture transitions.
+- [ ] Re-test artist and album navigation for plugins with direct ids and plugins that need search fallback.
+- [ ] Re-test playback resume, bottom-player tap, cover tap, cover long-press, lyric-page switch, and background/foreground restore on Android.
 - [ ] Review desktop/status-bar lyric settings against current CTZZG native support.
 - [x] Keep Android tap/long-press cover interactions on the stable `Pressable` path.
 
@@ -331,8 +335,32 @@ Implementation notes:
 - Playback progress events now arrive at 0.1s for lyric animation; persisted resume progress is throttled to one write per second so the smoother UI does not over-write MMKV.
 - Full lyric line updates compare by lyric index instead of lyric text, so repeated identical lyric lines can still advance correctly.
 - The alignment picker height was reduced so the right-align option is no longer clipped on shorter Android screens.
+- Android mini lyric rendering should avoid software `MaskedView` during navigation transitions because it can flash a black mask layer while the detail page is being popped.
 
 ## Round 17
+
+Goal: close the loop around downloads, local files, and special formats on top of CTZZG's private `react-native-track-player` fork.
+
+- [ ] Audit current playable/downloadable formats against the private player fork and native downloader.
+- [ ] Surface clearer download-time status for FLAC, OGG, Opus, M4A/MP4, mflac, QMC, and other special containers.
+- [ ] Distinguish network errors, permission errors, unsupported encrypted sources, decrypt failures, and metadata-writing failures in download task copy.
+- [ ] Complete metadata writing checks after download: title, artist, album, cover, lyric, quality, and source.
+- [ ] Re-evaluate Opus and M4A/MP4 tag writing after OGG support.
+- [ ] Keep encrypted mflac/QMC playback/download disabled unless the native decrypt/proxy path is fully verified on Android.
+- [ ] Add local-library scan indicators for supported, partially supported, and unsupported special formats.
+
+## Round 18
+
+Goal: turn the current migration into a stable Android release candidate.
+
+- [ ] Re-run Android release builds locally and through `.github/workflows/android-build.yml`.
+- [ ] Verify signing, versionCode/versionName, artifact naming, and GitHub Actions release artifacts.
+- [ ] Write a concise changelog covering home redesign, multi-source search, lyric changes, downloads, and plugin compatibility.
+- [ ] Add Android plugin compatibility notes, especially ES syntax limits and the Android-compatible GD Music build.
+- [ ] Add or document common diagnostics for plugin import failure, lyric loading failure, playback failure, download failure, and metadata writing failure.
+- [ ] Maintain an Android real-device regression checklist: startup, resume, play/pause, next/previous, bottom player, detail page, lyric page, cover gestures, search, album/artist navigation, download, local playback, notifications, and background restore.
+
+## Round 19
 
 Goal: run a controlled React Native / Expo / React major-upgrade spike instead of mixing framework churn into feature rounds.
 
@@ -340,6 +368,8 @@ Goal: run a controlled React Native / Expo / React major-upgrade spike instead o
 - [ ] Check the current official React Native, Expo, and React compatibility matrix before selecting exact target versions.
 - [ ] Attempt the framework upgrade with the private `react-native-track-player` fork preserved.
 - [ ] Fix or document native Android, Expo module, Reanimated, Metro, Gradle, and TypeScript breakages.
+- [ ] Keep New Architecture disabled for the first pass.
+- [ ] Verify Android build, playback, download, plugin import, lyrics, notifications, and file permissions before deciding whether the spike is mergeable.
 - [ ] Decide whether the upgrade is merge-ready, needs more native-player work, or should remain deferred.
 
 ## Later / Optional
