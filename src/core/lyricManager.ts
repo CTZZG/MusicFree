@@ -17,6 +17,7 @@ import { unlink, writeFile } from "react-native-fs";
 import RNTrackPlayer, { Event } from "react-native-track-player";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import { IPluginManager } from "@/types/core/pluginManager";
+import { makeMutable, type SharedValue } from "react-native-reanimated";
 
 interface ILyricState {
     loading: boolean;
@@ -43,6 +44,16 @@ const defaultLyricState = {
 
 const lyricStateAtom = atom<ILyricState>(defaultLyricState);
 const currentLyricItemAtom = atom<IParsedLrcItem | null>(null);
+const currentPositionMsAtom = atom<number>(0);
+
+let currentPositionMsShared: SharedValue<number> | null = null;
+
+export function getCurrentPositionMsShared() {
+    if (!currentPositionMsShared) {
+        currentPositionMsShared = makeMutable(0);
+    }
+    return currentPositionMsShared;
+}
 
 class LyricManager implements IInjectable {
     private trackPlayer!: ITrackPlayer;
@@ -90,6 +101,10 @@ class LyricManager implements IInjectable {
 
         RNTrackPlayer.addEventListener(Event.PlaybackProgressUpdated, evt => {
             const parser = this.lyricParser;
+            const positionMs = evt.position * 1000;
+            getDefaultStore().set(currentPositionMsAtom, positionMs);
+            getCurrentPositionMsShared().value = positionMs;
+
             if (!parser || !this.trackPlayer.isCurrentMusic(parser.musicItem)) {
                 return;
             }
@@ -98,7 +113,7 @@ class LyricManager implements IInjectable {
                 getDefaultStore().get(currentLyricItemAtom);
             const newLyricItem = parser.getPosition(evt.position);
 
-            if (currentLyricItem?.lrc !== newLyricItem?.lrc) {
+            if (currentLyricItem?.index !== newLyricItem?.index) {
                 // 更新当前歌词状态
                 getDefaultStore().set(
                     currentLyricItemAtom,
@@ -417,11 +432,13 @@ class LyricManager implements IInjectable {
                 meta: this.lyricParser.getMeta(),
             });
 
+            const progress = await this.trackPlayer.getProgress();
             const currentLyric = ignoreProgress
                 ? this.lyricParser.getLyricItems()?.[0] ?? null
-                : this.lyricParser.getPosition(
-                    (await this.trackPlayer.getProgress()).position,
-                );
+                : this.lyricParser.getPosition(progress.position);
+            const positionMs = progress.position * 1000;
+            getDefaultStore().set(currentPositionMsAtom, positionMs);
+            getCurrentPositionMsShared().value = positionMs;
             getDefaultStore().set(currentLyricItemAtom, currentLyric || null);
 
             if (this.appConfig.getConfig("lyric.showStatusBarLyric")) {
@@ -519,3 +536,4 @@ export default lyricManager;
 
 export const useLyricState = () => useAtomValue(lyricStateAtom);
 export const useCurrentLyricItem = () => useAtomValue(currentLyricItemAtom);
+export const useCurrentPositionMs = () => useAtomValue(currentPositionMsAtom);

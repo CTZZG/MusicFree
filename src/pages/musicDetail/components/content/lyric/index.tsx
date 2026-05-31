@@ -29,6 +29,9 @@ interface IDetailLyricLine {
     key: LyricLineType;
     text: string;
     primary: boolean;
+    hasWordByWord?: boolean;
+    words?: ILyric.IWordData[];
+    isPseudoWordByWord?: boolean;
 }
 
 interface IItemHeights {
@@ -81,6 +84,38 @@ function getLyricLineText(item: IParsedLrcItem, type: LyricLineType) {
     return item.romanization ?? "";
 }
 
+function getLyricLineWordData(item: IParsedLrcItem, type: LyricLineType) {
+    if (type === "original" && item.hasWordByWord && item.words?.length) {
+        return {
+            hasWordByWord: true,
+            words: item.words,
+        };
+    }
+    if (
+        type === "translation" &&
+        item.hasTranslationWordByWord &&
+        item.translationWords?.length
+    ) {
+        return {
+            hasWordByWord: true,
+            words: item.translationWords,
+            isPseudoWordByWord: true,
+        };
+    }
+    if (
+        type === "romanization" &&
+        item.hasRomanizationWordByWord &&
+        item.romanizationWords?.length
+    ) {
+        return {
+            hasWordByWord: true,
+            words: item.romanizationWords,
+            isPseudoWordByWord: item.isRomanizationPseudo,
+        };
+    }
+    return {};
+}
+
 function buildDetailLyricLines(
     item: IParsedLrcItem,
     order: LyricLineType[],
@@ -99,6 +134,7 @@ function buildDetailLyricLines(
         .map(type => ({
             key: type,
             text: getLyricLineText(item, type),
+            ...getLyricLineWordData(item, type),
         }))
         .filter(line => line.key === "original" || line.text.trim().length);
 

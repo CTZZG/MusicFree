@@ -319,11 +319,18 @@ Implementation notes:
 
 Goal: continue the Toskysun-inspired playback and lyric polish after the stable Round 11 foundation.
 
-- [ ] Refine the album-cover lyric preview layout, line count, blur/highlight, and blank-line behavior based on device testing.
-- [ ] Improve the full lyric page controls, including alignment picker placement, lyric density, and secondary-line readability.
-- [ ] Evaluate word-by-word lyric animation as a separate opt-in path so it does not destabilize the current scroll/gesture behavior.
+- [x] Refine the album-cover lyric preview layout, line count, blur/highlight, and blank-line behavior based on device testing.
+- [x] Improve the full lyric page controls, including alignment picker placement, lyric density, and secondary-line readability.
+- [x] Evaluate word-by-word lyric animation as a separate opt-in path so it does not destabilize the current scroll/gesture behavior.
 - [ ] Review desktop/status-bar lyric settings against current CTZZG native support.
-- [ ] Keep Android tap/long-press cover interactions on the stable `Pressable` path.
+- [x] Keep Android tap/long-press cover interactions on the stable `Pressable` path.
+
+Implementation notes:
+
+- Detail lyrics now keep the parsed QRC/angle-bracket word timing and render current-line word-by-word highlighting with a small float/scale sweep inspired by Toskysun, while non-current lines keep the same wrapped layout without per-frame animation.
+- Playback progress events now arrive at 0.1s for lyric animation; persisted resume progress is throttled to one write per second so the smoother UI does not over-write MMKV.
+- Full lyric line updates compare by lyric index instead of lyric text, so repeated identical lyric lines can still advance correctly.
+- The alignment picker height was reduced so the right-align option is no longer clipped on shorter Android screens.
 
 ## Round 17
 

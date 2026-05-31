@@ -6,9 +6,18 @@ import {
     useWindowDimensions,
     View,
 } from "react-native";
+import Animated, {
+    interpolate,
+    interpolateColor,
+    useAnimatedStyle,
+} from "react-native-reanimated";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
-import { useCurrentLyricItem, useLyricState } from "@/core/lyricManager";
+import {
+    getCurrentPositionMsShared,
+    useCurrentLyricItem,
+    useLyricState,
+} from "@/core/lyricManager";
 import rpx from "@/utils/rpx";
 import { getSongInfoWidth } from "./songInfo";
 import type { IParsedLrcItem } from "@/utils/lrcParser";
@@ -22,6 +31,7 @@ interface IMiniLyricDisplayLine {
     key: string;
     text: string;
     type: "context" | "current";
+    item: IParsedLrcItem;
 }
 
 function getLyricText(item?: IParsedLrcItem | null) {
@@ -43,6 +53,182 @@ function findNonEmptyLyricIndex(
         }
     }
     return -1;
+}
+
+const MIN_WORD_DURATION = 50;
+
+function normalizeWordSpaces(words: ILyric.IWordData[]) {
+    return words.map((word, index) => {
+        if (!word.space) {
+            return word;
+        }
+        const nextWord = words[index + 1];
+        if (word.text.endsWith(" ") || nextWord?.text.startsWith(" ")) {
+            return {
+                ...word,
+                space: false,
+            };
+        }
+        return word;
+    });
+}
+
+function splitWordToChars(word: ILyric.IWordData) {
+    const text = word.text ?? "";
+    const chars = Array.from(text);
+
+    if (chars.length <= 1 || /^\s+$/.test(text)) {
+        return [word];
+    }
+
+    const duration = Math.max(word.duration || 0, MIN_WORD_DURATION);
+    const charDuration = duration / chars.length;
+
+    return chars.map((char, index) => ({
+        text: char,
+        startTime: word.startTime + charDuration * index,
+        duration: charDuration,
+        space: index === chars.length - 1 ? word.space : false,
+    }));
+}
+
+function shouldAppendSpace(word: ILyric.IWordData) {
+    return !!word.space && !word.text.endsWith(" ");
+}
+
+function MiniAnimatedWord(props: {
+    word: ILyric.IWordData;
+    fontSize: number;
+    lineHeight: number;
+}) {
+    const { word, fontSize, lineHeight } = props;
+    const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
+    const maxTranslateY = Math.min(rpx(4), fontSize * 0.1);
+    const wordStartTime = word.startTime;
+    const wordDuration = word.duration;
+    const animatedStyle = useAnimatedStyle(() => {
+        const startTime = wordStartTime;
+        const duration = Math.max(wordDuration || 0, MIN_WORD_DURATION);
+        const endTime = startTime + duration;
+        const currentTime = currentPositionMs.value;
+        const progress =
+            currentTime <= startTime
+                ? 0
+                : currentTime >= endTime
+                  ? 1
+                  : (currentTime - startTime) / duration;
+        const wave = Math.sin(progress * Math.PI);
+
+        return {
+            color: interpolateColor(
+                progress,
+                [0, 1],
+                ["rgba(255, 255, 255, 0.42)", "rgba(255, 255, 255, 1)"],
+            ),
+            opacity: interpolate(progress, [0, 0.3, 1], [0.58, 0.86, 1]),
+            transform: [
+                {
+                    translateY: -wave * maxTranslateY,
+                },
+            ],
+        };
+    }, [maxTranslateY, wordDuration, wordStartTime]);
+
+    return (
+        <Animated.Text
+            style={[
+                styles.currentWord,
+                {
+                    fontSize,
+                    lineHeight,
+                },
+                animatedStyle,
+            ]}>
+            {word.text}
+        </Animated.Text>
+    );
+}
+
+function MiniAnimatedWordGroup(props: {
+    word: ILyric.IWordData;
+    fontSize: number;
+    lineHeight: number;
+}) {
+    const { word, fontSize, lineHeight } = props;
+    const characters = useMemo(() => splitWordToChars(word), [word]);
+    const trailingSpace = shouldAppendSpace(word) ? " " : "";
+
+    return (
+        <View style={styles.currentWordGroup}>
+            {characters.map((character, index) => (
+                <MiniAnimatedWord
+                    key={`${character.startTime}-${index}`}
+                    word={character}
+                    fontSize={fontSize}
+                    lineHeight={lineHeight}
+                />
+            ))}
+            {trailingSpace ? (
+                <Text
+                    style={[
+                        styles.currentWord,
+                        {
+                            color: "rgba(255, 255, 255, 0.42)",
+                            fontSize,
+                            lineHeight,
+                        },
+                    ]}>
+                    {trailingSpace}
+                </Text>
+            ) : null}
+        </View>
+    );
+}
+
+function MiniWordByWordLine(props: {
+    item: IParsedLrcItem;
+    compact?: boolean;
+}) {
+    const { item, compact } = props;
+    const words = useMemo(
+        () => normalizeWordSpaces(item.words ?? []),
+        [item.words],
+    );
+    const fontSize = compact ? fontSizeConst.subTitle : fontSizeConst.title;
+    const lineHeight = compact ? rpx(38) : rpx(44);
+    const maxHeight = compact ? lineHeight : lineHeight * 2;
+
+    if (!item.hasWordByWord || !words.length || !item.lrc.trim()) {
+        return (
+            <Text
+                numberOfLines={compact ? 1 : 2}
+                style={[
+                    styles.primary,
+                    compact ? styles.compactPrimary : styles.currentLine,
+                ]}>
+                {getLyricText(item)}
+            </Text>
+        );
+    }
+
+    return (
+        <View
+            style={[
+                styles.currentWordLine,
+                {
+                    maxHeight,
+                },
+            ]}>
+            {words.map((word, index) => (
+                <MiniAnimatedWordGroup
+                    key={`${word.startTime}-${index}`}
+                    word={word}
+                    fontSize={fontSize}
+                    lineHeight={lineHeight}
+                />
+            ))}
+        </View>
+    );
 }
 
 export default function MiniLyric(props: IMiniLyricProps) {
@@ -118,6 +304,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 key: `lyric-${index}`,
                 text: getLyricText(lyricState.lyrics[index]),
                 type: index === normalizedActiveIndex ? "current" : "context",
+                item: lyricState.lyrics[index],
             }));
 
         return {
@@ -142,35 +329,45 @@ export default function MiniLyric(props: IMiniLyricProps) {
             ]}>
             <View style={[styles.inner, compact ? styles.compactInner : null]}>
                 {compact || displayState.fallback ? (
-                    <Text
-                        numberOfLines={compact ? 1 : 2}
-                        style={[
-                            styles.primary,
-                            compact ? styles.compactPrimary : null,
-                        ]}>
-                        {displayState.fallback ||
-                            displayState.lines.find(
-                                line => line.type === "current",
-                            )?.text}
-                    </Text>
+                    displayState.fallback ? (
+                        <Text
+                            numberOfLines={compact ? 1 : 2}
+                            style={[
+                                styles.primary,
+                                compact ? styles.compactPrimary : null,
+                            ]}>
+                            {displayState.fallback}
+                        </Text>
+                    ) : (
+                        <MiniWordByWordLine
+                            compact={compact}
+                            item={
+                                displayState.lines.find(
+                                    line => line.type === "current",
+                                )!.item
+                            }
+                        />
+                    )
                 ) : (
                     <View style={styles.stack}>
-                        {displayState.lines.map(line => (
-                            <Text
-                                key={line.key}
-                                numberOfLines={line.type === "current" ? 2 : 1}
-                                style={[
-                                    styles.stackLine,
-                                    line.type === "current"
-                                        ? styles.currentLine
-                                        : null,
-                                    line.type === "context"
-                                        ? styles.contextLine
-                                        : null,
-                                ]}>
-                                {line.text}
-                            </Text>
-                        ))}
+                        {displayState.lines.map(line =>
+                            line.type === "current" ? (
+                                <MiniWordByWordLine
+                                    key={line.key}
+                                    item={line.item}
+                                />
+                            ) : (
+                                <Text
+                                    key={line.key}
+                                    numberOfLines={1}
+                                    style={[
+                                        styles.stackLine,
+                                        styles.contextLine,
+                                    ]}>
+                                    {line.text}
+                                </Text>
+                            ),
+                        )}
                     </View>
                 )}
             </View>
@@ -228,6 +425,27 @@ const styles = StyleSheet.create({
             height: 0,
         },
         textShadowRadius: rpx(8),
+    },
+    currentWordLine: {
+        width: "100%",
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "baseline",
+        overflow: "hidden",
+    },
+    currentWordGroup: {
+        flexDirection: "row",
+        alignItems: "baseline",
+    },
+    currentWord: {
+        includeFontPadding: false,
+        fontWeight: fontWeightConst.bold,
+        textShadowColor: "rgba(255, 255, 255, 0.28)",
+        textShadowOffset: {
+            width: 0,
+            height: 0,
+        },
+        textShadowRadius: rpx(7),
     },
     contextLine: {
         color: "rgba(255, 255, 255, 0.36)",

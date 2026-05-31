@@ -208,7 +208,7 @@ export async function initTrackPlayer() {
         ];
     await RNTrackPlayer.updateOptions({
         icon: ImgAsset.logoTransparent,
-        progressUpdateEventInterval: 0.5,
+        progressUpdateEventInterval: 0.1,
         android: {
             alwaysPauseOnInterruption: true,
             appKilledPlaybackBehavior:

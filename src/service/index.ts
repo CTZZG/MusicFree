@@ -5,6 +5,8 @@ import { musicIsPaused } from "@/utils/trackUtils";
 import PersistStatus from "@/utils/persistStatus";
 
 let resumeState: State | null;
+let lastProgressPersistTime = 0;
+
 module.exports = async function () {
     RNTrackPlayer.addEventListener(Event.RemotePlay, () => TrackPlayer.play());
     RNTrackPlayer.addEventListener(Event.RemotePause, () =>
@@ -56,6 +58,11 @@ module.exports = async function () {
 
 
     RNTrackPlayer.addEventListener(Event.PlaybackProgressUpdated, evt => {
+        const now = Date.now();
+        if (now - lastProgressPersistTime < 1000) {
+            return;
+        }
+        lastProgressPersistTime = now;
         PersistStatus.set("music.progress", evt.position);
     });
 
