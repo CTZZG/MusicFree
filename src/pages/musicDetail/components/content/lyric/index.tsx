@@ -20,6 +20,7 @@ import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import lyricManager, { useCurrentLyricItem, useLyricState } from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
 import { useAppConfig } from "@/core/appConfig";
+import { getLyricWordData } from "@/utils/lyricWordByWord";
 
 const ITEM_HEIGHT = rpx(92);
 
@@ -31,6 +32,7 @@ interface IDetailLyricLine {
     primary: boolean;
     hasWordByWord?: boolean;
     words?: ILyric.IWordData[];
+    lineStartTimeMs?: number;
     isPseudoWordByWord?: boolean;
 }
 
@@ -84,36 +86,19 @@ function getLyricLineText(item: IParsedLrcItem, type: LyricLineType) {
     return item.romanization ?? "";
 }
 
-function getLyricLineWordData(item: IParsedLrcItem, type: LyricLineType) {
-    if (type === "original" && item.hasWordByWord && item.words?.length) {
+function getLyricLineWordData(
+    item: IParsedLrcItem,
+    type: LyricLineType,
+    nextItem?: IParsedLrcItem,
+) {
+    const lyricWordData = getLyricWordData(item, type, nextItem);
+    if (!lyricWordData.hasWordByWord) {
         return {
-            hasWordByWord: true,
-            words: item.words,
+            lineStartTimeMs: lyricWordData.lineStartTimeMs,
         };
     }
-    if (
-        type === "translation" &&
-        item.hasTranslationWordByWord &&
-        item.translationWords?.length
-    ) {
-        return {
-            hasWordByWord: true,
-            words: item.translationWords,
-            isPseudoWordByWord: true,
-        };
-    }
-    if (
-        type === "romanization" &&
-        item.hasRomanizationWordByWord &&
-        item.romanizationWords?.length
-    ) {
-        return {
-            hasWordByWord: true,
-            words: item.romanizationWords,
-            isPseudoWordByWord: item.isRomanizationPseudo,
-        };
-    }
-    return {};
+
+    return lyricWordData;
 }
 
 function buildDetailLyricLines(
@@ -123,6 +108,7 @@ function buildDetailLyricLines(
     hasTranslation: boolean,
     showRomanization: boolean,
     hasRomanization: boolean,
+    nextItem?: IParsedLrcItem,
 ) {
     const enabled = {
         original: true,
@@ -134,7 +120,7 @@ function buildDetailLyricLines(
         .map(type => ({
             key: type,
             text: getLyricLineText(item, type),
-            ...getLyricLineWordData(item, type),
+            ...getLyricLineWordData(item, type, nextItem),
         }))
         .filter(line => line.key === "original" || line.text.trim().length);
 
@@ -142,6 +128,7 @@ function buildDetailLyricLines(
         orderedLines.push({
             key: "original",
             text: item.lrc,
+            ...getLyricLineWordData(item, "original", nextItem),
         });
     }
 
@@ -445,6 +432,7 @@ export default function Lyric(props: IProps) {
                                             hasTranslation,
                                             !!showRomanization,
                                             hasRomanization,
+                                            lyrics[index + 1],
                                         )}
                                         fontSize={fontSizeStyle.fontSize}
                                         secondaryFontScale={secondaryFontScale}

@@ -10,6 +10,7 @@ import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { getCurrentPositionMsShared } from "@/core/lyricManager";
+import { normalizeLyricWords } from "@/utils/lyricWordByWord";
 
 interface ILyricLine {
     key: string;
@@ -17,6 +18,7 @@ interface ILyricLine {
     primary: boolean;
     hasWordByWord?: boolean;
     words?: ILyric.IWordData[];
+    lineStartTimeMs?: number;
     isPseudoWordByWord?: boolean;
 }
 
@@ -61,22 +63,6 @@ function getRowJustifyContent(value: NonNullable<TextStyle["textAlign"]>) {
         return "flex-end" as const;
     }
     return "center" as const;
-}
-
-function normalizeWordSpaces(words: ILyric.IWordData[]) {
-    return words.map((word, index) => {
-        if (!word.space) {
-            return word;
-        }
-        const nextWord = words[index + 1];
-        if (word.text.endsWith(" ") || nextWord?.text.startsWith(" ")) {
-            return {
-                ...word,
-                space: false,
-            };
-        }
-        return word;
-    });
 }
 
 function splitWordToChars(word: ILyric.IWordData) {
@@ -351,8 +337,8 @@ function WordByWordLine(props: {
         highlight,
     } = props;
     const words = useMemo(
-        () => normalizeWordSpaces(line.words ?? []),
-        [line.words],
+        () => normalizeLyricWords(line.words ?? [], line.lineStartTimeMs ?? 0),
+        [line.lineStartTimeMs, line.words],
     );
     const justifyContent = getRowJustifyContent(textAlign);
 
@@ -442,7 +428,8 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
                 const canUseWordByWord =
                     !!line.hasWordByWord &&
                     !!line.words?.length &&
-                    !!line.text.trim();
+                    !!line.text.trim() &&
+                    (highlight || !line.isPseudoWordByWord);
 
                 return (
                     <View
