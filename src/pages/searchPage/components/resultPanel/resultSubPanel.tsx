@@ -1,12 +1,13 @@
 import Empty from "@/components/base/empty";
-import { fontWeightConst } from "@/constants/uiConst";
+import { RequestStateCode } from "@/constants/commonConst";
+import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import PluginManager from "@/core/pluginManager";
 import useColors from "@/hooks/useColors";
 import rpx, { vw } from "@/utils/rpx";
 import { useAtomValue } from "jotai";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
 import { searchResultsAtom } from "../../store/atoms";
 import { renderMap } from "./results";
@@ -16,6 +17,39 @@ import { useParams } from "@/core/router";
 
 interface IResultSubPanelProps {
     tab: ICommon.SupportMediaType;
+}
+
+function getPluginTabMeta(
+    searchResult:
+        | {
+              state?: RequestStateCode;
+              data?: unknown[];
+          }
+        | undefined,
+    loadingText: string,
+    failedText: string,
+) {
+    const resultCount = searchResult?.data?.length ?? 0;
+
+    if (
+        searchResult?.state === RequestStateCode.PENDING_FIRST_PAGE ||
+        searchResult?.state === RequestStateCode.PENDING_REST_PAGE
+    ) {
+        return resultCount ? `${resultCount}...` : loadingText;
+    }
+
+    if (searchResult?.state === RequestStateCode.ERROR) {
+        return failedText;
+    }
+
+    if (
+        searchResult?.state === RequestStateCode.FINISHED ||
+        searchResult?.state === RequestStateCode.PARTLY_DONE
+    ) {
+        return `${resultCount}`;
+    }
+
+    return "";
 }
 
 // 展示结果的视图
@@ -67,6 +101,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
     const params = useParams<"search-page">();
     const colors = useColors();
     const { t } = useI18N();
+    const searchResults = useAtomValue(searchResultsAtom);
 
     const routes = useMemo(
         () =>
@@ -115,21 +150,54 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                     tabStyle={styles.tab}
                     renderIndicator={() => null}
                     pressColor="transparent"
-                    renderLabel={({ route, focused, color }) => (
-                        <Text
-                            numberOfLines={1}
-                            style={[
-                                styles.pluginTabLabel,
-                                {
-                                    fontWeight: focused
-                                        ? fontWeightConst.bolder
-                                        : fontWeightConst.medium,
-                                    color,
-                                },
-                            ]}>
-                            {route.title ?? `(${t("common.unknownName")})`}
-                        </Text>
-                    )}
+                    renderLabel={({ route, focused, color }) => {
+                        const pluginSearchResult =
+                            searchResults[props.tab][route.key];
+                        const meta = getPluginTabMeta(
+                            pluginSearchResult,
+                            t("common.loading"),
+                            t("common.failToLoad"),
+                        );
+                        const isError =
+                            pluginSearchResult?.state ===
+                            RequestStateCode.ERROR;
+                        const metaColor = isError
+                            ? colors.notification
+                            : focused
+                                ? color
+                                : colors.textSecondary;
+
+                        return (
+                            <View style={styles.pluginTabLabel}>
+                                <Text
+                                    numberOfLines={1}
+                                    style={[
+                                        styles.pluginTabTitle,
+                                        {
+                                            fontWeight: focused
+                                                ? fontWeightConst.bolder
+                                                : fontWeightConst.medium,
+                                            color,
+                                        },
+                                    ]}>
+                                    {route.title ??
+                                        `(${t("common.unknownName")})`}
+                                </Text>
+                                {meta ? (
+                                    <Text
+                                        numberOfLines={1}
+                                        style={[
+                                            styles.pluginTabMeta,
+                                            {
+                                                color: metaColor,
+                                            },
+                                        ]}>
+                                        {meta}
+                                    </Text>
+                                ) : null}
+                            </View>
+                        );
+                    }}
                 />
             )}
             renderScene={renderScene}
@@ -153,6 +221,17 @@ const styles = StyleSheet.create({
     },
     pluginTabLabel: {
         width: rpx(140),
+        alignItems: "center",
+        justifyContent: "center",
+        rowGap: rpx(4),
+    },
+    pluginTabTitle: {
+        width: "100%",
+        textAlign: "center",
+    },
+    pluginTabMeta: {
+        width: "100%",
+        fontSize: fontSizeConst.tag,
         textAlign: "center",
     },
 });

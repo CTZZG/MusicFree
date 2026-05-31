@@ -145,6 +145,8 @@
     "searchPage.history": "历史记录",
     "searchPage.artistResultWorksNum": "{count} 个作品",
     "searchPage.comingSoon": "敬请期待",
+    "searchPage.sourceEmptyResult": "{source} 暂无搜索结果",
+    "searchPage.sourceLoadFailed": "{source} 加载失败",
     "topList.title": "榜单",
     "sheetDetail.totalMusicCount": "共 {count} 首",
     "sheetDetail.editSheetInfo": "编辑歌单信息",

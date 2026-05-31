@@ -145,6 +145,8 @@
     "searchPage.history": "History",
     "searchPage.artistResultWorksNum": "{count} works",
     "searchPage.comingSoon": "Coming Soon",
+    "searchPage.sourceEmptyResult": "No results from {source}",
+    "searchPage.sourceLoadFailed": "{source} failed to load",
     "topList.title": "Charts",
     "sheetDetail.totalMusicCount": "{count} songs total",
     "sheetDetail.syncPlaylist": "Sync Playlist",

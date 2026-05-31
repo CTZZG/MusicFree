@@ -8,6 +8,8 @@ export interface ISearchResult<T extends ICommon.SupportMediaType> {
     page?: number;
     /** 搜索词 */
     query?: string;
+    /** 搜索失败原因 */
+    errorMessage?: string;
     /** 搜索状态 */
     state: RequestStateCode;
     /** 数据 */

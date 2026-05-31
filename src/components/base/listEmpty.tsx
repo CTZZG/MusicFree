@@ -10,9 +10,11 @@ import { useI18N } from "@/core/i18n";
 interface IEmptyProps {
     state: RequestStateCode
     onRetry?: () => void;
+    title?: string;
+    description?: string;
 }
 export default function ListEmpty(props: IEmptyProps) {
-    const { state, onRetry } = props;
+    const { state, onRetry, title, description } = props;
 
     const colors = useColors();
     const { t } = useI18N();
@@ -20,8 +22,16 @@ export default function ListEmpty(props: IEmptyProps) {
     if (state === RequestStateCode.FINISHED || state === RequestStateCode.PARTLY_DONE) {
         return <View style={style.wrapper}>
             <ThemeText fontSize="title">
-                {t("common.emptyList")}
+                {title ?? t("common.emptyList")}
             </ThemeText>
+            {description ? (
+                <ThemeText
+                    fontSize="description"
+                    fontColor="textSecondary"
+                    style={style.description}>
+                    {description}
+                </ThemeText>
+            ) : null}
         </View>;
     } else if (state === RequestStateCode.PENDING_FIRST_PAGE) {
         return <View style={style.wrapper}>
@@ -35,8 +45,16 @@ export default function ListEmpty(props: IEmptyProps) {
     } else if (state === RequestStateCode.ERROR) {
         return <View style={style.wrapper}>
             <ThemeText fontSize="title">
-                {t("common.error")}
+                {title ?? t("common.error")}
             </ThemeText>
+            {description ? (
+                <ThemeText
+                    fontSize="description"
+                    fontColor="textSecondary"
+                    style={style.description}>
+                    {description}
+                </ThemeText>
+            ) : null}
             <TouchableOpacity onPress={onRetry} style={style.retryButton}>
                 <ThemeText>{t("common.clickToRetry")}</ThemeText>
             </TouchableOpacity>
@@ -59,5 +77,9 @@ const style = StyleSheet.create({
         paddingHorizontal: rpx(48),
         borderRadius: rpx(36),
         backgroundColor: "rgba(128, 128, 128, 0.2)",
+    },
+    description: {
+        maxWidth: "80%",
+        textAlign: "center",
     },
 });

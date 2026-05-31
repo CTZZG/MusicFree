@@ -101,6 +101,7 @@ export default function useSearch() {
                                     : prevMediaResult[_hash]?.data ?? [],
                                 query: query,
                                 page,
+                                errorMessage: undefined,
                             };
                         }),
                     );
@@ -126,7 +127,7 @@ export default function useSearch() {
                     setSearchResults(
                         produce(draft => {
                             const prevMediaResult = draft[searchType];
-                            const prevPluginResult: any = prevMediaResult[
+                            const previousStoredResult: any = prevMediaResult[
                                 _hash
                             ] ?? {
                                 data: [],
@@ -141,9 +142,10 @@ export default function useSearch() {
                                         : RequestStateCode.FINISHED,
                                 query,
                                 page,
+                                errorMessage: undefined,
                                 data: newSearch
                                     ? currResult
-                                    : (prevPluginResult.data ?? []).concat(
+                                    : (previousStoredResult.data ?? []).concat(
                                         currResult,
                                     ),
                             };
@@ -167,19 +169,21 @@ export default function useSearch() {
                     setSearchResults(
                         produce(draft => {
                             const prevMediaResult = draft[searchType];
-                            const prevPluginResult = prevMediaResult[_hash] ?? {
+                            const previousStoredResult = prevMediaResult[_hash] ?? {
                                 data: [],
                             };
 
-                            prevPluginResult.state =
+                            previousStoredResult.state =
                                 RequestStateCode.ERROR;
+                            previousStoredResult.errorMessage =
+                                e?.message ?? String(e ?? "");
                             return draft;
                         }),
                     );
                 }
             });
         },
-        [searchResults],
+        [searchResults, setPageStatus, setSearchResults],
     );
 
     return search;

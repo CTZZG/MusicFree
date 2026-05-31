@@ -6,10 +6,18 @@ import useOrientation from "@/hooks/useOrientation";
 import rpx from "@/utils/rpx";
 import { FlashList } from "@shopify/flash-list";
 import { useAtomValue } from "jotai";
-import React, { memo, useCallback, useEffect, useState } from "react";
+import React, {
+    memo,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import useSearch from "../../hooks/useSearch";
 import { ISearchResult, queryAtom } from "../../store/atoms";
 import { renderMap } from "./results";
+import { useI18N } from "@/core/i18n";
 
 interface IResultWrapperProps<
     T extends ICommon.SupportMediaType = ICommon.SupportMediaType,
@@ -21,13 +29,21 @@ interface IResultWrapperProps<
     pluginSearchResultRef: React.MutableRefObject<ISearchResult<T>>;
 }
 function ResultWrapper(props: IResultWrapperProps) {
-    const { tab, pluginHash, searchResult, pluginSearchResultRef } = props;
+    const {
+        tab,
+        pluginHash,
+        pluginName,
+        searchResult,
+        pluginSearchResultRef,
+    } = props;
     const search = useSearch();
     const [searchState, setSearchState] = useState<RequestStateCode>(
         searchResult?.state ?? RequestStateCode.IDLE,
     );
     const orientation = useOrientation();
     const query = useAtomValue(queryAtom);
+    const { t } = useI18N();
+    const didRequestFirstSearchRef = useRef(false);
 
     const ResultComponent = renderMap[tab]!;
     const data: any = searchResult?.data ?? [];
@@ -38,10 +54,14 @@ function ResultWrapper(props: IResultWrapperProps) {
     );
 
     useEffect(() => {
-        if (searchState === RequestStateCode.IDLE) {
+        if (
+            searchState === RequestStateCode.IDLE &&
+            !didRequestFirstSearchRef.current
+        ) {
+            didRequestFirstSearchRef.current = true;
             search(query, 1, tab, pluginHash);
         }
-    }, []);
+    }, [pluginHash, query, search, searchState, tab]);
 
     useEffect(() => {
         setSearchState(searchResult?.state ?? RequestStateCode.IDLE);
@@ -55,15 +75,44 @@ function ResultWrapper(props: IResultWrapperProps) {
             pluginSearchResultRef={pluginSearchResultRef}
         />
     );
+    const emptyStateText = useMemo(() => {
+        if (
+            searchState === RequestStateCode.FINISHED ||
+            searchState === RequestStateCode.PARTLY_DONE
+        ) {
+            return {
+                title: t("searchPage.sourceEmptyResult", {
+                    source: pluginName,
+                }),
+            };
+        }
+        if (searchState === RequestStateCode.ERROR) {
+            return {
+                title: t("searchPage.sourceLoadFailed", {
+                    source: pluginName,
+                }),
+                description: searchResult?.errorMessage,
+            };
+        }
+
+        return {};
+    }, [pluginName, searchResult?.errorMessage, searchState, t]);
 
     return searchState === RequestStateCode.PENDING_FIRST_PAGE ? (
         <Loading />
     ) : (
         <FlashList
             extraData={searchState}
-            ListEmptyComponent={<ListEmpty state={searchState} onRetry={() => {
-                search(query, 1, tab, pluginHash);
-            }} />}
+            ListEmptyComponent={
+                <ListEmpty
+                    state={searchState}
+                    title={emptyStateText.title}
+                    description={emptyStateText.description}
+                    onRetry={() => {
+                        search(query, 1, tab, pluginHash);
+                    }}
+                />
+            }
             ListFooterComponent={data?.length ? <ListFooter state={searchState} onRetry={() => {
                 search(query, undefined, tab, pluginHash);
             }} /> : null}

@@ -145,6 +145,8 @@
     "searchPage.history": "歷史紀錄",
     "searchPage.artistResultWorksNum": "{count} 個作品",
     "searchPage.comingSoon": "敬請期待",
+    "searchPage.sourceEmptyResult": "{source} 暫無搜尋結果",
+    "searchPage.sourceLoadFailed": "{source} 加載失敗",
     "topList.title": "榜單",
     "sheetDetail.totalMusicCount": "共 {count} 首",
     "sheetDetail.syncPlaylist": "歌單同步",
