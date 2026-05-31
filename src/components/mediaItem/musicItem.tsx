@@ -30,6 +30,7 @@ interface IMusicItemProps {
     highlight?: boolean;
     showArtwork?: boolean;
     showQuality?: boolean;
+    showDuration?: boolean;
 }
 
 function getMusicItemQualityBadge(musicItem: IMusic.IMusicItem) {
@@ -42,6 +43,25 @@ function getMusicItemQualityBadge(musicItem: IMusic.IMusicItem) {
     );
 
     return bestQuality ? getQualityAbbr(bestQuality) : "";
+}
+
+function formatDuration(duration?: number | string) {
+    const durationNumber =
+        typeof duration === "string" ? Number(duration) : duration;
+    if (!durationNumber || !Number.isFinite(durationNumber)) {
+        return "";
+    }
+
+    const totalSeconds = Math.max(0, Math.round(durationNumber));
+    const seconds = totalSeconds % 60;
+    const minutes = Math.floor(totalSeconds / 60) % 60;
+    const hours = Math.floor(totalSeconds / 3600);
+    const paddedSeconds = String(seconds).padStart(2, "0");
+    const paddedMinutes = hours ? String(minutes).padStart(2, "0") : minutes;
+
+    return hours
+        ? `${hours}:${paddedMinutes}:${paddedSeconds}`
+        : `${minutes}:${paddedSeconds}`;
 }
 
 export default function MusicItem(props: IMusicItemProps) {
@@ -58,10 +78,15 @@ export default function MusicItem(props: IMusicItemProps) {
         highlight = false,
         showArtwork = false,
         showQuality = false,
+        showDuration = false,
     } = props;
     const qualityBadge = useMemo(
         () => showQuality ? getMusicItemQualityBadge(musicItem) : "",
         [musicItem, showQuality],
+    );
+    const durationText = useMemo(
+        () => showDuration ? formatDuration(musicItem.duration) : "",
+        [musicItem.duration, showDuration],
     );
 
     return (
@@ -135,6 +160,17 @@ export default function MusicItem(props: IMusicItemProps) {
                     </View>
                 }
             />
+            {durationText ? (
+                <ListItem.ListItemText
+                    width={rpx(72)}
+                    position="none"
+                    fixedWidth
+                    fontSize="description"
+                    fontColor="textSecondary"
+                    contentStyle={styles.durationText}>
+                    {durationText}
+                </ListItem.ListItemText>
+            ) : null}
             {showMoreIcon ? (
                 <ListItem.ListItemIcon
                     width={rpx(48)}
@@ -190,6 +226,9 @@ const styles = StyleSheet.create({
         color: "#72c7ff",
         includeFontPadding: false,
         lineHeight: rpx(24),
+    },
+    durationText: {
+        textAlign: "right",
     },
 
     indexText: {

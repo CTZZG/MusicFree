@@ -301,11 +301,16 @@ Implementation notes:
 
 Goal: polish multi-source search and result browsing so the app feels coherent when many plugins are enabled.
 
-- [ ] Improve search result metadata density: cover artwork, quality badges, duration, platform/source clarity, and resilient fallbacks.
+- [x] Improve search result metadata density: cover artwork, quality badges, duration, platform/source clarity, and resilient fallbacks.
 - [ ] Review source tabs/filtering for many sources, including pinned/common sources and per-source loading/error states.
 - [ ] Tighten album, artist, and playlist result navigation so plugin-provided ids are used when available and search fallbacks remain clear.
 - [ ] Improve search empty/error copy and retry behavior, especially when only some sources fail.
 - [ ] Keep gdmusic and other Android-compatible plugins as the main smoke-test set.
+
+Implementation notes:
+
+- Search music results now show artwork, best available quality abbreviation, source/platform tag, and track duration when plugins provide it.
+- When search is opened with a `pluginHash`, the inner source tab now lands on that plugin instead of defaulting to the first enabled source.
 
 ## Round 16
 

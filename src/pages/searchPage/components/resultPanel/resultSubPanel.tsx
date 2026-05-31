@@ -6,12 +6,13 @@ import useColors from "@/hooks/useColors";
 import rpx, { vw } from "@/utils/rpx";
 import { useAtomValue } from "jotai";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Text } from "react-native";
+import { StyleSheet, Text } from "react-native";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
 import { searchResultsAtom } from "../../store/atoms";
 import { renderMap } from "./results";
 import DefaultResults from "./results/defaultResults";
 import ResultWrapper from "./resultWrapper";
+import { useParams } from "@/core/router";
 
 interface IResultSubPanelProps {
     tab: ICommon.SupportMediaType;
@@ -63,20 +64,35 @@ function getSubRouterScene(
 }
 
 function ResultSubPanel(props: IResultSubPanelProps) {
-    const [index, setIndex] = useState(0);
+    const params = useParams<"search-page">();
     const colors = useColors();
     const { t } = useI18N();
 
-    const routes = PluginManager.getSortedSearchablePlugins(props.tab).map(
-        _ => ({
-            key: _.hash,
-            title: _.name,
-        }),
-    );
-    const renderScene = useMemo(
-        () => getSubRouterScene(props.tab, routes),
+    const routes = useMemo(
+        () =>
+            PluginManager.getSortedSearchablePlugins(props.tab).map(_ => ({
+                key: _.hash,
+                title: _.name,
+            })),
         [props.tab],
     );
+    const initialIndex = useMemo(
+        () =>
+            Math.max(
+                routes.findIndex(route => route.key === params?.pluginHash),
+                0,
+            ),
+        [params?.pluginHash, routes],
+    );
+    const [index, setIndex] = useState(initialIndex);
+    const renderScene = useMemo(
+        () => getSubRouterScene(props.tab, routes),
+        [props.tab, routes],
+    );
+
+    useEffect(() => {
+        setIndex(initialIndex);
+    }, [initialIndex]);
 
     if (!routes.length) {
         return <Empty />;
@@ -93,29 +109,24 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                 <TabBar
                     {..._}
                     scrollEnabled
-                    style={{
-                        backgroundColor: "transparent",
-                        shadowColor: "transparent",
-                        borderColor: "transparent",
-                    }}
+                    style={styles.tabBar}
                     inactiveColor={colors.text}
                     activeColor={colors.primary}
-                    tabStyle={{
-                        width: "auto",
-                    }}
+                    tabStyle={styles.tab}
                     renderIndicator={() => null}
                     pressColor="transparent"
                     renderLabel={({ route, focused, color }) => (
                         <Text
                             numberOfLines={1}
-                            style={{
-                                width: rpx(140),
-                                fontWeight: focused
-                                    ? fontWeightConst.bolder
-                                    : fontWeightConst.medium,
-                                color,
-                                textAlign: "center",
-                            }}>
+                            style={[
+                                styles.pluginTabLabel,
+                                {
+                                    fontWeight: focused
+                                        ? fontWeightConst.bolder
+                                        : fontWeightConst.medium,
+                                    color,
+                                },
+                            ]}>
                             {route.title ?? `(${t("common.unknownName")})`}
                         </Text>
                     )}
@@ -130,3 +141,18 @@ function ResultSubPanel(props: IResultSubPanelProps) {
 
 // 不然会一直重新渲染
 export default memo(ResultSubPanel);
+
+const styles = StyleSheet.create({
+    tabBar: {
+        backgroundColor: "transparent",
+        shadowColor: "transparent",
+        borderColor: "transparent",
+    },
+    tab: {
+        width: "auto",
+    },
+    pluginTabLabel: {
+        width: rpx(140),
+        textAlign: "center",
+    },
+});
