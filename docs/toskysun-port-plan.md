@@ -1,6 +1,6 @@
 # Toskysun Feature Port Plan
 
-Last updated: 2026-05-26
+Last updated: 2026-05-31
 
 ## Scope
 
@@ -279,6 +279,46 @@ Implementation notes:
 - Discovery preview now focuses on chart/top-list content only; recommended playlists stay as a direct quick entry and multi-source search stays in the top search bar.
 - Discovery preview intentionally limits itself to one chart source on app launch. A later round can add manual refresh, source selection, and cache TTL controls.
 - React Native / Expo / React major upgrades remain a separate spike after the home redesign stabilizes.
+
+## Round 14
+
+Goal: turn the Round 13 discovery preview into a useful, source-aware discovery hub without adding heavy startup network work.
+
+- [ ] Add a fuller chart/discovery entry that can browse chart-capable plugins beyond the one lightweight home preview.
+- [ ] Add source selection, refresh, empty/error states, and cache TTL controls for discovery data.
+- [ ] Keep the home page network-light: the home overview should show previews and routes, while deeper discovery fetches happen after user intent.
+- [ ] Reuse existing top-list/recommendation routes where possible instead of adding a parallel content model.
+- [ ] Verify behavior with multiple enabled sources, disabled sources, and plugins without top-list support.
+
+## Round 15
+
+Goal: polish multi-source search and result browsing so the app feels coherent when many plugins are enabled.
+
+- [ ] Improve search result metadata density: cover artwork, quality badges, duration, platform/source clarity, and resilient fallbacks.
+- [ ] Review source tabs/filtering for many sources, including pinned/common sources and per-source loading/error states.
+- [ ] Tighten album, artist, and playlist result navigation so plugin-provided ids are used when available and search fallbacks remain clear.
+- [ ] Improve search empty/error copy and retry behavior, especially when only some sources fail.
+- [ ] Keep gdmusic and other Android-compatible plugins as the main smoke-test set.
+
+## Round 16
+
+Goal: continue the Toskysun-inspired playback and lyric polish after the stable Round 11 foundation.
+
+- [ ] Refine the album-cover lyric preview layout, line count, blur/highlight, and blank-line behavior based on device testing.
+- [ ] Improve the full lyric page controls, including alignment picker placement, lyric density, and secondary-line readability.
+- [ ] Evaluate word-by-word lyric animation as a separate opt-in path so it does not destabilize the current scroll/gesture behavior.
+- [ ] Review desktop/status-bar lyric settings against current CTZZG native support.
+- [ ] Keep Android tap/long-press cover interactions on the stable `Pressable` path.
+
+## Round 17
+
+Goal: run a controlled React Native / Expo / React major-upgrade spike instead of mixing framework churn into feature rounds.
+
+- [ ] Create an isolated upgrade branch from the latest stable feature branch.
+- [ ] Check the current official React Native, Expo, and React compatibility matrix before selecting exact target versions.
+- [ ] Attempt the framework upgrade with the private `react-native-track-player` fork preserved.
+- [ ] Fix or document native Android, Expo module, Reanimated, Metro, Gradle, and TypeScript breakages.
+- [ ] Decide whether the upgrade is merge-ready, needs more native-player work, or should remain deferred.
 
 ## Later / Optional
 
