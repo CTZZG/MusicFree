@@ -96,6 +96,7 @@ function MiniAnimatedCharacter(props: {
     const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
     const wordStartTime = word.startTime;
     const wordDuration = word.duration;
+    const activeShadowRadius = rpx(8);
     const animatedStyle = useAnimatedStyle(() => {
         const startTime = wordStartTime;
         const duration = Math.max(wordDuration || 0, MIN_WORD_DURATION);
@@ -115,9 +116,13 @@ function MiniAnimatedCharacter(props: {
                 ["rgba(255, 255, 255, 0.38)", "rgba(255, 255, 255, 1)"],
             ),
             opacity: interpolate(progress, [0, 0.3, 1], [0.55, 0.88, 1]),
-            textShadowRadius: interpolate(progress, [0, 1], [0, rpx(8)]),
+            textShadowRadius: interpolate(
+                progress,
+                [0, 1],
+                [0, activeShadowRadius],
+            ),
         };
-    }, [wordDuration, wordStartTime]);
+    }, [activeShadowRadius, wordDuration, wordStartTime]);
 
     return (
         <Animated.Text
