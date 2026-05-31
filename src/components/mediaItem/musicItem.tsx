@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import rpx from "@/utils/rpx";
 import ListItem from "../base/listItem";
@@ -10,6 +10,12 @@ import TitleAndTag from "./titleAndTag";
 import ThemeText from "../base/themeText";
 import TrackPlayer from "@/core/trackPlayer";
 import Icon from "@/components/base/icon.tsx";
+import pluginManager from "@/core/pluginManager";
+import {
+    getAvailableQualities,
+    getQualityAbbr,
+    TRY_QUALITYS_LIST,
+} from "@/utils/qualities";
 
 interface IMusicItemProps {
     index?: string | number;
@@ -23,7 +29,21 @@ interface IMusicItemProps {
     containerStyle?: StyleProp<ViewStyle>;
     highlight?: boolean;
     showArtwork?: boolean;
+    showQuality?: boolean;
 }
+
+function getMusicItemQualityBadge(musicItem: IMusic.IMusicItem) {
+    const plugin = pluginManager.getByMedia(musicItem);
+    const availableQualities = getAvailableQualities(musicItem, {
+        supportedQualities: plugin?.instance?.supportedQualities,
+    });
+    const bestQuality = TRY_QUALITYS_LIST.find(quality =>
+        availableQualities.includes(quality),
+    );
+
+    return bestQuality ? getQualityAbbr(bestQuality) : "";
+}
+
 export default function MusicItem(props: IMusicItemProps) {
     const {
         musicItem,
@@ -37,7 +57,12 @@ export default function MusicItem(props: IMusicItemProps) {
         containerStyle,
         highlight = false,
         showArtwork = false,
+        showQuality = false,
     } = props;
+    const qualityBadge = useMemo(
+        () => showQuality ? getMusicItemQualityBadge(musicItem) : "",
+        [musicItem, showQuality],
+    );
 
     return (
         <ListItem
@@ -90,10 +115,20 @@ export default function MusicItem(props: IMusicItemProps) {
                                 size={rpx(22)}
                             />
                         )}
+                        {qualityBadge ? (
+                            <View style={styles.qualityBadge}>
+                                <ThemeText
+                                    fontSize="tag"
+                                    style={styles.qualityBadgeText}>
+                                    {qualityBadge}
+                                </ThemeText>
+                            </View>
+                        ) : null}
                         <ThemeText
                             numberOfLines={1}
                             fontSize="description"
-                            fontColor={highlight ? "primary" : "textSecondary"}>
+                            fontColor={highlight ? "primary" : "textSecondary"}
+                            style={styles.descText}>
                             {musicItem.artist}
                             {musicItem.album ? ` - ${musicItem.album}` : ""}
                         </ThemeText>
@@ -132,7 +167,29 @@ const styles = StyleSheet.create({
     },
     descContainer: {
         flexDirection: "row",
+        alignItems: "center",
         marginTop: rpx(16),
+        minWidth: 0,
+    },
+    descText: {
+        flexShrink: 1,
+    },
+    qualityBadge: {
+        height: rpx(28),
+        paddingHorizontal: rpx(6),
+        marginRight: rpx(8),
+        borderRadius: rpx(4),
+        borderWidth: 1,
+        borderColor: "rgba(61, 169, 252, 0.78)",
+        backgroundColor: "rgba(61, 169, 252, 0.18)",
+        justifyContent: "center",
+        alignItems: "center",
+        flexShrink: 0,
+    },
+    qualityBadgeText: {
+        color: "#72c7ff",
+        includeFontPadding: false,
+        lineHeight: rpx(24),
     },
 
     indexText: {

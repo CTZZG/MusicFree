@@ -17,6 +17,7 @@ export default function MusicResultItem(props: IMusicResultsProps) {
         <MusicItem
             musicItem={musicItem}
             showArtwork
+            showQuality
             onItemPress={() => {
                 const clickBehavior = Config.getConfig(
                     "basic.clickMusicInSearch",

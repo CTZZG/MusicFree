@@ -1,11 +1,16 @@
 import React, { useMemo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+    Pressable,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import { useCurrentLyricItem, useLyricState } from "@/core/lyricManager";
-import PersistStatus from "@/utils/persistStatus";
 import rpx from "@/utils/rpx";
-import { getCoverLeftMargin } from "./index";
+import { getSongInfoWidth } from "./songInfo";
 import type { IParsedLrcItem } from "@/utils/lrcParser";
 
 interface IMiniLyricProps {
@@ -16,25 +21,11 @@ interface IMiniLyricProps {
 interface IMiniLyricDisplayLine {
     key: string;
     text: string;
-    type: "context" | "current" | "secondary";
+    type: "context" | "current";
 }
 
 function getLyricText(item?: IParsedLrcItem | null) {
     return item?.lrc?.trim() ?? "";
-}
-
-function getSecondaryLyricText(
-    item: IParsedLrcItem | undefined,
-    showTranslation: boolean,
-    showRomanization: boolean,
-) {
-    if (showTranslation && item?.translation?.trim()) {
-        return item.translation.trim();
-    }
-    if (showRomanization && item?.romanization?.trim()) {
-        return item.romanization.trim();
-    }
-    return "";
 }
 
 function findNonEmptyLyricIndex(
@@ -59,13 +50,10 @@ export default function MiniLyric(props: IMiniLyricProps) {
     const { t } = useI18N();
     const lyricState = useLyricState();
     const currentLyricItem = useCurrentLyricItem();
-    const showTranslation = PersistStatus.useValue(
-        "lyric.showTranslation",
-        false,
-    );
-    const showRomanization = PersistStatus.useValue(
-        "lyric.showRomanization",
-        false,
+    const { width: windowWidth } = useWindowDimensions();
+    const infoWidth = useMemo(
+        () => getSongInfoWidth(windowWidth),
+        [windowWidth],
     );
 
     const displayState = useMemo(() => {
@@ -106,51 +94,31 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 : nextActiveIndex;
         const normalizedActiveIndex =
             activeIndex >= 0 ? activeIndex : currentIndex;
-        const activeItem = lyricState.lyrics[normalizedActiveIndex];
-        const activeText = getLyricText(activeItem) || " ";
-        const previousIndex = findNonEmptyLyricIndex(
-            lyricState.lyrics,
-            normalizedActiveIndex - 1,
-            -1,
-        );
-        const nextIndex = findNonEmptyLyricIndex(
-            lyricState.lyrics,
-            normalizedActiveIndex + 1,
-            1,
-        );
-        const secondaryText = getSecondaryLyricText(
-            activeItem,
-            !!showTranslation,
-            !!showRomanization,
-        );
-        const lines: IMiniLyricDisplayLine[] = [];
+        const nonEmptyIndices = lyricState.lyrics
+            .map((item, index) => (getLyricText(item) ? index : -1))
+            .filter(index => index >= 0);
+        if (nonEmptyIndices.length === 0) {
+            return {
+                fallback: t("lyric.noLyric"),
+                lines: [] as IMiniLyricDisplayLine[],
+            };
+        }
+        const activePosition = nonEmptyIndices.indexOf(normalizedActiveIndex);
+        const windowCenter =
+            activePosition >= 0
+                ? activePosition
+                : Math.max(0, nonEmptyIndices.length - 1);
+        let startIndex = Math.max(0, windowCenter - 2);
+        const endIndex = Math.min(nonEmptyIndices.length, startIndex + 5);
+        startIndex = Math.max(0, endIndex - 5);
 
-        if (previousIndex >= 0) {
-            lines.push({
-                key: `previous-${previousIndex}`,
-                text: getLyricText(lyricState.lyrics[previousIndex]),
-                type: "context",
-            });
-        }
-        lines.push({
-            key: `current-${normalizedActiveIndex}`,
-            text: activeText,
-            type: "current",
-        });
-        if (secondaryText) {
-            lines.push({
-                key: `secondary-${normalizedActiveIndex}`,
-                text: secondaryText,
-                type: "secondary",
-            });
-        }
-        if (nextIndex >= 0) {
-            lines.push({
-                key: `next-${nextIndex}`,
-                text: getLyricText(lyricState.lyrics[nextIndex]),
-                type: "context",
-            });
-        }
+        const lines: IMiniLyricDisplayLine[] = nonEmptyIndices
+            .slice(startIndex, endIndex)
+            .map(index => ({
+                key: `lyric-${index}`,
+                text: getLyricText(lyricState.lyrics[index]),
+                type: index === normalizedActiveIndex ? "current" : "context",
+            }));
 
         return {
             fallback: "",
@@ -160,8 +128,6 @@ export default function MiniLyric(props: IMiniLyricProps) {
         currentLyricItem?.index,
         lyricState.loading,
         lyricState.lyrics,
-        showRomanization,
-        showTranslation,
         t,
     ]);
 
@@ -170,10 +136,11 @@ export default function MiniLyric(props: IMiniLyricProps) {
             onPress={onPress}
             style={({ pressed }) => [
                 styles.container,
+                { width: infoWidth },
                 compact ? styles.compactContainer : null,
                 pressed ? styles.pressed : null,
             ]}>
-            <View style={styles.inner}>
+            <View style={[styles.inner, compact ? styles.compactInner : null]}>
                 {compact || displayState.fallback ? (
                     <Text
                         numberOfLines={compact ? 1 : 2}
@@ -197,9 +164,6 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                     line.type === "current"
                                         ? styles.currentLine
                                         : null,
-                                    line.type === "secondary"
-                                        ? styles.secondaryLine
-                                        : null,
                                     line.type === "context"
                                         ? styles.contextLine
                                         : null,
@@ -216,8 +180,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
 
 const styles = StyleSheet.create({
     container: {
-        width: "100%",
-        paddingHorizontal: getCoverLeftMargin(),
+        alignSelf: "center",
         marginTop: rpx(2),
         marginBottom: rpx(10),
     },
@@ -226,9 +189,12 @@ const styles = StyleSheet.create({
     },
     inner: {
         width: "100%",
-        minHeight: rpx(132),
+        minHeight: rpx(190),
         justifyContent: "center",
         alignItems: "flex-start",
+    },
+    compactInner: {
+        minHeight: rpx(52),
     },
     primary: {
         width: "100%",
@@ -253,9 +219,9 @@ const styles = StyleSheet.create({
     },
     currentLine: {
         color: "white",
-        fontSize: fontSizeConst.content,
+        fontSize: fontSizeConst.title,
         fontWeight: fontWeightConst.bold,
-        lineHeight: rpx(38),
+        lineHeight: rpx(44),
         textShadowColor: "rgba(255, 255, 255, 0.32)",
         textShadowOffset: {
             width: 0,
@@ -263,17 +229,11 @@ const styles = StyleSheet.create({
         },
         textShadowRadius: rpx(8),
     },
-    secondaryLine: {
-        color: "rgba(255, 255, 255, 0.58)",
-        fontSize: fontSizeConst.description,
-        lineHeight: rpx(30),
-        marginTop: rpx(6),
-    },
     contextLine: {
-        color: "rgba(255, 255, 255, 0.34)",
-        fontSize: fontSizeConst.description,
-        lineHeight: rpx(34),
-        marginVertical: rpx(4),
+        color: "rgba(255, 255, 255, 0.36)",
+        fontSize: fontSizeConst.content,
+        lineHeight: rpx(38),
+        marginVertical: rpx(3),
     },
     pressed: {
         opacity: 0.65,

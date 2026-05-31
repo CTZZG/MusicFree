@@ -61,7 +61,7 @@ export default function LyricOperations(props: ILyricOperationsProps) {
                 onPress={() => {
                     showPanel("SimpleSelect", {
                         header: t("basicSettings.lyric.align"),
-                        height: rpx(360),
+                        height: rpx(560),
                         candidates: [
                             {
                                 title: t("basicSettings.lyric.align.left"),

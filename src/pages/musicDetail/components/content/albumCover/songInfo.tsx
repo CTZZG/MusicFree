@@ -34,6 +34,13 @@ interface ISingerInfo {
 const INFO_MAX_WIDTH = rpx(500);
 const INFO_HORIZONTAL_GUTTER = rpx(48);
 
+export function getSongInfoWidth(windowWidth: number) {
+    return Math.min(
+        INFO_MAX_WIDTH,
+        Math.max(rpx(280), windowWidth - INFO_HORIZONTAL_GUTTER),
+    );
+}
+
 function getSingerList(musicItem: IMusic.IMusicItem | null): ISingerInfo[] {
     const item = musicItem as any;
     if (!Array.isArray(item?.singerList)) {
@@ -84,11 +91,7 @@ export default function SongInfo(props: ISongInfoProps) {
 
     const singerList = useMemo(() => getSingerList(musicItem), [musicItem]);
     const infoWidth = useMemo(
-        () =>
-            Math.min(
-                INFO_MAX_WIDTH,
-                Math.max(rpx(280), windowWidth - INFO_HORIZONTAL_GUTTER),
-            ),
+        () => getSongInfoWidth(windowWidth),
         [windowWidth],
     );
 
