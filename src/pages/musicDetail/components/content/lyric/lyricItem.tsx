@@ -1,16 +1,21 @@
-import React, { memo, useMemo } from "react";
+import React, { memo, useEffect, useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { TextStyle } from "react-native";
 import Animated, {
+    Easing,
     interpolate,
     interpolateColor,
     useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withTiming,
 } from "react-native-reanimated";
 import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { getCurrentPositionMsShared } from "@/core/lyricManager";
 import { normalizeLyricWords } from "@/utils/lyricWordByWord";
+import { useAppConfig } from "@/core/appConfig";
 
 interface ILyricLine {
     key: string;
@@ -46,6 +51,93 @@ interface ILyricItemComponentProps {
 const MIN_WORD_DURATION = 50;
 const ACTIVE_FLOAT_RATE = 0.12;
 const ACTIVE_SCALE_RATE = 0.05;
+const DOT_SIZE = rpx(12);
+const DOT_GAP = rpx(10);
+
+export const BreathingDots = memo(function BreathingDots(props: {
+    color: string;
+    align?: "left" | "center" | "right";
+    highlight?: boolean;
+}) {
+    const { color, align = "center", highlight = false } = props;
+    const progress = useSharedValue(0);
+
+    useEffect(() => {
+        progress.value = withRepeat(
+            withTiming(1, {
+                duration: 1800,
+                easing: Easing.inOut(Easing.ease),
+            }),
+            -1,
+            true,
+        );
+    }, [progress]);
+
+    const dotStyle0 = useAnimatedStyle(() => ({
+        opacity: interpolate(progress.value, [0, 0.5, 1], [0.35, 1, 0.35]),
+        transform: [
+            {
+                scale: interpolate(
+                    progress.value,
+                    [0, 0.5, 1],
+                    [0.88, highlight ? 1.18 : 1.04, 0.88],
+                ),
+            },
+        ],
+    }));
+    const dotStyle1 = useAnimatedStyle(() => ({
+        opacity: interpolate(progress.value, [0, 0.5, 1], [0.55, 0.35, 1]),
+        transform: [
+            {
+                scale: interpolate(
+                    progress.value,
+                    [0, 0.5, 1],
+                    [1, 0.88, highlight ? 1.18 : 1.04],
+                ),
+            },
+        ],
+    }));
+    const dotStyle2 = useAnimatedStyle(() => ({
+        opacity: interpolate(progress.value, [0, 0.5, 1], [1, 0.55, 0.35]),
+        transform: [
+            {
+                scale: interpolate(
+                    progress.value,
+                    [0, 0.5, 1],
+                    [highlight ? 1.18 : 1.04, 1, 0.88],
+                ),
+            },
+        ],
+    }));
+
+    return (
+        <View
+            style={[
+                lyricStyles.dotsContainer,
+                {
+                    alignItems:
+                        align === "left"
+                            ? "flex-start"
+                            : align === "right"
+                              ? "flex-end"
+                              : "center",
+                },
+            ]}>
+            <View style={lyricStyles.dotsRow}>
+                {[dotStyle0, dotStyle1, dotStyle2].map((animatedStyle, index) => (
+                    <Animated.View
+                        key={index}
+                        style={[
+                            lyricStyles.dot,
+                            { backgroundColor: color },
+                            animatedStyle,
+                        ]}
+                    />
+                ))}
+            </View>
+        </View>
+    );
+});
 
 function normalizeTextAlign(value: NonNullable<TextStyle["textAlign"]>) {
     if (value === "left" || value === "right" || value === "center") {
@@ -159,6 +251,7 @@ function AnimatedWord(props: {
     lineHeight: number;
     primary: boolean;
     isPseudo?: boolean;
+    enableFloat?: boolean;
 }) {
     const {
         word,
@@ -168,6 +261,7 @@ function AnimatedWord(props: {
         lineHeight,
         primary,
         isPseudo,
+        enableFloat,
     } = props;
     const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
     const maxTranslateY = Math.min(rpx(5), fontSize * ACTIVE_FLOAT_RATE);
@@ -196,13 +290,13 @@ function AnimatedWord(props: {
             transform: [
                 {
                     translateY:
-                        primary && !isPseudo
+                        primary && !isPseudo && enableFloat
                             ? -wave * maxTranslateY
                             : 0,
                 },
                 {
                     scale:
-                        primary && !isPseudo
+                        primary && !isPseudo && enableFloat
                             ? 1 + wave * ACTIVE_SCALE_RATE
                             : 1,
                 },
@@ -215,6 +309,7 @@ function AnimatedWord(props: {
         isPseudo,
         maxTranslateY,
         primary,
+        enableFloat,
         wordDuration,
         wordStartTime,
     ]);
@@ -243,6 +338,7 @@ function AnimatedWordGroup(props: {
     lineHeight: number;
     primary: boolean;
     isPseudo?: boolean;
+    enableFloat?: boolean;
 }) {
     const {
         word,
@@ -252,6 +348,7 @@ function AnimatedWordGroup(props: {
         lineHeight,
         primary,
         isPseudo,
+        enableFloat,
     } = props;
     const characters = useMemo(() => splitWordToChars(word), [word]);
     const trailingSpace = shouldAppendSpace(word) ? " " : "";
@@ -267,6 +364,7 @@ function AnimatedWordGroup(props: {
                     lineHeight={lineHeight}
                     primary={primary}
                     isPseudo={isPseudo}
+                    enableFloat={enableFloat}
                 />
                 {trailingSpace ? (
                     <Text
@@ -297,6 +395,7 @@ function AnimatedWordGroup(props: {
                     lineHeight={lineHeight}
                     primary={primary}
                     isPseudo={isPseudo}
+                    enableFloat={enableFloat}
                 />
             ))}
             {trailingSpace ? (
@@ -325,6 +424,7 @@ function WordByWordLine(props: {
     lineHeight: number;
     textAlign: NonNullable<TextStyle["textAlign"]>;
     highlight?: boolean;
+    enableFloat?: boolean;
 }) {
     const {
         line,
@@ -335,6 +435,7 @@ function WordByWordLine(props: {
         lineHeight,
         textAlign,
         highlight,
+        enableFloat,
     } = props;
     const words = useMemo(
         () => normalizeLyricWords(line.words ?? [], line.lineStartTimeMs ?? 0),
@@ -361,6 +462,7 @@ function WordByWordLine(props: {
                         lineHeight={lineHeight}
                         primary={line.primary}
                         isPseudo={line.isPseudoWordByWord}
+                        enableFloat={enableFloat}
                     />
                 ) : (
                     <StaticWordGroup
@@ -391,6 +493,13 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
     } = props;
 
     const colors = useColors();
+    const enableWordByWord = useAppConfig("lyric.enableWordByWord") ?? true;
+    const enableWordByWordFloat =
+        useAppConfig("lyric.enableWordByWordFloat") ?? true;
+    const pureWhiteMode = useAppConfig("lyric.pureWhiteMode") ?? true;
+    const enableBreathingDots =
+        useAppConfig("lyric.enableBreathingDots") ?? true;
+    const activeColor = pureWhiteMode ? "white" : colors.primary;
     const displayLines = lines?.length
         ? lines
         : [
@@ -426,10 +535,12 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
                     currentFontSize * (line.primary ? 1.34 : 1.28),
                 );
                 const canUseWordByWord =
+                    enableWordByWord &&
                     !!line.hasWordByWord &&
                     !!line.words?.length &&
                     !!line.text.trim() &&
                     (highlight || !line.isPseudoWordByWord);
+                const isEmptyLine = !line.text.trim();
 
                 return (
                     <View
@@ -438,16 +549,23 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
                             lyricStyles.lineWrapper,
                             line.primary ? null : lyricStyles.secondaryLine,
                         ]}>
-                        {canUseWordByWord ? (
+                        {isEmptyLine && highlight && enableBreathingDots ? (
+                            <BreathingDots
+                                color={activeColor}
+                                align={normalizeTextAlign(textAlign)}
+                                highlight
+                            />
+                        ) : canUseWordByWord ? (
                             <WordByWordLine
                                 line={line}
-                                activeColor={colors.primary}
+                                activeColor={activeColor}
                                 inactiveColor="rgba(255, 255, 255, 0.48)"
                                 staticColor="white"
                                 fontSize={currentFontSize}
                                 lineHeight={lineHeight}
                                 textAlign={textAlign}
                                 highlight={highlight}
+                                enableFloat={enableWordByWordFloat}
                             />
                         ) : (
                             <Text
@@ -456,7 +574,7 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
                                     line.primary ? lyricStyles.primaryLine : null,
                                     {
                                         color: highlight
-                                            ? colors.primary
+                                            ? activeColor
                                             : "white",
                                         fontSize: currentFontSize,
                                         lineHeight,
@@ -541,5 +659,27 @@ const lyricStyles = StyleSheet.create({
             height: 0,
         },
         textShadowRadius: rpx(4),
+    },
+    dotsContainer: {
+        width: "100%",
+        minHeight: rpx(32),
+        justifyContent: "center",
+    },
+    dotsRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: DOT_GAP,
+    },
+    dot: {
+        width: DOT_SIZE,
+        height: DOT_SIZE,
+        borderRadius: DOT_SIZE / 2,
+        shadowColor: "#fff",
+        shadowOffset: {
+            width: 0,
+            height: 0,
+        },
+        shadowOpacity: 0.35,
+        shadowRadius: rpx(6),
     },
 });

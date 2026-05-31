@@ -77,7 +77,7 @@ class MusicMetadataManager {
         return fullMusicInfo?.artwork || undefined;
     }
 
-    private async getLyricContent(
+    async getLyricContentForDownload(
         musicItem: IMusic.IMusicItem,
         config: IDownloadMetadataConfig,
     ): Promise<string | undefined> {
@@ -147,7 +147,7 @@ class MusicMetadataManager {
             };
 
             if (config.writeLyric) {
-                const lyric = await this.getLyricContent(
+                const lyric = await this.getLyricContentForDownload(
                     taskInfo.musicItem,
                     config,
                 );

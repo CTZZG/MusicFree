@@ -291,6 +291,9 @@ export interface ILanguageData {
     "themeSettings.lightMode": string; // 明亮模式
     "themeSettings.darkMode": string; // 黑暗模式
     "themeSettings.customMode": string; // 自定义模式
+    "themeSettings.coverStyle": string; // 封面样式
+    "themeSettings.coverStyleSquare": string; // 方形
+    "themeSettings.coverStyleCircle": string; // 圆形
 
 
     // 自定义主题相关
@@ -412,6 +415,10 @@ export interface ILanguageData {
     "basicSettings.lyric.detailSecondaryFontScale": string; // 详情页副行字号
     "basicSettings.lyric.statusBarShowTranslation": string; // 桌面歌词显示翻译
     "basicSettings.lyric.statusBarShowRomanization": string; // 桌面歌词显示音译
+    "basicSettings.lyric.enableWordByWord": string; // 详情页逐字歌词
+    "basicSettings.lyric.enableWordByWordFloat": string; // 逐字歌词浮动动画
+    "basicSettings.lyric.pureWhiteMode": string; // 歌词纯白高亮
+    "basicSettings.lyric.enableBreathingDots": string; // 空白歌词呼吸点
     "basicSettings.lyric.textColor": string; // 文本颜色
     "basicSettings.lyric.backgroundColor": string; // 文本背景色
 
@@ -571,6 +578,8 @@ export interface ILanguageData {
     "panel.musicItemOptions.clearPluginCache": string; // 清除插件缓存
     "panel.musicItemOptions.cacheCleared": string; // 缓存已清除
     "panel.musicItemOptions.deleteFailed": string; // 删除失败
+    "panel.musicItemOptions.formatDiagnostics": string; // 格式支持诊断
+    "panel.musicItemOptions.formatDiagnosticsTitle": string; // 格式支持诊断标题
 
     // 面板相关 - 音质设置
     "panel.musicQuality.title": string; // 设置音质
@@ -603,6 +612,10 @@ export interface ILanguageData {
     "panel.musicMetadataSettings.writeCover": string; // 写入封面
     "panel.musicMetadataSettings.writeLyric": string; // 写入歌词
     "panel.musicMetadataSettings.enableWordByWord": string; // 保留逐字歌词
+    "panel.musicMetadataSettings.downloadLyricFile": string; // 下载独立歌词文件
+    "panel.musicMetadataSettings.lyricFileFormat": string; // 歌词文件格式
+    "panel.musicMetadataSettings.lyricFileFormatLrc": string; // LRC
+    "panel.musicMetadataSettings.lyricFileFormatTxt": string; // TXT
     "panel.musicMetadataSettings.resetDefault": string; // 恢复默认
     "panel.musicMetadataSettings.saveSuccess": string; // 保存成功
     "panel.musicMetadataSettings.resetSuccess": string; // 恢复默认成功

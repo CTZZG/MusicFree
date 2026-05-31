@@ -77,6 +77,10 @@ export interface IDownloadMetadataConfig {
     lyricOrder: LyricOrderItem[];
     /** 是否启用逐字歌词 */
     enableWordByWord: boolean;
+    /** 是否下载独立歌词文件 */
+    downloadLyricFile?: boolean;
+    /** 独立歌词文件格式 */
+    lyricFileFormat?: 'lrc' | 'txt';
 }
 
 /**

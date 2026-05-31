@@ -16,6 +16,7 @@ import {
     getQualityAbbr,
     TRY_QUALITYS_LIST,
 } from "@/utils/qualities";
+import DownloadStatusIndicator from "@/components/downloadStatusIndicator";
 
 interface IMusicItemProps {
     index?: string | number;
@@ -171,6 +172,7 @@ export default function MusicItem(props: IMusicItemProps) {
                     {durationText}
                 </ListItem.ListItemText>
             ) : null}
+            <DownloadStatusIndicator musicItem={musicItem} />
             {showMoreIcon ? (
                 <ListItem.ListItemIcon
                     width={rpx(48)}

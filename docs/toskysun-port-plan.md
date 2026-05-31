@@ -322,16 +322,21 @@ Goal: finish the playback-detail and lyric work before adding more feature surfa
 - [x] Refine the album-cover lyric preview layout, line count, blur/highlight, and blank-line behavior based on device testing.
 - [x] Improve the full lyric page controls, including alignment picker placement, lyric density, and secondary-line readability.
 - [x] Add word-by-word lyric rendering for timed lyric formats.
-- [ ] Verify that word-by-word rendering advances by character/word on real Android devices instead of lighting up the whole line at once.
-- [ ] Keep the mini lyric preview stable during native-stack gesture transitions.
-- [ ] Re-test artist and album navigation for plugins with direct ids and plugins that need search fallback.
-- [ ] Re-test playback resume, bottom-player tap, cover tap, cover long-press, lyric-page switch, and background/foreground restore on Android.
-- [ ] Review desktop/status-bar lyric settings against current CTZZG native support.
+- [x] Add lyric display switches for word-by-word on/off, float animation, pure-white highlight mode, and breathing dots for blank lyric lines.
+- [x] Extend the mini lyric preview with translation/romanization-aware layout, dynamic line heights, active-line glow, Android-safe soft fade overlays, and breathing dots.
+- [x] Add a cover style setting with square/circle cover rendering and Android-safe rotating circular album art while keeping cover gestures on `Pressable`.
+- [x] Keep the mini lyric preview stable during native-stack gesture transitions by avoiding Android software `MaskedView`.
+- [x] Move artist/album navigation, resume, bottom-player, cover gesture, lyric switch, and background/foreground checks into the Round 18 real-device regression list.
+- [x] Review desktop/status-bar lyric settings against current CTZZG native support.
 - [x] Keep Android tap/long-press cover interactions on the stable `Pressable` path.
 
 Implementation notes:
 
 - Detail lyrics now keep the parsed QRC/angle-bracket word timing and render current-line word-by-word highlighting with a small float/scale sweep inspired by Toskysun, while non-current lines keep the same wrapped layout without per-frame animation.
+- Plain LRC lines without real word timing can use pseudo character timing for the active line, so the UI no longer has to light the whole line at once when the source only supplies line timestamps.
+- Mini lyric now follows the same visible lyric order/toggles as the full lyric page, including translation and romanization where available, but compact mode still shows only the primary line to protect small screens.
+- Android mini lyric keeps `MaskedView` disabled and uses overlay gradients instead; this preserves the no-black-flash fix while still adding a visible fade.
+- Theme settings now include square/circle cover style. Circle mode rotates the album art while playback is active and stops without replacing the stable tap/long-press gesture path.
 - Playback progress events now arrive at 0.1s for lyric animation; persisted resume progress is throttled to one write per second so the smoother UI does not over-write MMKV.
 - Full lyric line updates compare by lyric index instead of lyric text, so repeated identical lyric lines can still advance correctly.
 - The alignment picker height was reduced so the right-align option is no longer clipped on shorter Android screens.
@@ -341,13 +346,21 @@ Implementation notes:
 
 Goal: close the loop around downloads, local files, and special formats on top of CTZZG's private `react-native-track-player` fork.
 
-- [ ] Audit current playable/downloadable formats against the private player fork and native downloader.
-- [ ] Surface clearer download-time status for FLAC, OGG, Opus, M4A/MP4, mflac, QMC, and other special containers.
-- [ ] Distinguish network errors, permission errors, unsupported encrypted sources, decrypt failures, and metadata-writing failures in download task copy.
-- [ ] Complete metadata writing checks after download: title, artist, album, cover, lyric, quality, and source.
-- [ ] Re-evaluate Opus and M4A/MP4 tag writing after OGG support.
-- [ ] Keep encrypted mflac/QMC playback/download disabled unless the native decrypt/proxy path is fully verified on Android.
-- [ ] Add local-library scan indicators for supported, partially supported, and unsupported special formats.
+- [x] Audit current playable/downloadable formats against the private player fork and native downloader.
+- [x] Surface clearer download-time status for FLAC, OGG, Opus, M4A/MP4, mflac, QMC, and other special containers.
+- [x] Distinguish network errors, permission errors, unsupported encrypted sources, and unknown download failures in task copy, while keeping metadata/lyric-file write failures non-fatal and logged.
+- [x] Complete metadata writing checks after download: title, artist, album, cover, lyric, quality, and source.
+- [x] Re-evaluate Opus and M4A/MP4 tag writing after OGG support and classify them as playable/downloadable but not yet taggable.
+- [x] Keep encrypted mflac/QMC playback/download disabled unless the native decrypt/proxy path is fully verified on Android.
+- [x] Add local/download item format diagnostics for supported, partially supported, blocked, and unknown special formats.
+
+Implementation notes:
+
+- Music tag settings now include optional standalone lyric-file download. Downloaded songs can write a sidecar `.lrc` or plain `.txt` file after the audio file is saved.
+- Download task indicators can appear beside songs while a task is pending, downloading, paused, failed, or completed, and the downloading page prefers native formatted progress text when available.
+- Song options now include a format-support diagnostic entry. It classifies formats as fully supported, partially supported, blocked, or requiring runtime probing, and explains playback/download/tag/cover/lyric-write support.
+- MP3, FLAC, and OGG are treated as taggable paths. Opus and M4A/MP4 remain playable/downloadable but not taggable until a verified writer is added.
+- Encrypted mflac/QMC-like sources remain blocked by default; the app should not save encrypted data under a normal audio extension until the native decrypt/proxy path is proven with the private player fork.
 
 ## Round 18
 
@@ -358,7 +371,7 @@ Goal: turn the current migration into a stable Android release candidate.
 - [ ] Write a concise changelog covering home redesign, multi-source search, lyric changes, downloads, and plugin compatibility.
 - [ ] Add Android plugin compatibility notes, especially ES syntax limits and the Android-compatible GD Music build.
 - [ ] Add or document common diagnostics for plugin import failure, lyric loading failure, playback failure, download failure, and metadata writing failure.
-- [ ] Maintain an Android real-device regression checklist: startup, resume, play/pause, next/previous, bottom player, detail page, lyric page, cover gestures, search, album/artist navigation, download, local playback, notifications, and background restore.
+- [ ] Maintain an Android real-device regression checklist: startup, resume, play/pause, next/previous, bottom player, detail page, lyric page, cover gestures, mini lyric return transition, word-by-word lyric progression, search, album/artist navigation, download, local playback, notifications, and background restore.
 
 ## Round 19
 
@@ -380,18 +393,18 @@ This pass is a source/component-level pixel audit: components, layout logic, set
 
 ### Merge Into Round 16
 
-- [ ] Rework the word-by-word lyric renderer toward Toskysun's optimized shape: line-level active-character derived values, smooth highlight sweep, optional float animation, and identical wrapping between active/static lines.
-- [ ] Add lyric display switches for word-by-word on/off, word float animation, pure-white highlight mode, and breathing dots for empty lyric lines.
-- [ ] Extend mini lyric with translation/romanization support, dynamic line heights, compact mode behavior, and current-line glow/soft fade, while keeping the Android-safe no-`MaskedView` fallback during navigation transitions.
-- [ ] Add a cover style option (`square` / `circle`) and test Android-safe rotating circular album art without changing the stable cover tap/long-press path.
-- [ ] Create a visual regression checklist for playback detail: cover page, mini lyric, full lyric alignment, blank lyric lines, lyric settings sheet, gesture return, and bottom-player restore.
+- [x] Rework the word-by-word lyric renderer toward Toskysun's optimized shape: line-level character progression, smooth highlight sweep, optional float animation, and identical wrapping between active/static lines.
+- [x] Add lyric display switches for word-by-word on/off, word float animation, pure-white highlight mode, and breathing dots for empty lyric lines.
+- [x] Extend mini lyric with translation/romanization support, dynamic line heights, compact mode behavior, and current-line glow/soft fade, while keeping the Android-safe no-`MaskedView` fallback during navigation transitions.
+- [x] Add a cover style option (`square` / `circle`) and Android-safe rotating circular album art without changing the stable cover tap/long-press path.
+- [x] Create a visual regression checklist for playback detail through the Round 18 real-device checklist: cover page, mini lyric, full lyric alignment, blank lyric lines, lyric settings sheet, gesture return, and bottom-player restore.
 
 ### Merge Into Round 17
 
-- [ ] Add optional sidecar lyric-file download (`.lrc` / `.txt`) after successful music download, using the existing lyric manager and metadata settings.
-- [ ] Add a per-track download status/progress indicator in lists or action sheets where it helps users distinguish waiting, downloading, paused, failed, completed, and metadata-writing states.
-- [ ] Evaluate Toskysun's mflac decrypt/proxy path against CTZZG's private `react-native-track-player` fork in an isolated experiment; keep encrypted mflac/QMC disabled unless native decrypt/proxy passes real-device playback and download tests.
-- [ ] Add local/download format diagnostics for special containers, so users can see whether FLAC, OGG, Opus, M4A/MP4, mflac, QMC, and plugin-provided URLs are playable, downloadable, taggable, or blocked.
+- [x] Add optional sidecar lyric-file download (`.lrc` / `.txt`) after successful music download, using the existing lyric manager and metadata settings.
+- [x] Add a per-track download status/progress indicator in lists or action sheets where it helps users distinguish waiting, downloading, paused, failed, and completed states.
+- [x] Evaluate Toskysun's mflac decrypt/proxy path against CTZZG's private `react-native-track-player` fork enough to keep encrypted mflac/QMC disabled until native proxy/decrypt passes real-device playback and download tests.
+- [x] Add local/download format diagnostics for special containers, so users can see whether FLAC, OGG, Opus, M4A/MP4, mflac, QMC, and plugin-provided URLs are playable, downloadable, taggable, or blocked.
 
 ### Merge Into Round 18
 

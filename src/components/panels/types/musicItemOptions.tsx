@@ -31,6 +31,10 @@ import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import lyricManager from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
 import pluginManager from "@/core/pluginManager";
+import {
+    formatMediaFormatDiagnosticsText,
+    getMediaFormatDiagnostics,
+} from "@/utils/mediaFormatDiagnostics";
 
 interface IMusicItemOptionsProps {
     /** 歌曲信息 */
@@ -58,6 +62,7 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
 
     const downloaded = LocalMusicSheet.isLocalMusic(musicItem);
     const associatedLrc = getMediaExtraProperty(musicItem, "associatedLrc");
+    const formatDiagnostics = getMediaFormatDiagnostics(musicItem);
 
     const options: IOption[] = [
         {
@@ -136,6 +141,17 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             icon: "check-circle-outline",
             title: t("panel.musicItemOptions.downloaded"),
             show: !!downloaded,
+        },
+        {
+            icon: "information-circle",
+            title: t("panel.musicItemOptions.formatDiagnostics"),
+            onPress: () => {
+                showDialog("SimpleDialog", {
+                    title: t("panel.musicItemOptions.formatDiagnosticsTitle"),
+                    content:
+                        formatMediaFormatDiagnosticsText(formatDiagnostics),
+                });
+            },
         },
         {
             icon: "trash-outline",

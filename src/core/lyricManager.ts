@@ -426,7 +426,8 @@ class LyricManager implements IInjectable {
                 return;
             }
 
-            const enableWordByWord = true;
+            const enableWordByWord =
+                this.appConfig.getConfig("lyric.enableWordByWord") ?? true;
             const rawLrc = lrcSource.rawLrc
                 ? await autoDecryptLyric(lrcSource.rawLrc, enableWordByWord)
                 : lrcSource.rawLrc;

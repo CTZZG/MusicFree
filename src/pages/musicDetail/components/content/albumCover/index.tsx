@@ -3,7 +3,7 @@ import rpx from "@/utils/rpx";
 import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
 import useOrientation from "@/hooks/useOrientation";
-import { useCurrentMusic } from "@/core/trackPlayer";
+import { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
 import globalStyle from "@/constants/globalStyle";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import Operations from "./operations";
@@ -11,6 +11,16 @@ import { showPanel } from "@/components/panels/usePanel.ts";
 import SongInfo from "./songInfo";
 import MiniLyric from "./miniLyric";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAppConfig } from "@/core/appConfig";
+import { musicIsPaused } from "@/utils/trackUtils";
+import Animated, {
+    cancelAnimation,
+    Easing,
+    useAnimatedStyle,
+    useSharedValue,
+    withRepeat,
+    withTiming,
+} from "react-native-reanimated";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -27,7 +37,9 @@ export default function AlbumCover(props: IProps) {
     const { onTurnPageClick } = props;
 
     const musicItem = useCurrentMusic();
+    const musicState = useMusicState();
     const orientation = useOrientation();
+    const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
     const { height: windowHeight, width: windowWidth } = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
     const longPressTriggeredRef = useRef(false);
@@ -46,6 +58,9 @@ export default function AlbumCover(props: IProps) {
     const [miniLyricLayout, setMiniLyricLayout] = useState<
         "normal" | "compact" | "hidden"
     >(baseMiniLyricLayout);
+    const rotation = useSharedValue(0);
+    const isCircleCover = coverStyle === "circle";
+    const shouldRotateCover = isCircleCover && !musicIsPaused(musicState);
 
     useEffect(() => {
         setMiniLyricLayout(baseMiniLyricLayout);
@@ -72,18 +87,56 @@ export default function AlbumCover(props: IProps) {
     }, [containerHeight, operationsBottom, orientation]);
 
     const artworkStyle = useMemo(() => {
+        const circleStyle = isCircleCover
+            ? {
+                borderRadius: rpx(999),
+                overflow: "hidden" as const,
+            }
+            : {
+                borderRadius: orientation === "vertical" ? rpx(6) : rpx(4),
+                overflow: "hidden" as const,
+            };
         if (orientation === "vertical") {
             return {
                 width: rpx(500),
                 height: rpx(500),
+                ...circleStyle,
             };
         } else {
             return {
                 width: rpx(260),
                 height: rpx(260),
+                ...circleStyle,
             };
         }
-    }, [orientation]);
+    }, [isCircleCover, orientation]);
+
+    useEffect(() => {
+        if (shouldRotateCover) {
+            rotation.value = withRepeat(
+                withTiming(rotation.value + 360, {
+                    duration: 22000,
+                    easing: Easing.linear,
+                }),
+                -1,
+                false,
+            );
+        } else {
+            cancelAnimation(rotation);
+        }
+    }, [rotation, shouldRotateCover]);
+
+    useEffect(() => {
+        rotation.value = 0;
+    }, [musicItem?.id, musicItem?.platform, rotation]);
+
+    const coverAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [
+            {
+                rotate: `${rotation.value}deg`,
+            },
+        ],
+    }));
 
     const handlePress = useCallback(() => {
         if (longPressTriggeredRef.current) {
@@ -112,11 +165,15 @@ export default function AlbumCover(props: IProps) {
                     onLongPress={handleLongPress}
                     style={styles.horizontalCoverArea}>
                     <View style={globalStyle.fullCenter}>
-                        <FastImage
-                            style={artworkStyle}
-                            source={musicItem?.artwork}
-                            placeholderSource={ImgAsset.albumDefault}
-                        />
+                        <Animated.View
+                            style={[artworkStyle, coverAnimatedStyle]}
+                        >
+                            <FastImage
+                                style={styles.coverImage}
+                                source={musicItem?.artwork}
+                                placeholderSource={ImgAsset.albumDefault}
+                            />
+                        </Animated.View>
                     </View>
                 </Pressable>
                 <Operations />
@@ -136,11 +193,15 @@ export default function AlbumCover(props: IProps) {
                 onLongPress={handleLongPress}
                 style={styles.coverArea}>
                 <View style={styles.coverCenter}>
-                    <FastImage
-                        style={artworkStyle}
-                        source={musicItem?.artwork}
-                        placeholderSource={ImgAsset.albumDefault}
-                    />
+                    <Animated.View
+                        style={[artworkStyle, coverAnimatedStyle]}
+                    >
+                        <FastImage
+                            style={styles.coverImage}
+                            source={musicItem?.artwork}
+                            placeholderSource={ImgAsset.albumDefault}
+                        />
+                    </Animated.View>
                 </View>
             </Pressable>
             <SongInfo />
@@ -177,6 +238,10 @@ const styles = {
         width: "100%" as const,
         justifyContent: "center" as const,
         alignItems: "center" as const,
+    },
+    coverImage: {
+        width: "100%" as const,
+        height: "100%" as const,
     },
     horizontalRoot: {
         width: "100%" as const,

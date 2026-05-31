@@ -43,7 +43,7 @@ function DownloadingListItem(props: DownloadingListItemProps) {
         const progress = taskInfo?.downloadedSize ? sizeFormatter(taskInfo.downloadedSize) : "-";
         const totalSize = taskInfo?.fileSize ? sizeFormatter(taskInfo.fileSize) : "-";
 
-        description = t("downloading.downloadStatus.downloadProgress", {
+        description = taskInfo?.progressText || t("downloading.downloadStatus.downloadProgress", {
             progress,
             totalSize,
         });

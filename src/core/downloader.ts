@@ -26,7 +26,7 @@ import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { nanoid } from "nanoid";
 import path from "path-browserify";
 import { useEffect, useState } from "react";
-import { copyFile, downloadFile, exists, unlink } from "react-native-fs";
+import { copyFile, downloadFile, exists, unlink, writeFile } from "react-native-fs";
 import Mp3Util, {
     INativeDownloadTaskStatus,
     NativeDownloadEmitter,
@@ -279,6 +279,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             enableWordByWord:
                 this.configService.getConfig("basic.enableWordByWordLyric") ??
                 false,
+            downloadLyricFile:
+                this.configService.getConfig("basic.downloadLyricFile") ??
+                false,
+            lyricFileFormat:
+                this.configService.getConfig("basic.lyricFileFormat") ?? "lrc",
         };
     }
 
@@ -299,6 +304,46 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             taskMetadata,
             this.getMetadataConfig(),
         );
+    }
+
+    private stripLyricTimestamps(lyric: string) {
+        return lyric
+            .split(/\r?\n/)
+            .map(line =>
+                line
+                    .replace(/\[[^\]]+\]/g, "")
+                    .replace(/<[\d:.]+>/g, "")
+                    .trim(),
+            )
+            .filter(Boolean)
+            .join("\n");
+    }
+
+    private async writeLyricFileForDownload(
+        musicItem: IMusic.IMusicItem,
+        filePath: string,
+    ) {
+        const config = this.getMetadataConfig();
+        if (!config.downloadLyricFile) {
+            return false;
+        }
+
+        const lyric = await musicMetadataManager.getLyricContentForDownload(
+            musicItem,
+            config,
+        );
+        if (!lyric?.trim()) {
+            return false;
+        }
+
+        const format = config.lyricFileFormat ?? "lrc";
+        const cleanFilePath = removeFileScheme(filePath);
+        const lyricPath = cleanFilePath.replace(/\.[^/.\\]+$/, `.${format}`);
+        const content =
+            format === "txt" ? this.stripLyricTimestamps(lyric) : lyric;
+
+        await writeFile(lyricPath, content, "utf8");
+        return true;
     }
 
     private canUseNativeDownload() {
@@ -707,6 +752,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
             this.writeMetadataToFile(musicItem, targetDownloadPath).catch(e => {
                 errorLog("元数据写入失败，但不影响下载完成", {
+                    musicItem: musicItem.title,
+                    error: e instanceof Error ? e.message : String(e),
+                });
+            });
+
+            this.writeLyricFileForDownload(
+                musicItem,
+                targetDownloadPath,
+            ).catch(e => {
+                errorLog("独立歌词文件写入失败，但不影响下载完成", {
                     musicItem: musicItem.title,
                     error: e instanceof Error ? e.message : String(e),
                 });

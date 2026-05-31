@@ -45,6 +45,8 @@ export interface IAppConfigProperties {
     "basic.writeMetadataExtended": boolean;
     "basic.lyricOrder": ("original" | "translation" | "romanization")[];
     "basic.enableWordByWordLyric": boolean;
+    "basic.downloadLyricFile": boolean;
+    "basic.lyricFileFormat": "lrc" | "txt";
 
     // Lyric
     "lyric.showStatusBarLyric": boolean;
@@ -60,6 +62,10 @@ export interface IAppConfigProperties {
     "lyric.statusBarShowTranslation": boolean;
     "lyric.statusBarShowRomanization": boolean;
     "lyric.autoSearchLyric": boolean;
+    "lyric.enableWordByWord": boolean;
+    "lyric.enableWordByWordFloat": boolean;
+    "lyric.pureWhiteMode": boolean;
+    "lyric.enableBreathingDots": boolean;
 
     // Theme
     "theme.background": string;
@@ -69,6 +75,7 @@ export interface IAppConfigProperties {
     "theme.customColors"?: CustomizedColors;
     "theme.followSystem": boolean;
     "theme.selectedTheme": string;
+    "theme.coverStyle": "square" | "circle";
 
     // Backup
     "backup.resumeMode": ResumeMode;

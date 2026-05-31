@@ -751,6 +751,10 @@ function LyricSetting() {
     const statusBarShowTranslation = useAppConfig("lyric.statusBarShowTranslation");
     const statusBarShowRomanization = useAppConfig("lyric.statusBarShowRomanization");
     const enableAutoSearchLyric = useAppConfig("lyric.autoSearchLyric");
+    const enableWordByWord = useAppConfig("lyric.enableWordByWord");
+    const enableWordByWordFloat = useAppConfig("lyric.enableWordByWordFloat");
+    const pureWhiteMode = useAppConfig("lyric.pureWhiteMode");
+    const enableBreathingDots = useAppConfig("lyric.enableBreathingDots");
 
 
 
@@ -762,6 +766,30 @@ function LyricSetting() {
         t("basicSettings.lyric.autoSearchLyric"),
         "lyric.autoSearchLyric",
         enableAutoSearchLyric ?? false,
+    );
+
+    const wordByWordLyric = createSwitch(
+        t("basicSettings.lyric.enableWordByWord"),
+        "lyric.enableWordByWord",
+        enableWordByWord ?? true,
+    );
+
+    const wordByWordFloat = createSwitch(
+        t("basicSettings.lyric.enableWordByWordFloat"),
+        "lyric.enableWordByWordFloat",
+        enableWordByWordFloat ?? true,
+    );
+
+    const lyricPureWhiteMode = createSwitch(
+        t("basicSettings.lyric.pureWhiteMode"),
+        "lyric.pureWhiteMode",
+        pureWhiteMode ?? true,
+    );
+
+    const breathingDots = createSwitch(
+        t("basicSettings.lyric.enableBreathingDots"),
+        "lyric.enableBreathingDots",
+        enableBreathingDots ?? true,
     );
 
     const openStatusBarLyric = createSwitch(
@@ -856,6 +884,34 @@ function LyricSetting() {
                 onPress={autoSearchLyric.onPress}>
                 <ListItem.Content title={autoSearchLyric.title} />
                 {autoSearchLyric.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={wordByWordLyric.onPress}>
+                <ListItem.Content title={wordByWordLyric.title} />
+                {wordByWordLyric.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={wordByWordFloat.onPress}>
+                <ListItem.Content title={wordByWordFloat.title} />
+                {wordByWordFloat.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={lyricPureWhiteMode.onPress}>
+                <ListItem.Content title={lyricPureWhiteMode.title} />
+                {lyricPureWhiteMode.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={breathingDots.onPress}>
+                <ListItem.Content title={breathingDots.title} />
+                {breathingDots.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding

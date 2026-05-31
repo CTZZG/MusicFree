@@ -32,6 +32,7 @@ type MetadataSwitchKey =
     | "writeMetadata"
     | "writeMetadataCover"
     | "writeMetadataLyric"
+    | "downloadLyricFile"
     | "enableWordByWord";
 
 export default function MusicMetadataSettings() {
@@ -42,12 +43,16 @@ export default function MusicMetadataSettings() {
     const currentWriteMetadataCover = useAppConfig("basic.writeMetadataCover");
     const currentWriteMetadataLyric = useAppConfig("basic.writeMetadataLyric");
     const currentEnableWordByWord = useAppConfig("basic.enableWordByWordLyric");
+    const currentDownloadLyricFile = useAppConfig("basic.downloadLyricFile");
+    const currentLyricFileFormat = useAppConfig("basic.lyricFileFormat");
     const currentLyricOrder = useAppConfig("basic.lyricOrder");
 
     const [settings, setSettings] = useState({
         writeMetadata: currentWriteMetadata ?? false,
         writeMetadataCover: currentWriteMetadataCover ?? true,
         writeMetadataLyric: currentWriteMetadataLyric ?? true,
+        downloadLyricFile: currentDownloadLyricFile ?? false,
+        lyricFileFormat: currentLyricFileFormat ?? "lrc",
         enableWordByWord: currentEnableWordByWord ?? false,
         lyricOrder: currentLyricOrder ?? DEFAULT_LYRIC_ORDER,
     });
@@ -71,6 +76,8 @@ export default function MusicMetadataSettings() {
         Config.setConfig("basic.writeMetadata", settings.writeMetadata);
         Config.setConfig("basic.writeMetadataCover", settings.writeMetadataCover);
         Config.setConfig("basic.writeMetadataLyric", settings.writeMetadataLyric);
+        Config.setConfig("basic.downloadLyricFile", settings.downloadLyricFile);
+        Config.setConfig("basic.lyricFileFormat", settings.lyricFileFormat);
         Config.setConfig("basic.enableWordByWordLyric", settings.enableWordByWord);
         Config.setConfig("basic.lyricOrder", settings.lyricOrder);
 
@@ -83,6 +90,8 @@ export default function MusicMetadataSettings() {
             writeMetadata: false,
             writeMetadataCover: true,
             writeMetadataLyric: true,
+            downloadLyricFile: false,
+            lyricFileFormat: "lrc" as "lrc" | "txt",
             enableWordByWord: false,
             lyricOrder: DEFAULT_LYRIC_ORDER,
         });
@@ -196,6 +205,24 @@ export default function MusicMetadataSettings() {
         })
         : t("panel.musicMetadataSettings.noLyricOrder");
 
+    const lyricFileFormat = {
+        title: t("panel.musicMetadataSettings.lyricFileFormat"),
+        right: (
+            <ThemeText style={styles.formatText}>
+                {settings.lyricFileFormat === "lrc"
+                    ? t("panel.musicMetadataSettings.lyricFileFormatLrc")
+                    : t("panel.musicMetadataSettings.lyricFileFormatTxt")}
+            </ThemeText>
+        ),
+        onPress: () => {
+            setSettings(prev => ({
+                ...prev,
+                lyricFileFormat:
+                    prev.lyricFileFormat === "lrc" ? "txt" : "lrc",
+            }));
+        },
+    };
+
     return (
         <PanelBase
             keyboardAvoidBehavior="height"
@@ -232,7 +259,27 @@ export default function MusicMetadataSettings() {
                             </>
                         ) : null}
 
-                        {settings.writeMetadata && settings.writeMetadataLyric ? (
+                        {renderSwitchItem(
+                            t("panel.musicMetadataSettings.downloadLyricFile"),
+                            settings.downloadLyricFile,
+                            createSwitchHandler("downloadLyricFile"),
+                        )}
+
+                        {settings.downloadLyricFile ? (
+                            <ListItem
+                                withHorizontalPadding
+                                heightType="small"
+                                onPress={lyricFileFormat.onPress}>
+                                <ListItem.Content
+                                    title={lyricFileFormat.title}
+                                />
+                                {lyricFileFormat.right}
+                            </ListItem>
+                        ) : null}
+
+                        {(settings.writeMetadata &&
+                            settings.writeMetadataLyric) ||
+                        settings.downloadLyricFile ? (
                             <>
                                 <ListItemHeader>
                                     {t(
@@ -303,6 +350,9 @@ const styles = StyleSheet.create({
     orderSummary: {
         paddingHorizontal: rpx(24),
         paddingVertical: rpx(12),
+    },
+    formatText: {
+        textAlign: "right",
     },
     bottomPadding: {
         height: rpx(72),

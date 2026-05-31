@@ -17,33 +17,64 @@ import Animated, {
 } from "react-native-reanimated";
 import MaskedView from "@react-native-masked-view/masked-view";
 import LinearGradient from "react-native-linear-gradient";
+import { useAppConfig } from "@/core/appConfig";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import {
     getCurrentPositionMsShared,
     useCurrentLyricItem,
     useLyricState,
 } from "@/core/lyricManager";
+import PersistStatus from "@/utils/persistStatus";
 import rpx from "@/utils/rpx";
 import { getSongInfoWidth } from "./songInfo";
 import type { IParsedLrcItem } from "@/utils/lrcParser";
-import { getLyricWordData } from "@/utils/lyricWordByWord";
+import {
+    getLyricWordData,
+    type LyricWordLineType,
+} from "@/utils/lyricWordByWord";
+import { BreathingDots } from "../lyric/lyricItem";
 
 interface IMiniLyricProps {
     compact?: boolean;
     onPress?: () => void;
 }
 
-const LINE_HEIGHT = rpx(42);
+type MiniLyricLineType = LyricWordLineType;
+
+const PRIMARY_LINE_HEIGHT = rpx(40);
+const SECONDARY_LINE_HEIGHT = rpx(28);
 const COMPACT_LINE_HEIGHT = rpx(36);
 const GROUP_SPACING = rpx(8);
-const CONTAINER_HEIGHT = rpx(222);
-const COMPACT_CONTAINER_HEIGHT = rpx(72);
-const FADE_HEIGHT = rpx(58);
-const COMPACT_FADE_HEIGHT = rpx(22);
+const CONTAINER_HEIGHT = rpx(198);
+const COMPACT_CONTAINER_HEIGHT = rpx(96);
+const FADE_HEIGHT = rpx(56);
+const COMPACT_FADE_HEIGHT = rpx(26);
 const MIN_WORD_DURATION = 50;
 
-function getLyricText(item?: IParsedLrcItem | null) {
-    return item?.lrc?.trim() ?? "";
+const defaultMiniLyricOrder: MiniLyricLineType[] = [
+    "original",
+    "translation",
+    "romanization",
+];
+
+function normalizeMiniLyricOrder(order?: MiniLyricLineType[]) {
+    const displayOrder: MiniLyricLineType[] = [];
+    [...(order ?? []), ...defaultMiniLyricOrder].forEach(type => {
+        if (!displayOrder.includes(type)) {
+            displayOrder.push(type);
+        }
+    });
+    return displayOrder;
+}
+
+function getLineText(item: IParsedLrcItem, type: MiniLyricLineType) {
+    if (type === "translation") {
+        return item.translation ?? "";
+    }
+    if (type === "romanization") {
+        return item.romanization ?? "";
+    }
+    return item.lrc ?? "";
 }
 
 function splitWordToChars(word: ILyric.IWordData) {
@@ -65,14 +96,11 @@ function splitWordToChars(word: ILyric.IWordData) {
     }));
 }
 
-function shouldAppendSpace(word: ILyric.IWordData) {
-    return !!word.space && !word.text.endsWith(" ");
-}
-
 function flattenWordsToCharacters(words: ILyric.IWordData[]) {
     return words.flatMap(word => {
         const chars = splitWordToChars(word);
-        if (!shouldAppendSpace(word)) {
+        const shouldAppendSpace = !!word.space && !word.text.endsWith(" ");
+        if (!shouldAppendSpace) {
             return chars;
         }
         return [
@@ -89,40 +117,45 @@ function flattenWordsToCharacters(words: ILyric.IWordData[]) {
 
 function MiniAnimatedCharacter(props: {
     word: ILyric.IWordData;
+    activeColor: string;
+    inactiveColor: string;
     fontSize: number;
     lineHeight: number;
 }) {
-    const { word, fontSize, lineHeight } = props;
+    const { word, activeColor, inactiveColor, fontSize, lineHeight } = props;
     const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
     const wordStartTime = word.startTime;
     const wordDuration = word.duration;
-    const activeShadowRadius = rpx(8);
     const animatedStyle = useAnimatedStyle(() => {
-        const startTime = wordStartTime;
         const duration = Math.max(wordDuration || 0, MIN_WORD_DURATION);
-        const endTime = startTime + duration;
+        const endTime = wordStartTime + duration;
         const currentTime = currentPositionMs.value;
         const progress =
-            currentTime <= startTime
+            currentTime <= wordStartTime
                 ? 0
                 : currentTime >= endTime
                   ? 1
-                  : (currentTime - startTime) / duration;
+                  : (currentTime - wordStartTime) / duration;
+        const wave = Math.sin(progress * Math.PI);
 
         return {
             color: interpolateColor(
                 progress,
                 [0, 1],
-                ["rgba(255, 255, 255, 0.38)", "rgba(255, 255, 255, 1)"],
+                [inactiveColor, activeColor],
             ),
-            opacity: interpolate(progress, [0, 0.3, 1], [0.55, 0.88, 1]),
-            textShadowRadius: interpolate(
-                progress,
-                [0, 1],
-                [0, activeShadowRadius],
-            ),
+            opacity: interpolate(progress, [0, 0.35, 1], [0.52, 0.86, 1]),
+            textShadowRadius: interpolate(progress, [0, 1], [0, rpx(9)]),
+            transform: [
+                {
+                    translateY: -wave * rpx(3),
+                },
+                {
+                    scale: 1 + wave * 0.04,
+                },
+            ],
         };
-    }, [activeShadowRadius, wordDuration, wordStartTime]);
+    }, [activeColor, inactiveColor, wordDuration, wordStartTime]);
 
     return (
         <Animated.Text
@@ -141,34 +174,48 @@ function MiniAnimatedCharacter(props: {
 
 function MiniWordByWordLine(props: {
     item: IParsedLrcItem;
+    type: MiniLyricLineType;
     nextItem?: IParsedLrcItem;
-    compact?: boolean;
+    activeColor: string;
+    inactiveColor: string;
+    fontSize: number;
+    lineHeight: number;
+    enableWordByWord: boolean;
 }) {
-    const { item, nextItem, compact } = props;
+    const {
+        item,
+        type,
+        nextItem,
+        activeColor,
+        inactiveColor,
+        fontSize,
+        lineHeight,
+        enableWordByWord,
+    } = props;
+    const text = getLineText(item, type);
     const lyricWordData = useMemo(
-        () => getLyricWordData(item, "original", nextItem),
-        [item, nextItem],
+        () => getLyricWordData(item, type, nextItem, enableWordByWord),
+        [enableWordByWord, item, nextItem, type],
     );
     const characters = useMemo(
         () => flattenWordsToCharacters(lyricWordData.words),
         [lyricWordData.words],
     );
-    const fontSize = compact ? fontSizeConst.subTitle : fontSizeConst.title;
-    const lineHeight = compact ? COMPACT_LINE_HEIGHT : LINE_HEIGHT;
 
-    if (!lyricWordData.hasWordByWord || !characters.length) {
+    if (!enableWordByWord || !lyricWordData.hasWordByWord || !characters.length) {
         return (
             <Text
                 numberOfLines={1}
                 style={[
                     styles.activeLine,
                     {
+                        color: activeColor,
                         fontSize,
                         height: lineHeight,
                         lineHeight,
                     },
                 ]}>
-                {getLyricText(item)}
+                {text}
             </Text>
         );
     }
@@ -178,13 +225,15 @@ function MiniWordByWordLine(props: {
             style={[
                 styles.activeWordLine,
                 {
-                    height: lineHeight,
+                    minHeight: lineHeight,
                 },
             ]}>
             {characters.map((word, index) => (
                 <MiniAnimatedCharacter
                     key={`${word.startTime}-${index}`}
                     word={word}
+                    activeColor={activeColor}
+                    inactiveColor={inactiveColor}
                     fontSize={fontSize}
                     lineHeight={lineHeight}
                 />
@@ -204,6 +253,23 @@ export default function MiniLyric(props: IMiniLyricProps) {
     );
     const translateY = useSharedValue(0);
     const lastIndexRef = useRef(-1);
+    const enableWordByWord = useAppConfig("lyric.enableWordByWord") ?? true;
+    const pureWhiteMode = useAppConfig("lyric.pureWhiteMode") ?? true;
+    const enableBreathingDots =
+        useAppConfig("lyric.enableBreathingDots") ?? true;
+    const configuredLyricOrder = useAppConfig("basic.lyricOrder");
+    const lyricOrder = useMemo(
+        () => normalizeMiniLyricOrder(configuredLyricOrder),
+        [configuredLyricOrder],
+    );
+    const showTranslation = PersistStatus.useValue(
+        "lyric.showTranslation",
+        false,
+    );
+    const showRomanization = PersistStatus.useValue(
+        "lyric.showRomanization",
+        false,
+    );
 
     const lyrics = lyricState.lyrics;
     const currentIndex = Math.max(
@@ -211,17 +277,71 @@ export default function MiniLyric(props: IMiniLyricProps) {
         Math.min(currentLyricItem?.index ?? 0, Math.max(0, lyrics.length - 1)),
     );
     const containerHeight = compact ? COMPACT_CONTAINER_HEIGHT : CONTAINER_HEIGHT;
-    const lineHeight = compact ? COMPACT_LINE_HEIGHT : LINE_HEIGHT;
-    const groupHeight = lineHeight + GROUP_SPACING;
     const fadeHeight = compact ? COMPACT_FADE_HEIGHT : FADE_HEIGHT;
+    const activeColor = pureWhiteMode ? "white" : "rgba(126, 229, 255, 1)";
+    const inactiveColor = "rgba(255, 255, 255, 0.36)";
+
+    const visibleTypes = useMemo(() => {
+        if (compact) {
+            return ["original"] as MiniLyricLineType[];
+        }
+        return lyricOrder.filter(type => {
+            if (type === "original") {
+                return true;
+            }
+            if (type === "translation") {
+                return !!showTranslation && lyricState.hasTranslation;
+            }
+            if (type === "romanization") {
+                return !!showRomanization && lyricState.hasRomanization;
+            }
+            return false;
+        });
+    }, [
+        compact,
+        lyricOrder,
+        lyricState.hasRomanization,
+        lyricState.hasTranslation,
+        showRomanization,
+        showTranslation,
+    ]);
+
+    const groupHeights = useMemo(
+        () =>
+            lyrics.map(item => {
+                const hasText = visibleTypes.some(type =>
+                    getLineText(item, type).trim(),
+                );
+                if (!hasText) {
+                    return (compact ? COMPACT_LINE_HEIGHT : PRIMARY_LINE_HEIGHT) +
+                        GROUP_SPACING;
+                }
+                const lineCount = Math.max(1, visibleTypes.length);
+                if (compact) {
+                    return COMPACT_LINE_HEIGHT + GROUP_SPACING;
+                }
+                return (
+                    PRIMARY_LINE_HEIGHT +
+                    Math.max(0, lineCount - 1) * SECONDARY_LINE_HEIGHT +
+                    GROUP_SPACING
+                );
+            }),
+        [compact, lyrics, visibleTypes],
+    );
 
     useEffect(() => {
         if (lyrics.length === 0) {
             return;
         }
 
+        const beforeHeight = groupHeights
+            .slice(0, currentIndex)
+            .reduce((sum, height) => sum + height, 0);
+        const currentGroupHeight =
+            groupHeights[currentIndex] ??
+            (compact ? COMPACT_LINE_HEIGHT : PRIMARY_LINE_HEIGHT);
         const targetY =
-            -currentIndex * groupHeight + (containerHeight - groupHeight) / 2;
+            -beforeHeight + (containerHeight - currentGroupHeight) / 2;
 
         if (lastIndexRef.current === -1) {
             translateY.value = targetY;
@@ -232,7 +352,14 @@ export default function MiniLyric(props: IMiniLyricProps) {
             });
         }
         lastIndexRef.current = currentIndex;
-    }, [containerHeight, currentIndex, groupHeight, lyrics.length, translateY]);
+    }, [
+        compact,
+        containerHeight,
+        currentIndex,
+        groupHeights,
+        lyrics.length,
+        translateY,
+    ]);
 
     const animatedListStyle = useAnimatedStyle(() => ({
         transform: [
@@ -268,16 +395,18 @@ export default function MiniLyric(props: IMiniLyricProps) {
             <Animated.View style={[styles.lyricsWrapper, animatedListStyle]}>
                 {lyrics.map((item, index) => {
                     const isActive = index === currentIndex;
-                    const text = getLyricText(item);
                     const distance = Math.abs(index - currentIndex);
                     const opacity =
                         distance === 0
                             ? 1
                             : distance === 1
-                              ? 0.48
+                              ? 0.5
                               : distance === 2
                                 ? 0.28
-                                : 0.16;
+                                : 0.12;
+                    const hasText = visibleTypes.some(type =>
+                        getLineText(item, type).trim(),
+                    );
 
                     return (
                         <View
@@ -285,34 +414,77 @@ export default function MiniLyric(props: IMiniLyricProps) {
                             style={[
                                 styles.lyricGroup,
                                 {
-                                    height: groupHeight,
+                                    minHeight: groupHeights[index],
                                     opacity,
                                 },
                             ]}>
-                            {isActive ? (
-                                <MiniWordByWordLine
-                                    item={item}
-                                    nextItem={lyrics[index + 1]}
-                                    compact={compact}
-                                />
-                            ) : text ? (
-                                <Text
-                                    numberOfLines={1}
-                                    style={[
-                                        styles.contextLine,
-                                        {
-                                            height: lineHeight,
-                                            lineHeight,
-                                        },
-                                    ]}>
-                                    {text}
-                                </Text>
+                            {!hasText ? (
+                                isActive && enableBreathingDots ? (
+                                    <View style={styles.dotsLine}>
+                                        <BreathingDots
+                                            color={activeColor}
+                                            align="left"
+                                            highlight
+                                        />
+                                    </View>
+                                ) : (
+                                    <View style={styles.dotsLine} />
+                                )
                             ) : (
-                                <View
-                                    style={{
-                                        height: lineHeight,
-                                    }}
-                                />
+                                visibleTypes.map((type, typeIndex) => {
+                                    const text = getLineText(item, type);
+                                    if (!text.trim() && type !== "original") {
+                                        return null;
+                                    }
+                                    const isPrimary = typeIndex === 0;
+                                    const fontSize = compact
+                                        ? fontSizeConst.subTitle
+                                        : isPrimary
+                                          ? fontSizeConst.title
+                                          : fontSizeConst.content;
+                                    const lineHeight = compact
+                                        ? COMPACT_LINE_HEIGHT
+                                        : isPrimary
+                                          ? PRIMARY_LINE_HEIGHT
+                                          : SECONDARY_LINE_HEIGHT;
+                                    if (isActive && isPrimary) {
+                                        return (
+                                            <MiniWordByWordLine
+                                                key={type}
+                                                item={item}
+                                                type={type}
+                                                nextItem={lyrics[index + 1]}
+                                                activeColor={activeColor}
+                                                inactiveColor={inactiveColor}
+                                                fontSize={fontSize}
+                                                lineHeight={lineHeight}
+                                                enableWordByWord={
+                                                    enableWordByWord
+                                                }
+                                            />
+                                        );
+                                    }
+                                    return (
+                                        <Text
+                                            key={type}
+                                            numberOfLines={1}
+                                            style={[
+                                                isPrimary
+                                                    ? styles.contextPrimaryLine
+                                                    : styles.contextSecondaryLine,
+                                                {
+                                                    color: isActive
+                                                        ? activeColor
+                                                        : "white",
+                                                    fontSize,
+                                                    height: lineHeight,
+                                                    lineHeight,
+                                                },
+                                            ]}>
+                                            {text}
+                                        </Text>
+                                    );
+                                })
                             )}
                         </View>
                     );
@@ -329,12 +501,34 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 {
                     width: infoWidth,
                     height: containerHeight,
-                    marginTop: compact ? rpx(10) : rpx(22),
+                    marginTop: compact ? rpx(8) : rpx(16),
                 },
                 pressed ? styles.pressed : null,
             ]}>
             {Platform.OS === "android" ? (
-                lyricContent
+                <>
+                    {lyricContent}
+                    <LinearGradient
+                        pointerEvents="none"
+                        colors={[
+                            "rgba(0,0,0,0.4)",
+                            "rgba(0,0,0,0)",
+                        ]}
+                        style={[styles.androidFade, styles.androidFadeTop, {
+                            height: fadeHeight,
+                        }]}
+                    />
+                    <LinearGradient
+                        pointerEvents="none"
+                        colors={[
+                            "rgba(0,0,0,0)",
+                            "rgba(0,0,0,0.4)",
+                        ]}
+                        style={[styles.androidFade, styles.androidFadeBottom, {
+                            height: fadeHeight,
+                        }]}
+                    />
+                </>
             ) : (
                 <MaskedView style={styles.maskedView} maskElement={maskElement}>
                     {lyricContent}
@@ -378,22 +572,21 @@ const styles = StyleSheet.create({
     },
     activeLine: {
         width: "100%",
-        color: "white",
         fontWeight: fontWeightConst.bold,
         includeFontPadding: false,
         textAlign: "left",
-        textShadowColor: "rgba(255, 255, 255, 0.28)",
+        textShadowColor: "rgba(255, 255, 255, 0.38)",
         textShadowOffset: {
             width: 0,
             height: 0,
         },
-        textShadowRadius: rpx(9),
+        textShadowRadius: rpx(10),
     },
     activeCharacter: {
         color: "white",
         fontWeight: fontWeightConst.bold,
         includeFontPadding: false,
-        textShadowColor: "rgba(255, 255, 255, 0.32)",
+        textShadowColor: "rgba(255, 255, 255, 0.38)",
         textShadowOffset: {
             width: 0,
             height: 0,
@@ -403,21 +596,45 @@ const styles = StyleSheet.create({
         width: "100%",
         flexDirection: "row",
         alignItems: "center",
+        flexWrap: "wrap",
         overflow: "hidden",
     },
-    contextLine: {
+    contextPrimaryLine: {
         width: "100%",
         color: "white",
-        fontSize: fontSizeConst.content,
-        fontWeight: fontWeightConst.medium,
+        fontWeight: fontWeightConst.bold,
         includeFontPadding: false,
         textAlign: "left",
-        textShadowColor: "rgba(255, 255, 255, 0.12)",
+        textShadowColor: "rgba(255, 255, 255, 0.14)",
         textShadowOffset: {
             width: 0,
             height: 0,
         },
         textShadowRadius: rpx(5),
+    },
+    contextSecondaryLine: {
+        width: "100%",
+        color: "white",
+        fontWeight: fontWeightConst.medium,
+        includeFontPadding: false,
+        opacity: 0.72,
+        textAlign: "left",
+    },
+    dotsLine: {
+        minHeight: PRIMARY_LINE_HEIGHT,
+        justifyContent: "center",
+    },
+    androidFade: {
+        position: "absolute",
+        left: 0,
+        right: 0,
+        zIndex: 2,
+    },
+    androidFadeTop: {
+        top: 0,
+    },
+    androidFadeBottom: {
+        bottom: 0,
     },
     pressed: {
         opacity: 0.72,
