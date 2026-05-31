@@ -59,6 +59,39 @@ function getSingerList(musicItem: IMusic.IMusicItem | null): ISingerInfo[] {
         }));
 }
 
+function getAlbumIdentity(musicItem: IMusic.IMusicItem) {
+    const item = musicItem as any;
+    const albumId = item.albumid ?? item.albumId ?? item.album_id;
+    const albumMID = item.albummid ?? item.albumMID ?? item.album_mid;
+    const normalizedId =
+        albumId === undefined || albumId === null ? "" : String(albumId).trim();
+    const normalizedMID =
+        albumMID === undefined || albumMID === null
+            ? ""
+            : String(albumMID).trim();
+
+    return {
+        id: normalizedId,
+        albumMID: normalizedMID,
+    };
+}
+
+function shouldUseAlbumSearchFallback(
+    musicItem: IMusic.IMusicItem,
+    plugin?: ReturnType<typeof pluginManager.getByMedia>,
+) {
+    const platformNames = [
+        musicItem.platform,
+        (musicItem as any).originPlatform,
+        plugin?.name,
+        plugin?.instance?.platform,
+    ]
+        .filter(Boolean)
+        .map(name => String(name));
+
+    return platformNames.some(name => name.includes("GD聚合音乐"));
+}
+
 export default function SongInfo(props: ISongInfoProps) {
     const { showHeart = false } = props;
     const musicItem = useCurrentMusic();
@@ -111,6 +144,30 @@ export default function SongInfo(props: ISongInfoProps) {
         }
 
         const plugin = pluginManager.getByMedia(musicItem);
+        const albumIdentity = getAlbumIdentity(musicItem);
+        const canOpenAlbumDetail =
+            !!plugin?.supportedMethods.has("getAlbumInfo") &&
+            !!(albumIdentity.id || albumIdentity.albumMID) &&
+            !shouldUseAlbumSearchFallback(musicItem, plugin);
+
+        if (canOpenAlbumDetail) {
+            const albumItem: IAlbum.IAlbumItem = {
+                id: albumIdentity.id || albumIdentity.albumMID,
+                albumMID: albumIdentity.albumMID,
+                title: musicItem.album,
+                platform: musicItem.platform,
+                artwork: musicItem.artwork,
+                artist: musicItem.artist,
+                description: "",
+                musicList: [],
+            };
+
+            navigate(ROUTE_PATH.ALBUM_DETAIL, {
+                albumItem,
+                pluginHash: plugin?.hash,
+            });
+            return;
+        }
 
         navigate(ROUTE_PATH.SEARCH_PAGE, {
             initialQuery: musicItem.album,
