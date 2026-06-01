@@ -59,6 +59,12 @@ Round 18 turns the migration branch into a stable Android release candidate.
 - Crash regression: collect `adb logcat` and `adb shell dumpsys dropbox --print`, especially for Reanimated `CppException` and native player errors.
 - Build identity: open About and check app version, Android `versionCode`, git SHA, build time, signing state, React Native / Expo / React versions, and the private player fork baseline.
 
+## Deferred Decisions
+
+- Announcement dialog/service: defer until there is a CTZZG-owned announcement endpoint or config file. Do not port Toskysun remote announcement URLs.
+- Keyboard avoidance setting: defer unless a real-device dialog/input overlap regression is reproduced on common Android keyboards.
+- Open playback detail on launch: defer until after the release candidate. Keep startup home-first while playback resume, bottom-player tap, lyric loading, and background restore remain the primary regression targets.
+
 ## Real-Device Regression Checklist
 
 - Startup and cold restore.
