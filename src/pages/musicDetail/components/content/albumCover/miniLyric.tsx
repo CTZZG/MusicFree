@@ -126,6 +126,8 @@ function MiniAnimatedCharacter(props: {
     const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
     const wordStartTime = word.startTime;
     const wordDuration = word.duration;
+    const activeShadowRadius = rpx(9);
+    const activeFloatDistance = rpx(3);
     const animatedStyle = useAnimatedStyle(() => {
         const duration = Math.max(wordDuration || 0, MIN_WORD_DURATION);
         const endTime = wordStartTime + duration;
@@ -134,8 +136,8 @@ function MiniAnimatedCharacter(props: {
             currentTime <= wordStartTime
                 ? 0
                 : currentTime >= endTime
-                  ? 1
-                  : (currentTime - wordStartTime) / duration;
+                    ? 1
+                    : (currentTime - wordStartTime) / duration;
         const wave = Math.sin(progress * Math.PI);
 
         return {
@@ -145,17 +147,28 @@ function MiniAnimatedCharacter(props: {
                 [inactiveColor, activeColor],
             ),
             opacity: interpolate(progress, [0, 0.35, 1], [0.52, 0.86, 1]),
-            textShadowRadius: interpolate(progress, [0, 1], [0, rpx(9)]),
+            textShadowRadius: interpolate(
+                progress,
+                [0, 1],
+                [0, activeShadowRadius],
+            ),
             transform: [
                 {
-                    translateY: -wave * rpx(3),
+                    translateY: -wave * activeFloatDistance,
                 },
                 {
                     scale: 1 + wave * 0.04,
                 },
             ],
         };
-    }, [activeColor, inactiveColor, wordDuration, wordStartTime]);
+    }, [
+        activeColor,
+        activeFloatDistance,
+        activeShadowRadius,
+        inactiveColor,
+        wordDuration,
+        wordStartTime,
+    ]);
 
     return (
         <Animated.Text
@@ -400,10 +413,10 @@ export default function MiniLyric(props: IMiniLyricProps) {
                         distance === 0
                             ? 1
                             : distance === 1
-                              ? 0.5
-                              : distance === 2
-                                ? 0.28
-                                : 0.12;
+                                ? 0.5
+                                : distance === 2
+                                    ? 0.28
+                                    : 0.12;
                     const hasText = visibleTypes.some(type =>
                         getLineText(item, type).trim(),
                     );
@@ -440,13 +453,13 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                     const fontSize = compact
                                         ? fontSizeConst.subTitle
                                         : isPrimary
-                                          ? fontSizeConst.title
-                                          : fontSizeConst.content;
+                                            ? fontSizeConst.title
+                                            : fontSizeConst.content;
                                     const lineHeight = compact
                                         ? COMPACT_LINE_HEIGHT
                                         : isPrimary
-                                          ? PRIMARY_LINE_HEIGHT
-                                          : SECONDARY_LINE_HEIGHT;
+                                            ? PRIMARY_LINE_HEIGHT
+                                            : SECONDARY_LINE_HEIGHT;
                                     if (isActive && isPrimary) {
                                         return (
                                             <MiniWordByWordLine

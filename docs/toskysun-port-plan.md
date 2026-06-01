@@ -341,6 +341,7 @@ Implementation notes:
 - Full lyric line updates compare by lyric index instead of lyric text, so repeated identical lyric lines can still advance correctly.
 - The alignment picker height was reduced so the right-align option is no longer clipped on shorter Android screens.
 - Android mini lyric rendering should avoid software `MaskedView` during navigation transitions because it can flash a black mask layer while the detail page is being popped.
+- Android real-device crash fixed: bottom-player and continue-listening entries both open the playback detail page, so mini lyric Reanimated worklets must only capture primitive values. The mini lyric now precomputes `rpx` distances outside `useAnimatedStyle`, avoiding release-device `Object is not a function` crashes on the UI thread.
 
 ## Round 17
 
