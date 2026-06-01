@@ -120,7 +120,7 @@ static def getVersion() {
 // }
 
 def appVersion = getVersion()
-def appVersionCode = 400011
+def appVersionCode = 400012
 
 configurations.all {
     exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-ffmpeg-extension'

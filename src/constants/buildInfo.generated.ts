@@ -2,13 +2,13 @@
 // It is committed with a baseline value so TypeScript can compile before the first generated build.
 
 export const buildInfo = {
-    "appVersion": "0.6.3-beta.1",
-    "packageVersion": "0.6.3-beta.1",
-    "versionCode": "400011",
-    "gitSha": "59e9562d45450ec7b1ef9aa3013c5ae0a875ee9b",
-    "shortSha": "59e9562",
+    "appVersion": "0.6.4-beta.1",
+    "packageVersion": "0.6.4-beta.1",
+    "versionCode": "400012",
+    "gitSha": "fc904c8a918fe984b2d9176deee4482a0fdfec15",
+    "shortSha": "fc904c8",
     "gitRef": "codex/round14-discovery-hub",
-    "buildDate": "2026-06-01T06:13:54.240Z",
+    "buildDate": "2026-06-01T07:31:16.732Z",
     "signing": "configured",
     "node": "v24.15.0",
     "react": "18.3.1",

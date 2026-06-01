@@ -5,8 +5,8 @@ Round 18 turns the migration branch into a stable Android release candidate.
 ## Baseline
 
 - App package: `fun.upup.musicfree`
-- App version: `0.6.3-beta.1`
-- Android `versionCode`: `400011`
+- App version: `0.6.4-beta.1`
+- Android `versionCode`: `400012`
 - React Native: `0.76.5`
 - Expo SDK: `52`
 - React: `18.3.1`
@@ -22,11 +22,11 @@ Round 18 turns the migration branch into a stable Android release candidate.
 - Local `app-arm64-v8a-release.apk` signature verified with `apksigner`.
 - Local `aapt2 dump badging` confirmed package, version, SDK, and ABI metadata.
 - GitHub Actions manual workflow run passed on 2026-06-01: [run `26737183304`](https://github.com/CTZZG/MusicFree/actions/runs/26737183304).
-- CI artifact name: `MusicFree-Android-0.6.3-beta.1-a9a10a4`.
+- CI artifact name pattern: `MusicFree-Android-0.6.4-beta.1-<short-sha>`.
 - CI artifact contents: ABI APKs for `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`, one universal APK, and `android-build-info.txt`.
 - CI `app-arm64-v8a` artifact signature verified with `apksigner`.
-- CI `aapt2 dump badging` confirmed `fun.upup.musicfree`, `versionCode=400011`, `versionName=0.6.3-beta.1`, `minSdkVersion=24`, `targetSdkVersion=30`, and `native-code=arm64-v8a`.
-- Tag-triggered GitHub release asset upload remains untested in Round 18 to avoid publishing a release before final approval.
+- CI `aapt2 dump badging` should confirm `fun.upup.musicfree`, `versionCode=400012`, `versionName=0.6.4-beta.1`, `minSdkVersion=24`, `targetSdkVersion=30`, and the target ABI.
+- Manual dispatch and tag-triggered builds publish or update a GitHub Release using tag `v<APP_VERSION>`, including ABI APKs, the universal APK, and `android-build-info.txt`; pull-request merge builds only upload workflow artifacts.
 
 ## Release Changelog Draft
 

@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
+const androidBuildGradlePath = path.join(rootDir, 'android', 'app', 'build.gradle');
 const outputPath = path.join(
     rootDir,
     'src',
@@ -34,6 +35,12 @@ function getSigningState() {
     return hasCiSigning || hasLocalSigning ? 'configured' : 'unsigned';
 }
 
+function getAndroidVersionCode() {
+    const gradle = readFileSync(androidBuildGradlePath, 'utf8');
+    const match = gradle.match(/\bappVersionCode\s*=\s*(\d+)/);
+    return match?.[1] ?? 'unknown';
+}
+
 const gitSha = process.env.GITHUB_SHA || run('git rev-parse HEAD', 'unknown');
 const shortSha = process.env.SHORT_SHA || gitSha.slice(0, 7);
 const gitRef =
@@ -45,7 +52,7 @@ const dependencies = packageJson.dependencies ?? {};
 const buildInfo = {
     appVersion: process.env.APP_VERSION || packageJson.version,
     packageVersion: process.env.PACKAGE_VERSION || packageJson.version,
-    versionCode: '400011',
+    versionCode: getAndroidVersionCode(),
     gitSha,
     shortSha,
     gitRef,

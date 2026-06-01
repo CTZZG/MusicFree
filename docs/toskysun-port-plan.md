@@ -379,8 +379,8 @@ Implementation notes:
 
 - Round 18 release-candidate notes live in `docs/android-release-candidate.md`.
 - Local TypeScript and Android release builds pass; the local release APK signature and package metadata have been checked with Android SDK tools.
-- `.github/workflows/android-build.yml` manual dispatch passed on run `26737183304`; artifacts were uploaded as `MusicFree-Android-0.6.3-beta.1-a9a10a4`.
-- CI artifact APK metadata and signing were checked after downloading the artifact zip. Tag-triggered release asset upload is intentionally left untested until final release approval.
+- `.github/workflows/android-build.yml` manual dispatch passed on run `26737183304`; the release-candidate version has since moved to `0.6.4-beta.1`, and artifacts now follow `MusicFree-Android-0.6.4-beta.1-<short-sha>`.
+- CI artifact APK metadata and signing were checked after downloading the artifact zip. Release publishing now creates or updates GitHub Release `v<APP_VERSION>` for manual dispatch and tag-triggered builds, while pull-request merge builds remain artifact-only.
 
 ## Round 19
 

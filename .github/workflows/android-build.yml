@@ -21,6 +21,9 @@ concurrency:
     group: android-build-${{ github.ref }}
     cancel-in-progress: false
 
+env:
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
     build-android:
         name: Build Android APK
@@ -159,11 +162,25 @@ jobs:
                   if-no-files-found: error
 
             - name: Publish GitHub release assets
-              if: startsWith(github.ref, 'refs/tags/')
+              if: github.event_name != 'pull_request'
               uses: softprops/action-gh-release@v2
               with:
-                  files: dist/*.apk
+                  tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', env.APP_VERSION) }}
+                  target_commitish: ${{ github.sha }}
+                  name: MusicFree ${{ env.APP_VERSION }}
+                  body: |
+                      Android build for `${{ env.APP_VERSION }}`.
+
+                      - Commit: `${{ github.sha }}`
+                      - Ref: `${{ github.ref_name }}`
+                      - Build date: `${{ env.BUILD_DATE }}`
+                      - Signing: release workflow signing check is recorded in `android-build-info.txt`.
+                  files: dist/*
                   generate_release_notes: true
+                  prerelease: ${{ contains(env.APP_VERSION, '-') }}
+                  make_latest: ${{ contains(env.APP_VERSION, '-') && 'false' || 'true' }}
+                  overwrite_files: true
+                  fail_on_unmatched_files: true
 
             - name: Build summary
               run: |
