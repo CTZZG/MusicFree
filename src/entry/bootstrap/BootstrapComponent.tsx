@@ -40,9 +40,16 @@ export function BootstrapComponent() {
                 title: i18n.t("dialog.loading.reinitializeTrackPlayer"), 
                 promise: initTrackPlayer(),
                 onResolve(data, hideDialog) {
+                    getDefaultStore().set(bootstrapAtom, {
+                        state: "Done",
+                    });
                     hideDialog();
                 },
                 onReject(reason, hideDialog) {
+                    getDefaultStore().set(bootstrapAtom, {
+                        state: "TrackPlayerError",
+                        reason,
+                    });
                     hideDialog();
                 },
             });

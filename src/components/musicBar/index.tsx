@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useState } from "react";
-import { ActivityIndicator, Keyboard, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, Keyboard, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import { CircularProgressBase } from "react-native-circular-progress-indicator";
 
@@ -72,16 +72,35 @@ function MusicBar() {
     const safeAreaInsets = useSafeAreaInsets();
 
     useEffect(() => {
+        let keyboardResetTimer: ReturnType<typeof setTimeout> | null = null;
         const showSubscription = Keyboard.addListener("keyboardDidShow", () => {
             setKeyboardStatus(true);
         });
         const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
             setKeyboardStatus(false);
         });
+        const appStateSubscription = AppState.addEventListener("change", nextState => {
+            if (nextState !== "active") {
+                setKeyboardStatus(false);
+                return;
+            }
+
+            if (keyboardResetTimer) {
+                clearTimeout(keyboardResetTimer);
+            }
+            Keyboard.dismiss();
+            keyboardResetTimer = setTimeout(() => {
+                setKeyboardStatus(false);
+            }, 120);
+        });
 
         return () => {
+            if (keyboardResetTimer) {
+                clearTimeout(keyboardResetTimer);
+            }
             showSubscription.remove();
             hideSubscription.remove();
+            appStateSubscription.remove();
         };
     }, []);
 

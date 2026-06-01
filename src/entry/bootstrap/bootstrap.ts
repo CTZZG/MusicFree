@@ -117,6 +117,7 @@ async function bootstrapImpl() {
     trace("插件初始化完成");
 
     await initTrackPlayer().catch(err => {
+        errorLog("播放器初始化失败，等待前台重试", err);
         // 初始化播放器出错，延迟初始化
         const bootstrapState = getDefaultStore().get(bootstrapAtom);
 
@@ -385,9 +386,11 @@ export default async function () {
         await bootstrapImpl();
         await downloadNotificationManager.initialize().catch(() => {});
         bindEvents();
-        getDefaultStore().set(bootstrapAtom, {
-            "state": "Done",
-        });
+        if (getDefaultStore().get(bootstrapAtom).state === "Loading") {
+            getDefaultStore().set(bootstrapAtom, {
+                "state": "Done",
+            });
+        }
         telemetry.logEvent("App.Bootstrap.Completed", {
             d: Date.now() - startTime,
             pluginCount: PluginManager.getPluginsCount(),

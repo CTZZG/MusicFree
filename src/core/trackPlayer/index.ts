@@ -153,6 +153,9 @@ class TrackPlayer extends EventEmitter<{
                 repeatMode === MusicRepeatMode.SHUFFLE,
             );
         }
+        if (track && !this.isInPlayList(track)) {
+            this.add(track);
+        }
 
         if (track && this.isInPlayList(track)) {
             if (!this.configService.getConfig("basic.autoPlayWhenAppStart")) {
