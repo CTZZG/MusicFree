@@ -17,6 +17,8 @@
     "commit-lint": "commitlint --edit",
     "lint-staged": "lint-staged",
     "connect-mumu": "adb kill-server & adb connect localhost:7555",
+    "generate-build-info": "node ./generator/generate-build-info.mjs",
+    "prebuild-android": "npm run generate-build-info",
     "build-android": "cd .\\android\\ && .\\gradlew assembleRelease",
     "generate-assets": "node ./generator/generate-assets.mjs",
     "prepare": "husky"

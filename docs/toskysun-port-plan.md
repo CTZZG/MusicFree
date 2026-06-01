@@ -417,7 +417,7 @@ This pass is a source/component-level pixel audit: components, layout logic, set
 
 ### Merge Into Round 18
 
-- [ ] Add app build-info / app-meta diagnostics so APK version, git SHA, build time, signing state, and dependency baseline can be checked from the app or support logs.
+- [x] Add app build-info / app-meta diagnostics so APK version, git SHA, build time, signing state, and dependency baseline can be checked from the app or support logs.
 - [ ] Decide whether to add an announcement dialog/service; if added, use a CTZZG-owned announcement source, cached reads, opt-out/ignore support, and no Toskysun remote endpoint.
 - [ ] Add a keyboard-avoidance setting only if real-device dialogs/input panels still overlap on common Android keyboards.
 - [ ] Consider an "open playback detail on launch" setting after resume, bottom-player tap, lyric loading, and background restore are stable.

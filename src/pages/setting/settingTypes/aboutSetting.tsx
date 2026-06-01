@@ -13,10 +13,42 @@ import LinkText from "@/components/base/linkText";
 import useCheckUpdate from "@/hooks/useCheckUpdate.ts";
 import useOrientation from "@/hooks/useOrientation";
 import Divider from "@/components/base/divider";
+import { buildInfo } from "@/constants/buildInfo.generated";
+import DeviceInfo from "react-native-device-info";
 
 export default function AboutSetting() {
     const checkAndShowResult = useCheckUpdate();
     const orientation = useOrientation();
+    const buildRows = [
+        {
+            label: "应用版本",
+            value: `${DeviceInfo.getVersion()} (${DeviceInfo.getBuildNumber()})`,
+        },
+        {
+            label: "构建版本",
+            value: `${buildInfo.appVersion} / ${buildInfo.versionCode}`,
+        },
+        {
+            label: "Git",
+            value: `${buildInfo.shortSha} · ${buildInfo.gitRef}`,
+        },
+        {
+            label: "构建时间",
+            value: buildInfo.buildDate,
+        },
+        {
+            label: "签名状态",
+            value: buildInfo.signing,
+        },
+        {
+            label: "依赖基线",
+            value: `RN ${buildInfo.reactNative} · Expo ${buildInfo.expo} · React ${buildInfo.react}`,
+        },
+        {
+            label: "播放器",
+            value: buildInfo.trackPlayer,
+        },
+    ];
 
     return (
         <View
@@ -65,6 +97,27 @@ export default function AboutSetting() {
             <ScrollView
                 contentContainerStyle={style.scrollViewContainer}
                 style={style.scrollView}>
+                <ThemeText fontSize="title">构建信息: </ThemeText>
+                <View style={style.buildInfoCard}>
+                    {buildRows.map(row => (
+                        <View key={row.label} style={style.buildInfoRow}>
+                            <ThemeText
+                                fontSize="description"
+                                fontColor="textSecondary"
+                                style={style.buildInfoLabel}>
+                                {row.label}
+                            </ThemeText>
+                            <ThemeText
+                                selectable
+                                fontSize="description"
+                                style={style.buildInfoValue}>
+                                {row.value}
+                            </ThemeText>
+                        </View>
+                    ))}
+                </View>
+                <Divider style={style.content} />
+
                 <ThemeText fontSize="title">开发者的话: </ThemeText>
                 <ThemeText style={style.content}>
                     软件作者是<ThemeText fontWeight="bold">猫头猫</ThemeText>
@@ -181,6 +234,22 @@ const style = StyleSheet.create({
     content: {
         marginTop: rpx(24),
         lineHeight: rpx(48),
+    },
+    buildInfoCard: {
+        marginTop: rpx(24),
+    },
+    buildInfoRow: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        marginTop: rpx(14),
+    },
+    buildInfoLabel: {
+        width: rpx(150),
+        lineHeight: rpx(34),
+    },
+    buildInfoValue: {
+        flex: 1,
+        lineHeight: rpx(34),
     },
     wcChannel: {
         width: rpx(330),

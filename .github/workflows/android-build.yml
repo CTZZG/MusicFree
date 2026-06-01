@@ -112,6 +112,9 @@ jobs:
                     echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
                   fi
 
+            - name: Generate app build info
+              run: npm run generate-build-info
+
             - name: Prepare Gradle
               run: chmod +x ./android/gradlew
 

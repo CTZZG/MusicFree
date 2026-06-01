@@ -57,6 +57,7 @@ Round 18 turns the migration branch into a stable Android release candidate.
 - Download failure: distinguish permission, notification, network, unsupported encrypted format, and metadata write failures.
 - Metadata write failure: check file format support. MP3, FLAC, and OGG are taggable; Opus and M4A/MP4 are currently playback/download paths without verified tag writing.
 - Crash regression: collect `adb logcat` and `adb shell dumpsys dropbox --print`, especially for Reanimated `CppException` and native player errors.
+- Build identity: open About and check app version, Android `versionCode`, git SHA, build time, signing state, React Native / Expo / React versions, and the private player fork baseline.
 
 ## Real-Device Regression Checklist
 
