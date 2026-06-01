@@ -368,8 +368,8 @@ Implementation notes:
 
 Goal: turn the current migration into a stable Android release candidate.
 
-- [ ] Re-run Android release builds locally and through `.github/workflows/android-build.yml`.
-- [ ] Verify signing, versionCode/versionName, artifact naming, and GitHub Actions release artifacts.
+- [x] Re-run Android release builds locally and through `.github/workflows/android-build.yml`.
+- [x] Verify signing, versionCode/versionName, artifact naming, and GitHub Actions release artifacts.
 - [x] Write a concise changelog covering home redesign, multi-source search, lyric changes, downloads, and plugin compatibility.
 - [x] Add Android plugin compatibility notes, especially ES syntax limits and the Android-compatible GD Music build.
 - [x] Add or document common diagnostics for plugin import failure, lyric loading failure, playback failure, download failure, and metadata writing failure.
@@ -379,7 +379,8 @@ Implementation notes:
 
 - Round 18 release-candidate notes live in `docs/android-release-candidate.md`.
 - Local TypeScript and Android release builds pass; the local release APK signature and package metadata have been checked with Android SDK tools.
-- GitHub Actions workflow verification remains pending until the branch is pushed and `.github/workflows/android-build.yml` is run through manual dispatch, tag, or merged PR.
+- `.github/workflows/android-build.yml` manual dispatch passed on run `26737183304`; artifacts were uploaded as `MusicFree-Android-0.6.3-beta.1-a9a10a4`.
+- CI artifact APK metadata and signing were checked after downloading the artifact zip. Tag-triggered release asset upload is intentionally left untested until final release approval.
 
 ## Round 19
 

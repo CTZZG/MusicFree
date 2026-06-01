@@ -21,7 +21,12 @@ Round 18 turns the migration branch into a stable Android release candidate.
 - Local release APKs generated under `android/app/build/outputs/apk/release/`.
 - Local `app-arm64-v8a-release.apk` signature verified with `apksigner`.
 - Local `aapt2 dump badging` confirmed package, version, SDK, and ABI metadata.
-- GitHub Actions workflow verification is still pending until this branch is pushed and `.github/workflows/android-build.yml` is run through manual dispatch, a `v*` tag, or a merged PR.
+- GitHub Actions manual workflow run passed on 2026-06-01: [run `26737183304`](https://github.com/CTZZG/MusicFree/actions/runs/26737183304).
+- CI artifact name: `MusicFree-Android-0.6.3-beta.1-a9a10a4`.
+- CI artifact contents: ABI APKs for `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`, one universal APK, and `android-build-info.txt`.
+- CI `app-arm64-v8a` artifact signature verified with `apksigner`.
+- CI `aapt2 dump badging` confirmed `fun.upup.musicfree`, `versionCode=400011`, `versionName=0.6.3-beta.1`, `minSdkVersion=24`, `targetSdkVersion=30`, and `native-code=arm64-v8a`.
+- Tag-triggered GitHub release asset upload remains untested in Round 18 to avoid publishing a release before final approval.
 
 ## Release Changelog Draft
 
