@@ -413,10 +413,10 @@ export default function MiniLyric(props: IMiniLyricProps) {
                         distance === 0
                             ? 1
                             : distance === 1
-                                ? 0.5
+                                ? 0.46
                                 : distance === 2
-                                    ? 0.28
-                                    : 0.12;
+                                    ? 0.2
+                                    : 0.06;
                     const hasText = visibleTypes.some(type =>
                         getLineText(item, type).trim(),
                     );
@@ -519,29 +519,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 pressed ? styles.pressed : null,
             ]}>
             {Platform.OS === "android" ? (
-                <>
-                    {lyricContent}
-                    <LinearGradient
-                        pointerEvents="none"
-                        colors={[
-                            "rgba(0,0,0,0.4)",
-                            "rgba(0,0,0,0)",
-                        ]}
-                        style={[styles.androidFade, styles.androidFadeTop, {
-                            height: fadeHeight,
-                        }]}
-                    />
-                    <LinearGradient
-                        pointerEvents="none"
-                        colors={[
-                            "rgba(0,0,0,0)",
-                            "rgba(0,0,0,0.4)",
-                        ]}
-                        style={[styles.androidFade, styles.androidFadeBottom, {
-                            height: fadeHeight,
-                        }]}
-                    />
-                </>
+                lyricContent
             ) : (
                 <MaskedView style={styles.maskedView} maskElement={maskElement}>
                     {lyricContent}
@@ -636,18 +614,6 @@ const styles = StyleSheet.create({
     dotsLine: {
         minHeight: PRIMARY_LINE_HEIGHT,
         justifyContent: "center",
-    },
-    androidFade: {
-        position: "absolute",
-        left: 0,
-        right: 0,
-        zIndex: 2,
-    },
-    androidFadeTop: {
-        top: 0,
-    },
-    androidFadeBottom: {
-        bottom: 0,
     },
     pressed: {
         opacity: 0.72,

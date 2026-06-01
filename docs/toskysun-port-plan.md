@@ -335,7 +335,7 @@ Implementation notes:
 - Detail lyrics now keep the parsed QRC/angle-bracket word timing and render current-line word-by-word highlighting with a small float/scale sweep inspired by Toskysun, while non-current lines keep the same wrapped layout without per-frame animation.
 - Plain LRC lines without real word timing can use pseudo character timing for the active line, so the UI no longer has to light the whole line at once when the source only supplies line timestamps.
 - Mini lyric now follows the same visible lyric order/toggles as the full lyric page, including translation and romanization where available, but compact mode still shows only the primary line to protect small screens.
-- Android mini lyric keeps `MaskedView` disabled and uses overlay gradients instead; this preserves the no-black-flash fix while still adding a visible fade.
+- Android mini lyric keeps `MaskedView` disabled and avoids background-dimming overlay gradients; fade is handled through lyric-line opacity so the preview blends into the blurred artwork background without visible dark rectangles.
 - Theme settings now include square/circle cover style. Circle mode rotates the album art while playback is active and stops without replacing the stable tap/long-press gesture path.
 - Playback progress events now arrive at 0.1s for lyric animation; persisted resume progress is throttled to one write per second so the smoother UI does not over-write MMKV.
 - Full lyric line updates compare by lyric index instead of lyric text, so repeated identical lyric lines can still advance correctly.
