@@ -288,7 +288,7 @@ Goal: turn the Round 13 discovery preview into a useful, source-aware discovery 
 - [x] Add source selection, refresh, empty/error states, and cache TTL controls for discovery data.
 - [x] Keep the home page network-light: the home overview should show previews and routes, while deeper discovery fetches happen after user intent.
 - [x] Reuse existing top-list/recommendation routes where possible instead of adding a parallel content model.
-- [ ] Verify behavior with multiple enabled sources, disabled sources, and plugins without top-list support.
+- [x] Verify behavior with multiple enabled sources, disabled sources, and plugins without top-list support.
 
 Implementation notes:
 
@@ -296,6 +296,7 @@ Implementation notes:
 - Top-list data is cached for 30 minutes per plugin source and can be force-refreshed through pull-to-refresh or retry.
 - Error and empty states now render through `ListEmpty` instead of getting stuck on an indefinite loading spinner.
 - The Round 13 home discovery preview passes its source hash into the top-list route so opening "view" lands on the relevant plugin tab.
+- Round 14 source-behavior audit: home discovery and the chart hub only include enabled plugins with `getTopLists`; disabled sources and plugins without chart support are filtered out, multiple chart-capable sources become scrollable tabs, and no chart-capable source falls back to the existing no-plugin capability state.
 
 ## Round 15
 
@@ -369,10 +370,16 @@ Goal: turn the current migration into a stable Android release candidate.
 
 - [ ] Re-run Android release builds locally and through `.github/workflows/android-build.yml`.
 - [ ] Verify signing, versionCode/versionName, artifact naming, and GitHub Actions release artifacts.
-- [ ] Write a concise changelog covering home redesign, multi-source search, lyric changes, downloads, and plugin compatibility.
-- [ ] Add Android plugin compatibility notes, especially ES syntax limits and the Android-compatible GD Music build.
-- [ ] Add or document common diagnostics for plugin import failure, lyric loading failure, playback failure, download failure, and metadata writing failure.
-- [ ] Maintain an Android real-device regression checklist: startup, resume, play/pause, next/previous, bottom player, detail page, lyric page, cover gestures, mini lyric return transition, word-by-word lyric progression, search, album/artist navigation, download, local playback, notifications, and background restore.
+- [x] Write a concise changelog covering home redesign, multi-source search, lyric changes, downloads, and plugin compatibility.
+- [x] Add Android plugin compatibility notes, especially ES syntax limits and the Android-compatible GD Music build.
+- [x] Add or document common diagnostics for plugin import failure, lyric loading failure, playback failure, download failure, and metadata writing failure.
+- [x] Maintain an Android real-device regression checklist: startup, resume, play/pause, next/previous, bottom player, detail page, lyric page, cover gestures, mini lyric return transition, word-by-word lyric progression, search, album/artist navigation, download, local playback, notifications, and background restore.
+
+Implementation notes:
+
+- Round 18 release-candidate notes live in `docs/android-release-candidate.md`.
+- Local TypeScript and Android release builds pass; the local release APK signature and package metadata have been checked with Android SDK tools.
+- GitHub Actions workflow verification remains pending until the branch is pushed and `.github/workflows/android-build.yml` is run through manual dispatch, tag, or merged PR.
 
 ## Round 19
 
