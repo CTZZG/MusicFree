@@ -158,6 +158,58 @@ jobs:
                   path: dist/*
                   if-no-files-found: error
 
+            - name: Clean existing release assets
+              if: github.event_name != 'pull_request'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  node <<'NODE'
+                  const repo = process.env.GITHUB_REPOSITORY;
+                  const tag = `v${process.env.APP_VERSION}`;
+                  const headers = {
+                    authorization: `Bearer ${process.env.GH_TOKEN}`,
+                    accept: 'application/vnd.github+json',
+                    'x-github-api-version': '2022-11-28',
+                  };
+
+                  async function github(path, options = {}) {
+                    const response = await fetch(`https://api.github.com/repos/${repo}${path}`, {
+                      ...options,
+                      headers: {
+                        ...headers,
+                        ...(options.headers ?? {}),
+                      },
+                    });
+                    if (response.status === 404) {
+                      return null;
+                    }
+                    if (!response.ok) {
+                      throw new Error(`${options.method ?? 'GET'} ${path} failed: ${response.status} ${await response.text()}`);
+                    }
+                    if (response.status === 204) {
+                      return null;
+                    }
+                    return response.json();
+                  }
+
+                  const release = await github(`/releases/tags/${encodeURIComponent(tag)}`);
+                  if (!release) {
+                    console.log(`Release ${tag} does not exist yet.`);
+                    process.exit(0);
+                  }
+
+                  const apkPrefix = `MusicFree-${process.env.APP_VERSION}-`;
+                  for (const asset of release.assets ?? []) {
+                    const shouldDelete =
+                      asset.name === 'android-build-info.txt' ||
+                      (asset.name.startsWith(apkPrefix) && asset.name.endsWith('.apk'));
+                    if (shouldDelete) {
+                      await github(`/releases/assets/${asset.id}`, {method: 'DELETE'});
+                      console.log(`Deleted old release asset: ${asset.name}`);
+                    }
+                  }
+                  NODE
+
             - name: Publish GitHub release assets
               if: github.event_name != 'pull_request'
               uses: softprops/action-gh-release@v3
