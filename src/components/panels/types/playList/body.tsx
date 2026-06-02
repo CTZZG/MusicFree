@@ -10,7 +10,7 @@ import Loading from "@/components/base/loading";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useColors from "@/hooks/useColors";
 import TrackPlayer, { useCurrentMusic, usePlayList } from "@/core/trackPlayer";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList, FlashListRef } from "@shopify/flash-list";
 import Icon from "@/components/base/icon.tsx";
 
 const ITEM_HEIGHT = rpx(108);
@@ -85,7 +85,7 @@ export default function Body(props: IBodyProps) {
     const { loading } = props;
     const playList = usePlayList();
     const currentMusicItem = useCurrentMusic();
-    const listRef = useRef<FlashList<IMusic.IMusicItem> | null>();
+    const listRef = useRef<FlashListRef<IMusic.IMusicItem> | null>(null);
     const safeAreaInsets = useSafeAreaInsets();
 
     const initIndex = useMemo(() => {
@@ -123,7 +123,6 @@ export default function Body(props: IBodyProps) {
                     listRef.current = _;
                 }}
                 extraData={{ currentMusicItem }}
-                estimatedItemSize={ITEM_HEIGHT}
                 data={playList}
                 initialScrollIndex={initIndex}
                 renderItem={renderItem}

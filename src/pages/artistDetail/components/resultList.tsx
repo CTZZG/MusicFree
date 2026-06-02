@@ -65,7 +65,6 @@ export default function ResultList(props: IResultListProps) {
                     queryState === RequestStateCode.PARTLY_DONE) &&
                     queryArtist(artistItem, undefined, tab);
             }}
-            estimatedItemSize={ITEM_HEIGHT}
             overScrollMode="always" 
             data={data.data ?? []}
             renderItem={renderItem}

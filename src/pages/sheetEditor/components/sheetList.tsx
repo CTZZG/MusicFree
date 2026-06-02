@@ -113,7 +113,6 @@ export default function SheetList() {
             </View>
             {editingSheetList.length === 0 ? <Empty /> : <SortableFlashList 
                 activeBackgroundColor={colors.placeholder}
-                estimatedItemSize={ListItem.Size.big}
                 data={editingSheetList} 
                 renderItem={({ item, index }) => <SheetEditorItem index={index} editorMusicSheet={item} />} 
                 onSortEnd={newData => {

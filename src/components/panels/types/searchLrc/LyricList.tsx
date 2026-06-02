@@ -40,7 +40,6 @@ function LyricListImpl(props: ILyricListProps) {
         <Loading />
     ) : (
         <FlashList
-            estimatedItemSize={ITEM_HEIGHT}
             renderItem={({ item }) => (
                 <LyricItem
                     lyricItem={item}

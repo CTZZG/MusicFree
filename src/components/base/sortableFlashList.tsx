@@ -1,5 +1,5 @@
 import globalStyle from "@/constants/globalStyle";
-import { CellContainer, FlashList } from "@shopify/flash-list";
+import { FlashList, FlashListRef } from "@shopify/flash-list";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent, LayoutRectangle, NativeScrollEvent, NativeSyntheticEvent, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import { Gesture, GestureDetector, GestureUpdateEvent, PanGestureHandlerEventPayload, Pressable, ScrollView } from "react-native-gesture-handler";
@@ -19,15 +19,16 @@ interface ISortableFlashListItemProps {
     startDrag?: (index: number) => void;
     children: React.ReactNode;
     style?: StyleProp<ViewStyle>
+    onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 function SortableFlashListItem(props: ISortableFlashListItemProps) {
-    const { index, children, startDrag, style } = props;
+    const { index, children, startDrag, style, onLayout } = props;
 
     const textColor = useTextColor();
 
 
-    return <Animated.View style={[listItemContainerStyle.container, style]}>
+    return <Animated.View onLayout={onLayout} style={[listItemContainerStyle.container, style]}>
         {children}
         <Pressable style={listItemContainerStyle.dragHandle} onTouchStart={() => {
             startDrag?.(index);
@@ -86,8 +87,8 @@ export default function SortableFlashList<T extends any = any>(
     const draggingElementOffsetValue = useSharedValue(-9999);
 
     // 自动滚动
-    const listRef = useRef<FlashList<T>>(null);
-    const scrollTimerRef = useRef<NodeJS.Timeout>();
+    const listRef = useRef<FlashListRef<T>>(null);
+    const scrollTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
     // 滚动位置
     const listOffsetRef = useRef(0);
@@ -167,23 +168,22 @@ export default function SortableFlashList<T extends any = any>(
     }, [dragging, listLayout]);
 
 
-    const renderCellContainer = useCallback((wrapperProps) => {
-        return <CellContainer {...wrapperProps} onLayout={(layoutEvent: LayoutChangeEvent) => {
+    const startDrag = useCallback((index: number) => {
+        draggingElementOffsetValue.value = -9999;
+        if (listLayoutReadyRef.current) {
+            draggingIndexRef.current = index;
+            setDragging(true);
+        }
+    }, []);
+
+    const renderSortableItem = useCallback(({ item, index }: { item: T; index: number }) => {
+        return <SortableFlashListItem index={index} startDrag={startDrag} onLayout={(layoutEvent: LayoutChangeEvent) => {
             const layout = layoutEvent.nativeEvent.layout;
             itemHeightValue.value = layout.height;
-            wrapperProps.onLayout?.(layoutEvent);
         }}>
-            <SortableFlashListItem index={wrapperProps.index} startDrag={(index) => {
-                draggingElementOffsetValue.value = -9999;
-                if (listLayoutReadyRef.current) {
-                    draggingIndexRef.current = index;
-                    setDragging(true);
-                }
-            }}>
-                {wrapperProps.children}
-            </SortableFlashListItem>
-        </CellContainer>;
-    }, []);
+            {renderItem({ item, index })}
+        </SortableFlashListItem>;
+    }, [renderItem, startDrag]);
 
     ;
 
@@ -249,16 +249,13 @@ export default function SortableFlashList<T extends any = any>(
         }}>
             {dragging && data[draggingIndexRef.current] && <SortableFlashListItem index={-1} style={[listStyles.fakeDraggingItem, {
                 backgroundColor: activeBackgroundColor, 
-            }, draggingItemStyle]}>
+            }, draggingItemStyle as StyleProp<ViewStyle>]}>
                 {renderItem({ item: data[draggingIndexRef.current], index: -1 })}
             </SortableFlashListItem>}
             <FlashList 
                 ref={listRef}
                 data={data}
-                renderItem={renderItem}
-                estimatedItemSize={estimatedItemSize}
-                CellRendererComponent={renderCellContainer}  
-                disableAutoLayout
+                renderItem={renderSortableItem}
                 scrollEnabled={!dragging}
                 scrollEventThrottle={16}
                 onScroll={scrollHandler}

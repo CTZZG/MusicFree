@@ -50,7 +50,9 @@ export default function (props: IPanelBaseProps) {
 
     const colors = useColors();
     const [loading, setLoading] = useState(true); // 是否处于弹出状态
-    const timerRef = useRef<any>();
+    const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+        undefined,
+    );
     const safeAreaInsets = useSafeAreaInsets();
     const orientation = useOrientation();
     const useAnimatedBase = useMemo(
@@ -58,7 +60,9 @@ export default function (props: IPanelBaseProps) {
         [orientation],
     );
 
-    const backHandlerRef = useRef<NativeEventSubscription>();
+    const backHandlerRef = useRef<NativeEventSubscription | undefined>(
+        undefined,
+    );
 
     const hideCallbackRef = useRef<Function[]>([]);
 
@@ -96,7 +100,7 @@ export default function (props: IPanelBaseProps) {
         return () => {
             if (timerRef.current) {
                 clearTimeout(timerRef.current);
-                timerRef.current = null;
+                timerRef.current = undefined;
             }
             if (backHandlerRef.current) {
                 backHandlerRef.current?.remove();

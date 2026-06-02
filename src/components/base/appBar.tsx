@@ -18,6 +18,7 @@ import ThemeText from "./themeText";
 import { useNavigation } from "@react-navigation/native";
 import Animated, {
     Easing,
+    type EasingFunction,
     useAnimatedStyle,
     useSharedValue,
     withTiming,
@@ -48,7 +49,7 @@ interface IAppBarProps {
     onBackPress?: () => void;
 }
 
-const ANIMATION_EASING: Animated.EasingFunction = Easing.out(Easing.exp);
+const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);
 const ANIMATION_DURATION = 500;
 
 const timingConfig = {

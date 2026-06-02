@@ -55,7 +55,9 @@ class Telemetry implements IInjectable {
                 for (let i = 0; i < Telemetry.configList.length; ++i) {
                     try {
                         const response = await fetch(Telemetry.configList[i]);
-                        const config = await response.json();
+                        const config = await response.json() as {
+                            disableTelemetry?: boolean;
+                        };
                         if (config.disableTelemetry !== true) {
                             appMeta.setTelemetryAvailable(true);
                         } else {

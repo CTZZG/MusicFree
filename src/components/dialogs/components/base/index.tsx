@@ -33,7 +33,9 @@ function Dialog(props: IDialogProps) {
 
     const sharedShowValue = useSharedValue(0);
     const colors = useColors();
-    const backHandlerRef = useRef<NativeEventSubscription>();
+    const backHandlerRef = useRef<NativeEventSubscription | undefined>(
+        undefined,
+    );
     const orientation = useOrientation();
 
     // 对话框宽度

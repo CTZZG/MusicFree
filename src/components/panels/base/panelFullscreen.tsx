@@ -52,7 +52,9 @@ export default function (props: IPanelFullScreenProps) {
 
     const colors = useColors();
 
-    const backHandlerRef = useRef<NativeEventSubscription>();
+    const backHandlerRef = useRef<NativeEventSubscription | undefined>(
+        undefined,
+    );
 
     const hideCallbackRef = useRef<Function[]>([]);
 

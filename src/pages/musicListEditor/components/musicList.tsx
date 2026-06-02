@@ -74,7 +74,6 @@ export default function MusicList() {
             activeBackgroundColor={colors.placeholder}
             data={editingMusicList} 
             renderItem={renderItem} 
-            estimatedItemSize={ITEM_HEIGHT}  
             onSortEnd={newData => {
                 setEditingMusicList(newData);
                 setMusicListChanged(true);

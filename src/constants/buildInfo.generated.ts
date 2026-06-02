@@ -5,15 +5,15 @@ export const buildInfo = {
     "appVersion": "0.6.4-beta.1",
     "packageVersion": "0.6.4-beta.1",
     "versionCode": "400012",
-    "gitSha": "fc904c8a918fe984b2d9176deee4482a0fdfec15",
-    "shortSha": "fc904c8",
-    "gitRef": "codex/round14-discovery-hub",
-    "buildDate": "2026-06-01T07:31:16.732Z",
+    "gitSha": "dbe3ac837aebbb3f3d3dbb2f439496b2c13febec",
+    "shortSha": "dbe3ac8",
+    "gitRef": "codex/round19-rn-expo-upgrade",
+    "buildDate": "2026-06-02T07:01:35.587Z",
     "signing": "configured",
     "node": "v24.15.0",
-    "react": "18.3.1",
-    "reactNative": "0.76.5",
-    "expo": "^52.0.0",
+    "react": "19.2.3",
+    "reactNative": "0.85.3",
+    "expo": "56.0.8",
     "trackPlayer": "github:CTZZG/react-native-track-player#v4.1.1"
 } as const;
 

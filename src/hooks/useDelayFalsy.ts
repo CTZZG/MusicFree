@@ -5,7 +5,7 @@ export default function useDelayFalsy<T extends any = any>(
     ms: number = 0,
 ) {
     const [_state, _setState] = useState<T | undefined>(init);
-    const timer = useRef<any>();
+    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     function setState(st: T) {
         if (st === undefined || st === null || st === false) {

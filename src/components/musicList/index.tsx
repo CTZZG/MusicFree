@@ -1,7 +1,7 @@
 import { RequestStateCode } from "@/constants/commonConst";
 import TrackPlayer from "@/core/trackPlayer";
 import rpx from "@/utils/rpx";
-import { FlashList } from "@shopify/flash-list";
+import { FlashList, FlashListRef } from "@shopify/flash-list";
 import React, { useRef, useCallback, useState, useEffect } from "react";
 import { FlatListProps, Pressable, StyleSheet, View } from "react-native";
 import ListEmpty from "../base/listEmpty";
@@ -33,8 +33,6 @@ interface IMusicListProps {
     onRetry?: () => void;
     onLoadMore?: () => void;
 }
-const ITEM_HEIGHT = rpx(120);
-
 /** 音乐列表 */
 export default function MusicList(props: IMusicListProps) {
     const {
@@ -49,9 +47,9 @@ export default function MusicList(props: IMusicListProps) {
         highlightMusicItem,
     } = props;    
     const colors = useColors();
-    const flashListRef = useRef<FlashList<IMusic.IMusicItem>>(null);
+    const flashListRef = useRef<FlashListRef<IMusic.IMusicItem>>(null);
     const [showBadge, setShowBadge] = useState(false);
-    const hideTimeoutRef = useRef<NodeJS.Timeout>();
+    const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     // 查找高亮项的索引
     const highlightIndex = React.useMemo(() => {
@@ -116,7 +114,6 @@ export default function MusicList(props: IMusicListProps) {
                 }
                 extraData={highlightMusicItem}
                 data={musicList ?? []}
-                estimatedItemSize={ITEM_HEIGHT}
                 onScrollBeginDrag={handleScrollBegin}
                 onScrollEndDrag={handleScrollEnd}
                 onMomentumScrollEnd={handleScrollEnd}

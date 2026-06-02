@@ -15,7 +15,6 @@ export default function SearchResult(props: ISearchResultProps) {
     const { result, musicSheet } = props;
     return (
         <FlashList
-            estimatedItemSize={ITEM_HEIGHT}
             ListEmptyComponent={<Empty />}
             data={result}
             renderItem={({ item }) => (

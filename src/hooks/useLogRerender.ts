@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 export default function (msg?: string, deps: any[] = []) {
-    const idRef = useRef<number>();
+    const idRef = useRef<number | undefined>(undefined);
     useEffect(() => {
         idRef.current = Math.random();
         console.log("Mount", msg ?? "", idRef.current);

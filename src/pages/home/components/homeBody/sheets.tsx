@@ -149,7 +149,6 @@ export default function Sheets(props: ISheetsProps) {
                 ListEmptyComponent={<Empty />}
                 extraData={{ t }}
                 data={(index === 0 ? allSheets : staredSheets) ?? []}
-                estimatedItemSize={ListItem.Size.big}
                 renderItem={({ item: sheet }) => {
                     const isLocalSheet = !(
                         sheet.platform && sheet.platform !== localPluginPlatform

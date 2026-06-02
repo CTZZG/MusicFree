@@ -32,7 +32,6 @@ export default function MusicComment(props: IMusicCommentProps) {
     const listBody = <FlashList
         ListFooterComponent={comments?.length ? <ListFooter state={reqState} onRetry={getMusicComments} /> : null}
         ListEmptyComponent={<ListEmpty state={reqState} onRetry={getMusicComments} />}
-        estimatedItemSize={100}
         renderItem={({ item }) => {
             return <Comment comment={item} />;
         }}

@@ -40,7 +40,6 @@ function SheetList(props: ISheetListProps) {
                 query();
             }}
             onEndReachedThreshold={0.1}
-            estimatedItemSize={rpx(306)}
             numColumns={orientation === "vertical" ? 3 : 4}
             renderItem={renderItem}
             data={sheets}
