@@ -5,7 +5,11 @@ import { useAtom } from "jotai";
 import { useCallback } from "react";
 import { pluginsTopListAtom } from "../store/atoms";
 
-const TOP_LIST_CACHE_TTL = 30 * 60 * 1000;
+export const TOP_LIST_CACHE_TTL = 30 * 60 * 1000;
+
+export function isTopListCacheFresh(updatedAt?: number) {
+    return Boolean(updatedAt && Date.now() - updatedAt < TOP_LIST_CACHE_TTL);
+}
 
 interface IGetTopListOptions {
     force?: boolean;
@@ -18,14 +22,10 @@ export default function useGetTopList() {
         async (pluginHash: string, options: IGetTopListOptions = {}) => {
             try {
                 const currentTopList = pluginsTopList[pluginHash];
-                const cacheIsFresh =
-                    currentTopList?.updatedAt &&
-                    Date.now() - currentTopList.updatedAt < TOP_LIST_CACHE_TTL;
-
                 if (
                     !options.force &&
                     currentTopList?.state === RequestStateCode.FINISHED &&
-                    cacheIsFresh
+                    isTopListCacheFresh(currentTopList.updatedAt)
                 ) {
                     return;
                 }
