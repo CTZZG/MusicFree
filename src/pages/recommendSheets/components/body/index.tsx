@@ -20,41 +20,53 @@ export default function Body() {
     );
     const { t } = useI18N();
 
-    const renderTabBar = (_: any) => (
-        <TabBar
-            {..._}
-            scrollEnabled
-            style={{
-                backgroundColor: "transparent",
-                shadowColor: "transparent",
-                borderColor: "transparent",
-            }}
-            tabStyle={{
-                width: "auto",
-            }}
-            pressColor="transparent"
-            inactiveColor={colors.text}
-            activeColor={colors.primary}
-            renderLabel={({ route, focused, color }) => (
-                <Text
-                    numberOfLines={1}
-                    style={{
-                        width: rpx(160),
-                        fontWeight: focused
-                            ? fontWeightConst.bolder
-                            : fontWeightConst.medium,
-                        color,
-                        textAlign: "center",
-                    }}>
-                    {route.title ?? `(${t("common.unknownName")})`}
-                </Text>
-            )}
-            indicatorStyle={{
-                backgroundColor: colors.primary,
-                height: rpx(4),
-            }}
-        />
-    );
+    const renderTabBar = (_: any) => {
+        const options = _.navigationState.routes.reduce(
+            (acc: Record<string, any>, route: { key: string; title?: string }) => {
+                acc[route.key] = {
+                    label: ({ focused, color }: any) => (
+                        <Text
+                            numberOfLines={1}
+                            style={{
+                                width: rpx(160),
+                                fontWeight: focused
+                                    ? fontWeightConst.bolder
+                                    : fontWeightConst.medium,
+                                color,
+                                textAlign: "center",
+                            }}>
+                            {route.title ?? `(${t("common.unknownName")})`}
+                        </Text>
+                    ),
+                };
+                return acc;
+            },
+            {} as Record<string, any>,
+        );
+
+        return (
+            <TabBar
+                {..._}
+                scrollEnabled
+                style={{
+                    backgroundColor: "transparent",
+                    shadowColor: "transparent",
+                    borderColor: "transparent",
+                }}
+                tabStyle={{
+                    width: "auto",
+                }}
+                pressColor="transparent"
+                inactiveColor={colors.text}
+                activeColor={colors.primary}
+                options={options}
+                indicatorStyle={{
+                    backgroundColor: colors.primary,
+                    height: rpx(4),
+                }}
+            />
+        );
+    };
 
     if (!routes?.length) {
         return <NoPlugin notSupportType={t("recommendSheet.title")} />;

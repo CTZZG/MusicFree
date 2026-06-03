@@ -140,41 +140,53 @@ function LyricResultBodyWrapper() {
                 index,
                 routes,
             }}
-            renderTabBar={_ => (
-                <TabBar
-                    {..._}
-                    scrollEnabled
-                    style={{
-                        backgroundColor: "transparent",
-                        shadowColor: "transparent",
-                        borderColor: "transparent",
-                    }}
-                    tabStyle={{
-                        width: "auto",
-                    }}
-                    pressColor="transparent"
-                    inactiveColor={colors.text}
-                    activeColor={colors.primary}
-                    renderLabel={({ route, focused, color }) => (
-                        <Text
-                            numberOfLines={1}
-                            style={{
-                                width: rpx(160),
-                                fontWeight: focused
-                                    ? fontWeightConst.bolder
-                                    : fontWeightConst.medium,
-                                color,
-                                textAlign: "center",
-                            }}>
-                            {route.title ?? t("panel.searchLrc.unnamed")}
-                        </Text>
-                    )}
-                    indicatorStyle={{
-                        backgroundColor: colors.primary,
-                        height: rpx(4),
-                    }}
-                />
-            )}
+            renderTabBar={_ => {
+                const options = _.navigationState.routes.reduce(
+                    (acc: Record<string, any>, route: { key: string; title?: string }) => {
+                        acc[route.key] = {
+                            label: ({ focused, color }: any) => (
+                                <Text
+                                    numberOfLines={1}
+                                    style={{
+                                        width: rpx(160),
+                                        fontWeight: focused
+                                            ? fontWeightConst.bolder
+                                            : fontWeightConst.medium,
+                                        color,
+                                        textAlign: "center",
+                                    }}>
+                                    {route.title ?? t("panel.searchLrc.unnamed")}
+                                </Text>
+                            ),
+                        };
+                        return acc;
+                    },
+                    {} as Record<string, any>,
+                );
+
+                return (
+                    <TabBar
+                        {..._}
+                        scrollEnabled
+                        style={{
+                            backgroundColor: "transparent",
+                            shadowColor: "transparent",
+                            borderColor: "transparent",
+                        }}
+                        tabStyle={{
+                            width: "auto",
+                        }}
+                        pressColor="transparent"
+                        inactiveColor={colors.text}
+                        activeColor={colors.primary}
+                        options={options}
+                        indicatorStyle={{
+                            backgroundColor: colors.primary,
+                            height: rpx(4),
+                        }}
+                    />
+                );
+            }}
             renderScene={sceneMap}
             onIndexChange={setIndex}
             initialLayout={{ width: vw(100) }}

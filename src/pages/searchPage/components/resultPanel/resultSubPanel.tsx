@@ -140,66 +140,78 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                 index,
                 routes,
             }}
-            renderTabBar={_ => (
-                <TabBar
-                    {..._}
-                    scrollEnabled
-                    style={styles.tabBar}
-                    inactiveColor={colors.text}
-                    activeColor={colors.primary}
-                    tabStyle={styles.tab}
-                    renderIndicator={() => null}
-                    pressColor="transparent"
-                    renderLabel={({ route, focused, color }) => {
-                        const pluginSearchResult =
-                            searchResults[props.tab][route.key];
-                        const meta = getPluginTabMeta(
-                            pluginSearchResult,
-                            t("common.loading"),
-                            t("common.failToLoad"),
-                        );
-                        const isError =
-                            pluginSearchResult?.state ===
-                            RequestStateCode.ERROR;
-                        const metaColor = isError
-                            ? colors.notification
-                            : focused
-                                ? color
-                                : colors.textSecondary;
+            renderTabBar={_ => {
+                const options = _.navigationState.routes.reduce(
+                    (acc: Record<string, any>, route: { key: string; title?: string }) => {
+                        acc[route.key] = {
+                            label: ({ focused, color }: any) => {
+                                const pluginSearchResult =
+                                    searchResults[props.tab][route.key];
+                                const meta = getPluginTabMeta(
+                                    pluginSearchResult,
+                                    t("common.loading"),
+                                    t("common.failToLoad"),
+                                );
+                                const isError =
+                                    pluginSearchResult?.state ===
+                                    RequestStateCode.ERROR;
+                                const metaColor = isError
+                                    ? colors.notification
+                                    : focused
+                                        ? color
+                                        : colors.textSecondary;
 
-                        return (
-                            <View style={styles.pluginTabLabel}>
-                                <Text
-                                    numberOfLines={1}
-                                    style={[
-                                        styles.pluginTabTitle,
-                                        {
-                                            fontWeight: focused
-                                                ? fontWeightConst.bolder
-                                                : fontWeightConst.medium,
-                                            color,
-                                        },
-                                    ]}>
-                                    {route.title ??
-                                        `(${t("common.unknownName")})`}
-                                </Text>
-                                {meta ? (
-                                    <Text
-                                        numberOfLines={1}
-                                        style={[
-                                            styles.pluginTabMeta,
-                                            {
-                                                color: metaColor,
-                                            },
-                                        ]}>
-                                        {meta}
-                                    </Text>
-                                ) : null}
-                            </View>
-                        );
-                    }}
-                />
-            )}
+                                return (
+                                    <View style={styles.pluginTabLabel}>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[
+                                                styles.pluginTabTitle,
+                                                {
+                                                    fontWeight: focused
+                                                        ? fontWeightConst.bolder
+                                                        : fontWeightConst.medium,
+                                                    color,
+                                                },
+                                            ]}>
+                                            {route.title ??
+                                                `(${t("common.unknownName")})`}
+                                        </Text>
+                                        {meta ? (
+                                            <Text
+                                                numberOfLines={1}
+                                                style={[
+                                                    styles.pluginTabMeta,
+                                                    {
+                                                        color: metaColor,
+                                                    },
+                                                ]}>
+                                                {meta}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                );
+                            },
+                        };
+                        return acc;
+                    },
+                    {} as Record<string, any>,
+                );
+
+                return (
+                    <TabBar
+                        {..._}
+                        scrollEnabled
+                        style={styles.tabBar}
+                        inactiveColor={colors.text}
+                        activeColor={colors.primary}
+                        tabStyle={styles.tab}
+                        renderIndicator={() => null}
+                        pressColor="transparent"
+                        options={options}
+                    />
+                );
+            }}
             renderScene={renderScene}
             onIndexChange={setIndex}
             initialLayout={{ width: vw(100) }}

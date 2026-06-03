@@ -46,12 +46,6 @@ function getMusicDescription(musicItem?: IMusic.IMusicItem | null) {
     return [musicItem.artist, musicItem.platform].filter(Boolean).join(" · ");
 }
 
-function formatPluginNames(plugins: Plugin[]) {
-    const names = plugins.slice(0, 2).map(plugin => plugin.name);
-    const suffix = plugins.length > 2 ? ` +${plugins.length - 2}` : "";
-    return `${names.join(" / ")}${suffix}`;
-}
-
 export default function HomeOverview() {
     const data = useHomeOverview();
     const discoveryPreview = useHomeDiscovery(data.topListPlugins);
@@ -444,6 +438,11 @@ function Discovery(props: {
             })),
         [navigate, preview, t],
     );
+    const fallbackPluginName =
+        preview.topListPluginName ?? topListPlugins[0]?.name ?? t("home.topList");
+    const fallbackDescription = preview.hasError
+        ? `${t("home.topList")} · ${t("common.failToLoad")}`
+        : `${t("home.topList")} · ${t("common.emptyList")}`;
 
     if (!topListPlugins.length && !previewItems.length && !preview.loading) {
         return null;
@@ -583,14 +582,14 @@ function Discovery(props: {
                             numberOfLines={1}
                             fontSize="subTitle"
                             fontWeight="bold">
-                            {t("home.topList")}
+                            {fallbackPluginName}
                         </ThemeText>
                         <ThemeText
                             numberOfLines={1}
                             fontSize="tag"
                             fontColor="textSecondary"
                             style={styles.smallTextMargin}>
-                            {formatPluginNames(topListPlugins)}
+                            {fallbackDescription}
                         </ThemeText>
                     </View>
                     <Icon

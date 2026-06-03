@@ -1,7 +1,11 @@
 import pathConst from "@/constants/pathConst";
-import { MMKV } from "react-native-mmkv";
+import { createMMKV, type MMKV } from "react-native-mmkv";
 
-const _mmkvCache: Record<string, MMKV> = {};
+type CompatibleMMKV = MMKV & {
+    delete: MMKV["remove"];
+};
+
+const _mmkvCache: Record<string, CompatibleMMKV> = {};
 
 // @ts-ignore;
 global.mmkv = _mmkvCache;
@@ -12,10 +16,12 @@ const getOrCreateMMKV = (dbName: string, cachePath = false) => {
         return _mmkvCache[dbName];
     }
 
-    const newStore = new MMKV({
+    const newStore = createMMKV({
         id: dbName,
         path: cachePath ? pathConst.mmkvCachePath : pathConst.mmkvPath,
-    });
+    }) as CompatibleMMKV;
+
+    newStore.delete = newStore.remove.bind(newStore);
 
     _mmkvCache[dbName] = newStore;
     return newStore;

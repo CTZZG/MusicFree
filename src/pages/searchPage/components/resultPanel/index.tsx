@@ -43,42 +43,54 @@ function ResultPanel() {
                 index,
                 routes,
             }}
-            renderTabBar={props => (
-                <TabBar
-                    {...props}
-                    scrollEnabled
-                    style={{
-                        backgroundColor: colors.tabBar,
-                        shadowColor: "transparent",
-                        borderColor: "transparent",
-                    }}
-                    inactiveColor={colors.text}
-                    activeColor={colors.primary}
-                    tabStyle={{
-                        width: "auto",
-                    }}
-                    renderLabel={({ route, focused, color }) => (
-                        <Text
-                            numberOfLines={1}
-                            style={{
-                                width: rpx(160),
-                                fontWeight: focused
-                                    ? fontWeightConst.bolder
-                                    : fontWeightConst.medium,
-                                color,
-                                textAlign: "center",
-                            }}>
-                            {route.i18nKey
-                                ? t(route.i18nKey as any)
-                                : route.title}
-                        </Text>
-                    )}
-                    indicatorStyle={{
-                        backgroundColor: colors.primary,
-                        height: rpx(4),
-                    }}
-                />
-            )}
+            renderTabBar={props => {
+                const options = props.navigationState.routes.reduce(
+                    (acc, route) => {
+                        acc[route.key] = {
+                            label: ({ focused, color }: any) => (
+                                <Text
+                                    numberOfLines={1}
+                                    style={{
+                                        width: rpx(160),
+                                        fontWeight: focused
+                                            ? fontWeightConst.bolder
+                                            : fontWeightConst.medium,
+                                        color,
+                                        textAlign: "center",
+                                    }}>
+                                    {route.i18nKey
+                                        ? t(route.i18nKey as any)
+                                        : route.title}
+                                </Text>
+                            ),
+                        };
+                        return acc;
+                    },
+                    {} as Record<string, any>,
+                );
+
+                return (
+                    <TabBar
+                        {...props}
+                        scrollEnabled
+                        style={{
+                            backgroundColor: colors.tabBar,
+                            shadowColor: "transparent",
+                            borderColor: "transparent",
+                        }}
+                        inactiveColor={colors.text}
+                        activeColor={colors.primary}
+                        tabStyle={{
+                            width: "auto",
+                        }}
+                        options={options}
+                        indicatorStyle={{
+                            backgroundColor: colors.primary,
+                            height: rpx(4),
+                        }}
+                    />
+                );
+            }}
             renderScene={renderScene}
             onIndexChange={setIndex}
             initialLayout={{ width: vw(100) }}

@@ -32,7 +32,7 @@ export default function Pages() {
     const theme = Theme.useTheme();
 
     return (
-        <ErrorBoundary>
+        <>
             <BootstrapComponent />
             <ReducedMotionConfig mode={ReduceMotion.Never} />
             <GestureHandlerRootView style={globalStyle.flex1}>
@@ -41,29 +41,31 @@ export default function Pages() {
                         theme={theme}
                     >
                         <PageBackground />
-                        <Stack.Navigator
-                            initialRouteName={routes[0].path}
-                            screenOptions={{
-                                headerShown: false,
-                                animation: "slide_from_right",
-                                animationDuration: 100,
-                            }}>
-                            {routes.map(route => (
-                                <Stack.Screen
-                                    key={route.path}
-                                    name={route.path}
-                                    component={route.component}
-                                />
-                            ))}
-                        </Stack.Navigator>                        
-                        <Panels />
-                        <Dialogs />
-                        <Debug />
-                        <ToastBaseComponent />
-                        <PortalHost />
+                        <ErrorBoundary>
+                            <Stack.Navigator
+                                initialRouteName={routes[0].path}
+                                screenOptions={{
+                                    headerShown: false,
+                                    animation: "slide_from_right",
+                                    animationDuration: 100,
+                                }}>
+                                {routes.map(route => (
+                                    <Stack.Screen
+                                        key={route.path}
+                                        name={route.path}
+                                        component={route.component}
+                                    />
+                                ))}
+                            </Stack.Navigator>
+                            <Panels />
+                            <Dialogs />
+                            <Debug />
+                            <ToastBaseComponent />
+                            <PortalHost />
+                        </ErrorBoundary>
                     </NavigationContainer>
                 </SafeAreaProvider>
             </GestureHandlerRootView>
-        </ErrorBoundary>
+        </>
     );
 }

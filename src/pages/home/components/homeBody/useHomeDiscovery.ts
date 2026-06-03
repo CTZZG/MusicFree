@@ -22,7 +22,6 @@ const defaultState: IHomeDiscoveryPreview = {
 };
 
 const HOME_DISCOVERY_PREVIEW_LIMIT = 6;
-const HOME_DISCOVERY_PREVIEW_TIMEOUT = 1200;
 
 function flattenTopLists(groups: IMusic.IMusicSheetGroupItem[]) {
     return groups.flatMap(group => group.data ?? []);
@@ -49,26 +48,6 @@ function getPreviewState(
         loading,
         hasError,
     };
-}
-
-function withPreviewTimeout<T>(promise: Promise<T>) {
-    return new Promise<T | null>((resolve, reject) => {
-        const timer = setTimeout(
-            () => resolve(null),
-            HOME_DISCOVERY_PREVIEW_TIMEOUT,
-        );
-
-        promise.then(
-            value => {
-                clearTimeout(timer);
-                resolve(value);
-            },
-            error => {
-                clearTimeout(timer);
-                reject(error);
-            },
-        );
-    });
 }
 
 export default function useHomeDiscovery(topListPlugins: Plugin[]) {
@@ -98,8 +77,6 @@ export default function useHomeDiscovery(topListPlugins: Plugin[]) {
         const cacheIsFresh =
             cachedTopListData?.state === RequestStateCode.FINISHED &&
             isTopListCacheFresh(cachedTopListData.updatedAt);
-        const isTopListPageLoading =
-            cachedTopListData?.state === RequestStateCode.PENDING_REST_PAGE;
 
         if (hasCachedTopLists || cacheIsFresh) {
             setState(
@@ -115,12 +92,12 @@ export default function useHomeDiscovery(topListPlugins: Plugin[]) {
                     topListPluginHash,
                     topListPluginName,
                     [],
-                    !isTopListPageLoading,
+                    true,
                 ),
             );
         }
 
-        if (cacheIsFresh || isTopListPageLoading) {
+        if (cacheIsFresh) {
             return () => {
                 canceled = true;
             };
@@ -132,24 +109,9 @@ export default function useHomeDiscovery(topListPlugins: Plugin[]) {
 
             if (topListPlugin) {
                 try {
-                    const result = await withPreviewTimeout(
-                        Promise.resolve(topListPlugin.methods.getTopLists()),
+                    const result = await Promise.resolve(
+                        topListPlugin.methods.getTopLists(),
                     );
-
-                    if (!result) {
-                        if (!canceled) {
-                            setState(
-                                getPreviewState(
-                                    topListPluginHash,
-                                    topListPluginName,
-                                    cachedTopLists,
-                                    false,
-                                    false,
-                                ),
-                            );
-                        }
-                        return;
-                    }
 
                     topLists = flattenTopLists(result ?? []).slice(
                         0,

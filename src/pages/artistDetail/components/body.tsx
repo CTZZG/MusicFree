@@ -41,33 +41,45 @@ export default function Body() {
                 index,
                 routes,
             }}
-            renderTabBar={props => (
-                <TabBar
-                    {...props}
-                    style={style.transparentColor}
-                    tabStyle={{
-                        width: "auto",
-                    }}
-                    renderIndicator={() => null}
-                    pressColor="transparent"
-                    inactiveColor={colors.text}
-                    activeColor={colors.primary}
-                    renderLabel={({ route, focused, color }) => (
-                        <Text
-                            numberOfLines={1}
-                            style={{
-                                width: rpx(160),
-                                fontWeight: focused
-                                    ? fontWeightConst.bolder
-                                    : fontWeightConst.medium,
-                                color,
-                                textAlign: "center",
-                            }}>
-                            {t(route.i18nKey as any) ?? route.title}
-                        </Text>
-                    )}
-                />
-            )}
+            renderTabBar={props => {
+                const options = props.navigationState.routes.reduce(
+                    (acc, route) => {
+                        acc[route.key] = {
+                            label: ({ focused, color }: any) => (
+                                <Text
+                                    numberOfLines={1}
+                                    style={{
+                                        width: rpx(160),
+                                        fontWeight: focused
+                                            ? fontWeightConst.bolder
+                                            : fontWeightConst.medium,
+                                        color,
+                                        textAlign: "center",
+                                    }}>
+                                    {t(route.i18nKey as any) ?? route.title}
+                                </Text>
+                            ),
+                        };
+                        return acc;
+                    },
+                    {} as Record<string, any>,
+                );
+
+                return (
+                    <TabBar
+                        {...props}
+                        style={style.transparentColor}
+                        tabStyle={{
+                            width: "auto",
+                        }}
+                        renderIndicator={() => null}
+                        pressColor="transparent"
+                        inactiveColor={colors.text}
+                        activeColor={colors.primary}
+                        options={options}
+                    />
+                );
+            }}
             renderScene={SceneMap(sceneMap)}
             onIndexChange={setIndex}
             initialLayout={{ width: rpx(750) }}

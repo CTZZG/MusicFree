@@ -81,12 +81,13 @@ function setup() {
         themeStore.setValue(lightTheme);
     } else {
         themeStore.setValue({
+            ...darkTheme,
             id: currentTheme,
             dark: true,
-            // @ts-ignore
-            colors:
-                (Config.getConfig("theme.colors") as CustomizedColors) ??
-                darkTheme.colors,
+            colors: {
+                ...darkTheme.colors,
+                ...((Config.getConfig("theme.colors") as Partial<CustomizedColors>) ?? {}),
+            },
         });
     }
 
@@ -114,6 +115,7 @@ function setTheme(
         themeStore.setValue(darkTheme);
     } else {
         themeStore.setValue({
+            ...darkTheme,
             id: themeName,
             dark: true,
             colors: {

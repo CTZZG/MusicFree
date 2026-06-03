@@ -52,35 +52,47 @@ export default function TopListBody() {
                 index,
                 routes,
             }}
-            renderTabBar={props => (
-                <TabBar
-                    {...props}
-                    style={styles.tabBarStyle}
-                    tabStyle={styles.tabStyle}
-                    scrollEnabled
-                    inactiveColor={colors.text}
-                    activeColor={colors.primary}
-                    renderLabel={({ route, focused, color }) => (
-                        <Text
-                            numberOfLines={1}
-                            style={[
-                                styles.tabLabel,
-                                {
-                                    fontWeight: focused
-                                        ? fontWeightConst.bolder
-                                        : fontWeightConst.medium,
-                                    color,
-                                },
-                            ]}>
-                            {route.title}
-                        </Text>
-                    )}
-                    indicatorStyle={{
-                        backgroundColor: colors.primary,
-                        height: rpx(4),
-                    }}
-                />
-            )}
+            renderTabBar={props => {
+                const options = props.navigationState.routes.reduce(
+                    (acc, route) => {
+                        acc[route.key] = {
+                            label: ({ focused, color }: any) => (
+                                <Text
+                                    numberOfLines={1}
+                                    style={[
+                                        styles.tabLabel,
+                                        {
+                                            fontWeight: focused
+                                                ? fontWeightConst.bolder
+                                                : fontWeightConst.medium,
+                                            color,
+                                        },
+                                    ]}>
+                                    {route.title}
+                                </Text>
+                            ),
+                        };
+                        return acc;
+                    },
+                    {} as Record<string, any>,
+                );
+
+                return (
+                    <TabBar
+                        {...props}
+                        style={styles.tabBarStyle}
+                        tabStyle={styles.tabStyle}
+                        scrollEnabled
+                        inactiveColor={colors.text}
+                        activeColor={colors.primary}
+                        options={options}
+                        indicatorStyle={{
+                            backgroundColor: colors.primary,
+                            height: rpx(4),
+                        }}
+                    />
+                );
+            }}
             renderScene={renderScene}
             onIndexChange={setIndex}
             initialLayout={{ width: rpx(750) }}

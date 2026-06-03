@@ -1,12 +1,11 @@
 import React, { memo, useEffect, useState } from "react";
-import { ActivityIndicator, AppState, Keyboard, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, Keyboard, Pressable, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
-import { CircularProgressBase } from "react-native-circular-progress-indicator";
+import Svg, { Circle } from "react-native-svg";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { showPanel } from "../panels/usePanel";
 import useColors from "@/hooks/useColors";
-import IconButton from "../base/iconButton";
 import TrackPlayer, { useCurrentMusic, useMusicState, useProgress } from "@/core/trackPlayer";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 import MusicInfo from "./musicInfo";
@@ -28,39 +27,69 @@ function CircularPlayBtn() {
     }
 
     const displayDuration = (progress.duration > 0) ? progress.duration : (musicItem?.duration ?? 0);
+    const playProgress = displayDuration
+        ? Math.min(1, Math.max(0, progress.position / displayDuration))
+        : 0;
+    const ringSize = rpx(72);
+    const strokeWidth = rpx(4);
+    const inactiveStrokeWidth = rpx(2);
+    const radius = (ringSize - strokeWidth) / 2;
+    const center = ringSize / 2;
+    const circumference = 2 * Math.PI * radius;
 
     return (
-        <CircularProgressBase
-            activeStrokeWidth={rpx(4)}
-            inActiveStrokeWidth={rpx(2)}
-            inActiveStrokeOpacity={0.2}
-            value={
-                displayDuration ? (100 * progress.position) / displayDuration : 0
-            }
-            duration={100}
-            radius={rpx(36)}
-            activeStrokeColor={colors.musicBarText}
-            inActiveStrokeColor={colors.textSecondary}>
-            <IconButton
+        <View style={styles.playButtonContainer}>
+            <Svg
+                width={ringSize}
+                height={ringSize}
+                viewBox={`0 0 ${ringSize} ${ringSize}`}
+                style={styles.playProgressRing}
+                pointerEvents="none">
+                <Circle
+                    cx={center}
+                    cy={center}
+                    r={radius}
+                    stroke={colors.textSecondary}
+                    strokeWidth={inactiveStrokeWidth}
+                    strokeOpacity={0.2}
+                    fill="none"
+                />
+                <Circle
+                    cx={center}
+                    cy={center}
+                    r={radius}
+                    stroke={colors.musicBarText}
+                    strokeWidth={strokeWidth}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${circumference} ${circumference}`}
+                    strokeDashoffset={circumference * (1 - playProgress)}
+                    transform={`rotate(-90 ${center} ${center})`}
+                />
+            </Svg>
+            <Pressable
                 accessibilityLabel={"播放或暂停歌曲"}
-                name={isPaused ? "play" : "pause"}
-                sizeType={"normal"}
                 hitSlop={{
                     top: 10,
                     left: 10,
                     right: 10,
                     bottom: 10,
                 }}
-                color={colors.musicBarText}
+                style={styles.playButtonPressable}
                 onPress={async () => {
                     if (isPaused) {
                         await TrackPlayer.play();
                     } else {
                         await TrackPlayer.pause();
                     }
-                }}
-            />
-        </CircularProgressBase>
+                }}>
+                <Icon
+                    name={isPaused ? "play" : "pause"}
+                    size={rpx(34)}
+                    color={colors.musicBarText}
+                />
+            </Pressable>
+        </View>
     );
 }
 function MusicBar() {
@@ -157,6 +186,26 @@ const styles = StyleSheet.create({
         height: rpx(72),
         justifyContent: "center",
         alignItems: "center",
+    },
+    playButtonContainer: {
+        width: rpx(72),
+        height: rpx(72),
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    playProgressRing: {
+        position: "absolute",
+        left: 0,
+        top: 0,
+    },
+    playButtonPressable: {
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        alignItems: "center",
+        justifyContent: "center",
     },
     actionGroup: {
         width: rpx(200),
