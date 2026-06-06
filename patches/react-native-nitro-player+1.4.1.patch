@@ -2,11 +2,10 @@ diff --git a/node_modules/react-native-nitro-player/android/build.gradle b/node_
 index 8f1a469..5b0041e 100644
 --- a/node_modules/react-native-nitro-player/android/build.gradle
 +++ b/node_modules/react-native-nitro-player/android/build.gradle
-@@ -35,6 +35,11 @@ def getExtOrIntegerDefault(name) {
+@@ -35,6 +35,10 @@ def getExtOrIntegerDefault(name) {
    return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["NitroPlayer_" + name]).toInteger()
  }
  
-+def enableMusicFreeNitroFfmpeg = findProperty("musicfreeEnableNitroFfmpeg") != "false"
 +def enableMusicFreeWmaExtractor =
 +        findProperty("musicfreeEnableWmaExtractor") != "false" &&
 +        findProperty("musicfreeEnableExperimentalWmaExtractor") != "false"
@@ -22,19 +21,6 @@ index 8f1a469..5b0041e 100644
  
      externalNativeBuild {
        cmake {
-@@ -145,9 +151,11 @@ dependencies {
-   implementation "androidx.media3:media3-exoplayer-smoothstreaming:$media3_version"
-   implementation "androidx.media3:media3-session:$media3_version"
-   implementation "androidx.media3:media3-common:$media3_version"
-+  if (enableMusicFreeNitroFfmpeg) {
-+    implementation files(rootProject.file("app/libs/musicfree-media3-ffmpeg-decoder-$media3_version+1.aar"))
-+  }
-   implementation "androidx.media:media:1.7.0"
- 
-   // WorkManager for background downloads.
-   implementation "androidx.work:work-runtime-ktx:2.10.5" // Latest version of 2.10
- }
--
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt
 index f22bd71..b865521 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt
