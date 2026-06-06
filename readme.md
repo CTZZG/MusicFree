@@ -53,7 +53,7 @@
 
 ### 构建与发布
 
-本分支保留 GitHub Actions Android release workflow：`.github/workflows/android-build.yml`。它可以通过手动 `workflow_dispatch` 或推送 `v*` tag 构建 release APK，并把产物上传到 GitHub Release。若要生成签名包，需要在仓库 Secrets 中配置 `ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS` 和 `ANDROID_RELEASE_KEY_PASSWORD`；缺少这些 Secrets 时 workflow 仍可构建，但会按 Gradle 当前签名配置生成未签名或本地配置签名的 release 产物。
+本分支保留 GitHub Actions Android release workflow：`.github/workflows/android-build.yml`。它可以通过手动 `workflow_dispatch` 或推送 `v*` tag 构建 release APK，并把产物上传到 GitHub Release。若要生成签名包，推荐在仓库 Secrets 中配置 `ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS` 和 `ANDROID_RELEASE_KEY_PASSWORD`；workflow 也兼容旧的 `RELEASE_KEYSTORE_BASE64`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS` 和 `RELEASE_KEY_PASSWORD` 命名。缺少这些 Secrets 时 workflow 仍可构建，但会按 Gradle 当前签名配置生成未签名或本地配置签名的 release 产物。
 
 > **桌面版来啦：<https://github.com/maotoumao/MusicFreeDesktop>**
 

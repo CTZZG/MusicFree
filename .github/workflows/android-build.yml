@@ -30,7 +30,10 @@ jobs:
             NODE_VERSION: '22'
             JAVA_VERSION: '17'
             NODE_ENV: production
-            ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+            RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 || secrets.RELEASE_KEYSTORE_BASE64 }}
+            RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
+            RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.RELEASE_KEY_ALIAS }}
+            RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
         steps:
             - name: Checkout
               uses: actions/checkout@v5
@@ -90,24 +93,41 @@ jobs:
                   } > android-build-info.txt
 
             - name: Setup signing key
-              if: env.ANDROID_RELEASE_KEYSTORE_BASE64 != ''
-              env:
-                  ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
-                  ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
-                  ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
               run: |
-                  echo "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > release.jks
+                  if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+                    echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
+                    exit 0
+                  fi
+
+                  missing=0
+                  for name in RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+                    if [ -z "${!name}" ]; then
+                      echo "::error::$name is required when a release keystore is provided."
+                      missing=1
+                    fi
+                  done
+                  if [ "$missing" -ne 0 ]; then
+                    exit 1
+                  fi
+
+                  echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release.jks
                   {
                     echo "RELEASE_STORE_FILE=../../release.jks"
-                    echo "RELEASE_STORE_PASSWORD=$ANDROID_RELEASE_STORE_PASSWORD"
-                    echo "RELEASE_KEY_ALIAS=$ANDROID_RELEASE_KEY_ALIAS"
-                    echo "RELEASE_KEY_PASSWORD=$ANDROID_RELEASE_KEY_PASSWORD"
+                    echo "RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD"
+                    echo "RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS"
+                    echo "RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD"
                   } > android/keystore.properties
 
             - name: Validate signing setup
               run: |
                   if [ -f android/keystore.properties ] && [ -f release.jks ]; then
                     echo "Release signing is configured."
+                    keytool -list \
+                      -keystore release.jks \
+                      -storepass "$RELEASE_STORE_PASSWORD" \
+                      -alias "$RELEASE_KEY_ALIAS" \
+                      >/dev/null
+                    echo "Release signing key was validated."
                   else
                     echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
                   fi
@@ -130,7 +150,12 @@ jobs:
 
             - name: Build release APKs
               working-directory: ./android
-              run: ./gradlew assembleRelease --no-daemon --stacktrace
+              run: |
+                  ./gradlew assembleRelease \
+                    --no-daemon \
+                    --stacktrace \
+                    --max-workers=2 \
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
 
             - name: Collect APKs
               run: |
