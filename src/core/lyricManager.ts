@@ -14,7 +14,6 @@ import { checkAndCreateDir } from "@/utils/fileUtils";
 import { autoDecryptLyric } from "@/utils/musicDecrypter";
 import CryptoJs from "crypto-js";
 import { unlink, writeFile } from "react-native-fs";
-import RNTrackPlayer, { Event } from "react-native-track-player";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import { IPluginManager } from "@/types/core/pluginManager";
 import { makeMutable, type SharedValue } from "react-native-reanimated";
@@ -123,7 +122,7 @@ class LyricManager implements IInjectable {
             },
         );
 
-        RNTrackPlayer.addEventListener(Event.PlaybackProgressUpdated, evt => {
+        this.trackPlayer.playerAdapter.addEventListener("progress", evt => {
             const parser = this.lyricParser;
             const positionMs = evt.position * 1000;
             getDefaultStore().set(currentPositionMsAtom, positionMs);

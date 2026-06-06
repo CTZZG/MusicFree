@@ -46,7 +46,7 @@ export default function AboutSetting() {
         },
         {
             label: "播放器",
-            value: buildInfo.trackPlayer,
+            value: buildInfo.nitroPlayer,
         },
     ];
 

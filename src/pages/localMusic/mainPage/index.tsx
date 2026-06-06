@@ -51,6 +51,15 @@ export default function MainPage() {
                                                 hideDialog();
                                                 resolve(true);
                                             },
+                                            onReject(reason, hideDialog) {
+                                                if (reason?.message !== "Import Broken") {
+                                                    Toast.warn(
+                                                        reason?.message ?? "扫描本地音乐失败",
+                                                    );
+                                                }
+                                                hideDialog();
+                                                resolve(false);
+                                            },
                                             onCancel(hideDialog) {
                                                 LocalMusicSheet.cancelImportLocal();
                                                 hideDialog();

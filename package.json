@@ -1,6 +1,6 @@
 {
   "name": "MusicFree",
-  "version": "0.6.4-beta.1",
+  "version": "0.6.4-nitro.1",
   "private": true,
   "license": "AGPL",
   "author": {
@@ -14,6 +14,14 @@
     "start": "react-native start",
     "clean": "cd ./android && ./gradlew clean",
     "test": "jest",
+    "audit:round20-static": "node ./generator/audit-round20-static.mjs",
+    "audit:round20-native": "node ./generator/audit-round20-native.mjs",
+    "audit:nitro-adapter": "node ./generator/audit-nitro-player-adapter.mjs",
+    "audit:nitro-format-extension": "node ./generator/audit-nitro-format-extension.mjs",
+    "audit:round20-format-samples": "node ./generator/audit-round20-format-samples.mjs",
+    "audit:track-player-immutability": "node ./generator/audit-track-player-immutability.mjs",
+    "audit:round20-rntp-removal": "node ./generator/audit-round20-rntp-removal.mjs",
+    "audit:round20-upgrade-boundary": "node ./generator/audit-round20-upgrade-boundary.mjs",
     "commit-lint": "commitlint --edit",
     "connect-mumu": "adb kill-server & adb connect localhost:7555",
     "generate-build-info": "node ./generator/generate-build-info.mjs",
@@ -77,6 +85,7 @@
     "react-native-logs": "^5.1.0",
     "react-native-mmkv": "^4.3.1",
     "react-native-nitro-modules": "^0.35.9",
+    "react-native-nitro-player": "^1.4.1",
     "react-native-pager-view": "^8.0.1",
     "react-native-permissions": "^4.1.5",
     "react-native-reanimated": "^4.4.0",
@@ -85,7 +94,6 @@
     "react-native-share": "^10.2.1",
     "react-native-svg": "^15.15.4",
     "react-native-tab-view": "^4.3.0",
-    "react-native-track-player": "github:CTZZG/react-native-track-player#v4.1.1",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-webview": "^13.16.1",
     "react-native-worklets": "^0.9.1",
@@ -146,7 +154,6 @@
     "doctor": {
       "reactNativeDirectoryCheck": {
         "exclude": [
-          "react-native-track-player",
           "react-native-background-timer",
           "react-native-fs",
           "expo-modules-jsi"

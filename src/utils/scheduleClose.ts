@@ -1,6 +1,6 @@
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import TrackPlayer from "@/core/trackPlayer";
-import NativeUtils from "@/native/utils";
+import forceExitApp from "@/utils/forceExitApp";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import BackgroundTimer from "react-native-background-timer";
@@ -12,11 +12,6 @@ const closeAfterPlayEndAtom = atom(false);
 let timerId: any;
 
 
-async function exitApp() {
-    await TrackPlayer.reset();
-    NativeUtils.exitApp();
-}
-
 function setScheduleClose(deadline: number | null) {
     getDefaultStore().set(deadlineAtom, deadline);
     timerId && BackgroundTimer.clearTimeout(timerId);
@@ -24,9 +19,9 @@ function setScheduleClose(deadline: number | null) {
         timerId = BackgroundTimer.setTimeout(async () => {
             const playAfterEnd = getDefaultStore().get(closeAfterPlayEndAtom);
             if (playAfterEnd) {
-                TrackPlayer.on(TrackPlayerEvents.PlayEnd, exitApp);
+                TrackPlayer.on(TrackPlayerEvents.PlayEnd, forceExitApp);
             } else {
-                exitApp();
+                forceExitApp();
             }
 
         }, deadline - Date.now());
@@ -41,7 +36,7 @@ function setScheduleClose(deadline: number | null) {
 function setCloseAfterPlayEnd(closeAfterPlayEnd: boolean) {
     if (!closeAfterPlayEnd) {
         // 边界条件：如果倒计时结束后，Trackplayer停止播放前，取消了修改
-        TrackPlayer.off(TrackPlayerEvents.PlayEnd, exitApp);
+        TrackPlayer.off(TrackPlayerEvents.PlayEnd, forceExitApp);
     }
     getDefaultStore().set(closeAfterPlayEndAtom, closeAfterPlayEnd);
 }

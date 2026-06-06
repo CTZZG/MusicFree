@@ -4,11 +4,12 @@ import {
     supportLocalMediaType,
 } from "@/constants/commonConst";
 import mp3Util, { IBasicMeta } from "@/native/mp3Util";
-import { addFileScheme, getFileName } from "@/utils/fileUtils.ts";
+import { getFileName, removeFileScheme } from "@/utils/fileUtils.ts";
 import {
     getLocalPath,
     isSameMediaItem,
 } from "@/utils/mediaUtils";
+import { trace } from "@/utils/log";
 import StateMapper from "@/utils/stateMapper";
 import { getStorage, setStorage } from "@/utils/storage";
 import CryptoJs from "crypto-js";
@@ -25,7 +26,8 @@ export async function setup() {
         let validSheet: IMusic.IMusicItem[] = [];
         for (let musicItem of sheet) {
             const localPath = getLocalPath(musicItem);
-            if (localPath && (await exists(localPath))) {
+            const fsPath = localPath ? normalizeFsPath(localPath) : null;
+            if (fsPath && (await exists(fsPath))) {
                 validSheet.push(musicItem);
             }
         }
@@ -88,7 +90,7 @@ export async function removeMusic(
             localMusicItem[internalSerializeKey]?.localPath;
         if (deleteOriginalFile && localPath) {
             try {
-                await unlink(localPath);
+                await unlink(normalizeFsPath(localPath));
             } catch (e: any) {
                 if (e.message !== "File does not exist") {
                     throw e;
@@ -117,6 +119,39 @@ function parseFilename(fn: string): Partial<IMusic.IMusicItem> | null {
 
 function localMediaFilter(filename: string) {
     return supportLocalMediaType.some(ext => filename.toLowerCase().endsWith(ext));
+}
+
+function normalizeFsPath(filePath: string) {
+    const rawPath = removeFileScheme(filePath);
+    try {
+        return decodeURI(rawPath);
+    } catch {
+        return rawPath;
+    }
+}
+
+const metadataUnsafeExtensions = new Set([
+    ".ape",
+    ".asf",
+    ".dff",
+    ".dsf",
+    ".wma",
+]);
+
+function getLowerFileExtension(filePath: string) {
+    const pathWithoutQuery = filePath.split("?")[0];
+    const slashIndex = Math.max(
+        pathWithoutQuery.lastIndexOf("/"),
+        pathWithoutQuery.lastIndexOf("\\"),
+    );
+    const dotIndex = pathWithoutQuery.lastIndexOf(".");
+    return dotIndex > slashIndex
+        ? pathWithoutQuery.slice(dotIndex).toLowerCase()
+        : "";
+}
+
+function shouldReadSystemMetadata(filePath: string) {
+    return !metadataUnsafeExtensions.has(getLowerFileExtension(filePath));
 }
 
 let importToken: string | null = null;
@@ -156,22 +191,59 @@ function cancelImportLocal() {
 
 // 导入本地音乐
 const groupNum = 25;
+async function readMusicMetas(
+    musicList: string[],
+    token: string,
+): Promise<Array<IBasicMeta | null>> {
+    const metas: Array<IBasicMeta | null> = Array(musicList.length).fill(null);
+    const readableMusicList = musicList
+        .map((path, index) => ({ path, index }))
+        .filter(item => shouldReadSystemMetadata(item.path));
+    const skippedCount = musicList.length - readableMusicList.length;
+
+    if (skippedCount > 0) {
+        trace("本地音乐扫描跳过系统元信息读取", {
+            skippedCount,
+            totalCount: musicList.length,
+        });
+    }
+
+    const groups = Math.ceil(readableMusicList.length / groupNum);
+    for (let i = 0; i < groups; ++i) {
+        if (token !== importToken) {
+            throw new Error("Import Broken");
+        }
+        const groupItems = readableMusicList.slice(
+            i * groupNum,
+            (i + 1) * groupNum,
+        );
+        try {
+            const groupMetas = await mp3Util.getMediaMeta(
+                groupItems.map(item => item.path),
+            );
+            groupItems.forEach((item, index) => {
+                metas[item.index] = groupMetas[index] ?? null;
+            });
+        } catch (e: any) {
+            trace("本地音乐扫描读取元信息失败", e?.message ?? String(e), "error");
+        }
+    }
+
+    return metas;
+}
+
 async function importLocal(_folderPaths: string[]) {
-    const folderPaths = [..._folderPaths.map(it => addFileScheme(it))];
+    const folderPaths = [..._folderPaths.map(normalizeFsPath)];
+    trace("本地音乐扫描开始", {
+        folderCount: folderPaths.length,
+        folders: folderPaths,
+    });
     const { musicList, token } = await getMusicStats(folderPaths);
     if (token !== importToken) {
         throw new Error("Import Broken");
     }
-    // 分组请求，不然序列化可能出问题
-    let metas: IBasicMeta[] = [];
-    const groups = Math.ceil(musicList.length / groupNum);
-    for (let i = 0; i < groups; ++i) {
-        metas = metas.concat(
-            await mp3Util.getMediaMeta(
-                musicList.slice(i * groupNum, (i + 1) * groupNum),
-            ),
-        );
-    }
+    trace("本地音乐扫描文件完成", { count: musicList.length });
+    const metas = await readMusicMetas(musicList, token);
     if (token !== importToken) {
         throw new Error("Import Broken");
     }
@@ -201,7 +273,12 @@ async function importLocal(_folderPaths: string[]) {
     if (token !== importToken) {
         throw new Error("Import Broken");
     }
-    addMusic(musicItems);
+    await addMusic(musicItems);
+    if (token === importToken) {
+        importToken = null;
+    }
+    trace("本地音乐扫描导入完成", { count: musicItems.length });
+    return musicItems;
 }
 
 /** 是否为本地音乐 */

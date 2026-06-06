@@ -25,10 +25,10 @@ import * as SplashScreen from "expo-splash-screen";
 import { getDefaultStore } from "jotai";
 import { Linking, Platform } from "react-native";
 import { PERMISSIONS, check, request } from "react-native-permissions";
-import RNTrackPlayer, { AppKilledPlaybackBehavior, Capability } from "react-native-track-player";
 import bootstrapAtom from "./bootstrap.atom";
 import playbackServiceObserver from "@/core/trackPlayer/playbackServiceObserver";
 import telemetry from "@/core/telemetry";
+import type { PlayerAdapterRemoteCapability } from "@/core/playerAdapter";
 
 // 依赖管理
 PluginManager.injectDependencies(Config);
@@ -176,54 +176,48 @@ export async function initTrackPlayer() {
     const playerTimestamp: Record<string, number> = {};
     const playerMetrics: Record<string, number> = {}; 
     playerTimestamp.Start = Date.now();
+    TrackPlayer.lockBackend();
 
     try {
-        await RNTrackPlayer.setupPlayer({
+        await TrackPlayer.playerAdapter.setup({
             maxCacheSize:
                 Config.getConfig("basic.maxCacheSize") ?? 1024 * 1024 * 512,
         });
     } catch (e: any) {
-        if (
-            e?.message !==
-            "The player has already been initialized via setupPlayer."
-        ) {
-            throw e;
-        }
+        throw e;
     }
-    playerTimestamp.RNTPSetup = Date.now();
-    playerMetrics.RNTPSetup = playerTimestamp.RNTPSetup - playerTimestamp.Start;
+    playerTimestamp.BackendSetup = Date.now();
+    playerMetrics.BackendSetup = playerTimestamp.BackendSetup - playerTimestamp.Start;
 
     const capabilities = Config.getConfig("basic.showExitOnNotification")
         ? [
-            Capability.Play,
-            Capability.Pause,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
-            Capability.Stop,
+            "play",
+            "pause",
+            "next",
+            "previous",
+            "stop",
         ]
         : [
-            Capability.Play,
-            Capability.Pause,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
+            "play",
+            "pause",
+            "next",
+            "previous",
         ];
-    await RNTrackPlayer.updateOptions({
-        icon: ImgAsset.logoTransparent,
+    const remoteCapabilities = capabilities as PlayerAdapterRemoteCapability[];
+
+    await TrackPlayer.playerAdapter.configure({
+        notificationIcon: ImgAsset.logoTransparent,
         progressUpdateEventInterval: 0.1,
-        android: {
-            alwaysPauseOnInterruption: true,
-            appKilledPlaybackBehavior:
-                AppKilledPlaybackBehavior.ContinuePlayback,
-        },
-        // @ts-ignore
+        alwaysPauseOnInterruption: true,
+        continuePlaybackOnAppKilled: true,
         userAgent: getAppUserAgent(),
-        capabilities: capabilities,
-        compactCapabilities: capabilities,
-        notificationCapabilities: [...capabilities, Capability.SeekTo],
+        capabilities: remoteCapabilities,
+        compactCapabilities: remoteCapabilities,
+        notificationCapabilities: [...remoteCapabilities, "seek"],
     });
     trace("播放器初始化完成");
     playerTimestamp.OptionsSetup = Date.now();
-    playerMetrics.OptionsSetup = playerTimestamp.OptionsSetup - playerTimestamp.RNTPSetup;
+    playerMetrics.OptionsSetup = playerTimestamp.OptionsSetup - playerTimestamp.BackendSetup;
 
     await TrackPlayer.setupTrackPlayer();
     trace("播放列表初始化完成");
@@ -262,6 +256,25 @@ async function extraMakeup() {
         }
     } catch { }
 
+    function getComparableMediaUrl(url: string) {
+        return url.split(/[?#]/)[0].toLowerCase();
+    }
+
+    function isSupportedMediaUrl(url: string) {
+        const comparableUrl = getComparableMediaUrl(url);
+        return supportLocalMediaType.some(it => comparableUrl.endsWith(it));
+    }
+
+    async function importAndPlayExternalMedia(url: string) {
+        const musicItem = await PluginManager.getByHash(
+            localPluginHash,
+        )?.instance?.importMusicItem?.(url);
+        console.log(musicItem);
+        if (musicItem) {
+            await TrackPlayer.play(musicItem, true);
+        }
+    }
+
     async function handleLinkingUrl(url: string) {
         // 插件
         try {
@@ -293,26 +306,19 @@ async function extraMakeup() {
                         console.log(e);
                         Toast.warn(e?.message ?? "无法识别此插件");
                     });
-            } else if (supportLocalMediaType.some(it => url.endsWith(it))) {
+            } else if (isSupportedMediaUrl(url)) {
                 // 本地播放
-                const musicItem = await PluginManager.getByHash(
-                    localPluginHash,
-                )?.instance?.importMusicItem?.(url);
-                console.log(musicItem);
-                if (musicItem) {
-                    TrackPlayer.play(musicItem);
-                }
+                await importAndPlayExternalMedia(url);
             } else if (url.startsWith("content://")) {
                 // 本地播放 (Android)
-                const musicItem = await PluginManager.getByHash(
-                    localPluginHash,
-                )?.instance?.importMusicItem?.(url);
-                console.log(musicItem);
-                if (musicItem) {
-                    TrackPlayer.play(musicItem);
-                }
+                await importAndPlayExternalMedia(url);
             }
-        } catch { }
+        } catch (e: any) {
+            trace("处理外部链接失败", {
+                url,
+                message: e?.message ?? String(e),
+            });
+        }
     }
 
     // 开启监听

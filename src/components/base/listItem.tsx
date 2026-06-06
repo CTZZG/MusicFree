@@ -6,8 +6,8 @@ import {
     StyleSheet,
     TextProps,
     TextStyle,
-    TouchableHighlight,
     TouchableOpacity,
+    Pressable,
     View,
     ViewStyle,
 } from "react-native";
@@ -69,16 +69,23 @@ function ListItem(props: IListItemProps) {
 
     const colors = useColors();
 
+    const isPressable = !!(onPress || onLongPress);
+
     return (
-        <TouchableHighlight
-            style={styles.container}
-            underlayColor={colors.listActive}
+        <Pressable
+            style={({ pressed }) => [
+                styles.container,
+                pressed && isPressable
+                    ? { backgroundColor: colors.listActive }
+                    : null,
+            ]}
+            disabled={!isPressable}
             onPress={onPress}
             onLongPress={onLongPress}>
             <View style={[styles.container, defaultStyle, style]}>
                 {children}
             </View>
-        </TouchableHighlight>
+        </Pressable>
     );
 }
 

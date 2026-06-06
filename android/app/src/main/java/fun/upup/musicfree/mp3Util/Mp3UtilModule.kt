@@ -13,6 +13,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
@@ -20,6 +21,45 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     private fun isContentUri(uri: Uri?): Boolean {
         return uri?.scheme?.equals("content", ignoreCase = true) == true
+    }
+
+    private val metadataUnsafeExtensions = setOf(
+        ".ape",
+        ".asf",
+        ".dff",
+        ".dsf",
+        ".wma",
+    )
+
+    private fun lowerFileExtension(filePath: String): String {
+        val pathWithoutQuery = filePath.substringBefore("?")
+        val slashIndex = maxOf(
+            pathWithoutQuery.lastIndexOf('/'),
+            pathWithoutQuery.lastIndexOf('\\'),
+        )
+        val dotIndex = pathWithoutQuery.lastIndexOf('.')
+        return if (dotIndex > slashIndex) {
+            pathWithoutQuery.substring(dotIndex).lowercase(Locale.ROOT)
+        } else {
+            ""
+        }
+    }
+
+    private fun shouldUseMediaMetadataRetriever(filePath: String): Boolean {
+        return !metadataUnsafeExtensions.contains(lowerFileExtension(filePath))
+    }
+
+    private fun extractBasicMeta(mmr: MediaMetadataRetriever): WritableMap {
+        return Arguments.createMap().apply {
+            putString("duration", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION))
+            putString("bitrate", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE))
+            putString("artist", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST))
+            putString("author", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR))
+            putString("album", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM))
+            putString("title", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE))
+            putString("date", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE))
+            putString("year", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR))
+        }
     }
 
     private fun downloadImageBytes(imageUrl: String): ByteArray? {
@@ -313,28 +353,27 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     @ReactMethod
     fun getBasicMeta(filePath: String, promise: Promise) {
+        if (!shouldUseMediaMetadataRetriever(filePath)) {
+            promise.resolve(Arguments.createMap())
+            return
+        }
+        val mmr = MediaMetadataRetriever()
         try {
             val uri = Uri.parse(filePath)
-            val mmr = MediaMetadataRetriever()
             if (isContentUri(uri)) {
                 mmr.setDataSource(reactApplicationContext, uri)
             } else {
                 mmr.setDataSource(filePath)
             }
 
-            val properties = Arguments.createMap().apply {
-                putString("duration", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION))
-                putString("bitrate", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE))
-                putString("artist", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST))
-                putString("author", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR))
-                putString("album", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM))
-                putString("title", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE))
-                putString("date", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE))
-                putString("year", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR))
-            }
-            promise.resolve(properties)
+            promise.resolve(extractBasicMeta(mmr))
         } catch (e: Exception) {
             promise.reject("Exception", e.message)
+        } finally {
+            try {
+                mmr.release()
+            } catch (ignored: Exception) {
+            }
         }
     }
 
@@ -344,7 +383,11 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
         val mmr = MediaMetadataRetriever()
         for (i in 0 until filePaths.size()) {
             try {
-                val filePath = filePaths.getString(i)
+                val filePath = filePaths.getString(i) ?: ""
+                if (!shouldUseMediaMetadataRetriever(filePath)) {
+                    metas.pushNull()
+                    continue
+                }
                 val uri = Uri.parse(filePath)
 
                 if (isContentUri(uri)) {
@@ -353,17 +396,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                     mmr.setDataSource(filePath)
                 }
 
-                val properties = Arguments.createMap().apply {
-                    putString("duration", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION))
-                    putString("bitrate", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE))
-                    putString("artist", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST))
-                    putString("author", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR))
-                    putString("album", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM))
-                    putString("title", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE))
-                    putString("date", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE))
-                    putString("year", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR))
-                }
-                metas.pushMap(properties)
+                metas.pushMap(extractBasicMeta(mmr))
             } catch (e: Exception) {
                 metas.pushNull()
             }

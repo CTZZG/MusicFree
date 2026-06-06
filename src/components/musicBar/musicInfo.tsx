@@ -41,6 +41,10 @@ function _BarMusicItem(props: IBarMusicItemProps) {
 
     return (
         <Animated.View
+            accessibilityElementsHidden={activeIndex !== 0}
+            importantForAccessibility={
+                activeIndex === 0 ? "auto" : "no-hide-descendants"
+            }
             style={[
                 styles.container,
                 {

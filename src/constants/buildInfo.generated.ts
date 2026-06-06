@@ -2,19 +2,19 @@
 // It is committed with a baseline value so TypeScript can compile before the first generated build.
 
 export const buildInfo = {
-    "appVersion": "0.6.4-beta.1",
-    "packageVersion": "0.6.4-beta.1",
+    "appVersion": "0.6.4-nitro.1",
+    "packageVersion": "0.6.4-nitro.1",
     "versionCode": "400012",
-    "gitSha": "dbe3ac837aebbb3f3d3dbb2f439496b2c13febec",
-    "shortSha": "dbe3ac8",
-    "gitRef": "codex/round19-rn-expo-upgrade",
-    "buildDate": "2026-06-02T07:01:35.587Z",
+    "gitSha": "80d2723cf0e08e8d1a770ba3b8668c6b2e680fb3",
+    "shortSha": "80d2723",
+    "gitRef": "codex/round20-nitro-player-refactor",
+    "buildDate": "2026-06-06T00:18:07.219Z",
     "signing": "configured",
     "node": "v24.15.0",
     "react": "19.2.3",
     "reactNative": "0.85.3",
     "expo": "56.0.8",
-    "trackPlayer": "github:CTZZG/react-native-track-player#v4.1.1"
+    "nitroPlayer": "^1.4.1"
 } as const;
 
 export type BuildInfo = typeof buildInfo;

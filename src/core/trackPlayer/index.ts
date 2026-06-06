@@ -1,6 +1,5 @@
 import { getCurrentDialog, showDialog } from "@/components/dialogs/useDialog";
 import {
-    internalFakeSoundKey,
     sortIndexSymbol,
     timeStampSymbol,
 } from "@/constants/commonConst";
@@ -9,6 +8,7 @@ import getUrlExt from "@/utils/getUrlExt";
 import { errorLog, trace } from "@/utils/log";
 import { createMediaIndexMap } from "@/utils/mediaIndexMap";
 import {
+    getMediaUniqueKey,
     getLocalPath,
     isSameMediaItem,
 } from "@/utils/mediaUtils";
@@ -16,19 +16,11 @@ import { hasEncryptedMediaSource } from "@/utils/mflac";
 import Network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
-import { musicIsPaused } from "@/utils/trackUtils";
 import EventEmitter from "eventemitter3";
 import { produce } from "immer";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import shuffle from "lodash.shuffle";
-import ReactNativeTrackPlayer, {
-    Event,
-    State,
-    Track,
-    TrackMetadataBase,
-    usePlaybackState,
-    useProgress,
-} from "react-native-track-player";
+import { useEffect } from "react";
 import LocalMusicSheet from "../localMusicSheet";
 
 import { MusicRepeatMode, TrackPlayerEvents } from "@/constants/trackPlayerConst";
@@ -40,13 +32,62 @@ import { IPluginManager } from "@/types/core/pluginManager";
 import { getAppUserAgent } from "@/utils/userAgentHelper"; // <--- 新增UA统一导入
 import { ImgAsset } from "@/constants/assetsConst";
 import { resolveImportedAssetOrPath } from "@/utils/fileUtils";
+import type {
+    PlayerAdapter,
+    PlayerAdapterProgress,
+    PlayerAdapterRepeatMode,
+    PlayerBackendState,
+    PlayerAdapterTrack,
+} from "@/core/playerAdapter";
+import nitroPlayerAdapter from "@/core/playerAdapter/nitroPlayerAdapter";
+import { normalizeMusicState } from "@/utils/trackUtils";
 
 
+type MusicFreePlayerTrack =
+    PlayerAdapterTrack &
+    Partial<IMusic.IMusicItem> &
+    Record<string, any>;
 
 const currentMusicAtom = atom<IMusic.IMusicItem | null>(null);
 const repeatModeAtom = atom<MusicRepeatMode>(MusicRepeatMode.QUEUE);
 const qualityAtom = atom<IMusic.IQualityKey>("standard");
 const playListAtom = atom<IMusic.IMusicItem[]>([]);
+const musicStateAtom = atom<PlayerBackendState>("idle");
+const progressAtom = atom<PlayerAdapterProgress>({
+    position: 0,
+    duration: 0,
+    buffered: 0,
+});
+
+function normalizeAdapterProgress(
+    progress?: Partial<PlayerAdapterProgress> | null,
+    fallbackDuration = 0,
+): PlayerAdapterProgress {
+    const position = Number(progress?.position);
+    const duration = Number(progress?.duration);
+    const buffered = Number(progress?.buffered);
+
+    return {
+        position: Number.isFinite(position) ? position : 0,
+        duration:
+            Number.isFinite(duration) && duration > 0
+                ? duration
+                : fallbackDuration,
+        buffered: Number.isFinite(buffered) ? buffered : 0,
+    };
+}
+
+function setPlayerProgress(
+    progress?: Partial<PlayerAdapterProgress> | null,
+    fallbackDuration = 0,
+) {
+    const normalizedProgress = normalizeAdapterProgress(
+        progress,
+        fallbackDuration,
+    );
+    getDefaultStore().set(progressAtom, normalizedProgress);
+    return normalizedProgress;
+}
 
 
 class TrackPlayer extends EventEmitter<{
@@ -66,6 +107,10 @@ class TrackPlayer extends EventEmitter<{
     private currentIndex = -1;
     // 音乐播放器服务是否启动
     private serviceInited = false;
+    // 底层播放器桥接固定为 Nitro Player。
+    private backend: PlayerAdapter<any> = nitroPlayerAdapter;
+    private nitroPendingSourceRequests = new Set<string>();
+    private nitroTrackChangeGuard: { key: string; until: number } | null = null;
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
 
@@ -77,9 +122,6 @@ class TrackPlayer extends EventEmitter<{
         [MusicRepeatMode.SINGLE]: MusicRepeatMode.QUEUE,
         [MusicRepeatMode.QUEUE]: MusicRepeatMode.SHUFFLE,
     };
-    private static fakeAudioUrl = "musicfree://fake-audio";
-    private static proposedAudioUrl = "musicfree://proposed-audio";
-
     constructor() {
         super();
     }
@@ -118,6 +160,10 @@ class TrackPlayer extends EventEmitter<{
         return getDefaultStore().get(playListAtom);
     }
 
+    public get playerAdapter() {
+        return this.backend;
+    }
+
 
     injectDependencies(configService: IAppConfig, musicHistoryService: IMusicHistory, pluginManager: IPluginManager): void {
         this.configService = configService;
@@ -125,8 +171,12 @@ class TrackPlayer extends EventEmitter<{
         this.pluginManagerService = pluginManager;
     }
 
+    lockBackend() {
+        this.backend = nitroPlayerAdapter;
+    }
 
     async setupTrackPlayer() {
+        this.lockBackend();
         const rate = PersistStatus.get("music.rate");
         const musicQueue = PersistStatus.get("music.playList");
         const repeatMode = PersistStatus.get("music.repeatMode");
@@ -137,14 +187,15 @@ class TrackPlayer extends EventEmitter<{
             this.configService.getConfig("basic.defaultPlayQuality") ||
             "standard";
 
-        ReactNativeTrackPlayer.setVolume(1);
+        await this.backend.setVolume(1);
         // 状态恢复
         if (rate) {
-            ReactNativeTrackPlayer.setRate(+rate / 100);
+            await this.backend.setRate(+rate / 100);
         }
         if (repeatMode) {
             getDefaultStore().set(repeatModeAtom, repeatMode as MusicRepeatMode);
         }
+        await this.syncBackendRepeatMode();
 
         if (musicQueue && Array.isArray(musicQueue)) {
             this.addAll(
@@ -162,7 +213,7 @@ class TrackPlayer extends EventEmitter<{
                 track.isInit = true;
             }
             // 添加 UA
-            track.userAgent = getAppUserAgent();
+            track.userAgent = track.userAgent || getAppUserAgent();
 
             // 异步
             this.pluginManagerService.getByMedia(track)
@@ -173,11 +224,11 @@ class TrackPlayer extends EventEmitter<{
                     }
                     track.url = newSource?.url || track.url;
                     track.headers = newSource?.headers || track.headers;
-                    track.userAgent = getAppUserAgent();
+                    track.userAgent = track.userAgent || getAppUserAgent();
 
                     if (isSameMediaItem(this.currentMusic, track)) {
                         await this.setTrackSource(
-                            track as Track,
+                            track as MusicFreePlayerTrack,
                             false,
                             this.normalizeProgress(progress),
                         );
@@ -194,50 +245,53 @@ class TrackPlayer extends EventEmitter<{
             /**
              * 此事件可能会被触发多次（比如直接替换queue） 参考代码：https://github.com/doublesymmetry/KotlinAudio
              */
-            ReactNativeTrackPlayer.addEventListener(
-                Event.PlaybackActiveTrackChanged,
+            this.backend.addEventListener(
+                "trackChanged",
                 async evt => {
-                    if (
-                        evt.index === 1 &&
-                        evt.lastIndex === 0 &&
-                        evt.track?.url === TrackPlayer.fakeAudioUrl
-                    ) {
-                        trace("队列末尾，播放下一首");
+                    if (this.shouldIgnoreNitroTrackChange(evt)) {
+                        return;
+                    }
+                    const syncedMusic = this.syncNitroCurrentMusic(
+                        evt.track,
+                    );
+                    trace("Nitro 队列切歌", {
+                        index: evt.index,
+                        reason: evt.reason,
+                        musicId: syncedMusic?.id,
+                        platform: syncedMusic?.platform,
+                    });
+                    if (evt.reason === "end" || evt.reason === "repeat") {
                         this.emit(TrackPlayerEvents.PlayEnd);
-                        if (
-                            this.repeatMode ===
-                            MusicRepeatMode.SINGLE
-                        ) {
-                            await this.play(null, true);
-                        } else {
-                            // 当前生效的歌曲是下一曲的标记
-                            await this.skipToNext();
-                        }
                     }
                 },
             );
 
-            ReactNativeTrackPlayer.addEventListener(
-                Event.PlaybackError,
+            this.backend.addEventListener(
+                "tracksNeedUpdate",
+                async evt => {
+                    await this.resolveNitroQueuedTracks(evt?.tracks ?? []);
+                },
+            );
+
+            this.backend.addEventListener(
+                "playbackError",
                 async e => {
                     errorLog("播放出错", e.message);
                     // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
                     const currentTrack =
-                        await ReactNativeTrackPlayer.getActiveTrack();
+                        await this.backend.getActiveTrack?.();
                     if (currentTrack?.isInit) {
                         // HACK: 避免初始失败的情况
-                        ReactNativeTrackPlayer.updateMetadataForTrack(0, {
+                        await this.backend.updateTrack({
                             ...currentTrack,
                             // @ts-ignore
                             isInit: undefined,
                             userAgent: getAppUserAgent(), // <--- 添加UA
-                        });
+                        } as MusicFreePlayerTrack, 0);
                         return;
                     }
 
                     if (
-                        currentTrack?.url !== TrackPlayer.fakeAudioUrl && currentTrack?.url !== TrackPlayer.proposedAudioUrl &&
-                        (await ReactNativeTrackPlayer.getActiveTrackIndex()) === 0 &&
                         e.message &&
                         e.message !== "android-io-file-not-found"
                     ) {
@@ -250,6 +304,17 @@ class TrackPlayer extends EventEmitter<{
                     }
                 },
             );
+
+            this.backend.addEventListener("playbackStateChanged", state => {
+                getDefaultStore().set(
+                    musicStateAtom,
+                    normalizeMusicState(state),
+                );
+            });
+
+            this.backend.addEventListener("progress", progress => {
+                setPlayerProgress(progress, this.currentMusic?.duration ?? 0);
+            });
 
             this.serviceInited = true;
         }
@@ -280,6 +345,14 @@ class TrackPlayer extends EventEmitter<{
         return playList[(index % len + len) % len]; // <--- 修正取模确保正数
     }
 
+    private getWrappedPlayListIndex(index: number) {
+        const len = this.playList.length;
+        if (len === 0) {
+            return -1;
+        }
+        return (index % len + len) % len;
+    }
+
     isPlayListEmpty() {
         return this.playList.length === 0;
     }
@@ -293,19 +366,20 @@ class TrackPlayer extends EventEmitter<{
         const now = Date.now();
         let newPlayList: IMusic.IMusicItem[] = [];
         let currentPlayList = this.playList;
-        musicItems.forEach((item, index) => {
-            item[timeStampSymbol] = now;
-            item[sortIndexSymbol] = index;
-        });
+        const queueMusicItems = musicItems.map((item, index) => ({
+            ...item,
+            [timeStampSymbol]: now,
+            [sortIndexSymbol]: index,
+        }));
 
         if (beforeIndex === undefined || beforeIndex < 0) {
             // 1.1. 添加到歌单末尾，并过滤掉已有的歌曲
             newPlayList = currentPlayList.concat(
-                musicItems.filter(item => !this.isInPlayList(item)),
+                queueMusicItems.filter(item => !this.isInPlayList(item)),
             );
         } else {
             // 1.2. 新的播放列表，插入
-            const indexMap = createMediaIndexMap(musicItems);
+            const indexMap = createMediaIndexMap(queueMusicItems);
             const beforeDraft = currentPlayList
                 .slice(0, beforeIndex)
                 .filter(item => !indexMap.has(item));
@@ -313,7 +387,7 @@ class TrackPlayer extends EventEmitter<{
                 .slice(beforeIndex)
                 .filter(item => !indexMap.has(item));
 
-            newPlayList = [...beforeDraft, ...musicItems, ...afterDraft];
+            newPlayList = [...beforeDraft, ...queueMusicItems, ...afterDraft];
         }
 
         // 如果太长了
@@ -344,8 +418,17 @@ class TrackPlayer extends EventEmitter<{
 
     addNext(musicItem: IMusic.IMusicItem | IMusic.IMusicItem[]): void {
         const shouldAutoPlay = this.isPlayListEmpty() || !this.currentMusic;
+        const musicItems = Array.isArray(musicItem) ? musicItem : [musicItem];
+        const insertIndex = this.currentIndex + 1;
+        const newItems = musicItems.filter(item => !this.isInPlayList(item));
 
-        this.add(musicItem, this.currentIndex + 1);
+        this.add(musicItems, insertIndex);
+
+        if (!shouldAutoPlay && newItems.length > 0) {
+            this.syncNitroQueueInsert(newItems, insertIndex).catch(error => {
+                errorLog("Nitro 同步下一首队列失败", error?.message ?? error);
+            });
+        }
 
         if (shouldAutoPlay) {
             this.play(Array.isArray(musicItem) ? musicItem[0] : musicItem);
@@ -376,10 +459,8 @@ class TrackPlayer extends EventEmitter<{
             } else {
                 currentMusic = newPlayList[this.currentIndex % newPlayList.length];
                 try {
-                    const state = (
-                        await ReactNativeTrackPlayer.getPlaybackState()
-                    ).state;
-                    shouldPlayCurrent = !musicIsPaused(state);
+                    const state = await this.backend.getState();
+                    shouldPlayCurrent = state === "playing";
                 } catch {
                     shouldPlayCurrent = false;
                 }
@@ -400,7 +481,11 @@ class TrackPlayer extends EventEmitter<{
         if (shouldPlayCurrent === true) {
             await this.play(currentMusic, true);
         } else if (shouldPlayCurrent === false) {
-            await ReactNativeTrackPlayer.reset();
+            await this.backend.reset();
+        } else {
+            await this.syncNitroQueueRemove(musicItem).catch(error => {
+                errorLog("Nitro 同步移除队列失败", error?.message ?? error);
+            });
         }
     }
 
@@ -413,10 +498,22 @@ class TrackPlayer extends EventEmitter<{
         forcePlay?: boolean,
     ): Promise<void> {
         try {
+            trace("TrackPlayer.play start", {
+                backend: this.backend.name,
+                musicId: musicItem?.id ?? this.currentMusic?.id,
+                platform: musicItem?.platform ?? this.currentMusic?.platform,
+                forcePlay,
+            });
             // 如果不传参，默认是播放当前音乐
             if (!musicItem) {
                 musicItem = this.currentMusic;
             }
+            trace("TrackPlayer.play resolved music", {
+                backend: this.backend.name,
+                musicId: musicItem?.id,
+                platform: musicItem?.platform,
+                isCurrent: this.isCurrentMusic(musicItem),
+            });
             if (!musicItem) {
                 throw new Error(PlayFailReason.PLAY_LIST_IS_EMPTY);
             }
@@ -431,14 +528,37 @@ class TrackPlayer extends EventEmitter<{
                 !LocalMusicSheet.isLocalMusic(musicItem) &&
                 !localPath
             ) {
-                await ReactNativeTrackPlayer.reset();
+                await this.backend.reset();
+                trace("TrackPlayer.play blocked by cellular policy", {
+                    musicId: musicItem.id,
+                    platform: musicItem.platform,
+                });
                 throw new Error(PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY);
             }
 
             // 2. 如果是当前正在播放的音频
-            if (this.isCurrentMusic(musicItem)) {
+            const isCurrentMusic = this.isCurrentMusic(musicItem);
+            const shouldUseCurrentFastPath = isCurrentMusic && !forcePlay;
+            if (isCurrentMusic && !shouldUseCurrentFastPath) {
+                trace("TrackPlayer.play bypass current fast path", {
+                    backend: this.backend.name,
+                    musicId: musicItem.id,
+                    platform: musicItem.platform,
+                    forcePlay,
+                });
+            }
+            if (shouldUseCurrentFastPath) {
                 // 获取底层播放器中的track
-                const currentTrack = await ReactNativeTrackPlayer.getTrack(0);
+                trace("TrackPlayer.play current branch getTrack start", {
+                    backend: this.backend.name,
+                });
+                const currentTrack = await this.backend.getTrack?.(0);
+                trace("TrackPlayer.play current branch getTrack end", {
+                    hasTrack: !!currentTrack,
+                    trackUrl: currentTrack?.url,
+                    trackId: currentTrack?.id,
+                    trackPlatform: currentTrack?.platform,
+                });
                 // 2.1 如果当前有源
                 if (
                     currentTrack?.url &&
@@ -448,23 +568,21 @@ class TrackPlayer extends EventEmitter<{
                     )
                 ) {
                     const currentActiveIndex =
-                        await ReactNativeTrackPlayer.getActiveTrackIndex();
+                        await this.backend.getActiveTrackIndex?.();
                     if (currentActiveIndex !== 0) {
-                        await ReactNativeTrackPlayer.skip(0);
+                        await this.backend.skipToIndex(0);
                     }
                     if (forcePlay) {
                         // 2.1.1 强制重新开始
                         await this.seekTo(0);
                     }
-                    const currentState = (
-                        await ReactNativeTrackPlayer.getPlaybackState()
-                    ).state;
-                    if (currentState === State.Stopped) {
+                    const currentState = await this.backend.getState();
+                    if (currentState === "stopped") {
                         await this.setTrackSource(currentTrack, true, seekToTime);
                     }
-                    if (currentState !== State.Playing) {
+                    if (currentState !== "playing") {
                         // 2.1.2 恢复播放
-                        await ReactNativeTrackPlayer.play();
+                        await this.backend.play();
                     }
                     // 这种情况下，播放队列和当前歌曲都不需要变化
                     return;
@@ -480,14 +598,15 @@ class TrackPlayer extends EventEmitter<{
 
             // 4. 更新列表状态和当前音乐
             this.setCurrentMusic(musicItem);
-            await ReactNativeTrackPlayer.setQueue([{
-                ...musicItem,
-                url: TrackPlayer.proposedAudioUrl,
-                userAgent: getAppUserAgent(), // <--- 设置UA
-                artwork: resolveImportedAssetOrPath(musicItem.artwork?.trim?.()?.length ? musicItem.artwork : ImgAsset.albumDefault) as unknown as any,
-            }, this.getFakeNextTrack()]);
-
-            this.emit(TrackPlayerEvents.ProgressChanged, { position: seekToTime ?? 0, duration: musicItem.duration || 0 });
+            const proposedProgress = setPlayerProgress(
+                {
+                    position: seekToTime ?? 0,
+                    duration: musicItem.duration || 0,
+                    buffered: seekToTime ?? 0,
+                },
+                musicItem.duration || 0,
+            );
+            this.emit(TrackPlayerEvents.ProgressChanged, proposedProgress);
 
             // 5. 获取音源
             let track: IMusic.IMusicItem;
@@ -503,17 +622,29 @@ class TrackPlayer extends EventEmitter<{
             let source: IPlugin.IMediaSourceResult | null = null;
             for (let quality of qualityOrder) {
                 if (this.isCurrentMusic(musicItem)) {
+                    trace("TrackPlayer.play getMediaSource start", {
+                        musicId: musicItem.id,
+                        platform: musicItem.platform,
+                        quality,
+                    });
                     const candidate =
                         (await plugin?.methods?.getMediaSource(
                             musicItem,
                             quality,
                         )) ?? null;
+                    trace("TrackPlayer.play getMediaSource end", {
+                        musicId: musicItem.id,
+                        platform: musicItem.platform,
+                        quality,
+                        hasSource: !!candidate?.url,
+                        sourceUrl: candidate?.url,
+                    });
                     if (this.isUnsupportedEncryptedSource(candidate)) {
                         continue;
                     }
-                    source = candidate;
                     // 5.3.1 获取到真实源
-                    if (source) {
+                    if (candidate?.url) {
+                        source = candidate;
                         this.setQuality(quality);
                         break;
                     }
@@ -574,9 +705,9 @@ class TrackPlayer extends EventEmitter<{
                                     ) {
                                         continue;
                                     }
-                                    source = candidate;
                                     // 5.4.1 获取到真实源
-                                    if (source) {
+                                    if (candidate?.url) {
+                                        source = candidate;
                                         this.setQuality(quality);
                                         break;
                                     }
@@ -614,14 +745,14 @@ class TrackPlayer extends EventEmitter<{
             // 7. 合并结果
             track = this.mergeTrackSource(musicItem, source) as IMusic.IMusicItem;
 
-            track.userAgent = getAppUserAgent(); // <--- 确保UA
+            track.userAgent = track.userAgent || getAppUserAgent();
 
             // 8. 新增历史记录
             this.musicHistoryService.addMusic(musicItem);
 
             trace("获取音源成功", track);
             // 9. 设置音源
-            await this.setTrackSource(track as Track, true, seekToTime);
+            await this.setTrackSource(track as MusicFreePlayerTrack, true, seekToTime);
 
             // 10. 获取补充信息
             let info: Partial<IMusic.IMusicItem> | null = null;
@@ -639,20 +770,22 @@ class TrackPlayer extends EventEmitter<{
             // 11. 设置补充信息
             if (info && this.isCurrentMusic(musicItem)) {
                 const mergedTrack = this.mergeTrackSource(track, info);
-                mergedTrack.userAgent = getAppUserAgent(); // <--- 再次确保UA
+                mergedTrack.userAgent = mergedTrack.userAgent || getAppUserAgent();
                 getDefaultStore().set(currentMusicAtom, mergedTrack as IMusic.IMusicItem);
-                await ReactNativeTrackPlayer.updateMetadataForTrack(
-                    0,
-                    mergedTrack as TrackMetadataBase,
-                );
+                await this.backend.updateTrack(mergedTrack as unknown as MusicFreePlayerTrack, 0);
             }
         } catch (e: any) {
             const message = e?.message;
+            trace("TrackPlayer.play error", {
+                backend: this.backend.name,
+                message,
+                stack: e?.stack,
+            }, "error");
             if (
                 message ===
                 "The player is not initialized. Call setupPlayer first."
             ) {
-                await ReactNativeTrackPlayer.setupPlayer();
+                await this.backend.setup();
                 this.play(musicItem, forcePlay);
             } else if (message === PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY) {
                 if (getCurrentDialog()?.name !== "SimpleDialog") {
@@ -672,7 +805,7 @@ class TrackPlayer extends EventEmitter<{
     }
 
     async pause(): Promise<void> {
-        await ReactNativeTrackPlayer.pause();
+        await this.backend.pause();
     }
 
     toggleRepeatMode(): void {
@@ -684,7 +817,7 @@ class TrackPlayer extends EventEmitter<{
         this.setPlayList([]);
         this.setCurrentMusic(null);
 
-        await ReactNativeTrackPlayer.reset();
+        await this.backend.reset();
         PersistStatus.set("music.musicItem", undefined);
         PersistStatus.set("music.progress", 0);
     }
@@ -695,7 +828,24 @@ class TrackPlayer extends EventEmitter<{
             return;
         }
 
-        await this.play(this.getPlayListMusicAt(this.currentIndex + 1), true);
+        if (this.backend.getNextTracks) {
+            const nextTracks = await this.backend.getNextTracks(1).catch(error => {
+                errorLog(
+                    "Nitro 下一首队列读取失败",
+                    error?.message ?? error,
+                );
+                return [];
+            });
+            if (nextTracks.length > 0) {
+                await this.resolveNitroQueuedTracks(nextTracks).catch(error => {
+                    errorLog(
+                        "Nitro 下一首音源预解析失败",
+                        error?.message ?? error,
+                    );
+                });
+            }
+        }
+        await this.backend.skipToNext();
     }
 
     async skipToPrevious(): Promise<void> {
@@ -704,10 +854,7 @@ class TrackPlayer extends EventEmitter<{
             return;
         }
 
-        await this.play(
-            this.getPlayListMusicAt(this.currentIndex === -1 ? 0 : this.currentIndex - 1),
-            true,
-        );
+        await this.backend.skipToPrevious();
     }
 
     async changeQuality(newQuality: IMusic.IQualityKey): Promise<boolean> {
@@ -722,7 +869,7 @@ class TrackPlayer extends EventEmitter<{
             return false;
         }
         try {
-            const progress = await ReactNativeTrackPlayer.getProgress();
+            const progress = await this.backend.getProgress();
             const plugin = this.pluginManagerService.getByMedia(musicItem);
             const newSource = await plugin?.methods?.getMediaSource(
                 musicItem,
@@ -735,12 +882,10 @@ class TrackPlayer extends EventEmitter<{
                 throw new Error(PlayFailReason.INVALID_SOURCE);
             }
             if (this.isCurrentMusic(musicItem)) {
-                const playingState = (
-                    await ReactNativeTrackPlayer.getPlaybackState()
-                ).state;
+                const playingState = await this.backend.getState();
                 await this.setTrackSource(
-                    this.mergeTrackSource(musicItem, newSource) as unknown as Track,
-                    !musicIsPaused(playingState),
+                    this.mergeTrackSource(musicItem, newSource) as unknown as MusicFreePlayerTrack,
+                    playingState === "playing",
                 );
 
                 await this.seekTo(progress.position ?? 0);
@@ -757,7 +902,20 @@ class TrackPlayer extends EventEmitter<{
         musicItem: IMusic.IMusicItem,
         newPlayList: IMusic.IMusicItem[],
     ): Promise<void> {
-        if (newPlayList.length !== 0) {
+        try {
+            trace("TrackPlayer.playWithReplacePlayList start", {
+                musicId: musicItem?.id,
+                platform: musicItem?.platform,
+                inputLength: newPlayList?.length ?? 0,
+                repeatMode: this.repeatMode,
+            });
+            if (!Array.isArray(newPlayList) || newPlayList.length === 0) {
+                newPlayList = [musicItem];
+            }
+            if (newPlayList.length === 0) {
+                return;
+            }
+
             const now = Date.now();
             if (newPlayList.length > TrackPlayer.maxMusicQueueLength) {
                 newPlayList = this.shrinkPlayListToSize(
@@ -766,29 +924,54 @@ class TrackPlayer extends EventEmitter<{
                 );
             }
 
-            newPlayList.forEach((it, index) => {
-                it[timeStampSymbol] = now;
-                it[sortIndexSymbol] = index;
-            });
+            const writablePlayList = newPlayList.map((it, index) => ({
+                ...it,
+                [timeStampSymbol]: now,
+                [sortIndexSymbol]: index,
+            }));
+            const targetMusic =
+                writablePlayList.find(it => isSameMediaItem(it, musicItem)) ??
+                {
+                    ...musicItem,
+                    [timeStampSymbol]: now,
+                    [sortIndexSymbol]: 0,
+                };
 
             this.setPlayList(
                 this.repeatMode === MusicRepeatMode.SHUFFLE
-                    ? shuffle(newPlayList)
-                    : newPlayList,
+                    ? shuffle(writablePlayList)
+                    : writablePlayList,
             );
-            await this.play(musicItem, true);
+            trace("TrackPlayer.playWithReplacePlayList before play", {
+                musicId: targetMusic.id,
+                platform: targetMusic.platform,
+                queuedLength: writablePlayList.length,
+                currentIndex: this.currentIndex,
+            });
+            await this.play(targetMusic, true);
+            trace("TrackPlayer.playWithReplacePlayList end", {
+                musicId: targetMusic.id,
+                platform: targetMusic.platform,
+            });
+        } catch (e: any) {
+            trace("TrackPlayer.playWithReplacePlayList error", {
+                musicId: musicItem?.id,
+                platform: musicItem?.platform,
+                message: e?.message ?? String(e ?? ""),
+                stack: e?.stack,
+            }, "error");
         }
     }
 
     async seekTo(progress: number) {
         PersistStatus.set("music.progress", progress);
-        return ReactNativeTrackPlayer.seekTo(progress);
+        return this.backend.seekTo(progress);
     }
 
-    getProgress = ReactNativeTrackPlayer.getProgress;
-    getRate = ReactNativeTrackPlayer.getRate;
-    setRate = ReactNativeTrackPlayer.setRate;
-    reset = ReactNativeTrackPlayer.reset;
+    getProgress = () => this.backend.getProgress();
+    getRate = () => this.backend.getRate();
+    setRate = (rate: number) => this.backend.setRate(rate);
+    reset = () => this.backend.reset();
 
 
     /**************** 辅助函数 -- 设置内部状态 ****************/
@@ -804,13 +987,18 @@ class TrackPlayer extends EventEmitter<{
             this.emit(TrackPlayerEvents.CurrentMusicChanged, null);
             return;
         }
-        if (typeof musicItem.artwork !== "string") {
-            musicItem.artwork = ImgAsset.albumDefault;
-        }
-        this.currentIndex = this.getMusicIndexInPlayList(musicItem);
-        getDefaultStore().set(currentMusicAtom, musicItem);
+        const normalizedMusicItem =
+            typeof musicItem.artwork === "string"
+                ? musicItem
+                : {
+                    ...musicItem,
+                    artwork: ImgAsset.albumDefault,
+                };
+        this.currentIndex = this.getMusicIndexInPlayList(normalizedMusicItem);
+        getDefaultStore().set(currentMusicAtom, normalizedMusicItem);
+        PersistStatus.set("music.musicItem", normalizedMusicItem);
 
-        this.emit(TrackPlayerEvents.CurrentMusicChanged, musicItem);
+        this.emit(TrackPlayerEvents.CurrentMusicChanged, normalizedMusicItem);
     }
 
     private setRepeatMode(mode: MusicRepeatMode) {
@@ -832,11 +1020,9 @@ class TrackPlayer extends EventEmitter<{
         }
 
         getDefaultStore().set(repeatModeAtom, mode);
-        // 更新下一首歌的信息
-        ReactNativeTrackPlayer.updateMetadataForTrack(
-            1,
-            this.getFakeNextTrack(),
-        );
+        this.syncBackendRepeatMode().catch(error => {
+            errorLog("同步播放循环模式失败", error?.message ?? error);
+        });
         // 记录
         PersistStatus.set("music.repeatMode", mode);
     }
@@ -850,6 +1036,52 @@ class TrackPlayer extends EventEmitter<{
         return typeof progress === "number" && Number.isFinite(progress) && progress > 0
             ? progress
             : undefined;
+    }
+
+    private async ensureNitroAutoPlay(targetKey: string) {
+        const retryDelays = [180, 520, 1100];
+        for (let retryDelay of retryDelays) {
+            await delay(retryDelay);
+
+            const currentMusic = this.currentMusic;
+            if (!currentMusic || getMediaUniqueKey(currentMusic) !== targetKey) {
+                trace("Nitro 自动播放补偿取消", {
+                    targetKey,
+                    currentKey: currentMusic
+                        ? getMediaUniqueKey(currentMusic)
+                        : null,
+                });
+                return;
+            }
+
+            const activeTrack = await this.backend.getActiveTrack?.()
+                .catch(() => null);
+            const activeMusic = this.resolveMusicFromAdapterTrack(
+                activeTrack as Partial<IMusic.IMusicItem> | null,
+            );
+            const activeKey = activeMusic
+                ? getMediaUniqueKey(activeMusic)
+                : null;
+            if (activeKey && activeKey !== targetKey) {
+                trace("Nitro 自动播放补偿等待目标曲", {
+                    targetKey,
+                    activeKey,
+                });
+                continue;
+            }
+
+            const state = await this.backend.getState().catch(() => "idle");
+            if (state === "playing") {
+                return;
+            }
+
+            trace("Nitro 自动播放补偿", {
+                targetKey,
+                state,
+                retryDelay,
+            });
+            await this.backend.play();
+        }
     }
 
     private resolveResumeSeekTime(musicItem: IMusic.IMusicItem) {
@@ -872,22 +1104,52 @@ class TrackPlayer extends EventEmitter<{
     }
 
     // 设置音源
-    private async setTrackSource(track: Track, autoPlay = true, seekTo?: number) {
+    private async setTrackSource(track: MusicFreePlayerTrack, autoPlay = true, seekTo?: number) {
         const clonedTrack = this.patchMediaArtwork(track);
         if (!clonedTrack) {
             return;
         }
         const initialProgress = this.normalizeProgress(seekTo) ?? 0;
-        track.userAgent = getAppUserAgent(); // <--- 确保设置UA
-        await ReactNativeTrackPlayer.setQueue([clonedTrack, this.getFakeNextTrack()]);
+        clonedTrack.userAgent = clonedTrack.userAgent || getAppUserAgent();
+        const nitroTargetKey = getMediaUniqueKey(clonedTrack as unknown as IMusic.IMusicItem);
+        const nitroQueue = this.getNitroQueue(clonedTrack as unknown as IMusic.IMusicItem);
+        this.nitroTrackChangeGuard = {
+            key: nitroTargetKey,
+            until: Date.now() + 5000,
+        };
+        await this.backend.loadQueue(
+            nitroQueue.tracks,
+            nitroQueue.startIndex,
+        );
+        await this.syncBackendRepeatMode();
+        const startIndex = nitroQueue.startIndex;
+        const lookaheadTracks =
+            nitroQueue.tracks.slice(startIndex + 1, startIndex + 6);
+        this.resolveNitroQueuedTracks(lookaheadTracks)
+            .catch(error => {
+                errorLog(
+                    "Nitro 预解析下一首失败",
+                    error?.message ?? error,
+                );
+            });
         PersistStatus.set("music.musicItem", track as IMusic.IMusicItem);
         PersistStatus.set("music.progress", initialProgress);
-        this.emit(TrackPlayerEvents.ProgressChanged, {
+        const currentProgress = setPlayerProgress({
             position: initialProgress,
             duration: Number(track.duration) || 0,
+            buffered: initialProgress,
         });
+        this.emit(TrackPlayerEvents.ProgressChanged, currentProgress);
         if (autoPlay) {
-            await ReactNativeTrackPlayer.play();
+            await this.backend.play();
+            if (nitroTargetKey) {
+                this.ensureNitroAutoPlay(nitroTargetKey).catch(error => {
+                    errorLog(
+                        "Nitro 自动播放补偿失败",
+                        error?.message ?? error,
+                    );
+                });
+            }
         }
         // [新增] 在开始播放后跳转到指定时间
         if (initialProgress > 0) {
@@ -939,16 +1201,14 @@ class TrackPlayer extends EventEmitter<{
     private mergeTrackSource(
         mediaItem: ICommon.IMediaBase,
         props: Record<string, any> | undefined,
-    ) {
-        const merged = props
-            ? {
-                ...mediaItem,
-                ...props,
-                id: mediaItem.id,
-                platform: mediaItem.platform,
-            }
-            : mediaItem;
-        merged.userAgent = getAppUserAgent(); // <--- 确保UA
+    ): ICommon.IMediaBase & Record<string, any> {
+        const merged = {
+            ...mediaItem,
+            ...(props ?? {}),
+            id: mediaItem.id,
+            platform: mediaItem.platform,
+        } as ICommon.IMediaBase & Record<string, any>;
+        merged.userAgent = merged.userAgent || getAppUserAgent();
         return merged;
     }
 
@@ -971,42 +1231,254 @@ class TrackPlayer extends EventEmitter<{
         });
     }
 
-    private getFakeNextTrack() {
-        let track: Track | undefined;
-        const repeatMode = this.repeatMode;
-        if (repeatMode === MusicRepeatMode.SINGLE) {
-            // 单曲循环
-            track = this.getPlayListMusicAt(this.currentIndex) as Track;
-        } else {
-            // 下一曲
-            track = this.getPlayListMusicAt(this.currentIndex + 1) as Track;
+    private getPlayQualityOrder() {
+        return getQualityOrder(
+            this.configService.getConfig("basic.defaultPlayQuality") ?? "standard",
+            this.configService.getConfig("basic.playQualityOrder") ?? "asc",
+        );
+    }
+
+    private createNitroQueuedTrack(musicItem: IMusic.IMusicItem) {
+        return this.patchMediaArtwork({
+            ...musicItem,
+            url: musicItem.url ?? "",
+            userAgent: getAppUserAgent(),
+            musicItem,
+        } as unknown as MusicFreePlayerTrack) as MusicFreePlayerTrack;
+    }
+
+    private async syncNitroQueueInsert(
+        musicItems: IMusic.IMusicItem[],
+        index?: number,
+    ) {
+        if (!this.backend.addQueueTracks || musicItems.length === 0) {
+            return;
+        }
+        await this.backend.addQueueTracks(
+            musicItems.map(item => this.createNitroQueuedTrack(item)),
+            index,
+        );
+    }
+
+    private async syncNitroQueueRemove(musicItem: IMusic.IMusicItem) {
+        if (!this.backend.removeQueueTrack) {
+            return;
+        }
+        await this.backend.removeQueueTrack(
+            this.createNitroQueuedTrack(musicItem),
+        );
+    }
+
+    private getNitroQueue(currentTrack: IMusic.IMusicItem) {
+        const fallbackTrack = this.patchMediaArtwork(
+            currentTrack as unknown as MusicFreePlayerTrack,
+        ) as MusicFreePlayerTrack;
+        if (this.playList.length === 0) {
+            return {
+                tracks: [fallbackTrack],
+                startIndex: 0,
+            };
         }
 
-        const appUA = getAppUserAgent();
+        const startIndex = Math.max(
+            0,
+            this.getMusicIndexInPlayList(currentTrack),
+        );
+        const currentKey = getMediaUniqueKey(currentTrack);
+        const tracks = this.playList.map(musicItem => {
+            if (getMediaUniqueKey(musicItem) === currentKey) {
+                return fallbackTrack;
+            }
+            return this.createNitroQueuedTrack(musicItem);
+        });
 
-        if (track) {
-            return produce(track, _ => {
-                _.url = TrackPlayer.fakeAudioUrl;
-                _.$ = internalFakeSoundKey;
-                _.userAgent = appUA;
-                _.artwork = resolveImportedAssetOrPath(ImgAsset.albumDefault) as unknown as any;
-            });
-        } else {
-            // 只有列表长度为0时才会出现的特殊情况
+        return {
+            tracks,
+            startIndex,
+        };
+    }
+
+    private resolveMusicFromAdapterTrack(
+        track?: Partial<IMusic.IMusicItem> | null,
+    ) {
+        if (!track?.platform || !track.id) {
+            return null;
+        }
+        const index = this.playListIndexMap.getIndex(
+            track as ICommon.IMediaBase,
+        );
+        return index >= 0 ? this.playList[index] : null;
+    }
+
+    private shouldIgnoreNitroTrackChange(evt: {
+        track?: Partial<IMusic.IMusicItem> | null;
+        index?: number;
+        reason?: unknown;
+    }) {
+        const guard = this.nitroTrackChangeGuard;
+        if (!guard) {
+            return false;
+        }
+        if (Date.now() > guard.until) {
+            this.nitroTrackChangeGuard = null;
+            return false;
+        }
+
+        const musicItem = this.resolveMusicFromAdapterTrack(evt.track);
+        const eventKey = musicItem ? getMediaUniqueKey(musicItem) : null;
+        if (eventKey === guard.key) {
+            return false;
+        }
+
+        trace("Nitro 队列切歌忽略", {
+            index: evt.index,
+            reason: evt.reason,
+            eventMusicId: musicItem?.id,
+            eventPlatform: musicItem?.platform,
+            expectedKey: guard.key,
+        });
+        return true;
+    }
+
+    private async resolveDirectMediaSource(
+        musicItem: IMusic.IMusicItem,
+    ): Promise<IPlugin.IMediaSourceResult | null> {
+        const plugin = this.pluginManagerService.getByName(musicItem.platform);
+        const qualityOrder = this.getPlayQualityOrder();
+
+        for (let quality of qualityOrder) {
+            const candidate =
+                (await plugin?.methods?.getMediaSource(
+                    musicItem,
+                    quality,
+                )) ?? null;
+            if (candidate?.url && !this.isUnsupportedEncryptedSource(candidate)) {
+                return candidate;
+            }
+        }
+
+        if (musicItem.source) {
+            for (let quality of qualityOrder) {
+                const legacyQuality = convertToLegacyQuality(quality);
+                const directSource =
+                    musicItem.source[quality] ??
+                    (legacyQuality ? musicItem.source[legacyQuality] : undefined);
+                if (
+                    directSource?.url &&
+                    !this.isUnsupportedEncryptedSource(directSource)
+                ) {
+                    return directSource;
+                }
+            }
+        }
+
+        if (musicItem.url) {
             return {
-                url: TrackPlayer.fakeAudioUrl,
-                $: internalFakeSoundKey,
-            } as Track;
+                url: musicItem.url,
+                ekey: musicItem.ekey,
+            };
+        }
+
+        return null;
+    }
+
+    private async resolveNitroQueuedTracks(
+        tracks: Array<Partial<IMusic.IMusicItem>>,
+    ) {
+        for (let track of tracks) {
+            const musicItem = this.resolveMusicFromAdapterTrack(track);
+            if (!musicItem) {
+                continue;
+            }
+
+            const key = getMediaUniqueKey(musicItem);
+            if (this.nitroPendingSourceRequests.has(key)) {
+                continue;
+            }
+
+            this.nitroPendingSourceRequests.add(key);
+            try {
+                const source = await this.resolveDirectMediaSource(musicItem);
+                if (!source?.url) {
+                    continue;
+                }
+                const updatedTrack = this.patchMediaArtwork(
+                    this.mergeTrackSource(
+                        musicItem,
+                        source,
+                    ) as unknown as MusicFreePlayerTrack,
+                );
+                if (updatedTrack) {
+                    trace("Nitro 预解析音源成功", {
+                        musicId: musicItem.id,
+                        platform: musicItem.platform,
+                        sourceUrl: source.url,
+                    });
+                    await this.backend.updateTrack(updatedTrack);
+                }
+            } catch (error: any) {
+                errorLog("Nitro 预解析音源失败", error?.message ?? error);
+            } finally {
+                this.nitroPendingSourceRequests.delete(key);
+            }
         }
     }
 
-
-    private async handlePlayFail() {
-        // 如果自动跳转下一曲, 500s后自动跳转
-        if (!this.configService.getConfig("basic.autoStopWhenError")) {
-            await delay(500);
-            await this.skipToNext();
+    private async prepareNitroTrackSource(musicItem: IMusic.IMusicItem) {
+        const source = await this.resolveDirectMediaSource(musicItem);
+        if (!source?.url) {
+            return null;
         }
+        const updatedTrack = this.patchMediaArtwork(
+            this.mergeTrackSource(
+                musicItem,
+                source,
+            ) as unknown as MusicFreePlayerTrack,
+        );
+        if (updatedTrack) {
+            await this.backend.updateTrack(updatedTrack);
+        }
+        return updatedTrack;
+    }
+
+    private syncNitroCurrentMusic(track?: Partial<IMusic.IMusicItem> | null) {
+        const musicItem = this.resolveMusicFromAdapterTrack(track);
+        if (!musicItem) {
+            return null;
+        }
+        const syncedMusic = track?.url
+            ? this.mergeTrackSource(musicItem, {
+                url: track.url,
+            }) as IMusic.IMusicItem
+            : musicItem;
+        this.setCurrentMusic(syncedMusic);
+        PersistStatus.set("music.musicItem", syncedMusic);
+        PersistStatus.set("music.progress", 0);
+        setPlayerProgress({
+            position: 0,
+            duration: Number(syncedMusic.duration) || 0,
+            buffered: 0,
+        });
+        return syncedMusic;
+    }
+
+    private getBackendRepeatMode(
+        mode: MusicRepeatMode = this.repeatMode,
+    ): PlayerAdapterRepeatMode {
+        if (mode === MusicRepeatMode.SINGLE) {
+            return "track";
+        }
+        return "queue";
+    }
+
+    private async syncBackendRepeatMode() {
+        await this.backend.setRepeatMode?.(
+            this.getBackendRepeatMode(),
+        );
+    }
+
+    private handlePlayFail() {
+        trace("Nitro 播放失败，不执行 JS 自动下一曲");
     }
 
     /**
@@ -1075,7 +1547,7 @@ class TrackPlayer extends EventEmitter<{
     }
 
 
-    private patchMediaArtwork(track: Track) {
+    private patchMediaArtwork(track: MusicFreePlayerTrack) {
         // Bug: React native track player 在设置音频时，artwork不能为null，并且部分情况下artwork不能为ImageSource类型
         if (!track) {
             return null;
@@ -1095,11 +1567,46 @@ export const useCurrentMusic = () => useAtomValue(currentMusicAtom);
 export const useRepeatMode = () => useAtomValue(repeatModeAtom);
 export const useMusicQuality = () => useAtomValue(qualityAtom);
 export function useMusicState() {
-    const playbackState = usePlaybackState();
+    const musicState = useAtomValue(musicStateAtom);
 
-    return playbackState.state;
+    useEffect(() => {
+        let cancelled = false;
+        trackPlayer.playerAdapter.getState().then(state => {
+            if (!cancelled) {
+                getDefaultStore().set(musicStateAtom, state);
+            }
+        }).catch(() => undefined);
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    return musicState;
 }
-export { State as MusicState, useProgress };
+
+export function useProgress(_updateInterval?: number) {
+    const progress = useAtomValue(progressAtom);
+
+    useEffect(() => {
+        let cancelled = false;
+        trackPlayer.getProgress().then(currentProgress => {
+            if (!cancelled) {
+                setPlayerProgress(
+                    currentProgress,
+                    trackPlayer.currentMusic?.duration ?? 0,
+                );
+            }
+        }).catch(() => undefined);
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    return progress;
+}
+export type { PlayerBackendState as MusicState };
 
 enum PlayFailReason {
     /** 禁止移动网络播放 */

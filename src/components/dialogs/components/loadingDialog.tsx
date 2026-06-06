@@ -28,7 +28,11 @@ export default function LoadingDialog(props: ILoadingDialogProps) {
                 onResolve?.(data, hideDialog);
             })
             .catch(e => {
-                onReject?.(e, hideDialog);
+                if (onReject) {
+                    onReject(e, hideDialog);
+                } else {
+                    hideDialog();
+                }
             });
     }, []);
 

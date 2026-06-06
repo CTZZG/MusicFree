@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.DisplayMetrics
@@ -28,8 +30,39 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod
     fun exitApp() {
+        stopMusicFreePlaybackServices()
         val activity = reactContext.currentActivity
-        activity?.finishAndRemoveTask()
+        if (activity != null) {
+            activity.runOnUiThread {
+                try {
+                    activity.finishAndRemoveTask()
+                } catch (_: Throwable) {
+                    activity.finishAffinity()
+                }
+                Handler(Looper.getMainLooper()).postDelayed({
+                    killCurrentProcess()
+                }, 80)
+            }
+            return
+        }
+        killCurrentProcess()
+    }
+
+    private fun stopMusicFreePlaybackServices() {
+        val serviceClassNames = listOf(
+            "com.margelo.nitro.nitroplayer.media.NitroPlayerPlaybackService"
+        )
+        serviceClassNames.forEach { className ->
+            try {
+                val serviceClass = Class.forName(className)
+                reactContext.stopService(Intent(reactContext, serviceClass))
+            } catch (_: Throwable) {
+                // Best effort: process kill below is the hard stop.
+            }
+        }
+    }
+
+    private fun killCurrentProcess() {
         android.os.Process.killProcess(android.os.Process.myPid())
         exitProcess(0)
     }

@@ -1,4 +1,7 @@
-import type { Progress } from "react-native-track-player";
+import type {
+    PlayerAdapter,
+    PlayerAdapterProgress,
+} from "@/core/playerAdapter";
 import type { MusicRepeatMode } from "@/constants/trackPlayerConst";
 import { IInjectable } from "@/types/infra";
 import type EventEmitter from "eventemitter3";
@@ -31,6 +34,11 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
      * 当前播放模式
      */
     readonly repeatMode: MusicRepeatMode;
+
+    /**
+     * 当前底层播放器适配器
+     */
+    readonly playerAdapter: PlayerAdapter<any>;
 
     /**
      * 当前播放音质
@@ -171,7 +179,7 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
      * 获取当前播放进度
      * @returns 包含播放位置和总时长的对象
      */
-    getProgress(): Promise<Progress>;
+    getProgress(): Promise<PlayerAdapterProgress>;
 
     /**
      * 获取当前播放速率

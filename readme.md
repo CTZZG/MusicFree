@@ -17,6 +17,44 @@
 
 一个插件化、定制化、无广告的免费音乐播放器，目前只支持 Android 和 Harmony OS。
 
+## 本分支说明：Nitro 重构版
+
+本仓库是基于上游初始项目 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，不代表上游官方发布。当前封存版本为 `0.6.4-nitro.1`，主要目标是把 Android 播放底座从 RNTP 收敛到 [react-native-nitro-player](https://github.com/riteshshukla04/react-native-nitro-player)，并补齐 MusicFree 对 ALAC、WMA/ASF、DSF 等格式的播放能力。
+
+### 与上游初始项目的主要区别
+
+| 方向 | 上游初始项目 | 本分支 Nitro 重构版 |
+| --- | --- | --- |
+| 播放器底座 | 以 `react-native-track-player` 路线为基础 | 已移除 RNTP 依赖和 RNTP v4 adapter，MusicFree 业务层保留 `TrackPlayer` facade，但底层固定桥接 Nitro Player |
+| 原生播放内核 | 依赖原有 RNTP/ExoPlayer 集成 | 使用 Nitro Player + Android Media3 + MediaSession，通知栏、蓝牙和系统媒体键走原生 MediaSession |
+| 格式扩展 | 主要覆盖常见 Android/Media3 可播格式 | 引入自定义 Media3 FFmpeg decoder AAR，并注册 MusicFree 专用 extractor/source factory |
+| M4A/ALAC | 普通 M4A/AAC 依赖平台/Media3 路径，ALAC 不是专项目标 | ALAC 通过 FFmpeg 扩展支持，已用 FFmpeg `snoop_try.m4a` 本地与 HTTP 样本验证 |
+| WMA/ASF | 非默认目标格式 | 自写 ASF/WMA header parser、packet parser、payload assembler 和 extractor，WMA v2/ASF 默认启用，保留 `-PmusicfreeEnableWmaExtractor=false` 回滚开关 |
+| DSF | 非默认目标格式 | 自写 DSF extractor，并通过 legacy FFmpeg4 native base + Media3 JNI wrapper 接入 DSD 解码，真机可听、seek 和强停恢复已验证 |
+| Nitro API 对齐 | 不适用 | Nitro `TrackPlayer` 与 `PlayerQueue` 核心操作已映射到 MusicFree `PlayerAdapter`；DownloadManager、Equalizer、AudioDevices、AndroidAutoMediaLibrary 等非核心模块暂登记为后续优化项 |
+| 升级边界 | 无本分支扩展边界 | MusicFree 自定义 native 扩展集中在 `com.margelo.nitro.nitroplayer.musicfree` 命名空间，并由 Round20 审计脚本守护，便于未来升级 Nitro Player 时复核 |
+| 诊断和验收 | 常规项目文档 | 增加 Round20 文档和审计脚本，覆盖 RNTP 移除、Nitro operation 映射、Media3/FFmpeg 扩展、格式样本矩阵和升级边界 |
+| 退出应用 | 原退出偏向返回桌面/软退出语义 | 菜单“退出应用”和定时关闭统一为硬退出：先 best-effort reset 播放器，再结束 Activity/task，最后 kill 当前进程 |
+
+### 当前已验证的范围
+
+- RNTP 已从依赖、patch、adapter 和 service 分流中移除，当前 Android 播放后端为 Nitro-only。
+- WMA HTTP、ASF HTTP、ALAC HTTP 均达到 `PLAYING` 且 `error=null`。
+- DSF 真机样本已验证可听，pause/play、fast-forward/seek 类动作和强停重开路径通过。
+- 通知栏、蓝牙、详情页、歌词页、长时间播放和系统媒体键基础路径已通过 Round20 Gate 记录。
+- `npm run audit:round20-static`、`npm run audit:round20-native` 和 release APK 真机构建/安装 smoke 已通过。
+
+### 已知边界
+
+- WMA Pro、WMA Lossless、WMA Voice 仍缺样本覆盖；当前可宣称的是 WMA v2/ASF 基础链路。
+- Nitro 原始 Media3 error payload 暂未 fork spec/codegen 暴露到 JS；native logcat 已记录 Media3 error code/name/message/cause。
+- Nitro DownloadManager、Equalizer、AudioDevices、AndroidAutoMediaLibrary 尚未产品化接入 MusicFree，后续可作为独立优化项推进。
+- 普通 M4A/AAC、MP3、FLAC、OGG/Opus 属于发布前 smoke 补强项，不是 ALAC/WMA/DSF 本轮目标的阻塞项。
+
+### 构建与发布
+
+本分支保留 GitHub Actions Android release workflow：`.github/workflows/android-build.yml`。它可以通过手动 `workflow_dispatch` 或推送 `v*` tag 构建 release APK，并把产物上传到 GitHub Release。若要生成签名包，需要在仓库 Secrets 中配置 `ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS` 和 `ANDROID_RELEASE_KEY_PASSWORD`；缺少这些 Secrets 时 workflow 仍可构建，但会按 Gradle 当前签名配置生成未签名或本地配置签名的 release 产物。
+
 > **桌面版来啦：<https://github.com/maotoumao/MusicFreeDesktop>**
 
 如果需要了解后续进展可以关注公众号↓；如果有问题可以在 issue 区或者公众号直接留言反馈。

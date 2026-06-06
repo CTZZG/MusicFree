@@ -12,8 +12,6 @@ export const musicHistorySheetId = "history-music-sheet";
 export const localPluginPlatform = "本地";
 export const localPluginHash = "local-plugin-hash";
 
-export const internalFakeSoundKey = "fake-key";
-
 const emptyFunction = () => {};
 Object.freeze(emptyFunction);
 export { emptyFunction };
@@ -59,8 +57,8 @@ export const supportLocalMediaType = [
     ".aac",
     ".ape",
     ".opus",
+    ".asf",
     ".dsf",
-    ".dff",
 ];
 
 const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);

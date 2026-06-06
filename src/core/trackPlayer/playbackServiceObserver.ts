@@ -1,7 +1,7 @@
 import TrackPlayer from "@/core/trackPlayer";
 import PluginManager from "@/core/pluginManager";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
-import RNTrackPlayer, { Event, State } from "react-native-track-player";
+import { normalizeMusicState } from "@/utils/trackUtils";
 
 let previousMusicItem: IMusic.IMusicItem | null = null;
 let lastProgressTime = 0;
@@ -21,7 +21,7 @@ function setupPlaybackObserver() {
     });
 
     // 监听播放/暂停/停止状态
-    RNTrackPlayer.addEventListener(Event.PlaybackState, ({ state }) => {
+    TrackPlayer.playerAdapter.addEventListener("playbackStateChanged", state => {
         const musicItem = TrackPlayer.currentMusic;
         if (!musicItem || !musicItem.platform) return;
 
@@ -29,9 +29,10 @@ function setupPlaybackObserver() {
         if (!plugin?.instance.onPlaybackStateChange) return;
 
         let eventType: "play" | "pause" | "stop" | null = null;
-        if (state === State.Playing) eventType = "play";
-        else if (state === State.Paused) eventType = "pause";
-        else if (state === State.Stopped || state === State.None) eventType = "stop";
+        const normalizedState = normalizeMusicState(state);
+        if (normalizedState === "playing") eventType = "play";
+        else if (normalizedState === "paused") eventType = "pause";
+        else if (normalizedState === "stopped" || normalizedState === "idle") eventType = "stop";
 
         if (eventType) {
             plugin.instance.onPlaybackStateChange({
@@ -42,7 +43,7 @@ function setupPlaybackObserver() {
     });
 
     // 监听进度更新
-    RNTrackPlayer.addEventListener(Event.PlaybackProgressUpdated, (progress) => {
+    TrackPlayer.playerAdapter.addEventListener("progress", (progress) => {
         const now = Date.now();
         if (now - lastProgressTime < PROGRESS_THROTTLE_MS) {
             return;

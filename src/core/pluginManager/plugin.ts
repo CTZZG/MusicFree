@@ -7,7 +7,7 @@ import pathConst from "@/constants/pathConst";
 import Mp3Util from "@/native/mp3Util";
 import Base64 from "@/utils/base64";
 import delay from "@/utils/delay";
-import { addFileScheme, getFileName } from "@/utils/fileUtils";
+import { addFileScheme, getFileName, removeFileScheme } from "@/utils/fileUtils";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
 import { getLocalPath, isSameMediaItem, resetMediaItem } from "@/utils/mediaUtils";
 import notImplementedFunction from "@/utils/notImplementedFunction.ts";
@@ -217,6 +217,52 @@ function formatAuthUrl(url: string) {
     };
 }
 
+function normalizeLocalFilePath(localPath: string) {
+    if (isRemoteMediaUrl(localPath)) {
+        return localPath;
+    }
+    const filePath = removeFileScheme(localPath);
+    try {
+        return decodeURI(filePath);
+    } catch {
+        return filePath;
+    }
+}
+
+function isRemoteMediaUrl(urlLike?: string | null) {
+    return typeof urlLike === "string" && /^https?:\/\//i.test(urlLike);
+}
+
+function getRemoteMediaTitle(urlLike: string) {
+    const pathWithoutQuery = urlLike.split(/[?#]/)[0];
+    const fileName = getFileName(pathWithoutQuery);
+    return fileName || urlLike;
+}
+
+const localMetadataUnsafeExtensions = new Set([
+    ".ape",
+    ".asf",
+    ".dff",
+    ".dsf",
+    ".wma",
+]);
+
+function getLowerFileExtension(filePath: string) {
+    const pathWithoutQuery = filePath.split("?")[0];
+    const slashIndex = Math.max(
+        pathWithoutQuery.lastIndexOf("/"),
+        pathWithoutQuery.lastIndexOf("\\"),
+    );
+    const dotIndex = pathWithoutQuery.lastIndexOf(".");
+    return dotIndex > slashIndex
+        ? pathWithoutQuery.slice(dotIndex).toLowerCase()
+        : "";
+}
+
+function shouldReadLocalSystemMetadata(filePath: string) {
+    return !localMetadataUnsafeExtensions.has(getLowerFileExtension(filePath));
+}
+
 function normalizeResultItem<T extends Partial<IMusic.IMusicItem>>(item: T) {
     Object.assign(item, normalizePluginMusicItem(item));
     return item;
@@ -344,17 +390,40 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         // 1. 本地搜索 其实直接读mediameta就好了
         const localPathInMediaExtra = getMediaExtraProperty(musicItem, "localPath");
         const localPath = getLocalPath(musicItem);
-        if (localPath && (localPath.startsWith("content://") || await exists(localPath))) {
-            trace("本地播放", localPath);
-            if (localPathInMediaExtra !== localPath) {
+        const remoteMediaUrl =
+            isRemoteMediaUrl(localPath)
+                ? localPath
+                : musicItem.platform === localPluginPlatform &&
+                    isRemoteMediaUrl(musicItem.url)
+                    ? musicItem.url
+                    : null;
+        if (remoteMediaUrl) {
+            trace("网络音频播放", remoteMediaUrl);
+            return {
+                url: remoteMediaUrl,
+            };
+        }
+        const normalizedLocalPath =
+            localPath && !localPath.startsWith("content://")
+                ? normalizeLocalFilePath(localPath)
+                : localPath;
+        if (
+            normalizedLocalPath &&
+            (
+                normalizedLocalPath.startsWith("content://") ||
+                await exists(normalizedLocalPath)
+            )
+        ) {
+            trace("本地播放", normalizedLocalPath);
+            if (localPathInMediaExtra !== normalizedLocalPath) {
                 // 修正一下本地数据
                 patchMediaExtra(musicItem, {
-                    localPath,
+                    localPath: normalizedLocalPath,
                 });
 
             }
             return {
-                url: addFileScheme(localPath),
+                url: addFileScheme(normalizedLocalPath),
             };
         } else if (localPathInMediaExtra) {
             patchMediaExtra(musicItem, {
@@ -1310,8 +1379,16 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
     platform: localPluginPlatform,
     async getMusicInfo(musicBase) {
         const localPath = getLocalPath(musicBase);
-        if (localPath) {
-            const coverImg = await Mp3Util.getMediaCoverImg(localPath);
+        if (localPath && !isRemoteMediaUrl(localPath)) {
+            const normalizedLocalPath = normalizeLocalFilePath(localPath);
+            if (!shouldReadLocalSystemMetadata(normalizedLocalPath)) {
+                return {
+                    artwork: "",
+                };
+            }
+            const coverImg = await Mp3Util.getMediaCoverImg(
+                normalizedLocalPath,
+            );
             return {
                 artwork: coverImg,
             };
@@ -1321,17 +1398,18 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
     async getLyric(musicBase) {
         const localPath = getLocalPath(musicBase);
         let rawLrc: string | null = null;
-        if (localPath) {
+        if (localPath && !isRemoteMediaUrl(localPath)) {
+            const normalizedLocalPath = normalizeLocalFilePath(localPath);
             // 读取内嵌歌词
             try {
-                rawLrc = await Mp3Util.getLyric(localPath);
+                rawLrc = await Mp3Util.getLyric(normalizedLocalPath);
             } catch (e) {
                 console.log("读取内嵌歌词失败", e);
             }
             if (!rawLrc) {
                 // 读取配置歌词
-                const lastDot = localPath.lastIndexOf(".");
-                const lrcPath = localPath.slice(0, lastDot) + ".lrc";
+                const lastDot = normalizedLocalPath.lastIndexOf(".");
+                const lrcPath = normalizedLocalPath.slice(0, lastDot) + ".lrc";
 
                 try {
                     if (await exists(lrcPath)) {
@@ -1348,18 +1426,50 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
             : null;
     },
     async importMusicItem(urlLike) { // 绝对路径
+        if (isRemoteMediaUrl(urlLike)) {
+            const remoteUrl = urlLike;
+            const id = CryptoJs.MD5(remoteUrl).toString(CryptoJs.enc.Hex) || nanoid();
+            return {
+                id,
+                platform: localPluginPlatform,
+                title: getRemoteMediaTitle(remoteUrl),
+                artist: "未知歌手",
+                duration: 0,
+                album: "未知专辑",
+                artwork: "",
+                url: remoteUrl,
+            };
+        }
+
+        const localPath = urlLike.startsWith("content://")
+            ? urlLike
+            : normalizeLocalFilePath(urlLike);
         let meta: any = {};
         let id: string;
 
+        if (shouldReadLocalSystemMetadata(localPath)) {
+            try {
+                meta = await Mp3Util.getBasicMeta(localPath);
+            } catch (e: any) {
+                trace("本地音乐元信息读取失败", {
+                    localPath,
+                    message: e?.message ?? String(e),
+                });
+            }
+        } else {
+            trace("本地音乐跳过系统元信息读取", localPath);
+        }
+
         try {
-            meta = await Mp3Util.getBasicMeta(urlLike);
-            const fileStat = await stat(urlLike);
+            const fileStat = await stat(localPath);
             id =
-                CryptoJs.MD5(fileStat.originalFilepath).toString(
+                CryptoJs.MD5(
+                    fileStat.originalFilepath ?? fileStat.path ?? localPath,
+                ).toString(
                     CryptoJs.enc.Hex,
                 ) || nanoid();
         } catch (e) {
-            id = CryptoJs.MD5(urlLike).toString(
+            id = CryptoJs.MD5(localPath).toString(
                 CryptoJs.enc.Hex,
             ) || nanoid();
         }
@@ -1367,20 +1477,25 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
         return {
             id: id,
             platform: localPluginPlatform,
-            title: meta?.title ?? getFileName(urlLike),
+            title: meta?.title ?? getFileName(localPath),
             artist: meta?.artist ?? "未知歌手",
             duration: parseInt(meta?.duration ?? "0", 10) / 1000,
             album: meta?.album ?? "未知专辑",
             artwork: "",
             [internalSerializeKey]: {
-                localPath: urlLike,
+                localPath,
             },
-            url: urlLike,
+            url: localPath,
         };
     },
     async getMediaSource(musicItem) {
+        const localPath = musicItem.$?.localPath || musicItem.url;
         return {
-            url: addFileScheme(musicItem.$?.localPath || musicItem.url),
+            url: localPath
+                ? localPath.startsWith("content://") || isRemoteMediaUrl(localPath)
+                    ? localPath
+                    : addFileScheme(normalizeLocalFilePath(localPath))
+                : undefined,
         };
     },
 

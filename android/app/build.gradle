@@ -122,10 +122,6 @@ static def getVersion() {
 def appVersion = getVersion()
 def appVersionCode = 400012
 
-configurations.all {
-    exclude group: 'com.github.CTZZG.jellyfin-androidx-media', module: 'exoplayer-ffmpeg-extension'
-}
-
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -201,5 +197,5 @@ dependencies {
     implementation 'androidx.core:core-splashscreen:1.0.0'
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
 
-    api(name: 'exoplayer-ffmpeg-extension-v2.19.1', ext: 'aar')
+    logger.lifecycle("[MusicFree] Nitro Media3 FFmpeg is the only packaged audio extension path.")
 }

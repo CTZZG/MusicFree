@@ -7,9 +7,8 @@ import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import { useI18N } from "@/core/i18n";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import TrackPlayer from "@/core/trackPlayer";
 import { checkUpdateAndShowResult } from "@/hooks/useCheckUpdate.ts";
-import NativeUtils from "@/native/utils";
+import forceExitApp from "@/utils/forceExitApp";
 import rpx from "@/utils/rpx";
 import { useScheduleCloseCountDown } from "@/utils/scheduleClose";
 import timeformat from "@/utils/timeformat";
@@ -209,9 +208,8 @@ function HomeDrawer(props: any) {
                 </ListItem>
                 <ListItem
                     withHorizontalPadding
-                    onPress={async () => {
-                        await TrackPlayer.reset();
-                        NativeUtils.exitApp();
+                    onPress={() => {
+                        forceExitApp();
                     }}>
                     <ListItem.ListItemIcon
                         icon={"power-outline"}

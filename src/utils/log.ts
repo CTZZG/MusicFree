@@ -26,6 +26,8 @@ const traceConfig = {
 
 const log = logger.createLogger(config);
 const traceLogger = logger.createLogger(traceConfig);
+const forceTraceLog =
+    process.env.EXPO_PUBLIC_MUSICFREE_PLAYER_BACKEND === "nitro-player";
 
 export function trace(
     desc: string,
@@ -36,7 +38,7 @@ export function trace(
         console.log(desc, message);
     }
     // 特殊情况记录操作路径
-    if (Config.getConfig("debug.traceLog")) {
+    if (forceTraceLog || Config.getConfig("debug.traceLog")) {
         traceLogger[level]({
             desc,
             message,
