@@ -111,12 +111,15 @@ class TrackPlayer extends EventEmitter<{
     private backend: PlayerAdapter<any> = nitroPlayerAdapter;
     private nitroPendingSourceRequests = new Set<string>();
     private nitroTrackChangeGuard: { key: string; until: number } | null = null;
+    private lastProgressPersistedAt = 0;
+    private lastProgressPersistedPosition = 0;
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
 
 
     private static maxMusicQueueLength = 10000;
     private static halfMaxMusicQueueLength = 5000;
+    private static progressPersistIntervalMs = 1000;
     private static toggleRepeatMapping = {
         [MusicRepeatMode.SHUFFLE]: MusicRepeatMode.SINGLE,
         [MusicRepeatMode.SINGLE]: MusicRepeatMode.QUEUE,
@@ -253,6 +256,7 @@ class TrackPlayer extends EventEmitter<{
                     }
                     const syncedMusic = this.syncNitroCurrentMusic(
                         evt.track,
+                        evt.reason,
                     );
                     trace("Nitro 队列切歌", {
                         index: evt.index,
@@ -306,14 +310,44 @@ class TrackPlayer extends EventEmitter<{
             );
 
             this.backend.addEventListener("playbackStateChanged", state => {
+                const normalizedState = normalizeMusicState(state);
                 getDefaultStore().set(
                     musicStateAtom,
-                    normalizeMusicState(state),
+                    normalizedState,
                 );
+                if (normalizedState === "paused") {
+                    this.backend.getProgress()
+                        .then(progress => {
+                            const currentProgress = setPlayerProgress(
+                                progress,
+                                this.currentMusic?.duration ?? 0,
+                            );
+                            this.persistPlaybackProgress(
+                                currentProgress.position,
+                                true,
+                            );
+                        })
+                        .catch(() => undefined);
+                }
             });
 
             this.backend.addEventListener("progress", progress => {
-                setPlayerProgress(progress, this.currentMusic?.duration ?? 0);
+                const currentProgress = setPlayerProgress(
+                    progress,
+                    this.currentMusic?.duration ?? 0,
+                );
+                this.persistPlaybackProgress(currentProgress.position);
+            });
+
+            this.backend.addEventListener("playbackSeeked", progress => {
+                const currentProgress = setPlayerProgress(
+                    progress,
+                    this.currentMusic?.duration ?? 0,
+                );
+                this.persistPlaybackProgress(
+                    currentProgress.position,
+                    true,
+                );
             });
 
             this.serviceInited = true;
@@ -548,12 +582,12 @@ class TrackPlayer extends EventEmitter<{
                 });
             }
             if (shouldUseCurrentFastPath) {
-                // 获取底层播放器中的track
-                trace("TrackPlayer.play current branch getTrack start", {
+                // 获取底层播放器中的当前 track
+                trace("TrackPlayer.play current branch getActiveTrack start", {
                     backend: this.backend.name,
                 });
-                const currentTrack = await this.backend.getTrack?.(0);
-                trace("TrackPlayer.play current branch getTrack end", {
+                const currentTrack = await this.backend.getActiveTrack?.();
+                trace("TrackPlayer.play current branch getActiveTrack end", {
                     hasTrack: !!currentTrack,
                     trackUrl: currentTrack?.url,
                     trackId: currentTrack?.id,
@@ -567,17 +601,22 @@ class TrackPlayer extends EventEmitter<{
                         currentTrack as IMusic.IMusicItem,
                     )
                 ) {
-                    const currentActiveIndex =
-                        await this.backend.getActiveTrackIndex?.();
-                    if (currentActiveIndex !== 0) {
-                        await this.backend.skipToIndex(0);
-                    }
                     if (forcePlay) {
                         // 2.1.1 强制重新开始
                         await this.seekTo(0);
+                    } else if (seekToTime) {
+                        const currentProgress =
+                            await this.backend.getProgress()
+                                .catch(() => null);
+                        if (
+                            !currentProgress ||
+                            currentProgress.position < 1
+                        ) {
+                            await this.seekTo(seekToTime);
+                        }
                     }
                     const currentState = await this.backend.getState();
-                    if (currentState === "stopped") {
+                    if (currentState === "stopped" || currentState === "idle") {
                         await this.setTrackSource(currentTrack, true, seekToTime);
                     }
                     if (currentState !== "playing") {
@@ -1038,6 +1077,35 @@ class TrackPlayer extends EventEmitter<{
             : undefined;
     }
 
+    private persistPlaybackProgress(progress?: number | null, force = false) {
+        if (!this.currentMusic) {
+            return;
+        }
+        const normalizedProgress =
+            typeof progress === "number" && Number.isFinite(progress) && progress >= 0
+                ? progress
+                : undefined;
+        if (normalizedProgress === undefined) {
+            return;
+        }
+        if (!force && normalizedProgress <= 0) {
+            return;
+        }
+
+        const now = Date.now();
+        if (
+            !force &&
+            now - this.lastProgressPersistedAt < TrackPlayer.progressPersistIntervalMs &&
+            Math.abs(normalizedProgress - this.lastProgressPersistedPosition) < 1
+        ) {
+            return;
+        }
+
+        this.lastProgressPersistedAt = now;
+        this.lastProgressPersistedPosition = normalizedProgress;
+        PersistStatus.set("music.progress", normalizedProgress);
+    }
+
     private async ensureNitroAutoPlay(targetKey: string) {
         const retryDelays = [180, 520, 1100];
         for (let retryDelay of retryDelays) {
@@ -1140,6 +1208,11 @@ class TrackPlayer extends EventEmitter<{
             buffered: initialProgress,
         });
         this.emit(TrackPlayerEvents.ProgressChanged, currentProgress);
+        // 先恢复位置再播放，避免重启恢复时短暂从 0 秒出声。
+        if (initialProgress > 0) {
+            await delay(100);
+            await this.seekTo(initialProgress);
+        }
         if (autoPlay) {
             await this.backend.play();
             if (nitroTargetKey) {
@@ -1150,12 +1223,6 @@ class TrackPlayer extends EventEmitter<{
                     );
                 });
             }
-        }
-        // [新增] 在开始播放后跳转到指定时间
-        if (initialProgress > 0) {
-            // 增加一个短暂延迟，确保播放器准备好接收 seek 命令
-            await delay(100);
-            await this.seekTo(initialProgress);
         }
     }
 
@@ -1441,7 +1508,10 @@ class TrackPlayer extends EventEmitter<{
         return updatedTrack;
     }
 
-    private syncNitroCurrentMusic(track?: Partial<IMusic.IMusicItem> | null) {
+    private syncNitroCurrentMusic(
+        track?: Partial<IMusic.IMusicItem> | null,
+        reason?: unknown,
+    ) {
         const musicItem = this.resolveMusicFromAdapterTrack(track);
         if (!musicItem) {
             return null;
@@ -1451,14 +1521,19 @@ class TrackPlayer extends EventEmitter<{
                 url: track.url,
             }) as IMusic.IMusicItem
             : musicItem;
+        const shouldResetProgress =
+            !isSameMediaItem(this.currentMusic, syncedMusic) ||
+            reason === "repeat";
         this.setCurrentMusic(syncedMusic);
         PersistStatus.set("music.musicItem", syncedMusic);
-        PersistStatus.set("music.progress", 0);
-        setPlayerProgress({
-            position: 0,
-            duration: Number(syncedMusic.duration) || 0,
-            buffered: 0,
-        });
+        if (shouldResetProgress) {
+            PersistStatus.set("music.progress", 0);
+            setPlayerProgress({
+                position: 0,
+                duration: Number(syncedMusic.duration) || 0,
+                buffered: 0,
+            });
+        }
         return syncedMusic;
     }
 
