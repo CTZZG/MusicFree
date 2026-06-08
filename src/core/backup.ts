@@ -4,6 +4,7 @@ import { compare } from "compare-versions";
 import PluginManager from "./pluginManager";
 import MusicSheet from "@/core/musicSheet";
 import { ResumeMode } from "@/constants/commonConst.ts";
+import LocalMusicSheet from "@/core/localMusicSheet";
 
 /**
  * 结果：一份大的json文件
@@ -15,11 +16,15 @@ import { ResumeMode } from "@/constants/commonConst.ts";
 
 interface IBackJson {
     musicSheets: IMusic.IMusicSheetItem[];
+    localMusicSheet?: IMusic.IMusicItem[];
+    starredMusicSheets?: IMusic.IMusicSheetItem[];
     plugins: Array<{ srcUrl: string; version: string }>;
 }
 
 function backup() {
     const musicSheets = MusicSheet.backupSheets();
+    const localMusicSheet = LocalMusicSheet.getMusicList();
+    const starredMusicSheets = MusicSheet.getStarredSheets();
     const plugins = PluginManager.getEnabledPlugins();
     const normalizedPlugins = plugins.map(_ => ({
         srcUrl: _.instance.srcUrl,
@@ -28,6 +33,8 @@ function backup() {
 
     return JSON.stringify({
         musicSheets: musicSheets,
+        localMusicSheet: localMusicSheet,
+        starredMusicSheets: starredMusicSheets,
         plugins: normalizedPlugins,
     });
 }
@@ -43,7 +50,8 @@ async function resume(
         obj = raw as IBackJson;
     }
 
-    const { plugins, musicSheets } = obj ?? {};
+    const { plugins, musicSheets, localMusicSheet, starredMusicSheets } =
+        obj ?? {};
     /** 恢复插件 */
     const validPlugins = PluginManager.getEnabledPlugins();
     const resumePlugins = plugins?.map(_ => {
@@ -66,8 +74,17 @@ async function resume(
 
     /** 恢复歌单 */
     const resumeMusicSheets = MusicSheet.resumeSheets(musicSheets, resumeMode);
+    const resumeLocalMusicSheet =
+        LocalMusicSheet.resumeMusicList(localMusicSheet);
+    const resumeStarredMusicSheets =
+        MusicSheet.resumeStarredMusicSheets(starredMusicSheets);
 
-    return Promise.all([...(resumePlugins ?? []), resumeMusicSheets]);
+    return Promise.all([
+        ...(resumePlugins ?? []),
+        resumeMusicSheets,
+        resumeLocalMusicSheet,
+        resumeStarredMusicSheets,
+    ]);
 }
 
 const Backup = {

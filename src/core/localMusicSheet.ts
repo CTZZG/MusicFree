@@ -104,10 +104,20 @@ export async function removeMusic(
 }
 
 function parseFilename(fn: string): Partial<IMusic.IMusicItem> | null {
-    const data = fn.slice(0, fn.lastIndexOf(".")).split("@");
+    const dotIndex = fn.lastIndexOf(".");
+    const basename = dotIndex > 0 ? fn.slice(0, dotIndex) : fn;
+    const data = basename.split("@");
     const [platform, id, title, artist] = data;
     if (!platform || !id) {
-        return null;
+        const displayName = basename.trim();
+        const displayNameMatch = displayName.match(/^(.+?)\s+-\s+(.+)$/);
+        if (!displayNameMatch) {
+            return null;
+        }
+        return {
+            title: displayNameMatch[1].trim(),
+            artist: displayNameMatch[2].trim(),
+        };
     }
     return {
         id,
@@ -317,6 +327,25 @@ async function updateMusicList(newSheet: IMusic.IMusicItem[]) {
     } catch {}
 }
 
+async function resumeMusicList(musicItems?: IMusic.IMusicItem[]) {
+    if (!Array.isArray(musicItems) || !musicItems.length) {
+        return;
+    }
+
+    const validMusicItems: IMusic.IMusicItem[] = [];
+    for (let musicItem of musicItems) {
+        const localPath = getLocalPath(musicItem);
+        const fsPath = localPath ? normalizeFsPath(localPath) : null;
+        if (fsPath && (await exists(fsPath))) {
+            validMusicItems.push(musicItem);
+        }
+    }
+
+    if (validMusicItems.length) {
+        await addMusic(validMusicItems);
+    }
+}
+
 const LocalMusicSheet = {
     setup,
     addMusic,
@@ -330,6 +359,7 @@ const LocalMusicSheet = {
     getMusicList,
     useMusicList: localSheetStateMapper.useMappedState,
     updateMusicList,
+    resumeMusicList,
 };
 
 export default LocalMusicSheet;

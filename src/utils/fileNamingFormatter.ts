@@ -5,11 +5,11 @@ import {escapeCharacter} from './fileUtils';
  */
 const PRESET_TEMPLATES: Record<IFileNaming.IPresetTemplate, string> = {
     歌曲名: '{title}',
-    '歌曲名-歌手': '{title}-{artist}',
-    '歌手-歌曲名': '{artist}-{title}',
-    '歌曲名-歌手-音质': '{title}-{artist}-{quality}',
-    '歌曲名-歌手-专辑': '{title}-{artist}-{album}',
-    '歌手-专辑-歌曲名': '{artist}-{album}-{title}',
+    '歌曲名-歌手': '{title} - {artist}',
+    '歌手-歌曲名': '{artist} - {title}',
+    '歌曲名-歌手-音质': '{title} - {artist} - {quality}',
+    '歌曲名-歌手-专辑': '{title} - {artist} - {album}',
+    '歌手-专辑-歌曲名': '{artist} - {album} - {title}',
 };
 
 /**
@@ -98,8 +98,11 @@ function replaceTemplateVariables(
         }
     });
 
-    // 清理多余的连字符
-    result = result.replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+    // 清理多余的连字符和空白，避免可选字段为空时留下尾随分隔符。
+    result = result
+        .replace(/\s*-\s*/g, ' - ')
+        .replace(/(?:^\s*-\s*|\s*-\s*$)/g, '')
+        .trim();
 
     return result;
 }

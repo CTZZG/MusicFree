@@ -152,13 +152,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         musicItem: IMusic.IMusicItem,
         quality?: IMusic.IQualityKey,
     ) {
-        const type = this.configService.getConfig("basic.fileNamingType");
-        if (!type) {
-            return Downloader.generateLegacyFilename(musicItem);
-        }
-
         const config: IFileNaming.IFileNamingConfig = {
-            type,
+            type:
+                this.configService.getConfig("basic.fileNamingType") ??
+                DEFAULT_FILE_NAMING_CONFIG.type,
             preset:
                 this.configService.getConfig("basic.fileNamingPreset") ??
                 DEFAULT_FILE_NAMING_CONFIG.preset,
@@ -183,6 +180,28 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         );
 
         return result.filename || Downloader.generateLegacyFilename(musicItem);
+    }
+
+    private async getAvailableDownloadPath(fileName: string) {
+        let candidate = this.getDownloadPath(fileName);
+        if (!(await exists(candidate))) {
+            return candidate;
+        }
+
+        const extension = path.extname(fileName);
+        const basename = extension
+            ? fileName.slice(0, -extension.length)
+            : fileName;
+        for (let index = 1; index < 1000; index += 1) {
+            candidate = this.getDownloadPath(
+                `${basename} (${index})${extension}`,
+            );
+            if (!(await exists(candidate))) {
+                return candidate;
+            }
+        }
+
+        return this.getDownloadPath(`${basename}-${nanoid()}${extension}`);
     }
 
     private updateDownloadTask(
@@ -689,7 +708,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         // 真实下载地址
         const targetDownloadPath = addFileScheme(
-            this.getDownloadPath(`${nextTask.filename}.${extension}`),
+            await this.getAvailableDownloadPath(
+                `${nextTask.filename}.${extension}`,
+            ),
         );
 
         // 检测下载位置是否存在

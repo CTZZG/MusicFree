@@ -266,35 +266,55 @@ class MusicSheetClazz implements IInjectable {
 
 
     async resumeSheets(
-        sheets: IMusic.IMusicSheetItem[],
+        sheets: IMusic.IMusicSheetItem[] | undefined,
         resumeMode: ResumeMode,
     ) {
+        const resumeSheets = Array.isArray(sheets) ? [...sheets] : [];
+        if (!resumeSheets.length) {
+            return;
+        }
+
         if (resumeMode === ResumeMode.Append) {
             // 逆序恢复，最新创建的在最上方
-            for (let i = sheets.length - 1; i >= 0; --i) {
-                const newSheetId = await this.addSheet(sheets[i].title || "");
-                await this.addMusic(newSheetId, sheets[i].musicList || []);
+            for (let i = resumeSheets.length - 1; i >= 0; --i) {
+                const newSheetId = await this.addSheet(
+                    resumeSheets[i].title || "",
+                );
+                await this.addMusic(
+                    newSheetId,
+                    resumeSheets[i].musicList || [],
+                );
             }
             return;
         }
         // 1. 分离默认歌单和其他歌单
-        const defaultSheetIndex = sheets.findIndex(it => it.id === _defaultSheet.id);
+        const defaultSheetIndex = resumeSheets.findIndex(
+            it => it.id === _defaultSheet.id,
+        );
 
         let exportedDefaultSheet: IMusic.IMusicSheetItem | null = null;
 
         if (defaultSheetIndex !== -1) {
-            exportedDefaultSheet = sheets.splice(defaultSheetIndex, 1)[0];
+            exportedDefaultSheet = resumeSheets.splice(defaultSheetIndex, 1)[0];
         }
 
         // 2. 合并默认歌单
-        await this.addMusic(_defaultSheet.id, exportedDefaultSheet?.musicList || []);
+        await this.addMusic(
+            _defaultSheet.id,
+            exportedDefaultSheet?.musicList || [],
+        );
 
         // 3. 合并其他歌单
         if (resumeMode === ResumeMode.OverwriteDefault) {
             // 逆序恢复，最新创建的在最上方
-            for (let i = sheets.length - 1; i >= 0; --i) {
-                const newSheetId = await this.addSheet(sheets[i].title || "");
-                await this.addMusic(newSheetId, sheets[i].musicList || []);
+            for (let i = resumeSheets.length - 1; i >= 0; --i) {
+                const newSheetId = await this.addSheet(
+                    resumeSheets[i].title || "",
+                );
+                await this.addMusic(
+                    newSheetId,
+                    resumeSheets[i].musicList || [],
+                );
             }
         } else {
             // 合并同名
@@ -303,12 +323,17 @@ class MusicSheetClazz implements IInjectable {
             allSheets.forEach(it => {
                 existsSheetIdMap[it.title!] = it.id;
             });
-            for (let i = sheets.length - 1; i >= 0; --i) {
-                let newSheetId = existsSheetIdMap[sheets[i].title || ""];
+            for (let i = resumeSheets.length - 1; i >= 0; --i) {
+                let newSheetId = existsSheetIdMap[resumeSheets[i].title || ""];
                 if (!newSheetId) {
-                    newSheetId = await this.addSheet(sheets[i].title || "");
+                    newSheetId = await this.addSheet(
+                        resumeSheets[i].title || "",
+                    );
                 }
-                await this.addMusic(newSheetId, sheets[i].musicList || []);
+                await this.addMusic(
+                    newSheetId,
+                    resumeSheets[i].musicList || [],
+                );
             }
         }
     }
@@ -536,6 +561,28 @@ class MusicSheetClazz implements IInjectable {
     async setStarredMusicSheets(sheets: IMusic.IMusicSheetItem[]) {
         getDefaultStore().set(starredMusicSheetsAtom, sheets);
         await storage.setStarredSheets(sheets);
+    }
+
+    async resumeStarredMusicSheets(sheets?: IMusic.IMusicSheetItem[]) {
+        if (!Array.isArray(sheets) || !sheets.length) {
+            return;
+        }
+
+        const mergedSheets = [...getDefaultStore().get(starredMusicSheetsAtom)];
+        for (let i = sheets.length - 1; i >= 0; i -= 1) {
+            const sheet = sheets[i];
+            if (
+                !mergedSheets.some(it =>
+                    isSameMediaItem(
+                        it as ICommon.IMediaBase,
+                        sheet as ICommon.IMediaBase,
+                    ),
+                )
+            ) {
+                mergedSheets.unshift(sheet);
+            }
+        }
+        await this.setStarredMusicSheets(mergedSheets);
     }
 }
 
