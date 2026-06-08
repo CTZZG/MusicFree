@@ -2,9 +2,9 @@
 // It is committed with a baseline value so TypeScript can compile before the first generated build.
 
 export const buildInfo = {
-    "appVersion": "0.6.4-nitro.1",
-    "packageVersion": "0.6.4-nitro.1",
-    "versionCode": "400012",
+    "appVersion": "0.6.4-nitro.2",
+    "packageVersion": "0.6.4-nitro.2",
+    "versionCode": "400013",
     "gitSha": "80d2723cf0e08e8d1a770ba3b8668c6b2e680fb3",
     "shortSha": "80d2723",
     "gitRef": "codex/round20-nitro-player-refactor",
