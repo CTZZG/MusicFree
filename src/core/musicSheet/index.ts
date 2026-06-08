@@ -33,6 +33,47 @@ const starredMusicSheetsAtom = atom<IMusic.IMusicSheetItem[]>([]);
 // key: sheetId, value: musicList
 const musicListMap = new Map<string, SortedMusicList>();
 
+function isValidMusicItem(
+    musicItem: Partial<IMusic.IMusicItem> | null | undefined,
+): musicItem is IMusic.IMusicItem {
+    return (
+        musicItem !== null &&
+        musicItem !== undefined &&
+        musicItem.id !== null &&
+        musicItem.id !== undefined &&
+        musicItem.platform !== null &&
+        musicItem.platform !== undefined
+    );
+}
+
+function normalizeResumeMusicList(
+    musicList: unknown,
+): IMusic.IMusicItem[] {
+    if (!Array.isArray(musicList)) {
+        return [];
+    }
+    return musicList.filter(isValidMusicItem).map(item => ({
+        ...item,
+        id: `${item.id}`,
+        platform: `${item.platform}`,
+    }));
+}
+
+function normalizeResumeSheet(
+    sheet: Partial<IMusic.IMusicSheetItem> | null | undefined,
+): IMusic.IMusicSheetItem | null {
+    if (!sheet || typeof sheet !== "object") {
+        return null;
+    }
+    return {
+        ...sheet,
+        id: sheet.id ? `${sheet.id}` : nanoid(),
+        platform: sheet.platform ? `${sheet.platform}` : localPluginPlatform,
+        title: sheet.title ?? "",
+        musicList: normalizeResumeMusicList(sheet.musicList),
+    };
+}
+
 
 const ee = new EventEmitter<{
     UpdateMusicList: (updateInfo: {
@@ -269,7 +310,11 @@ class MusicSheetClazz implements IInjectable {
         sheets: IMusic.IMusicSheetItem[] | undefined,
         resumeMode: ResumeMode,
     ) {
-        const resumeSheets = Array.isArray(sheets) ? [...sheets] : [];
+        const resumeSheets = Array.isArray(sheets)
+            ? sheets
+                .map(normalizeResumeSheet)
+                .filter((it): it is IMusic.IMusicSheetItem => !!it)
+            : [];
         if (!resumeSheets.length) {
             return;
         }

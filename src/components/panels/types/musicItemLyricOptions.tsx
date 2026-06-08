@@ -18,7 +18,7 @@ import lyricManager from "@/core/lyricManager";
 import mediaCache from "@/core/mediaCache";
 import LyricUtil from "@/native/lyricUtil";
 import { getDocumentAsync } from "expo-document-picker";
-import { readAsStringAsync } from "expo-file-system";
+import { readAsStringAsync } from "expo-file-system/legacy";
 import { FlatList } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PanelBase from "../base/panelBase";

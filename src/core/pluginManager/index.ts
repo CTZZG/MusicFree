@@ -13,7 +13,7 @@ import { removeAllMediaExtra } from "@/utils/mediaExtra";
 import axios from "axios";
 import { compare } from "compare-versions";
 import EventEmitter from "eventemitter3";
-import { readAsStringAsync } from "expo-file-system";
+import { readAsStringAsync } from "expo-file-system/legacy";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { nanoid } from "nanoid";
 import { useEffect, useState } from "react";

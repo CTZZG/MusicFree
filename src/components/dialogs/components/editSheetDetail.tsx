@@ -13,7 +13,7 @@ import { hideDialog } from "../useDialog";
 import Dialog from "./base";
 import Input from "@/components/base/input";
 import { fontSizeConst } from "@/constants/uiConst";
-import { copyAsync, deleteAsync, getInfoAsync } from "expo-file-system";
+import { copyAsync, deleteAsync, getInfoAsync } from "expo-file-system/legacy";
 import MusicSheet from "@/core/musicSheet";
 import { useI18N } from "@/core/i18n";
 

@@ -1,6 +1,7 @@
 import {
     StorageKeys,
     internalSerializeKey,
+    localPluginPlatform,
     supportLocalMediaType,
 } from "@/constants/commonConst";
 import mp3Util, { IBasicMeta } from "@/native/mp3Util";
@@ -337,7 +338,19 @@ async function resumeMusicList(musicItems?: IMusic.IMusicItem[]) {
         const localPath = getLocalPath(musicItem);
         const fsPath = localPath ? normalizeFsPath(localPath) : null;
         if (fsPath && (await exists(fsPath))) {
-            validMusicItems.push(musicItem);
+            validMusicItems.push({
+                ...musicItem,
+                id:
+                    musicItem.id ??
+                    CryptoJs.MD5(fsPath).toString(CryptoJs.enc.Hex),
+                platform: musicItem.platform ?? localPluginPlatform,
+                title: musicItem.title ?? getFileName(fsPath),
+                artist: musicItem.artist ?? "未知歌手",
+                [internalSerializeKey]: {
+                    ...(musicItem[internalSerializeKey] ?? {}),
+                    localPath,
+                },
+            });
         }
     }
 

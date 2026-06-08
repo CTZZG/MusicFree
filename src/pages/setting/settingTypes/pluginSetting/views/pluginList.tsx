@@ -107,7 +107,14 @@ export default function PluginList() {
             const results = await DocumentPicker.getDocumentAsync({
                 copyToCacheDirectory: true,
                 multiple: true,
-                type: ["application/javascript", "text/javascript"],
+                type: [
+                    "application/javascript",
+                    "application/x-javascript",
+                    "text/javascript",
+                    "text/plain",
+                    "application/octet-stream",
+                    "*/*",
+                ],
             });
             if (results.canceled) {
                 // 用户取消

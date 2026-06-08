@@ -11,7 +11,7 @@ import { grayRate } from "@/utils/colorUtil";
 import rpx from "@/utils/rpx";
 import Slider from "@react-native-community/slider";
 import Color from "color";
-import { readAsStringAsync } from "expo-file-system";
+import { readAsStringAsync } from "expo-file-system/legacy";
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import { copyFile } from "react-native-fs";
