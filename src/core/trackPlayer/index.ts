@@ -111,6 +111,7 @@ class TrackPlayer extends EventEmitter<{
     private backend: PlayerAdapter<any> = nitroPlayerAdapter;
     private nitroPendingSourceRequests = new Set<string>();
     private nitroTrackChangeGuard: { key: string; until: number } | null = null;
+    private isForceExiting = false;
     private lastProgressPersistedAt = 0;
     private lastProgressPersistedPosition = 0;
     // 播放队列索引map
@@ -251,6 +252,9 @@ class TrackPlayer extends EventEmitter<{
             this.backend.addEventListener(
                 "trackChanged",
                 async evt => {
+                    if (this.isForceExiting) {
+                        return;
+                    }
                     if (this.shouldIgnoreNitroTrackChange(evt)) {
                         return;
                     }
@@ -273,6 +277,9 @@ class TrackPlayer extends EventEmitter<{
             this.backend.addEventListener(
                 "tracksNeedUpdate",
                 async evt => {
+                    if (this.isForceExiting) {
+                        return;
+                    }
                     await this.resolveNitroQueuedTracks(evt?.tracks ?? []);
                 },
             );
@@ -310,6 +317,9 @@ class TrackPlayer extends EventEmitter<{
             );
 
             this.backend.addEventListener("playbackStateChanged", state => {
+                if (this.isForceExiting) {
+                    return;
+                }
                 const normalizedState = normalizeMusicState(state);
                 getDefaultStore().set(
                     musicStateAtom,
@@ -332,6 +342,9 @@ class TrackPlayer extends EventEmitter<{
             });
 
             this.backend.addEventListener("progress", progress => {
+                if (this.isForceExiting) {
+                    return;
+                }
                 const currentProgress = setPlayerProgress(
                     progress,
                     this.currentMusic?.duration ?? 0,
@@ -340,6 +353,9 @@ class TrackPlayer extends EventEmitter<{
             });
 
             this.backend.addEventListener("playbackSeeked", progress => {
+                if (this.isForceExiting) {
+                    return;
+                }
                 const currentProgress = setPlayerProgress(
                     progress,
                     this.currentMusic?.duration ?? 0,
@@ -845,6 +861,34 @@ class TrackPlayer extends EventEmitter<{
 
     async pause(): Promise<void> {
         await this.backend.pause();
+    }
+
+    async prepareForAppExit(): Promise<void> {
+        if (this.isForceExiting) {
+            return;
+        }
+        this.isForceExiting = true;
+
+        const currentMusic = this.currentMusic;
+        if (currentMusic) {
+            let progress = getDefaultStore().get(progressAtom);
+            try {
+                progress = normalizeAdapterProgress(
+                    await this.backend.getProgress(),
+                    currentMusic.duration ?? 0,
+                );
+                if (progress.position > 0) {
+                    setPlayerProgress(progress, currentMusic.duration ?? 0);
+                }
+            } catch {
+                // Use the last UI progress if the native player is already stopping.
+            }
+
+            if (progress.position > 0) {
+                PersistStatus.set("music.musicItem", currentMusic);
+                this.persistPlaybackProgress(progress.position, true);
+            }
+        }
     }
 
     toggleRepeatMode(): void {

@@ -25,6 +25,7 @@ import kotlin.system.exitProcess
 class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
 
     private val reactContext: ReactApplicationContext = context;
+    private val exitHandler = Handler(Looper.getMainLooper())
 
     override fun getName() = "NativeUtils"
 
@@ -39,23 +40,37 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
                 } catch (_: Throwable) {
                     activity.finishAffinity()
                 }
-                Handler(Looper.getMainLooper()).postDelayed({
+                exitHandler.postDelayed({
                     killCurrentProcess()
-                }, 80)
+                }, 450)
             }
             return
         }
-        killCurrentProcess()
+        exitHandler.postDelayed({
+            killCurrentProcess()
+        }, 450)
     }
 
     private fun stopMusicFreePlaybackServices() {
-        val serviceClassNames = listOf(
-            "com.margelo.nitro.nitroplayer.media.NitroPlayerPlaybackService"
+        val playbackServices = listOf(
+            Pair(
+                "com.margelo.nitro.nitroplayer.media.NitroPlayerPlaybackService",
+                "com.margelo.nitro.nitroplayer.SHUTDOWN"
+            )
         )
-        serviceClassNames.forEach { className ->
+        playbackServices.forEach { (className, shutdownAction) ->
             try {
                 val serviceClass = Class.forName(className)
-                reactContext.stopService(Intent(reactContext, serviceClass))
+                reactContext.startService(
+                    Intent(reactContext, serviceClass).apply {
+                        action = shutdownAction
+                    }
+                )
+                exitHandler.postDelayed({
+                    try {
+                        reactContext.stopService(Intent(reactContext, serviceClass))
+                    } catch (_: Throwable) {}
+                }, 150)
             } catch (_: Throwable) {
                 // Best effort: process kill below is the hard stop.
             }

@@ -2,7 +2,7 @@ import TrackPlayer from "@/core/trackPlayer";
 import NativeUtils from "@/native/utils";
 import { BackHandler } from "react-native";
 
-const RESET_GRACE_MS = 500;
+const EXIT_PREPARE_GRACE_MS = 500;
 
 let isExiting = false;
 
@@ -10,9 +10,11 @@ function wait(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function resetPlayerBestEffort() {
+function preparePlayerForExitBestEffort() {
     try {
-        return Promise.resolve(TrackPlayer.reset()).catch(() => undefined);
+        return Promise.resolve(TrackPlayer.prepareForAppExit()).catch(
+            () => undefined,
+        );
     } catch {
         return Promise.resolve();
     }
@@ -32,11 +34,11 @@ export default function forceExitApp() {
     }
     isExiting = true;
 
-    const exitAfterResetOrTimeout = Promise.race([
-        resetPlayerBestEffort(),
-        wait(RESET_GRACE_MS),
+    const exitAfterPrepareOrTimeout = Promise.race([
+        preparePlayerForExitBestEffort(),
+        wait(EXIT_PREPARE_GRACE_MS),
     ]);
 
-    exitAfterResetOrTimeout.finally(exitNativeProcess);
-    setTimeout(exitNativeProcess, RESET_GRACE_MS + 500);
+    exitAfterPrepareOrTimeout.finally(exitNativeProcess);
+    setTimeout(exitNativeProcess, EXIT_PREPARE_GRACE_MS + 500);
 }
