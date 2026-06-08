@@ -191,30 +191,57 @@ jobs:
                   node <<'NODE'
                   const repo = process.env.GITHUB_REPOSITORY;
                   const tag = `v${process.env.APP_VERSION}`;
+                  const retryableStatuses = new Set([429, 500, 502, 503, 504]);
                   const headers = {
                     authorization: `Bearer ${process.env.GH_TOKEN}`,
                     accept: 'application/vnd.github+json',
                     'x-github-api-version': '2022-11-28',
                   };
 
+                  class GithubRequestError extends Error {
+                    constructor(method, path, status, body) {
+                      super(`${method} ${path} failed: ${status} ${body}`);
+                      this.status = status;
+                    }
+                  }
+
+                  function sleep(ms) {
+                    return new Promise(resolve => setTimeout(resolve, ms));
+                  }
+
                   async function github(path, options = {}) {
-                    const response = await fetch(`https://api.github.com/repos/${repo}${path}`, {
-                      ...options,
-                      headers: {
-                        ...headers,
-                        ...(options.headers ?? {}),
-                      },
-                    });
-                    if (response.status === 404) {
-                      return null;
+                    const {maxAttempts = 4, ...requestOptions} = options;
+                    const method = requestOptions.method ?? 'GET';
+                    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+                      const response = await fetch(`https://api.github.com/repos/${repo}${path}`, {
+                        ...requestOptions,
+                        headers: {
+                          ...headers,
+                          ...(requestOptions.headers ?? {}),
+                        },
+                      });
+                      if (response.status === 404) {
+                        return null;
+                      }
+                      if (response.ok) {
+                        if (response.status === 204) {
+                          return null;
+                        }
+                        return response.json();
+                      }
+
+                      const body = await response.text();
+                      if (!retryableStatuses.has(response.status) || attempt === maxAttempts) {
+                        throw new GithubRequestError(method, path, response.status, body);
+                      }
+
+                      const retryAfter = Number(response.headers.get('retry-after'));
+                      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+                        ? retryAfter * 1000
+                        : attempt * 1500;
+                      console.warn(`${method} ${path} failed with ${response.status}; retrying in ${delayMs}ms (${attempt}/${maxAttempts}).`);
+                      await sleep(delayMs);
                     }
-                    if (!response.ok) {
-                      throw new Error(`${options.method ?? 'GET'} ${path} failed: ${response.status} ${await response.text()}`);
-                    }
-                    if (response.status === 204) {
-                      return null;
-                    }
-                    return response.json();
                   }
 
                   const release = await github(`/releases/tags/${encodeURIComponent(tag)}`);
@@ -229,8 +256,16 @@ jobs:
                       asset.name === 'android-build-info.txt' ||
                       (asset.name.startsWith(apkPrefix) && asset.name.endsWith('.apk'));
                     if (shouldDelete) {
-                      await github(`/releases/assets/${asset.id}`, {method: 'DELETE'});
-                      console.log(`Deleted old release asset: ${asset.name}`);
+                      try {
+                        await github(`/releases/assets/${asset.id}`, {method: 'DELETE', maxAttempts: 5});
+                        console.log(`Deleted old release asset: ${asset.name}`);
+                      } catch (error) {
+                        if (error instanceof GithubRequestError && retryableStatuses.has(error.status)) {
+                          console.warn(`::warning::Could not delete old release asset after retries: ${asset.name}. Continuing because cleanup is best-effort.`);
+                          continue;
+                        }
+                        throw error;
+                      }
                     }
                   }
                   NODE
