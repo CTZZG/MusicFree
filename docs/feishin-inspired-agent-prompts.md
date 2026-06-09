@@ -629,6 +629,45 @@
 - WebDAV 手动备份会生成时间戳历史文件。
 ```
 
+## Prompt 17：WebDAV 远端备份选择恢复
+
+状态：已完成。本次让 WebDAV 恢复入口能列出 latest 和历史备份，用户可选择要恢复的远端备份文件。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/pages/setting/settingTypes/backupSetting.tsx
+- src/components/panels/types/simpleSelect.tsx
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+增强 WebDAV 恢复入口，让用户不只能恢复 latest 文件，也能选择历史备份。
+
+范围：
+- WebDAV 恢复时检查 `/MusicFree/MusicFreeBackup.json`。
+- 同时读取 `/MusicFree/Backups` 中的 `MusicFreeBackup-*.json`。
+- 如果只有一个可恢复文件，保持直接预览恢复。
+- 如果有多个可恢复文件，弹出 SimpleSelect 让用户选择。
+- 补齐中/英/繁体文案和 i18n 类型。
+
+不要做：
+- 不新增完整远端备份管理页。
+- 不删除远端备份。
+- 不改变恢复预览和恢复报告流程。
+- 不做后台自动备份。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- WebDAV 只有 latest 时仍可直接恢复。
+- WebDAV 有历史备份时可选择恢复文件。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 16。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做 WebDAV 远端备份列表/选择恢复，或进入下载/本地资料库的后续增强。
+当前已经完成 Prompt 01 到 Prompt 17。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议进入下载/本地资料库的后续增强，或继续完善 WebDAV 自动备份设置。

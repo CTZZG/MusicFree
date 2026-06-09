@@ -339,6 +339,8 @@
     "backupAndResume.webdavUrl": "Webdav Server URL",
     "backupAndResume.backupToWebdav": "Backup to Webdav",
     "backupAndResume.resumeFromWebdav": "Restore from Webdav",
+    "backupAndResume.selectWebdavBackup": "Select WebDAV Backup",
+    "backupAndResume.webdavLatestBackup": "Latest Backup",
     "backupAndResume.resumePreviewTitle": "Restore Preview",
     "backupAndResume.resumeReportTitle": "Restore Report",
     "backupAndResume.copyResumeReport": "Copy Report",

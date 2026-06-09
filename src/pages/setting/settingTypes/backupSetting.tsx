@@ -31,6 +31,12 @@ const webdavLatestBackupPath = `${webdavRootPath}/MusicFreeBackup.json`;
 const webdavHistoryDir = `${webdavRootPath}/Backups`;
 const webdavHistoryKeepCount = 10;
 
+interface IWebdavBackupFile {
+    basename?: string;
+    filename?: string;
+    type?: string;
+}
+
 function formatBackupTimestamp(date = new Date()) {
     return date.toISOString().replace(/[:.]/g, "-");
 }
@@ -41,23 +47,32 @@ async function ensureWebdavDirectory(client: ReturnType<typeof createClient>, pa
     }
 }
 
+function getWebdavBackupFileName(item: IWebdavBackupFile) {
+    return item.basename ?? item.filename?.split("/").pop() ?? "";
+}
+
+function isWebdavHistoryBackupFile(item: IWebdavBackupFile) {
+    return item.type !== "directory" &&
+        !!item.filename &&
+        getWebdavBackupFileName(item).startsWith("MusicFreeBackup-");
+}
+
+async function getWebdavHistoryBackups(client: ReturnType<typeof createClient>) {
+    if (!(await client.exists(webdavHistoryDir))) {
+        return [];
+    }
+    const contents = await client.getDirectoryContents(webdavHistoryDir) as IWebdavBackupFile[];
+    return contents
+        .filter(isWebdavHistoryBackupFile)
+        .sort((a, b) =>
+            getWebdavBackupFileName(b)
+                .localeCompare(getWebdavBackupFileName(a)),
+        );
+}
+
 async function pruneWebdavBackupHistory(client: ReturnType<typeof createClient>) {
     try {
-        const contents = await client.getDirectoryContents(webdavHistoryDir) as Array<{
-            basename?: string;
-            filename?: string;
-            type?: string;
-        }>;
-        const backupFiles = contents
-            .filter(item => item.type !== "directory")
-            .filter(item =>
-                (item.basename ?? item.filename ?? "")
-                    .startsWith("MusicFreeBackup-"),
-            )
-            .sort((a, b) =>
-                (b.basename ?? b.filename ?? "")
-                    .localeCompare(a.basename ?? a.filename ?? ""),
-            );
+        const backupFiles = await getWebdavHistoryBackups(client);
 
         await Promise.all(
             backupFiles
@@ -331,19 +346,61 @@ export default function BackupSetting() {
             password: password,
         });
 
-        if (!(await client.exists(webdavLatestBackupPath))) {
-            Toast.warn(t("toast.backupFileNotFound"));
-            return;
+        async function showWebdavResumePreview(path: string) {
+            try {
+                const resumeData = await client.getFileContents(
+                    path,
+                    {
+                        format: "text",
+                    },
+                );
+                showResumePreview(resumeData as string);
+            } catch (e: any) {
+                Toast.warn(t("toast.resumeFail", { reason: e?.message ?? e }));
+            }
         }
 
         try {
-            const resumeData = await client.getFileContents(
-                webdavLatestBackupPath,
-                {
-                    format: "text",
+            const candidates: Array<{
+                title: string;
+                icon: "save-outline" | "document-outline";
+                value: string;
+            }> = [];
+
+            if (await client.exists(webdavLatestBackupPath)) {
+                candidates.push({
+                    title: t("backupAndResume.webdavLatestBackup"),
+                    icon: "save-outline",
+                    value: webdavLatestBackupPath,
+                });
+            }
+
+            const historyBackups = await getWebdavHistoryBackups(client);
+            historyBackups.forEach(item => {
+                candidates.push({
+                    title: getWebdavBackupFileName(item),
+                    icon: "document-outline",
+                    value: item.filename as string,
+                });
+            });
+
+            if (!candidates.length) {
+                Toast.warn(t("toast.backupFileNotFound"));
+                return;
+            }
+
+            if (candidates.length === 1) {
+                await showWebdavResumePreview(candidates[0].value);
+                return;
+            }
+
+            showPanel("SimpleSelect", {
+                header: t("backupAndResume.selectWebdavBackup"),
+                candidates,
+                onPress(item) {
+                    showWebdavResumePreview(`${item.value}`);
                 },
-            );
-            showResumePreview(resumeData as string);
+            });
         } catch (e: any) {
             Toast.warn(t("toast.resumeFail", { reason: e?.message ?? e }));
         }

@@ -339,6 +339,8 @@
     "backupAndResume.webdavUrl": "webdav服務地址",
     "backupAndResume.backupToWebdav": "備份到Webdav",
     "backupAndResume.resumeFromWebdav": "從Webdav中恢復",
+    "backupAndResume.selectWebdavBackup": "選擇 WebDAV 備份",
+    "backupAndResume.webdavLatestBackup": "最新備份",
     "backupAndResume.resumePreviewTitle": "恢復前預覽",
     "backupAndResume.resumeReportTitle": "恢復結果",
     "backupAndResume.copyResumeReport": "複製報告",
