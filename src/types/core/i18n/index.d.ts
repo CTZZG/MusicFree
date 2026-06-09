@@ -396,6 +396,7 @@ export interface ILanguageData {
     "backupAndResume.resumeFromWebdav": string; // 从WebDAV恢复
     "backupAndResume.resumePreviewTitle": string; // 恢复前预览
     "backupAndResume.resumeReportTitle": string; // 恢复结果
+    "backupAndResume.copyResumeReport": string; // 复制恢复报告
     "backupAndResume.startResume": string; // 开始恢复
     "backupAndResume.report.musicSheets": string; // 歌单
     "backupAndResume.report.musicItems": string; // 歌曲

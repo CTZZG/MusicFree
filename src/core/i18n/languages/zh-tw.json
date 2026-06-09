@@ -341,6 +341,7 @@
     "backupAndResume.resumeFromWebdav": "從Webdav中恢復",
     "backupAndResume.resumePreviewTitle": "恢復前預覽",
     "backupAndResume.resumeReportTitle": "恢復結果",
+    "backupAndResume.copyResumeReport": "複製報告",
     "backupAndResume.startResume": "開始恢復",
     "backupAndResume.report.musicSheets": "歌單",
     "backupAndResume.report.musicItems": "歌曲",

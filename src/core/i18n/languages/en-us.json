@@ -341,6 +341,7 @@
     "backupAndResume.resumeFromWebdav": "Restore from Webdav",
     "backupAndResume.resumePreviewTitle": "Restore Preview",
     "backupAndResume.resumeReportTitle": "Restore Report",
+    "backupAndResume.copyResumeReport": "Copy Report",
     "backupAndResume.startResume": "Start Restore",
     "backupAndResume.report.musicSheets": "Playlists",
     "backupAndResume.report.musicItems": "Songs",

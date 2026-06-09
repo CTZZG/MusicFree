@@ -23,6 +23,7 @@ import { getDocumentAsync } from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { DocumentDirectoryPath } from "react-native-fs";
 import { AuthType, createClient } from "webdav";
+import Clipboard from "@react-native-clipboard/clipboard";
 
 const preRestoreBackupDir = `${DocumentDirectoryPath}/MusicFree`;
 
@@ -113,9 +114,15 @@ export default function BackupSetting() {
     }
 
     function showResumeReport(report: IBackupResumeReport) {
+        const reportText = formatResumeReport(report);
         showDialog("SimpleDialog", {
             title: t("backupAndResume.resumeReportTitle"),
-            content: formatResumeReport(report),
+            content: reportText,
+            okText: t("backupAndResume.copyResumeReport"),
+            onOk() {
+                Clipboard.setString(reportText);
+                Toast.success(t("toast.copiedToClipboard"));
+            },
         });
     }
 

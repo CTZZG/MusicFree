@@ -560,6 +560,41 @@
 - 自动备份失败时仍继续执行恢复。
 ```
 
+## Prompt 15：恢复报告复制
+
+状态：已完成。本次给恢复结果弹窗增加“复制报告”按钮，方便用户把恢复摘要和失败原因发给测试/开发排查。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/pages/setting/settingTypes/backupSetting.tsx
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+增强备份恢复报告，让用户恢复完成后可以一键复制报告文本。
+
+范围：
+- 复用现有 `formatResumeReport` 生成报告文本。
+- 恢复结果弹窗增加复制按钮。
+- 复制成功后沿用现有复制成功 toast。
+- 补齐中/英/繁体文案和 i18n 类型。
+
+不要做：
+- 不保存报告历史。
+- 不上传报告。
+- 不改变恢复流程。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 恢复报告弹窗点击复制后写入剪贴板。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 14。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做备份恢复历史报告或 WebDAV 自动备份预案。
+当前已经完成 Prompt 01 到 Prompt 15。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做 WebDAV 自动备份预案，或进入下载/本地资料库的后续增强。
