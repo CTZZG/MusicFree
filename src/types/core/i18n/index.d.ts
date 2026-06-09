@@ -96,6 +96,7 @@ export interface ILanguageData {
     "home.favoriteSheet": string; // 我喜欢
     "home.localMusicShort": string; // 本地
     "home.starredShort": string; // 收藏
+    "home.smartSheets": string; // 智能歌单
     "home.playlistCount": string; // 歌单数量
     "home.downloadQueueCount": string; // 下载队列数量
     "home.sourceCapability.search": string; // 搜索
@@ -205,6 +206,13 @@ export interface ILanguageData {
     // 历史记录相关
     "history.title": string; // 历史记录
     "history.clearHistory": string; // 清除历史记录
+    "smartSheet.title": string; // 智能歌单
+    "smartSheet.builtInTemplates": string; // 内置模板
+    "smartSheet.pluginSources": string; // 插件来源
+    "smartSheet.recentPlayed": string; // 最近播放
+    "smartSheet.localMusic": string; // 本地音乐
+    "smartSheet.downloaded": string; // 已下载歌曲
+    "smartSheet.pluginSourceTitle": string; // 插件来源歌曲
 
     // 下载相关
     "downloading.title": string; // 下载

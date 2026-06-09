@@ -325,6 +325,13 @@ function QuickAccess() {
             action: () => navigate(ROUTE_PATH.DOWNLOADING),
         },
         {
+            key: "smartSheets",
+            icon: "strategy",
+            title: t("home.smartSheets"),
+            accent: "#E5A1C6",
+            action: () => navigate(ROUTE_PATH.SMART_SHEETS),
+        },
+        {
             key: "recommend",
             icon: "fire-outline",
             title: t("home.recommendSheet"),

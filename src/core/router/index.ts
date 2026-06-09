@@ -50,6 +50,10 @@ export const ROUTE_PATH = {
     SHEET_EDITOR: "sheet-editor",
     /** 歌单浏览 */
     SHEET_BROWSER: "sheet-browser",
+    /** 智能歌单 */
+    SMART_SHEETS: "smart-sheets",
+    /** 智能歌单详情 */
+    SMART_SHEET_DETAIL: "smart-sheet-detail",
     /** 编辑歌单详情 */
     EDIT_MUSIC_SHEET_INFO: "edit-music-sheet-info",
 } as const;
@@ -125,6 +129,11 @@ interface RouterParams extends RouterParamsBase {
     };
     "sheet-browser": {
         sheetType?: "local" | "starred";
+    };
+    "smart-sheets": undefined;
+    "smart-sheet-detail": {
+        type: "recent-played" | "local" | "downloaded" | "plugin-source";
+        platform?: string;
     };
     "edit-music-sheet-info": {
         musicSheet: IMusic.IMusicSheetItem;

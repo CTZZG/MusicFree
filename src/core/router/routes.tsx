@@ -19,6 +19,8 @@ import SetCustomTheme from "@/pages/setCustomTheme";
 import Permissions from "@/pages/permissions";
 import SheetEditor from "@/pages/sheetEditor";
 import SheetBrowser from "@/pages/sheetBrowser";
+import SmartSheets from "@/pages/smartSheets";
+import SmartSheetDetail from "@/pages/smartSheetDetail";
 
 import { ROUTE_PATH } from "@/core/router/index.ts";
 import EditMusicSheetInfo from "@/pages/editMusicSheetInfo";
@@ -116,6 +118,14 @@ export const routes: Array<IRoutes> = [
     {
         path: ROUTE_PATH.SHEET_BROWSER,
         component: SheetBrowser,
+    },
+    {
+        path: ROUTE_PATH.SMART_SHEETS,
+        component: SmartSheets,
+    },
+    {
+        path: ROUTE_PATH.SMART_SHEET_DETAIL,
+        component: SmartSheetDetail,
     },
     {
         path: ROUTE_PATH.EDIT_MUSIC_SHEET_INFO,
