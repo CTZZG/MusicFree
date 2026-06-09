@@ -13,6 +13,17 @@ declare namespace ILyric {
         translation?: string;
         /** 纯文本格式的罗马音 */
         romanization?: string;
+        /** 歌词来源，仅用于应用内状态展示 */
+        sourceType?:
+            | "plugin"
+            | "associated"
+            | "local"
+            | "cache"
+            | "auto-search";
+        /** 来源插件或平台名称 */
+        sourcePluginName?: string;
+        /** 来源歌曲标题 */
+        sourceTitle?: string;
     }
 
     /** 逐字歌词单词数据 */

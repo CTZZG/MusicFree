@@ -143,6 +143,18 @@ export interface ILanguageData {
     "lyric.unlinkLyric": string; // 取消链接歌词
     "lyric.noLyric": string; // 暂无歌词
     "lyric.searchLyric": string; // 搜索歌词
+    "lyric.source.plugin": string; // 插件歌词来源
+    "lyric.source.local": string; // 本地歌词来源
+    "lyric.source.cache": string; // 缓存歌词来源
+    "lyric.source.autoSearch": string; // 自动搜索歌词来源
+    "lyric.noLyricReason.noCurrentMusic": string; // 当前无播放歌曲
+    "lyric.noLyricReason.pluginNotFound": string; // 歌词插件不存在
+    "lyric.noLyricReason.pluginNotSupported": string; // 插件不支持歌词
+    "lyric.noLyricReason.pluginEmpty": string; // 插件返回空歌词
+    "lyric.noLyricReason.autoSearchEmpty": string; // 自动搜索无歌词
+    "lyric.noLyricReason.parseFailed": string; // 歌词解析失败
+    "lyric.noLyricReason.timeout": string; // 歌词获取超时
+    "lyric.noLyricReason.unknown": string; // 未知无歌词原因
 
     // 音乐列表编辑器相关
     "musicListEditor.selectMusicCount": string; // 选择的音乐数量

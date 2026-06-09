@@ -622,6 +622,24 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         } else {
             musicItem = originalMusicItem as IMusic.IMusicItem;
         }
+        const withSourceMeta = (
+            source: ILyric.ILyricSource,
+            fallbackType: NonNullable<ILyric.ILyricSource["sourceType"]>,
+            pluginName = this.plugin.name,
+        ): ILyric.ILyricSource => ({
+            ...source,
+            sourceType: associatedLrc
+                ? "associated"
+                : source.sourceType ?? fallbackType,
+            sourcePluginName:
+                associatedLrc?.platform ??
+                source.sourcePluginName ??
+                pluginName,
+            sourceTitle:
+                associatedLrc?.title ??
+                source.sourceTitle ??
+                musicItem.title,
+        });
 
         const musicItemCache = MediaCache.getMediaCache(
             musicItem,
@@ -687,11 +705,11 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                     )) || null;
             }
 
-            return {
+            return withSourceMeta({
                 rawLrc,
                 translation: translation || undefined,
                 romanization: romanization || undefined,
-            };
+            }, "local");
         }
 
         // 2. 缓存歌词 / 对象上本身的歌词
@@ -705,11 +723,11 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
             // 优先用缓存的结果
             if (cacheLyric.rawLrc || cacheLyric.translation || cacheLyric.romanization) {
-                return {
+                return withSourceMeta({
                     rawLrc: cacheLyric.rawLrc,
                     translation: cacheLyric.translation,
                     romanization: cacheLyric.romanization,
-                };
+                }, "cache");
             }
 
             // 本地其实是缓存的路径
@@ -744,11 +762,11 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 }
 
                 if (!needRefetch && (rawLrc || translation || romanization)) {
-                    return {
+                    return withSourceMeta({
                         rawLrc: rawLrc || undefined,
                         translation: translation || undefined,
                         romanization: romanization || undefined,
-                    };
+                    }, "cache");
                 }
             }
         }
@@ -835,11 +853,11 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                         return draft;
                     }),
                 );
-                return {
+                return withSourceMeta({
                     rawLrc: rawLrc || undefined,
                     translation: translation || undefined,
                     romanization: romanization || undefined,
-                };
+                }, "plugin");
             }
         }
 
@@ -853,7 +871,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             devLog("info", "本地文件歌词");
 
             if (res) {
-                return res;
+                return withSourceMeta(res, res.sourceType ?? "local");
             }
         }
         devLog("warn", "无歌词");
@@ -1496,6 +1514,8 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
         return rawLrc
             ? {
                 rawLrc,
+                sourceType: "local",
+                sourcePluginName: localPluginPlatform,
             }
             : null;
     },

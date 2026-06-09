@@ -145,8 +145,15 @@ function buildDetailLyricLines(
 export default function Lyric(props: IProps) {
     const { onTurnPageClick } = props;
 
-    const { loading, meta, lyrics, hasTranslation, hasRomanization } =
-        useLyricState();
+    const {
+        loading,
+        meta,
+        lyrics,
+        hasTranslation,
+        hasRomanization,
+        source,
+        emptyReason,
+    } = useLyricState();
     const currentLrcItem = useCurrentLyricItem();
     const showTranslation = PersistStatus.useValue(
         "lyric.showTranslation",
@@ -185,6 +192,55 @@ export default function Lyric(props: IProps) {
 
     const currentMusicItem = useCurrentMusic();
     const associateMusicItem = getMediaExtraProperty(currentMusicItem, "associatedLrc");
+    const lyricSourceText = useMemo(() => {
+        if (!source || source.type === "none" || associateMusicItem) {
+            return null;
+        }
+        const pluginName = source.pluginName || currentMusicItem?.platform || "";
+        const title = source.title || currentMusicItem?.title || "";
+        switch (source.type) {
+            case "plugin":
+                return t("lyric.source.plugin", { plugin: pluginName });
+            case "local":
+                return t("lyric.source.local");
+            case "cache":
+                return t("lyric.source.cache", { plugin: pluginName });
+            case "auto-search":
+                return t("lyric.source.autoSearch", {
+                    plugin: pluginName,
+                    title,
+                });
+            case "associated":
+                return t("lyric.lyricLinkedFrom", {
+                    platform: pluginName,
+                    title,
+                });
+            default:
+                return null;
+        }
+    }, [associateMusicItem, currentMusicItem, source, t]);
+    const noLyricReasonText = useMemo(() => {
+        switch (emptyReason) {
+            case "no-current-music":
+                return t("lyric.noLyricReason.noCurrentMusic");
+            case "plugin-not-found":
+                return t("lyric.noLyricReason.pluginNotFound");
+            case "plugin-not-supported":
+                return t("lyric.noLyricReason.pluginNotSupported");
+            case "plugin-empty":
+                return t("lyric.noLyricReason.pluginEmpty");
+            case "auto-search-empty":
+                return t("lyric.noLyricReason.autoSearchEmpty");
+            case "parse-failed":
+                return t("lyric.noLyricReason.parseFailed");
+            case "timeout":
+                return t("lyric.noLyricReason.timeout");
+            case "unknown":
+                return t("lyric.noLyricReason.unknown");
+            default:
+                return null;
+        }
+    }, [emptyReason, t]);
 
     // 是否展示拖拽
     const dragShownRef = useRef(false);
@@ -400,6 +456,16 @@ export default function Lyric(props: IProps) {
                                                     </Text>
                                                 </GestureDetector>
                                             </>
+                                        ) : lyricSourceText ? (
+                                            <Text
+                                                style={[
+                                                    styles.lyricMetaText,
+                                                    fontSizeStyle,
+                                                ]}
+                                                ellipsizeMode="tail"
+                                                numberOfLines={1}>
+                                                {lyricSourceText}
+                                            </Text>
                                         ) : null}
                                     </View>
                                 </>
@@ -451,6 +517,11 @@ export default function Lyric(props: IProps) {
                             <Text style={[styles.white, fontSizeStyle]}>
                                 {t("lyric.noLyric")}
                             </Text>
+                            {noLyricReasonText ? (
+                                <Text style={[styles.noLyricReason, fontSizeStyle]}>
+                                    {noLyricReasonText}
+                                </Text>
+                            ) : null}
                             <TapGestureHandler
                                 onActivated={() => {
                                     showPanel("SearchLrc", {
@@ -568,5 +639,12 @@ const styles = StyleSheet.create({
         alignSelf: "center",
         color: "#66eeff",
         textDecorationLine: "underline",
+    },
+    noLyricReason: {
+        color: "white",
+        opacity: 0.7,
+        maxWidth: "82%",
+        marginTop: rpx(12),
+        textAlign: "center",
     },
 });

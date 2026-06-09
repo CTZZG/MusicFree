@@ -279,6 +279,121 @@
 - npx tsc --noEmit 通过。
 ```
 
+## Prompt 08：歌词候选和偏移保存 MVP
+
+状态：已完成。本次实现歌词来源标记、手动关联沿用、偏移沿用和无歌词原因展示。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/lyricManager.ts
+- src/components/panels/types/musicItemLyricOptions.tsx
+- src/components/panels/types/searchLrc
+- src/pages/musicDetail/components/content/lyric
+- src/utils/mediaExtra.ts
+- src/utils/lrcParser.ts
+
+任务：
+增强歌词体验第一版，让用户能更清楚地处理歌词来源和偏移。
+
+范围：
+- 展示当前歌词来源：插件 / 手动关联 / 本地内嵌 / 无歌词。
+- 歌词偏移保存到 mediaExtra，并在下次播放同一首歌时沿用。
+- 搜索歌词结果选择后保存关联关系。
+- 无歌词时给出可读原因，例如插件不支持、返回空、解析失败。
+
+不要做：
+- 不做复杂自动置信度算法。
+- 不做新 NativeModule。
+- 不重写歌词渲染。
+- 不做逐字歌词新格式解析。
+
+验收：
+- 手动选择歌词后下次播放仍使用该歌词。
+- 偏移调整后下次播放仍生效。
+- 无歌词时能看到原因。
+- npx tsc --noEmit 通过。
+```
+
+## Prompt 09：统一搜索/全局跳转 MVP
+
+状态：待执行。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/router
+- src/core/pluginManager/index.ts
+- src/core/musicSheet/index.ts
+- src/pages/searchPage
+- src/pages/home
+- src/pages/setting
+
+任务：
+实现统一搜索/全局跳转 MVP，让重度用户可以快速跳到常用对象。
+
+范围：
+- 搜插件：跳转插件管理并能看到插件。
+- 搜本地歌单：跳转歌单详情。
+- 搜设置项：跳转对应设置页。
+- 搜歌曲仍复用现有搜索页，不重写搜索引擎。
+
+不要做：
+- 不做命令动作，如直接删除、启用、下载。
+- 不做复杂分页。
+- 不阻塞播放。
+- 不新增远程服务。
+
+验收：
+- 输入插件名能找到插件入口。
+- 输入歌单名能跳转歌单。
+- 输入设置项能跳转设置。
+- 没结果时有清晰空状态。
+- npx tsc --noEmit 通过。
+```
+
+## Prompt 10：发布体验正规化 MVP
+
+状态：待执行。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- .github/workflows/android-build.yml
+- generator/generate-build-info.mjs
+- src/constants/buildInfo.generated.ts
+- src/pages/setting/settingTypes/aboutSetting.tsx
+- package.json
+- android/app/build.gradle
+
+任务：
+增强发布体验第一版，让 GitHub Release 和构建信息更可靠。
+
+范围：
+- Release asset 清理遇到 GitHub 5xx 时重试或跳过失败项，不让整条构建直接失败。
+- android-build-info.txt 补充版本号、commit、构建时间、构建分支。
+- APK 文件名保留版本号和 shortSha。
+- 构建失败时日志能区分构建失败、签名失败、上传失败。
+
+不要做：
+- 不重写整个 CI。
+- 不引入新发布服务。
+- 不改变 beta/stable 版本规则。
+- 不要求 CI 真机测试。
+
+验收：
+- release asset 清理有容错。
+- 构建信息文件包含关键字段。
+- npx tsc --noEmit 通过。
+- workflow YAML 语法保持有效。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 和 Prompt 02。下一步优先执行 Prompt 03，继续把本地安装、URL 安装、订阅安装的结果展示统一起来。
+当前已经完成 Prompt 01 到 Prompt 08。下一步优先执行 Prompt 09，继续统一搜索/全局跳转 MVP。

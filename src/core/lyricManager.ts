@@ -24,6 +24,25 @@ interface ILyricState {
     hasTranslation: boolean;
     hasRomanization: boolean;
     meta?: Record<string, string>;
+    source?: ILyricSourceStatus;
+    emptyReason?: LyricEmptyReason;
+}
+
+type LyricSourceType = NonNullable<ILyric.ILyricSource["sourceType"]> | "none";
+type LyricEmptyReason =
+    | "no-current-music"
+    | "plugin-not-found"
+    | "plugin-not-supported"
+    | "plugin-empty"
+    | "auto-search-empty"
+    | "parse-failed"
+    | "timeout"
+    | "unknown";
+
+interface ILyricSourceStatus {
+    type: LyricSourceType;
+    pluginName?: string;
+    title?: string;
 }
 
 type LyricLineType = "original" | "translation" | "romanization";
@@ -34,7 +53,7 @@ const defaultLyricDisplayOrder: LyricLineType[] = [
     "romanization",
 ];
 
-const defaultLyricState = {
+const defaultLyricState: ILyricState = {
     loading: true,
     lyrics: [],
     hasTranslation: false,
@@ -76,6 +95,11 @@ function withTimeout<T>(
             },
         );
     });
+}
+
+function isTimeoutError(err: any) {
+    const message = `${err?.message ?? err ?? ""}`.toLowerCase();
+    return message.includes("超时") || message.includes("timeout");
 }
 
 class LyricManager implements IInjectable {
@@ -329,22 +353,52 @@ class LyricManager implements IInjectable {
         }
     }
 
-    private setLyricAsLoadingState() {
+    private getLyricSourceStatus(
+        lrcSource: ILyric.ILyricSource,
+        musicItem: IMusic.IMusicItem,
+        plugin?: Plugin,
+        fallbackType: Exclude<LyricSourceType, "none"> = "plugin",
+    ): ILyricSourceStatus {
+        const associatedLrc = getMediaExtraProperty(musicItem, "associatedLrc");
+        if (associatedLrc) {
+            return {
+                type: "associated",
+                pluginName: associatedLrc.platform,
+                title: associatedLrc.title,
+            };
+        }
+
+        return {
+            type: lrcSource.sourceType ?? fallbackType,
+            pluginName:
+                lrcSource.sourcePluginName ?? plugin?.name ?? musicItem.platform,
+            title: lrcSource.sourceTitle ?? musicItem.title,
+        };
+    }
+
+    private setLyricAsLoadingState(source?: ILyricSourceStatus) {
         getDefaultStore().set(lyricStateAtom, {
             loading: true,
             lyrics: [],
             hasTranslation: false,
             hasRomanization: false,
+            source,
+            emptyReason: undefined,
         });
         getDefaultStore().set(currentLyricItemAtom, null);
     }
 
-    private setLyricAsNoLyricState() {
+    private setLyricAsNoLyricState(
+        emptyReason: LyricEmptyReason = "unknown",
+        source: ILyricSourceStatus = { type: "none" },
+    ) {
         getDefaultStore().set(lyricStateAtom, {
             loading: false,
             lyrics: [],
             hasTranslation: false,
             hasRomanization: false,
+            source,
+            emptyReason,
         });
         getDefaultStore().set(currentLyricItemAtom, null);
         if (this.appConfig.getConfig("lyric.showStatusBarLyric")) {
@@ -365,12 +419,14 @@ class LyricManager implements IInjectable {
 
         // 如果没有当前音乐项，重置歌词状态
         if (!currentMusicItem) {
-            this.setLyricAsNoLyricState();
+            this.setLyricAsNoLyricState("no-current-music");
             return;
         }
 
         try {
             let lrcSource: ILyric.ILyricSource | null;
+            let sourceStatus: ILyricSourceStatus | undefined;
+            let emptyReason: LyricEmptyReason = "plugin-empty";
 
             if (
                 skipFetchLyricSourceIfSame &&
@@ -378,19 +434,34 @@ class LyricManager implements IInjectable {
                 this.trackPlayer.isCurrentMusic(this.lyricParser.musicItem)
             ) {
                 lrcSource = this.lyricParser.lyricSource ?? null;
+                sourceStatus = this.lyricState.source;
             } else {
                 // 重置歌词状态
                 this.setLyricAsLoadingState();
 
-                lrcSource =
-                    (await withTimeout(
-                        this.pluginManager
-                            .getByMedia(currentMusicItem)
-                            ?.methods?.getLyric(currentMusicItem) ??
-                            Promise.resolve(null),
+                const plugin = this.pluginManager.getByMedia(currentMusicItem);
+                if (!plugin) {
+                    lrcSource = null;
+                    emptyReason = "plugin-not-found";
+                } else {
+                    lrcSource = (await withTimeout(
+                        plugin.methods.getLyric(currentMusicItem),
                         LYRIC_REQUEST_TIMEOUT_MS,
                         "获取歌词超时",
                     )) ?? null;
+
+                    if (lrcSource) {
+                        sourceStatus = this.getLyricSourceStatus(
+                            lrcSource,
+                            currentMusicItem,
+                            plugin,
+                        );
+                    } else if (!plugin.supportedMethods.has("getLyric")) {
+                        emptyReason = "plugin-not-supported";
+                    } else {
+                        emptyReason = "plugin-empty";
+                    }
+                }
             }
 
             // 切换到其他歌曲了, 直接返回
@@ -404,13 +475,26 @@ class LyricManager implements IInjectable {
                 this.appConfig.getConfig("lyric.autoSearchLyric")
             ) {
                 // 重置歌词状态
-                this.setLyricAsLoadingState();
+                this.setLyricAsLoadingState({
+                    type: "auto-search",
+                    title: currentMusicItem.title,
+                });
 
                 lrcSource = await withTimeout(
                     this.searchSimilarLyric(currentMusicItem),
                     LYRIC_REQUEST_TIMEOUT_MS,
                     "自动搜索歌词超时",
                 );
+                if (lrcSource) {
+                    sourceStatus = this.getLyricSourceStatus(
+                        lrcSource,
+                        currentMusicItem,
+                        undefined,
+                        "auto-search",
+                    );
+                } else {
+                    emptyReason = "auto-search-empty";
+                }
             }
 
             // 切换到其他歌曲了, 直接返回
@@ -420,10 +504,13 @@ class LyricManager implements IInjectable {
 
             // 如果源不存在，恢复默认设置
             if (!lrcSource) {
-                this.setLyricAsNoLyricState();
+                this.setLyricAsNoLyricState(emptyReason);
                 this.lyricParser = null;
                 return;
             }
+            sourceStatus =
+                sourceStatus ??
+                this.getLyricSourceStatus(lrcSource, currentMusicItem);
 
             const enableWordByWord =
                 this.appConfig.getConfig("lyric.enableWordByWord") ?? true;
@@ -457,17 +544,26 @@ class LyricManager implements IInjectable {
                 romanization,
             });
 
+            const lyricItems = this.lyricParser.getLyricItems();
+            if (!lyricItems.length) {
+                this.lyricParser = null;
+                this.setLyricAsNoLyricState("parse-failed", sourceStatus);
+                return;
+            }
+
             getDefaultStore().set(lyricStateAtom, {
                 loading: false,
-                lyrics: this.lyricParser.getLyricItems(),
+                lyrics: lyricItems,
                 hasTranslation: this.lyricParser.hasTranslation,
                 hasRomanization: this.lyricParser.hasRomanization,
                 meta: this.lyricParser.getMeta(),
+                source: sourceStatus,
+                emptyReason: undefined,
             });
 
             const progress = await this.trackPlayer.getProgress();
             const currentLyric = ignoreProgress
-                ? this.lyricParser.getLyricItems()?.[0] ?? null
+                ? lyricItems[0] ?? null
                 : this.lyricParser.getPosition(progress.position);
             const positionMs = progress.position * 1000;
             getDefaultStore().set(currentPositionMsAtom, positionMs);
@@ -492,7 +588,9 @@ class LyricManager implements IInjectable {
         } catch (err) {
             if (this.trackPlayer.isCurrentMusic(currentMusicItem)) {
                 this.lyricParser = null;
-                this.setLyricAsNoLyricState();
+                this.setLyricAsNoLyricState(
+                    isTimeoutError(err) ? "timeout" : "parse-failed",
+                );
             }
         }
     }
@@ -502,7 +600,9 @@ class LyricManager implements IInjectable {
      * @param musicItem
      * @returns
      */
-    private async searchSimilarLyric(musicItem: IMusic.IMusicItem) {
+    private async searchSimilarLyric(
+        musicItem: IMusic.IMusicItem,
+    ): Promise<ILyric.ILyricSource | null> {
         const keyword = musicItem.alias || musicItem.title;
         const plugins = this.pluginManager.getSearchablePlugins("lyric");
 
@@ -557,11 +657,19 @@ class LyricManager implements IInjectable {
         }
 
         if (minDistanceMusicItem && targetPlugin) {
-            return await withTimeout(
+            const lrcSource = await withTimeout(
                 targetPlugin.methods.getLyric(minDistanceMusicItem),
                 LYRIC_REQUEST_TIMEOUT_MS,
                 "获取匹配歌词超时",
             ).catch(() => null);
+            return lrcSource
+                ? {
+                    ...lrcSource,
+                    sourceType: "auto-search",
+                    sourcePluginName: targetPlugin.name,
+                    sourceTitle: minDistanceMusicItem.title,
+                }
+                : null;
         }
 
         return null;
