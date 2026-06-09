@@ -36,12 +36,63 @@ export default function PluginList() {
 
     const navigator = useNavigation<any>();
 
+    function getInstallResultSourceLabel(result: IInstallPluginResult) {
+        if (result.sourceType === "network") {
+            return t("pluginSetting.pluginItem.source.network");
+        }
+        if (result.sourceType === "local-file") {
+            return t("pluginSetting.pluginItem.source.localFile");
+        }
+        return t("pluginSetting.pluginItem.source.unknown");
+    }
+
+    function formatInstallResult(result: IInstallPluginResult) {
+        const title =
+            result.pluginName ??
+            result.pluginUrl ??
+            t("common.unknownName");
+        const lines = [
+            result.pluginVersion
+                ? t("pluginSetting.pluginItem.versionHint", {
+                    version: result.pluginVersion,
+                })
+                : "",
+            `${t("pluginSetting.installResult.source")}: ${getInstallResultSourceLabel(result)}`,
+            result.pluginUrl ? `${result.pluginUrl}` : "",
+            result.success
+                ? ""
+                : t("pluginSetting.failReason", {
+                    reason: result.message ?? "",
+                }),
+        ].filter(Boolean);
+
+        return [title, ...lines].join("\n");
+    }
+
     function showPluginInstallResults(
         successResults: IInstallPluginResult[],
         failResults: IInstallPluginResult[],
     ) {
+        const content = [
+            successResults.length
+                ? `${t("pluginSetting.installResult.success")}\n${successResults.map(formatInstallResult).join("\n-----\n")}`
+                : "",
+            failResults.length
+                ? `${t("pluginSetting.installResult.failed")}\n${failResults.map(formatInstallResult).join("\n-----\n")}`
+                : "",
+        ].filter(Boolean).join("\n\n");
+        const showInstallResultDialog = () => {
+            showDialog("SimpleDialog", {
+                title: t("pluginSetting.installResult.dialogTitle"),
+                content,
+            });
+        };
+
         if (!failResults.length) {
-            Toast.success(t("toast.installPluginSuccess"));
+            Toast.success(t("toast.installPluginSuccess"), {
+                actionText: t("common.view"),
+                onActionClick: showInstallResultDialog,
+            });
             return;
         }
 
@@ -52,20 +103,7 @@ export default function PluginList() {
             {
                 type: "warn",
                 actionText: t("common.view"),
-                onActionClick: () => {
-                    showDialog("SimpleDialog", {
-                        title: t("pluginSetting.menu.pluginInstallFailedDialogTitle"),
-                        content: t("pluginSetting.pluginInstallFailedDialogContent", {
-                            detail: failResults.map(it => {
-                                const pluginSource =
-                                    it.pluginUrl ?? it.pluginName ?? "";
-                                return `${pluginSource}\n${t("pluginSetting.failReason", {
-                                    reason: it.message ?? "",
-                                })}`;
-                            }).join("\n-----\n"),
-                        }),
-                    });
-                },
+                onActionClick: showInstallResultDialog,
             },
         );
     }
@@ -133,6 +171,7 @@ export default function PluginList() {
                     return {
                         ...result,
                         pluginUrl: result.pluginUrl ?? it.name ?? it.uri,
+                        sourceType: result.sourceType ?? "local-file",
                     };
                 }),
             );
@@ -171,24 +210,7 @@ export default function PluginList() {
                     }
                 }
 
-                if (!failResults.length) {
-                    Toast.success(t("toast.installPluginSuccess"));
-                } else {
-                    Toast.warn(successResults.length ? t("toast.partialPluginInstallFailed") : t("toast.allPluginInstallFailed"), {
-                        "type": "warn",
-                        "actionText": t("common.view"),
-                        "onActionClick": () => {
-                            showDialog("SimpleDialog", {
-                                title: t("pluginSetting.menu.pluginInstallFailedDialogTitle"),
-                                content: t("pluginSetting.pluginInstallFailedDialogContent", {
-                                    detail: failResults.map(it => (it.pluginUrl ?? "") + "\n" + t("pluginSetting.failReason", {
-                                        reason: it.message ?? "",
-                                    })).join("\n-----\n"),
-                                }),
-                            });
-                        },
-                    });
-                }
+                showPluginInstallResults(successResults, failResults);
 
 
                 setLoading(false);
@@ -223,35 +245,16 @@ export default function PluginList() {
                 throw new Error();
             }
 
-            if (!failResults.length) {
-                Toast.success(t("toast.installPluginSuccess"));
-            } else {
-                Toast.warn((successResults.length ? t("toast.partialPluginInstallFailed") : t("toast.allPluginInstallFailed")), {
-                    "type": "warn",
-                    "actionText": t("common.view"),
-                    "onActionClick": () => {
-                        showDialog("SimpleDialog", {
-                            title: t("pluginSetting.menu.pluginInstallFailedDialogTitle"),
-                            content: t("pluginSetting.pluginInstallFailedDialogContent", {
-                                detail: failResults.map(it => (it.pluginUrl ?? "") + "\n" + t("pluginSetting.failReason", {
-                                    reason: it.message ?? "",
-                                })).join("\n-----\n"),
-                            }),
-                        });
-                    },
-                });
-            }
+            showPluginInstallResults(successResults, failResults);
 
         } catch {
             if (urls?.length) {
                 const result = await installPluginFromUrl(urls);
                 if (result[0]) {
                     if (result[0].success) {
-                        Toast.success(t("toast.installPluginSuccess"));
+                        showPluginInstallResults([result[0]], []);
                     } else {
-                        Toast.warn(t("toast.partialPluginInstallFailedWithReason", {
-                            reason: result[0].message ?? "",
-                        }));
+                        showPluginInstallResults([], [result[0]]);
                     }
                 } else {
                     Toast.warn(t("toast.subscriptionInvalid"));
@@ -422,6 +425,11 @@ async function installPluginFromUrl(text: string): Promise<IInstallPluginResult[
             ),
         );
     } catch (e: any) {
-        return [{ success: false, message: e?.message, pluginUrl: text }];
+        return [{
+            success: false,
+            message: e?.message,
+            pluginUrl: text,
+            sourceType: "network",
+        }];
     }
 }

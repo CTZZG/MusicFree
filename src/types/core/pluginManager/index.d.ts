@@ -7,6 +7,8 @@ export interface IInstallPluginConfig {
     notCheckVersion?: boolean;
 }
 
+export type IInstallPluginSourceType = "network" | "local-file" | "unknown";
+
 /**
  * 插件安装结果接口
  */
@@ -16,6 +18,8 @@ export interface IInstallPluginResult {
     pluginName?: string;
     pluginHash?: string;
     pluginUrl?: string;
+    pluginVersion?: string;
+    sourceType?: IInstallPluginSourceType;
 }
 
 /**

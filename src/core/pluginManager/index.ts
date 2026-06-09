@@ -199,86 +199,105 @@ class PluginManager implements IPluginManager, IInjectable {
             useExpoFs?: boolean;
         },
     ): Promise<IInstallPluginResult> {
-        let funcCode: string;
-        if (config?.useExpoFs) {
-            funcCode = await readAsStringAsync(pluginPath);
-        } else {
-            funcCode = await readFile(pluginPath, "utf8");
-        }
-
-        if (funcCode) {
-            const plugin = new Plugin(funcCode, pluginPath);
-            let allPlugins = [...this.getPlugins()];
-
-            const _pluginIndex = allPlugins.findIndex(
-                p => p.hash === plugin.hash,
-            );
-            if (_pluginIndex !== -1) {
-                // 静默忽略
-                return {
-                    success: true,
-                    message: "插件已安装",
-                    pluginName: plugin.name,
-                    pluginHash: plugin.hash,
-                };
+        try {
+            let funcCode: string;
+            if (config?.useExpoFs) {
+                funcCode = await readAsStringAsync(pluginPath);
+            } else {
+                funcCode = await readFile(pluginPath, "utf8");
             }
-            const oldVersionPlugin = allPlugins.find(
-                p => p.name === plugin.name,
-            );
-            if (oldVersionPlugin && !config?.notCheckVersion) {
-                if (
-                    compare(
-                        oldVersionPlugin.instance.version ?? "",
-                        plugin.instance.version ?? "",
-                        ">",
-                    )
-                ) {
+
+            if (funcCode) {
+                const plugin = new Plugin(funcCode, pluginPath);
+                let allPlugins = [...this.getPlugins()];
+
+                const _pluginIndex = allPlugins.findIndex(
+                    p => p.hash === plugin.hash,
+                );
+                if (_pluginIndex !== -1) {
+                    // 静默忽略
                     return {
-                        success: false,
-                        message: "已安装更新版本的插件",
+                        success: true,
+                        message: "插件已安装",
                         pluginName: plugin.name,
                         pluginHash: plugin.hash,
+                        pluginVersion: plugin.instance.version,
+                        sourceType: "local-file",
                     };
                 }
-            }
-
-            if (plugin.state === PluginState.Mounted) {
-                const fn = nanoid();
-                if (oldVersionPlugin) {
-                    allPlugins = allPlugins.filter(
-                        _ => _.hash !== oldVersionPlugin.hash,
-                    );
-                    try {
-                        await unlink(oldVersionPlugin.path);
-                    } catch {}
+                const oldVersionPlugin = allPlugins.find(
+                    p => p.name === plugin.name,
+                );
+                if (oldVersionPlugin && !config?.notCheckVersion) {
+                    if (
+                        compare(
+                            oldVersionPlugin.instance.version ?? "",
+                            plugin.instance.version ?? "",
+                            ">",
+                        )
+                    ) {
+                        return {
+                            success: false,
+                            message: "已安装更新版本的插件",
+                            pluginName: plugin.name,
+                            pluginHash: plugin.hash,
+                            pluginVersion: plugin.instance.version,
+                            sourceType: "local-file",
+                        };
+                    }
                 }
-                const _pluginPath = `${pathConst.pluginPath}${fn}.js`;
-                if (config?.useExpoFs) {
-                    await writeFile(_pluginPath, funcCode, "utf8");
-                } else {
-                    await copyFile(pluginPath, _pluginPath);
-                }
-                plugin.path = _pluginPath;
-                allPlugins = allPlugins.concat(plugin);
-                this.setPlugins(allPlugins);
 
+                if (plugin.state === PluginState.Mounted) {
+                    const fn = nanoid();
+                    if (oldVersionPlugin) {
+                        allPlugins = allPlugins.filter(
+                            _ => _.hash !== oldVersionPlugin.hash,
+                        );
+                        try {
+                            await unlink(oldVersionPlugin.path);
+                        } catch {}
+                    }
+                    const _pluginPath = `${pathConst.pluginPath}${fn}.js`;
+                    if (config?.useExpoFs) {
+                        await writeFile(_pluginPath, funcCode, "utf8");
+                    } else {
+                        await copyFile(pluginPath, _pluginPath);
+                    }
+                    plugin.path = _pluginPath;
+                    allPlugins = allPlugins.concat(plugin);
+                    this.setPlugins(allPlugins);
+
+                    return {
+                        success: true,
+                        pluginName: plugin.name,
+                        pluginHash: plugin.hash,
+                        pluginVersion: plugin.instance.version,
+                        sourceType: "local-file",
+                    };
+                }
                 return {
-                    success: true,
-                    pluginName: plugin.name,
-                    pluginHash: plugin.hash,
+                    success: false,
+                    message: plugin.errorMessage
+                        ? `插件无法解析: ${plugin.errorMessage}`
+                        : "插件无法解析",
+                    pluginName: plugin.name || undefined,
+                    pluginVersion: plugin.instance.version,
+                    sourceType: "local-file",
                 };
             }
             return {
                 success: false,
-                message: plugin.errorMessage
-                    ? `插件无法解析: ${plugin.errorMessage}`
-                    : "插件无法解析",
+                message: "插件无法识别",
+                sourceType: "local-file",
+            };
+        } catch (e: any) {
+            return {
+                success: false,
+                message: e?.message ?? "本地插件读取失败",
+                pluginUrl: pluginPath,
+                sourceType: "local-file",
             };
         }
-        return {
-            success: false,
-            message: "插件无法识别",
-        };
     }
 
     /**
@@ -316,6 +335,8 @@ class PluginManager implements IPluginManager, IInjectable {
                         pluginName: plugin.name,
                         pluginHash: plugin.hash,
                         pluginUrl: url,
+                        pluginVersion: plugin.instance.version,
+                        sourceType: "network",
                     };
                 }
                 const oldVersionPlugin = allPlugins.find(
@@ -335,6 +356,8 @@ class PluginManager implements IPluginManager, IInjectable {
                             pluginName: plugin.name,
                             pluginHash: plugin.hash,
                             pluginUrl: url,
+                            pluginVersion: plugin.instance.version,
+                            sourceType: "network",
                         };
                     }
                 }
@@ -359,6 +382,8 @@ class PluginManager implements IPluginManager, IInjectable {
                         pluginName: plugin.name,
                         pluginHash: plugin.hash,
                         pluginUrl: url,
+                        pluginVersion: plugin.instance.version,
+                        sourceType: "network",
                     };
                 }
                 return {
@@ -367,12 +392,16 @@ class PluginManager implements IPluginManager, IInjectable {
                         ? `插件无法解析: ${plugin.errorMessage}`
                         : "插件无法解析",
                     pluginUrl: url,
+                    pluginName: plugin.name || undefined,
+                    pluginVersion: plugin.instance.version,
+                    sourceType: "network",
                 };
             } else {
                 return {
                     success: false,
                     message: "插件无法识别",
                     pluginUrl: url,
+                    sourceType: "network",
                 };
             }
         } catch (e: any) {
@@ -384,12 +413,14 @@ class PluginManager implements IPluginManager, IInjectable {
                     success: false,
                     message: "插件不存在，请联系插件作者",
                     pluginUrl: url,
+                    sourceType: "network",
                 };
             } else {
                 return {
                     success: false,
                     message: e?.message ?? "",
                     pluginUrl: url,
+                    sourceType: "network",
                 };
             }
         }

@@ -270,6 +270,10 @@ export interface ILanguageData {
     "pluginSetting.fabOptions.updateAllPlugins": string; // 更新所有插件
     "pluginSetting.fabOptions.updateSubscription": string; // 更新订阅
     "pluginSetting.failReason": string; // 失败原因
+    "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
+    "pluginSetting.installResult.success": string; // 安装成功
+    "pluginSetting.installResult.failed": string; // 安装失败
+    "pluginSetting.installResult.source": string; // 来源
     "pluginSetting.pluginInstallFailedDialogContent": string; // 插件安装失败对话框内容
     "pluginSetting.pluginUpdateFailedDialogContent": string; // 插件更新失败对话框内容
 
