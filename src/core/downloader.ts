@@ -1023,4 +1023,23 @@ export function useDownloadTask(musicItem: IMusic.IMusicItem) {
     return downloadStatus;
 }
 
+export function useDownloadTasksSnapshot() {
+    const [, setVersion] = useState(0);
+
+    useEffect(() => {
+        const update = () => {
+            setVersion(prev => prev + 1);
+        };
+        downloader.on(DownloaderEvent.DownloadTaskUpdate, update);
+        downloader.on(DownloaderEvent.DownloadQueueCompleted, update);
+
+        return () => {
+            downloader.off(DownloaderEvent.DownloadTaskUpdate, update);
+            downloader.off(DownloaderEvent.DownloadQueueCompleted, update);
+        };
+    }, []);
+
+    return new Map(downloadTasks);
+}
+
 export const useDownloadQueue = () => useAtomValue(downloadQueueAtom);

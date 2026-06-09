@@ -17,6 +17,7 @@ import {
     TRY_QUALITYS_LIST,
 } from "@/utils/qualities";
 import DownloadStatusIndicator from "@/components/downloadStatusIndicator";
+import { useI18N } from "@/core/i18n";
 
 interface IMusicItemProps {
     index?: string | number;
@@ -85,6 +86,8 @@ export default function MusicItem(props: IMusicItemProps) {
         () => showQuality ? getMusicItemQualityBadge(musicItem) : "",
         [musicItem, showQuality],
     );
+    const { t } = useI18N();
+    const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
     const durationText = useMemo(
         () => showDuration ? formatDuration(musicItem.duration) : "",
         [musicItem.duration, showDuration],
@@ -136,8 +139,8 @@ export default function MusicItem(props: IMusicItemProps) {
                         {LocalMusicSheet.isLocalMusic(musicItem) && (
                             <Icon
                                 style={styles.icon}
-                                color="#11659a"
-                                name="check-circle"
+                                color={localFileExists === false ? "#e66767" : "#11659a"}
+                                name={localFileExists === false ? "exclamation-circle" : "check-circle"}
                                 size={rpx(22)}
                             />
                         )}
@@ -153,10 +156,16 @@ export default function MusicItem(props: IMusicItemProps) {
                         <ThemeText
                             numberOfLines={1}
                             fontSize="description"
+                            color={
+                                localFileExists === false
+                                    ? "#e66767"
+                                    : undefined
+                            }
                             fontColor={highlight ? "primary" : "textSecondary"}
                             style={styles.descText}>
-                            {musicItem.artist}
-                            {musicItem.album ? ` - ${musicItem.album}` : ""}
+                            {localFileExists === false
+                                ? t("localMusic.fileMissing")
+                                : `${musicItem.artist}${musicItem.album ? ` - ${musicItem.album}` : ""}`}
                         </ThemeText>
                     </View>
                 }

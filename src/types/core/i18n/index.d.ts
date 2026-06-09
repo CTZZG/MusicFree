@@ -135,6 +135,8 @@ export interface ILanguageData {
     "localMusic.scanLocalMusic": string; // 扫描本地音乐
     "localMusic.beginScan": string; // 开始扫描
     "localMusic.downloadList": string; // 下载列表
+    "localMusic.sourceFilter.all": string; // 全部来源
+    "localMusic.fileMissing": string; // 文件不存在
 
     // 歌词相关
     "lyric.lyricLinkedFrom": string; // 歌词来自
@@ -216,6 +218,11 @@ export interface ILanguageData {
 
     // 下载相关
     "downloading.title": string; // 下载
+    "downloading.filter.all": string; // 全部
+    "downloading.filter.active": string; // 进行中
+    "downloading.filter.paused": string; // 已暂停
+    "downloading.filter.completed": string; // 已完成
+    "downloading.filter.error": string; // 失败
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源

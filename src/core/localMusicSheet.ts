@@ -40,18 +40,7 @@ function createResumeReport(): ILocalMusicResumeReport {
 export async function setup() {
     const sheet = await getStorage(StorageKeys.LocalMusicSheet);
     if (sheet) {
-        let validSheet: IMusic.IMusicItem[] = [];
-        for (let musicItem of sheet) {
-            const localPath = getLocalPath(musicItem);
-            const fsPath = localPath ? normalizeFsPath(localPath) : null;
-            if (fsPath && (await exists(fsPath))) {
-                validSheet.push(musicItem);
-            }
-        }
-        if (validSheet.length !== sheet.length) {
-            await setStorage(StorageKeys.LocalMusicSheet, validSheet);
-        }
-        localSheet = validSheet;
+        localSheet = sheet;
     } else {
         await setStorage(StorageKeys.LocalMusicSheet, []);
     }
@@ -331,6 +320,39 @@ function useIsLocal(musicItem: IMusic.IMusicItem | null) {
     return isLocal;
 }
 
+function useLocalFileExists(musicItem: IMusic.IMusicItem | null) {
+    const localMusicState = localSheetStateMapper.useMappedState();
+    const [fileExists, setFileExists] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        async function checkFileExists() {
+            if (!musicItem) {
+                setFileExists(null);
+                return;
+            }
+            const localPath = getLocalPath(musicItem);
+            if (!localPath) {
+                setFileExists(null);
+                return;
+            }
+            const fsPath = normalizeFsPath(localPath);
+            const result = await exists(fsPath).catch(() => false);
+            if (!cancelled) {
+                setFileExists(result);
+            }
+        }
+
+        checkFileExists();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [localMusicState, musicItem]);
+
+    return fileExists;
+}
+
 function getMusicList() {
     return localSheet;
 }
@@ -405,6 +427,7 @@ const LocalMusicSheet = {
     useIsLocal,
     getMusicList,
     useMusicList: localSheetStateMapper.useMappedState,
+    useLocalFileExists,
     updateMusicList,
     resumeMusicList,
 };
