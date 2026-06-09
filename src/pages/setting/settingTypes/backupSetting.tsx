@@ -26,9 +26,49 @@ import { AuthType, createClient } from "webdav";
 import Clipboard from "@react-native-clipboard/clipboard";
 
 const preRestoreBackupDir = `${DocumentDirectoryPath}/MusicFree`;
+const webdavRootPath = "/MusicFree";
+const webdavLatestBackupPath = `${webdavRootPath}/MusicFreeBackup.json`;
+const webdavHistoryDir = `${webdavRootPath}/Backups`;
+const webdavHistoryKeepCount = 10;
 
 function formatBackupTimestamp(date = new Date()) {
     return date.toISOString().replace(/[:.]/g, "-");
+}
+
+async function ensureWebdavDirectory(client: ReturnType<typeof createClient>, path: string) {
+    if (!(await client.exists(path))) {
+        await client.createDirectory(path);
+    }
+}
+
+async function pruneWebdavBackupHistory(client: ReturnType<typeof createClient>) {
+    try {
+        const contents = await client.getDirectoryContents(webdavHistoryDir) as Array<{
+            basename?: string;
+            filename?: string;
+            type?: string;
+        }>;
+        const backupFiles = contents
+            .filter(item => item.type !== "directory")
+            .filter(item =>
+                (item.basename ?? item.filename ?? "")
+                    .startsWith("MusicFreeBackup-"),
+            )
+            .sort((a, b) =>
+                (b.basename ?? b.filename ?? "")
+                    .localeCompare(a.basename ?? a.filename ?? ""),
+            );
+
+        await Promise.all(
+            backupFiles
+                .slice(webdavHistoryKeepCount)
+                .map(item => item.filename)
+                .filter((filename): filename is string => !!filename)
+                .map(filename => client.deleteFile(filename)),
+        );
+    } catch (e) {
+        errorLog("清理 WebDAV 备份历史失败", e);
+    }
 }
 
 export default function BackupSetting() {
@@ -291,14 +331,14 @@ export default function BackupSetting() {
             password: password,
         });
 
-        if (!(await client.exists("/MusicFree/MusicFreeBackup.json"))) {
+        if (!(await client.exists(webdavLatestBackupPath))) {
             Toast.warn(t("toast.backupFileNotFound"));
             return;
         }
 
         try {
             const resumeData = await client.getFileContents(
-                "/MusicFree/MusicFreeBackup.json",
+                webdavLatestBackupPath,
                 {
                     format: "text",
                 },
@@ -325,17 +365,26 @@ export default function BackupSetting() {
             });
 
             const raw = Backup.backup();
-            if (!(await client.exists("/MusicFree"))) {
-                await client.createDirectory("/MusicFree");
-            }
-            // 临时文件
+            await ensureWebdavDirectory(client, webdavRootPath);
+            await ensureWebdavDirectory(client, webdavHistoryDir);
+
+            const historyBackupPath =
+                `${webdavHistoryDir}/MusicFreeBackup-${formatBackupTimestamp()}.json`;
             await client.putFileContents(
-                "/MusicFree/MusicFreeBackup.json",
+                historyBackupPath,
+                raw,
+                {
+                    overwrite: false,
+                },
+            );
+            await client.putFileContents(
+                webdavLatestBackupPath,
                 raw,
                 {
                     overwrite: true,
                 },
             );
+            await pruneWebdavBackupHistory(client);
             Toast.success(t("toast.backupSuccess"));
         } catch (e: any) {
             Toast.warn(t("toast.backupFail", { reason: e?.message ?? e }));

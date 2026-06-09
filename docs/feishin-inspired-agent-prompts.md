@@ -595,6 +595,40 @@
 - 恢复报告弹窗点击复制后写入剪贴板。
 ```
 
+## Prompt 16：WebDAV 备份历史基础
+
+状态：已完成。本次让手动 WebDAV 备份同时写入 latest 文件和带时间戳的历史文件，并保留最近 10 份历史备份。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/pages/setting/settingTypes/backupSetting.tsx
+
+任务：
+为后续 WebDAV 自动备份打基础，让当前手动 WebDAV 备份不再只有一个会被覆盖的文件。
+
+范围：
+- 保留 `/MusicFree/MusicFreeBackup.json` 作为 latest 文件，兼容现有 WebDAV 恢复入口。
+- 每次 WebDAV 备份额外写入 `/MusicFree/Backups/MusicFreeBackup-<timestamp>.json`。
+- 自动创建 `/MusicFree` 和 `/MusicFree/Backups`。
+- 备份成功后清理历史目录，只保留最近 10 份时间戳备份。
+- 历史清理失败只记录日志，不让本次备份失败。
+
+不要做：
+- 不实现后台定时任务。
+- 不增加 Wi-Fi 条件。
+- 不新增远端备份列表 UI。
+- 不改变 WebDAV 恢复默认读取 latest 文件的行为。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- WebDAV 手动备份仍更新 latest 文件。
+- WebDAV 手动备份会生成时间戳历史文件。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 15。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做 WebDAV 自动备份预案，或进入下载/本地资料库的后续增强。
+当前已经完成 Prompt 01 到 Prompt 16。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做 WebDAV 远端备份列表/选择恢复，或进入下载/本地资料库的后续增强。
