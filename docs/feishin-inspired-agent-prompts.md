@@ -358,7 +358,7 @@
 
 ## Prompt 10：发布体验正规化 MVP
 
-状态：待执行。
+状态：已完成。本次实现 release asset 清理容错、构建信息补充、构建/签名/产物错误注解，以及关于页构建引用展示。
 
 ```text
 你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
@@ -396,4 +396,4 @@
 
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 09。下一步优先执行 Prompt 10，继续发布体验正规化 MVP。
+当前已经完成 Prompt 01 到 Prompt 10。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做播放诊断 Native 状态补充或备份恢复校验增强。

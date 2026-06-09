@@ -44,9 +44,16 @@ function getAndroidVersionCode() {
 const gitSha = process.env.GITHUB_SHA || run('git rev-parse HEAD', 'unknown');
 const shortSha = process.env.SHORT_SHA || gitSha.slice(0, 7);
 const gitRef =
+    process.env.BUILD_REF_NAME ||
     process.env.GITHUB_REF_NAME ||
     process.env.GITHUB_REF ||
     run('git branch --show-current', 'unknown');
+const gitRefType = process.env.BUILD_REF_TYPE || process.env.GITHUB_REF_TYPE || 'branch';
+const buildRunUrl =
+    process.env.BUILD_RUN_URL ||
+    (process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+        ? `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+        : '');
 
 const dependencies = packageJson.dependencies ?? {};
 const buildInfo = {
@@ -56,6 +63,8 @@ const buildInfo = {
     gitSha,
     shortSha,
     gitRef,
+    gitRefType,
+    buildRunUrl,
     buildDate: process.env.BUILD_DATE || new Date().toISOString(),
     signing: getSigningState(),
     node: process.version,

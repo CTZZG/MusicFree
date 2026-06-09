@@ -73,12 +73,18 @@ jobs:
                   APP_VERSION="${INPUT_VERSION:-$PACKAGE_VERSION}"
                   SHORT_SHA="${GITHUB_SHA::7}"
                   BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+                  BUILD_REF_NAME="${GITHUB_REF_NAME:-unknown}"
+                  BUILD_REF_TYPE="${GITHUB_REF_TYPE:-unknown}"
+                  BUILD_RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
                   {
                     echo "APP_VERSION=$APP_VERSION"
                     echo "PACKAGE_VERSION=$PACKAGE_VERSION"
                     echo "SHORT_SHA=$SHORT_SHA"
                     echo "BUILD_DATE=$BUILD_DATE"
+                    echo "BUILD_REF_NAME=$BUILD_REF_NAME"
+                    echo "BUILD_REF_TYPE=$BUILD_REF_TYPE"
+                    echo "BUILD_RUN_URL=$BUILD_RUN_URL"
                   } >> "$GITHUB_ENV"
 
                   {
@@ -86,8 +92,12 @@ jobs:
                     echo "Package version: $PACKAGE_VERSION"
                     echo "Commit: $GITHUB_SHA"
                     echo "Short SHA: $SHORT_SHA"
-                    echo "Ref: $GITHUB_REF_NAME"
+                    echo "Build branch: $BUILD_REF_NAME"
+                    echo "Ref type: $BUILD_REF_TYPE"
+                    echo "Ref: $GITHUB_REF"
                     echo "Build date: $BUILD_DATE"
+                    echo "Workflow: $GITHUB_WORKFLOW"
+                    echo "Run: $BUILD_RUN_URL"
                     echo "Node: ${{ env.NODE_VERSION }}"
                     echo "Java: ${{ env.JAVA_VERSION }}"
                   } > android-build-info.txt
@@ -107,6 +117,7 @@ jobs:
                     fi
                   done
                   if [ "$missing" -ne 0 ]; then
+                    echo "::error title=Signing configuration failed::Release keystore was provided, but one or more required signing secrets are missing."
                     exit 1
                   fi
 
@@ -122,11 +133,14 @@ jobs:
               run: |
                   if [ -f android/keystore.properties ] && [ -f release.jks ]; then
                     echo "Release signing is configured."
-                    keytool -list \
+                    if ! keytool -list \
                       -keystore release.jks \
                       -storepass "$RELEASE_STORE_PASSWORD" \
                       -alias "$RELEASE_KEY_ALIAS" \
-                      >/dev/null
+                      >/dev/null; then
+                      echo "::error title=Signing validation failed::Release signing key validation failed. Check keystore password, key alias, and key password secrets."
+                      exit 1
+                    fi
                     echo "Release signing key was validated."
                   else
                     echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
@@ -151,11 +165,14 @@ jobs:
             - name: Build release APKs
               working-directory: ./android
               run: |
-                  ./gradlew assembleRelease \
+                  if ! ./gradlew assembleRelease \
                     --no-daemon \
                     --stacktrace \
                     --max-workers=2 \
-                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"; then
+                    echo "::error title=Android build failed::Gradle assembleRelease failed. Check this step for compiler, bundling, or native build output."
+                    exit 1
+                  fi
 
             - name: Collect APKs
               run: |
@@ -163,7 +180,7 @@ jobs:
                   shopt -s nullglob
                   apks=(android/app/build/outputs/apk/release/*.apk)
                   if [ ${#apks[@]} -eq 0 ]; then
-                    echo "No release APKs were found."
+                    echo "::error title=Build output collection failed::No release APKs were found after assembleRelease."
                     find android/app/build/outputs/apk -type f -name '*.apk' -print || true
                     exit 1
                   fi
@@ -244,7 +261,16 @@ jobs:
                     }
                   }
 
-                  const release = await github(`/releases/tags/${encodeURIComponent(tag)}`);
+                  let release;
+                  try {
+                    release = await github(`/releases/tags/${encodeURIComponent(tag)}`, {maxAttempts: 5});
+                  } catch (error) {
+                    if (error instanceof GithubRequestError && retryableStatuses.has(error.status)) {
+                      console.warn(`::warning::Could not load release ${tag} after retries. Continuing because cleanup is best-effort.`);
+                      process.exit(0);
+                    }
+                    throw error;
+                  }
                   if (!release) {
                     console.log(`Release ${tag} does not exist yet.`);
                     process.exit(0);
@@ -281,7 +307,7 @@ jobs:
                       Android build for `${{ env.APP_VERSION }}`.
 
                       - Commit: `${{ github.sha }}`
-                      - Ref: `${{ github.ref_name }}`
+                      - Ref: `${{ env.BUILD_REF_NAME }}`
                       - Build date: `${{ env.BUILD_DATE }}`
                       - Signing: release workflow signing check is recorded in `android-build-info.txt`.
                   files: dist/*
@@ -299,7 +325,9 @@ jobs:
                     echo "- App version: ${APP_VERSION}"
                     echo "- Package version: ${PACKAGE_VERSION}"
                     echo "- Commit: ${GITHUB_SHA}"
+                    echo "- Ref: ${BUILD_REF_NAME} (${BUILD_REF_TYPE})"
                     echo "- Build date: ${BUILD_DATE}"
+                    echo "- Run: ${BUILD_RUN_URL}"
                     echo "- Signing: $([ -f android/keystore.properties ] && echo configured || echo unsigned)"
                     echo
                     echo "### Artifacts"

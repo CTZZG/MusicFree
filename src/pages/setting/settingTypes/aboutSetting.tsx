@@ -43,6 +43,14 @@ export default function AboutSetting() {
             value: `${buildInfo.shortSha} · ${buildInfo.gitRef}`,
         },
         {
+            label: "构建引用",
+            value: buildInfo.gitRefType,
+        },
+        {
+            label: "构建运行",
+            value: buildInfo.buildRunUrl || "-",
+        },
+        {
             label: "构建时间",
             value: buildInfo.buildDate,
         },
