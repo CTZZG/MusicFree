@@ -348,6 +348,7 @@
     "backupAndResume.report.starredMusicSheets": "Starred Playlists",
     "backupAndResume.report.plugins": "Plugins",
     "backupAndResume.report.pluginConfigs": "Plugin Configs",
+    "backupAndResume.report.preRestoreBackup": "Pre-restore Backup",
     "backupAndResume.report.invalidPlugins": "Invalid Plugin Items",
     "backupAndResume.report.success": "Success",
     "backupAndResume.report.skipped": "Skipped",

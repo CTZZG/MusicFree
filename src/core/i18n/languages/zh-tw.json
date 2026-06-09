@@ -348,6 +348,7 @@
     "backupAndResume.report.starredMusicSheets": "收藏歌單",
     "backupAndResume.report.plugins": "外掛",
     "backupAndResume.report.pluginConfigs": "外掛配置",
+    "backupAndResume.report.preRestoreBackup": "恢復前備份",
     "backupAndResume.report.invalidPlugins": "無效外掛項",
     "backupAndResume.report.success": "成功",
     "backupAndResume.report.skipped": "跳過",

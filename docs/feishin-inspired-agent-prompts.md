@@ -519,6 +519,47 @@
 - 诊断报告只包含脱敏后的诊断事件和插件摘要。
 ```
 
+## Prompt 14：恢复前自动备份
+
+状态：已完成。本次在恢复流程开始前自动把当前数据备份到 App 可写目录，并把备份路径或失败原因写入恢复报告。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/backup.ts
+- src/pages/setting/settingTypes/backupSetting.tsx
+- src/utils/fileUtils.ts
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+增强备份恢复可验证流程，在正式恢复用户选择的备份文件前，自动保存当前应用数据，降低误恢复风险。
+
+范围：
+- 恢复前调用现有 `Backup.backup()` 生成当前数据备份。
+- 文件名使用 `backup-before-restore-<timestamp>.json`。
+- 存储到 App 可写目录下的 `MusicFree` 文件夹。
+- 自动备份成功时在恢复报告里显示路径。
+- 自动备份失败时不阻断恢复，但恢复报告显示失败原因。
+- 本地文件、URL、WebDAV 三个恢复入口复用同一恢复 loading 流程。
+
+不要做：
+- 不新增云同步。
+- 不改变用户选择的恢复模式。
+- 不要求用户额外选择目录。
+- 不阻断恢复。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 恢复报告能显示恢复前备份路径或失败原因。
+- 自动备份失败时仍继续执行恢复。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 13。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做恢复前自动备份或备份恢复历史报告。
+当前已经完成 Prompt 01 到 Prompt 14。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做备份恢复历史报告或 WebDAV 自动备份预案。

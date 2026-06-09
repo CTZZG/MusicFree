@@ -70,6 +70,11 @@ export interface IBackupResumeReport {
     starredMusicSheets: IBackupResumeSectionReport;
     plugins: IBackupResumeSectionReport;
     pluginConfigs: IBackupResumeSectionReport;
+    preRestoreBackup?: {
+        success: boolean;
+        path?: string;
+        error?: string;
+    };
 }
 
 function isValidPluginBackupItem(

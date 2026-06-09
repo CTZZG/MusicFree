@@ -17,11 +17,18 @@ import { ResumeMode } from "@/constants/commonConst.ts";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { useI18N } from "@/core/i18n";
 import delay from "@/utils/delay";
-import { writeInChunks } from "@/utils/fileUtils.ts";
+import { checkAndCreateDir, writeInChunks } from "@/utils/fileUtils.ts";
 import { errorLog } from "@/utils/log.ts";
 import { getDocumentAsync } from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
+import { DocumentDirectoryPath } from "react-native-fs";
 import { AuthType, createClient } from "webdav";
+
+const preRestoreBackupDir = `${DocumentDirectoryPath}/MusicFree`;
+
+function formatBackupTimestamp(date = new Date()) {
+    return date.toISOString().replace(/[:.]/g, "-");
+}
 
 export default function BackupSetting() {
     const { t } = useI18N();
@@ -60,9 +67,21 @@ export default function BackupSetting() {
             ...report.starredMusicSheets.failureReasons,
             ...report.plugins.failureReasons,
             ...report.pluginConfigs.failureReasons,
-        ];
+            report.preRestoreBackup?.success === false
+                ? `${t("backupAndResume.report.preRestoreBackup")}: ${
+                    report.preRestoreBackup.error ?? ""
+                }`
+                : "",
+        ].filter(Boolean);
 
         return [
+            report.preRestoreBackup
+                ? `${t("backupAndResume.report.preRestoreBackup")}: ${
+                    report.preRestoreBackup.success
+                        ? report.preRestoreBackup.path
+                        : t("backupAndResume.report.failed")
+                }`
+                : "",
             formatResumeSection(
                 t("backupAndResume.report.musicSheets"),
                 report.musicSheets,
@@ -100,6 +119,25 @@ export default function BackupSetting() {
         });
     }
 
+    async function createPreRestoreBackup() {
+        try {
+            await checkAndCreateDir(preRestoreBackupDir);
+            const path =
+                `${preRestoreBackupDir}/backup-before-restore-${formatBackupTimestamp()}.json`;
+            await writeInChunks(path, Backup.backup());
+            return {
+                success: true,
+                path,
+            };
+        } catch (e: any) {
+            errorLog("恢复前自动备份失败", e);
+            return {
+                success: false,
+                error: e?.message ?? `${e}`,
+            };
+        }
+    }
+
     function showResumeLoading(raw: string | object) {
         return new Promise(resolve => {
             showDialog("LoadingDialog", {
@@ -107,7 +145,10 @@ export default function BackupSetting() {
                 loadingText: t("backupAndResume.resuming"),
                 async task() {
                     await delay(300, false);
-                    return Backup.resume(raw, resumeMode);
+                    const preRestoreBackup = await createPreRestoreBackup();
+                    const report = await Backup.resume(raw, resumeMode);
+                    report.preRestoreBackup = preRestoreBackup;
+                    return report;
                 },
                 onResolve(report, hideDialog) {
                     hideDialog();
