@@ -23,6 +23,8 @@ import { IInstallPluginResult } from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
 import ListItem from "@/components/base/listItem";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
+import Clipboard from "@react-native-clipboard/clipboard";
+import { buildPluginDiagnosticReport } from "@/core/pluginManager/diagnostics";
 
 interface IOption {
     icon: IIconName;
@@ -127,6 +129,11 @@ export default function PluginList() {
         );
     }
 
+    function onCopyPluginDiagnosticReport() {
+        Clipboard.setString(buildPluginDiagnosticReport(plugins));
+        Toast.success(t("toast.copiedToClipboard"));
+    }
+
     const menuOptions: IOption[] = [
         {
             icon: "bookmark-square",
@@ -141,6 +148,11 @@ export default function PluginList() {
             onPress() {
                 navigator.navigate("/pluginsetting/sort");
             },
+        },
+        {
+            icon: "document-outline",
+            title: t("pluginSetting.menu.copyDiagnosticReport"),
+            onPress: onCopyPluginDiagnosticReport,
         },
         {
             icon: "trash-outline",

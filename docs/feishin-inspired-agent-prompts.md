@@ -477,6 +477,48 @@
 - 本地插件缺失时恢复报告有提示且歌单恢复不被阻断。
 ```
 
+## Prompt 13：插件诊断报告导出
+
+状态：已完成。本次新增插件诊断报告生成器，并在插件管理页菜单增加“复制诊断报告”入口。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/plugin-center-plan.md
+- src/core/pluginManager/diagnostics.ts
+- src/pages/setting/settingTypes/pluginSetting/views/pluginList.tsx
+- src/pages/setting/settingTypes/pluginSetting/components/pluginItem.tsx
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+为插件管理页增加手动复制插件诊断报告能力，方便用户反馈“某插件不能搜/不能播/安装失败”等问题。
+
+范围：
+- 在插件诊断模块里新增报告生成函数。
+- 报告包含生成时间、插件数量、诊断事件数量。
+- 报告列出插件名称、版本、作者、来源类型、hash 前缀、能力列表、最近错误数。
+- 报告列出最近诊断事件。
+- 插件管理页菜单增加“复制诊断报告”。
+- 补齐中/英/繁体文案和 i18n 类型。
+
+不要做：
+- 不上传诊断报告。
+- 不展示或复制用户变量。
+- 不复制完整插件 URL。
+- 不复制 headers/cookies/token。
+- 不触发插件方法探测。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 点击菜单能复制诊断报告。
+- 诊断报告只包含脱敏后的诊断事件和插件摘要。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 12。下一步可以从 `docs/plugin-center-plan.md` 的 Phase 5 或 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做插件诊断报告导出或恢复前自动备份。
+当前已经完成 Prompt 01 到 Prompt 13。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做恢复前自动备份或备份恢复历史报告。

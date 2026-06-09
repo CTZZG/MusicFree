@@ -30,6 +30,18 @@ interface IRecordPluginDiagnosticParams {
     estimatedLocation?: string | null;
 }
 
+interface IPluginDiagnosticReportPlugin {
+    name: string;
+    hash?: string;
+    path?: string;
+    instance: {
+        version?: string;
+        author?: string;
+        srcUrl?: string;
+    };
+    supportedMethods: Set<string>;
+}
+
 function getStoredEvents() {
     const events = safeParse<PluginDiagnosticEvent[]>(
         storage.getString(storageKey),
@@ -66,6 +78,62 @@ function formatErrorMessage(error: any) {
     } catch {
         return String(error ?? "Unknown error");
     }
+}
+
+function sanitizeReportValue(value: unknown) {
+    const sanitized = sanitizeMessage(String(value ?? "-"))
+        .replace(/\r?\n/g, " ")
+        .trim();
+    return sanitized || "-";
+}
+
+function getPluginSourceType(plugin: IPluginDiagnosticReportPlugin) {
+    if (plugin.instance.srcUrl) {
+        return "network";
+    }
+    if (plugin.path) {
+        return "local-file";
+    }
+    return "unknown";
+}
+
+function getPluginDiagnosticEventLines(events: PluginDiagnosticEvent[]) {
+    if (!events.length) {
+        return ["-"];
+    }
+    return events.map(event => [
+        `- ${new Date(event.createdAt).toLocaleString()} ${sanitizeReportValue(event.pluginName)} ${sanitizeReportValue(event.method)}`,
+        `  ${sanitizeReportValue(event.message)}`,
+        event.estimatedLocation
+            ? `  ${sanitizeReportValue(event.estimatedLocation)}`
+            : "",
+    ].filter(Boolean).join("\n"));
+}
+
+function getPluginReportLines(
+    plugins: IPluginDiagnosticReportPlugin[],
+    events: PluginDiagnosticEvent[],
+) {
+    if (!plugins.length) {
+        return ["-"];
+    }
+    return plugins.map(plugin => {
+        const eventCount = events.filter(event =>
+            plugin.hash
+                ? event.pluginHash === plugin.hash
+                : event.pluginName === plugin.name,
+        ).length;
+        const capabilities = [...plugin.supportedMethods].sort();
+        return [
+            `- ${sanitizeReportValue(plugin.name)}`,
+            `  version=${sanitizeReportValue(plugin.instance.version)}`,
+            `  author=${sanitizeReportValue(plugin.instance.author)}`,
+            `  source=${getPluginSourceType(plugin)}`,
+            `  hash=${sanitizeReportValue(plugin.hash ? plugin.hash.slice(0, 12) : "")}`,
+            `  capabilities=${capabilities.length ? capabilities.map(sanitizeReportValue).join(",") : "-"}`,
+            `  recentErrors=${eventCount}`,
+        ].join("\n");
+    });
 }
 
 function trimEvents(events: PluginDiagnosticEvent[]) {
@@ -124,4 +192,26 @@ export function getLatestPluginDiagnosticEvent(
     pluginName?: string,
 ) {
     return getPluginDiagnosticEvents(pluginHash, pluginName, 1)[0] ?? null;
+}
+
+export function getAllPluginDiagnosticEvents(limit = maxEventsTotal) {
+    return getStoredEvents().slice(0, limit);
+}
+
+export function buildPluginDiagnosticReport(
+    plugins: IPluginDiagnosticReportPlugin[],
+) {
+    const events = getAllPluginDiagnosticEvents();
+    return [
+        "MusicFree Plugin Diagnostic Report",
+        `Generated: ${new Date().toISOString()}`,
+        `Plugins: ${plugins.length}`,
+        `Diagnostic events: ${events.length}`,
+        "",
+        "Plugins",
+        ...getPluginReportLines(plugins, events),
+        "",
+        "Recent diagnostics",
+        ...getPluginDiagnosticEventLines(events.slice(0, 50)),
+    ].join("\n");
 }

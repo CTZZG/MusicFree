@@ -251,6 +251,7 @@
     "pluginSetting.pluginItem.detail.noDiagnostics": "最近無錯誤",
     "pluginSetting.menu.subscriptionSetting": "訂閱設定",
     "pluginSetting.menu.sort": "外掛排序",
+    "pluginSetting.menu.copyDiagnosticReport": "複製診斷報告",
     "pluginSetting.menu.uninstallAll": "卸載全部外掛",
     "pluginSetting.menu.uninstallAllContent": "確認卸載全部外掛嗎？此操作不可恢復！",
     "pluginSetting.menu.installPlugin": "安裝外掛",

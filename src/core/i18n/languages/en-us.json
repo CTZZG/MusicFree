@@ -251,6 +251,7 @@
     "pluginSetting.pluginItem.detail.noDiagnostics": "No recent errors",
     "pluginSetting.menu.subscriptionSetting": "Subscription Settings",
     "pluginSetting.menu.sort": "Plugin Sort",
+    "pluginSetting.menu.copyDiagnosticReport": "Copy Diagnostic Report",
     "pluginSetting.menu.uninstallAll": "Uninstall All Plugins",
     "pluginSetting.menu.uninstallAllContent": "Are you sure to uninstall all plugins? This action cannot be undone!",
     "pluginSetting.menu.installPlugin": "Install Plugin",

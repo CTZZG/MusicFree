@@ -299,6 +299,7 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.detail.noDiagnostics": string; // 最近无错误
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
+    "pluginSetting.menu.copyDiagnosticReport": string; // 复制诊断报告
     "pluginSetting.menu.uninstallAll": string; // 卸载所有
     "pluginSetting.menu.uninstallAllContent": string; // 确定卸载所有插件吗？
     "pluginSetting.menu.installPlugin": string; // 安装插件
