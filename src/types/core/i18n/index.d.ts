@@ -401,6 +401,7 @@ export interface ILanguageData {
     "backupAndResume.report.localMusic": string; // 本地音乐
     "backupAndResume.report.starredMusicSheets": string; // 收藏歌单
     "backupAndResume.report.plugins": string; // 插件
+    "backupAndResume.report.pluginConfigs": string; // 插件配置
     "backupAndResume.report.invalidPlugins": string; // 无效插件项
     "backupAndResume.report.success": string; // 成功
     "backupAndResume.report.skipped": string; // 跳过

@@ -39,6 +39,7 @@ export default function BackupSetting() {
             `${t("backupAndResume.report.localMusic")}: ${preview.localMusicCount}`,
             `${t("backupAndResume.report.starredMusicSheets")}: ${preview.starredMusicSheetCount}`,
             `${t("backupAndResume.report.plugins")}: ${preview.pluginCount}`,
+            `${t("backupAndResume.report.pluginConfigs")}: ${preview.pluginConfigCount}`,
             preview.invalidPluginCount
                 ? `${t("backupAndResume.report.invalidPlugins")}: ${preview.invalidPluginCount}`
                 : "",
@@ -58,6 +59,7 @@ export default function BackupSetting() {
             ...report.localMusicSheet.failureReasons,
             ...report.starredMusicSheets.failureReasons,
             ...report.plugins.failureReasons,
+            ...report.pluginConfigs.failureReasons,
         ];
 
         return [
@@ -76,6 +78,10 @@ export default function BackupSetting() {
             formatResumeSection(
                 t("backupAndResume.report.plugins"),
                 report.plugins,
+            ),
+            formatResumeSection(
+                t("backupAndResume.report.pluginConfigs"),
+                report.pluginConfigs,
             ),
             failureReasons.length
                 ? [

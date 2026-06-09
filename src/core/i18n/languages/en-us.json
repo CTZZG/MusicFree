@@ -346,6 +346,7 @@
     "backupAndResume.report.localMusic": "Local Music",
     "backupAndResume.report.starredMusicSheets": "Starred Playlists",
     "backupAndResume.report.plugins": "Plugins",
+    "backupAndResume.report.pluginConfigs": "Plugin Configs",
     "backupAndResume.report.invalidPlugins": "Invalid Plugin Items",
     "backupAndResume.report.success": "Success",
     "backupAndResume.report.skipped": "Skipped",

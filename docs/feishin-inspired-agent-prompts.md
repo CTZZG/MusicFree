@@ -434,6 +434,49 @@
 - 复制诊断信息不包含播放 URL、headers、cookie、token。
 ```
 
+## Prompt 12：插件配置备份恢复 V2
+
+状态：已完成。本次新增 `pluginBackupV2` 备份块，备份插件来源、顺序、启用状态、用户变量和替代插件，并在恢复报告里增加插件配置结果。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/plugin-center-plan.md
+- docs/feishin-inspired-roadmap.md
+- src/core/backup.ts
+- src/core/pluginManager/index.ts
+- src/core/pluginManager/meta.ts
+- src/pages/setting/settingTypes/backupSetting.tsx
+
+任务：
+实现插件配置备份恢复 V2，让换机恢复时插件顺序、禁用状态、用户变量、替代插件能随备份迁移。
+
+范围：
+- 备份文件新增 `pluginBackupV2`，保留旧 `plugins` 字段兼容旧版本。
+- `pluginBackupV2.installed` 记录 name/hash/version/sourceType/srcUrl。
+- `pluginBackupV2` 记录 order、disabled、alternativePlugins、userVariables。
+- 恢复时优先使用 V2；没有 V2 时继续走旧 `plugins` 恢复逻辑。
+- network 插件有 srcUrl 时尝试安装，失败不阻断歌单恢复。
+- local-file 插件不自动恢复代码，报告提示需要重新选择文件安装。
+- 已安装插件恢复顺序、启用状态、用户变量和替代插件。
+- 预览和恢复报告增加“插件配置”计数。
+
+不要做：
+- 不新增加密。
+- 不新增用户变量导出开关。
+- 不自动恢复本地插件代码。
+- 不做 WebDAV 定时备份。
+- 不改变现有恢复模式语义。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 旧备份没有 `pluginBackupV2` 时仍能恢复。
+- 新备份包含 `pluginBackupV2` 和旧 `plugins` 字段。
+- 本地插件缺失时恢复报告有提示且歌单恢复不被阻断。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 11。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做备份恢复校验增强或插件诊断报告导出。
+当前已经完成 Prompt 01 到 Prompt 12。下一步可以从 `docs/plugin-center-plan.md` 的 Phase 5 或 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做插件诊断报告导出或恢复前自动备份。
