@@ -394,6 +394,46 @@
 - workflow YAML 语法保持有效。
 ```
 
+## Prompt 11：播放诊断 Native 状态补充
+
+状态：已完成。本次在现有播放诊断里补充 Android Native 侧快照，包括通知权限、电池优化、App importance、Nitro 播放服务声明/运行状态，以及 MediaSession 查询可访问性。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/trackPlayer/index.ts
+- src/types/core/trackPlayer/index.d.ts
+- src/native/utils/index.ts
+- src/pages/setting/settingTypes/aboutSetting.tsx
+- android/app/src/main/java/fun/upup/musicfree/utils/UtilsModule.kt
+
+任务：
+增强播放诊断页，让真机排查通知栏残留、退出恢复、MediaSession 状态时能看到 Native 侧关键状态。
+
+范围：
+- NativeUtils 增加只读播放诊断方法。
+- 诊断字段包含包名、进程、通知权限、电池优化、App importance。
+- 诊断字段包含 Nitro 播放服务是否声明、是否运行、shutdown action。
+- 尝试读取当前应用 MediaSession；无权限时返回 denied 和原因，不抛错阻断页面。
+- TrackPlayer 诊断快照挂载 native 字段。
+- 关于页“播放诊断”复制内容增加 Native / 系统区块。
+
+不要做：
+- 不控制播放。
+- 不强停服务。
+- 不新增通知监听权限。
+- 不 fork Nitro Player。
+- 不上传诊断信息。
+
+验收：
+- npx tsc --noEmit 通过。
+- android :app:compileReleaseKotlin 通过。
+- 播放诊断弹窗在 Native 读取失败时仍能打开。
+- 复制诊断信息不包含播放 URL、headers、cookie、token。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 10。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做播放诊断 Native 状态补充或备份恢复校验增强。
+当前已经完成 Prompt 01 到 Prompt 11。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议优先做备份恢复校验增强或插件诊断报告导出。

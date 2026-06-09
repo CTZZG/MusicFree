@@ -41,6 +41,9 @@ import type {
 } from "@/core/playerAdapter";
 import nitroPlayerAdapter from "@/core/playerAdapter/nitroPlayerAdapter";
 import { normalizeMusicState } from "@/utils/trackUtils";
+import NativeUtils, {
+    IPlaybackNativeDiagnostics,
+} from "@/native/utils";
 
 
 type MusicFreePlayerTrack =
@@ -74,6 +77,7 @@ export interface IPlaybackDiagnosticSnapshot {
         code?: string;
         createdAt: number;
     }>;
+    native?: IPlaybackNativeDiagnostics;
 }
 
 const currentMusicAtom = atom<IMusic.IMusicItem | null>(null);
@@ -1096,6 +1100,7 @@ class TrackPlayer extends EventEmitter<{
             activeTrackIndex,
             rate,
             backendRepeatMode,
+            nativeDiagnostics,
         ] = await Promise.all([
             this.backend.getState().catch(() => "error" as PlayerBackendState),
             this.backend.getProgress()
@@ -1113,6 +1118,13 @@ class TrackPlayer extends EventEmitter<{
             this.backend.getRate().catch(() => 1),
             this.backend.getRepeatMode
                 ? this.backend.getRepeatMode().catch(() => undefined)
+                : Promise.resolve(undefined),
+            NativeUtils.getPlaybackNativeDiagnostics
+                ? NativeUtils.getPlaybackNativeDiagnostics().catch(error => ({
+                    error: this.sanitizeDiagnosticText(
+                        error?.message ?? String(error ?? ""),
+                    ),
+                }))
                 : Promise.resolve(undefined),
         ]);
 
@@ -1140,6 +1152,7 @@ class TrackPlayer extends EventEmitter<{
                 }
                 : null,
             recentErrors: [...this.recentPlaybackErrors],
+            native: nativeDiagnostics,
         };
     }
 

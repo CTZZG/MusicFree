@@ -8,6 +8,7 @@ import type { MusicRepeatMode } from "@/constants/trackPlayerConst";
 import { IInjectable } from "@/types/infra";
 import type EventEmitter from "eventemitter3";
 import type { TrackPlayerEvents } from "@/constants/trackPlayerConst";
+import type { IPlaybackNativeDiagnostics } from "@/native/utils";
 
 export interface IPlaybackDiagnosticSnapshot {
     backendName: string;
@@ -35,6 +36,7 @@ export interface IPlaybackDiagnosticSnapshot {
         code?: string;
         createdAt: number;
     }>;
+    native?: IPlaybackNativeDiagnostics;
 }
 
 export interface ITrackPlayer extends IInjectable, EventEmitter<{

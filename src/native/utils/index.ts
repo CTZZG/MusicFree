@@ -1,5 +1,33 @@
 import { NativeModule, NativeModules } from "react-native";
 
+export interface IPlaybackNativeServiceDiagnostic {
+    className: string;
+    shutdownAction: string;
+    declared: boolean;
+    running: boolean;
+}
+
+export interface IPlaybackNativeMediaSessionDiagnostic {
+    access: "granted" | "denied" | "error";
+    activeSessionCount?: number;
+    hasOwnActiveSession?: boolean;
+    playbackStates?: string[];
+    reason?: string;
+}
+
+export interface IPlaybackNativeDiagnostics {
+    packageName?: string;
+    processId?: number;
+    checkedAt?: number;
+    notificationPermission?: boolean;
+    batteryOptimizationIgnored?: boolean;
+    appImportance?: number;
+    appImportanceLabel?: string;
+    playbackServices?: IPlaybackNativeServiceDiagnostic[];
+    mediaSession?: IPlaybackNativeMediaSessionDiagnostic;
+    error?: string;
+}
+
 interface INativeUtils extends NativeModule {
     exitApp: () => void;
     checkStoragePermission: () => Promise<boolean>;
@@ -8,6 +36,7 @@ interface INativeUtils extends NativeModule {
     isIgnoringBatteryOptimizations: () => Promise<boolean>;
     requestIgnoreBatteryOptimizations: () => Promise<boolean>;
     openBatteryOptimizationSettings: () => Promise<boolean>;
+    getPlaybackNativeDiagnostics?: () => Promise<IPlaybackNativeDiagnostics>;
 }
 
 const NativeUtils = NativeModules.NativeUtils;

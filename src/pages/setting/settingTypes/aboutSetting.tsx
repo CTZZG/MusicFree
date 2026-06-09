@@ -25,6 +25,8 @@ import Toast from "@/utils/toast";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { useI18N } from "@/core/i18n";
 
+type NativeDiagnostics = NonNullable<IPlaybackDiagnosticSnapshot["native"]>;
+
 export default function AboutSetting() {
     const checkAndShowResult = useCheckUpdate();
     const orientation = useOrientation();
@@ -75,6 +77,49 @@ export default function AboutSetting() {
         return `${value}`;
     }
 
+    function formatBoolean(value?: boolean | null) {
+        if (value === null || value === undefined) {
+            return "-";
+        }
+        return value ? "yes" : "no";
+    }
+
+    function formatNativeMediaSession(
+        mediaSession?: NativeDiagnostics["mediaSession"],
+    ) {
+        if (!mediaSession) {
+            return "-";
+        }
+        const playbackStates = mediaSession.playbackStates?.length
+            ? mediaSession.playbackStates.join(",")
+            : "-";
+        return [
+            `access=${mediaSession.access}`,
+            `ownActive=${formatBoolean(mediaSession.hasOwnActiveSession)}`,
+            `count=${formatValue(mediaSession.activeSessionCount)}`,
+            `states=${playbackStates}`,
+            mediaSession.reason ? `reason=${mediaSession.reason}` : "",
+        ].filter(Boolean).join(" ");
+    }
+
+    function formatNativeServiceLines(
+        services?: NativeDiagnostics["playbackServices"],
+    ) {
+        if (!services?.length) {
+            return ["服务: -"];
+        }
+        return services.map(service => {
+            const shortName =
+                service.className.split(".").pop() ?? service.className;
+            return [
+                `服务: ${shortName}`,
+                `declared=${formatBoolean(service.declared)}`,
+                `running=${formatBoolean(service.running)}`,
+                `shutdown=${formatValue(service.shutdownAction)}`,
+            ].join(" ");
+        });
+    }
+
     function formatProgress(snapshot: IPlaybackDiagnosticSnapshot) {
         const duration =
             snapshot.progress.duration ||
@@ -97,6 +142,7 @@ export default function AboutSetting() {
                 return `${createdAt} ${error.code ? `[${error.code}] ` : ""}${error.message}`;
             })
             : ["-"];
+        const native = snapshot.native;
 
         return [
             "构建",
@@ -121,6 +167,16 @@ export default function AboutSetting() {
             `Native 活动索引: ${formatValue(snapshot.activeTrackIndex)}`,
             `音源类型: ${formatValue(snapshot.activeTrack?.urlType)}`,
             `Headers: ${snapshot.activeTrack?.hasHeaders ? "yes" : "no"}`,
+            "",
+            "Native / 系统",
+            `包名: ${formatValue(native?.packageName)}`,
+            `进程: ${formatValue(native?.processId)}`,
+            `通知权限: ${formatBoolean(native?.notificationPermission)}`,
+            `电池优化豁免: ${formatBoolean(native?.batteryOptimizationIgnored)}`,
+            `App importance: ${formatValue(native?.appImportanceLabel ?? native?.appImportance)}`,
+            `MediaSession: ${formatNativeMediaSession(native?.mediaSession)}`,
+            ...formatNativeServiceLines(native?.playbackServices),
+            ...(native?.error ? [`Native 诊断错误: ${native.error}`] : []),
             "",
             "最近错误",
             ...recentErrors,
