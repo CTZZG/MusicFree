@@ -16,6 +16,7 @@ import { IIconName } from "@/components/base/icon.tsx";
 import { useI18N } from "@/core/i18n";
 import IconButton from "@/components/base/iconButton";
 import useRerender from "@/hooks/useRerender";
+import { getPluginDiagnosticEvents } from "@/core/pluginManager/diagnostics";
 
 interface IPluginItemProps {
     plugin: Plugin;
@@ -124,6 +125,11 @@ function _PluginItem(props: IPluginItemProps) {
             title: t("pluginSetting.pluginItem.options.viewDetails"),
             icon: "information-circle",
             onPress() {
+                const diagnostics = getPluginDiagnosticEvents(
+                    plugin.hash,
+                    plugin.name,
+                    5,
+                );
                 showDialog("SimpleDialog", {
                     title: plugin.name,
                     content: [
@@ -139,6 +145,24 @@ function _PluginItem(props: IPluginItemProps) {
                         capabilityLabels.length
                             ? capabilityLabels.map(label => `- ${label}`).join("\n")
                             : t("pluginSetting.pluginItem.detail.noCapabilities"),
+                        "",
+                        `${t("pluginSetting.pluginItem.detail.diagnostics")}:`,
+                        diagnostics.length
+                            ? diagnostics.map(event => {
+                                const time = new Date(
+                                    event.createdAt,
+                                ).toLocaleString();
+                                return [
+                                    `- ${time} ${event.method}`,
+                                    `  ${event.message}`,
+                                    event.estimatedLocation
+                                        ? `  ${event.estimatedLocation}`
+                                        : "",
+                                ]
+                                    .filter(Boolean)
+                                    .join("\n");
+                            }).join("\n")
+                            : t("pluginSetting.pluginItem.detail.noDiagnostics"),
                     ]
                         .filter(Boolean)
                         .join("\n"),

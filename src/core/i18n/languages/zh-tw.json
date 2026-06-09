@@ -207,6 +207,8 @@
     "pluginSetting.pluginItem.detail.hash": "外掛 Hash",
     "pluginSetting.pluginItem.detail.capabilities": "支援能力",
     "pluginSetting.pluginItem.detail.noCapabilities": "暫無可識別能力",
+    "pluginSetting.pluginItem.detail.diagnostics": "最近診斷",
+    "pluginSetting.pluginItem.detail.noDiagnostics": "最近無錯誤",
     "pluginSetting.menu.subscriptionSetting": "訂閱設定",
     "pluginSetting.menu.sort": "外掛排序",
     "pluginSetting.menu.uninstallAll": "卸載全部外掛",

@@ -207,6 +207,8 @@
     "pluginSetting.pluginItem.detail.hash": "Plugin Hash",
     "pluginSetting.pluginItem.detail.capabilities": "Capabilities",
     "pluginSetting.pluginItem.detail.noCapabilities": "No detected capabilities",
+    "pluginSetting.pluginItem.detail.diagnostics": "Recent diagnostics",
+    "pluginSetting.pluginItem.detail.noDiagnostics": "No recent errors",
     "pluginSetting.menu.subscriptionSetting": "Subscription Settings",
     "pluginSetting.menu.sort": "Plugin Sort",
     "pluginSetting.menu.uninstallAll": "Uninstall All Plugins",

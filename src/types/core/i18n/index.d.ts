@@ -255,6 +255,8 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.detail.hash": string; // 插件 Hash
     "pluginSetting.pluginItem.detail.capabilities": string; // 支持能力
     "pluginSetting.pluginItem.detail.noCapabilities": string; // 暂无可识别能力
+    "pluginSetting.pluginItem.detail.diagnostics": string; // 最近诊断
+    "pluginSetting.pluginItem.detail.noDiagnostics": string; // 最近无错误
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
     "pluginSetting.menu.uninstallAll": string; // 卸载所有

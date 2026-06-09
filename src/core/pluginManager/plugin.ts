@@ -31,6 +31,7 @@ import { Buffer } from "buffer";
 import { devLog, errorLog, trace } from "../../utils/log";
 import Network from "../../utils/network";
 import MediaCache from "../mediaCache";
+import { recordPluginDiagnosticError } from "./diagnostics";
 import _internalPluginMeta from "./meta";
 import { IPluginManager } from "@/types/core/pluginManager";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
@@ -344,6 +345,31 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         this.ensurePluginIsMounted = ensurePluginIsMounted;
     }
 
+    private recordError(
+        method: keyof IPlugin.IPluginInstanceMethods | "mount",
+        error: any,
+        plugin: Plugin = this.plugin,
+    ) {
+        recordPluginDiagnosticError({
+            pluginName: plugin.name || plugin.instance.platform || "unknown",
+            pluginHash: plugin.hash,
+            method,
+            error,
+            estimatedLocation: getAnonymousStackLocation(error?.stack),
+        });
+    }
+
+    private async ensurePluginReady(
+        method: keyof IPlugin.IPluginInstanceMethods,
+    ) {
+        try {
+            await this.ensurePluginIsMounted();
+        } catch (e) {
+            this.recordError(method, e);
+            throw e;
+        }
+    }
+
 
     /** 搜索 */
     async search<T extends ICommon.SupportMediaType>(
@@ -351,7 +377,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         page: number,
         type: T,
     ): Promise<IPlugin.ISearchResult<T>> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("search");
         if (!this.plugin.instance.search) {
             return {
                 isEnd: true,
@@ -359,22 +385,27 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             };
         }
 
-        const result =
-            (await this.plugin.instance.search(query, page, type)) ?? {};
-        if (Array.isArray(result.data)) {
-            result.data.forEach(_ => {
-                normalizeResultItem(_);
-                resetMediaItem(_, this.plugin.name);
-            });
+        try {
+            const result =
+                (await this.plugin.instance.search(query, page, type)) ?? {};
+            if (Array.isArray(result.data)) {
+                result.data.forEach(_ => {
+                    normalizeResultItem(_);
+                    resetMediaItem(_, this.plugin.name);
+                });
+                return {
+                    isEnd: result.isEnd ?? true,
+                    data: result.data,
+                };
+            }
             return {
-                isEnd: result.isEnd ?? true,
-                data: result.data,
+                isEnd: true,
+                data: [],
             };
+        } catch (e) {
+            this.recordError("search", e);
+            throw e;
         }
-        return {
-            isEnd: true,
-            data: [],
-        };
     }
 
     /** 获取真实源 */
@@ -384,7 +415,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         retryCount = 1,
         notUpdateCache = false,
     ): Promise<IPlugin.IMediaSourceResult | null> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getMediaSource");
         const normalizedQuality = convertLegacyQuality(quality);
         const legacyQuality = convertToLegacyQuality(normalizedQuality);
         // 1. 本地搜索 其实直接读mediameta就好了
@@ -542,6 +573,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 await delay(150);
                 return this.getMediaSource(musicItem, quality, --retryCount);
             }
+            this.recordError("getMediaSource", e, parserPlugin);
             errorLog("获取真实源失败", e?.message);
             devLog("error", "获取真实源失败", e, e?.message);
             return null;
@@ -552,7 +584,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
     async getMusicInfo(
         musicItem: ICommon.IMediaBase,
     ): Promise<Partial<IMusic.IMusicItem> | null> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getMusicInfo");
         if (!this.plugin.instance.getMusicInfo) {
             return null;
         }
@@ -563,6 +595,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 )) ?? null;
             return result ? normalizeResultItem(result) : null;
         } catch (e: any) {
+            this.recordError("getMusicInfo", e);
             devLog("error", "获取音乐详情失败", e, e?.message);
             return null;
         }
@@ -580,7 +613,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
     async getLyric(
         originalMusicItem: IMusic.IMusicItemBase,
     ): Promise<ILyric.ILyricSource | null> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getLyric");
         // 1.额外存储的meta信息（关联歌词）
         const associatedLrc = getMediaExtraProperty(originalMusicItem, "associatedLrc");
         let musicItem: IMusic.IMusicItem;
@@ -726,14 +759,21 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             lrcSource =
                 (await this.plugin.instance
                     ?.getLyric?.(resetMediaItem(musicItem, undefined, true))
-                    ?.catch(() => null)) || null;
+                    ?.catch(e => {
+                        this.recordError("getLyric", e);
+                        return null;
+                    })) || null;
         } else {
+            const targetPlugin = Plugin.pluginManager?.getByMedia(musicItem) as Plugin | undefined;
             lrcSource =
-                (await Plugin.pluginManager?.getByMedia(musicItem)
+                (await targetPlugin
                     ?.instance?.getLyric?.(
                         resetMediaItem(musicItem, undefined, true),
                     )
-                    ?.catch(() => null)) || null;
+                    ?.catch(e => {
+                        this.recordError("getLyric", e, targetPlugin);
+                        return null;
+                    })) || null;
         }
 
         if (lrcSource) {
@@ -825,7 +865,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
     async getWordByWordLyric(
         originalMusicItem: IMusic.IMusicItemBase,
     ): Promise<ILyric.ILyricSource | null> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getWordByWordLyric");
         const associatedLrc = getMediaExtraProperty(originalMusicItem, "associatedLrc");
         const musicItem = associatedLrc
             ? associatedLrc as IMusic.IMusicItem
@@ -842,6 +882,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 )
             ) ?? null;
         } catch (e: any) {
+            this.recordError("getWordByWordLyric", e);
             devLog("error", "获取逐字歌词失败", e, e?.message);
             return null;
         }
@@ -853,7 +894,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         albumItem: IAlbum.IAlbumItemBase,
         page: number = 1,
     ): Promise<IPlugin.IAlbumInfoResult | null> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getAlbumInfo");
         if (!this.plugin.instance.getAlbumInfo) {
             return {
                 albumItem,
@@ -893,6 +934,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 };
             }
         } catch (e: any) {
+            this.recordError("getAlbumInfo", e);
             trace("获取专辑信息失败", e?.message);
             devLog("error", "获取专辑信息失败", e, e?.message);
 
@@ -905,7 +947,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         sheetItem: IMusic.IMusicSheetItem,
         page: number = 1,
     ): Promise<IPlugin.ISheetInfoResult | null> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getMusicSheetInfo");
         if (!this.plugin.instance.getMusicSheetInfo) {
             return {
                 sheetItem,
@@ -940,6 +982,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 };
             }
         } catch (e: any) {
+            this.recordError("getMusicSheetInfo", e);
             trace("获取歌单信息失败", e, e?.message);
             devLog("error", "获取歌单信息失败", e, e?.message);
 
@@ -953,7 +996,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         page: number,
         type: T,
     ): Promise<IPlugin.ISearchResult<T>> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getArtistWorks");
         if (!this.plugin.instance.getArtistWorks) {
             return {
                 isEnd: true,
@@ -981,6 +1024,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 data: result.data,
             };
         } catch (e: any) {
+            this.recordError("getArtistWorks", e);
             trace("查询作者信息失败", e?.message);
             devLog("error", "查询作者信息失败", e, e?.message);
 
@@ -990,7 +1034,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
     /** 导入歌单 */
     async importMusicSheet(urlLike: string): Promise<IMusic.IMusicItem[]> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("importMusicSheet");
         try {
             const result =
                 (await this.plugin.instance?.importMusicSheet?.(urlLike)) ?? [];
@@ -1000,6 +1044,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             });
             return result;
         } catch (e: any) {
+            this.recordError("importMusicSheet", e);
             console.log(e);
             devLog("error", "导入歌单失败", e, e?.message);
 
@@ -1009,7 +1054,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
     /** 导入单曲 */
     async importMusicItem(urlLike: string): Promise<IMusic.IMusicItem | null> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("importMusicItem");
         try {
             const result = await this.plugin.instance?.importMusicItem?.(
                 urlLike,
@@ -1021,6 +1066,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             resetMediaItem(result, this.plugin.name);
             return result;
         } catch (e: any) {
+            this.recordError("importMusicItem", e);
             devLog("error", "导入单曲失败", e, e?.message);
 
             return null;
@@ -1029,7 +1075,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
     /** 获取榜单 */
     async getTopLists(): Promise<IMusic.IMusicSheetGroupItem[]> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getTopLists");
         try {
             const result = await this.plugin.instance?.getTopLists?.();
             if (!result) {
@@ -1037,6 +1083,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             }
             return result;
         } catch (e: any) {
+            this.recordError("getTopLists", e);
             devLog("error", "获取榜单失败", e, e?.message);
             return [];
         }
@@ -1047,31 +1094,36 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         topListItem: IMusic.IMusicSheetItemBase,
         page: number,
     ): Promise<IPlugin.ITopListInfoResult> {
-        await this.ensurePluginIsMounted();
-        const result = await this.plugin.instance?.getTopListDetail?.(
-            topListItem,
-            page,
-        );
-        if (!result) {
-            throw new Error();
+        await this.ensurePluginReady("getTopListDetail");
+        try {
+            const result = await this.plugin.instance?.getTopListDetail?.(
+                topListItem,
+                page,
+            );
+            if (!result) {
+                throw new Error();
+            }
+            if (result.musicList) {
+                result.musicList.forEach(_ => {
+                    normalizeResultItem(_);
+                    resetMediaItem(_, this.plugin.name);
+                });
+            } else {
+                result.musicList = [];
+            }
+            if (result.isEnd !== false) {
+                result.isEnd = true;
+            }
+            return result;
+        } catch (e) {
+            this.recordError("getTopListDetail", e);
+            throw e;
         }
-        if (result.musicList) {
-            result.musicList.forEach(_ => {
-                normalizeResultItem(_);
-                resetMediaItem(_, this.plugin.name);
-            });
-        } else {
-            result.musicList = [];
-        }
-        if (result.isEnd !== false) {
-            result.isEnd = true;
-        }
-        return result;
     }
 
     /** 获取推荐歌单的tag */
     async getRecommendSheetTags(): Promise<IPlugin.IGetRecommendSheetTagsResult> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getRecommendSheetTags");
         try {
             const result =
                 await this.plugin.instance?.getRecommendSheetTags?.();
@@ -1080,6 +1132,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             }
             return result;
         } catch (e: any) {
+            this.recordError("getRecommendSheetTags", e);
             devLog("error", "获取推荐歌单失败", e, e?.message);
             return {
                 data: [],
@@ -1092,7 +1145,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         tagItem: ICommon.IUnique,
         page?: number,
     ): Promise<ICommon.PaginationResponse<IMusic.IMusicSheetItemBase>> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("getRecommendSheetsByTag");
         try {
             const result =
                 await this.plugin.instance?.getRecommendSheetsByTag?.(
@@ -1115,6 +1168,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
             return result;
         } catch (e: any) {
+            this.recordError("getRecommendSheetsByTag", e);
             devLog("error", "获取推荐歌单详情失败", e, e?.message);
             return {
                 isEnd: true,
@@ -1125,13 +1179,14 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
     /** 同步歌单 */
     async syncMusicSheet(sheetItem: IMusic.IMusicSheetItem): Promise<boolean> {
-        await this.ensurePluginIsMounted();
+        await this.ensurePluginReady("syncMusicSheet");
         if (!this.plugin.instance.syncMusicSheet) {
             return false;
         }
         try {
             return (await this.plugin.instance.syncMusicSheet(sheetItem)) ?? false;
         } catch (e: any) {
+            this.recordError("syncMusicSheet", e);
             devLog("error", "同步歌单失败", e, e?.message);
             return false;
         }
@@ -1145,22 +1200,27 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         musicItem: IMusic.IMusicItem,
         page?: number
     ): Promise<ICommon.PaginationResponse<IMedia.IComment>> {
-        await this.ensurePluginIsMounted();
-        const result = await this.plugin.instance?.getMusicComments?.(
-            musicItem,
-            page ?? 1
-        );
-        if (!result) {
-            throw new Error();
-        }
-        if (result.isEnd !== false) {
-            result.isEnd = true;
-        }
-        if (!result.data) {
-            result.data = [];
-        }
+        await this.ensurePluginReady("getMusicComments");
+        try {
+            const result = await this.plugin.instance?.getMusicComments?.(
+                musicItem,
+                page ?? 1,
+            );
+            if (!result) {
+                throw new Error();
+            }
+            if (result.isEnd !== false) {
+                result.isEnd = true;
+            }
+            if (!result.data) {
+                result.data = [];
+            }
 
-        return result;
+            return result;
+        } catch (e) {
+            this.recordError("getMusicComments", e);
+            throw e;
+        }
     }
 }
 
@@ -1231,6 +1291,13 @@ export class Plugin {
                 this.state = PluginState.Error;
                 this.errorMessage = formatPluginErrorMessage(e);
                 this.errorReason = this.errorReason ?? PluginErrorReason.CannotParse;
+                recordPluginDiagnosticError({
+                    pluginName: this.name || this.instance.platform || "unknown",
+                    pluginHash: this.hash,
+                    method: "mount",
+                    error: e,
+                    estimatedLocation: getAnonymousStackLocation(e?.stack),
+                });
             }
         }
         if (this.state === PluginState.Error) {
@@ -1304,6 +1371,13 @@ export class Plugin {
             this.state = PluginState.Error;
             this.errorReason = e?.errorReason ?? PluginErrorReason.CannotParse;
             this.errorMessage = formatPluginErrorMessage(e);
+            recordPluginDiagnosticError({
+                pluginName: this.name || e?.instance?.platform || "unknown",
+                pluginHash: this.hash,
+                method: "mount",
+                error: e,
+                estimatedLocation: getAnonymousStackLocation(e?.stack),
+            });
 
             errorLog(`${pluginPath}插件无法解析 `, {
                 errorReason: this.errorReason,

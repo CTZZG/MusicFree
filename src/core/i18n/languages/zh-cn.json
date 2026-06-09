@@ -207,6 +207,8 @@
     "pluginSetting.pluginItem.detail.hash": "插件 Hash",
     "pluginSetting.pluginItem.detail.capabilities": "支持能力",
     "pluginSetting.pluginItem.detail.noCapabilities": "暂无可识别能力",
+    "pluginSetting.pluginItem.detail.diagnostics": "最近诊断",
+    "pluginSetting.pluginItem.detail.noDiagnostics": "最近无错误",
     "pluginSetting.menu.subscriptionSetting": "订阅设置",
     "pluginSetting.menu.sort": "插件排序",
     "pluginSetting.menu.uninstallAll": "卸载全部插件",
