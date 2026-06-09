@@ -225,6 +225,7 @@ export interface ILanguageData {
 
     // 插件设置相关
     "pluginSetting.pluginItem.options.updatePlugin": string; // 更新插件
+    "pluginSetting.pluginItem.options.viewDetails": string; // 详情
     "pluginSetting.pluginItem.options.sharePlugin": string; // 分享插件
     "pluginSetting.pluginItem.options.uninstallPlugin": string; // 卸载插件
     "pluginSetting.pluginItem.options.uninstallPluginContent": string; // 确定卸载该插件吗？
@@ -243,6 +244,17 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.options.userVariables": string; // 用户变量
     "pluginSetting.pluginItem.versionHint": string; // 版本提示
     "pluginSetting.pluginItem.author": string; // 作者
+    "pluginSetting.pluginItem.source.network": string; // 网络安装
+    "pluginSetting.pluginItem.source.localFile": string; // 本地文件
+    "pluginSetting.pluginItem.source.unknown": string; // 来源未知
+    "pluginSetting.pluginItem.capability.sync": string; // 同步
+    "pluginSetting.pluginItem.detail.version": string; // 版本
+    "pluginSetting.pluginItem.detail.author": string; // 作者
+    "pluginSetting.pluginItem.detail.source": string; // 来源
+    "pluginSetting.pluginItem.detail.sourceDetail": string; // 来源详情
+    "pluginSetting.pluginItem.detail.hash": string; // 插件 Hash
+    "pluginSetting.pluginItem.detail.capabilities": string; // 支持能力
+    "pluginSetting.pluginItem.detail.noCapabilities": string; // 暂无可识别能力
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
     "pluginSetting.menu.uninstallAll": string; // 卸载所有

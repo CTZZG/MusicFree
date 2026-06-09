@@ -28,6 +28,83 @@ interface IOption {
     show?: boolean;
 }
 
+const capabilityConfigs: Array<{
+    labelKey: Parameters<ReturnType<typeof useI18N>["t"]>[0];
+    methods: Array<keyof IPlugin.IPluginInstanceMethods>;
+}> = [
+    {
+        labelKey: "home.sourceCapability.search",
+        methods: ["search"],
+    },
+    {
+        labelKey: "home.sourceCapability.source",
+        methods: ["getMediaSource"],
+    },
+    {
+        labelKey: "home.sourceCapability.lyric",
+        methods: ["getLyric"],
+    },
+    {
+        labelKey: "home.sourceCapability.wordLyric",
+        methods: ["getWordByWordLyric"],
+    },
+    {
+        labelKey: "home.sourceCapability.topList",
+        methods: ["getTopLists", "getTopListDetail"],
+    },
+    {
+        labelKey: "home.sourceCapability.recommend",
+        methods: ["getRecommendSheetTags", "getRecommendSheetsByTag"],
+    },
+    {
+        labelKey: "home.sourceCapability.album",
+        methods: ["getAlbumInfo"],
+    },
+    {
+        labelKey: "home.sourceCapability.artist",
+        methods: ["getArtistWorks"],
+    },
+    {
+        labelKey: "home.sourceCapability.import",
+        methods: ["importMusicItem", "importMusicSheet"],
+    },
+    {
+        labelKey: "home.sourceCapability.comment",
+        methods: ["getMusicComments"],
+    },
+    {
+        labelKey: "pluginSetting.pluginItem.capability.sync",
+        methods: ["syncMusicSheet"],
+    },
+];
+
+function getPluginSourceInfo(plugin: Plugin, t: ReturnType<typeof useI18N>["t"]) {
+    if (plugin.instance.srcUrl) {
+        return {
+            label: t("pluginSetting.pluginItem.source.network"),
+            detail: plugin.instance.srcUrl as string,
+        };
+    }
+    if (plugin.path) {
+        return {
+            label: t("pluginSetting.pluginItem.source.localFile"),
+            detail: plugin.path as string,
+        };
+    }
+    return {
+        label: t("pluginSetting.pluginItem.source.unknown"),
+        detail: "",
+    };
+}
+
+function getCapabilityLabels(plugin: Plugin, t: ReturnType<typeof useI18N>["t"]) {
+    return capabilityConfigs
+        .filter(config =>
+            config.methods.some(method => plugin.supportedMethods.has(method)),
+        )
+        .map(config => t(config.labelKey));
+}
+
 function _PluginItem(props: IPluginItemProps) {
     const { plugin } = props;
     const colors = useColors();
@@ -36,8 +113,39 @@ function _PluginItem(props: IPluginItemProps) {
     const rerender = useRerender();
 
     const alternativePluginName = pluginManager.getAlternativePluginName(plugin);
+    const sourceInfo = getPluginSourceInfo(plugin, t);
+    const capabilityLabels = getCapabilityLabels(plugin, t);
+    const visibleCapabilityLabels = capabilityLabels.slice(0, 6);
+    const hiddenCapabilityCount =
+        capabilityLabels.length - visibleCapabilityLabels.length;
 
     const options: IOption[] = [
+        {
+            title: t("pluginSetting.pluginItem.options.viewDetails"),
+            icon: "information-circle",
+            onPress() {
+                showDialog("SimpleDialog", {
+                    title: plugin.name,
+                    content: [
+                        `${t("pluginSetting.pluginItem.detail.version")}: ${plugin.instance.version ?? "-"}`,
+                        `${t("pluginSetting.pluginItem.detail.author")}: ${plugin.instance.author ?? "-"}`,
+                        `${t("pluginSetting.pluginItem.detail.source")}: ${sourceInfo.label}`,
+                        sourceInfo.detail
+                            ? `${t("pluginSetting.pluginItem.detail.sourceDetail")}: ${sourceInfo.detail}`
+                            : "",
+                        `${t("pluginSetting.pluginItem.detail.hash")}: ${plugin.hash}`,
+                        "",
+                        `${t("pluginSetting.pluginItem.detail.capabilities")}:`,
+                        capabilityLabels.length
+                            ? capabilityLabels.map(label => `- ${label}`).join("\n")
+                            : t("pluginSetting.pluginItem.detail.noCapabilities"),
+                    ]
+                        .filter(Boolean)
+                        .join("\n"),
+                });
+            },
+            show: true,
+        },
         {
             title: t("pluginSetting.pluginItem.options.updatePlugin"),
             icon: "arrow-path",
@@ -256,6 +364,15 @@ function _PluginItem(props: IPluginItemProps) {
                     })}
                 </ThemeText>
             </View> : null}
+            <View style={styles.tags}>
+                <PluginTag>{sourceInfo.label}</PluginTag>
+                {visibleCapabilityLabels.map(label => (
+                    <PluginTag key={label}>{label}</PluginTag>
+                ))}
+                {hiddenCapabilityCount > 0 ? (
+                    <PluginTag>{`+${hiddenCapabilityCount}`}</PluginTag>
+                ) : null}
+            </View>
             <View style={styles.contents}>
                 {options.map((it, index) =>
                     it.show !== false ? (
@@ -316,6 +433,26 @@ const PluginItem = memo(_PluginItem, (prev, curr) => {
 });
 export default PluginItem;
 
+function PluginTag(props: { children: string }) {
+    const colors = useColors();
+    return (
+        <View
+            style={[
+                styles.tag,
+                {
+                    backgroundColor: colors.placeholder,
+                },
+            ]}>
+            <ThemeText
+                fontSize="description"
+                fontColor="textSecondary"
+                numberOfLines={1}>
+                {props.children}
+            </ThemeText>
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -350,6 +487,21 @@ const styles = StyleSheet.create({
         marginHorizontal: rpx(16),
         marginBottom: rpx(24),
         flexDirection: "row",
+    },
+    tags: {
+        marginHorizontal: rpx(16),
+        marginBottom: rpx(24),
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: rpx(10),
+    },
+    tag: {
+        maxWidth: rpx(160),
+        height: rpx(44),
+        borderRadius: rpx(22),
+        paddingHorizontal: rpx(14),
+        alignItems: "center",
+        justifyContent: "center",
     },
     contents: {
         flexDirection: "row",
