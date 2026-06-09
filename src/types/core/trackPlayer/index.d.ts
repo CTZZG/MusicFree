@@ -1,11 +1,41 @@
 import type {
     PlayerAdapter,
+    PlayerAdapterRepeatMode,
     PlayerAdapterProgress,
+    PlayerBackendState,
 } from "@/core/playerAdapter";
 import type { MusicRepeatMode } from "@/constants/trackPlayerConst";
 import { IInjectable } from "@/types/infra";
 import type EventEmitter from "eventemitter3";
 import type { TrackPlayerEvents } from "@/constants/trackPlayerConst";
+
+export interface IPlaybackDiagnosticSnapshot {
+    backendName: string;
+    backendState: PlayerBackendState;
+    backendRepeatMode?: PlayerAdapterRepeatMode;
+    rate: number;
+    currentMusic: IMusic.IMusicItem | null;
+    queueIndex: number;
+    queueLength: number;
+    quality: IMusic.IQualityKey;
+    repeatMode: MusicRepeatMode;
+    progress: PlayerAdapterProgress;
+    activeTrackIndex?: number | null;
+    activeTrack?: {
+        id?: string;
+        title?: string;
+        artist?: string;
+        album?: string;
+        duration?: number;
+        urlType: string;
+        hasHeaders: boolean;
+    } | null;
+    recentErrors: Array<{
+        message: string;
+        code?: string;
+        createdAt: number;
+    }>;
+}
 
 export interface ITrackPlayer extends IInjectable, EventEmitter<{
     [TrackPlayerEvents.PlayEnd]: () => void;
@@ -180,6 +210,11 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
      * @returns 包含播放位置和总时长的对象
      */
     getProgress(): Promise<PlayerAdapterProgress>;
+
+    /**
+     * 获取 JS 层播放诊断快照
+     */
+    getPlaybackDiagnosticSnapshot(): Promise<IPlaybackDiagnosticSnapshot>;
 
     /**
      * 获取当前播放速率

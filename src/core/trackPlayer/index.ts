@@ -48,6 +48,34 @@ type MusicFreePlayerTrack =
     Partial<IMusic.IMusicItem> &
     Record<string, any>;
 
+export interface IPlaybackDiagnosticSnapshot {
+    backendName: string;
+    backendState: PlayerBackendState;
+    backendRepeatMode?: PlayerAdapterRepeatMode;
+    rate: number;
+    currentMusic: IMusic.IMusicItem | null;
+    queueIndex: number;
+    queueLength: number;
+    quality: IMusic.IQualityKey;
+    repeatMode: MusicRepeatMode;
+    progress: PlayerAdapterProgress;
+    activeTrackIndex?: number | null;
+    activeTrack?: {
+        id?: string;
+        title?: string;
+        artist?: string;
+        album?: string;
+        duration?: number;
+        urlType: string;
+        hasHeaders: boolean;
+    } | null;
+    recentErrors: Array<{
+        message: string;
+        code?: string;
+        createdAt: number;
+    }>;
+}
+
 const currentMusicAtom = atom<IMusic.IMusicItem | null>(null);
 const repeatModeAtom = atom<MusicRepeatMode>(MusicRepeatMode.QUEUE);
 const qualityAtom = atom<IMusic.IQualityKey>("standard");
@@ -114,6 +142,7 @@ class TrackPlayer extends EventEmitter<{
     private isForceExiting = false;
     private lastProgressPersistedAt = 0;
     private lastProgressPersistedPosition = 0;
+    private recentPlaybackErrors: IPlaybackDiagnosticSnapshot["recentErrors"] = [];
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
 
@@ -287,6 +316,7 @@ class TrackPlayer extends EventEmitter<{
             this.backend.addEventListener(
                 "playbackError",
                 async e => {
+                    this.recordPlaybackError(e);
                     errorLog("播放出错", e.message);
                     // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
                     const currentTrack =
@@ -830,6 +860,7 @@ class TrackPlayer extends EventEmitter<{
                 await this.backend.updateTrack(mergedTrack as unknown as MusicFreePlayerTrack, 0);
             }
         } catch (e: any) {
+            this.recordPlaybackError(e);
             const message = e?.message;
             trace("TrackPlayer.play error", {
                 backend: this.backend.name,
@@ -1055,6 +1086,62 @@ class TrackPlayer extends EventEmitter<{
     getRate = () => this.backend.getRate();
     setRate = (rate: number) => this.backend.setRate(rate);
     reset = () => this.backend.reset();
+
+    async getPlaybackDiagnosticSnapshot(): Promise<IPlaybackDiagnosticSnapshot> {
+        const currentMusic = this.currentMusic;
+        const [
+            backendState,
+            progress,
+            activeTrack,
+            activeTrackIndex,
+            rate,
+            backendRepeatMode,
+        ] = await Promise.all([
+            this.backend.getState().catch(() => "error" as PlayerBackendState),
+            this.backend.getProgress()
+                .then(it => normalizeAdapterProgress(
+                    it,
+                    currentMusic?.duration ?? 0,
+                ))
+                .catch(() => getDefaultStore().get(progressAtom)),
+            this.backend.getActiveTrack
+                ? this.backend.getActiveTrack().catch(() => null)
+                : Promise.resolve(null),
+            this.backend.getActiveTrackIndex
+                ? this.backend.getActiveTrackIndex().catch(() => null)
+                : Promise.resolve(null),
+            this.backend.getRate().catch(() => 1),
+            this.backend.getRepeatMode
+                ? this.backend.getRepeatMode().catch(() => undefined)
+                : Promise.resolve(undefined),
+        ]);
+
+        return {
+            backendName: this.backend.name,
+            backendState,
+            backendRepeatMode,
+            rate,
+            currentMusic,
+            queueIndex: this.getMusicIndexInPlayList(currentMusic),
+            queueLength: this.playList.length,
+            quality: this.quality,
+            repeatMode: this.repeatMode,
+            progress,
+            activeTrackIndex,
+            activeTrack: activeTrack
+                ? {
+                    id: activeTrack.id,
+                    title: activeTrack.title,
+                    artist: activeTrack.artist,
+                    album: activeTrack.album,
+                    duration: activeTrack.duration,
+                    urlType: this.getDiagnosticUrlType(activeTrack.url),
+                    hasHeaders: !!Object.keys(activeTrack.headers ?? {}).length,
+                }
+                : null,
+            recentErrors: [...this.recentPlaybackErrors],
+        };
+    }
 
 
     /**************** 辅助函数 -- 设置内部状态 ****************/
@@ -1598,6 +1685,49 @@ class TrackPlayer extends EventEmitter<{
 
     private handlePlayFail() {
         trace("Nitro 播放失败，不执行 JS 自动下一曲");
+    }
+
+    private recordPlaybackError(error: any) {
+        const message = this.sanitizeDiagnosticText(
+            error?.message ?? String(error ?? ""),
+        );
+        if (!message) {
+            return;
+        }
+        this.recentPlaybackErrors = [
+            {
+                message,
+                code: error?.code,
+                createdAt: Date.now(),
+            },
+            ...this.recentPlaybackErrors,
+        ].slice(0, 5);
+    }
+
+    private sanitizeDiagnosticText(value: string) {
+        return value
+            .replace(/(authorization|cookie|token|password)=([^&\s]+)/gi, "$1=***")
+            .replace(/(authorization|cookie|token|password):\s*([^\n]+)/gi, "$1: ***");
+    }
+
+    private getDiagnosticUrlType(url?: string | null) {
+        if (!url) {
+            return "none";
+        }
+        const lowerUrl = url.toLowerCase();
+        if (lowerUrl.includes(".m3u8")) {
+            return "hls";
+        }
+        if (lowerUrl.startsWith("http://") || lowerUrl.startsWith("https://")) {
+            return "http";
+        }
+        if (lowerUrl.startsWith("file://")) {
+            return "file";
+        }
+        if (lowerUrl.startsWith("content://")) {
+            return "content";
+        }
+        return "other";
     }
 
     /**

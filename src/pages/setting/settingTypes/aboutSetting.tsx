@@ -15,10 +15,20 @@ import useOrientation from "@/hooks/useOrientation";
 import Divider from "@/components/base/divider";
 import { buildInfo } from "@/constants/buildInfo.generated";
 import DeviceInfo from "react-native-device-info";
+import TrackPlayer, {
+    IPlaybackDiagnosticSnapshot,
+} from "@/core/trackPlayer";
+import PluginManager from "@/core/pluginManager";
+import timeformat from "@/utils/timeformat";
+import Clipboard from "@react-native-clipboard/clipboard";
+import Toast from "@/utils/toast";
+import { showDialog } from "@/components/dialogs/useDialog";
+import { useI18N } from "@/core/i18n";
 
 export default function AboutSetting() {
     const checkAndShowResult = useCheckUpdate();
     const orientation = useOrientation();
+    const { t } = useI18N();
     const buildRows = [
         {
             label: "应用版本",
@@ -49,6 +59,106 @@ export default function AboutSetting() {
             value: buildInfo.nitroPlayer,
         },
     ];
+
+    function formatValue(value?: string | number | null) {
+        if (value === null || value === undefined || value === "") {
+            return "-";
+        }
+        return `${value}`;
+    }
+
+    function formatProgress(snapshot: IPlaybackDiagnosticSnapshot) {
+        const duration =
+            snapshot.progress.duration ||
+            snapshot.currentMusic?.duration ||
+            snapshot.activeTrack?.duration ||
+            0;
+        return `${timeformat(snapshot.progress.position)} / ${timeformat(duration)}`;
+    }
+
+    function formatPlaybackDiagnostic(snapshot: IPlaybackDiagnosticSnapshot) {
+        const currentMusic = snapshot.currentMusic;
+        const currentPlugin = currentMusic
+            ? PluginManager.getByMedia(currentMusic)
+            : null;
+        const queueIndex =
+            snapshot.queueIndex >= 0 ? snapshot.queueIndex + 1 : "-";
+        const recentErrors = snapshot.recentErrors.length
+            ? snapshot.recentErrors.map(error => {
+                const createdAt = new Date(error.createdAt).toLocaleString();
+                return `${createdAt} ${error.code ? `[${error.code}] ` : ""}${error.message}`;
+            })
+            : ["-"];
+
+        return [
+            "构建",
+            ...buildRows.map(row => `${row.label}: ${row.value}`),
+            "",
+            "当前播放",
+            `歌曲: ${formatValue(currentMusic?.title)}`,
+            `歌手: ${formatValue(currentMusic?.artist)}`,
+            `专辑: ${formatValue(currentMusic?.album)}`,
+            `平台: ${formatValue(currentMusic?.platform)}`,
+            `插件: ${formatValue(currentPlugin?.name ?? currentMusic?.platform)}`,
+            `队列索引: ${queueIndex} / ${snapshot.queueLength}`,
+            `进度: ${formatProgress(snapshot)}`,
+            `播放状态: ${snapshot.backendState}`,
+            `播放模式: ${snapshot.repeatMode}`,
+            `音质: ${snapshot.quality}`,
+            `速率: ${snapshot.rate}`,
+            "",
+            "播放后端",
+            `后端: ${snapshot.backendName}`,
+            `后端循环模式: ${formatValue(snapshot.backendRepeatMode)}`,
+            `Native 活动索引: ${formatValue(snapshot.activeTrackIndex)}`,
+            `音源类型: ${formatValue(snapshot.activeTrack?.urlType)}`,
+            `Headers: ${snapshot.activeTrack?.hasHeaders ? "yes" : "no"}`,
+            "",
+            "最近错误",
+            ...recentErrors,
+        ].join("\n");
+    }
+
+    function renderDiagnosticContent(diagnosticText: string) {
+        return (
+            <View>
+                <TouchableOpacity
+                    style={style.diagnosticRefresh}
+                    onPress={showPlaybackDiagnostics}>
+                    <ThemeText fontSize="description" fontWeight="bold">
+                        刷新
+                    </ThemeText>
+                </TouchableOpacity>
+                <ThemeText
+                    selectable
+                    fontSize="description"
+                    style={style.diagnosticText}>
+                    {diagnosticText}
+                </ThemeText>
+            </View>
+        );
+    }
+
+    async function showPlaybackDiagnostics() {
+        try {
+            const snapshot =
+                await TrackPlayer.getPlaybackDiagnosticSnapshot();
+            const diagnosticText = formatPlaybackDiagnostic(snapshot);
+            showDialog("SimpleDialog", {
+                title: "播放诊断",
+                content: renderDiagnosticContent(diagnosticText),
+                okText: "复制诊断",
+                onOk() {
+                    Clipboard.setString(diagnosticText);
+                    Toast.success(t("toast.copiedToClipboard"));
+                },
+            });
+        } catch (e: any) {
+            Toast.warn(t("toast.unknownError", {
+                reason: e?.message ?? e,
+            }));
+        }
+    }
 
     return (
         <View
@@ -115,6 +225,13 @@ export default function AboutSetting() {
                             </ThemeText>
                         </View>
                     ))}
+                    <TouchableOpacity
+                        style={style.diagnosticEntry}
+                        onPress={showPlaybackDiagnostics}>
+                        <ThemeText fontSize="description" fontWeight="bold">
+                            播放诊断
+                        </ThemeText>
+                    </TouchableOpacity>
                 </View>
                 <Divider style={style.content} />
 
@@ -250,6 +367,16 @@ const style = StyleSheet.create({
     buildInfoValue: {
         flex: 1,
         lineHeight: rpx(34),
+    },
+    diagnosticEntry: {
+        marginTop: rpx(20),
+    },
+    diagnosticRefresh: {
+        alignSelf: "flex-start",
+        marginBottom: rpx(20),
+    },
+    diagnosticText: {
+        lineHeight: rpx(38),
     },
     wcChannel: {
         width: rpx(330),
