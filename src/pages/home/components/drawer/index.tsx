@@ -37,6 +37,13 @@ function HomeDrawer(props: any) {
 
     const basicSetting: ISettingOptions[] = [
         {
+            icon: "magnifying-glass",
+            title: t("globalSearch.title"),
+            onPress: () => {
+                navigate(ROUTE_PATH.GLOBAL_SEARCH);
+            },
+        },
+        {
             icon: "cog-8-tooth",
             title: t("sidebar.basicSettings"),
             onPress: () => {

@@ -38,7 +38,7 @@ export default function NavBar() {
                 accessible
                 accessibilityLabel={t("home.clickToSearch")}
                 onPress={() => {
-                    navigation.navigate(ROUTE_PATH.SEARCH_PAGE);
+                    navigation.navigate(ROUTE_PATH.GLOBAL_SEARCH);
                 }}>
                 <Icon
                     accessible={false}

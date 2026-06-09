@@ -107,7 +107,7 @@ function ContinueListening(props: {
                     <QuickPill
                         icon="magnifying-glass"
                         title={t("home.startSearch")}
-                        onPress={() => navigate(ROUTE_PATH.SEARCH_PAGE)}
+                        onPress={() => navigate(ROUTE_PATH.GLOBAL_SEARCH)}
                     />
                     <QuickPill
                         icon="inbox-arrow-down"

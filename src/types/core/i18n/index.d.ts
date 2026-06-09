@@ -199,6 +199,18 @@ export interface ILanguageData {
     "searchPage.albumDetailFallback": string; // 专辑详情不可用时回退搜索
     "searchPage.sourceEmptyResult": string; // 某来源无搜索结果
     "searchPage.sourceLoadFailed": string; // 某来源加载失败
+    "globalSearch.title": string; // 全局搜索
+    "globalSearch.placeholder": string; // 全局搜索占位
+    "globalSearch.searchLabel.a11y": string; // 全局搜索标签
+    "globalSearch.onlineSection": string; // 在线搜索分组
+    "globalSearch.localSection": string; // 本地入口分组
+    "globalSearch.musicTitle": string; // 搜索歌曲结果标题
+    "globalSearch.musicDescription": string; // 搜索歌曲结果描述
+    "globalSearch.pluginDescription": string; // 插件结果描述
+    "globalSearch.sheetDescription": string; // 歌单结果描述
+    "globalSearch.settingDescription": string; // 设置结果描述
+    "globalSearch.emptyQuery": string; // 全局搜索空输入
+    "globalSearch.noLocalResult": string; // 全局搜索无本地结果
 
     // 榜单相关
     "topList.title": string; // 榜单
@@ -271,6 +283,7 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.options.userVariables": string; // 用户变量
     "pluginSetting.pluginItem.versionHint": string; // 版本提示
     "pluginSetting.pluginItem.author": string; // 作者
+    "pluginSetting.filteringByPlugin": string; // 插件筛选提示
     "pluginSetting.pluginItem.source.network": string; // 网络安装
     "pluginSetting.pluginItem.source.localFile": string; // 本地文件
     "pluginSetting.pluginItem.source.unknown": string; // 来源未知

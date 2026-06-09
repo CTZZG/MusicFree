@@ -1,0 +1,310 @@
+import AppBar from "@/components/base/appBar";
+import Empty from "@/components/base/empty";
+import Icon from "@/components/base/icon.tsx";
+import IconButton from "@/components/base/iconButton";
+import Input from "@/components/base/input";
+import ListItem, { ListItemHeader } from "@/components/base/listItem";
+import MusicBar from "@/components/musicBar";
+import { useI18N } from "@/core/i18n";
+import { useSortedPlugins } from "@/core/pluginManager";
+import { ROUTE_PATH, useNavigate } from "@/core/router";
+import { useSheetsBase } from "@/core/musicSheet";
+import { iconSizeConst } from "@/constants/uiConst";
+import useColors from "@/hooks/useColors";
+import rpx from "@/utils/rpx";
+import Color from "color";
+import React, { useMemo, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+type GlobalSearchResultType = "music" | "music-sheet" | "plugin" | "setting";
+
+interface IGlobalSearchResult {
+    id: string;
+    type: GlobalSearchResultType;
+    title: string;
+    description: string;
+    icon: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
+    keywords?: string[];
+    onPress: () => void;
+}
+
+function normalizeKeyword(text?: string) {
+    return (text ?? "").trim().toLowerCase();
+}
+
+function matchesQuery(query: string, item: IGlobalSearchResult) {
+    const normalizedQuery = normalizeKeyword(query);
+    if (!normalizedQuery) {
+        return false;
+    }
+    return [item.title, item.description, ...(item.keywords ?? [])]
+        .map(normalizeKeyword)
+        .some(text => text.includes(normalizedQuery));
+}
+
+export default function GlobalSearch() {
+    const { t } = useI18N();
+    const navigate = useNavigate();
+    const colors = useColors();
+    const plugins = useSortedPlugins();
+    const sheets = useSheetsBase();
+    const [query, setQuery] = useState("");
+    const normalizedQuery = query.trim();
+
+    const settingTargets = useMemo<IGlobalSearchResult[]>(() => [
+        {
+            id: "setting-basic",
+            type: "setting",
+            title: t("sidebar.basicSettings"),
+            description: t("globalSearch.settingDescription"),
+            icon: "cog-8-tooth",
+            keywords: [
+                t("basicSettings.lyric"),
+                t("basicSettings.clickMusicInSearch"),
+                t("basicSettings.qualityManagement"),
+                t("basicSettings.download"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.SETTING, { type: "basic" }),
+        },
+        {
+            id: "setting-plugin",
+            type: "setting",
+            title: t("sidebar.pluginManagement"),
+            description: t("globalSearch.settingDescription"),
+            icon: "javascript",
+            keywords: [
+                t("pluginSetting.menu.installPlugin"),
+                t("pluginSetting.menu.subscriptionSetting"),
+                t("pluginSetting.menu.sort"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.SETTING, { type: "plugin" }),
+        },
+        {
+            id: "setting-theme",
+            type: "setting",
+            title: t("sidebar.themeSettings"),
+            description: t("globalSearch.settingDescription"),
+            icon: "t-shirt-outline",
+            keywords: [
+                t("themeSettings.setTheme"),
+                t("themeSettings.customMode"),
+                t("themeSettings.coverStyle"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.SETTING, { type: "theme" }),
+        },
+        {
+            id: "setting-backup",
+            type: "setting",
+            title: t("sidebar.backupAndResume"),
+            description: t("globalSearch.settingDescription"),
+            icon: "circle-stack",
+            keywords: [
+                t("backupAndResume.backupToLocal"),
+                t("backupAndResume.resumeFromLocalFile"),
+                t("backupAndResume.webdavSettings"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.SETTING, { type: "backup" }),
+        },
+        {
+            id: "setting-about",
+            type: "setting",
+            title: t("common.about"),
+            description: t("globalSearch.settingDescription"),
+            icon: "information-circle",
+            keywords: ["version", "update", "版本", "更新"],
+            onPress: () => navigate(ROUTE_PATH.SETTING, { type: "about" }),
+        },
+    ], [navigate, t]);
+
+    const localResults = useMemo(() => {
+        if (!normalizedQuery) {
+            return [];
+        }
+        const pluginResults: IGlobalSearchResult[] = plugins.map(plugin => ({
+            id: `plugin-${plugin.hash}`,
+            type: "plugin",
+            title: plugin.name,
+            description: t("globalSearch.pluginDescription"),
+            icon: "javascript",
+            keywords: [
+                plugin.instance.author ?? "",
+                plugin.instance.description ?? "",
+            ],
+            onPress: () =>
+                navigate(ROUTE_PATH.SETTING, {
+                    type: "plugin",
+                    initialPluginName: plugin.name,
+                }),
+        }));
+        const sheetResults: IGlobalSearchResult[] = sheets.map(sheet => ({
+            id: `sheet-${sheet.id}`,
+            type: "music-sheet",
+            title: sheet.title ?? t("common.sheet"),
+            description: t("globalSearch.sheetDescription", {
+                count: sheet.worksNum ?? 0,
+            }),
+            icon: "playlist",
+            keywords: [sheet.description ?? ""],
+            onPress: () =>
+                navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, {
+                    id: sheet.id,
+                }),
+        }));
+
+        return [...pluginResults, ...sheetResults, ...settingTargets].filter(
+            item => matchesQuery(normalizedQuery, item),
+        );
+    }, [navigate, normalizedQuery, plugins, settingTargets, sheets, t]);
+
+    const searchMusicResult = useMemo<IGlobalSearchResult | null>(() => {
+        if (!normalizedQuery) {
+            return null;
+        }
+        return {
+            id: "music-search",
+            type: "music",
+            title: t("globalSearch.musicTitle", { query: normalizedQuery }),
+            description: t("globalSearch.musicDescription"),
+            icon: "magnifying-glass",
+            onPress: () =>
+                navigate(ROUTE_PATH.SEARCH_PAGE, {
+                    initialQuery: normalizedQuery,
+                    initialSearchType: "music",
+                }),
+        };
+    }, [navigate, normalizedQuery, t]);
+
+    const hintTextColor = Color(colors.text).alpha(0.6).toString();
+
+    return (
+        <SafeAreaView edges={["bottom", "top"]} style={styles.wrapper}>
+            <AppBar containerStyle={styles.appbar} contentStyle={styles.appbar}>
+                <View style={styles.searchBarContainer}>
+                    <Icon
+                        name="magnifying-glass"
+                        color={hintTextColor}
+                        size={iconSizeConst.small}
+                        style={styles.magnify}
+                    />
+                    <Input
+                        autoFocus
+                        style={[
+                            styles.searchBar,
+                            {
+                                color: colors.text,
+                                backgroundColor: colors.pageBackground,
+                            },
+                        ]}
+                        accessible
+                        accessibilityLabel={t("globalSearch.searchLabel.a11y")}
+                        accessibilityHint={t("globalSearch.placeholder")}
+                        placeholderTextColor={hintTextColor}
+                        placeholder={t("globalSearch.placeholder")}
+                        onChangeText={setQuery}
+                        value={query}
+                    />
+                    {query.length ? (
+                        <IconButton
+                            style={styles.close}
+                            sizeType="light"
+                            onPress={() => setQuery("")}
+                            color={hintTextColor}
+                            name="x-mark"
+                        />
+                    ) : null}
+                </View>
+            </AppBar>
+            <SafeAreaView edges={["left", "right"]} style={styles.wrapper}>
+                {!normalizedQuery ? (
+                    <Empty content={t("globalSearch.emptyQuery")} />
+                ) : (
+                    <ScrollView
+                        style={styles.resultWrapper}
+                        keyboardShouldPersistTaps="handled">
+                        {searchMusicResult ? (
+                            <>
+                                <ListItemHeader>
+                                    {t("globalSearch.onlineSection")}
+                                </ListItemHeader>
+                                <GlobalSearchListItem item={searchMusicResult} />
+                            </>
+                        ) : null}
+                        {localResults.length ? (
+                            <>
+                                <ListItemHeader>
+                                    {t("globalSearch.localSection")}
+                                </ListItemHeader>
+                                {localResults.map(item => (
+                                    <GlobalSearchListItem
+                                        key={item.id}
+                                        item={item}
+                                    />
+                                ))}
+                            </>
+                        ) : (
+                            <Empty content={t("globalSearch.noLocalResult")} />
+                        )}
+                    </ScrollView>
+                )}
+            </SafeAreaView>
+            <MusicBar />
+        </SafeAreaView>
+    );
+}
+
+function GlobalSearchListItem(props: { item: IGlobalSearchResult }) {
+    const { item } = props;
+
+    return (
+        <ListItem withHorizontalPadding onPress={item.onPress}>
+            <ListItem.ListItemIcon icon={item.icon} />
+            <ListItem.Content
+                title={item.title}
+                description={item.description}
+            />
+            <ListItem.ListItemIcon
+                icon="chevron-right"
+                position="right"
+                fixedWidth
+            />
+        </ListItem>
+    );
+}
+
+const styles = StyleSheet.create({
+    wrapper: {
+        width: "100%",
+        flex: 1,
+    },
+    appbar: {
+        paddingRight: 0,
+    },
+    searchBarContainer: {
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    searchBar: {
+        minWidth: rpx(320),
+        flex: 1,
+        paddingHorizontal: rpx(64),
+        borderRadius: rpx(64),
+        height: rpx(64),
+        maxHeight: rpx(64),
+        alignItems: "center",
+    },
+    magnify: {
+        position: "absolute",
+        left: rpx(24),
+        zIndex: 1,
+    },
+    close: {
+        position: "absolute",
+        right: rpx(12),
+    },
+    resultWrapper: {
+        width: "100%",
+        flex: 1,
+    },
+});

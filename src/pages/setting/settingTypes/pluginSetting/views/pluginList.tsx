@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import * as DocumentPicker from "expo-document-picker";
@@ -9,7 +9,7 @@ import { trace } from "@/utils/log";
 
 import Toast from "@/utils/toast";
 import axios from "axios";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import Config from "@/core/appConfig";
 import Empty from "@/components/base/empty";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
@@ -21,6 +21,8 @@ import PluginItem from "../components/pluginItem";
 import { IIconName } from "@/components/base/icon.tsx";
 import { IInstallPluginResult } from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
+import ListItem from "@/components/base/listItem";
+import { ROUTE_PATH, useNavigate } from "@/core/router";
 
 interface IOption {
     icon: IIconName;
@@ -31,6 +33,23 @@ interface IOption {
 export default function PluginList() {
     const plugins = useSortedPlugins();
     const { t } = useI18N();
+    const route = useRoute<any>();
+    const navigate = useNavigate();
+    const initialPluginName = `${route.params?.initialPluginName ?? ""}`.trim();
+    const [filterText, setFilterText] = useState(initialPluginName);
+    const visiblePlugins = useMemo(() => {
+        const keyword = filterText.trim().toLowerCase();
+        if (!keyword) {
+            return plugins;
+        }
+        return plugins.filter(plugin =>
+            [
+                plugin.name,
+                plugin.instance.author ?? "",
+                plugin.instance.description ?? "",
+            ].some(text => text.toLowerCase().includes(keyword)),
+        );
+    }, [filterText, plugins]);
 
     const [loading, setLoading] = useState(false);
 
@@ -315,7 +334,16 @@ export default function PluginList() {
 
     return (
         <>
-            <AppBar menu={menuOptions}>{t("sidebar.pluginManagement")}</AppBar>
+            <AppBar
+                actions={[
+                    {
+                        icon: "magnifying-glass",
+                        onPress: () => navigate(ROUTE_PATH.GLOBAL_SEARCH),
+                    },
+                ]}
+                menu={menuOptions}>
+                {t("sidebar.pluginManagement")}
+            </AppBar>
             <HorizontalSafeAreaView style={style.wrapper}>
                 <>
                     {loading ? (
@@ -323,8 +351,29 @@ export default function PluginList() {
                     ) : (
                         <FlatList
                             ListEmptyComponent={Empty}
+                            ListHeaderComponent={
+                                filterText ? (
+                                    <ListItem
+                                        withHorizontalPadding
+                                        heightType="smallest"
+                                        onPress={() => setFilterText("")}>
+                                        <ListItem.Content
+                                            title={t(
+                                                "pluginSetting.filteringByPlugin",
+                                                {
+                                                    name: filterText,
+                                                },
+                                            )}
+                                        />
+                                        <ListItem.ListItemIcon
+                                            icon="x-mark"
+                                            position="right"
+                                        />
+                                    </ListItem>
+                                ) : null
+                            }
                             ListFooterComponent={<View style={style.blank} />}
-                            data={plugins ?? []}
+                            data={visiblePlugins ?? []}
                             keyExtractor={_ => _.hash}
                             renderItem={({ item: plugin }) => (
                                 <PluginItem key={plugin.hash} plugin={plugin} />
