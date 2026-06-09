@@ -138,7 +138,7 @@
 
 ## Prompt 04：备份恢复预览和报告
 
-状态：待执行。
+状态：已完成。
 
 ```text
 你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。

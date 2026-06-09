@@ -1,5 +1,9 @@
 import ListItem, { ListItemHeader } from "@/components/base/listItem";
-import Backup from "@/core/backup";
+import Backup, {
+    IBackupPreview,
+    IBackupResumeReport,
+    IBackupResumeSectionReport,
+} from "@/core/backup";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import Toast from "@/utils/toast";
 import React from "react";
@@ -28,6 +32,116 @@ export default function BackupSetting() {
     const webdavUsername = useAppConfig("webdav.username");
     const webdavPassword = useAppConfig("webdav.password");
 
+    function formatResumePreview(preview: IBackupPreview) {
+        return [
+            `${t("backupAndResume.report.musicSheets")}: ${preview.musicSheetCount}`,
+            `${t("backupAndResume.report.musicItems")}: ${preview.musicCount}`,
+            `${t("backupAndResume.report.localMusic")}: ${preview.localMusicCount}`,
+            `${t("backupAndResume.report.starredMusicSheets")}: ${preview.starredMusicSheetCount}`,
+            `${t("backupAndResume.report.plugins")}: ${preview.pluginCount}`,
+            preview.invalidPluginCount
+                ? `${t("backupAndResume.report.invalidPlugins")}: ${preview.invalidPluginCount}`
+                : "",
+        ].filter(Boolean).join("\n");
+    }
+
+    function formatResumeSection(
+        label: string,
+        section: IBackupResumeSectionReport,
+    ) {
+        return `${label}: ${t("backupAndResume.report.success")} ${section.successCount}, ${t("backupAndResume.report.skipped")} ${section.skippedCount}, ${t("backupAndResume.report.failed")} ${section.failedCount}`;
+    }
+
+    function formatResumeReport(report: IBackupResumeReport) {
+        const failureReasons = [
+            ...report.musicSheets.failureReasons,
+            ...report.localMusicSheet.failureReasons,
+            ...report.starredMusicSheets.failureReasons,
+            ...report.plugins.failureReasons,
+        ];
+
+        return [
+            formatResumeSection(
+                t("backupAndResume.report.musicSheets"),
+                report.musicSheets,
+            ),
+            formatResumeSection(
+                t("backupAndResume.report.localMusic"),
+                report.localMusicSheet,
+            ),
+            formatResumeSection(
+                t("backupAndResume.report.starredMusicSheets"),
+                report.starredMusicSheets,
+            ),
+            formatResumeSection(
+                t("backupAndResume.report.plugins"),
+                report.plugins,
+            ),
+            failureReasons.length
+                ? [
+                    "",
+                    t("backupAndResume.report.failureReasons"),
+                    ...failureReasons.map(reason => `- ${reason}`),
+                ].join("\n")
+                : "",
+        ].filter(Boolean).join("\n");
+    }
+
+    function showResumeReport(report: IBackupResumeReport) {
+        showDialog("SimpleDialog", {
+            title: t("backupAndResume.resumeReportTitle"),
+            content: formatResumeReport(report),
+        });
+    }
+
+    function showResumeLoading(raw: string | object) {
+        return new Promise(resolve => {
+            showDialog("LoadingDialog", {
+                title: t("sidebar.backupAndResume"),
+                loadingText: t("backupAndResume.resuming"),
+                async task() {
+                    await delay(300, false);
+                    return Backup.resume(raw, resumeMode);
+                },
+                onResolve(report, hideDialog) {
+                    hideDialog();
+                    Toast.success(t("toast.resumeSuccess"));
+                    showResumeReport(report);
+                    resolve(true);
+                },
+                onCancel(hideDialog) {
+                    hideDialog();
+                    resolve(false);
+                },
+                onReject(reason, hideDialog) {
+                    hideDialog();
+                    resolve(false);
+                    console.log(reason);
+                    Toast.warn(t("toast.resumeFail", {
+                        reason: reason?.message ?? reason,
+                    }));
+                },
+            });
+        });
+    }
+
+    function showResumePreview(raw: string | object) {
+        try {
+            const preview = Backup.preview(raw);
+            showDialog("SimpleDialog", {
+                title: t("backupAndResume.resumePreviewTitle"),
+                content: formatResumePreview(preview),
+                okText: t("backupAndResume.startResume"),
+                onOk() {
+                    setTimeout(() => {
+                        showResumeLoading(raw);
+                    }, 0);
+                },
+            });
+        } catch (e: any) {
+            Toast.warn(t("toast.resumeFail", { reason: e?.message ?? e }));
+        }
+    }
 
     const onBackupToLocal = async () => {
         navigate(ROUTE_PATH.FILE_SELECTOR, {
@@ -77,31 +191,7 @@ export default function BackupSetting() {
                 return;
             }
             const result = await readAsStringAsync(pickResult.assets[0].uri);
-            return new Promise(resolve => {
-                showDialog("LoadingDialog", {
-                    title: t("backupAndResume.resumeFromLocalFile"),
-                    loadingText: t("backupAndResume.resuming"),
-                    async task() {
-                        await delay(300, false);
-                        return Backup.resume(result, resumeMode);
-                    },
-                    onResolve(_, hideDialog) {
-                        Toast.success(t("toast.resumeSuccess"));
-                        hideDialog();
-                        resolve(true);
-                    },
-                    onCancel(hideDialog) {
-                        hideDialog();
-                        resolve(false);
-                    },
-                    onReject(reason, hideDialog) {
-                        hideDialog();
-                        resolve(false);
-                        console.log(reason);
-                        Toast.warn(t("toast.resumeFail", { reason: reason?.message ?? reason }));
-                    },
-                });
-            });
+            showResumePreview(result);
         } catch (e: any) {
             errorLog("恢复失败", e);
             Toast.warn(t("toast.resumeFail", { reason: e?.message ?? e }));
@@ -118,11 +208,12 @@ export default function BackupSetting() {
                     const url = text.trim();
                     if (url.endsWith(".json") || url.endsWith(".txt")) {
                         const raw = (await axios.get(text)).data;
-                        await Backup.resume(raw, resumeMode);
-                        Toast.success(t("toast.resumeSuccess"));
                         closePanel();
+                        setTimeout(() => {
+                            showResumePreview(raw);
+                        }, 0);
                     } else {
-                        throw "无效的URL";
+                        throw new Error("无效的URL");
                     }
                 } catch (e: any) {
                     Toast.warn(t("toast.resumeFail", { reason: e?.message ?? e }));
@@ -158,11 +249,7 @@ export default function BackupSetting() {
                     format: "text",
                 },
             );
-            await Backup.resume(
-                resumeData,
-                Config.getConfig("backup.resumeMode"),
-            );
-            Toast.success(t("toast.resumeSuccess"));
+            showResumePreview(resumeData as string);
         } catch (e: any) {
             Toast.warn(t("toast.resumeFail", { reason: e?.message ?? e }));
         }

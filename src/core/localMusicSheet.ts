@@ -21,6 +21,22 @@ import { ReadDirItem, exists, readDir, unlink } from "react-native-fs";
 let localSheet: IMusic.IMusicItem[] = [];
 const localSheetStateMapper = new StateMapper(() => localSheet);
 
+interface ILocalMusicResumeReport {
+    successCount: number;
+    skippedCount: number;
+    failedCount: number;
+    failureReasons: string[];
+}
+
+function createResumeReport(): ILocalMusicResumeReport {
+    return {
+        successCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        failureReasons: [],
+    };
+}
+
 export async function setup() {
     const sheet = await getStorage(StorageKeys.LocalMusicSheet);
     if (sheet) {
@@ -328,35 +344,53 @@ async function updateMusicList(newSheet: IMusic.IMusicItem[]) {
     } catch {}
 }
 
-async function resumeMusicList(musicItems?: IMusic.IMusicItem[]) {
+async function resumeMusicList(
+    musicItems?: IMusic.IMusicItem[],
+): Promise<ILocalMusicResumeReport> {
+    const report = createResumeReport();
     if (!Array.isArray(musicItems) || !musicItems.length) {
-        return;
+        return report;
     }
 
     const validMusicItems: IMusic.IMusicItem[] = [];
     for (let musicItem of musicItems) {
-        const localPath = getLocalPath(musicItem);
-        const fsPath = localPath ? normalizeFsPath(localPath) : null;
-        if (fsPath && (await exists(fsPath))) {
-            validMusicItems.push({
-                ...musicItem,
-                id:
-                    musicItem.id ??
-                    CryptoJs.MD5(fsPath).toString(CryptoJs.enc.Hex),
-                platform: musicItem.platform ?? localPluginPlatform,
-                title: musicItem.title ?? getFileName(fsPath),
-                artist: musicItem.artist ?? "未知歌手",
-                [internalSerializeKey]: {
-                    ...(musicItem[internalSerializeKey] ?? {}),
-                    localPath,
-                },
-            });
+        try {
+            const localPath = getLocalPath(musicItem);
+            const fsPath = localPath ? normalizeFsPath(localPath) : null;
+            if (fsPath && (await exists(fsPath))) {
+                validMusicItems.push({
+                    ...musicItem,
+                    id:
+                        musicItem.id ??
+                        CryptoJs.MD5(fsPath).toString(CryptoJs.enc.Hex),
+                    platform: musicItem.platform ?? localPluginPlatform,
+                    title: musicItem.title ?? getFileName(fsPath),
+                    artist: musicItem.artist ?? "未知歌手",
+                    [internalSerializeKey]: {
+                        ...(musicItem[internalSerializeKey] ?? {}),
+                        localPath,
+                    },
+                });
+            } else {
+                report.skippedCount += 1;
+            }
+        } catch (e: any) {
+            report.failedCount += 1;
+            report.failureReasons.push(e?.message ?? String(e));
         }
     }
 
     if (validMusicItems.length) {
-        await addMusic(validMusicItems);
+        try {
+            await addMusic(validMusicItems);
+            report.successCount = validMusicItems.length;
+        } catch (e: any) {
+            report.failedCount += validMusicItems.length;
+            report.failureReasons.push(e?.message ?? String(e));
+        }
     }
+
+    return report;
 }
 
 const LocalMusicSheet = {

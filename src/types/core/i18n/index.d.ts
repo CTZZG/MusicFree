@@ -353,6 +353,19 @@ export interface ILanguageData {
     "backupAndResume.webdavUrl": string; // WebDAV URL
     "backupAndResume.backupToWebdav": string; // 备份到WebDAV
     "backupAndResume.resumeFromWebdav": string; // 从WebDAV恢复
+    "backupAndResume.resumePreviewTitle": string; // 恢复前预览
+    "backupAndResume.resumeReportTitle": string; // 恢复结果
+    "backupAndResume.startResume": string; // 开始恢复
+    "backupAndResume.report.musicSheets": string; // 歌单
+    "backupAndResume.report.musicItems": string; // 歌曲
+    "backupAndResume.report.localMusic": string; // 本地音乐
+    "backupAndResume.report.starredMusicSheets": string; // 收藏歌单
+    "backupAndResume.report.plugins": string; // 插件
+    "backupAndResume.report.invalidPlugins": string; // 无效插件项
+    "backupAndResume.report.success": string; // 成功
+    "backupAndResume.report.skipped": string; // 跳过
+    "backupAndResume.report.failed": string; // 失败
+    "backupAndResume.report.failureReasons": string; // 失败原因
     "backupAndResume.resumeMode.append": string; // 附加
     "backupAndResume.resumeMode.overwrite-default": string; // 覆盖（默认）
     "backupAndResume.resumeMode.overwrite": string; // 覆盖
