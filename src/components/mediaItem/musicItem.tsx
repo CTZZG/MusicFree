@@ -19,6 +19,9 @@ import {
 import DownloadStatusIndicator from "@/components/downloadStatusIndicator";
 import { useI18N } from "@/core/i18n";
 import Toast from "@/utils/toast";
+import { useMediaExtraProperty } from "@/utils/mediaExtra";
+
+type DownloadWriteStatus = "success" | "failed" | "skipped";
 
 interface IMusicItemProps {
     index?: string | number;
@@ -90,6 +93,47 @@ export default function MusicItem(props: IMusicItemProps) {
     const { t } = useI18N();
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
     const localMusicItem = LocalMusicSheet.isLocalMusic(musicItem);
+    const downloadMetadataStatus = useMediaExtraProperty(
+        musicItem,
+        "downloadMetadataStatus",
+    ) as DownloadWriteStatus | null;
+    const downloadLyricStatus = useMediaExtraProperty(
+        musicItem,
+        "downloadLyricStatus",
+    ) as DownloadWriteStatus | null;
+    const downloadWriteBadges = useMemo(() => {
+        const badges: Array<{
+            key: string;
+            text: string;
+            status: DownloadWriteStatus;
+        }> = [];
+
+        if (downloadMetadataStatus) {
+            badges.push({
+                key: "metadata",
+                text:
+                    downloadMetadataStatus === "success"
+                        ? t("localMusic.metadataStatus.success")
+                        : downloadMetadataStatus === "failed"
+                          ? t("localMusic.metadataStatus.failed")
+                          : t("localMusic.metadataStatus.skipped"),
+                status: downloadMetadataStatus,
+            });
+        }
+
+        if (downloadLyricStatus && downloadLyricStatus !== "skipped") {
+            badges.push({
+                key: "lyric",
+                text:
+                    downloadLyricStatus === "success"
+                        ? t("localMusic.lyricFileStatus.success")
+                        : t("localMusic.lyricFileStatus.failed"),
+                status: downloadLyricStatus,
+            });
+        }
+
+        return badges;
+    }, [downloadMetadataStatus, downloadLyricStatus, t]);
     const durationText = useMemo(
         () => showDuration ? formatDuration(musicItem.duration) : "",
         [musicItem.duration, showDuration],
@@ -159,6 +203,33 @@ export default function MusicItem(props: IMusicItemProps) {
                                 </ThemeText>
                             </View>
                         ) : null}
+                        {localFileExists !== false
+                            ? downloadWriteBadges.map(badge => (
+                                <View
+                                    key={badge.key}
+                                    style={[
+                                        styles.writeBadge,
+                                        badge.status === "success"
+                                            ? styles.writeBadgeSuccess
+                                            : badge.status === "failed"
+                                              ? styles.writeBadgeFailed
+                                              : styles.writeBadgeSkipped,
+                                    ]}>
+                                    <ThemeText
+                                        fontSize="tag"
+                                        style={[
+                                            styles.writeBadgeText,
+                                            badge.status === "success"
+                                                ? styles.writeBadgeTextSuccess
+                                                : badge.status === "failed"
+                                                  ? styles.writeBadgeTextFailed
+                                                  : styles.writeBadgeTextSkipped,
+                                        ]}>
+                                        {badge.text}
+                                    </ThemeText>
+                                </View>
+                            ))
+                            : null}
                         <ThemeText
                             numberOfLines={1}
                             fontSize="description"
@@ -243,6 +314,41 @@ const styles = StyleSheet.create({
         color: "#72c7ff",
         includeFontPadding: false,
         lineHeight: rpx(24),
+    },
+    writeBadge: {
+        height: rpx(28),
+        paddingHorizontal: rpx(6),
+        marginRight: rpx(8),
+        borderRadius: rpx(4),
+        borderWidth: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        flexShrink: 0,
+    },
+    writeBadgeSuccess: {
+        borderColor: "rgba(84, 209, 138, 0.72)",
+        backgroundColor: "rgba(84, 209, 138, 0.16)",
+    },
+    writeBadgeFailed: {
+        borderColor: "rgba(230, 103, 103, 0.78)",
+        backgroundColor: "rgba(230, 103, 103, 0.16)",
+    },
+    writeBadgeSkipped: {
+        borderColor: "rgba(255,255,255,0.22)",
+        backgroundColor: "rgba(255,255,255,0.08)",
+    },
+    writeBadgeText: {
+        includeFontPadding: false,
+        lineHeight: rpx(24),
+    },
+    writeBadgeTextSuccess: {
+        color: "#78dba0",
+    },
+    writeBadgeTextFailed: {
+        color: "#ff8585",
+    },
+    writeBadgeTextSkipped: {
+        color: "rgba(255,255,255,0.58)",
     },
     durationText: {
         textAlign: "right",

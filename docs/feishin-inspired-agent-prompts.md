@@ -756,6 +756,48 @@
 - 三个筛选可以组合使用。
 ```
 
+## Prompt 20：下载元数据写入状态展示
+
+状态：已完成。本次在下载完成后记录元数据和独立歌词文件写入结果，并在歌曲列表项中展示轻量状态徽标。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/downloader.ts
+- src/core/musicMetadataManager.ts
+- src/utils/mediaExtra.ts
+- src/components/mediaItem/musicItem.tsx
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+让用户在下载完成后能看到元数据写入是否成功。
+
+范围：
+- 下载完成后异步记录元数据写入状态：success / failed / skipped。
+- 下载完成后异步记录独立歌词文件写入状态：success / failed / skipped。
+- 状态写入 mediaExtra，随歌曲项订阅更新。
+- 歌曲项展示元数据状态徽标。
+- 独立歌词文件只在成功或失败时展示徽标，避免默认未启用时过度占位。
+- 补齐中/英/繁体文案和 i18n 类型。
+
+不要做：
+- 不阻塞下载完成态和后续队列。
+- 不新增下载历史页。
+- 不做格式级别的详细标签字段校验。
+- 不改 Native 元数据写入接口。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 下载完成后本地歌曲项可显示元数据已写入/失败/未写入。
+- 启用独立歌词文件下载时，可显示歌词文件写入成功或失败。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 19。下一步可以继续推进下载/本地资料库的元数据状态展示，或继续完善 WebDAV 自动备份设置。
+当前已经完成 Prompt 01 到 Prompt 20。下一步可以继续推进下载中心插件来源筛选/下载时间展示，或继续完善 WebDAV 自动备份设置。

@@ -40,6 +40,8 @@ import type {
     IDownloadTaskMetadata,
 } from "@/types/metadata";
 
+type IWriteResult = "success" | "failed" | "skipped";
+
 export enum DownloadStatus {
     // 等待下载
     Pending,
@@ -309,7 +311,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private async writeMetadataToFile(
         musicItem: IMusic.IMusicItem,
         filePath: string,
-    ) {
+    ): Promise<IWriteResult> {
         const taskMetadata: IDownloadTaskMetadata = {
             musicItem,
             filePath,
@@ -319,10 +321,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     : undefined,
         };
 
-        await musicMetadataManager.writeMetadataForDownloadTask(
+        const config = this.getMetadataConfig();
+        if (!config.enabled || !musicMetadataManager.isAvailable()) {
+            return "skipped";
+        }
+
+        const success = await musicMetadataManager.writeMetadataForDownloadTask(
             taskMetadata,
-            this.getMetadataConfig(),
+            config,
         );
+        return success ? "success" : "failed";
     }
 
     private stripLyricTimestamps(lyric: string) {
@@ -341,10 +349,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private async writeLyricFileForDownload(
         musicItem: IMusic.IMusicItem,
         filePath: string,
-    ) {
+    ): Promise<IWriteResult> {
         const config = this.getMetadataConfig();
         if (!config.downloadLyricFile) {
-            return false;
+            return "skipped";
         }
 
         const lyric = await musicMetadataManager.getLyricContentForDownload(
@@ -352,7 +360,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             config,
         );
         if (!lyric?.trim()) {
-            return false;
+            return "skipped";
         }
 
         const format = config.lyricFileFormat ?? "lrc";
@@ -362,7 +370,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             format === "txt" ? this.stripLyricTimestamps(lyric) : lyric;
 
         await writeFile(lyricPath, content, "utf8");
-        return true;
+        return "success";
     }
 
     private canUseNativeDownload() {
@@ -771,14 +779,17 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             // 下载完成，移动文件
             await copyFile(cacheDownloadPath, targetDownloadPath);
 
-            this.writeMetadataToFile(musicItem, targetDownloadPath).catch(e => {
+            const metadataWriteTask = this.writeMetadataToFile(
+                musicItem,
+                targetDownloadPath,
+            ).catch(e => {
                 errorLog("元数据写入失败，但不影响下载完成", {
                     musicItem: musicItem.title,
                     error: e instanceof Error ? e.message : String(e),
                 });
+                return "failed" as IWriteResult;
             });
-
-            this.writeLyricFileForDownload(
+            const lyricWriteTask = this.writeLyricFileForDownload(
                 musicItem,
                 targetDownloadPath,
             ).catch(e => {
@@ -786,6 +797,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     musicItem: musicItem.title,
                     error: e instanceof Error ? e.message : String(e),
                 });
+                return "failed" as IWriteResult;
             });
 
             LocalMusicSheet.addMusic({
@@ -798,7 +810,18 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             patchMediaExtra(musicItem, {
                 downloaded: true,
                 localPath: targetDownloadPath,
+                downloadMetadataStatus: undefined,
+                downloadLyricStatus: undefined,
             });
+
+            void Promise.all([metadataWriteTask, lyricWriteTask]).then(
+                ([metadataWriteStatus, lyricWriteStatus]) => {
+                    patchMediaExtra(musicItem, {
+                        downloadMetadataStatus: metadataWriteStatus,
+                        downloadLyricStatus: lyricWriteStatus,
+                    });
+                },
+            );
 
             this.markTaskAsCompleted(musicItem);
         } catch (e: any) {

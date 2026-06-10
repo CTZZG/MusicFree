@@ -144,6 +144,11 @@ export interface ILanguageData {
     "localMusic.relocateFailed": string; // 重新定位失败
     "localMusic.artistFilter.all": string; // 全部歌手
     "localMusic.albumFilter.all": string; // 全部专辑
+    "localMusic.metadataStatus.success": string; // 元数据已写入
+    "localMusic.metadataStatus.failed": string; // 元数据失败
+    "localMusic.metadataStatus.skipped": string; // 元数据未写入
+    "localMusic.lyricFileStatus.success": string; // 歌词已写入
+    "localMusic.lyricFileStatus.failed": string; // 歌词失败
 
     // 歌词相关
     "lyric.lyricLinkedFrom": string; // 歌词来自
