@@ -373,6 +373,7 @@
     "pluginSetting.diagnostics.exportEventFailed": "Export failed: {reason}",
     "pluginSetting.diagnostics.eventDetailTitle": "{name} Diagnostic Detail",
     "pluginSetting.diagnostics.copyEventReport": "Copy Report",
+    "pluginSetting.diagnostics.viewPlugin": "View Plugin",
     "pluginSetting.diagnostics.closeEventDetail": "Close",
     "pluginSetting.capabilityMatrix.summary": "{pluginCount} plugins · {capabilityCount} capabilities",
     "pluginSetting.capabilityMatrix.empty": "No plugin capability information",

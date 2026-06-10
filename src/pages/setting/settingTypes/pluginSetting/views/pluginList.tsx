@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import * as DocumentPicker from "expo-document-picker";
@@ -44,6 +44,10 @@ export default function PluginList() {
     const navigate = useNavigate();
     const initialPluginName = `${route.params?.initialPluginName ?? ""}`.trim();
     const [filterText, setFilterText] = useState(initialPluginName);
+    useEffect(() => {
+        setFilterText(initialPluginName);
+    }, [initialPluginName]);
+
     const visiblePlugins = useMemo(() => {
         const keyword = filterText.trim().toLowerCase();
         if (!keyword) {

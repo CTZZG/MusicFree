@@ -373,6 +373,7 @@
     "pluginSetting.diagnostics.exportEventFailed": "导出失败: {reason}",
     "pluginSetting.diagnostics.eventDetailTitle": "{name} 诊断详情",
     "pluginSetting.diagnostics.copyEventReport": "复制报告",
+    "pluginSetting.diagnostics.viewPlugin": "查看插件",
     "pluginSetting.diagnostics.closeEventDetail": "关闭",
     "pluginSetting.capabilityMatrix.summary": "共 {pluginCount} 个插件 · {capabilityCount} 项能力",
     "pluginSetting.capabilityMatrix.empty": "暂无插件能力信息",

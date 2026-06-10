@@ -7,7 +7,7 @@ import {
     View,
 } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
-import { useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import Color from "color";
 import AppBar from "@/components/base/appBar";
 import Empty from "@/components/base/empty";
@@ -556,6 +556,7 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
     const colors = useColors();
     const { t } = useI18N();
     const navigate = useNavigate();
+    const navigator = useNavigation<any>();
 
     function getDiagnosticEventReport() {
         return buildPluginDiagnosticEventReport(event);
@@ -574,7 +575,12 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
             }),
             content: reportText,
             okText: t("pluginSetting.diagnostics.copyEventReport"),
-            cancelText: t("pluginSetting.diagnostics.closeEventDetail"),
+            cancelText: t("pluginSetting.diagnostics.viewPlugin"),
+            onCancel() {
+                navigator.navigate("/pluginsetting/list", {
+                    initialPluginName: event.pluginName,
+                });
+            },
             onOk() {
                 Clipboard.setString(reportText);
                 Toast.success(t("toast.copiedToClipboard"));
