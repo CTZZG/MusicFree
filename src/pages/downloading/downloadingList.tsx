@@ -112,7 +112,43 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     const canRetry = status === DownloadStatus.Error;
     const canRemove = status !== DownloadStatus.Completed;
 
-    return <ListItem withHorizontalPadding rightPadding={rpx(4)}>
+    function showCompletedDownloadDetail() {
+        if (status !== DownloadStatus.Completed) {
+            return;
+        }
+
+        showDialog("SimpleDialog", {
+            title: t("downloading.detail.title"),
+            content: [
+                `${t("downloading.detail.song")}: ${musicItem.title || t("common.unknownName")}`,
+                `${t("downloading.detail.artist")}: ${musicItem.artist || t("common.unknownName")}`,
+                `${t("downloading.detail.source")}: ${musicItem.platform || "-"}`,
+                `${t("downloading.detail.completedAt")}: ${
+                    taskInfo?.completedAt
+                        ? formatDownloadCompletedAt(taskInfo.completedAt)
+                        : "-"
+                }`,
+                `${t("downloading.detail.fileName")}: ${taskInfo?.filename || "-"}`,
+                `${t("downloading.detail.metadataStatus")}: ${getDownloadDetailMetadataStatusText(
+                    downloadMetadataStatus,
+                    t,
+                )}`,
+                `${t("downloading.detail.lyricStatus")}: ${getDownloadDetailLyricStatusText(
+                    downloadLyricStatus,
+                    t,
+                )}`,
+            ].join("\n"),
+        });
+    }
+
+    return <ListItem
+        withHorizontalPadding
+        rightPadding={rpx(4)}
+        onPress={
+            status === DownloadStatus.Completed
+                ? showCompletedDownloadDetail
+                : undefined
+        }>
         <ListItem.Content
             title={musicItem.title}
             description={description}
@@ -312,6 +348,28 @@ function getDownloadLyricStatusText(
     return status === "success"
         ? t("localMusic.lyricFileStatus.success")
         : t("localMusic.lyricFileStatus.failed");
+}
+
+function getDownloadDetailMetadataStatusText(
+    status: DownloadWriteStatus | null,
+    t: ReturnType<typeof useI18N>["t"],
+) {
+    return status
+        ? getDownloadMetadataStatusText(status, t)
+        : t("downloading.detail.pendingWriteStatus");
+}
+
+function getDownloadDetailLyricStatusText(
+    status: DownloadWriteStatus | null,
+    t: ReturnType<typeof useI18N>["t"],
+) {
+    if (!status) {
+        return t("downloading.detail.pendingWriteStatus");
+    }
+    if (status === "skipped") {
+        return t("downloading.detail.lyricSkipped");
+    }
+    return getDownloadLyricStatusText(status, t);
 }
 
 function FilterChip(props: {
