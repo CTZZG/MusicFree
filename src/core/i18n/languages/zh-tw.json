@@ -288,6 +288,7 @@
     "pluginSetting.pluginItem.options.updatePlugin": "更新外掛",
     "pluginSetting.pluginItem.options.viewDetails": "詳情",
     "pluginSetting.pluginItem.options.healthCheck": "健康檢查",
+    "pluginSetting.pluginItem.options.viewDiagnostics": "查看診斷",
     "pluginSetting.pluginItem.options.sharePlugin": "分享外掛",
     "pluginSetting.pluginItem.options.testSearch": "測試搜尋",
     "pluginSetting.pluginItem.options.testSearchPlaceHolder": "輸入測試關鍵字",

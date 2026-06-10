@@ -288,6 +288,7 @@
     "pluginSetting.pluginItem.options.updatePlugin": "Update Plugin",
     "pluginSetting.pluginItem.options.viewDetails": "Details",
     "pluginSetting.pluginItem.options.healthCheck": "Health Check",
+    "pluginSetting.pluginItem.options.viewDiagnostics": "View Diagnostics",
     "pluginSetting.pluginItem.options.sharePlugin": "Share Plugin",
     "pluginSetting.pluginItem.options.testSearch": "Test Search",
     "pluginSetting.pluginItem.options.testSearchPlaceHolder": "Enter test keyword",

@@ -336,6 +336,7 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.options.updatePlugin": string; // 更新插件
     "pluginSetting.pluginItem.options.viewDetails": string; // 详情
     "pluginSetting.pluginItem.options.healthCheck": string; // 健康检查
+    "pluginSetting.pluginItem.options.viewDiagnostics": string; // 查看诊断
     "pluginSetting.pluginItem.options.sharePlugin": string; // 分享插件
     "pluginSetting.pluginItem.options.testSearch": string; // 测试搜索
     "pluginSetting.pluginItem.options.testSearchPlaceHolder": string; // 测试搜索关键词

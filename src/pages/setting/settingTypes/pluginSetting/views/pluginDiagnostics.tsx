@@ -7,6 +7,7 @@ import {
     View,
 } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
+import { useRoute } from "@react-navigation/native";
 import Color from "color";
 import AppBar from "@/components/base/appBar";
 import Empty from "@/components/base/empty";
@@ -190,9 +191,13 @@ export default function PluginDiagnostics() {
     const colors = useColors();
     const plugins = useSortedPlugins();
     const navigate = useNavigate();
+    const route = useRoute<any>();
+    const initialPluginName = `${route.params?.initialPluginName ?? ""}`.trim();
     const [events, setEvents] = useState(() => getAllPluginDiagnosticEvents());
     const [filter, setFilter] = useState<DiagnosticFilter>("all");
-    const [pluginFilter, setPluginFilter] = useState("all");
+    const [pluginFilter, setPluginFilter] = useState(
+        initialPluginName || "all",
+    );
     const [timeFilter, setTimeFilter] = useState<DiagnosticTimeFilter>("all");
     const [keywordFilter, setKeywordFilter] = useState("");
 
@@ -219,13 +224,14 @@ export default function PluginDiagnostics() {
             "all",
             ...Array.from(
                 new Set(
-                    events
-                        .map(event => event.pluginName)
-                        .filter(Boolean),
+                    [
+                        initialPluginName,
+                        ...events.map(event => event.pluginName),
+                    ].filter(Boolean),
                 ),
             ).sort((a, b) => a.localeCompare(b)),
         ],
-        [events],
+        [events, initialPluginName],
     );
     const pluginFilterTitle =
         pluginFilter === "all"
@@ -254,6 +260,12 @@ export default function PluginDiagnostics() {
         [filter, pluginFilter, timeFilter, keywordFilter, t],
     );
     const hasActiveFilters = activeFilterLabels.length > 0;
+
+    useEffect(() => {
+        if (initialPluginName) {
+            setPluginFilter(initialPluginName);
+        }
+    }, [initialPluginName]);
 
     useEffect(() => {
         if (!pluginFilterItems.includes(pluginFilter)) {

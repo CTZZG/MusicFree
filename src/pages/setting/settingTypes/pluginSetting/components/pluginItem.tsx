@@ -5,6 +5,7 @@ import pluginManager, { Plugin, usePluginEnabled } from "@/core/pluginManager";
 
 import Toast from "@/utils/toast";
 import Clipboard from "@react-native-clipboard/clipboard";
+import { useNavigation } from "@react-navigation/native";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import rpx from "@/utils/rpx";
@@ -102,6 +103,7 @@ function _PluginItem(props: IPluginItemProps) {
     const { t } = useI18N();
     const rerender = useRerender();
     const navigate = useNavigate();
+    const navigator = useNavigation<any>();
 
     const alternativePluginName = pluginManager.getAlternativePluginName(plugin);
     const sourceInfo = getPluginSourceInfo(plugin, t);
@@ -470,6 +472,16 @@ function _PluginItem(props: IPluginItemProps) {
             title: t("pluginSetting.pluginItem.options.healthCheck"),
             icon: "shield-keyhole-outline",
             onPress: onHealthCheck,
+            show: true,
+        },
+        {
+            title: t("pluginSetting.pluginItem.options.viewDiagnostics"),
+            icon: "exclamation-circle",
+            onPress() {
+                navigator.navigate("/pluginsetting/diagnostics", {
+                    initialPluginName: plugin.name,
+                });
+            },
             show: true,
         },
         {
