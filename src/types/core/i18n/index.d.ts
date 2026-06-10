@@ -292,6 +292,10 @@ export interface ILanguageData {
     "downloading.detail.copyFolderPathSuccess": string; // 复制文件夹路径成功
     "downloading.detail.copyFilePathSuccess": string; // 复制文件位置成功
     "downloading.detail.filePathUnavailable": string; // 文件位置不可用
+    "downloading.detail.fileStatus": string; // 文件状态
+    "downloading.detail.fileStatusExists": string; // 文件存在
+    "downloading.detail.fileStatusMissing": string; // 文件不存在
+    "downloading.detail.fileStatusUnknown": string; // 状态未知
     "downloading.copyCompletedRecords": string; // 复制记录
     "downloading.copyCompletedRecordsSuccess": string; // 复制完成记录成功
     "downloading.exportCompletedRecords": string; // 导出记录
@@ -314,6 +318,7 @@ export interface ILanguageData {
     "downloading.downloadFailReason.unknown": string; // 下载失败：未知原因
     "downloading.downloadStatus.completed": string; // 下载完成
     "downloading.downloadStatus.completedAt": string; // 下载完成时间
+    "downloading.downloadStatus.fileMissing": string; // 文件不存在
     "downloading.downloadStatus.downloadProgress": string; // 下载进度
     "downloading.downloadStatus.pending": string; // 等待中
     "downloading.downloadStatus.paused": string; // 已暂停

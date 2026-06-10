@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
-import { writeFile } from "react-native-fs";
+import { exists, writeFile } from "react-native-fs";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
 import {
@@ -125,6 +125,17 @@ function getCompletedDownloadFolderPath(filePath: string | null) {
     return directory && directory !== filePath ? directory : null;
 }
 
+async function resolveCompletedDownloadFileExists(filePath: string | null) {
+    if (!filePath || filePath.startsWith("content://")) {
+        return null;
+    }
+    try {
+        return await exists(filePath);
+    } catch {
+        return false;
+    }
+}
+
 function getCompletedDownloadDetailText(
     musicItem: IMusic.IMusicItem,
     taskInfo: DownloadTaskDetailInfo | null | undefined,
@@ -216,6 +227,33 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     ) as DownloadWriteStatus | null;
 
     const status = taskInfo?.status ?? DownloadStatus.Error;
+    const completedLocalPath =
+        status === DownloadStatus.Completed
+            ? getCompletedDownloadLocalPath(musicItem)
+            : null;
+    const [localFileExists, setLocalFileExists] = useState<boolean | null>(
+        null,
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+
+        if (status !== DownloadStatus.Completed || !completedLocalPath) {
+            setLocalFileExists(null);
+            return;
+        }
+
+        setLocalFileExists(null);
+        resolveCompletedDownloadFileExists(completedLocalPath).then(result => {
+            if (!cancelled) {
+                setLocalFileExists(result);
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [status, completedLocalPath]);
 
     let description = "";
 
@@ -241,6 +279,9 @@ function DownloadingListItem(props: DownloadingListItemProps) {
             : t("downloading.downloadStatus.completed");
         description = [
             completedText,
+            localFileExists === false
+                ? t("downloading.downloadStatus.fileMissing")
+                : "",
             getDownloadMetadataStatusText(downloadMetadataStatus, t),
             getDownloadLyricStatusText(downloadLyricStatus, t),
         ].filter(Boolean).join(" · ");
@@ -267,7 +308,7 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     const canRetry = status === DownloadStatus.Error;
     const canRemove = status !== DownloadStatus.Completed;
 
-    function showCompletedDownloadDetail() {
+    async function showCompletedDownloadDetail() {
         if (status !== DownloadStatus.Completed) {
             return;
         }
@@ -278,8 +319,11 @@ function DownloadingListItem(props: DownloadingListItemProps) {
             downloadLyricStatus,
             t,
         );
-        const filePath = getCompletedDownloadLocalPath(musicItem);
+        const filePath = completedLocalPath;
         const folderPath = getCompletedDownloadFolderPath(filePath);
+        const checkedFileExists =
+            await resolveCompletedDownloadFileExists(filePath);
+        setLocalFileExists(checkedFileExists);
 
         function copyDetailValue(value: string, successText: string) {
             Clipboard.setString(value);
@@ -295,6 +339,20 @@ function DownloadingListItem(props: DownloadingListItemProps) {
                         fontSize="content"
                         style={style.detailText}>
                         {detailText}
+                    </ThemeText>
+                    <ThemeText
+                        fontSize="description"
+                        fontColor="textSecondary"
+                        color={
+                            checkedFileExists === false
+                                ? colors.notification
+                                : undefined
+                        }>
+                        {`${t("downloading.detail.fileStatus")}: ${getDownloadDetailFileStatusText(
+                            filePath,
+                            checkedFileExists,
+                            t,
+                        )}`}
                     </ThemeText>
                     {filePath ? (
                         <View style={style.detailPathActions}>
@@ -594,6 +652,23 @@ function getDownloadDetailLyricStatusText(
         return t("downloading.detail.lyricSkipped");
     }
     return getDownloadLyricStatusText(status, t);
+}
+
+function getDownloadDetailFileStatusText(
+    filePath: string | null,
+    fileExists: boolean | null,
+    t: ReturnType<typeof useI18N>["t"],
+) {
+    if (!filePath) {
+        return t("downloading.detail.filePathUnavailable");
+    }
+    if (fileExists === true) {
+        return t("downloading.detail.fileStatusExists");
+    }
+    if (fileExists === false) {
+        return t("downloading.detail.fileStatusMissing");
+    }
+    return t("downloading.detail.fileStatusUnknown");
 }
 
 function FilterChip(props: {
