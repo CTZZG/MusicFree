@@ -419,6 +419,9 @@ export interface ILanguageData {
     "pluginSetting.diagnostics.exportEventAction": string; // 导出单条诊断到此处
     "pluginSetting.diagnostics.exportEventSuccess": string; // 导出单条诊断成功
     "pluginSetting.diagnostics.exportEventFailed": string; // 导出单条诊断失败
+    "pluginSetting.diagnostics.eventDetailTitle": string; // 单条诊断详情标题
+    "pluginSetting.diagnostics.copyEventReport": string; // 复制单条诊断报告
+    "pluginSetting.diagnostics.closeEventDetail": string; // 关闭单条诊断详情
     "pluginSetting.capabilityMatrix.summary": string; // 插件能力矩阵摘要
     "pluginSetting.capabilityMatrix.empty": string; // 无插件能力信息
     "pluginSetting.capabilityMatrix.plugin": string; // 插件能力矩阵插件列

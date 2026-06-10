@@ -557,9 +557,29 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
     const { t } = useI18N();
     const navigate = useNavigate();
 
+    function getDiagnosticEventReport() {
+        return buildPluginDiagnosticEventReport(event);
+    }
+
     function copyDiagnosticEvent() {
-        Clipboard.setString(buildPluginDiagnosticEventReport(event));
+        Clipboard.setString(getDiagnosticEventReport());
         Toast.success(t("toast.copiedToClipboard"));
+    }
+
+    function showDiagnosticEventDetail() {
+        const reportText = getDiagnosticEventReport();
+        showDialog("SimpleDialog", {
+            title: t("pluginSetting.diagnostics.eventDetailTitle", {
+                name: event.pluginName,
+            }),
+            content: reportText,
+            okText: t("pluginSetting.diagnostics.copyEventReport"),
+            cancelText: t("pluginSetting.diagnostics.closeEventDetail"),
+            onOk() {
+                Clipboard.setString(reportText);
+                Toast.success(t("toast.copiedToClipboard"));
+            },
+        });
     }
 
     function exportDiagnosticEvent() {
@@ -575,7 +595,7 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
                 try {
                     const filename = await writePluginDiagnosticReport(
                         folder,
-                        buildPluginDiagnosticEventReport(event),
+                        getDiagnosticEventReport(),
                     );
                     Toast.success(t(
                         "pluginSetting.diagnostics.exportEventSuccess",
@@ -597,6 +617,7 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
         <ListItem
             withHorizontalPadding
             heightType="none"
+            onPress={showDiagnosticEventDetail}
             style={styles.eventItem}>
             <ListItem.ListItemIcon
                 icon="exclamation-circle"
