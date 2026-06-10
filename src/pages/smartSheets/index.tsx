@@ -40,6 +40,12 @@ export default function SmartSheets() {
             icon: "plus",
         },
         {
+            key: "favorite",
+            type: "favorite",
+            title: t("smartSheet.favorite"),
+            icon: "heart",
+        },
+        {
             key: "local",
             type: "local",
             title: t("smartSheet.localMusic"),

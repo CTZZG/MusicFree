@@ -9,6 +9,7 @@ import { useSortedPlugins } from "./pluginManager";
 export type SmartSheetType =
     | "recent-played"
     | "recent-added"
+    | "favorite"
     | "local"
     | "downloaded"
     | "plugin-source";
@@ -49,6 +50,12 @@ function getRecentAddedMusicList() {
     );
 }
 
+function getFavoriteMusicList() {
+    return MusicSheet.backupSheets().find(
+        sheet => sheet.id === MusicSheet.defaultSheet.id,
+    )?.musicList ?? [];
+}
+
 function getKnownMusicList(
     history: IMusic.IMusicItem[],
     localMusicList: IMusic.IMusicItem[],
@@ -74,6 +81,9 @@ export function useSmartSheetMusicList(
         }
         if (type === "recent-added") {
             return getRecentAddedMusicList();
+        }
+        if (type === "favorite") {
+            return getFavoriteMusicList();
         }
         if (type === "local") {
             return localMusicList;

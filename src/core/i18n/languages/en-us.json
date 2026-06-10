@@ -236,6 +236,7 @@
     "smartSheet.pluginSources": "Plugin Sources",
     "smartSheet.recentPlayed": "Recently Played",
     "smartSheet.recentAdded": "Recently Added",
+    "smartSheet.favorite": "Favorite Songs",
     "smartSheet.localMusic": "Local Music",
     "smartSheet.downloaded": "Downloaded Songs",
     "smartSheet.pluginSourceTitle": "{platform} Source Songs",

@@ -236,6 +236,7 @@
     "smartSheet.pluginSources": "插件来源",
     "smartSheet.recentPlayed": "最近播放",
     "smartSheet.recentAdded": "最近添加",
+    "smartSheet.favorite": "收藏歌曲",
     "smartSheet.localMusic": "本地音乐",
     "smartSheet.downloaded": "已下载歌曲",
     "smartSheet.pluginSourceTitle": "{platform} 来源歌曲",

@@ -278,6 +278,7 @@ export interface ILanguageData {
     "smartSheet.pluginSources": string; // 插件来源
     "smartSheet.recentPlayed": string; // 最近播放
     "smartSheet.recentAdded": string; // 最近添加
+    "smartSheet.favorite": string; // 收藏歌曲
     "smartSheet.localMusic": string; // 本地音乐
     "smartSheet.downloaded": string; // 已下载歌曲
     "smartSheet.pluginSourceTitle": string; // 插件来源歌曲

@@ -20,6 +20,9 @@ function getSmartSheetTitle(
     if (type === "recent-added") {
         return t("smartSheet.recentAdded");
     }
+    if (type === "favorite") {
+        return t("smartSheet.favorite");
+    }
     if (type === "local") {
         return t("smartSheet.localMusic");
     }
