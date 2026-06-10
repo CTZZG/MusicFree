@@ -268,6 +268,7 @@ export interface ILanguageData {
     "downloading.writeStatusFilter.metadataSkipped": string; // 元数据未写入
     "downloading.writeStatusFilter.lyricSuccess": string; // 歌词已写入
     "downloading.writeStatusFilter.lyricFailed": string; // 歌词失败
+    "downloading.writeStatusSummary": string; // 写入结果摘要
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源

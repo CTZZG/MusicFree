@@ -224,6 +224,7 @@
     "downloading.writeStatusFilter.metadataSkipped": "No Metadata",
     "downloading.writeStatusFilter.lyricSuccess": "Lyric File Written",
     "downloading.writeStatusFilter.lyricFailed": "Lyric File Failed",
+    "downloading.writeStatusSummary": "Completed {completed} · Metadata failed {metadataFailed} · Lyric failed {lyricFailed}",
     "downloading.downloadFailReason.noWritePermission": "No write permission",
     "downloading.downloadFailReason.failToFetchSource": "Failed to fetch music source",
     "downloading.downloadFailReason.encryptedMediaUnsupported": "Encrypted source downloads are not supported yet",

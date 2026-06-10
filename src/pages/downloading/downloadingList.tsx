@@ -418,6 +418,46 @@ export default function DownloadingList() {
         ],
     );
     const completedTaskCount = completedDownloadItems.length;
+    const completedWriteStats = useMemo(
+        () => {
+            const stats = {
+                completed: 0,
+                metadataFailed: 0,
+                lyricFailed: 0,
+            };
+            downloadQueue.forEach(musicItem => {
+                const status =
+                    downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
+                    DownloadStatus.Error;
+                if (status !== DownloadStatus.Completed) {
+                    return;
+                }
+                if (
+                    sourceFilter !== "all" &&
+                    musicItem.platform !== sourceFilter
+                ) {
+                    return;
+                }
+                stats.completed += 1;
+                if (
+                    getDownloadWriteStatus(
+                        musicItem,
+                        "downloadMetadataStatus",
+                    ) === "failed"
+                ) {
+                    stats.metadataFailed += 1;
+                }
+                if (
+                    getDownloadWriteStatus(musicItem, "downloadLyricStatus") ===
+                    "failed"
+                ) {
+                    stats.lyricFailed += 1;
+                }
+            });
+            return stats;
+        },
+        [downloadQueue, downloadTasks, sourceFilter, mediaExtraVersion],
+    );
     const failedDownloadItems = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
@@ -620,6 +660,20 @@ export default function DownloadingList() {
 
     return (
         <View style={style.wrapper}>
+            {completedWriteStats.completed ? (
+                <View style={style.writeSummary}>
+                    <ThemeText
+                        fontSize="description"
+                        fontColor="textSecondary">
+                        {t("downloading.writeStatusSummary", {
+                            completed: completedWriteStats.completed,
+                            metadataFailed:
+                                completedWriteStats.metadataFailed,
+                            lyricFailed: completedWriteStats.lyricFailed,
+                        })}
+                    </ThemeText>
+                </View>
+            ) : null}
             <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -708,6 +762,10 @@ const style = StyleSheet.create({
     filterBar: {
         paddingHorizontal: rpx(24),
         paddingVertical: rpx(16),
+    },
+    writeSummary: {
+        paddingHorizontal: rpx(24),
+        paddingTop: rpx(16),
     },
     filterChip: {
         height: rpx(56),

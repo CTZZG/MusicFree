@@ -224,6 +224,7 @@
     "downloading.writeStatusFilter.metadataSkipped": "元数据未写入",
     "downloading.writeStatusFilter.lyricSuccess": "歌词已写入",
     "downloading.writeStatusFilter.lyricFailed": "歌词失败",
+    "downloading.writeStatusSummary": "已完成 {completed} · 元数据失败 {metadataFailed} · 歌词失败 {lyricFailed}",
     "downloading.downloadFailReason.noWritePermission": "没有写入文件的权限",
     "downloading.downloadFailReason.failToFetchSource": "获取音乐源失败",
     "downloading.downloadFailReason.encryptedMediaUnsupported": "暂不支持加密音源下载",
