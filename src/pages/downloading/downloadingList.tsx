@@ -22,8 +22,10 @@ import { showPanel } from "@/components/panels/usePanel";
 import Icon, { IIconName } from "@/components/base/icon";
 import Toast from "@/utils/toast";
 import { showDialog } from "@/components/dialogs/useDialog";
+import { useMediaExtraProperty } from "@/utils/mediaExtra";
 
 type DownloadFilter = "all" | "active" | "paused" | "completed" | "error";
+type DownloadWriteStatus = "success" | "failed" | "skipped";
 
 interface DownloadingListItemProps {
     musicItem: IMusic.IMusicItem;
@@ -32,6 +34,14 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     const { musicItem } = props;
     const taskInfo = useDownloadTask(musicItem);
     const { t } = useI18N();
+    const downloadMetadataStatus = useMediaExtraProperty(
+        musicItem,
+        "downloadMetadataStatus",
+    ) as DownloadWriteStatus | null;
+    const downloadLyricStatus = useMediaExtraProperty(
+        musicItem,
+        "downloadLyricStatus",
+    ) as DownloadWriteStatus | null;
 
     const status = taskInfo?.status ?? DownloadStatus.Error;
 
@@ -52,11 +62,16 @@ function DownloadingListItem(props: DownloadingListItemProps) {
             description = t("downloading.downloadFailReason.unknown");
         }
     } else if (status === DownloadStatus.Completed) {
-        description = taskInfo?.completedAt
+        const completedText = taskInfo?.completedAt
             ? t("downloading.downloadStatus.completedAt", {
                 time: formatDownloadCompletedAt(taskInfo.completedAt),
             })
             : t("downloading.downloadStatus.completed");
+        description = [
+            completedText,
+            getDownloadMetadataStatusText(downloadMetadataStatus, t),
+            getDownloadLyricStatusText(downloadLyricStatus, t),
+        ].filter(Boolean).join(" · ");
     } else if (status === DownloadStatus.Downloading) {
         const progress = taskInfo?.downloadedSize ? sizeFormatter(taskInfo.downloadedSize) : "-";
         const totalSize = taskInfo?.fileSize ? sizeFormatter(taskInfo.fileSize) : "-";
@@ -160,6 +175,34 @@ function formatDownloadCompletedAt(timestamp: number) {
         )}`,
         `${padTime(date.getHours())}:${padTime(date.getMinutes())}`,
     ].join(" ");
+}
+
+function getDownloadMetadataStatusText(
+    status: DownloadWriteStatus | null,
+    t: ReturnType<typeof useI18N>["t"],
+) {
+    if (!status) {
+        return "";
+    }
+    if (status === "success") {
+        return t("localMusic.metadataStatus.success");
+    }
+    if (status === "failed") {
+        return t("localMusic.metadataStatus.failed");
+    }
+    return t("localMusic.metadataStatus.skipped");
+}
+
+function getDownloadLyricStatusText(
+    status: DownloadWriteStatus | null,
+    t: ReturnType<typeof useI18N>["t"],
+) {
+    if (!status || status === "skipped") {
+        return "";
+    }
+    return status === "success"
+        ? t("localMusic.lyricFileStatus.success")
+        : t("localMusic.lyricFileStatus.failed");
 }
 
 function FilterChip(props: {
