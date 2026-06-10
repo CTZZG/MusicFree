@@ -459,6 +459,10 @@ export interface ILanguageData {
     "pluginSetting.testSearch.noResults": string; // 测试搜索无结果
     "pluginSetting.testSearch.copyResult": string; // 复制测试搜索结果
     "pluginSetting.testSearch.copyFailureReport": string; // 复制测试搜索失败报告
+    "pluginSetting.testSearch.exportReport": string; // 导出测试搜索报告
+    "pluginSetting.testSearch.exportReportAction": string; // 导出测试搜索报告到此处
+    "pluginSetting.testSearch.exportReportSuccess": string; // 导出测试搜索报告成功
+    "pluginSetting.testSearch.exportReportFailed": string; // 导出测试搜索报告失败
     "pluginSetting.testSearch.isEnd.yes": string; // 测试搜索已到末页
     "pluginSetting.testSearch.isEnd.no": string; // 测试搜索未到末页
     "pluginSetting.testSearch.emptyKeyword": string; // 测试搜索空关键词

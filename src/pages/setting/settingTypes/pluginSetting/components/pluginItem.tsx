@@ -23,6 +23,8 @@ import {
     getPluginSourceInfo,
 } from "../capabilityUtils";
 import { buildPluginHealthCheckReport } from "../healthCheckUtils";
+import { ROUTE_PATH, useNavigate } from "@/core/router";
+import { writePluginTestSearchReport } from "../reportExportUtils";
 
 interface IPluginItemProps {
     plugin: Plugin;
@@ -96,6 +98,7 @@ function _PluginItem(props: IPluginItemProps) {
     const enabled = usePluginEnabled(plugin);
     const { t } = useI18N();
     const rerender = useRerender();
+    const navigate = useNavigate();
 
     const alternativePluginName = pluginManager.getAlternativePluginName(plugin);
     const sourceInfo = getPluginSourceInfo(plugin, t);
@@ -118,6 +121,39 @@ function _PluginItem(props: IPluginItemProps) {
             default:
                 return t("common.singleMusic");
         }
+    }
+
+    function exportTestSearchReport(reportText: string) {
+        setTimeout(() => {
+            navigate(ROUTE_PATH.FILE_SELECTOR, {
+                fileType: "folder",
+                multi: false,
+                actionText: t("pluginSetting.testSearch.exportReportAction"),
+                async onAction(selectedFiles) {
+                    const folder = selectedFiles[0]?.path;
+                    if (!folder) {
+                        return false;
+                    }
+                    try {
+                        const filename = await writePluginTestSearchReport(
+                            folder,
+                            reportText,
+                        );
+                        Toast.success(t(
+                            "pluginSetting.testSearch.exportReportSuccess",
+                            { filename },
+                        ));
+                        return true;
+                    } catch (e: any) {
+                        Toast.warn(t(
+                            "pluginSetting.testSearch.exportReportFailed",
+                            { reason: e?.message ?? e },
+                        ));
+                        return false;
+                    }
+                },
+            });
+        }, 0);
     }
 
     function showTestSearchResult(
@@ -149,6 +185,10 @@ function _PluginItem(props: IPluginItemProps) {
             title,
             content,
             okText: t("pluginSetting.testSearch.copyResult"),
+            cancelText: t("pluginSetting.testSearch.exportReport"),
+            onCancel() {
+                exportTestSearchReport(reportText);
+            },
             onOk() {
                 Clipboard.setString(reportText);
                 Toast.success(t("toast.copiedToClipboard"));
@@ -191,6 +231,10 @@ function _PluginItem(props: IPluginItemProps) {
             title,
             content,
             okText: t("pluginSetting.testSearch.copyFailureReport"),
+            cancelText: t("pluginSetting.testSearch.exportReport"),
+            onCancel() {
+                exportTestSearchReport(reportText);
+            },
             onOk() {
                 Clipboard.setString(reportText);
                 Toast.success(t("toast.copiedToClipboard"));
