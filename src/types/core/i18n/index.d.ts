@@ -287,6 +287,15 @@ export interface ILanguageData {
     "downloading.detail.lyricSkipped": string; // 未写入
     "downloading.detail.copy": string; // 复制详情
     "downloading.detail.close": string; // 关闭
+    "downloading.copyCompletedRecords": string; // 复制记录
+    "downloading.copyCompletedRecordsSuccess": string; // 复制完成记录成功
+    "downloading.report.title": string; // 下载记录报告
+    "downloading.report.generatedAt": string; // 生成时间
+    "downloading.report.count": string; // 记录数量
+    "downloading.report.filterStatus": string; // 状态筛选
+    "downloading.report.filterSource": string; // 来源筛选
+    "downloading.report.filterWrite": string; // 写入筛选
+    "downloading.report.sort": string; // 排序
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源

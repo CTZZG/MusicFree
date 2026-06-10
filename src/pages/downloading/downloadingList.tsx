@@ -44,6 +44,80 @@ type DownloadSortMode =
     | "title"
     | "artist";
 type DownloadWriteStatus = "success" | "failed" | "skipped";
+type DownloadTaskDetailInfo = {
+    filename?: string;
+    completedAt?: number;
+};
+
+function getCompletedDownloadDetailText(
+    musicItem: IMusic.IMusicItem,
+    taskInfo: DownloadTaskDetailInfo | null | undefined,
+    downloadMetadataStatus: DownloadWriteStatus | null,
+    downloadLyricStatus: DownloadWriteStatus | null,
+    t: ReturnType<typeof useI18N>["t"],
+) {
+    return [
+        `${t("downloading.detail.song")}: ${musicItem.title || t("common.unknownName")}`,
+        `${t("downloading.detail.artist")}: ${musicItem.artist || t("common.unknownName")}`,
+        `${t("downloading.detail.source")}: ${musicItem.platform || "-"}`,
+        `${t("downloading.detail.completedAt")}: ${
+            taskInfo?.completedAt
+                ? formatDownloadCompletedAt(taskInfo.completedAt)
+                : "-"
+        }`,
+        `${t("downloading.detail.fileName")}: ${taskInfo?.filename || "-"}`,
+        `${t("downloading.detail.metadataStatus")}: ${getDownloadDetailMetadataStatusText(
+            downloadMetadataStatus,
+            t,
+        )}`,
+        `${t("downloading.detail.lyricStatus")}: ${getDownloadDetailLyricStatusText(
+            downloadLyricStatus,
+            t,
+        )}`,
+    ].join("\n");
+}
+
+function buildCompletedDownloadRecordsReport(params: {
+    items: IMusic.IMusicItem[];
+    downloadTasks: ReadonlyMap<string, DownloadTaskDetailInfo>;
+    statusFilterTitle: string;
+    sourceFilterTitle: string;
+    writeFilterTitle: string;
+    sortTitle: string;
+    t: ReturnType<typeof useI18N>["t"];
+}) {
+    const {
+        items,
+        downloadTasks,
+        statusFilterTitle,
+        sourceFilterTitle,
+        writeFilterTitle,
+        sortTitle,
+        t,
+    } = params;
+    const records = items.map((musicItem, index) => [
+        `#${index + 1}`,
+        getCompletedDownloadDetailText(
+            musicItem,
+            downloadTasks.get(getMediaUniqueKey(musicItem)),
+            getDownloadWriteStatus(musicItem, "downloadMetadataStatus"),
+            getDownloadWriteStatus(musicItem, "downloadLyricStatus"),
+            t,
+        ),
+    ].join("\n"));
+
+    return [
+        t("downloading.report.title"),
+        `${t("downloading.report.generatedAt")}: ${new Date().toISOString()}`,
+        `${t("downloading.report.count")}: ${items.length}`,
+        `${t("downloading.report.filterStatus")}: ${statusFilterTitle}`,
+        `${t("downloading.report.filterSource")}: ${sourceFilterTitle}`,
+        `${t("downloading.report.filterWrite")}: ${writeFilterTitle}`,
+        `${t("downloading.report.sort")}: ${sortTitle}`,
+        "",
+        records.join("\n\n"),
+    ].join("\n");
+}
 
 interface DownloadingListItemProps {
     musicItem: IMusic.IMusicItem;
@@ -113,33 +187,17 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     const canRetry = status === DownloadStatus.Error;
     const canRemove = status !== DownloadStatus.Completed;
 
-    function getCompletedDownloadDetailText() {
-        return [
-            `${t("downloading.detail.song")}: ${musicItem.title || t("common.unknownName")}`,
-            `${t("downloading.detail.artist")}: ${musicItem.artist || t("common.unknownName")}`,
-            `${t("downloading.detail.source")}: ${musicItem.platform || "-"}`,
-            `${t("downloading.detail.completedAt")}: ${
-                taskInfo?.completedAt
-                    ? formatDownloadCompletedAt(taskInfo.completedAt)
-                    : "-"
-            }`,
-            `${t("downloading.detail.fileName")}: ${taskInfo?.filename || "-"}`,
-            `${t("downloading.detail.metadataStatus")}: ${getDownloadDetailMetadataStatusText(
-                downloadMetadataStatus,
-                t,
-            )}`,
-            `${t("downloading.detail.lyricStatus")}: ${getDownloadDetailLyricStatusText(
-                downloadLyricStatus,
-                t,
-            )}`,
-        ].join("\n");
-    }
-
     function showCompletedDownloadDetail() {
         if (status !== DownloadStatus.Completed) {
             return;
         }
-        const detailText = getCompletedDownloadDetailText();
+        const detailText = getCompletedDownloadDetailText(
+            musicItem,
+            taskInfo,
+            downloadMetadataStatus,
+            downloadLyricStatus,
+            t,
+        );
 
         showDialog("SimpleDialog", {
             title: t("downloading.detail.title"),
@@ -464,6 +522,9 @@ export default function DownloadingList() {
             title: t("downloading.filter.error"),
         },
     ];
+    const statusFilterTitle =
+        filterItems.find(item => item.key === filter)?.title ??
+        t("downloading.filter.all");
 
     const sourceFilters = useMemo(
         () => [
@@ -516,6 +577,9 @@ export default function DownloadingList() {
             ? t("downloading.writeStatusFilter.title")
             : writeFilterItems.find(item => item.key === writeFilter)?.title ??
                 t("downloading.writeStatusFilter.title");
+    const writeFilterReportTitle =
+        writeFilterItems.find(item => item.key === writeFilter)?.title ??
+        t("downloading.writeStatusFilter.all");
     const sortItems: Array<{
         key: DownloadSortMode;
         title: string;
@@ -546,6 +610,9 @@ export default function DownloadingList() {
             ? t("downloading.sort.title")
             : sortItems.find(item => item.key === sortMode)?.title ??
                 t("downloading.sort.title");
+    const sortReportTitle =
+        sortItems.find(item => item.key === sortMode)?.title ??
+        t("downloading.sort.default");
     const completedDownloadItems = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
@@ -830,6 +897,36 @@ export default function DownloadingList() {
             mediaExtraVersion,
         ],
     );
+    const completedFilteredQueue = useMemo(
+        () =>
+            filteredQueue.filter(musicItem => {
+                const status =
+                    downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
+                    DownloadStatus.Error;
+                return status === DownloadStatus.Completed;
+            }),
+        [filteredQueue, downloadTasks],
+    );
+
+    function copyCompletedDownloadRecords() {
+        if (!completedFilteredQueue.length) {
+            showNoBatchTasksToast();
+            return;
+        }
+
+        Clipboard.setString(buildCompletedDownloadRecordsReport({
+            items: completedFilteredQueue,
+            downloadTasks,
+            statusFilterTitle,
+            sourceFilterTitle,
+            writeFilterTitle: writeFilterReportTitle,
+            sortTitle: sortReportTitle,
+            t,
+        }));
+        Toast.success(t("downloading.copyCompletedRecordsSuccess", {
+            count: completedFilteredQueue.length,
+        }));
+    }
 
 
     return (
@@ -878,6 +975,14 @@ export default function DownloadingList() {
                     onPress={showSortSelect}
                     icon="sort-outline"
                 />
+                {completedFilteredQueue.length ? (
+                    <FilterChip
+                        title={t("downloading.copyCompletedRecords")}
+                        selected={false}
+                        onPress={copyCompletedDownloadRecords}
+                        icon="document-outline"
+                    />
+                ) : null}
                 {canUseNativeControls && pausableDownloadItems.length ? (
                     <FilterChip
                         title={t("downloading.pauseActive")}
