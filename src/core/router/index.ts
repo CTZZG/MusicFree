@@ -136,7 +136,12 @@ interface RouterParams extends RouterParamsBase {
     };
     "smart-sheets": undefined;
     "smart-sheet-detail": {
-        type: "recent-played" | "local" | "downloaded" | "plugin-source";
+        type:
+            | "recent-played"
+            | "recent-added"
+            | "local"
+            | "downloaded"
+            | "plugin-source";
         platform?: string;
     };
     "edit-music-sheet-info": {

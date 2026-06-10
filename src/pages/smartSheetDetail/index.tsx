@@ -17,6 +17,9 @@ function getSmartSheetTitle(
     if (type === "recent-played") {
         return t("smartSheet.recentPlayed");
     }
+    if (type === "recent-added") {
+        return t("smartSheet.recentAdded");
+    }
     if (type === "local") {
         return t("smartSheet.localMusic");
     }

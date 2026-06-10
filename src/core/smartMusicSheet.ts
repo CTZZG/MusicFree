@@ -8,6 +8,7 @@ import { useSortedPlugins } from "./pluginManager";
 
 export type SmartSheetType =
     | "recent-played"
+    | "recent-added"
     | "local"
     | "downloaded"
     | "plugin-source";
@@ -36,6 +37,18 @@ function getSheetMusicList() {
     return MusicSheet.backupSheets().flatMap(sheet => sheet.musicList ?? []);
 }
 
+function getRecentAddedMusicList() {
+    return dedupeMusicList(
+        getSheetMusicList()
+            .filter(musicItem => Number(musicItem.$timestamp) > 0)
+            .sort(
+                (a, b) =>
+                    Number(b.$timestamp) - Number(a.$timestamp) ||
+                    (b.$sortIndex ?? 0) - (a.$sortIndex ?? 0),
+            ),
+    );
+}
+
 function getKnownMusicList(
     history: IMusic.IMusicItem[],
     localMusicList: IMusic.IMusicItem[],
@@ -58,6 +71,9 @@ export function useSmartSheetMusicList(
     return useMemo(() => {
         if (type === "recent-played") {
             return history;
+        }
+        if (type === "recent-added") {
+            return getRecentAddedMusicList();
         }
         if (type === "local") {
             return localMusicList;

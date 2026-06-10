@@ -34,6 +34,12 @@ export default function SmartSheets() {
             icon: "clock-outline",
         },
         {
+            key: "recent-added",
+            type: "recent-added",
+            title: t("smartSheet.recentAdded"),
+            icon: "plus",
+        },
+        {
             key: "local",
             type: "local",
             title: t("smartSheet.localMusic"),
