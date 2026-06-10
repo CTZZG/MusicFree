@@ -269,6 +269,12 @@ export interface ILanguageData {
     "downloading.writeStatusFilter.lyricSuccess": string; // 歌词已写入
     "downloading.writeStatusFilter.lyricFailed": string; // 歌词失败
     "downloading.writeStatusSummary": string; // 写入结果摘要
+    "downloading.sort.title": string; // 排序
+    "downloading.sort.default": string; // 默认顺序
+    "downloading.sort.completedNewest": string; // 完成时间从新到旧
+    "downloading.sort.completedOldest": string; // 完成时间从旧到新
+    "downloading.sort.titleName": string; // 按歌曲名
+    "downloading.sort.artistName": string; // 按歌手名
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源

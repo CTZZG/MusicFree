@@ -36,6 +36,12 @@ type DownloadWriteFilter =
     | "metadata-skipped"
     | "lyric-success"
     | "lyric-failed";
+type DownloadSortMode =
+    | "default"
+    | "completed-newest"
+    | "completed-oldest"
+    | "title"
+    | "artist";
 type DownloadWriteStatus = "success" | "failed" | "skipped";
 
 interface DownloadingListItemProps {
@@ -216,6 +222,56 @@ function matchDownloadWriteFilter(
     return true;
 }
 
+function getDownloadTaskCompletedAt(
+    downloadTasks: Map<string, { completedAt?: number }>,
+    musicItem: IMusic.IMusicItem,
+) {
+    return downloadTasks.get(getMediaUniqueKey(musicItem))?.completedAt ?? 0;
+}
+
+function compareText(left?: string, right?: string) {
+    return (left ?? "").localeCompare(right ?? "");
+}
+
+function sortDownloadItems(
+    items: IMusic.IMusicItem[],
+    downloadTasks: Map<string, { completedAt?: number }>,
+    sortMode: DownloadSortMode,
+) {
+    if (sortMode === "default") {
+        return items;
+    }
+
+    return [...items].sort((a, b) => {
+        if (sortMode === "completed-newest") {
+            return (
+                getDownloadTaskCompletedAt(downloadTasks, b) -
+                    getDownloadTaskCompletedAt(downloadTasks, a) ||
+                compareText(a.title, b.title)
+            );
+        }
+        if (sortMode === "completed-oldest") {
+            return (
+                (getDownloadTaskCompletedAt(downloadTasks, a) ||
+                    Number.MAX_SAFE_INTEGER) -
+                    (getDownloadTaskCompletedAt(downloadTasks, b) ||
+                        Number.MAX_SAFE_INTEGER) ||
+                compareText(a.title, b.title)
+            );
+        }
+        if (sortMode === "title") {
+            return compareText(a.title, b.title);
+        }
+        if (sortMode === "artist") {
+            return (
+                compareText(a.artist, b.artist) ||
+                compareText(a.title, b.title)
+            );
+        }
+        return 0;
+    });
+}
+
 function padTime(value: number) {
     return `${value}`.padStart(2, "0");
 }
@@ -309,6 +365,7 @@ export default function DownloadingList() {
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
     const [writeFilter, setWriteFilter] = useState<DownloadWriteFilter>("all");
+    const [sortMode, setSortMode] = useState<DownloadSortMode>("default");
     const mediaExtraVersion = useMediaExtraVersion();
     const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
 
@@ -389,6 +446,36 @@ export default function DownloadingList() {
             ? t("downloading.writeStatusFilter.title")
             : writeFilterItems.find(item => item.key === writeFilter)?.title ??
                 t("downloading.writeStatusFilter.title");
+    const sortItems: Array<{
+        key: DownloadSortMode;
+        title: string;
+    }> = [
+        {
+            key: "default",
+            title: t("downloading.sort.default"),
+        },
+        {
+            key: "completed-newest",
+            title: t("downloading.sort.completedNewest"),
+        },
+        {
+            key: "completed-oldest",
+            title: t("downloading.sort.completedOldest"),
+        },
+        {
+            key: "title",
+            title: t("downloading.sort.titleName"),
+        },
+        {
+            key: "artist",
+            title: t("downloading.sort.artistName"),
+        },
+    ];
+    const sortTitle =
+        sortMode === "default"
+            ? t("downloading.sort.title")
+            : sortItems.find(item => item.key === sortMode)?.title ??
+                t("downloading.sort.title");
     const completedDownloadItems = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
@@ -556,6 +643,20 @@ export default function DownloadingList() {
         });
     }
 
+    function showSortSelect() {
+        showPanel("SimpleSelect", {
+            header: t("downloading.sort.title"),
+            candidates: sortItems.map(item => ({
+                title: item.title,
+                value: item.key,
+                icon: "sort-outline",
+            })),
+            onPress(item) {
+                setSortMode(item.value as DownloadSortMode);
+            },
+        });
+    }
+
     function clearCompletedTasks() {
         showDialog("SimpleDialog", {
             title: t("downloading.clearCompleted"),
@@ -628,8 +729,8 @@ export default function DownloadingList() {
     }
 
     const filteredQueue = useMemo(
-        () =>
-            downloadQueue.filter(musicItem => {
+        () => {
+            const items = downloadQueue.filter(musicItem => {
                 const status =
                     downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
                     DownloadStatus.Error;
@@ -646,13 +747,16 @@ export default function DownloadingList() {
                     return false;
                 }
                 return true;
-            }),
+            });
+            return sortDownloadItems(items, downloadTasks, sortMode);
+        },
         [
             downloadQueue,
             downloadTasks,
             filter,
             sourceFilter,
             writeFilter,
+            sortMode,
             mediaExtraVersion,
         ],
     );
@@ -697,6 +801,12 @@ export default function DownloadingList() {
                     selected={writeFilter !== "all"}
                     onPress={showWriteFilterSelect}
                     icon="save-outline"
+                />
+                <FilterChip
+                    title={sortTitle}
+                    selected={sortMode !== "default"}
+                    onPress={showSortSelect}
+                    icon="sort-outline"
                 />
                 {canUseNativeControls && pausableDownloadItems.length ? (
                     <FilterChip
