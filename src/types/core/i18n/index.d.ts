@@ -451,6 +451,10 @@ export interface ILanguageData {
     "pluginSetting.healthCheck.attentionRecentDiagnostics": string; // 健康检查最近诊断提醒
     "pluginSetting.testSearch.loading": string; // 测试搜索加载文案
     "pluginSetting.testSearch.selectType": string; // 选择测试搜索类型
+    "pluginSetting.testSearch.combinedReportTitle": string; // 测试搜索综合报告标题
+    "pluginSetting.testSearch.generatedAt": string; // 测试搜索报告生成时间
+    "pluginSetting.testSearch.searchSection": string; // 测试搜索报告搜索小节
+    "pluginSetting.testSearch.healthCheckSection": string; // 测试搜索报告健康检查小节
     "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题
     "pluginSetting.testSearch.resultSummary": string; // 测试搜索结果摘要
     "pluginSetting.testSearch.failureTitle": string; // 测试搜索失败标题
@@ -463,6 +467,7 @@ export interface ILanguageData {
     "pluginSetting.testSearch.noResults": string; // 测试搜索无结果
     "pluginSetting.testSearch.copyResult": string; // 复制测试搜索结果
     "pluginSetting.testSearch.copyFailureReport": string; // 复制测试搜索失败报告
+    "pluginSetting.testSearch.copyCombinedReport": string; // 复制测试搜索综合报告
     "pluginSetting.testSearch.exportReport": string; // 导出测试搜索报告
     "pluginSetting.testSearch.exportReportAction": string; // 导出测试搜索报告到此处
     "pluginSetting.testSearch.exportReportSuccess": string; // 导出测试搜索报告成功

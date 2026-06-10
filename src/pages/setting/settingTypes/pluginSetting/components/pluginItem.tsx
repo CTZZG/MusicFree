@@ -192,6 +192,40 @@ function _PluginItem(props: IPluginItemProps) {
         }, 0);
     }
 
+    function buildCurrentHealthCheckReport(diagnosticsLimit = 3) {
+        return buildPluginHealthCheckReport({
+            plugin,
+            enabled,
+            sourceLabel: sourceInfo.label,
+            sourceKnown: !!(plugin.instance.srcUrl || plugin.path),
+            capabilityLabels,
+            userVariables: pluginManager.getUserVariables(plugin),
+            diagnostics: getPluginDiagnosticEvents(
+                plugin.hash,
+                plugin.name,
+                diagnosticsLimit,
+            ),
+            t,
+        });
+    }
+
+    function buildCombinedTestSearchReport(searchReport: string) {
+        const healthCheckReport = buildCurrentHealthCheckReport();
+        return [
+            t("pluginSetting.testSearch.combinedReportTitle", {
+                name: plugin.name,
+            }),
+            "",
+            `${t("pluginSetting.testSearch.generatedAt")}: ${new Date().toLocaleString()}`,
+            "",
+            `## ${t("pluginSetting.testSearch.searchSection")}`,
+            searchReport,
+            "",
+            `## ${t("pluginSetting.testSearch.healthCheckSection")}`,
+            healthCheckReport.reportText,
+        ].join("\n");
+    }
+
     function showTestSearchResult(
         keyword: string,
         type: ICommon.SupportMediaType,
@@ -216,11 +250,13 @@ function _PluginItem(props: IPluginItemProps) {
                 ? resultLines.join("\n")
                 : t("pluginSetting.testSearch.noResults"),
         ].join("\n\n");
-        const reportText = [title, "", content].join("\n");
+        const reportText = buildCombinedTestSearchReport(
+            [title, "", content].join("\n"),
+        );
         showDialog("SimpleDialog", {
             title,
             content,
-            okText: t("pluginSetting.testSearch.copyResult"),
+            okText: t("pluginSetting.testSearch.copyCombinedReport"),
             cancelText: t("pluginSetting.testSearch.exportReport"),
             onCancel() {
                 exportTestSearchReport(reportText);
@@ -262,11 +298,13 @@ function _PluginItem(props: IPluginItemProps) {
             t("pluginSetting.testSearch.failureDiagnosticTitle"),
             ...diagnosticLines,
         ].join("\n");
-        const reportText = [title, "", content].join("\n");
+        const reportText = buildCombinedTestSearchReport(
+            [title, "", content].join("\n"),
+        );
         showDialog("SimpleDialog", {
             title,
             content,
-            okText: t("pluginSetting.testSearch.copyFailureReport"),
+            okText: t("pluginSetting.testSearch.copyCombinedReport"),
             cancelText: t("pluginSetting.testSearch.exportReport"),
             onCancel() {
                 exportTestSearchReport(reportText);
@@ -361,21 +399,7 @@ function _PluginItem(props: IPluginItemProps) {
     }
 
     function onHealthCheck() {
-        const diagnostics = getPluginDiagnosticEvents(
-            plugin.hash,
-            plugin.name,
-            3,
-        );
-        const report = buildPluginHealthCheckReport({
-            plugin,
-            enabled,
-            sourceLabel: sourceInfo.label,
-            sourceKnown: !!(plugin.instance.srcUrl || plugin.path),
-            capabilityLabels,
-            userVariables: pluginManager.getUserVariables(plugin),
-            diagnostics,
-            t,
-        });
+        const report = buildCurrentHealthCheckReport();
 
         showDialog("SimpleDialog", {
             title: report.title,
