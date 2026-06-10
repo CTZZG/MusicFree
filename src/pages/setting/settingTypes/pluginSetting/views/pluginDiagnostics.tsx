@@ -159,6 +159,19 @@ export default function PluginDiagnostics() {
     const keywordFilterTitle = keywordFilter.trim()
         ? `${t("pluginSetting.diagnostics.keywordFilter.title")}: ${keywordFilter.trim()}`
         : t("pluginSetting.diagnostics.keywordFilter.title");
+    const activeFilterLabels = useMemo(
+        () => [
+            filter === "all"
+                ? ""
+                : t(diagnosticFilterI18nKeys[filter]),
+            pluginFilter === "all" ? "" : pluginFilter,
+            keywordFilter.trim()
+                ? `${t("pluginSetting.diagnostics.keywordFilter.title")}: ${keywordFilter.trim()}`
+                : "",
+        ].filter(Boolean),
+        [filter, pluginFilter, keywordFilter, t],
+    );
+    const hasActiveFilters = activeFilterLabels.length > 0;
 
     useEffect(() => {
         if (!pluginFilterItems.includes(pluginFilter)) {
@@ -229,6 +242,12 @@ export default function PluginDiagnostics() {
         });
     }
 
+    function clearFilters() {
+        setFilter("all");
+        setPluginFilter("all");
+        setKeywordFilter("");
+    }
+
     return (
         <>
             <AppBar
@@ -259,6 +278,16 @@ export default function PluginDiagnostics() {
                             count: filteredEvents.length,
                         })}
                     </ThemeText>
+                    {hasActiveFilters ? (
+                        <ThemeText
+                            fontColor="textSecondary"
+                            fontSize="description"
+                            style={styles.filterSummary}>
+                            {t("pluginSetting.diagnostics.activeFilters", {
+                                filters: activeFilterLabels.join(" / "),
+                            })}
+                        </ThemeText>
+                    ) : null}
                 </View>
                 <ScrollView
                     horizontal
@@ -285,6 +314,14 @@ export default function PluginDiagnostics() {
                         selected={Boolean(keywordFilter.trim())}
                         onPress={showKeywordFilterInput}
                     />
+                    {hasActiveFilters ? (
+                        <FilterChip
+                            icon="x-mark"
+                            title={t("common.clear")}
+                            selected={false}
+                            onPress={clearFilters}
+                        />
+                    ) : null}
                 </ScrollView>
                 <FlatList
                     style={styles.list}
@@ -407,6 +444,9 @@ const styles = StyleSheet.create({
     summary: {
         paddingHorizontal: rpx(24),
         paddingTop: rpx(20),
+    },
+    filterSummary: {
+        marginTop: rpx(8),
     },
     filterBar: {
         paddingHorizontal: rpx(24),

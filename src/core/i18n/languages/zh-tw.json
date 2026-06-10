@@ -309,6 +309,7 @@
     "pluginSetting.diagnostics.clearFiltered": "清理目前診斷",
     "pluginSetting.diagnostics.clearFilteredConfirm": "將清理目前篩選出的 {count} 條診斷記錄，僅刪除本機診斷記錄，不影響外掛、設定或播放資料。確定繼續嗎？",
     "pluginSetting.diagnostics.clearSuccess": "已清理 {count} 條診斷記錄",
+    "pluginSetting.diagnostics.activeFilters": "目前篩選：{filters}",
     "pluginSetting.failReason": "失敗原因: {reason}",
     "pluginSetting.installResult.dialogTitle": "外掛安裝結果",
     "pluginSetting.installResult.success": "安裝成功",
