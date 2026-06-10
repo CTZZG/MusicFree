@@ -31,6 +31,7 @@ import { showPanel } from "@/components/panels/usePanel";
 import { showDialog } from "@/components/dialogs/useDialog";
 
 type DiagnosticFilter = "all" | "search" | "source" | "lyric" | "install" | "other";
+type DiagnosticTimeFilter = "all" | "today" | "last24h" | "last7d" | "last30d";
 
 const diagnosticFilterConfigs: Array<{
     key: DiagnosticFilter;
@@ -76,6 +77,43 @@ const diagnosticFilterI18nKeys: Record<DiagnosticFilter, keyof ILanguageData> = 
     other: "pluginSetting.diagnostics.filter.other",
 };
 
+const diagnosticTimeFilterConfigs: Array<{
+    key: DiagnosticTimeFilter;
+    icon: IIconName;
+}> = [
+    {
+        key: "all",
+        icon: "clock-outline",
+    },
+    {
+        key: "today",
+        icon: "clock-outline",
+    },
+    {
+        key: "last24h",
+        icon: "clock-outline",
+    },
+    {
+        key: "last7d",
+        icon: "clock-outline",
+    },
+    {
+        key: "last30d",
+        icon: "clock-outline",
+    },
+];
+
+const diagnosticTimeFilterI18nKeys: Record<
+    DiagnosticTimeFilter,
+    keyof ILanguageData
+> = {
+    all: "pluginSetting.diagnostics.timeFilter.all",
+    today: "pluginSetting.diagnostics.timeFilter.today",
+    last24h: "pluginSetting.diagnostics.timeFilter.last24h",
+    last7d: "pluginSetting.diagnostics.timeFilter.last7d",
+    last30d: "pluginSetting.diagnostics.timeFilter.last30d",
+};
+
 function getKnownMethods() {
     return diagnosticFilterConfigs
         .flatMap(config => config.methods ?? [])
@@ -91,6 +129,37 @@ function matchFilter(event: PluginDiagnosticEvent, filter: DiagnosticFilter) {
     }
     const config = diagnosticFilterConfigs.find(item => item.key === filter);
     return !!config?.methods?.includes(event.method);
+}
+
+function getTodayStartTimestamp(now: number) {
+    const date = new Date(now);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+}
+
+function getTimeFilterSince(timeFilter: DiagnosticTimeFilter, now: number) {
+    if (timeFilter === "today") {
+        return getTodayStartTimestamp(now);
+    }
+    if (timeFilter === "last24h") {
+        return now - 24 * 60 * 60 * 1000;
+    }
+    if (timeFilter === "last7d") {
+        return now - 7 * 24 * 60 * 60 * 1000;
+    }
+    if (timeFilter === "last30d") {
+        return now - 30 * 24 * 60 * 60 * 1000;
+    }
+    return null;
+}
+
+function matchTimeFilter(
+    event: PluginDiagnosticEvent,
+    timeFilter: DiagnosticTimeFilter,
+    now: number,
+) {
+    const since = getTimeFilterSince(timeFilter, now);
+    return since === null || event.createdAt >= since;
 }
 
 function matchKeyword(event: PluginDiagnosticEvent, keyword: string) {
@@ -121,24 +190,27 @@ export default function PluginDiagnostics() {
     const [events, setEvents] = useState(() => getAllPluginDiagnosticEvents());
     const [filter, setFilter] = useState<DiagnosticFilter>("all");
     const [pluginFilter, setPluginFilter] = useState("all");
+    const [timeFilter, setTimeFilter] = useState<DiagnosticTimeFilter>("all");
     const [keywordFilter, setKeywordFilter] = useState("");
 
-    const filteredEvents = useMemo(
-        () =>
-            events.filter(event => {
-                if (!matchFilter(event, filter)) {
-                    return false;
-                }
-                if (!matchKeyword(event, keywordFilter)) {
-                    return false;
-                }
-                return (
-                    pluginFilter === "all" ||
-                    event.pluginName === pluginFilter
-                );
-            }),
-        [events, filter, pluginFilter, keywordFilter],
-    );
+    const filteredEvents = useMemo(() => {
+        const now = Date.now();
+        return events.filter(event => {
+            if (!matchFilter(event, filter)) {
+                return false;
+            }
+            if (!matchKeyword(event, keywordFilter)) {
+                return false;
+            }
+            if (!matchTimeFilter(event, timeFilter, now)) {
+                return false;
+            }
+            return (
+                pluginFilter === "all" ||
+                event.pluginName === pluginFilter
+            );
+        });
+    }, [events, filter, pluginFilter, timeFilter, keywordFilter]);
     const pluginFilterItems = useMemo(
         () => [
             "all",
@@ -159,17 +231,24 @@ export default function PluginDiagnostics() {
     const keywordFilterTitle = keywordFilter.trim()
         ? `${t("pluginSetting.diagnostics.keywordFilter.title")}: ${keywordFilter.trim()}`
         : t("pluginSetting.diagnostics.keywordFilter.title");
+    const timeFilterTitle =
+        timeFilter === "all"
+            ? t("pluginSetting.diagnostics.timeFilter.title")
+            : t(diagnosticTimeFilterI18nKeys[timeFilter]);
     const activeFilterLabels = useMemo(
         () => [
             filter === "all"
                 ? ""
                 : t(diagnosticFilterI18nKeys[filter]),
             pluginFilter === "all" ? "" : pluginFilter,
+            timeFilter === "all"
+                ? ""
+                : t(diagnosticTimeFilterI18nKeys[timeFilter]),
             keywordFilter.trim()
                 ? `${t("pluginSetting.diagnostics.keywordFilter.title")}: ${keywordFilter.trim()}`
                 : "",
         ].filter(Boolean),
-        [filter, pluginFilter, keywordFilter, t],
+        [filter, pluginFilter, timeFilter, keywordFilter, t],
     );
     const hasActiveFilters = activeFilterLabels.length > 0;
 
@@ -228,6 +307,20 @@ export default function PluginDiagnostics() {
         });
     }
 
+    function showTimeFilterSelect() {
+        showPanel("SimpleSelect", {
+            header: t("pluginSetting.diagnostics.timeFilter.title"),
+            candidates: diagnosticTimeFilterConfigs.map(config => ({
+                title: t(diagnosticTimeFilterI18nKeys[config.key]),
+                value: config.key,
+                icon: config.icon,
+            })),
+            onPress(item) {
+                setTimeFilter(item.value as DiagnosticTimeFilter);
+            },
+        });
+    }
+
     function showKeywordFilterInput() {
         showPanel("SimpleInput", {
             title: t("pluginSetting.diagnostics.keywordFilter.title"),
@@ -245,6 +338,7 @@ export default function PluginDiagnostics() {
     function clearFilters() {
         setFilter("all");
         setPluginFilter("all");
+        setTimeFilter("all");
         setKeywordFilter("");
     }
 
@@ -307,6 +401,12 @@ export default function PluginDiagnostics() {
                         title={pluginFilterTitle}
                         selected={pluginFilter !== "all"}
                         onPress={showPluginFilterSelect}
+                    />
+                    <FilterChip
+                        icon="clock-outline"
+                        title={timeFilterTitle}
+                        selected={timeFilter !== "all"}
+                        onPress={showTimeFilterSelect}
                     />
                     <FilterChip
                         icon="magnifying-glass"

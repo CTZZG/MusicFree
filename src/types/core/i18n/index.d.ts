@@ -353,6 +353,12 @@ export interface ILanguageData {
     "pluginSetting.diagnostics.filter.other": string; // 其他诊断
     "pluginSetting.diagnostics.pluginFilter.title": string; // 插件筛选标题
     "pluginSetting.diagnostics.pluginFilter.all": string; // 全部插件筛选
+    "pluginSetting.diagnostics.timeFilter.title": string; // 诊断时间范围标题
+    "pluginSetting.diagnostics.timeFilter.all": string; // 全部时间
+    "pluginSetting.diagnostics.timeFilter.today": string; // 今天
+    "pluginSetting.diagnostics.timeFilter.last24h": string; // 最近 24 小时
+    "pluginSetting.diagnostics.timeFilter.last7d": string; // 最近 7 天
+    "pluginSetting.diagnostics.timeFilter.last30d": string; // 最近 30 天
     "pluginSetting.diagnostics.keywordFilter.title": string; // 诊断关键字筛选标题
     "pluginSetting.diagnostics.keywordFilter.placeholder": string; // 诊断关键字筛选占位文案
     "pluginSetting.diagnostics.clearFiltered": string; // 清理当前诊断
