@@ -543,10 +543,42 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
     const { event } = props;
     const colors = useColors();
     const { t } = useI18N();
+    const navigate = useNavigate();
 
     function copyDiagnosticEvent() {
         Clipboard.setString(buildPluginDiagnosticEventReport(event));
         Toast.success(t("toast.copiedToClipboard"));
+    }
+
+    function exportDiagnosticEvent() {
+        navigate(ROUTE_PATH.FILE_SELECTOR, {
+            fileType: "folder",
+            multi: false,
+            actionText: t("pluginSetting.diagnostics.exportEventAction"),
+            async onAction(selectedFiles) {
+                const folder = selectedFiles[0]?.path;
+                if (!folder) {
+                    return false;
+                }
+                try {
+                    const filename = await writePluginDiagnosticReport(
+                        folder,
+                        buildPluginDiagnosticEventReport(event),
+                    );
+                    Toast.success(t(
+                        "pluginSetting.diagnostics.exportEventSuccess",
+                        { filename },
+                    ));
+                    return true;
+                } catch (e: any) {
+                    Toast.warn(t(
+                        "pluginSetting.diagnostics.exportEventFailed",
+                        { reason: e?.message ?? e },
+                    ));
+                    return false;
+                }
+            },
+        });
     }
 
     return (
@@ -590,6 +622,12 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
                 position="right"
                 color={colors.textSecondary}
                 onPress={copyDiagnosticEvent}
+            />
+            <ListItem.ListItemIcon
+                icon="arrow-up-tray"
+                position="right"
+                color={colors.textSecondary}
+                onPress={exportDiagnosticEvent}
             />
         </ListItem>
     );
