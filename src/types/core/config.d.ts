@@ -88,6 +88,7 @@ export interface IAppConfigProperties {
     "webdav.username": string;
     "webdav.password": string;
     "webdav.autoBackupInterval": "off" | "daily" | "weekly";
+    "webdav.autoBackupWifiOnly": boolean;
 
     // Debug（保持嵌套结构）
     "debug.errorLog": boolean;

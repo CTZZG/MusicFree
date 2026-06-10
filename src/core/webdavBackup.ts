@@ -1,6 +1,7 @@
 import Backup from "@/core/backup";
 import Config from "@/core/appConfig";
 import { errorLog, trace } from "@/utils/log";
+import network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { AuthType, createClient } from "webdav";
 
@@ -182,6 +183,10 @@ function getAutoBackupInterval() {
     return Config.getConfig("webdav.autoBackupInterval") ?? "off";
 }
 
+function getAutoBackupWifiOnly() {
+    return Config.getConfig("webdav.autoBackupWifiOnly") ?? true;
+}
+
 function getSafeErrorMessage(error: unknown) {
     const rawMessage = error instanceof Error
         ? error.message
@@ -195,6 +200,10 @@ function getSafeErrorMessage(error: unknown) {
 function isAutoBackupDue(now = Date.now()) {
     const interval = getAutoBackupInterval();
     if (interval === "off" || !hasConfiguredWebdav()) {
+        return false;
+    }
+
+    if (getAutoBackupWifiOnly() && !network.isWifi) {
         return false;
     }
 

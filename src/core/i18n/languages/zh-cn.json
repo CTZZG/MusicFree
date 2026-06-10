@@ -360,6 +360,7 @@
     "backupAndResume.webdavAutoBackup.off": "关闭",
     "backupAndResume.webdavAutoBackup.daily": "每天",
     "backupAndResume.webdavAutoBackup.weekly": "每周",
+    "backupAndResume.webdavAutoBackupWifiOnly": "仅 Wi-Fi 时自动备份",
     "backupAndResume.webdavAutoBackupStatus": "自动备份状态",
     "backupAndResume.webdavAutoBackupStatus.never": "尚未自动备份",
     "backupAndResume.webdavAutoBackupStatus.success": "上次成功：{time}",

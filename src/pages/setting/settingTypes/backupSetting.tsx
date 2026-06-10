@@ -1,4 +1,5 @@
 import ListItem, { ListItemHeader } from "@/components/base/listItem";
+import ThemeSwitch from "@/components/base/switch";
 import Backup, {
     IBackupPreview,
     IBackupResumeReport,
@@ -44,6 +45,8 @@ export default function BackupSetting() {
     const webdavPassword = useAppConfig("webdav.password");
     const webdavAutoBackupInterval =
         useAppConfig("webdav.autoBackupInterval") ?? "off";
+    const webdavAutoBackupWifiOnly =
+        useAppConfig("webdav.autoBackupWifiOnly") ?? true;
     const webdavAutoBackupLastSuccessAt = PersistStatus.useValue(
         "backup.webdavAutoBackupLastSuccessAt",
     );
@@ -396,6 +399,10 @@ export default function BackupSetting() {
         });
     }
 
+    function setWebdavAutoBackupWifiOnly(value: boolean) {
+        Config.setConfig("webdav.autoBackupWifiOnly", value);
+    }
+
     function getWebdavAutoBackupStatus() {
         if (
             webdavAutoBackupLastFailedAt &&
@@ -528,6 +535,19 @@ export default function BackupSetting() {
                 <ListItem.ListItemText>
                     {getWebdavAutoBackupLabel(webdavAutoBackupInterval)}
                 </ListItem.ListItemText>
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                onPress={() => {
+                    setWebdavAutoBackupWifiOnly(!webdavAutoBackupWifiOnly);
+                }}>
+                <ListItem.Content
+                    title={t("backupAndResume.webdavAutoBackupWifiOnly")}
+                />
+                <ThemeSwitch
+                    value={webdavAutoBackupWifiOnly}
+                    onValueChange={setWebdavAutoBackupWifiOnly}
+                />
             </ListItem>
             <ListItem withHorizontalPadding>
                 <ListItem.Content

@@ -415,6 +415,7 @@ export interface ILanguageData {
     "backupAndResume.webdavAutoBackup.off": string; // 关闭
     "backupAndResume.webdavAutoBackup.daily": string; // 每天
     "backupAndResume.webdavAutoBackup.weekly": string; // 每周
+    "backupAndResume.webdavAutoBackupWifiOnly": string; // 仅 Wi-Fi 时自动备份
     "backupAndResume.webdavAutoBackupStatus": string; // 自动备份状态
     "backupAndResume.webdavAutoBackupStatus.never": string; // 尚未自动备份
     "backupAndResume.webdavAutoBackupStatus.success": string; // 上次成功

@@ -925,6 +925,35 @@
 - 自动备份失败后设置页显示失败时间和简短原因。
 ```
 
+## Prompt 24：WebDAV 自动备份 Wi-Fi 条件
+
+状态：已完成。本次给 WebDAV 自动备份增加默认开启的“仅 Wi-Fi 时自动备份”开关，移动网络下静默跳过自动备份，且不影响手动备份/恢复。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+目标：
+- WebDAV 自动备份默认只在 Wi-Fi 下运行，保护用户移动流量。
+- 设置页允许用户关闭“仅 Wi-Fi”限制。
+- 手动 WebDAV 备份/恢复不受这个限制影响。
+
+实现要求：
+- 新增配置 webdav.autoBackupWifiOnly: boolean。
+- 没有历史配置时默认视为 true。
+- maybeRunAutoWebdavBackup 只在自动备份场景检查 Wi-Fi 条件。
+- 非 Wi-Fi 且开关开启时静默跳过，不写入 lastAttempt，避免回到 Wi-Fi 后被误判为刚尝试过。
+- WebDAV 设置页在自动备份频率下方展示“仅 Wi-Fi 时自动备份”开关。
+- 同步 zh-cn/en-us/zh-tw i18n 和 i18n 类型。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 自动备份关闭时不触发。
+- 自动备份开启且仅 Wi-Fi 开启时，移动网络下不触发、不更新时间戳。
+- 自动备份开启且仅 Wi-Fi 关闭时，仍按每日/每周间隔触发。
+- 手动 WebDAV 备份/恢复入口仍可使用。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 23。下一步可以推进下载历史持久化/下载中心管理能力，或继续完善 WebDAV 自动备份的网络条件。
+当前已经完成 Prompt 01 到 Prompt 24。下一步可以推进下载历史持久化/下载中心管理能力，或继续补 WebDAV 自动备份的跳过状态提示与失败重试策略。

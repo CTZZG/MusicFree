@@ -360,6 +360,7 @@
     "backupAndResume.webdavAutoBackup.off": "Off",
     "backupAndResume.webdavAutoBackup.daily": "Daily",
     "backupAndResume.webdavAutoBackup.weekly": "Weekly",
+    "backupAndResume.webdavAutoBackupWifiOnly": "Auto Backup on Wi-Fi Only",
     "backupAndResume.webdavAutoBackupStatus": "Auto Backup Status",
     "backupAndResume.webdavAutoBackupStatus.never": "No automatic backup yet",
     "backupAndResume.webdavAutoBackupStatus.success": "Last success: {time}",
