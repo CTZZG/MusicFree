@@ -1,5 +1,6 @@
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse, safeStringify } from "@/utils/jsonUtil";
+import type { IInstallPluginResult } from "@/types/core/pluginManager";
 
 const storage = getOrCreateMMKV("plugin-diagnostics");
 const storageKey = "events";
@@ -7,9 +8,34 @@ const maxEventsPerPlugin = 20;
 const maxEventsTotal = 200;
 const maxMessageLength = 800;
 
-const sensitivePatterns = [
-    /([?&](?:access_token|refresh_token|token|auth|authorization|cookie|session|password|passwd|secret|sign)=)[^&\s]+/gi,
-    /\b(authorization|cookie|token|access_token|refresh_token|session|password|passwd|secret|sign)\s*[:=]\s*[^,\s;]+/gi,
+const sensitivePatterns: Array<{
+    pattern: RegExp;
+    replacement: string;
+}> = [
+    {
+        pattern: /([?&](?:access_token|refresh_token|token|auth|authorization|cookie|session|password|passwd|secret|sign)=)[^&\s]+/gi,
+        replacement: "$1<redacted>",
+    },
+    {
+        pattern: /\b(authorization|cookie|token|access_token|refresh_token|session|password|passwd|secret|sign)\s*[:=]\s*[^,\s;]+/gi,
+        replacement: "$1=<redacted>",
+    },
+    {
+        pattern: /file:\/\/[^\s'",)]+/gi,
+        replacement: "file://<redacted>",
+    },
+    {
+        pattern: /content:\/\/[^\s'",)]+/gi,
+        replacement: "content://<redacted>",
+    },
+    {
+        pattern: /(?:\/storage\/emulated|\/sdcard|\/data\/user\/0|\/data\/data)\/[^\s'",)]+/gi,
+        replacement: "<local-path>",
+    },
+    {
+        pattern: /[a-z]:\\[^\s'",)]+/gi,
+        replacement: "<local-path>",
+    },
 ];
 
 export interface PluginDiagnosticEvent {
@@ -27,6 +53,14 @@ interface IRecordPluginDiagnosticParams {
     pluginHash?: string;
     method: string;
     error: any;
+    estimatedLocation?: string | null;
+}
+
+interface IRecordPluginDiagnosticMessageParams {
+    pluginName: string;
+    pluginHash?: string;
+    method: string;
+    message: string;
     estimatedLocation?: string | null;
 }
 
@@ -55,8 +89,8 @@ function setStoredEvents(events: PluginDiagnosticEvent[]) {
 
 function sanitizeMessage(raw: string) {
     let sanitized = raw;
-    sensitivePatterns.forEach(pattern => {
-        sanitized = sanitized.replace(pattern, "$1<redacted>");
+    sensitivePatterns.forEach(({ pattern, replacement }) => {
+        sanitized = sanitized.replace(pattern, replacement);
     });
     return sanitized.length > maxMessageLength
         ? `${sanitized.slice(0, maxMessageLength)}...`
@@ -159,18 +193,59 @@ function trimEvents(events: PluginDiagnosticEvent[]) {
 export function recordPluginDiagnosticError(
     params: IRecordPluginDiagnosticParams,
 ) {
+    return recordPluginDiagnosticMessage({
+        pluginName: params.pluginName,
+        pluginHash: params.pluginHash,
+        method: params.method,
+        message: formatErrorMessage(params.error),
+        estimatedLocation: params.estimatedLocation,
+    });
+}
+
+export function recordPluginDiagnosticMessage(
+    params: IRecordPluginDiagnosticMessageParams,
+) {
     const event: PluginDiagnosticEvent = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         pluginName: params.pluginName || "unknown",
         pluginHash: params.pluginHash,
         method: params.method,
-        message: sanitizeMessage(formatErrorMessage(params.error)),
-        estimatedLocation: params.estimatedLocation || undefined,
+        message: sanitizeMessage(params.message),
+        estimatedLocation: params.estimatedLocation
+            ? sanitizeMessage(params.estimatedLocation)
+            : undefined,
         createdAt: Date.now(),
     };
 
     setStoredEvents(trimEvents([event, ...getStoredEvents()]));
     return event;
+}
+
+export function recordPluginInstallFailure(result: IInstallPluginResult) {
+    if (result.success) {
+        return null;
+    }
+    const details = [
+        result.message || "插件安装失败",
+        result.failureReason ? `failureReason=${result.failureReason}` : "",
+        result.retryable === undefined
+            ? ""
+            : `retryable=${result.retryable ? "yes" : "no"}`,
+        result.sourceType ? `source=${result.sourceType}` : "",
+    ].filter(Boolean).join("; ");
+
+    return recordPluginDiagnosticMessage({
+        pluginName:
+            result.pluginName ||
+            (result.sourceType === "local-file"
+                ? "local-plugin-install"
+                : result.sourceType === "network"
+                    ? "network-plugin-install"
+                    : "plugin-install"),
+        pluginHash: result.pluginHash,
+        method: "install",
+        message: details,
+    });
 }
 
 export function getPluginDiagnosticEvents(

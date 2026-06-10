@@ -8,6 +8,7 @@ import {
     IInstallPluginResult,
 } from "@/types/core/pluginManager";
 import type { ILanguageData } from "@/types/core/i18n";
+import { recordPluginInstallFailure } from "@/core/pluginManager/diagnostics";
 
 export type PluginInstallTranslate = <K extends keyof ILanguageData>(
     key: K,
@@ -48,6 +49,11 @@ function getHttpStatus(error: any) {
 
 function getUrlPathForExtension(url: string) {
     return url.trim().split(/[?#]/)[0].toLowerCase();
+}
+
+function recordFailedInstallResult(result: IInstallPluginResult) {
+    recordPluginInstallFailure(result);
+    return result;
 }
 
 export function getPluginSubscriptionUrlKind(
@@ -174,14 +180,14 @@ export async function installPluginFromUrlText(
     const inputUrl = text.trim();
     const urlKind = getPluginSubscriptionUrlKind(inputUrl);
     if (urlKind === "invalid" && options?.requireSupportedExtension) {
-        return [{
+        return [recordFailedInstallResult({
             success: false,
             message: "订阅地址必须以 .js 或 .json 结尾",
             pluginUrl: text,
             sourceType: "network",
             failureReason: "unrecognized",
             retryable: false,
-        }];
+        })];
     }
 
     try {
@@ -202,14 +208,14 @@ export async function installPluginFromUrlText(
                 )
                 .filter((url: string) => Boolean(url));
             if (!urls.length) {
-                return [{
+                return [recordFailedInstallResult({
                     success: false,
                     message: "订阅无效",
                     pluginUrl: inputUrl,
                     sourceType: "network",
                     failureReason: "unrecognized",
                     retryable: false,
-                }];
+                })];
             }
         } else {
             urls = [inputUrl];
@@ -225,7 +231,7 @@ export async function installPluginFromUrlText(
         );
     } catch (e: any) {
         const isNotFound = getHttpStatus(e) === 404;
-        return [{
+        return [recordFailedInstallResult({
             success: false,
             message: isNotFound
                 ? "插件不存在，请联系插件作者"
@@ -234,6 +240,6 @@ export async function installPluginFromUrlText(
             sourceType: "network",
             failureReason: isNotFound ? "not-found" : "network",
             retryable: !isNotFound,
-        }];
+        })];
     }
 }

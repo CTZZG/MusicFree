@@ -55,7 +55,7 @@ const diagnosticFilterConfigs: Array<{
     {
         key: "install",
         icon: "javascript",
-        methods: ["mount"],
+        methods: ["mount", "install"],
     },
     {
         key: "other",

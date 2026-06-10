@@ -1169,6 +1169,41 @@
 - 点击复制能复制脱敏后的插件诊断报告。
 ```
 
+## Prompt 31：插件安装失败事件进入诊断页
+
+状态：已完成。本次把本地安装、网络安装和订阅源解析阶段的安装失败写入插件诊断记录，并让诊断页“安装”筛选包含 `install` 事件。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+目标：
+- 插件安装失败不只出现在即时弹窗里，也会进入插件诊断页和复制诊断报告。
+- 安装失败记录应覆盖本地文件读取失败、网络失败、订阅 JSON 为空、无效订阅地址、解析失败、版本倒退和未知错误。
+- 诊断记录不得暴露完整本地路径、content URI、file URI、cookie、token 等敏感信息。
+
+实现要求：
+- 在插件诊断模块新增通用消息记录入口。
+- 复用诊断模块的容量限制和脱敏逻辑。
+- 扩展脱敏规则，遮盖 token/cookie/authorization 以及常见本地路径、`file://`、`content://`。
+- `PluginManager.installPluginFromLocalFile` 的失败返回写入 `method=install` 诊断事件。
+- `PluginManager.installPluginFromUrl` 的失败返回写入 `method=install` 诊断事件。
+- `installPluginFromUrlText` 中未进入 PluginManager 的失败也写入 `method=install` 诊断事件。
+- 插件诊断页“安装”筛选包含 `mount` 和 `install`。
+
+不要做：
+- 不记录成功安装。
+- 不上传诊断数据。
+- 不改变插件安装协议。
+- 不把完整插件 URL 或本地路径写入诊断报告。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 本地坏插件安装失败后，插件诊断页“安装”筛选能看到 `install` 事件。
+- 网络插件地址失败后，插件诊断报告包含安装失败摘要和失败分类。
+- 复制诊断报告不包含完整本地路径、`file://` 或 `content://` 原文。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 30。下一步可以继续增强下载中心的批量删除/失败重试管理，或为插件诊断页补充安装失败事件记录。
+当前已经完成 Prompt 01 到 Prompt 31。下一步可以继续增强下载中心的批量删除/失败重试管理，或把插件诊断页的事件详情做成可复制的单条报告。

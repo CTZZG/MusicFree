@@ -28,6 +28,7 @@ import { safeParse } from "@/utils/jsonUtil";
 import { IInjectable } from "@/types/infra";
 import { IAppConfig } from "@/types/core/config";
 import delay from "@/utils/delay";
+import { recordPluginInstallFailure } from "./diagnostics";
 
 const pluginsAtom = atom<Plugin[]>([]);
 const pluginCacheStore = getOrCreateMMKV("plugin.cache");
@@ -46,6 +47,11 @@ function getPluginInstallParseFailureReason(plugin: Plugin) {
         plugin.errorReason === PluginErrorReason.VersionNotMatch
         ? "parse"
         : "unrecognized";
+}
+
+function recordFailedInstallResult(result: IInstallPluginResult) {
+    recordPluginInstallFailure(result);
+    return result;
 }
 
 const ee = new EventEmitter<{
@@ -223,14 +229,14 @@ class PluginManager implements IPluginManager, IInjectable {
                 funcCode = await readFile(pluginPath, "utf8");
             }
         } catch (e: any) {
-            return {
+            return recordFailedInstallResult({
                 success: false,
                 message: e?.message ?? "本地插件读取失败",
                 pluginUrl: pluginPath,
                 sourceType: "local-file",
                 failureReason: "file-read",
                 retryable: true,
-            };
+            });
         }
 
         try {
@@ -263,7 +269,7 @@ class PluginManager implements IPluginManager, IInjectable {
                             ">",
                         )
                     ) {
-                        return {
+                        return recordFailedInstallResult({
                             success: false,
                             message: "已安装更新版本的插件",
                             pluginName: plugin.name,
@@ -272,7 +278,7 @@ class PluginManager implements IPluginManager, IInjectable {
                             sourceType: "local-file",
                             failureReason: "newer-version-installed",
                             retryable: false,
-                        };
+                        });
                     }
                 }
 
@@ -304,7 +310,7 @@ class PluginManager implements IPluginManager, IInjectable {
                         sourceType: "local-file",
                     };
                 }
-                return {
+                return recordFailedInstallResult({
                     success: false,
                     message: plugin.errorMessage
                         ? `插件无法解析: ${plugin.errorMessage}`
@@ -314,24 +320,24 @@ class PluginManager implements IPluginManager, IInjectable {
                     sourceType: "local-file",
                     failureReason: getPluginInstallParseFailureReason(plugin),
                     retryable: false,
-                };
+                });
             }
-            return {
+            return recordFailedInstallResult({
                 success: false,
                 message: "插件无法识别",
                 sourceType: "local-file",
                 failureReason: "unrecognized",
                 retryable: false,
-            };
+            });
         } catch (e: any) {
-            return {
+            return recordFailedInstallResult({
                 success: false,
                 message: e?.message ?? "插件安装失败",
                 pluginUrl: pluginPath,
                 sourceType: "local-file",
                 failureReason: "unknown",
                 retryable: false,
-            };
+            });
         }
     }
 
@@ -362,7 +368,7 @@ class PluginManager implements IPluginManager, IInjectable {
             errorLog("URL安装插件失败", e);
 
             const isNotFound = getHttpStatus(e) === 404;
-            return {
+            return recordFailedInstallResult({
                 success: false,
                 message: isNotFound
                     ? "插件不存在，请联系插件作者"
@@ -371,7 +377,7 @@ class PluginManager implements IPluginManager, IInjectable {
                 sourceType: "network",
                 failureReason: isNotFound ? "not-found" : "network",
                 retryable: !isNotFound,
-            };
+            });
         }
 
         try {
@@ -404,7 +410,7 @@ class PluginManager implements IPluginManager, IInjectable {
                             ">",
                         )
                     ) {
-                        return {
+                        return recordFailedInstallResult({
                             success: false,
                             message: "已安装更新版本的插件",
                             pluginName: plugin.name,
@@ -414,7 +420,7 @@ class PluginManager implements IPluginManager, IInjectable {
                             sourceType: "network",
                             failureReason: "newer-version-installed",
                             retryable: false,
-                        };
+                        });
                     }
                 }
 
@@ -442,7 +448,7 @@ class PluginManager implements IPluginManager, IInjectable {
                         sourceType: "network",
                     };
                 }
-                return {
+                return recordFailedInstallResult({
                     success: false,
                     message: plugin.errorMessage
                         ? `插件无法解析: ${plugin.errorMessage}`
@@ -453,29 +459,29 @@ class PluginManager implements IPluginManager, IInjectable {
                     sourceType: "network",
                     failureReason: getPluginInstallParseFailureReason(plugin),
                     retryable: false,
-                };
+                });
             } else {
-                return {
+                return recordFailedInstallResult({
                     success: false,
                     message: "插件无法识别",
                     pluginUrl: url,
                     sourceType: "network",
                     failureReason: "unrecognized",
                     retryable: false,
-                };
+                });
             }
         } catch (e: any) {
             devLog("error", "URL安装插件失败", e, e?.message);
             errorLog("URL安装插件失败", e);
 
-            return {
+            return recordFailedInstallResult({
                 success: false,
                 message: e?.message ?? "",
                 pluginUrl: url,
                 sourceType: "network",
                 failureReason: "unknown",
                 retryable: false,
-            };
+            });
         }
     }
 
