@@ -82,6 +82,13 @@ export default function PluginList() {
             },
         },
         {
+            icon: "exclamation-circle",
+            title: t("pluginSetting.menu.diagnostics"),
+            onPress() {
+                navigator.navigate("/pluginsetting/diagnostics");
+            },
+        },
+        {
             icon: "document-outline",
             title: t("pluginSetting.menu.copyDiagnosticReport"),
             onPress: onCopyPluginDiagnosticReport,

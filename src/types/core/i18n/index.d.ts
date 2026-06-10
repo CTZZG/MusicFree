@@ -317,6 +317,7 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.detail.noDiagnostics": string; // 最近无错误
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
+    "pluginSetting.menu.diagnostics": string; // 插件诊断
     "pluginSetting.menu.copyDiagnosticReport": string; // 复制诊断报告
     "pluginSetting.menu.uninstallAll": string; // 卸载所有
     "pluginSetting.menu.uninstallAllContent": string; // 确定卸载所有插件吗？
@@ -331,6 +332,14 @@ export interface ILanguageData {
     "pluginSetting.subscription.urlType.singlePlugin": string; // 单插件订阅
     "pluginSetting.subscription.urlType.collection": string; // 订阅集合
     "pluginSetting.subscription.urlType.invalid": string; // 地址格式无效
+    "pluginSetting.diagnostics.eventCount": string; // 插件诊断记录数量
+    "pluginSetting.diagnostics.empty": string; // 暂无插件诊断记录
+    "pluginSetting.diagnostics.filter.all": string; // 全部诊断
+    "pluginSetting.diagnostics.filter.search": string; // 搜索诊断
+    "pluginSetting.diagnostics.filter.source": string; // 播放源诊断
+    "pluginSetting.diagnostics.filter.lyric": string; // 歌词诊断
+    "pluginSetting.diagnostics.filter.install": string; // 安装诊断
+    "pluginSetting.diagnostics.filter.other": string; // 其他诊断
     "pluginSetting.failReason": string; // 失败原因
     "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
     "pluginSetting.installResult.success": string; // 安装成功
