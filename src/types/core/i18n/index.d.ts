@@ -449,8 +449,16 @@ export interface ILanguageData {
     "pluginSetting.testSearch.selectType": string; // 选择测试搜索类型
     "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题
     "pluginSetting.testSearch.resultSummary": string; // 测试搜索结果摘要
+    "pluginSetting.testSearch.failureTitle": string; // 测试搜索失败标题
+    "pluginSetting.testSearch.failureSummary": string; // 测试搜索失败摘要
+    "pluginSetting.testSearch.failureDiagnosticTitle": string; // 测试搜索失败诊断标题
+    "pluginSetting.testSearch.failureDiagnosticMethod": string; // 测试搜索失败诊断方法
+    "pluginSetting.testSearch.failureDiagnosticTime": string; // 测试搜索失败诊断时间
+    "pluginSetting.testSearch.failureDiagnosticLocation": string; // 测试搜索失败诊断位置
+    "pluginSetting.testSearch.failureNoDiagnostic": string; // 测试搜索失败无诊断
     "pluginSetting.testSearch.noResults": string; // 测试搜索无结果
     "pluginSetting.testSearch.copyResult": string; // 复制测试搜索结果
+    "pluginSetting.testSearch.copyFailureReport": string; // 复制测试搜索失败报告
     "pluginSetting.testSearch.isEnd.yes": string; // 测试搜索已到末页
     "pluginSetting.testSearch.isEnd.no": string; // 测试搜索未到末页
     "pluginSetting.testSearch.emptyKeyword": string; // 测试搜索空关键词

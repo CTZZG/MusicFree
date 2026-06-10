@@ -17,6 +17,7 @@ import { useI18N } from "@/core/i18n";
 import IconButton from "@/components/base/iconButton";
 import useRerender from "@/hooks/useRerender";
 import { getPluginDiagnosticEvents } from "@/core/pluginManager/diagnostics";
+import type { PluginDiagnosticEvent } from "@/core/pluginManager/diagnostics";
 import {
     getPluginCapabilityLabels,
     getPluginSourceInfo,
@@ -73,6 +74,20 @@ function formatTestSearchResultItem(item: any) {
         item?.author,
         item?.platform,
     ].filter(Boolean).join(" - ") || "-";
+}
+
+function sanitizeTestSearchFailureReason(reason: unknown) {
+    const raw = String(reason ?? "-")
+        .replace(/([?&](?:access_token|refresh_token|token|auth|authorization|cookie|session|password|passwd|secret|sign)=)[^&\s]+/gi, "$1<redacted>")
+        .replace(/(bearer\s+)[a-z0-9._~+/=-]+/gi, "$1<redacted>")
+        .replace(/(cookie\s*[:=]\s*)[^\s;]+/gi, "$1<redacted>")
+        .replace(/[a-z]:\\[^\s'",)]+/gi, "<local-path>")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!raw) {
+        return "-";
+    }
+    return raw.length > 240 ? `${raw.slice(0, 240)}...` : raw;
 }
 
 function _PluginItem(props: IPluginItemProps) {
@@ -141,6 +156,51 @@ function _PluginItem(props: IPluginItemProps) {
         });
     }
 
+    function showTestSearchFailure(
+        keyword: string,
+        type: ICommon.SupportMediaType,
+        reason: any,
+        diagnostic?: PluginDiagnosticEvent,
+    ) {
+        const reasonText = diagnostic?.message ??
+            sanitizeTestSearchFailureReason(reason?.message ?? reason);
+        const title = t("pluginSetting.testSearch.failureTitle", {
+            name: plugin.name,
+        });
+        const diagnosticLines = diagnostic
+            ? [
+                `${t("pluginSetting.testSearch.failureDiagnosticMethod")}: ${diagnostic.method}`,
+                `${t("pluginSetting.testSearch.failureDiagnosticTime")}: ${new Date(diagnostic.createdAt).toLocaleString()}`,
+                diagnostic.estimatedLocation
+                    ? `${t("pluginSetting.testSearch.failureDiagnosticLocation")}: ${diagnostic.estimatedLocation}`
+                    : "",
+            ].filter(Boolean)
+            : [t("pluginSetting.testSearch.failureNoDiagnostic")];
+        const content = [
+            t("pluginSetting.testSearch.failureSummary", {
+                keyword,
+                type,
+                reason: reasonText,
+            }),
+            "",
+            t("pluginSetting.testSearch.failureDiagnosticTitle"),
+            ...diagnosticLines,
+        ].join("\n");
+        const reportText = [title, "", content].join("\n");
+        showDialog("SimpleDialog", {
+            title,
+            content,
+            okText: t("pluginSetting.testSearch.copyFailureReport"),
+            onOk() {
+                Clipboard.setString(reportText);
+                Toast.success(t("toast.copiedToClipboard"));
+            },
+        });
+        Toast.warn(t("pluginSetting.testSearch.failed", {
+            reason: reasonText,
+        }));
+    }
+
     function showTestSearchInput(searchType: ICommon.SupportMediaType) {
         showPanel("SimpleInput", {
             title: t("pluginSetting.pluginItem.options.testSearch"),
@@ -156,6 +216,7 @@ function _PluginItem(props: IPluginItemProps) {
                 }
                 closePanel();
                 setTimeout(() => {
+                    const testStartedAt = Date.now();
                     showDialog("LoadingDialog", {
                         title: t("pluginSetting.pluginItem.options.testSearch"),
                         loadingText: t("pluginSetting.testSearch.loading"),
@@ -176,9 +237,20 @@ function _PluginItem(props: IPluginItemProps) {
                         },
                         onReject(reason, hideDialog) {
                             hideDialog();
-                            Toast.warn(t("pluginSetting.testSearch.failed", {
-                                reason: reason?.message ?? reason,
-                            }));
+                            const latestDiagnostic = getPluginDiagnosticEvents(
+                                plugin.hash,
+                                plugin.name,
+                                5,
+                            ).find(event =>
+                                event.method === "search" &&
+                                event.createdAt >= testStartedAt - 1000,
+                            );
+                            showTestSearchFailure(
+                                keyword,
+                                searchType,
+                                reason,
+                                latestDiagnostic,
+                            );
                         },
                     });
                 }, 0);
