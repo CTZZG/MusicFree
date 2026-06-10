@@ -76,6 +76,11 @@ interface IPluginDiagnosticReportPlugin {
     supportedMethods: Set<string>;
 }
 
+interface IPluginDiagnosticReportOptions {
+    events?: PluginDiagnosticEvent[];
+    filterSummary?: string;
+}
+
 function getStoredEvents() {
     const events = safeParse<PluginDiagnosticEvent[]>(
         storage.getString(storageKey),
@@ -292,13 +297,18 @@ export function clearPluginDiagnosticEvents(eventIds?: string[]) {
 
 export function buildPluginDiagnosticReport(
     plugins: IPluginDiagnosticReportPlugin[],
+    options: IPluginDiagnosticReportOptions = {},
 ) {
-    const events = getAllPluginDiagnosticEvents();
+    const events = options.events ?? getAllPluginDiagnosticEvents();
+    const filterLines = options.filterSummary
+        ? [`Filters: ${sanitizeReportValue(options.filterSummary)}`]
+        : [];
     return [
         "MusicFree Plugin Diagnostic Report",
         `Generated: ${new Date().toISOString()}`,
         `Plugins: ${plugins.length}`,
         `Diagnostic events: ${events.length}`,
+        ...filterLines,
         "",
         "Plugins",
         ...getPluginReportLines(plugins, events),

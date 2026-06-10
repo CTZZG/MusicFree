@@ -263,6 +263,19 @@ export default function PluginDiagnostics() {
     }
 
     function copyDiagnosticReport() {
+        if (hasActiveFilters) {
+            Clipboard.setString(buildPluginDiagnosticReport(plugins, {
+                events: filteredEvents,
+                filterSummary: activeFilterLabels.join(" / "),
+            }));
+            Toast.success(
+                t("pluginSetting.diagnostics.copyFilteredReportSuccess", {
+                    count: filteredEvents.length,
+                }),
+            );
+            return;
+        }
+
         Clipboard.setString(buildPluginDiagnosticReport(plugins));
         Toast.success(t("toast.copiedToClipboard"));
     }

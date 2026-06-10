@@ -352,6 +352,7 @@
     "pluginSetting.diagnostics.clearFilteredConfirm": "This will clear {count} currently filtered diagnostic records from this device only. Plugins, settings, and playback data will not be changed. Continue?",
     "pluginSetting.diagnostics.clearSuccess": "Cleared {count} diagnostic records",
     "pluginSetting.diagnostics.activeFilters": "Filters: {filters}",
+    "pluginSetting.diagnostics.copyFilteredReportSuccess": "Copied {count} filtered diagnostics",
     "pluginSetting.failReason": "Failure reason: {reason}",
     "pluginSetting.installResult.dialogTitle": "Plugin Installation Result",
     "pluginSetting.installResult.success": "Installed",
