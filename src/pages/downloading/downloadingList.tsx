@@ -21,6 +21,7 @@ import { RequestStateCode } from "@/constants/commonConst";
 import { showPanel } from "@/components/panels/usePanel";
 import Icon, { IIconName } from "@/components/base/icon";
 import Toast from "@/utils/toast";
+import { showDialog } from "@/components/dialogs/useDialog";
 
 type DownloadFilter = "all" | "active" | "paused" | "completed" | "error";
 
@@ -256,13 +257,26 @@ export default function DownloadingList() {
         sourceFilter === "all"
             ? t("downloading.sourceFilter.all")
             : sourceFilter;
-    const completedTaskCount = useMemo(
+    const completedDownloadItems = useMemo(
         () =>
-            Array.from(downloadTasks.values()).filter(
-                task => task.status === DownloadStatus.Completed,
-            ).length,
-        [downloadTasks],
+            downloadQueue.filter(musicItem => {
+                const status =
+                    downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
+                    DownloadStatus.Error;
+                if (status !== DownloadStatus.Completed) {
+                    return false;
+                }
+                if (
+                    sourceFilter !== "all" &&
+                    musicItem.platform !== sourceFilter
+                ) {
+                    return false;
+                }
+                return true;
+            }),
+        [downloadQueue, downloadTasks, sourceFilter],
     );
+    const completedTaskCount = completedDownloadItems.length;
     const failedDownloadItems = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
@@ -348,10 +362,22 @@ export default function DownloadingList() {
     }
 
     function clearCompletedTasks() {
-        const count = downloader.clearCompletedTasks();
-        if (count) {
-            Toast.success(t("downloading.clearCompletedSuccess", { count }));
-        }
+        showDialog("SimpleDialog", {
+            title: t("downloading.clearCompleted"),
+            content: t("downloading.clearCompletedConfirm", {
+                count: completedTaskCount,
+            }),
+            onOk() {
+                const count = downloader.clearCompletedTasks(
+                    completedDownloadItems,
+                );
+                if (count) {
+                    Toast.success(t("downloading.clearCompletedSuccess", {
+                        count,
+                    }));
+                }
+            },
+        });
     }
 
     function retryFailedTasks() {
@@ -362,10 +388,20 @@ export default function DownloadingList() {
     }
 
     function clearFailedTasks() {
-        const count = downloader.clearFailedTasks(failedDownloadItems);
-        if (count) {
-            Toast.success(t("downloading.clearFailedSuccess", { count }));
-        }
+        showDialog("SimpleDialog", {
+            title: t("downloading.clearFailed"),
+            content: t("downloading.clearFailedConfirm", {
+                count: failedTaskCount,
+            }),
+            onOk() {
+                const count = downloader.clearFailedTasks(failedDownloadItems);
+                if (count) {
+                    Toast.success(t("downloading.clearFailedSuccess", {
+                        count,
+                    }));
+                }
+            },
+        });
     }
 
     async function pauseActiveTasks() {

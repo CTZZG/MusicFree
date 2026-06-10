@@ -273,10 +273,12 @@ export interface ILanguageData {
     "downloading.downloadStatus.paused": string; // 已暂停
     "downloading.downloadStatus.preparing": string; // 准备中
     "downloading.clearCompleted": string; // 清理已完成
+    "downloading.clearCompletedConfirm": string; // 清理已完成确认
     "downloading.clearCompletedSuccess": string; // 清理已完成成功
     "downloading.retryFailed": string; // 重试失败任务
     "downloading.retryFailedSuccess": string; // 重试失败任务成功
     "downloading.clearFailed": string; // 清理失败记录
+    "downloading.clearFailedConfirm": string; // 清理失败记录确认
     "downloading.clearFailedSuccess": string; // 清理失败记录成功
     "downloading.pauseActive": string; // 暂停进行中任务
     "downloading.pauseActiveSuccess": string; // 暂停进行中任务成功

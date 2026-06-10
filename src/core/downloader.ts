@@ -1182,11 +1182,17 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         return false;
     }
 
-    clearCompletedTasks() {
+    clearCompletedTasks(musicItems?: IMusic.IMusicItem[]) {
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+        const candidateKeys = new Set(
+            (musicItems ?? downloadQueue).map(getMediaUniqueKey),
+        );
         const completedKeys = new Set<string>();
         downloadTasks.forEach((task, key) => {
-            if (task.status === DownloadStatus.Completed) {
+            if (
+                task.status === DownloadStatus.Completed &&
+                candidateKeys.has(key)
+            ) {
                 completedKeys.add(key);
             }
         });
