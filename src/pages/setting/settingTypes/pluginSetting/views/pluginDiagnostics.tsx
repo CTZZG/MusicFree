@@ -17,6 +17,7 @@ import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx
 import { useI18N } from "@/core/i18n";
 import { useSortedPlugins } from "@/core/pluginManager";
 import {
+    buildPluginDiagnosticEventReport,
     buildPluginDiagnosticReport,
     getAllPluginDiagnosticEvents,
     PluginDiagnosticEvent,
@@ -215,6 +216,12 @@ function FilterChip(props: {
 function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
     const { event } = props;
     const colors = useColors();
+    const { t } = useI18N();
+
+    function copyDiagnosticEvent() {
+        Clipboard.setString(buildPluginDiagnosticEventReport(event));
+        Toast.success(t("toast.copiedToClipboard"));
+    }
 
     return (
         <ListItem
@@ -252,6 +259,12 @@ function DiagnosticEventItem(props: { event: PluginDiagnosticEvent }) {
                     </ThemeText>
                 ) : null}
             </View>
+            <ListItem.ListItemIcon
+                icon="document-outline"
+                position="right"
+                color={colors.textSecondary}
+                onPress={copyDiagnosticEvent}
+            />
         </ListItem>
     );
 }

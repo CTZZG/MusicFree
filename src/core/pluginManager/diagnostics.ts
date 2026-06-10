@@ -290,3 +290,28 @@ export function buildPluginDiagnosticReport(
         ...getPluginDiagnosticEventLines(events.slice(0, 50)),
     ].join("\n");
 }
+
+export function buildPluginDiagnosticEventReport(
+    event: PluginDiagnosticEvent,
+) {
+    return [
+        "MusicFree Plugin Diagnostic Event",
+        `Generated: ${new Date().toISOString()}`,
+        `Plugin: ${sanitizeReportValue(event.pluginName)}`,
+        `Method: ${sanitizeReportValue(event.method)}`,
+        `Time: ${new Date(event.createdAt).toISOString()}`,
+        event.pluginHash
+            ? `Hash: ${sanitizeReportValue(event.pluginHash.slice(0, 12))}`
+            : "",
+        "",
+        "Message",
+        sanitizeReportValue(event.message),
+        event.estimatedLocation
+            ? [
+                "",
+                "Estimated location",
+                sanitizeReportValue(event.estimatedLocation),
+            ].join("\n")
+            : "",
+    ].filter(Boolean).join("\n");
+}
