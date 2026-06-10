@@ -415,6 +415,11 @@ export interface ILanguageData {
     "backupAndResume.webdavAutoBackup.off": string; // 关闭
     "backupAndResume.webdavAutoBackup.daily": string; // 每天
     "backupAndResume.webdavAutoBackup.weekly": string; // 每周
+    "backupAndResume.webdavAutoBackupStatus": string; // 自动备份状态
+    "backupAndResume.webdavAutoBackupStatus.never": string; // 尚未自动备份
+    "backupAndResume.webdavAutoBackupStatus.success": string; // 上次成功
+    "backupAndResume.webdavAutoBackupStatus.failed": string; // 上次失败
+    "backupAndResume.webdavAutoBackupStatus.failureReason": string; // 失败原因
     "backupAndResume.resumePreviewTitle": string; // 恢复前预览
     "backupAndResume.resumeReportTitle": string; // 恢复结果
     "backupAndResume.copyResumeReport": string; // 复制恢复报告

@@ -884,6 +884,47 @@
 - 自动备份设置为每天/每周时，到期后启动会写入 latest 和历史备份。
 ```
 
+## Prompt 23：WebDAV 自动备份结果展示
+
+状态：已完成。本次在 WebDAV 自动备份设置下展示最近自动备份结果，并记录脱敏失败原因。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/webdavBackup.ts
+- src/pages/setting/settingTypes/backupSetting.tsx
+- src/utils/persistStatus.ts
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+让用户能在设置页看到 WebDAV 自动备份最近一次是否成功，失败时看到简短原因。
+
+范围：
+- 自动备份成功时记录最近成功时间。
+- 自动备份失败时记录最近失败时间和脱敏原因摘要。
+- 成功后清除旧失败状态。
+- WebDAV 设置页展示自动备份状态：尚未备份 / 上次成功 / 上次失败。
+- 失败原因不保存完整 URL，截断过长文本。
+- 补齐中/英/繁体文案、i18n 类型和持久化状态类型。
+
+不要做：
+- 不弹出自动备份失败 toast。
+- 不上传诊断信息。
+- 不新增远端备份管理页。
+- 不新增 Wi-Fi 条件。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 自动备份成功后设置页显示成功时间。
+- 自动备份失败后设置页显示失败时间和简短原因。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 22。下一步可以推进下载历史持久化/下载中心管理能力，或继续完善 WebDAV 自动备份的网络条件与结果展示。
+当前已经完成 Prompt 01 到 Prompt 23。下一步可以推进下载历史持久化/下载中心管理能力，或继续完善 WebDAV 自动备份的网络条件。

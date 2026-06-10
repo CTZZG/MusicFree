@@ -182,6 +182,16 @@ function getAutoBackupInterval() {
     return Config.getConfig("webdav.autoBackupInterval") ?? "off";
 }
 
+function getSafeErrorMessage(error: unknown) {
+    const rawMessage = error instanceof Error
+        ? error.message
+        : String(error);
+    return rawMessage
+        .replace(/https?:\/\/\S+/g, "[url]")
+        .replace(/([?&](?:token|access_token|password|pwd|key|secret)=)[^&\s]+/gi, "$1[redacted]")
+        .slice(0, 160);
+}
+
 function isAutoBackupDue(now = Date.now()) {
     const interval = getAutoBackupInterval();
     if (interval === "off" || !hasConfiguredWebdav()) {
@@ -204,9 +214,16 @@ export async function maybeRunAutoWebdavBackup() {
     try {
         const result = await backupToWebdav();
         PersistStatus.set("backup.webdavAutoBackupLastSuccessAt", now);
+        PersistStatus.set("backup.webdavAutoBackupLastFailedAt", undefined);
+        PersistStatus.set("backup.webdavAutoBackupLastError", undefined);
         trace("WebDAV 自动备份完成", result);
         return true;
     } catch (e) {
+        PersistStatus.set("backup.webdavAutoBackupLastFailedAt", Date.now());
+        PersistStatus.set(
+            "backup.webdavAutoBackupLastError",
+            getSafeErrorMessage(e),
+        );
         errorLog("WebDAV 自动备份失败", e);
         return false;
     }

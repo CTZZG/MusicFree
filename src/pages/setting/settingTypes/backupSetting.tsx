@@ -26,6 +26,7 @@ import {
 import delay from "@/utils/delay";
 import { checkAndCreateDir, writeInChunks } from "@/utils/fileUtils.ts";
 import { errorLog } from "@/utils/log.ts";
+import PersistStatus from "@/utils/persistStatus";
 import { getDocumentAsync } from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { DocumentDirectoryPath } from "react-native-fs";
@@ -43,6 +44,29 @@ export default function BackupSetting() {
     const webdavPassword = useAppConfig("webdav.password");
     const webdavAutoBackupInterval =
         useAppConfig("webdav.autoBackupInterval") ?? "off";
+    const webdavAutoBackupLastSuccessAt = PersistStatus.useValue(
+        "backup.webdavAutoBackupLastSuccessAt",
+    );
+    const webdavAutoBackupLastFailedAt = PersistStatus.useValue(
+        "backup.webdavAutoBackupLastFailedAt",
+    );
+    const webdavAutoBackupLastError = PersistStatus.useValue(
+        "backup.webdavAutoBackupLastError",
+    );
+
+    function padTime(value: number) {
+        return `${value}`.padStart(2, "0");
+    }
+
+    function formatLocalTime(timestamp: number) {
+        const date = new Date(timestamp);
+        return [
+            `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(
+                date.getDate(),
+            )}`,
+            `${padTime(date.getHours())}:${padTime(date.getMinutes())}`,
+        ].join(" ");
+    }
 
     function formatResumePreview(preview: IBackupPreview) {
         return [
@@ -372,6 +396,42 @@ export default function BackupSetting() {
         });
     }
 
+    function getWebdavAutoBackupStatus() {
+        if (
+            webdavAutoBackupLastFailedAt &&
+            (!webdavAutoBackupLastSuccessAt ||
+                webdavAutoBackupLastFailedAt > webdavAutoBackupLastSuccessAt)
+        ) {
+            const title = t("backupAndResume.webdavAutoBackupStatus.failed", {
+                time: formatLocalTime(webdavAutoBackupLastFailedAt),
+            });
+            const failureReason = webdavAutoBackupLastError
+                ? t("backupAndResume.webdavAutoBackupStatus.failureReason", {
+                    reason: webdavAutoBackupLastError,
+                })
+                : "";
+            return {
+                description: failureReason
+                    ? `${title}; ${failureReason}`
+                    : title,
+            };
+        }
+
+        if (webdavAutoBackupLastSuccessAt) {
+            return {
+                description: t("backupAndResume.webdavAutoBackupStatus.success", {
+                    time: formatLocalTime(webdavAutoBackupLastSuccessAt),
+                }),
+            };
+        }
+
+        return {
+            description: t("backupAndResume.webdavAutoBackupStatus.never"),
+        };
+    }
+
+    const webdavAutoBackupStatus = getWebdavAutoBackupStatus();
+
     return (
         <ScrollView style={style.wrapper}>
             <ListItemHeader>{t("sidebar.backupAndResume")}</ListItemHeader>
@@ -468,6 +528,12 @@ export default function BackupSetting() {
                 <ListItem.ListItemText>
                     {getWebdavAutoBackupLabel(webdavAutoBackupInterval)}
                 </ListItem.ListItemText>
+            </ListItem>
+            <ListItem withHorizontalPadding>
+                <ListItem.Content
+                    title={t("backupAndResume.webdavAutoBackupStatus")}
+                    description={webdavAutoBackupStatus.description}
+                />
             </ListItem>
             <ListItem withHorizontalPadding onPress={onBackupToWebdav}>
                 <ListItem.Content title={t("backupAndResume.backupToWebdav")} />
