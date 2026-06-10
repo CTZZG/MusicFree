@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
@@ -18,6 +18,8 @@ import Color from "color";
 import { getMediaUniqueKey } from "@/utils/mediaUtils";
 import ListEmpty from "@/components/base/listEmpty";
 import { RequestStateCode } from "@/constants/commonConst";
+import { showPanel } from "@/components/panels/usePanel";
+import Icon, { IIconName } from "@/components/base/icon";
 
 type DownloadFilter = "all" | "active" | "paused" | "completed" | "error";
 
@@ -46,7 +48,11 @@ function DownloadingListItem(props: DownloadingListItemProps) {
             description = t("downloading.downloadFailReason.unknown");
         }
     } else if (status === DownloadStatus.Completed) {
-        description = t("downloading.downloadStatus.completed");
+        description = taskInfo?.completedAt
+            ? t("downloading.downloadStatus.completedAt", {
+                time: formatDownloadCompletedAt(taskInfo.completedAt),
+            })
+            : t("downloading.downloadStatus.completed");
     } else if (status === DownloadStatus.Downloading) {
         const progress = taskInfo?.downloadedSize ? sizeFormatter(taskInfo.downloadedSize) : "-";
         const totalSize = taskInfo?.fileSize ? sizeFormatter(taskInfo.fileSize) : "-";
@@ -138,12 +144,27 @@ function matchDownloadFilter(status: DownloadStatus, filter: DownloadFilter) {
     return true;
 }
 
+function padTime(value: number) {
+    return `${value}`.padStart(2, "0");
+}
+
+function formatDownloadCompletedAt(timestamp: number) {
+    const date = new Date(timestamp);
+    return [
+        `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(
+            date.getDate(),
+        )}`,
+        `${padTime(date.getHours())}:${padTime(date.getMinutes())}`,
+    ].join(" ");
+}
+
 function FilterChip(props: {
     title: string;
     selected: boolean;
     onPress: () => void;
+    icon?: IIconName;
 }) {
-    const { title, selected, onPress } = props;
+    const { title, selected, onPress, icon } = props;
     const colors = useColors();
 
     return (
@@ -160,13 +181,23 @@ function FilterChip(props: {
                 },
             ]}
             onPress={onPress}>
-            <ThemeText
-                numberOfLines={1}
-                fontSize="description"
-                fontWeight="semibold"
-                color={selected ? colors.primary : colors.text}>
-                {title}
-            </ThemeText>
+            <View style={style.filterChipContent}>
+                {icon ? (
+                    <Icon
+                        name={icon}
+                        size={rpx(28)}
+                        color={selected ? colors.primary : colors.text}
+                        style={style.filterChipIcon}
+                    />
+                ) : null}
+                <ThemeText
+                    numberOfLines={1}
+                    fontSize="description"
+                    fontWeight="semibold"
+                    color={selected ? colors.primary : colors.text}>
+                    {title}
+                </ThemeText>
+            </View>
         </Pressable>
     );
 }
@@ -176,6 +207,7 @@ export default function DownloadingList() {
     const downloadTasks = useDownloadTasksSnapshot();
     const { t } = useI18N();
     const [filter, setFilter] = useState<DownloadFilter>("all");
+    const [sourceFilter, setSourceFilter] = useState("all");
 
     const filterItems: Array<{
         key: DownloadFilter;
@@ -203,15 +235,64 @@ export default function DownloadingList() {
         },
     ];
 
+    const sourceFilters = useMemo(
+        () => [
+            "all",
+            ...Array.from(
+                new Set(
+                    downloadQueue
+                        .map(musicItem => musicItem.platform)
+                        .filter(Boolean),
+                ),
+            ).sort((a, b) => a.localeCompare(b)),
+        ],
+        [downloadQueue],
+    );
+    const sourceFilterTitle =
+        sourceFilter === "all"
+            ? t("downloading.sourceFilter.all")
+            : sourceFilter;
+
+    useEffect(() => {
+        if (!sourceFilters.includes(sourceFilter)) {
+            setSourceFilter("all");
+        }
+    }, [sourceFilter, sourceFilters]);
+
+    function showSourceFilterSelect() {
+        showPanel("SimpleSelect", {
+            header: t("downloading.sourceFilter.title"),
+            candidates: sourceFilters.map(source => ({
+                title:
+                    source === "all"
+                        ? t("downloading.sourceFilter.all")
+                        : source,
+                value: source,
+            })),
+            onPress(item) {
+                setSourceFilter(item.value);
+            },
+        });
+    }
+
     const filteredQueue = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
                 const status =
                     downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
                     DownloadStatus.Error;
-                return matchDownloadFilter(status, filter);
+                if (!matchDownloadFilter(status, filter)) {
+                    return false;
+                }
+                if (
+                    sourceFilter !== "all" &&
+                    musicItem.platform !== sourceFilter
+                ) {
+                    return false;
+                }
+                return true;
             }),
-        [downloadQueue, downloadTasks, filter],
+        [downloadQueue, downloadTasks, filter, sourceFilter],
     );
 
 
@@ -229,6 +310,12 @@ export default function DownloadingList() {
                         onPress={() => setFilter(item.key)}
                     />
                 ))}
+                <FilterChip
+                    title={sourceFilterTitle}
+                    selected={sourceFilter !== "all"}
+                    onPress={showSourceFilterSelect}
+                    icon="code-bracket-square"
+                />
             </ScrollView>
             <FlashList
                 style={style.downloading}
@@ -262,6 +349,13 @@ const style = StyleSheet.create({
         marginRight: rpx(12),
         alignItems: "center",
         justifyContent: "center",
+    },
+    filterChipContent: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    filterChipIcon: {
+        marginRight: rpx(8),
     },
     downloading: {
         flexGrow: 0,

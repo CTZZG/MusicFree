@@ -104,6 +104,8 @@ interface IDownloadTaskInfo {
     musicItem: IMusic.IMusicItem;
     // 如果下载失败，下载失败的原因
     errorReason?: DownloadFailReason;
+    // 下载完成时间
+    completedAt?: number;
 }
 
 const downloadQueueAtom = atom<IMusic.IMusicItem[]>([]);
@@ -231,6 +233,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         this.downloadingCount--;
         this.updateDownloadTask(musicItem, {
             status: DownloadStatus.Completed,
+            completedAt: Date.now(),
         });
     }
 

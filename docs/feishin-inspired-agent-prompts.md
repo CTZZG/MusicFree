@@ -798,6 +798,46 @@
 - 启用独立歌词文件下载时，可显示歌词文件写入成功或失败。
 ```
 
+## Prompt 21：下载中心来源筛选与完成时间
+
+状态：已完成。本次让下载中心可按插件来源筛选，并在下载完成任务上显示完成时间。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/downloader.ts
+- src/pages/downloading/downloadingList.tsx
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+增强下载中心的资料库浏览能力，让用户能按插件来源筛选下载任务，并看见任务完成时间。
+
+范围：
+- 下载任务完成时记录 `completedAt` 时间戳。
+- 下载中心保留现有状态筛选。
+- 下载中心增加插件来源筛选入口。
+- 来源候选从当前下载队列中的 `platform` 自动生成。
+- 已完成任务显示完成时间。
+- 补齐中/英/繁体文案和 i18n 类型。
+
+不要做：
+- 不新增持久化下载历史表。
+- 不删除已完成任务。
+- 不改变下载文件命名规则。
+- 不改变下载队列调度逻辑。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 下载中心状态筛选和来源筛选可以组合使用。
+- 下载完成任务显示完成时间；没有时间戳的旧任务仍显示“下载完成”。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 20。下一步可以继续推进下载中心插件来源筛选/下载时间展示，或继续完善 WebDAV 自动备份设置。
+当前已经完成 Prompt 01 到 Prompt 21。下一步可以继续完善 WebDAV 自动备份设置，或推进下载历史持久化/下载中心管理能力。
