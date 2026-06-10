@@ -24,7 +24,10 @@ import {
 } from "../capabilityUtils";
 import { buildPluginHealthCheckReport } from "../healthCheckUtils";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import { writePluginTestSearchReport } from "../reportExportUtils";
+import {
+    writePluginHealthCheckReport,
+    writePluginTestSearchReport,
+} from "../reportExportUtils";
 
 interface IPluginItemProps {
     plugin: Plugin;
@@ -147,6 +150,39 @@ function _PluginItem(props: IPluginItemProps) {
                     } catch (e: any) {
                         Toast.warn(t(
                             "pluginSetting.testSearch.exportReportFailed",
+                            { reason: e?.message ?? e },
+                        ));
+                        return false;
+                    }
+                },
+            });
+        }, 0);
+    }
+
+    function exportHealthCheckReport(reportText: string) {
+        setTimeout(() => {
+            navigate(ROUTE_PATH.FILE_SELECTOR, {
+                fileType: "folder",
+                multi: false,
+                actionText: t("pluginSetting.healthCheck.exportReportAction"),
+                async onAction(selectedFiles) {
+                    const folder = selectedFiles[0]?.path;
+                    if (!folder) {
+                        return false;
+                    }
+                    try {
+                        const filename = await writePluginHealthCheckReport(
+                            folder,
+                            reportText,
+                        );
+                        Toast.success(t(
+                            "pluginSetting.healthCheck.exportReportSuccess",
+                            { filename },
+                        ));
+                        return true;
+                    } catch (e: any) {
+                        Toast.warn(t(
+                            "pluginSetting.healthCheck.exportReportFailed",
                             { reason: e?.message ?? e },
                         ));
                         return false;
@@ -345,6 +381,10 @@ function _PluginItem(props: IPluginItemProps) {
             title: report.title,
             content: report.content,
             okText: t("pluginSetting.healthCheck.copyReport"),
+            cancelText: t("pluginSetting.healthCheck.exportReport"),
+            onCancel() {
+                exportHealthCheckReport(report.reportText);
+            },
             onOk() {
                 Clipboard.setString(report.reportText);
                 Toast.success(t("toast.copiedToClipboard"));

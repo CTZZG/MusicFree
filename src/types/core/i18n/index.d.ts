@@ -425,6 +425,10 @@ export interface ILanguageData {
     "pluginSetting.capabilityMatrix.disabled": string; // 已禁用
     "pluginSetting.healthCheck.title": string; // 插件健康检查标题
     "pluginSetting.healthCheck.copyReport": string; // 复制健康检查报告
+    "pluginSetting.healthCheck.exportReport": string; // 导出健康检查报告
+    "pluginSetting.healthCheck.exportReportAction": string; // 导出健康检查报告到此处
+    "pluginSetting.healthCheck.exportReportSuccess": string; // 导出健康检查报告成功
+    "pluginSetting.healthCheck.exportReportFailed": string; // 导出健康检查报告失败
     "pluginSetting.healthCheck.generatedAt": string; // 健康检查生成时间
     "pluginSetting.healthCheck.status": string; // 健康检查状态
     "pluginSetting.healthCheck.enabled": string; // 健康检查已启用
