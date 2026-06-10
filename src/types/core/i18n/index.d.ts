@@ -274,6 +274,10 @@ export interface ILanguageData {
     "downloading.downloadStatus.preparing": string; // 准备中
     "downloading.clearCompleted": string; // 清理已完成
     "downloading.clearCompletedSuccess": string; // 清理已完成成功
+    "downloading.retryFailed": string; // 重试失败任务
+    "downloading.retryFailedSuccess": string; // 重试失败任务成功
+    "downloading.clearFailed": string; // 清理失败记录
+    "downloading.clearFailedSuccess": string; // 清理失败记录成功
 
     // 艺术家详情相关
     "artistDetail.fansCount": string; // 粉丝数量

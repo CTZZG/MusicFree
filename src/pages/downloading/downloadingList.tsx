@@ -262,6 +262,26 @@ export default function DownloadingList() {
             ).length,
         [downloadTasks],
     );
+    const failedDownloadItems = useMemo(
+        () =>
+            downloadQueue.filter(musicItem => {
+                const status =
+                    downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
+                    DownloadStatus.Error;
+                if (status !== DownloadStatus.Error) {
+                    return false;
+                }
+                if (
+                    sourceFilter !== "all" &&
+                    musicItem.platform !== sourceFilter
+                ) {
+                    return false;
+                }
+                return true;
+            }),
+        [downloadQueue, downloadTasks, sourceFilter],
+    );
+    const failedTaskCount = failedDownloadItems.length;
 
     useEffect(() => {
         if (!sourceFilters.includes(sourceFilter)) {
@@ -289,6 +309,20 @@ export default function DownloadingList() {
         const count = downloader.clearCompletedTasks();
         if (count) {
             Toast.success(t("downloading.clearCompletedSuccess", { count }));
+        }
+    }
+
+    function retryFailedTasks() {
+        const count = downloader.retryFailedTasks(failedDownloadItems);
+        if (count) {
+            Toast.success(t("downloading.retryFailedSuccess", { count }));
+        }
+    }
+
+    function clearFailedTasks() {
+        const count = downloader.clearFailedTasks(failedDownloadItems);
+        if (count) {
+            Toast.success(t("downloading.clearFailedSuccess", { count }));
         }
     }
 
@@ -340,6 +374,22 @@ export default function DownloadingList() {
                         onPress={clearCompletedTasks}
                         icon="trash-outline"
                     />
+                ) : null}
+                {failedTaskCount ? (
+                    <>
+                        <FilterChip
+                            title={t("downloading.retryFailed")}
+                            selected={false}
+                            onPress={retryFailedTasks}
+                            icon="arrow-path"
+                        />
+                        <FilterChip
+                            title={t("downloading.clearFailed")}
+                            selected={false}
+                            onPress={clearFailedTasks}
+                            icon="trash-outline"
+                        />
+                    </>
                 ) : null}
             </ScrollView>
             <FlashList

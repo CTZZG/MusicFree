@@ -424,6 +424,29 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         };
     }
 
+    private canStartDownload() {
+        if (network.isOffline) {
+            this.emit(
+                DownloaderEvent.DownloadError,
+                DownloadFailReason.NetworkOffline,
+            );
+            return false;
+        }
+
+        if (
+            network.isCellular &&
+            !this.configService.getConfig("basic.useCelluarNetworkDownload")
+        ) {
+            this.emit(
+                DownloaderEvent.DownloadError,
+                DownloadFailReason.NotAllowToDownloadInCellular,
+            );
+            return false;
+        }
+
+        return true;
+    }
+
     private async writeMetadataToFile(
         musicItem: IMusic.IMusicItem,
         filePath: string,
@@ -1009,6 +1032,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         if (!task || task.status !== DownloadStatus.Error) {
             return false;
         }
+        if (!this.canStartDownload()) {
+            return false;
+        }
 
         const quality = task.quality;
         downloadTasks.delete(key);
@@ -1020,26 +1046,29 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         return true;
     }
 
+    retryFailedTasks(musicItems?: IMusic.IMusicItem[]) {
+        const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+        const candidates = musicItems ?? downloadQueue;
+        let retryCount = 0;
+
+        if (!candidates.length || !this.canStartDownload()) {
+            return retryCount;
+        }
+
+        candidates.forEach(musicItem => {
+            if (this.retry(musicItem)) {
+                retryCount += 1;
+            }
+        });
+
+        return retryCount;
+    }
+
     download(
         musicItems: IMusic.IMusicItem | IMusic.IMusicItem[],
         quality?: IMusic.IQualityKey,
     ) {
-        if (network.isOffline) {
-            this.emit(
-                DownloaderEvent.DownloadError,
-                DownloadFailReason.NetworkOffline,
-            );
-            return;
-        }
-
-        if (
-            network.isCellular &&
-            !this.configService.getConfig("basic.useCelluarNetworkDownload")
-        ) {
-            this.emit(
-                DownloaderEvent.DownloadError,
-                DownloadFailReason.NotAllowToDownloadInCellular,
-            );
+        if (!this.canStartDownload()) {
             return;
         }
 
@@ -1145,6 +1174,39 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         );
         this.emit(DownloaderEvent.DownloadTaskListChanged);
         return completedKeys.size;
+    }
+
+    clearFailedTasks(musicItems?: IMusic.IMusicItem[]) {
+        const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+        const candidateKeys = new Set(
+            (musicItems ?? downloadQueue).map(getMediaUniqueKey),
+        );
+        const failedKeys = new Set<string>();
+
+        downloadTasks.forEach((task, key) => {
+            if (
+                task.status === DownloadStatus.Error &&
+                candidateKeys.has(key)
+            ) {
+                failedKeys.add(key);
+            }
+        });
+        if (!failedKeys.size) {
+            return 0;
+        }
+
+        failedKeys.forEach(key => {
+            void Mp3Util.removeDownloadTask(key).catch(() => {});
+            void downloadNotificationManager.cancelNotification(key);
+            downloadTasks.delete(key);
+        });
+        setDownloadQueue(
+            downloadQueue.filter(
+                musicItem => !failedKeys.has(getMediaUniqueKey(musicItem)),
+            ),
+        );
+        this.emit(DownloaderEvent.DownloadTaskListChanged);
+        return failedKeys.size;
     }
 }
 
