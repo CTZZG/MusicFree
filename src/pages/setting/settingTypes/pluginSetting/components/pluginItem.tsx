@@ -42,6 +42,28 @@ function getPluginTestSearchType(plugin: Plugin): ICommon.SupportMediaType {
     return supportedTypes?.[0] ?? "music";
 }
 
+function getPluginTestSearchTypes(plugin: Plugin): ICommon.SupportMediaType[] {
+    const supportedTypes = plugin.instance.supportedSearchType ?? [];
+    const defaultType = getPluginTestSearchType(plugin);
+    return Array.from(new Set([defaultType, ...supportedTypes]));
+}
+
+function getSearchTypeIcon(type: ICommon.SupportMediaType): IIconName {
+    switch (type) {
+        case "album":
+            return "album-outline";
+        case "artist":
+            return "user";
+        case "sheet":
+            return "playlist";
+        case "lyric":
+            return "lyric";
+        case "music":
+        default:
+            return "musical-note";
+    }
+}
+
 function formatTestSearchResultItem(item: any) {
     return [
         item?.title,
@@ -65,6 +87,22 @@ function _PluginItem(props: IPluginItemProps) {
     const visibleCapabilityLabels = capabilityLabels.slice(0, 6);
     const hiddenCapabilityCount =
         capabilityLabels.length - visibleCapabilityLabels.length;
+
+    function getSearchTypeLabel(type: ICommon.SupportMediaType) {
+        switch (type) {
+            case "album":
+                return t("common.album");
+            case "artist":
+                return t("common.artist");
+            case "sheet":
+                return t("common.sheet");
+            case "lyric":
+                return t("home.sourceCapability.lyric");
+            case "music":
+            default:
+                return t("common.singleMusic");
+        }
+    }
 
     function showTestSearchResult(
         keyword: string,
@@ -102,7 +140,7 @@ function _PluginItem(props: IPluginItemProps) {
         });
     }
 
-    function onTestSearch() {
+    function showTestSearchInput(searchType: ICommon.SupportMediaType) {
         showPanel("SimpleInput", {
             title: t("pluginSetting.pluginItem.options.testSearch"),
             placeholder: t(
@@ -115,7 +153,6 @@ function _PluginItem(props: IPluginItemProps) {
                     Toast.warn(t("pluginSetting.testSearch.emptyKeyword"));
                     return;
                 }
-                const searchType = getPluginTestSearchType(plugin);
                 closePanel();
                 setTimeout(() => {
                     showDialog("LoadingDialog", {
@@ -143,6 +180,28 @@ function _PluginItem(props: IPluginItemProps) {
                             }));
                         },
                     });
+                }, 0);
+            },
+        });
+    }
+
+    function onTestSearch() {
+        const searchTypes = getPluginTestSearchTypes(plugin);
+        if (searchTypes.length <= 1) {
+            showTestSearchInput(searchTypes[0] ?? "music");
+            return;
+        }
+
+        showPanel("SimpleSelect", {
+            header: t("pluginSetting.testSearch.selectType"),
+            candidates: searchTypes.map(searchType => ({
+                title: getSearchTypeLabel(searchType),
+                value: searchType,
+                icon: getSearchTypeIcon(searchType),
+            })),
+            onPress(item) {
+                setTimeout(() => {
+                    showTestSearchInput(item.value as ICommon.SupportMediaType);
                 }, 0);
             },
         });

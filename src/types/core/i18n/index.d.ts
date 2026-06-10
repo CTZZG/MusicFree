@@ -423,6 +423,7 @@ export interface ILanguageData {
     "pluginSetting.capabilityMatrix.enabled": string; // 已启用
     "pluginSetting.capabilityMatrix.disabled": string; // 已禁用
     "pluginSetting.testSearch.loading": string; // 测试搜索加载文案
+    "pluginSetting.testSearch.selectType": string; // 选择测试搜索类型
     "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题
     "pluginSetting.testSearch.resultSummary": string; // 测试搜索结果摘要
     "pluginSetting.testSearch.noResults": string; // 测试搜索无结果

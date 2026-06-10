@@ -375,6 +375,7 @@
     "pluginSetting.capabilityMatrix.enabled": "已啟用",
     "pluginSetting.capabilityMatrix.disabled": "已停用",
     "pluginSetting.testSearch.loading": "正在測試外掛搜尋",
+    "pluginSetting.testSearch.selectType": "選擇搜尋類型",
     "pluginSetting.testSearch.resultTitle": "{name} 搜尋測試",
     "pluginSetting.testSearch.resultSummary": "關鍵字: {keyword}\n類型: {type}\n結果數: {count}\n已到末頁: {isEnd}",
     "pluginSetting.testSearch.noResults": "沒有返回結果",

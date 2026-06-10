@@ -375,6 +375,7 @@
     "pluginSetting.capabilityMatrix.enabled": "已启用",
     "pluginSetting.capabilityMatrix.disabled": "已禁用",
     "pluginSetting.testSearch.loading": "正在测试插件搜索",
+    "pluginSetting.testSearch.selectType": "选择搜索类型",
     "pluginSetting.testSearch.resultTitle": "{name} 搜索测试",
     "pluginSetting.testSearch.resultSummary": "关键词: {keyword}\n类型: {type}\n结果数: {count}\n已到末页: {isEnd}",
     "pluginSetting.testSearch.noResults": "没有返回结果",

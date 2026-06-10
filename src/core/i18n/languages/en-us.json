@@ -375,6 +375,7 @@
     "pluginSetting.capabilityMatrix.enabled": "Enabled",
     "pluginSetting.capabilityMatrix.disabled": "Disabled",
     "pluginSetting.testSearch.loading": "Testing plugin search",
+    "pluginSetting.testSearch.selectType": "Select Search Type",
     "pluginSetting.testSearch.resultTitle": "{name} Search Test",
     "pluginSetting.testSearch.resultSummary": "Keyword: {keyword}\nType: {type}\nResults: {count}\nEnd reached: {isEnd}",
     "pluginSetting.testSearch.noResults": "No results returned",
