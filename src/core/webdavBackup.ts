@@ -20,6 +20,7 @@ const autoBackupIntervalMs: Record<Exclude<IWebdavAutoBackupInterval, "off">, nu
     daily: 24 * 60 * 60 * 1000,
     weekly: 7 * 24 * 60 * 60 * 1000,
 };
+const autoBackupFailureRetryMs = 30 * 60 * 1000;
 
 interface IWebdavBackupFile {
     basename?: string;
@@ -192,6 +193,22 @@ function getAutoBackupWifiOnly() {
     return Config.getConfig("webdav.autoBackupWifiOnly") ?? true;
 }
 
+function isAutoBackupFailureRetryDue(now: number) {
+    const lastFailedAt =
+        PersistStatus.get("backup.webdavAutoBackupLastFailedAt") ?? 0;
+    if (!lastFailedAt) {
+        return false;
+    }
+
+    const lastSuccessAt =
+        PersistStatus.get("backup.webdavAutoBackupLastSuccessAt") ?? 0;
+    if (lastSuccessAt >= lastFailedAt) {
+        return false;
+    }
+
+    return Math.abs(now - lastFailedAt) >= autoBackupFailureRetryMs;
+}
+
 function getSafeErrorMessage(error: unknown) {
     const rawMessage = error instanceof Error
         ? error.message
@@ -210,7 +227,9 @@ function checkAutoBackup(now = Date.now()): IWebdavAutoBackupCheckResult {
 
     const lastAttempt =
         PersistStatus.get("backup.webdavAutoBackupLastAttemptAt") ?? 0;
-    if (Math.abs(now - lastAttempt) < autoBackupIntervalMs[interval]) {
+    const isIntervalDue =
+        Math.abs(now - lastAttempt) >= autoBackupIntervalMs[interval];
+    if (!isIntervalDue && !isAutoBackupFailureRetryDue(now)) {
         return { action: "idle" };
     }
 
