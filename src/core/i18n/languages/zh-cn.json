@@ -289,6 +289,7 @@
     "pluginSetting.pluginItem.options.viewDetails": "详情",
     "pluginSetting.pluginItem.options.healthCheck": "健康检查",
     "pluginSetting.pluginItem.options.viewDiagnostics": "查看诊断",
+    "pluginSetting.pluginItem.options.reselectLocalFile": "重新选择文件",
     "pluginSetting.pluginItem.options.sharePlugin": "分享插件",
     "pluginSetting.pluginItem.options.testSearch": "测试搜索",
     "pluginSetting.pluginItem.options.testSearchPlaceHolder": "输入测试关键词",

@@ -242,6 +242,21 @@ class PluginManager implements IPluginManager, IInjectable {
         try {
             if (funcCode) {
                 const plugin = new Plugin(funcCode, pluginPath);
+                if (
+                    config?.expectedPluginName &&
+                    plugin.name !== config.expectedPluginName
+                ) {
+                    return recordFailedInstallResult({
+                        success: false,
+                        message: `选择的插件是「${plugin.name || "unknown"}」，不是「${config.expectedPluginName}」`,
+                        pluginName: plugin.name || undefined,
+                        pluginVersion: plugin.instance.version,
+                        pluginUrl: pluginPath,
+                        sourceType: "local-file",
+                        failureReason: "unknown",
+                        retryable: true,
+                    });
+                }
                 let allPlugins = [...this.getPlugins()];
 
                 const _pluginIndex = allPlugins.findIndex(

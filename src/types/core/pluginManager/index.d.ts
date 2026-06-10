@@ -5,6 +5,7 @@ type Plugin = any; // Placeholder for the actual Plugin type
  */
 export interface IInstallPluginConfig {
     notCheckVersion?: boolean;
+    expectedPluginName?: string;
 }
 
 export type IInstallPluginSourceType = "network" | "local-file" | "unknown";

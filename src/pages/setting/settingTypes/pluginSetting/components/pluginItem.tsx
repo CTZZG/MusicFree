@@ -5,7 +5,9 @@ import pluginManager, { Plugin, usePluginEnabled } from "@/core/pluginManager";
 
 import Toast from "@/utils/toast";
 import Clipboard from "@react-native-clipboard/clipboard";
+import * as DocumentPicker from "expo-document-picker";
 import { useNavigation } from "@react-navigation/native";
+import Config from "@/core/appConfig";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import rpx from "@/utils/rpx";
@@ -29,6 +31,7 @@ import {
     writePluginHealthCheckReport,
     writePluginTestSearchReport,
 } from "../reportExportUtils";
+import { showPluginInstallResults } from "../installPluginUtils";
 
 interface IPluginItemProps {
     plugin: Plugin;
@@ -418,6 +421,59 @@ function _PluginItem(props: IPluginItemProps) {
         });
     }
 
+    async function onReselectLocalPluginFile() {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                copyToCacheDirectory: true,
+                multiple: false,
+                type: [
+                    "application/javascript",
+                    "application/x-javascript",
+                    "text/javascript",
+                    "text/plain",
+                    "application/octet-stream",
+                    "*/*",
+                ],
+            });
+            if (result.canceled) {
+                return;
+            }
+
+            const asset = result.assets[0];
+            if (!asset?.uri) {
+                return;
+            }
+
+            const installResult = await pluginManager.installPluginFromLocalFile(
+                asset.uri,
+                {
+                    expectedPluginName: plugin.name,
+                    notCheckVersion: Config.getConfig(
+                        "basic.notCheckPluginVersion",
+                    ),
+                    useExpoFs: true,
+                },
+            );
+            const displayResult = {
+                ...installResult,
+                pluginUrl: installResult.pluginUrl ?? asset.name ?? asset.uri,
+                sourceType: installResult.sourceType ?? "local-file",
+            };
+            showPluginInstallResults(
+                displayResult.success ? [displayResult] : [],
+                displayResult.success ? [] : [displayResult],
+                t,
+            );
+            if (displayResult.success) {
+                rerender();
+            }
+        } catch (e: any) {
+            Toast.warn(t("toast.installPluginFail", {
+                reason: e?.message ?? "",
+            }));
+        }
+    }
+
     const options: IOption[] = [
         {
             title: t("pluginSetting.pluginItem.options.viewDetails"),
@@ -492,6 +548,12 @@ function _PluginItem(props: IPluginItemProps) {
                 });
             },
             show: true,
+        },
+        {
+            title: t("pluginSetting.pluginItem.options.reselectLocalFile"),
+            icon: "arrow-up-tray",
+            onPress: onReselectLocalPluginFile,
+            show: Boolean(plugin.path && !plugin.instance.srcUrl),
         },
         {
             title: t("pluginSetting.pluginItem.options.updatePlugin"),
