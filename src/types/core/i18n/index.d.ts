@@ -261,6 +261,13 @@ export interface ILanguageData {
     "downloading.filter.error": string; // 失败
     "downloading.sourceFilter.title": string; // 插件来源
     "downloading.sourceFilter.all": string; // 全部来源
+    "downloading.writeStatusFilter.title": string; // 写入结果
+    "downloading.writeStatusFilter.all": string; // 全部写入结果
+    "downloading.writeStatusFilter.metadataSuccess": string; // 元数据已写入
+    "downloading.writeStatusFilter.metadataFailed": string; // 元数据失败
+    "downloading.writeStatusFilter.metadataSkipped": string; // 元数据未写入
+    "downloading.writeStatusFilter.lyricSuccess": string; // 歌词已写入
+    "downloading.writeStatusFilter.lyricFailed": string; // 歌词失败
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源

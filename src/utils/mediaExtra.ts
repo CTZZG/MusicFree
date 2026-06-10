@@ -29,6 +29,13 @@ interface IMediaExtraProperties {
 
 
 const observerCallbacks = new Map<string, Set<(extra: IMediaExtraProperties | null) => void>>();
+const globalObserverCallbacks = new Set<() => void>();
+
+function emitMediaExtraChanged() {
+    for (const callback of globalObserverCallbacks) {
+        callback();
+    }
+}
 
 /**
  * 获取媒体资源的全部附加属性
@@ -88,6 +95,7 @@ function patchMediaExtra(mediaItem: ICommon.IMediaBase, extra: Partial<IMediaExt
             callback(newMeta);
         }
     }
+    emitMediaExtraChanged();
 
     return newMeta;
 }
@@ -112,6 +120,7 @@ function setMediaExtra(mediaItem: ICommon.IMediaBase, extra: IMediaExtraProperti
             callback(extra);
         }
     }
+    emitMediaExtraChanged();
 
     return extra;
 }
@@ -135,6 +144,7 @@ function removeMediaExtra(mediaItem: ICommon.IMediaBase) {
             callback(null);
         }
     }
+    emitMediaExtraChanged();
 
     return true;
 }
@@ -160,6 +170,21 @@ function removeAllMediaExtra(pluginName: string) {
             }
         }
     }
+    emitMediaExtraChanged();
+}
+
+function useMediaExtraVersion() {
+    const [version, setVersion] = useState(0);
+
+    useEffect(() => {
+        const callback = () => setVersion(prev => prev + 1);
+        globalObserverCallbacks.add(callback);
+        return () => {
+            globalObserverCallbacks.delete(callback);
+        };
+    }, []);
+
+    return version;
 }
 
 
@@ -258,4 +283,5 @@ export {
     removeAllMediaExtra,
     useMediaExtra,
     useMediaExtraProperty,
+    useMediaExtraVersion,
 };

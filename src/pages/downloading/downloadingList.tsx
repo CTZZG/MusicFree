@@ -22,9 +22,20 @@ import { showPanel } from "@/components/panels/usePanel";
 import Icon, { IIconName } from "@/components/base/icon";
 import Toast from "@/utils/toast";
 import { showDialog } from "@/components/dialogs/useDialog";
-import { useMediaExtraProperty } from "@/utils/mediaExtra";
+import {
+    getMediaExtraProperty,
+    useMediaExtraProperty,
+    useMediaExtraVersion,
+} from "@/utils/mediaExtra";
 
 type DownloadFilter = "all" | "active" | "paused" | "completed" | "error";
+type DownloadWriteFilter =
+    | "all"
+    | "metadata-success"
+    | "metadata-failed"
+    | "metadata-skipped"
+    | "lyric-success"
+    | "lyric-failed";
 type DownloadWriteStatus = "success" | "failed" | "skipped";
 
 interface DownloadingListItemProps {
@@ -163,6 +174,48 @@ function matchDownloadFilter(status: DownloadStatus, filter: DownloadFilter) {
     return true;
 }
 
+function getDownloadWriteStatus(
+    musicItem: IMusic.IMusicItem,
+    key: "downloadMetadataStatus" | "downloadLyricStatus",
+) {
+    return getMediaExtraProperty(musicItem, key) as DownloadWriteStatus | null;
+}
+
+function matchDownloadWriteFilter(
+    musicItem: IMusic.IMusicItem,
+    status: DownloadStatus,
+    filter: DownloadWriteFilter,
+) {
+    if (filter === "all") {
+        return true;
+    }
+    if (status !== DownloadStatus.Completed) {
+        return false;
+    }
+
+    if (filter === "metadata-success") {
+        return getDownloadWriteStatus(musicItem, "downloadMetadataStatus") ===
+            "success";
+    }
+    if (filter === "metadata-failed") {
+        return getDownloadWriteStatus(musicItem, "downloadMetadataStatus") ===
+            "failed";
+    }
+    if (filter === "metadata-skipped") {
+        return getDownloadWriteStatus(musicItem, "downloadMetadataStatus") ===
+            "skipped";
+    }
+    if (filter === "lyric-success") {
+        return getDownloadWriteStatus(musicItem, "downloadLyricStatus") ===
+            "success";
+    }
+    if (filter === "lyric-failed") {
+        return getDownloadWriteStatus(musicItem, "downloadLyricStatus") ===
+            "failed";
+    }
+    return true;
+}
+
 function padTime(value: number) {
     return `${value}`.padStart(2, "0");
 }
@@ -255,6 +308,8 @@ export default function DownloadingList() {
     const { t } = useI18N();
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
+    const [writeFilter, setWriteFilter] = useState<DownloadWriteFilter>("all");
+    const mediaExtraVersion = useMediaExtraVersion();
     const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
 
     const filterItems: Array<{
@@ -300,6 +355,40 @@ export default function DownloadingList() {
         sourceFilter === "all"
             ? t("downloading.sourceFilter.all")
             : sourceFilter;
+    const writeFilterItems: Array<{
+        key: DownloadWriteFilter;
+        title: string;
+    }> = [
+        {
+            key: "all",
+            title: t("downloading.writeStatusFilter.all"),
+        },
+        {
+            key: "metadata-success",
+            title: t("downloading.writeStatusFilter.metadataSuccess"),
+        },
+        {
+            key: "metadata-failed",
+            title: t("downloading.writeStatusFilter.metadataFailed"),
+        },
+        {
+            key: "metadata-skipped",
+            title: t("downloading.writeStatusFilter.metadataSkipped"),
+        },
+        {
+            key: "lyric-success",
+            title: t("downloading.writeStatusFilter.lyricSuccess"),
+        },
+        {
+            key: "lyric-failed",
+            title: t("downloading.writeStatusFilter.lyricFailed"),
+        },
+    ];
+    const writeFilterTitle =
+        writeFilter === "all"
+            ? t("downloading.writeStatusFilter.title")
+            : writeFilterItems.find(item => item.key === writeFilter)?.title ??
+                t("downloading.writeStatusFilter.title");
     const completedDownloadItems = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
@@ -315,9 +404,18 @@ export default function DownloadingList() {
                 ) {
                     return false;
                 }
+                if (!matchDownloadWriteFilter(musicItem, status, writeFilter)) {
+                    return false;
+                }
                 return true;
             }),
-        [downloadQueue, downloadTasks, sourceFilter],
+        [
+            downloadQueue,
+            downloadTasks,
+            sourceFilter,
+            writeFilter,
+            mediaExtraVersion,
+        ],
     );
     const completedTaskCount = completedDownloadItems.length;
     const failedDownloadItems = useMemo(
@@ -400,6 +498,20 @@ export default function DownloadingList() {
             })),
             onPress(item) {
                 setSourceFilter(item.value);
+            },
+        });
+    }
+
+    function showWriteFilterSelect() {
+        showPanel("SimpleSelect", {
+            header: t("downloading.writeStatusFilter.title"),
+            candidates: writeFilterItems.map(item => ({
+                title: item.title,
+                value: item.key,
+                icon: "save-outline",
+            })),
+            onPress(item) {
+                setWriteFilter(item.value as DownloadWriteFilter);
             },
         });
     }
@@ -490,9 +602,19 @@ export default function DownloadingList() {
                 ) {
                     return false;
                 }
+                if (!matchDownloadWriteFilter(musicItem, status, writeFilter)) {
+                    return false;
+                }
                 return true;
             }),
-        [downloadQueue, downloadTasks, filter, sourceFilter],
+        [
+            downloadQueue,
+            downloadTasks,
+            filter,
+            sourceFilter,
+            writeFilter,
+            mediaExtraVersion,
+        ],
     );
 
 
@@ -515,6 +637,12 @@ export default function DownloadingList() {
                     selected={sourceFilter !== "all"}
                     onPress={showSourceFilterSelect}
                     icon="code-bracket-square"
+                />
+                <FilterChip
+                    title={writeFilterTitle}
+                    selected={writeFilter !== "all"}
+                    onPress={showWriteFilterSelect}
+                    icon="save-outline"
                 />
                 {canUseNativeControls && pausableDownloadItems.length ? (
                     <FilterChip
