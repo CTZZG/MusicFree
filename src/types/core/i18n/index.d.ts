@@ -328,6 +328,9 @@ export interface ILanguageData {
     "pluginSetting.fabOptions.installFromNetwork": string; // 从网络安装
     "pluginSetting.fabOptions.updateAllPlugins": string; // 更新所有插件
     "pluginSetting.fabOptions.updateSubscription": string; // 更新订阅
+    "pluginSetting.subscription.urlType.singlePlugin": string; // 单插件订阅
+    "pluginSetting.subscription.urlType.collection": string; // 订阅集合
+    "pluginSetting.subscription.urlType.invalid": string; // 地址格式无效
     "pluginSetting.failReason": string; // 失败原因
     "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
     "pluginSetting.installResult.success": string; // 安装成功

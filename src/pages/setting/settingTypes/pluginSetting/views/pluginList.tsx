@@ -8,7 +8,6 @@ import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
 import { trace } from "@/utils/log";
 
 import Toast from "@/utils/toast";
-import axios from "axios";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import Config from "@/core/appConfig";
 import Empty from "@/components/base/empty";
@@ -19,44 +18,22 @@ import AppBar from "@/components/base/appBar";
 import Fab from "@/components/base/fab";
 import PluginItem from "../components/pluginItem";
 import { IIconName } from "@/components/base/icon.tsx";
-import {
-    IInstallPluginFailureReason,
-    IInstallPluginResult,
-} from "@/types/core/pluginManager";
+import { IInstallPluginResult } from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
-import type { ILanguageData } from "@/types/core/i18n";
 import ListItem from "@/components/base/listItem";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { buildPluginDiagnosticReport } from "@/core/pluginManager/diagnostics";
+import {
+    formatPluginInstallResult,
+    installPluginFromUrlText,
+    showPluginInstallResults,
+} from "../installPluginUtils";
 
 interface IOption {
     icon: IIconName;
     title: string;
     onPress?: () => void;
-}
-
-const installFailureReasonI18nKeys: Record<
-    IInstallPluginFailureReason,
-    keyof ILanguageData
-> = {
-    "file-read": "pluginSetting.installResult.failureReason.file-read",
-    network: "pluginSetting.installResult.failureReason.network",
-    "not-found": "pluginSetting.installResult.failureReason.not-found",
-    parse: "pluginSetting.installResult.failureReason.parse",
-    "newer-version-installed":
-        "pluginSetting.installResult.failureReason.newer-version-installed",
-    unrecognized: "pluginSetting.installResult.failureReason.unrecognized",
-    unknown: "pluginSetting.installResult.failureReason.unknown",
-};
-
-function getHttpStatus(error: any) {
-    return (
-        error?.response?.status ??
-        error?.response?.statusCode ??
-        error?.status ??
-        error?.statusCode
-    );
 }
 
 export default function PluginList() {
@@ -83,96 +60,6 @@ export default function PluginList() {
     const [loading, setLoading] = useState(false);
 
     const navigator = useNavigation<any>();
-
-    function getInstallResultSourceLabel(result: IInstallPluginResult) {
-        if (result.sourceType === "network") {
-            return t("pluginSetting.pluginItem.source.network");
-        }
-        if (result.sourceType === "local-file") {
-            return t("pluginSetting.pluginItem.source.localFile");
-        }
-        return t("pluginSetting.pluginItem.source.unknown");
-    }
-
-    function getInstallFailureReasonLabel(result: IInstallPluginResult) {
-        const reason = result.failureReason ?? "unknown";
-        return t(
-            installFailureReasonI18nKeys[reason] ??
-                installFailureReasonI18nKeys.unknown,
-        );
-    }
-
-    function formatInstallResult(result: IInstallPluginResult) {
-        const title =
-            result.pluginName ??
-            result.pluginUrl ??
-            t("common.unknownName");
-        const lines = [
-            result.pluginVersion
-                ? t("pluginSetting.pluginItem.versionHint", {
-                    version: result.pluginVersion,
-                })
-                : "",
-            `${t("pluginSetting.installResult.source")}: ${getInstallResultSourceLabel(result)}`,
-            result.pluginUrl ? `${result.pluginUrl}` : "",
-            result.success
-                ? ""
-                : `${t("pluginSetting.installResult.failureType")}: ${getInstallFailureReasonLabel(result)}`,
-            result.success
-                ? ""
-                : `${t("pluginSetting.installResult.retryable")}: ${
-                    result.retryable
-                        ? t("pluginSetting.installResult.retryable.yes")
-                        : t("pluginSetting.installResult.retryable.no")
-                }`,
-            result.success || !result.message
-                ? ""
-                : t("pluginSetting.failReason", {
-                    reason: result.message ?? "",
-                }),
-        ].filter(Boolean);
-
-        return [title, ...lines].join("\n");
-    }
-
-    function showPluginInstallResults(
-        successResults: IInstallPluginResult[],
-        failResults: IInstallPluginResult[],
-    ) {
-        const content = [
-            successResults.length
-                ? `${t("pluginSetting.installResult.success")}\n${successResults.map(formatInstallResult).join("\n-----\n")}`
-                : "",
-            failResults.length
-                ? `${t("pluginSetting.installResult.failed")}\n${failResults.map(formatInstallResult).join("\n-----\n")}`
-                : "",
-        ].filter(Boolean).join("\n\n");
-        const showInstallResultDialog = () => {
-            showDialog("SimpleDialog", {
-                title: t("pluginSetting.installResult.dialogTitle"),
-                content,
-            });
-        };
-
-        if (!failResults.length) {
-            Toast.success(t("toast.installPluginSuccess"), {
-                actionText: t("common.view"),
-                onActionClick: showInstallResultDialog,
-            });
-            return;
-        }
-
-        Toast.warn(
-            successResults.length
-                ? t("toast.partialPluginInstallFailed")
-                : t("toast.allPluginInstallFailed"),
-            {
-                type: "warn",
-                actionText: t("common.view"),
-                onActionClick: showInstallResultDialog,
-            },
-        );
-    }
 
     function onCopyPluginDiagnosticReport() {
         Clipboard.setString(buildPluginDiagnosticReport(plugins));
@@ -254,7 +141,7 @@ export default function PluginList() {
 
             const successResults = installResults.filter(it => it.success);
             const failResults = installResults.filter(it => !it.success);
-            showPluginInstallResults(successResults, failResults);
+            showPluginInstallResults(successResults, failResults, t);
         } catch (e: any) {
             trace("插件安装失败", e?.message);
             Toast.warn(t("toast.installPluginFail", {
@@ -273,7 +160,7 @@ export default function PluginList() {
                 setLoading(true);
                 closePanel();
 
-                const result = await installPluginFromUrl(text.trim());
+                const result = await installPluginFromUrlText(text.trim());
 
                 // 检查是否全部安装成功
                 const successResults: IInstallPluginResult[] = [];
@@ -286,7 +173,7 @@ export default function PluginList() {
                     }
                 }
 
-                showPluginInstallResults(successResults, failResults);
+                showPluginInstallResults(successResults, failResults, t);
 
 
                 setLoading(false);
@@ -298,6 +185,7 @@ export default function PluginList() {
         const urls = Config.getConfig("plugin.subscribeUrl");
         if (!urls) {
             Toast.warn(t("toast.noSubscription"));
+            return;
         }
         setLoading(true);
 
@@ -308,7 +196,9 @@ export default function PluginList() {
             const urlItems = JSON.parse(urls!);
             if (Array.isArray(urlItems)) {
                 for (let i = 0; i < urlItems.length; ++i) {
-                    const result = await installPluginFromUrl(urlItems[i].url);
+                    const result = await installPluginFromUrlText(
+                        urlItems[i].url,
+                    );
                     if (result[0]) {
                         if (result[0].success) {
                             successResults.push(result[0]);
@@ -321,16 +211,16 @@ export default function PluginList() {
                 throw new Error();
             }
 
-            showPluginInstallResults(successResults, failResults);
+            showPluginInstallResults(successResults, failResults, t);
 
         } catch {
             if (urls?.length) {
-                const result = await installPluginFromUrl(urls);
+                const result = await installPluginFromUrlText(urls);
                 if (result[0]) {
                     if (result[0].success) {
-                        showPluginInstallResults([result[0]], []);
+                        showPluginInstallResults([result[0]], [], t);
                     } else {
-                        showPluginInstallResults([], [result[0]]);
+                        showPluginInstallResults([], [result[0]], t);
                     }
                 } else {
                     Toast.warn(t("toast.subscriptionInvalid"));
@@ -351,7 +241,7 @@ export default function PluginList() {
             for (let i = 0; i < plugins.length; ++i) {
                 const srcUrl = plugins[i].instance.srcUrl;
                 if (srcUrl) {
-                    const result = await installPluginFromUrl(srcUrl);
+                    const result = await installPluginFromUrlText(srcUrl);
                     if (result[0]) {
                         if (result[0].success) {
                             successResults.push(result[0]);
@@ -372,7 +262,9 @@ export default function PluginList() {
                         showDialog("SimpleDialog", {
                             title: t("pluginSetting.menu.pluginUpdateFailedDialogTitle"),
                             content: t("pluginSetting.pluginUpdateFailedDialogContent", {
-                                detail: failResults.map(formatInstallResult).join("\n-----\n"),
+                                detail: failResults
+                                    .map(it => formatPluginInstallResult(it, t))
+                                    .join("\n-----\n"),
                             }),
                         });
                     },
@@ -490,55 +382,3 @@ const style = StyleSheet.create({
         height: rpx(200),
     },
 });
-
-
-
-async function installPluginFromUrl(text: string): Promise<IInstallPluginResult[]> {
-    try {
-        let urls: string[] = [];
-        const inputUrl = text.trim();
-        if (text.endsWith(".json")) {
-            const jsonFile = (
-                await axios.get(inputUrl, {
-                    headers: {
-                        "Cache-Control": "no-cache",
-                        Pragma: "no-cache",
-                        Expires: "0",
-                    },
-                })
-            ).data;
-            /**
-             * {
-             *     plugins: [{
-             *          version: xxx,
-             *          url: xxx
-             *      }]
-             * }
-             */
-            urls = (jsonFile?.plugins ?? []).map((_: any) => _.url);
-        } else {
-            urls = [inputUrl];
-        }
-        return await Promise.all(
-            urls.map(url =>
-                PluginManager.installPluginFromUrl(url, {
-                    notCheckVersion: Config.getConfig(
-                        "basic.notCheckPluginVersion",
-                    ),
-                }),
-            ),
-        );
-    } catch (e: any) {
-        const isNotFound = getHttpStatus(e) === 404;
-        return [{
-            success: false,
-            message: isNotFound
-                ? "插件不存在，请联系插件作者"
-                : e?.message,
-            pluginUrl: text,
-            sourceType: "network",
-            failureReason: isNotFound ? "not-found" : "network",
-            retryable: !isNotFound,
-        }];
-    }
-}
