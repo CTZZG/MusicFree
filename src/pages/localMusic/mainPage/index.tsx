@@ -1,4 +1,5 @@
 import React from "react";
+import Clipboard from "@react-native-clipboard/clipboard";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import LocalMusicList from "./localMusicList";
@@ -13,7 +14,7 @@ export default function MainPage() {
     const navigate = useNavigate();
     const { t } = useI18N();
 
-    function showScanResultReport(
+    function buildScanResultReport(
         report: Awaited<ReturnType<typeof LocalMusicSheet.importLocal>>,
     ) {
         const repairedCount =
@@ -23,26 +24,41 @@ export default function MainPage() {
             report.scannedCount - report.addedCount - repairedCount,
         );
 
+        return [
+            t("localMusic.scanResult.title"),
+            `${t("localMusic.scanResult.generatedAt")}: ${new Date().toISOString()}`,
+            t("localMusic.scanResult.scanned", {
+                count: report.scannedCount,
+            }),
+            t("localMusic.scanResult.added", {
+                count: report.addedCount,
+            }),
+            t("localMusic.scanResult.exactMatched", {
+                count: report.exactMatchedCount,
+            }),
+            t("localMusic.scanResult.weakMatched", {
+                count: report.weakMatchedCount,
+            }),
+            t("localMusic.scanResult.unchanged", {
+                count: unchangedCount,
+            }),
+        ].join("\n");
+    }
+
+    function showScanResultReport(
+        report: Awaited<ReturnType<typeof LocalMusicSheet.importLocal>>,
+    ) {
+        const reportText = buildScanResultReport(report);
+
         showDialog("SimpleDialog", {
             title: t("localMusic.scanResult.title"),
-            content: [
-                t("localMusic.scanResult.scanned", {
-                    count: report.scannedCount,
-                }),
-                t("localMusic.scanResult.added", {
-                    count: report.addedCount,
-                }),
-                t("localMusic.scanResult.exactMatched", {
-                    count: report.exactMatchedCount,
-                }),
-                t("localMusic.scanResult.weakMatched", {
-                    count: report.weakMatchedCount,
-                }),
-                t("localMusic.scanResult.unchanged", {
-                    count: unchangedCount,
-                }),
-            ].join("\n"),
-            okText: t("common.done"),
+            content: reportText,
+            okText: t("localMusic.scanResult.copyReport"),
+            cancelText: t("common.done"),
+            onOk() {
+                Clipboard.setString(reportText);
+                Toast.success(t("localMusic.scanResult.copyReportSuccess"));
+            },
         });
     }
 

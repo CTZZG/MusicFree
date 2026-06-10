@@ -136,11 +136,14 @@ export interface ILanguageData {
     "localMusic.beginScan": string; // 开始扫描
     "localMusic.downloadList": string; // 下载列表
     "localMusic.scanResult.title": string; // 本地音乐扫描结果
+    "localMusic.scanResult.generatedAt": string; // 生成时间
     "localMusic.scanResult.scanned": string; // 扫描到歌曲
     "localMusic.scanResult.added": string; // 新增歌曲
     "localMusic.scanResult.exactMatched": string; // 按原始 ID 修复
     "localMusic.scanResult.weakMatched": string; // 按歌曲信息修复
     "localMusic.scanResult.unchanged": string; // 已存在或未变化
+    "localMusic.scanResult.copyReport": string; // 复制报告
+    "localMusic.scanResult.copyReportSuccess": string; // 复制报告成功
     "localMusic.sourceFilter.all": string; // 全部来源
     "localMusic.fileMissing": string; // 文件不存在
     "localMusic.fileMissingTapHint": string; // 文件不存在点击提示
