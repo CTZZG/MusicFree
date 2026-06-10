@@ -838,6 +838,52 @@
 - 下载完成任务显示完成时间；没有时间戳的旧任务仍显示“下载完成”。
 ```
 
+## Prompt 22：WebDAV 自动备份启动触发
+
+状态：已完成。本次抽出 WebDAV 备份核心能力，并增加启动后的每日/每周静默自动备份。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/pages/setting/settingTypes/backupSetting.tsx
+- src/entry/bootstrap/bootstrap.ts
+- src/core/backup.ts
+- src/core/appConfig.ts
+- src/utils/persistStatus.ts
+- src/types/core/config.d.ts
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+在已有 WebDAV 手动备份历史基础上，增加可关闭的自动备份入口。
+
+范围：
+- 抽出可复用 WebDAV 备份模块。
+- 手动 WebDAV 备份继续写 latest 和历史备份，并继续清理旧历史。
+- 设置页增加 WebDAV 自动备份频率：关闭 / 每天 / 每周。
+- App 启动后按频率静默触发一次 WebDAV 备份。
+- 自动备份默认关闭。
+- 自动备份失败只写日志，不弹 toast、不阻断启动。
+- 补齐中/英/繁体文案、i18n 类型、配置类型和持久化状态类型。
+
+不要做：
+- 不实现后台常驻定时任务。
+- 不新增 Wi-Fi 条件。
+- 不新增远端备份管理页。
+- 不改变手动备份和恢复入口的交互。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- WebDAV 手动备份/恢复入口仍可使用。
+- 自动备份关闭时启动不触发。
+- 自动备份设置为每天/每周时，到期后启动会写入 latest 和历史备份。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 21。下一步可以继续完善 WebDAV 自动备份设置，或推进下载历史持久化/下载中心管理能力。
+当前已经完成 Prompt 01 到 Prompt 22。下一步可以推进下载历史持久化/下载中心管理能力，或继续完善 WebDAV 自动备份的网络条件与结果展示。

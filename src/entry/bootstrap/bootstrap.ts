@@ -15,6 +15,7 @@ import downloadNotificationManager from "@/core/downloadNotificationManager";
 import PluginManager from "@/core/pluginManager";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
+import { maybeRunAutoWebdavBackup } from "@/core/webdavBackup";
 import NativeUtils from "@/native/utils";
 import { checkAndCreateDir } from "@/utils/fileUtils";
 import { errorLog, trace } from "@/utils/log";
@@ -255,6 +256,8 @@ async function extraMakeup() {
             }
         }
     } catch { }
+
+    void maybeRunAutoWebdavBackup();
 
     function getComparableMediaUrl(url: string) {
         return url.split(/[?#]/)[0].toLowerCase();

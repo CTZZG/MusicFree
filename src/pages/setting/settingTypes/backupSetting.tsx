@@ -16,75 +16,22 @@ import axios from "axios";
 import { ResumeMode } from "@/constants/commonConst.ts";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { useI18N } from "@/core/i18n";
+import {
+    backupToWebdav,
+    formatBackupTimestamp,
+    getWebdavBackupCandidates,
+    readWebdavBackup,
+    type IWebdavAutoBackupInterval,
+} from "@/core/webdavBackup";
 import delay from "@/utils/delay";
 import { checkAndCreateDir, writeInChunks } from "@/utils/fileUtils.ts";
 import { errorLog } from "@/utils/log.ts";
 import { getDocumentAsync } from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { DocumentDirectoryPath } from "react-native-fs";
-import { AuthType, createClient } from "webdav";
 import Clipboard from "@react-native-clipboard/clipboard";
 
 const preRestoreBackupDir = `${DocumentDirectoryPath}/MusicFree`;
-const webdavRootPath = "/MusicFree";
-const webdavLatestBackupPath = `${webdavRootPath}/MusicFreeBackup.json`;
-const webdavHistoryDir = `${webdavRootPath}/Backups`;
-const webdavHistoryKeepCount = 10;
-
-interface IWebdavBackupFile {
-    basename?: string;
-    filename?: string;
-    type?: string;
-}
-
-function formatBackupTimestamp(date = new Date()) {
-    return date.toISOString().replace(/[:.]/g, "-");
-}
-
-async function ensureWebdavDirectory(client: ReturnType<typeof createClient>, path: string) {
-    if (!(await client.exists(path))) {
-        await client.createDirectory(path);
-    }
-}
-
-function getWebdavBackupFileName(item: IWebdavBackupFile) {
-    return item.basename ?? item.filename?.split("/").pop() ?? "";
-}
-
-function isWebdavHistoryBackupFile(item: IWebdavBackupFile) {
-    return item.type !== "directory" &&
-        !!item.filename &&
-        getWebdavBackupFileName(item).startsWith("MusicFreeBackup-");
-}
-
-async function getWebdavHistoryBackups(client: ReturnType<typeof createClient>) {
-    if (!(await client.exists(webdavHistoryDir))) {
-        return [];
-    }
-    const contents = await client.getDirectoryContents(webdavHistoryDir) as IWebdavBackupFile[];
-    return contents
-        .filter(isWebdavHistoryBackupFile)
-        .sort((a, b) =>
-            getWebdavBackupFileName(b)
-                .localeCompare(getWebdavBackupFileName(a)),
-        );
-}
-
-async function pruneWebdavBackupHistory(client: ReturnType<typeof createClient>) {
-    try {
-        const backupFiles = await getWebdavHistoryBackups(client);
-
-        await Promise.all(
-            backupFiles
-                .slice(webdavHistoryKeepCount)
-                .map(item => item.filename)
-                .filter((filename): filename is string => !!filename)
-                .map(filename => client.deleteFile(filename)),
-        );
-    } catch (e) {
-        errorLog("清理 WebDAV 备份历史失败", e);
-    }
-}
 
 export default function BackupSetting() {
     const { t } = useI18N();
@@ -94,6 +41,8 @@ export default function BackupSetting() {
     const webdavUrl = useAppConfig("webdav.url");
     const webdavUsername = useAppConfig("webdav.username");
     const webdavPassword = useAppConfig("webdav.password");
+    const webdavAutoBackupInterval =
+        useAppConfig("webdav.autoBackupInterval") ?? "off";
 
     function formatResumePreview(preview: IBackupPreview) {
         return [
@@ -332,57 +281,34 @@ export default function BackupSetting() {
     }
 
     async function onResumeFromWebdav() {
-        const url = Config.getConfig("webdav.url");
-        const username = Config.getConfig("webdav.username");
-        const password = Config.getConfig("webdav.password");
-
-        if (!(username && password && url)) {
+        if (!(webdavUsername && webdavPassword && webdavUrl)) {
             Toast.warn(t("toast.resumePreCheckFailed"));
             return;
         }
-        const client = createClient(url, {
-            authType: AuthType.Password,
-            username: username,
-            password: password,
-        });
 
         async function showWebdavResumePreview(path: string) {
             try {
-                const resumeData = await client.getFileContents(
-                    path,
-                    {
-                        format: "text",
-                    },
-                );
-                showResumePreview(resumeData as string);
+                const resumeData = await readWebdavBackup(path);
+                showResumePreview(resumeData);
             } catch (e: any) {
                 Toast.warn(t("toast.resumeFail", { reason: e?.message ?? e }));
             }
         }
 
         try {
-            const candidates: Array<{
-                title: string;
-                icon: "save-outline" | "document-outline";
-                value: string;
-            }> = [];
-
-            if (await client.exists(webdavLatestBackupPath)) {
-                candidates.push({
-                    title: t("backupAndResume.webdavLatestBackup"),
-                    icon: "save-outline",
-                    value: webdavLatestBackupPath,
-                });
-            }
-
-            const historyBackups = await getWebdavHistoryBackups(client);
-            historyBackups.forEach(item => {
-                candidates.push({
-                    title: getWebdavBackupFileName(item),
-                    icon: "document-outline",
-                    value: item.filename as string,
-                });
-            });
+            const candidates = (await getWebdavBackupCandidates()).map(
+                item => ({
+                    title:
+                        item.type === "latest"
+                            ? t("backupAndResume.webdavLatestBackup")
+                            : item.name,
+                    icon:
+                        item.type === "latest"
+                            ? "save-outline" as const
+                            : "document-outline" as const,
+                    value: item.path,
+                }),
+            );
 
             if (!candidates.length) {
                 Toast.warn(t("toast.backupFileNotFound"));
@@ -407,45 +333,43 @@ export default function BackupSetting() {
     }
 
     async function onBackupToWebdav() {
-        const username = Config.getConfig("webdav.username");
-        const password = Config.getConfig("webdav.password");
-        const url = Config.getConfig("webdav.url");
-        if (!(username && password && url)) {
+        if (!(webdavUsername && webdavPassword && webdavUrl)) {
             Toast.warn(t("toast.resumePreCheckFailed"));
             return;
         }
+
         try {
-            const client = createClient(url, {
-                authType: AuthType.Password,
-                username: username,
-                password: password,
-            });
-
-            const raw = Backup.backup();
-            await ensureWebdavDirectory(client, webdavRootPath);
-            await ensureWebdavDirectory(client, webdavHistoryDir);
-
-            const historyBackupPath =
-                `${webdavHistoryDir}/MusicFreeBackup-${formatBackupTimestamp()}.json`;
-            await client.putFileContents(
-                historyBackupPath,
-                raw,
-                {
-                    overwrite: false,
-                },
-            );
-            await client.putFileContents(
-                webdavLatestBackupPath,
-                raw,
-                {
-                    overwrite: true,
-                },
-            );
-            await pruneWebdavBackupHistory(client);
+            await backupToWebdav();
             Toast.success(t("toast.backupSuccess"));
         } catch (e: any) {
             Toast.warn(t("toast.backupFail", { reason: e?.message ?? e }));
         }
+    }
+
+    const getWebdavAutoBackupLabel = (
+        interval: IWebdavAutoBackupInterval,
+    ) => t((`backupAndResume.webdavAutoBackup.${interval}`) as any);
+
+    function onSetWebdavAutoBackupInterval() {
+        const candidates: IWebdavAutoBackupInterval[] = [
+            "off",
+            "daily",
+            "weekly",
+        ];
+        showDialog("RadioDialog", {
+            title: t("backupAndResume.webdavAutoBackup"),
+            content: candidates.map(interval => ({
+                label: getWebdavAutoBackupLabel(interval),
+                value: interval,
+            })),
+            defaultSelected: webdavAutoBackupInterval,
+            onOk(value) {
+                Config.setConfig(
+                    "webdav.autoBackupInterval",
+                    value as IWebdavAutoBackupInterval,
+                );
+            },
+        });
     }
 
     return (
@@ -534,6 +458,16 @@ export default function BackupSetting() {
                     });
                 }}>
                 <ListItem.Content title={t("backupAndResume.webdavSettings")} />
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                onPress={onSetWebdavAutoBackupInterval}>
+                <ListItem.Content
+                    title={t("backupAndResume.webdavAutoBackup")}
+                />
+                <ListItem.ListItemText>
+                    {getWebdavAutoBackupLabel(webdavAutoBackupInterval)}
+                </ListItem.ListItemText>
             </ListItem>
             <ListItem withHorizontalPadding onPress={onBackupToWebdav}>
                 <ListItem.Content title={t("backupAndResume.backupToWebdav")} />

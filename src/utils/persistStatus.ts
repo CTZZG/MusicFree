@@ -32,6 +32,10 @@ interface IPersistStatus {
     "app.language": string;
     /** 上次更新插件的时间 */
     "app.pluginUpdateTime": number;
+    /** 上次尝试 WebDAV 自动备份的时间 */
+    "backup.webdavAutoBackupLastAttemptAt": number;
+    /** 上次 WebDAV 自动备份成功的时间 */
+    "backup.webdavAutoBackupLastSuccessAt": number;
     /** 缓存的定时关闭自定义时间（分钟） */
     "app.scheduleCloseTime": number;
     /** 歌词-是否启用翻译 */

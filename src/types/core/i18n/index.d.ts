@@ -411,6 +411,10 @@ export interface ILanguageData {
     "backupAndResume.resumeFromWebdav": string; // 从WebDAV恢复
     "backupAndResume.selectWebdavBackup": string; // 选择 WebDAV 备份
     "backupAndResume.webdavLatestBackup": string; // 最新备份
+    "backupAndResume.webdavAutoBackup": string; // WebDAV自动备份
+    "backupAndResume.webdavAutoBackup.off": string; // 关闭
+    "backupAndResume.webdavAutoBackup.daily": string; // 每天
+    "backupAndResume.webdavAutoBackup.weekly": string; // 每周
     "backupAndResume.resumePreviewTitle": string; // 恢复前预览
     "backupAndResume.resumeReportTitle": string; // 恢复结果
     "backupAndResume.copyResumeReport": string; // 复制恢复报告
