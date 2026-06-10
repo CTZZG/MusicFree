@@ -21,6 +21,7 @@ import {
     getPluginCapabilityLabels,
     getPluginSourceInfo,
 } from "../capabilityUtils";
+import { buildPluginHealthCheckReport } from "../healthCheckUtils";
 
 interface IPluginItemProps {
     plugin: Plugin;
@@ -207,6 +208,34 @@ function _PluginItem(props: IPluginItemProps) {
         });
     }
 
+    function onHealthCheck() {
+        const diagnostics = getPluginDiagnosticEvents(
+            plugin.hash,
+            plugin.name,
+            3,
+        );
+        const report = buildPluginHealthCheckReport({
+            plugin,
+            enabled,
+            sourceLabel: sourceInfo.label,
+            sourceKnown: !!(plugin.instance.srcUrl || plugin.path),
+            capabilityLabels,
+            userVariables: pluginManager.getUserVariables(plugin),
+            diagnostics,
+            t,
+        });
+
+        showDialog("SimpleDialog", {
+            title: report.title,
+            content: report.content,
+            okText: t("pluginSetting.healthCheck.copyReport"),
+            onOk() {
+                Clipboard.setString(report.reportText);
+                Toast.success(t("toast.copiedToClipboard"));
+            },
+        });
+    }
+
     const options: IOption[] = [
         {
             title: t("pluginSetting.pluginItem.options.viewDetails"),
@@ -255,6 +284,12 @@ function _PluginItem(props: IPluginItemProps) {
                         .join("\n"),
                 });
             },
+            show: true,
+        },
+        {
+            title: t("pluginSetting.pluginItem.options.healthCheck"),
+            icon: "shield-keyhole-outline",
+            onPress: onHealthCheck,
             show: true,
         },
         {

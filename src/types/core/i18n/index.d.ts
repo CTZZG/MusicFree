@@ -335,6 +335,7 @@ export interface ILanguageData {
     // 插件设置相关
     "pluginSetting.pluginItem.options.updatePlugin": string; // 更新插件
     "pluginSetting.pluginItem.options.viewDetails": string; // 详情
+    "pluginSetting.pluginItem.options.healthCheck": string; // 健康检查
     "pluginSetting.pluginItem.options.sharePlugin": string; // 分享插件
     "pluginSetting.pluginItem.options.testSearch": string; // 测试搜索
     "pluginSetting.pluginItem.options.testSearchPlaceHolder": string; // 测试搜索关键词
@@ -422,6 +423,28 @@ export interface ILanguageData {
     "pluginSetting.capabilityMatrix.supportedCount": string; // 插件能力矩阵支持数列
     "pluginSetting.capabilityMatrix.enabled": string; // 已启用
     "pluginSetting.capabilityMatrix.disabled": string; // 已禁用
+    "pluginSetting.healthCheck.title": string; // 插件健康检查标题
+    "pluginSetting.healthCheck.copyReport": string; // 复制健康检查报告
+    "pluginSetting.healthCheck.generatedAt": string; // 健康检查生成时间
+    "pluginSetting.healthCheck.status": string; // 健康检查状态
+    "pluginSetting.healthCheck.enabled": string; // 健康检查已启用
+    "pluginSetting.healthCheck.disabled": string; // 健康检查已禁用
+    "pluginSetting.healthCheck.source": string; // 健康检查来源
+    "pluginSetting.healthCheck.capabilities": string; // 健康检查能力
+    "pluginSetting.healthCheck.noCapabilities": string; // 健康检查无能力
+    "pluginSetting.healthCheck.userVariables": string; // 健康检查用户变量
+    "pluginSetting.healthCheck.userVariablesSummary": string; // 健康检查用户变量摘要
+    "pluginSetting.healthCheck.userVariablesNone": string; // 健康检查无用户变量
+    "pluginSetting.healthCheck.userVariablesMissing": string; // 健康检查未配置用户变量
+    "pluginSetting.healthCheck.recentDiagnostics": string; // 健康检查最近诊断
+    "pluginSetting.healthCheck.noRecentDiagnostics": string; // 健康检查无最近诊断
+    "pluginSetting.healthCheck.attention": string; // 健康检查提醒
+    "pluginSetting.healthCheck.attentionNone": string; // 健康检查无提醒
+    "pluginSetting.healthCheck.attentionDisabled": string; // 健康检查插件禁用提醒
+    "pluginSetting.healthCheck.attentionUnknownSource": string; // 健康检查未知来源提醒
+    "pluginSetting.healthCheck.attentionNoCapabilities": string; // 健康检查无能力提醒
+    "pluginSetting.healthCheck.attentionMissingVariables": string; // 健康检查用户变量未配置提醒
+    "pluginSetting.healthCheck.attentionRecentDiagnostics": string; // 健康检查最近诊断提醒
     "pluginSetting.testSearch.loading": string; // 测试搜索加载文案
     "pluginSetting.testSearch.selectType": string; // 选择测试搜索类型
     "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题
