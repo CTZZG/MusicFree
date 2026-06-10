@@ -426,6 +426,7 @@ export interface ILanguageData {
     "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题
     "pluginSetting.testSearch.resultSummary": string; // 测试搜索结果摘要
     "pluginSetting.testSearch.noResults": string; // 测试搜索无结果
+    "pluginSetting.testSearch.copyResult": string; // 复制测试搜索结果
     "pluginSetting.testSearch.isEnd.yes": string; // 测试搜索已到末页
     "pluginSetting.testSearch.isEnd.no": string; // 测试搜索未到末页
     "pluginSetting.testSearch.emptyKeyword": string; // 测试搜索空关键词

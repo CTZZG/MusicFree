@@ -74,23 +74,31 @@ function _PluginItem(props: IPluginItemProps) {
         const resultLines = result.data?.slice(0, 5).map((item, index) =>
             `${index + 1}. ${formatTestSearchResultItem(item)}`,
         ) ?? [];
-        showDialog("SimpleDialog", {
-            title: t("pluginSetting.testSearch.resultTitle", {
-                name: plugin.name,
+        const title = t("pluginSetting.testSearch.resultTitle", {
+            name: plugin.name,
+        });
+        const content = [
+            t("pluginSetting.testSearch.resultSummary", {
+                keyword,
+                type,
+                count: result.data?.length ?? 0,
+                isEnd: result.isEnd
+                    ? t("pluginSetting.testSearch.isEnd.yes")
+                    : t("pluginSetting.testSearch.isEnd.no"),
             }),
-            content: [
-                t("pluginSetting.testSearch.resultSummary", {
-                    keyword,
-                    type,
-                    count: result.data?.length ?? 0,
-                    isEnd: result.isEnd
-                        ? t("pluginSetting.testSearch.isEnd.yes")
-                        : t("pluginSetting.testSearch.isEnd.no"),
-                }),
-                resultLines.length
-                    ? resultLines.join("\n")
-                    : t("pluginSetting.testSearch.noResults"),
-            ].join("\n\n"),
+            resultLines.length
+                ? resultLines.join("\n")
+                : t("pluginSetting.testSearch.noResults"),
+        ].join("\n\n");
+        const reportText = [title, "", content].join("\n");
+        showDialog("SimpleDialog", {
+            title,
+            content,
+            okText: t("pluginSetting.testSearch.copyResult"),
+            onOk() {
+                Clipboard.setString(reportText);
+                Toast.success(t("toast.copiedToClipboard"));
+            },
         });
     }
 

@@ -378,6 +378,7 @@
     "pluginSetting.testSearch.resultTitle": "{name} 搜尋測試",
     "pluginSetting.testSearch.resultSummary": "關鍵字: {keyword}\n類型: {type}\n結果數: {count}\n已到末頁: {isEnd}",
     "pluginSetting.testSearch.noResults": "沒有返回結果",
+    "pluginSetting.testSearch.copyResult": "複製結果",
     "pluginSetting.testSearch.isEnd.yes": "是",
     "pluginSetting.testSearch.isEnd.no": "否",
     "pluginSetting.testSearch.emptyKeyword": "請輸入測試關鍵字",

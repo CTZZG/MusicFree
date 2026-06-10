@@ -378,6 +378,7 @@
     "pluginSetting.testSearch.resultTitle": "{name} Search Test",
     "pluginSetting.testSearch.resultSummary": "Keyword: {keyword}\nType: {type}\nResults: {count}\nEnd reached: {isEnd}",
     "pluginSetting.testSearch.noResults": "No results returned",
+    "pluginSetting.testSearch.copyResult": "Copy Result",
     "pluginSetting.testSearch.isEnd.yes": "Yes",
     "pluginSetting.testSearch.isEnd.no": "No",
     "pluginSetting.testSearch.emptyKeyword": "Enter a test keyword",
