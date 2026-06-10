@@ -91,6 +91,19 @@ function matchFilter(event: PluginDiagnosticEvent, filter: DiagnosticFilter) {
     return !!config?.methods?.includes(event.method);
 }
 
+function matchKeyword(event: PluginDiagnosticEvent, keyword: string) {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (!normalizedKeyword) {
+        return true;
+    }
+    return [
+        event.pluginName,
+        event.method,
+        event.message,
+        event.estimatedLocation ?? "",
+    ].some(value => value.toLowerCase().includes(normalizedKeyword));
+}
+
 function formatDiagnosticTime(timestamp: number) {
     const date = new Date(timestamp);
     return [
@@ -106,6 +119,7 @@ export default function PluginDiagnostics() {
     const [events, setEvents] = useState(() => getAllPluginDiagnosticEvents());
     const [filter, setFilter] = useState<DiagnosticFilter>("all");
     const [pluginFilter, setPluginFilter] = useState("all");
+    const [keywordFilter, setKeywordFilter] = useState("");
 
     const filteredEvents = useMemo(
         () =>
@@ -113,12 +127,15 @@ export default function PluginDiagnostics() {
                 if (!matchFilter(event, filter)) {
                     return false;
                 }
+                if (!matchKeyword(event, keywordFilter)) {
+                    return false;
+                }
                 return (
                     pluginFilter === "all" ||
                     event.pluginName === pluginFilter
                 );
             }),
-        [events, filter, pluginFilter],
+        [events, filter, pluginFilter, keywordFilter],
     );
     const pluginFilterItems = useMemo(
         () => [
@@ -137,6 +154,9 @@ export default function PluginDiagnostics() {
         pluginFilter === "all"
             ? t("pluginSetting.diagnostics.pluginFilter.all")
             : pluginFilter;
+    const keywordFilterTitle = keywordFilter.trim()
+        ? `${t("pluginSetting.diagnostics.keywordFilter.title")}: ${keywordFilter.trim()}`
+        : t("pluginSetting.diagnostics.keywordFilter.title");
 
     useEffect(() => {
         if (!pluginFilterItems.includes(pluginFilter)) {
@@ -169,6 +189,20 @@ export default function PluginDiagnostics() {
             })),
             onPress(item) {
                 setPluginFilter(item.value);
+            },
+        });
+    }
+
+    function showKeywordFilterInput() {
+        showPanel("SimpleInput", {
+            title: t("pluginSetting.diagnostics.keywordFilter.title"),
+            placeholder: t(
+                "pluginSetting.diagnostics.keywordFilter.placeholder",
+            ),
+            maxLength: 80,
+            async onOk(text, closePanel) {
+                setKeywordFilter(text.trim());
+                closePanel();
             },
         });
     }
@@ -214,6 +248,12 @@ export default function PluginDiagnostics() {
                         title={pluginFilterTitle}
                         selected={pluginFilter !== "all"}
                         onPress={showPluginFilterSelect}
+                    />
+                    <FilterChip
+                        icon="magnifying-glass"
+                        title={keywordFilterTitle}
+                        selected={Boolean(keywordFilter.trim())}
+                        onPress={showKeywordFilterInput}
                     />
                 </ScrollView>
                 <FlatList

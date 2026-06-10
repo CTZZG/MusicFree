@@ -352,6 +352,8 @@ export interface ILanguageData {
     "pluginSetting.diagnostics.filter.other": string; // 其他诊断
     "pluginSetting.diagnostics.pluginFilter.title": string; // 插件筛选标题
     "pluginSetting.diagnostics.pluginFilter.all": string; // 全部插件筛选
+    "pluginSetting.diagnostics.keywordFilter.title": string; // 诊断关键字筛选标题
+    "pluginSetting.diagnostics.keywordFilter.placeholder": string; // 诊断关键字筛选占位文案
     "pluginSetting.failReason": string; // 失败原因
     "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
     "pluginSetting.installResult.success": string; // 安装成功
