@@ -407,6 +407,9 @@ export interface ILanguageData {
     "pluginSetting.diagnostics.clearSuccess": string; // 清理诊断成功
     "pluginSetting.diagnostics.activeFilters": string; // 当前诊断筛选摘要
     "pluginSetting.diagnostics.copyFilteredReportSuccess": string; // 复制当前筛选诊断报告成功
+    "pluginSetting.diagnostics.exportReportAction": string; // 导出诊断报告到此处
+    "pluginSetting.diagnostics.exportReportSuccess": string; // 导出诊断报告成功
+    "pluginSetting.diagnostics.exportReportFailed": string; // 导出诊断报告失败
     "pluginSetting.failReason": string; // 失败原因
     "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
     "pluginSetting.installResult.success": string; // 安装成功
