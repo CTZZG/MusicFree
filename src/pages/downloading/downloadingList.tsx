@@ -4,7 +4,11 @@ import Clipboard from "@react-native-clipboard/clipboard";
 import { writeFile } from "react-native-fs";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
-import { sizeFormatter } from "@/utils/fileUtils";
+import {
+    getDirectory,
+    removeFileScheme,
+    sizeFormatter,
+} from "@/utils/fileUtils";
 import downloader, {
     DownloadFailReason,
     DownloadStatus,
@@ -17,7 +21,7 @@ import { useI18N } from "@/core/i18n";
 import ThemeText from "@/components/base/themeText";
 import useColors from "@/hooks/useColors";
 import Color from "color";
-import { getMediaUniqueKey } from "@/utils/mediaUtils";
+import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
 import ListEmpty from "@/components/base/listEmpty";
 import { RequestStateCode } from "@/constants/commonConst";
 import { showPanel } from "@/components/panels/usePanel";
@@ -105,6 +109,22 @@ function joinFolderPath(folder: string, filename: string) {
     return `${folder.replace(/[\\/]+$/, "")}/${filename}`;
 }
 
+function getCompletedDownloadLocalPath(musicItem: IMusic.IMusicItem) {
+    const localPath = getLocalPath(musicItem);
+    if (!localPath) {
+        return null;
+    }
+    return removeFileScheme(localPath) || null;
+}
+
+function getCompletedDownloadFolderPath(filePath: string | null) {
+    if (!filePath) {
+        return null;
+    }
+    const directory = getDirectory(filePath);
+    return directory && directory !== filePath ? directory : null;
+}
+
 function getCompletedDownloadDetailText(
     musicItem: IMusic.IMusicItem,
     taskInfo: DownloadTaskDetailInfo | null | undefined,
@@ -185,6 +205,7 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     const { musicItem } = props;
     const taskInfo = useDownloadTask(musicItem);
     const { t } = useI18N();
+    const colors = useColors();
     const downloadMetadataStatus = useMediaExtraProperty(
         musicItem,
         "downloadMetadataStatus",
@@ -257,10 +278,84 @@ function DownloadingListItem(props: DownloadingListItemProps) {
             downloadLyricStatus,
             t,
         );
+        const filePath = getCompletedDownloadLocalPath(musicItem);
+        const folderPath = getCompletedDownloadFolderPath(filePath);
+
+        function copyDetailValue(value: string, successText: string) {
+            Clipboard.setString(value);
+            Toast.success(successText);
+        }
 
         showDialog("SimpleDialog", {
             title: t("downloading.detail.title"),
-            content: detailText,
+            content: (
+                <View style={style.detailContent}>
+                    <ThemeText
+                        selectable
+                        fontSize="content"
+                        style={style.detailText}>
+                        {detailText}
+                    </ThemeText>
+                    {filePath ? (
+                        <View style={style.detailPathActions}>
+                            {folderPath ? (
+                                <Pressable
+                                    style={[
+                                        style.detailPathAction,
+                                        { backgroundColor: colors.placeholder },
+                                    ]}
+                                    onPress={() =>
+                                        copyDetailValue(
+                                            folderPath,
+                                            t("downloading.detail.copyFolderPathSuccess"),
+                                        )
+                                    }>
+                                    <Icon
+                                        name="folder-outline"
+                                        size={rpx(28)}
+                                        color={colors.text}
+                                    />
+                                    <ThemeText
+                                        numberOfLines={1}
+                                        fontSize="description"
+                                        fontWeight="semibold">
+                                        {t("downloading.detail.copyFolderPath")}
+                                    </ThemeText>
+                                </Pressable>
+                            ) : null}
+                            <Pressable
+                                style={[
+                                    style.detailPathAction,
+                                    { backgroundColor: colors.placeholder },
+                                ]}
+                                onPress={() =>
+                                    copyDetailValue(
+                                        filePath,
+                                        t("downloading.detail.copyFilePathSuccess"),
+                                    )
+                                }>
+                                <Icon
+                                    name="document-outline"
+                                    size={rpx(28)}
+                                    color={colors.text}
+                                />
+                                <ThemeText
+                                    numberOfLines={1}
+                                    fontSize="description"
+                                    fontWeight="semibold">
+                                    {t("downloading.detail.copyFilePath")}
+                                </ThemeText>
+                            </Pressable>
+                        </View>
+                    ) : (
+                        <ThemeText
+                            fontSize="description"
+                            fontColor="textSecondary">
+                            {t("downloading.detail.filePathUnavailable")}
+                        </ThemeText>
+                    )}
+                </View>
+            ),
             okText: t("downloading.detail.copy"),
             cancelText: t("downloading.detail.close"),
             onOk() {
@@ -1159,6 +1254,27 @@ const style = StyleSheet.create({
     writeSummary: {
         paddingHorizontal: rpx(24),
         paddingTop: rpx(16),
+    },
+    detailContent: {
+        gap: rpx(20),
+    },
+    detailText: {
+        lineHeight: rpx(40),
+    },
+    detailPathActions: {
+        flexDirection: "row",
+        gap: rpx(16),
+        flexWrap: "wrap",
+    },
+    detailPathAction: {
+        minWidth: rpx(208),
+        height: rpx(64),
+        borderRadius: rpx(8),
+        paddingHorizontal: rpx(18),
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: rpx(8),
     },
     filterChip: {
         height: rpx(56),

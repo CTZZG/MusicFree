@@ -287,6 +287,11 @@ export interface ILanguageData {
     "downloading.detail.lyricSkipped": string; // 未写入
     "downloading.detail.copy": string; // 复制详情
     "downloading.detail.close": string; // 关闭
+    "downloading.detail.copyFolderPath": string; // 复制文件夹路径
+    "downloading.detail.copyFilePath": string; // 复制完整位置
+    "downloading.detail.copyFolderPathSuccess": string; // 复制文件夹路径成功
+    "downloading.detail.copyFilePathSuccess": string; // 复制文件位置成功
+    "downloading.detail.filePathUnavailable": string; // 文件位置不可用
     "downloading.copyCompletedRecords": string; // 复制记录
     "downloading.copyCompletedRecordsSuccess": string; // 复制完成记录成功
     "downloading.exportCompletedRecords": string; // 导出记录
