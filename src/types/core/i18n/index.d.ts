@@ -285,6 +285,8 @@ export interface ILanguageData {
     "downloading.detail.lyricStatus": string; // 歌词文件
     "downloading.detail.pendingWriteStatus": string; // 等待写入结果
     "downloading.detail.lyricSkipped": string; // 未写入
+    "downloading.detail.copy": string; // 复制详情
+    "downloading.detail.close": string; // 关闭
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源

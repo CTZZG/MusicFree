@@ -241,6 +241,8 @@
     "downloading.detail.lyricStatus": "Lyric File",
     "downloading.detail.pendingWriteStatus": "Waiting for write result",
     "downloading.detail.lyricSkipped": "Not written",
+    "downloading.detail.copy": "Copy Details",
+    "downloading.detail.close": "Close",
     "downloading.downloadFailReason.noWritePermission": "No write permission",
     "downloading.downloadFailReason.failToFetchSource": "Failed to fetch music source",
     "downloading.downloadFailReason.encryptedMediaUnsupported": "Encrypted source downloads are not supported yet",

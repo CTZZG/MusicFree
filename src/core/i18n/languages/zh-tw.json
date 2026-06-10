@@ -241,6 +241,8 @@
     "downloading.detail.lyricStatus": "歌詞文件",
     "downloading.detail.pendingWriteStatus": "等待寫入結果",
     "downloading.detail.lyricSkipped": "未寫入",
+    "downloading.detail.copy": "複製詳情",
+    "downloading.detail.close": "關閉",
     "downloading.downloadFailReason.noWritePermission": "沒有寫入文件的權限",
     "downloading.downloadFailReason.failToFetchSource": "獲取音樂源失敗",
     "downloading.downloadFailReason.encryptedMediaUnsupported": "暫不支援加密音源下載",

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import Clipboard from "@react-native-clipboard/clipboard";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
 import { sizeFormatter } from "@/utils/fileUtils";
@@ -112,32 +113,43 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     const canRetry = status === DownloadStatus.Error;
     const canRemove = status !== DownloadStatus.Completed;
 
+    function getCompletedDownloadDetailText() {
+        return [
+            `${t("downloading.detail.song")}: ${musicItem.title || t("common.unknownName")}`,
+            `${t("downloading.detail.artist")}: ${musicItem.artist || t("common.unknownName")}`,
+            `${t("downloading.detail.source")}: ${musicItem.platform || "-"}`,
+            `${t("downloading.detail.completedAt")}: ${
+                taskInfo?.completedAt
+                    ? formatDownloadCompletedAt(taskInfo.completedAt)
+                    : "-"
+            }`,
+            `${t("downloading.detail.fileName")}: ${taskInfo?.filename || "-"}`,
+            `${t("downloading.detail.metadataStatus")}: ${getDownloadDetailMetadataStatusText(
+                downloadMetadataStatus,
+                t,
+            )}`,
+            `${t("downloading.detail.lyricStatus")}: ${getDownloadDetailLyricStatusText(
+                downloadLyricStatus,
+                t,
+            )}`,
+        ].join("\n");
+    }
+
     function showCompletedDownloadDetail() {
         if (status !== DownloadStatus.Completed) {
             return;
         }
+        const detailText = getCompletedDownloadDetailText();
 
         showDialog("SimpleDialog", {
             title: t("downloading.detail.title"),
-            content: [
-                `${t("downloading.detail.song")}: ${musicItem.title || t("common.unknownName")}`,
-                `${t("downloading.detail.artist")}: ${musicItem.artist || t("common.unknownName")}`,
-                `${t("downloading.detail.source")}: ${musicItem.platform || "-"}`,
-                `${t("downloading.detail.completedAt")}: ${
-                    taskInfo?.completedAt
-                        ? formatDownloadCompletedAt(taskInfo.completedAt)
-                        : "-"
-                }`,
-                `${t("downloading.detail.fileName")}: ${taskInfo?.filename || "-"}`,
-                `${t("downloading.detail.metadataStatus")}: ${getDownloadDetailMetadataStatusText(
-                    downloadMetadataStatus,
-                    t,
-                )}`,
-                `${t("downloading.detail.lyricStatus")}: ${getDownloadDetailLyricStatusText(
-                    downloadLyricStatus,
-                    t,
-                )}`,
-            ].join("\n"),
+            content: detailText,
+            okText: t("downloading.detail.copy"),
+            cancelText: t("downloading.detail.close"),
+            onOk() {
+                Clipboard.setString(detailText);
+                Toast.success(t("toast.copiedToClipboard"));
+            },
         });
     }
 
