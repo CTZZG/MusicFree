@@ -150,6 +150,20 @@ export interface ILanguageData {
     "localMusic.fileStatusFilter.missing": string; // 文件不存在
     "localMusic.fileStatusFilter.unknown": string; // 状态未知
     "localMusic.fileStatusSummary": string; // 文件状态摘要
+    "localMusic.copyMissingFilesReport": string; // 复制缺失报告
+    "localMusic.copyMissingFilesReportSuccess": string; // 复制缺失报告成功
+    "localMusic.noMissingFiles": string; // 当前范围没有缺失文件
+    "localMusic.report.title": string; // 本地音乐缺失文件报告
+    "localMusic.report.generatedAt": string; // 生成时间
+    "localMusic.report.count": string; // 缺失数量
+    "localMusic.report.filterSource": string; // 来源筛选
+    "localMusic.report.filterArtist": string; // 歌手筛选
+    "localMusic.report.filterAlbum": string; // 专辑筛选
+    "localMusic.report.song": string; // 歌曲
+    "localMusic.report.artist": string; // 歌手
+    "localMusic.report.album": string; // 专辑
+    "localMusic.report.source": string; // 来源
+    "localMusic.report.reason": string; // 原因
     "localMusic.metadataStatus.success": string; // 元数据已写入
     "localMusic.metadataStatus.failed": string; // 元数据失败
     "localMusic.metadataStatus.skipped": string; // 元数据未写入
