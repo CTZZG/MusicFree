@@ -142,8 +142,11 @@ interface RouterParams extends RouterParamsBase {
             | "favorite"
             | "local"
             | "downloaded"
-            | "plugin-source";
+            | "plugin-source"
+            | "artist"
+            | "album";
         platform?: string;
+        value?: string;
     };
     "edit-music-sheet-info": {
         musicSheet: IMusic.IMusicSheetItem;

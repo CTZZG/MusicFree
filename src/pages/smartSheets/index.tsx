@@ -4,6 +4,7 @@ import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useI18N } from "@/core/i18n";
 import {
     SmartSheetType,
+    useSmartSheetFacets,
     useSmartSheetSourcePlatforms,
 } from "@/core/smartMusicSheet";
 import React from "react";
@@ -19,12 +20,15 @@ interface ISmartSheetTemplate {
     title: string;
     icon: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
     platform?: string;
+    value?: string;
 }
 
 export default function SmartSheets() {
     const navigate = useNavigate();
     const { t } = useI18N();
     const sourcePlatforms = useSmartSheetSourcePlatforms();
+    const artistFacets = useSmartSheetFacets("artist");
+    const albumFacets = useSmartSheetFacets("album");
 
     const templates: ISmartSheetTemplate[] = [
         {
@@ -63,6 +67,7 @@ export default function SmartSheets() {
         navigate(ROUTE_PATH.SMART_SHEET_DETAIL, {
             type: item.type,
             platform: item.platform,
+            value: item.value,
         });
     }
 
@@ -81,6 +86,60 @@ export default function SmartSheets() {
                         <ListItem.Content title={item.title} />
                     </ListItem>
                 ))}
+                {artistFacets.length ? (
+                    <>
+                        <ListItemHeader>{t("smartSheet.artists")}</ListItemHeader>
+                        {artistFacets.map(item => (
+                            <ListItem
+                                key={item.value}
+                                withHorizontalPadding
+                                onPress={() =>
+                                    openSmartSheet({
+                                        key: `artist-${item.value}`,
+                                        type: "artist",
+                                        value: item.value,
+                                        title: item.title,
+                                        icon: "user",
+                                    })
+                                }>
+                                <ListItem.ListItemIcon icon="user" />
+                                <ListItem.Content
+                                    title={item.title}
+                                    description={t("home.songCount", {
+                                        count: item.count,
+                                    })}
+                                />
+                            </ListItem>
+                        ))}
+                    </>
+                ) : null}
+                {albumFacets.length ? (
+                    <>
+                        <ListItemHeader>{t("smartSheet.albums")}</ListItemHeader>
+                        {albumFacets.map(item => (
+                            <ListItem
+                                key={item.value}
+                                withHorizontalPadding
+                                onPress={() =>
+                                    openSmartSheet({
+                                        key: `album-${item.value}`,
+                                        type: "album",
+                                        value: item.value,
+                                        title: item.title,
+                                        icon: "album-outline",
+                                    })
+                                }>
+                                <ListItem.ListItemIcon icon="album-outline" />
+                                <ListItem.Content
+                                    title={item.title}
+                                    description={t("home.songCount", {
+                                        count: item.count,
+                                    })}
+                                />
+                            </ListItem>
+                        ))}
+                    </>
+                ) : null}
                 {sourcePlatforms.length ? (
                     <>
                         <ListItemHeader>{t("smartSheet.pluginSources")}</ListItemHeader>

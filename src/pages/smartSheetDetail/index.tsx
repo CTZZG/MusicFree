@@ -13,6 +13,7 @@ function getSmartSheetTitle(
     t: ReturnType<typeof useI18N>["t"],
     type: SmartSheetType,
     platform?: string,
+    value?: string,
 ) {
     if (type === "recent-played") {
         return t("smartSheet.recentPlayed");
@@ -32,24 +33,30 @@ function getSmartSheetTitle(
     if (type === "plugin-source" && platform) {
         return t("smartSheet.pluginSourceTitle", { platform });
     }
+    if (type === "artist" && value) {
+        return t("smartSheet.artistTitle", { artist: value });
+    }
+    if (type === "album" && value) {
+        return t("smartSheet.albumTitle", { album: value });
+    }
     return t("smartSheet.title");
 }
 
 export default function SmartSheetDetail() {
-    const { type, platform } = useParams<"smart-sheet-detail">();
+    const { type, platform, value } = useParams<"smart-sheet-detail">();
     const { t } = useI18N();
-    const musicList = useSmartSheetMusicList(type, platform);
-    const title = getSmartSheetTitle(t, type, platform);
+    const musicList = useSmartSheetMusicList(type, platform, value);
+    const title = getSmartSheetTitle(t, type, platform, value);
 
     const sheetInfo = useMemo(
         () => ({
-            id: getSmartSheetId(type, platform),
+            id: getSmartSheetId(type, platform, value),
             platform: localPluginPlatform,
             title,
             worksNum: musicList.length,
             musicList,
         }),
-        [musicList, platform, title, type],
+        [musicList, platform, title, type, value],
     );
 
     return (

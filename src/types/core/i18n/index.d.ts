@@ -281,6 +281,10 @@ export interface ILanguageData {
     "smartSheet.favorite": string; // 收藏歌曲
     "smartSheet.localMusic": string; // 本地音乐
     "smartSheet.downloaded": string; // 已下载歌曲
+    "smartSheet.artists": string; // 歌手
+    "smartSheet.albums": string; // 专辑
+    "smartSheet.artistTitle": string; // 歌手歌曲
+    "smartSheet.albumTitle": string; // 专辑歌曲
     "smartSheet.pluginSourceTitle": string; // 插件来源歌曲
 
     // 下载相关
