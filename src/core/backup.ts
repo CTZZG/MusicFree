@@ -65,6 +65,7 @@ export interface IBackupResumeSectionReport {
 
 export interface IBackupResumeReport {
     preview: IBackupPreview;
+    resumeMode: ResumeMode;
     musicSheets: IBackupResumeSectionReport;
     localMusicSheet: IBackupResumeSectionReport;
     starredMusicSheets: IBackupResumeSectionReport;
@@ -543,6 +544,7 @@ async function resume(
 
     const report: IBackupResumeReport = {
         preview: backupPreview,
+        resumeMode,
         musicSheets: createSectionReport(
             validMusicSheets.length,
             backupPreview.musicSheetCount - validMusicSheets.length,

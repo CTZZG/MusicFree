@@ -77,8 +77,17 @@ export default function BackupSetting() {
         ].join(" ");
     }
 
+    function getResumeModeTitle(mode?: ResumeMode) {
+        return t(
+            (`backupAndResume.resumeMode.${mode || ResumeMode.Append}`) as any,
+        );
+    }
+
     function formatResumePreview(preview: IBackupPreview) {
         return [
+            `${t("backupAndResume.resumeMode")}: ${getResumeModeTitle(
+                resumeMode as ResumeMode,
+            )}`,
             `${t("backupAndResume.report.musicSheets")}: ${preview.musicSheetCount}`,
             `${t("backupAndResume.report.musicItems")}: ${preview.musicCount}`,
             `${t("backupAndResume.report.localMusic")}: ${preview.localMusicCount}`,
@@ -113,6 +122,9 @@ export default function BackupSetting() {
         ].filter(Boolean);
 
         return [
+            `${t("backupAndResume.resumeMode")}: ${getResumeModeTitle(
+                report.resumeMode,
+            )}`,
             report.preRestoreBackup
                 ? `${t("backupAndResume.report.preRestoreBackup")}: ${
                     report.preRestoreBackup.success
