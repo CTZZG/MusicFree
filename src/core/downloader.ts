@@ -27,6 +27,7 @@ import { nanoid } from "nanoid";
 import path from "path-browserify";
 import { useEffect, useState } from "react";
 import { copyFile, downloadFile, exists, unlink, writeFile } from "react-native-fs";
+import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import Mp3Util, {
     INativeDownloadTaskStatus,
     NativeDownloadEmitter,
@@ -39,6 +40,7 @@ import type {
     IDownloadMetadataConfig,
     IDownloadTaskMetadata,
 } from "@/types/metadata";
+import { safeParse, safeStringify } from "@/utils/jsonUtil";
 
 type IWriteResult = "success" | "failed" | "skipped";
 
@@ -69,6 +71,9 @@ export enum DownloaderEvent {
 
     // 下载完成
     DownloadQueueCompleted = "download-queue-completed",
+
+    // 下载任务列表刷新
+    DownloadTaskListChanged = "download-task-list-changed",
 }
 
 export enum DownloadFailReason {
@@ -82,6 +87,8 @@ export enum DownloadFailReason {
     EncryptedMediaUnsupported = "encrypted-media-unsupported",
     /** 没有文件写入的权限 */
     NoWritePermission = "no-write-permission",
+    /** App 退出或重启导致任务中断 */
+    Interrupted = "interrupted",
     Unknown = "unknown",
 }
 
@@ -110,6 +117,56 @@ interface IDownloadTaskInfo {
 
 const downloadQueueAtom = atom<IMusic.IMusicItem[]>([]);
 const downloadTasks = new Map<string, IDownloadTaskInfo>();
+const downloadTasksStore = getOrCreateMMKV("music.DownloadTasks");
+const downloadQueueStorageKey = "queue";
+const downloadTasksStorageKey = "tasks";
+const maxPersistedDownloadTasks = 200;
+
+function normalizeRestoredDownloadTask(
+    task: Partial<IDownloadTaskInfo> | null,
+) {
+    if (!task?.musicItem?.platform || !task.musicItem.id || !task.filename) {
+        return null;
+    }
+
+    const status = Object.values(DownloadStatus).includes(task.status as any)
+        ? task.status
+        : DownloadStatus.Error;
+    const shouldMarkInterrupted =
+        status === DownloadStatus.Pending ||
+        status === DownloadStatus.Preparing ||
+        status === DownloadStatus.Downloading ||
+        status === DownloadStatus.Paused;
+
+    return {
+        ...task,
+        status: shouldMarkInterrupted ? DownloadStatus.Error : status,
+        jobId: undefined,
+        progressText: shouldMarkInterrupted ? undefined : task.progressText,
+        errorReason: shouldMarkInterrupted
+            ? DownloadFailReason.Interrupted
+            : task.errorReason,
+    } as IDownloadTaskInfo;
+}
+
+function persistDownloadState() {
+    const queue = getDefaultStore().get(downloadQueueAtom);
+    const queueKeys = new Set(queue.map(getMediaUniqueKey));
+    const tasks = Array.from(downloadTasks.values())
+        .filter(task => queueKeys.has(getMediaUniqueKey(task.musicItem)))
+        .slice(-maxPersistedDownloadTasks);
+
+    downloadTasksStore.set(
+        downloadQueueStorageKey,
+        safeStringify(queue.slice(-maxPersistedDownloadTasks)),
+    );
+    downloadTasksStore.set(downloadTasksStorageKey, safeStringify(tasks));
+}
+
+function setDownloadQueue(queue: IMusic.IMusicItem[]) {
+    getDefaultStore().set(downloadQueueAtom, queue);
+    persistDownloadState();
+}
 
 interface IEvents {
     /** 某次下载行为出现报错 */
@@ -127,6 +184,8 @@ interface IEvents {
     [DownloaderEvent.DownloadTaskUpdate]: (task: IDownloadTaskInfo) => void;
     /** 下载队列清空 */
     [DownloaderEvent.DownloadQueueCompleted]: () => void;
+    /** 下载任务列表刷新 */
+    [DownloaderEvent.DownloadTaskListChanged]: () => void;
 }
 
 class Downloader extends EventEmitter<IEvents> implements IInjectable {
@@ -150,6 +209,49 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         this.configService = configService;
         this.pluginManagerService = pluginManager;
         musicMetadataManager.injectPluginManager(pluginManager);
+    }
+
+    setup() {
+        const restoredQueue =
+            safeParse<IMusic.IMusicItem[]>(
+                downloadTasksStore.getString(downloadQueueStorageKey),
+            ) ?? [];
+        const restoredTasks =
+            safeParse<Array<Partial<IDownloadTaskInfo>>>(
+                downloadTasksStore.getString(downloadTasksStorageKey),
+            ) ?? [];
+
+        downloadTasks.clear();
+        restoredTasks
+            .map(normalizeRestoredDownloadTask)
+            .filter((task): task is IDownloadTaskInfo => !!task)
+            .forEach(task => {
+                downloadTasks.set(getMediaUniqueKey(task.musicItem), task);
+            });
+
+        const restoredQueueKeys = new Set<string>();
+        const queue = restoredQueue.filter(musicItem => {
+            const key = getMediaUniqueKey(musicItem);
+            if (!downloadTasks.has(key) || restoredQueueKeys.has(key)) {
+                return false;
+            }
+            restoredQueueKeys.add(key);
+            return true;
+        });
+
+        Array.from(downloadTasks.values()).forEach(task => {
+            const key = getMediaUniqueKey(task.musicItem);
+            if (!restoredQueueKeys.has(key)) {
+                restoredQueueKeys.add(key);
+                queue.push(task.musicItem);
+            }
+        });
+
+        getDefaultStore().set(
+            downloadQueueAtom,
+            queue.slice(-maxPersistedDownloadTasks),
+        );
+        persistDownloadState();
     }
 
     private generateFilename(
@@ -212,12 +314,23 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         musicItem: IMusic.IMusicItem,
         patch: Partial<IDownloadTaskInfo>,
     ) {
+        const key = getMediaUniqueKey(musicItem);
+        const previous = downloadTasks.get(key);
         const newValue = {
-            ...downloadTasks.get(getMediaUniqueKey(musicItem)),
+            ...previous,
             ...patch,
         } as IDownloadTaskInfo;
-        downloadTasks.set(getMediaUniqueKey(musicItem), newValue);
+        downloadTasks.set(key, newValue);
         this.emit(DownloaderEvent.DownloadTaskUpdate, newValue);
+        if (
+            (patch.status !== undefined && patch.status !== previous?.status) ||
+            patch.errorReason !== undefined ||
+            patch.completedAt !== undefined ||
+            patch.filename !== undefined ||
+            patch.quality !== undefined
+        ) {
+            persistDownloadState();
+        }
         return newValue;
     }
 
@@ -732,10 +845,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 await mkdirR(folder);
             }
         } catch (e: any) {
-            this.emit(
-                DownloaderEvent.DownloadTaskError,
-                DownloadFailReason.NoWritePermission,
+            this.markTaskAsError(
                 musicItem,
+                DownloadFailReason.NoWritePermission,
                 e,
             );
             return;
@@ -841,16 +953,6 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         } catch {}
         this.downloadNextPendingTask();
 
-        // 如果任务状态是完成，则从队列中移除
-        const key = getMediaUniqueKey(musicItem);
-        if (downloadTasks.get(key)?.status === DownloadStatus.Completed) {
-            downloadTasks.delete(key);
-            const downloadQueue = getDefaultStore().get(downloadQueueAtom);
-            const newDownloadQueue = downloadQueue.filter(
-                item => !isSameMediaItem(item, musicItem),
-            );
-            getDefaultStore().set(downloadQueueAtom, newDownloadQueue);
-        }
     }
 
     isNativeDownloadControlAvailable() {
@@ -911,8 +1013,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         const quality = task.quality;
         downloadTasks.delete(key);
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
-        getDefaultStore().set(
-            downloadQueueAtom,
+        setDownloadQueue(
             downloadQueue.filter(item => !isSameMediaItem(item, musicItem)),
         );
         this.download(musicItem, quality);
@@ -977,7 +1078,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         // 添加进任务队列
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
         const newDownloadQueue = [...downloadQueue, ...musicItems];
-        getDefaultStore().set(downloadQueueAtom, newDownloadQueue);
+        setDownloadQueue(newDownloadQueue);
 
         this.downloadNextPendingTask();
     }
@@ -1000,7 +1101,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             const newDownloadQueue = downloadQueue.filter(
                 item => !isSameMediaItem(item, musicItem),
             );
-            getDefaultStore().set(downloadQueueAtom, newDownloadQueue);
+            setDownloadQueue(newDownloadQueue);
             return true;
         }
         if (
@@ -1017,11 +1118,33 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             const newDownloadQueue = downloadQueue.filter(
                 item => !isSameMediaItem(item, musicItem),
             );
-            getDefaultStore().set(downloadQueueAtom, newDownloadQueue);
+            setDownloadQueue(newDownloadQueue);
             this.downloadNextPendingTask();
             return true;
         }
         return false;
+    }
+
+    clearCompletedTasks() {
+        const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+        const completedKeys = new Set<string>();
+        downloadTasks.forEach((task, key) => {
+            if (task.status === DownloadStatus.Completed) {
+                completedKeys.add(key);
+            }
+        });
+        if (!completedKeys.size) {
+            return 0;
+        }
+
+        completedKeys.forEach(key => downloadTasks.delete(key));
+        setDownloadQueue(
+            downloadQueue.filter(
+                musicItem => !completedKeys.has(getMediaUniqueKey(musicItem)),
+            ),
+        );
+        this.emit(DownloaderEvent.DownloadTaskListChanged);
+        return completedKeys.size;
     }
 }
 
@@ -1058,10 +1181,12 @@ export function useDownloadTasksSnapshot() {
         };
         downloader.on(DownloaderEvent.DownloadTaskUpdate, update);
         downloader.on(DownloaderEvent.DownloadQueueCompleted, update);
+        downloader.on(DownloaderEvent.DownloadTaskListChanged, update);
 
         return () => {
             downloader.off(DownloaderEvent.DownloadTaskUpdate, update);
             downloader.off(DownloaderEvent.DownloadQueueCompleted, update);
+            downloader.off(DownloaderEvent.DownloadTaskListChanged, update);
         };
     }, []);
 

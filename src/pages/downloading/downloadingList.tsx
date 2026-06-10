@@ -20,6 +20,7 @@ import ListEmpty from "@/components/base/listEmpty";
 import { RequestStateCode } from "@/constants/commonConst";
 import { showPanel } from "@/components/panels/usePanel";
 import Icon, { IIconName } from "@/components/base/icon";
+import Toast from "@/utils/toast";
 
 type DownloadFilter = "all" | "active" | "paused" | "completed" | "error";
 
@@ -44,6 +45,8 @@ function DownloadingListItem(props: DownloadingListItemProps) {
             description = t("downloading.downloadFailReason.failToFetchSource");
         } else if (reason === DownloadFailReason.EncryptedMediaUnsupported) {
             description = t("downloading.downloadFailReason.encryptedMediaUnsupported");
+        } else if (reason === DownloadFailReason.Interrupted) {
+            description = t("downloading.downloadFailReason.interrupted");
         } else {
             description = t("downloading.downloadFailReason.unknown");
         }
@@ -252,6 +255,13 @@ export default function DownloadingList() {
         sourceFilter === "all"
             ? t("downloading.sourceFilter.all")
             : sourceFilter;
+    const completedTaskCount = useMemo(
+        () =>
+            Array.from(downloadTasks.values()).filter(
+                task => task.status === DownloadStatus.Completed,
+            ).length,
+        [downloadTasks],
+    );
 
     useEffect(() => {
         if (!sourceFilters.includes(sourceFilter)) {
@@ -273,6 +283,13 @@ export default function DownloadingList() {
                 setSourceFilter(item.value);
             },
         });
+    }
+
+    function clearCompletedTasks() {
+        const count = downloader.clearCompletedTasks();
+        if (count) {
+            Toast.success(t("downloading.clearCompletedSuccess", { count }));
+        }
     }
 
     const filteredQueue = useMemo(
@@ -316,6 +333,14 @@ export default function DownloadingList() {
                     onPress={showSourceFilterSelect}
                     icon="code-bracket-square"
                 />
+                {completedTaskCount ? (
+                    <FilterChip
+                        title={t("downloading.clearCompleted")}
+                        selected={false}
+                        onPress={clearCompletedTasks}
+                        icon="trash-outline"
+                    />
+                ) : null}
             </ScrollView>
             <FlashList
                 style={style.downloading}

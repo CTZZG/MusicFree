@@ -110,6 +110,8 @@ async function bootstrapImpl() {
     bootstrapMetrics.BatchConfigSetup = bootstrapTimestamp.BatchConfigSetup - bootstrapTimestamp.FolderSetup;
     trace("配置初始化完成");
 
+    downloader.setup();
+    trace("下载历史初始化完成");
 
     // 加载插件
     await PluginManager.setup();
@@ -371,6 +373,9 @@ function bindEvents() {
             ),
             [DownloadFailReason.NoWritePermission]: i18n.t(
                 "downloading.downloadFailReason.noWritePermission",
+            ),
+            [DownloadFailReason.Interrupted]: i18n.t(
+                "downloading.downloadFailReason.interrupted",
             ),
             [DownloadFailReason.Unknown]: i18n.t(
                 "downloading.downloadFailReason.unknown",

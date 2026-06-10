@@ -264,6 +264,7 @@ export interface ILanguageData {
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源
+    "downloading.downloadFailReason.interrupted": string; // 下载失败：应用退出或重启导致中断
     "downloading.downloadFailReason.unknown": string; // 下载失败：未知原因
     "downloading.downloadStatus.completed": string; // 下载完成
     "downloading.downloadStatus.completedAt": string; // 下载完成时间
@@ -271,6 +272,8 @@ export interface ILanguageData {
     "downloading.downloadStatus.pending": string; // 等待中
     "downloading.downloadStatus.paused": string; // 已暂停
     "downloading.downloadStatus.preparing": string; // 准备中
+    "downloading.clearCompleted": string; // 清理已完成
+    "downloading.clearCompletedSuccess": string; // 清理已完成成功
 
     // 艺术家详情相关
     "artistDetail.fansCount": string; // 粉丝数量
