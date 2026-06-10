@@ -56,6 +56,12 @@ export default function BackupSetting() {
     const webdavAutoBackupLastError = PersistStatus.useValue(
         "backup.webdavAutoBackupLastError",
     );
+    const webdavAutoBackupLastSkippedAt = PersistStatus.useValue(
+        "backup.webdavAutoBackupLastSkippedAt",
+    );
+    const webdavAutoBackupLastSkipReason = PersistStatus.useValue(
+        "backup.webdavAutoBackupLastSkipReason",
+    );
 
     function padTime(value: number) {
         return `${value}`.padStart(2, "0");
@@ -403,14 +409,29 @@ export default function BackupSetting() {
         Config.setConfig("webdav.autoBackupWifiOnly", value);
     }
 
+    function getWebdavAutoBackupSkipReasonLabel() {
+        switch (webdavAutoBackupLastSkipReason) {
+            case "wifiOnly":
+                return t(
+                    "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly",
+                );
+            default:
+                return "";
+        }
+    }
+
     function getWebdavAutoBackupStatus() {
+        const lastSuccessAt = webdavAutoBackupLastSuccessAt ?? 0;
+        const lastFailedAt = webdavAutoBackupLastFailedAt ?? 0;
+        const lastSkippedAt = webdavAutoBackupLastSkippedAt ?? 0;
+
         if (
-            webdavAutoBackupLastFailedAt &&
-            (!webdavAutoBackupLastSuccessAt ||
-                webdavAutoBackupLastFailedAt > webdavAutoBackupLastSuccessAt)
+            lastFailedAt &&
+            lastFailedAt >= lastSuccessAt &&
+            lastFailedAt >= lastSkippedAt
         ) {
             const title = t("backupAndResume.webdavAutoBackupStatus.failed", {
-                time: formatLocalTime(webdavAutoBackupLastFailedAt),
+                time: formatLocalTime(lastFailedAt),
             });
             const failureReason = webdavAutoBackupLastError
                 ? t("backupAndResume.webdavAutoBackupStatus.failureReason", {
@@ -424,10 +445,25 @@ export default function BackupSetting() {
             };
         }
 
-        if (webdavAutoBackupLastSuccessAt) {
+        if (lastSkippedAt && lastSkippedAt >= lastSuccessAt) {
+            const title = t("backupAndResume.webdavAutoBackupStatus.skipped", {
+                time: formatLocalTime(lastSkippedAt),
+            });
+            const reason = getWebdavAutoBackupSkipReasonLabel();
+            const skipReason = reason
+                ? t("backupAndResume.webdavAutoBackupStatus.skipReason", {
+                    reason,
+                })
+                : "";
+            return {
+                description: skipReason ? `${title}; ${skipReason}` : title,
+            };
+        }
+
+        if (lastSuccessAt) {
             return {
                 description: t("backupAndResume.webdavAutoBackupStatus.success", {
-                    time: formatLocalTime(webdavAutoBackupLastSuccessAt),
+                    time: formatLocalTime(lastSuccessAt),
                 }),
             };
         }

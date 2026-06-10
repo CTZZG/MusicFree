@@ -40,6 +40,10 @@ interface IPersistStatus {
     "backup.webdavAutoBackupLastFailedAt": number;
     /** 上次 WebDAV 自动备份失败的原因 */
     "backup.webdavAutoBackupLastError": string;
+    /** 上次 WebDAV 自动备份被跳过的时间 */
+    "backup.webdavAutoBackupLastSkippedAt": number;
+    /** 上次 WebDAV 自动备份被跳过的原因 */
+    "backup.webdavAutoBackupLastSkipReason": "wifiOnly";
     /** 缓存的定时关闭自定义时间（分钟） */
     "app.scheduleCloseTime": number;
     /** 歌词-是否启用翻译 */

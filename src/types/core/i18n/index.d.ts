@@ -420,7 +420,10 @@ export interface ILanguageData {
     "backupAndResume.webdavAutoBackupStatus.never": string; // 尚未自动备份
     "backupAndResume.webdavAutoBackupStatus.success": string; // 上次成功
     "backupAndResume.webdavAutoBackupStatus.failed": string; // 上次失败
+    "backupAndResume.webdavAutoBackupStatus.skipped": string; // 上次跳过
     "backupAndResume.webdavAutoBackupStatus.failureReason": string; // 失败原因
+    "backupAndResume.webdavAutoBackupStatus.skipReason": string; // 跳过原因
+    "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly": string; // 当前不是 Wi-Fi 网络
     "backupAndResume.resumePreviewTitle": string; // 恢复前预览
     "backupAndResume.resumeReportTitle": string; // 恢复结果
     "backupAndResume.copyResumeReport": string; // 复制恢复报告

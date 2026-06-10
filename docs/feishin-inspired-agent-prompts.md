@@ -954,6 +954,35 @@
 - 手动 WebDAV 备份/恢复入口仍可使用。
 ```
 
+## Prompt 25：WebDAV 自动备份跳过状态
+
+状态：已完成。本次在 WebDAV 自动备份状态中展示“因非 Wi-Fi 被跳过”的最近记录，同时保持跳过不计入自动备份尝试时间。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+目标：
+- 用户在移动网络下启动 App 时，如果 WebDAV 自动备份因“仅 Wi-Fi”规则被跳过，设置页能看见最近跳过时间和原因。
+- 跳过状态不能影响下一次真正自动备份的到期判断。
+- 手动 WebDAV 备份/恢复不受影响。
+
+实现要求：
+- WebDAV 自动备份检查返回 run / idle / skip 三种结果。
+- 只有自动备份已到期、WebDAV 已配置、且仅 Wi-Fi 开启但当前不是 Wi-Fi 时，记录跳过状态。
+- 记录 backup.webdavAutoBackupLastSkippedAt 和 backup.webdavAutoBackupLastSkipReason。
+- 跳过时不写 backup.webdavAutoBackupLastAttemptAt。
+- 设置页“自动备份状态”按最近事件展示成功 / 失败 / 跳过。
+- 新增三语 i18n 和 i18n 类型。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 到期且移动网络下被跳过时，状态显示“上次跳过”和非 Wi-Fi 原因。
+- 未到期时不刷新跳过时间。
+- 回到 Wi-Fi 后仍可立即按原到期时间触发自动备份。
+- 手动 WebDAV 备份/恢复入口仍可使用。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 24。下一步可以推进下载历史持久化/下载中心管理能力，或继续补 WebDAV 自动备份的跳过状态提示与失败重试策略。
+当前已经完成 Prompt 01 到 Prompt 25。下一步可以推进下载历史持久化/下载中心管理能力，或继续补 WebDAV 自动备份的失败重试策略。

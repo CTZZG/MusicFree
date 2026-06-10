@@ -6,6 +6,11 @@ import PersistStatus from "@/utils/persistStatus";
 import { AuthType, createClient } from "webdav";
 
 export type IWebdavAutoBackupInterval = "off" | "daily" | "weekly";
+type IWebdavAutoBackupSkipReason = "wifiOnly";
+type IWebdavAutoBackupCheckResult =
+    | { action: "run" }
+    | { action: "idle" }
+    | { action: "skip"; reason: IWebdavAutoBackupSkipReason };
 
 const webdavRootPath = "/MusicFree";
 const webdavLatestBackupPath = `${webdavRootPath}/MusicFreeBackup.json`;
@@ -197,28 +202,45 @@ function getSafeErrorMessage(error: unknown) {
         .slice(0, 160);
 }
 
-function isAutoBackupDue(now = Date.now()) {
+function checkAutoBackup(now = Date.now()): IWebdavAutoBackupCheckResult {
     const interval = getAutoBackupInterval();
     if (interval === "off" || !hasConfiguredWebdav()) {
-        return false;
-    }
-
-    if (getAutoBackupWifiOnly() && !network.isWifi) {
-        return false;
+        return { action: "idle" };
     }
 
     const lastAttempt =
         PersistStatus.get("backup.webdavAutoBackupLastAttemptAt") ?? 0;
-    return Math.abs(now - lastAttempt) >= autoBackupIntervalMs[interval];
+    if (Math.abs(now - lastAttempt) < autoBackupIntervalMs[interval]) {
+        return { action: "idle" };
+    }
+
+    if (getAutoBackupWifiOnly() && !network.isWifi) {
+        return { action: "skip", reason: "wifiOnly" };
+    }
+
+    return { action: "run" };
 }
 
 export async function maybeRunAutoWebdavBackup() {
-    if (!isAutoBackupDue()) {
+    const checkResult = checkAutoBackup();
+    if (checkResult.action === "idle") {
         return false;
     }
 
     const now = Date.now();
+    if (checkResult.action === "skip") {
+        PersistStatus.set("backup.webdavAutoBackupLastSkippedAt", now);
+        PersistStatus.set(
+            "backup.webdavAutoBackupLastSkipReason",
+            checkResult.reason,
+        );
+        trace("WebDAV 自动备份跳过", checkResult);
+        return false;
+    }
+
     PersistStatus.set("backup.webdavAutoBackupLastAttemptAt", now);
+    PersistStatus.set("backup.webdavAutoBackupLastSkippedAt", undefined);
+    PersistStatus.set("backup.webdavAutoBackupLastSkipReason", undefined);
 
     try {
         const result = await backupToWebdav();
