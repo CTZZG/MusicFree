@@ -371,6 +371,8 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.detail.noCapabilities": string; // 暂无可识别能力
     "pluginSetting.pluginItem.detail.diagnostics": string; // 最近诊断
     "pluginSetting.pluginItem.detail.noDiagnostics": string; // 最近无错误
+    "pluginSetting.pluginItem.detail.copyDiagnostic": string; // 复制插件诊断
+    "pluginSetting.pluginItem.detail.closeDetails": string; // 关闭插件详情
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
     "pluginSetting.menu.diagnostics": string; // 插件诊断

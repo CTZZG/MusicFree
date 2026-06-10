@@ -323,6 +323,8 @@
     "pluginSetting.pluginItem.detail.noCapabilities": "暂无可识别能力",
     "pluginSetting.pluginItem.detail.diagnostics": "最近诊断",
     "pluginSetting.pluginItem.detail.noDiagnostics": "最近无错误",
+    "pluginSetting.pluginItem.detail.copyDiagnostic": "复制诊断",
+    "pluginSetting.pluginItem.detail.closeDetails": "关闭",
     "pluginSetting.menu.subscriptionSetting": "订阅设置",
     "pluginSetting.menu.sort": "插件排序",
     "pluginSetting.menu.diagnostics": "插件诊断",

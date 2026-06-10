@@ -323,6 +323,8 @@
     "pluginSetting.pluginItem.detail.noCapabilities": "暫無可識別能力",
     "pluginSetting.pluginItem.detail.diagnostics": "最近診斷",
     "pluginSetting.pluginItem.detail.noDiagnostics": "最近無錯誤",
+    "pluginSetting.pluginItem.detail.copyDiagnostic": "複製診斷",
+    "pluginSetting.pluginItem.detail.closeDetails": "關閉",
     "pluginSetting.menu.subscriptionSetting": "訂閱設定",
     "pluginSetting.menu.sort": "外掛排序",
     "pluginSetting.menu.diagnostics": "外掛診斷",

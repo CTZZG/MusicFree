@@ -428,42 +428,51 @@ function _PluginItem(props: IPluginItemProps) {
                     plugin.name,
                     5,
                 );
+                const detailContent = [
+                    `${t("pluginSetting.pluginItem.detail.version")}: ${plugin.instance.version ?? "-"}`,
+                    `${t("pluginSetting.pluginItem.detail.author")}: ${plugin.instance.author ?? "-"}`,
+                    `${t("pluginSetting.pluginItem.detail.source")}: ${sourceInfo.label}`,
+                    sourceInfo.detail
+                        ? `${t("pluginSetting.pluginItem.detail.sourceDetail")}: ${sourceInfo.detail}`
+                        : "",
+                    `${t("pluginSetting.pluginItem.detail.hash")}: ${plugin.hash}`,
+                    "",
+                    `${t("pluginSetting.pluginItem.detail.capabilities")}:`,
+                    capabilityLabels.length
+                        ? capabilityLabels.map(label => `- ${label}`).join("\n")
+                        : t("pluginSetting.pluginItem.detail.noCapabilities"),
+                    "",
+                    `${t("pluginSetting.pluginItem.detail.diagnostics")}:`,
+                    diagnostics.length
+                        ? diagnostics.map(event => {
+                            const time = new Date(
+                                event.createdAt,
+                            ).toLocaleString();
+                            return [
+                                `- ${time} ${event.method}`,
+                                `  ${event.message}`,
+                                event.estimatedLocation
+                                    ? `  ${event.estimatedLocation}`
+                                    : "",
+                            ]
+                                .filter(Boolean)
+                                .join("\n");
+                        }).join("\n")
+                        : t("pluginSetting.pluginItem.detail.noDiagnostics"),
+                ]
+                    .filter(Boolean)
+                    .join("\n");
                 showDialog("SimpleDialog", {
                     title: plugin.name,
-                    content: [
-                        `${t("pluginSetting.pluginItem.detail.version")}: ${plugin.instance.version ?? "-"}`,
-                        `${t("pluginSetting.pluginItem.detail.author")}: ${plugin.instance.author ?? "-"}`,
-                        `${t("pluginSetting.pluginItem.detail.source")}: ${sourceInfo.label}`,
-                        sourceInfo.detail
-                            ? `${t("pluginSetting.pluginItem.detail.sourceDetail")}: ${sourceInfo.detail}`
-                            : "",
-                        `${t("pluginSetting.pluginItem.detail.hash")}: ${plugin.hash}`,
-                        "",
-                        `${t("pluginSetting.pluginItem.detail.capabilities")}:`,
-                        capabilityLabels.length
-                            ? capabilityLabels.map(label => `- ${label}`).join("\n")
-                            : t("pluginSetting.pluginItem.detail.noCapabilities"),
-                        "",
-                        `${t("pluginSetting.pluginItem.detail.diagnostics")}:`,
-                        diagnostics.length
-                            ? diagnostics.map(event => {
-                                const time = new Date(
-                                    event.createdAt,
-                                ).toLocaleString();
-                                return [
-                                    `- ${time} ${event.method}`,
-                                    `  ${event.message}`,
-                                    event.estimatedLocation
-                                        ? `  ${event.estimatedLocation}`
-                                        : "",
-                                ]
-                                    .filter(Boolean)
-                                    .join("\n");
-                            }).join("\n")
-                            : t("pluginSetting.pluginItem.detail.noDiagnostics"),
-                    ]
-                        .filter(Boolean)
-                        .join("\n"),
+                    content: detailContent,
+                    okText: t("pluginSetting.pluginItem.detail.copyDiagnostic"),
+                    cancelText: t("pluginSetting.pluginItem.detail.closeDetails"),
+                    onOk() {
+                        Clipboard.setString(
+                            buildCurrentHealthCheckReport(10).reportText,
+                        );
+                        Toast.success(t("toast.copiedToClipboard"));
+                    },
                 });
             },
             show: true,

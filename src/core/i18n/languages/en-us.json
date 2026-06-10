@@ -323,6 +323,8 @@
     "pluginSetting.pluginItem.detail.noCapabilities": "No detected capabilities",
     "pluginSetting.pluginItem.detail.diagnostics": "Recent diagnostics",
     "pluginSetting.pluginItem.detail.noDiagnostics": "No recent errors",
+    "pluginSetting.pluginItem.detail.copyDiagnostic": "Copy Diagnostics",
+    "pluginSetting.pluginItem.detail.closeDetails": "Close",
     "pluginSetting.menu.subscriptionSetting": "Subscription Settings",
     "pluginSetting.menu.sort": "Plugin Sort",
     "pluginSetting.menu.diagnostics": "Plugin Diagnostics",
