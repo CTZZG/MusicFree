@@ -292,6 +292,8 @@ export interface ILanguageData {
     "downloading.report.title": string; // 下载记录报告
     "downloading.report.generatedAt": string; // 生成时间
     "downloading.report.count": string; // 记录数量
+    "downloading.report.metadataSummary": string; // 元数据统计
+    "downloading.report.lyricSummary": string; // 歌词文件统计
     "downloading.report.filterStatus": string; // 状态筛选
     "downloading.report.filterSource": string; // 来源筛选
     "downloading.report.filterWrite": string; // 写入筛选

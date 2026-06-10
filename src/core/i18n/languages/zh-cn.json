@@ -248,6 +248,8 @@
     "downloading.report.title": "MusicFree 下载记录报告",
     "downloading.report.generatedAt": "生成时间",
     "downloading.report.count": "记录数量",
+    "downloading.report.metadataSummary": "元数据统计：已写入 {success} · 失败 {failed} · 未写入 {skipped} · 等待 {pending}",
+    "downloading.report.lyricSummary": "歌词文件统计：已写入 {success} · 失败 {failed} · 未写入 {skipped} · 等待 {pending}",
     "downloading.report.filterStatus": "状态筛选",
     "downloading.report.filterSource": "来源筛选",
     "downloading.report.filterWrite": "写入筛选",

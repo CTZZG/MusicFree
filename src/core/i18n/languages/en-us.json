@@ -248,6 +248,8 @@
     "downloading.report.title": "MusicFree Download Records Report",
     "downloading.report.generatedAt": "Generated At",
     "downloading.report.count": "Record Count",
+    "downloading.report.metadataSummary": "Metadata: written {success} · failed {failed} · not written {skipped} · pending {pending}",
+    "downloading.report.lyricSummary": "Lyric file: written {success} · failed {failed} · not written {skipped} · pending {pending}",
     "downloading.report.filterStatus": "Status Filter",
     "downloading.report.filterSource": "Source Filter",
     "downloading.report.filterWrite": "Write Filter",

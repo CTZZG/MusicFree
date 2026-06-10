@@ -44,10 +44,47 @@ type DownloadSortMode =
     | "title"
     | "artist";
 type DownloadWriteStatus = "success" | "failed" | "skipped";
+type DownloadWriteStatusStats = Record<DownloadWriteStatus | "pending", number>;
 type DownloadTaskDetailInfo = {
     filename?: string;
     completedAt?: number;
 };
+
+function createDownloadWriteStatusStats(): DownloadWriteStatusStats {
+    return {
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        pending: 0,
+    };
+}
+
+function addDownloadWriteStatusStats(
+    stats: DownloadWriteStatusStats,
+    status: DownloadWriteStatus | null,
+) {
+    if (status) {
+        stats[status] += 1;
+    } else {
+        stats.pending += 1;
+    }
+}
+
+function getCompletedDownloadRecordStats(items: IMusic.IMusicItem[]) {
+    const metadata = createDownloadWriteStatusStats();
+    const lyric = createDownloadWriteStatusStats();
+    items.forEach(musicItem => {
+        addDownloadWriteStatusStats(
+            metadata,
+            getDownloadWriteStatus(musicItem, "downloadMetadataStatus"),
+        );
+        addDownloadWriteStatusStats(
+            lyric,
+            getDownloadWriteStatus(musicItem, "downloadLyricStatus"),
+        );
+    });
+    return { metadata, lyric };
+}
 
 function getCompletedDownloadDetailText(
     musicItem: IMusic.IMusicItem,
@@ -95,6 +132,7 @@ function buildCompletedDownloadRecordsReport(params: {
         sortTitle,
         t,
     } = params;
+    const stats = getCompletedDownloadRecordStats(items);
     const records = items.map((musicItem, index) => [
         `#${index + 1}`,
         getCompletedDownloadDetailText(
@@ -110,6 +148,8 @@ function buildCompletedDownloadRecordsReport(params: {
         t("downloading.report.title"),
         `${t("downloading.report.generatedAt")}: ${new Date().toISOString()}`,
         `${t("downloading.report.count")}: ${items.length}`,
+        t("downloading.report.metadataSummary", stats.metadata),
+        t("downloading.report.lyricSummary", stats.lyric),
         `${t("downloading.report.filterStatus")}: ${statusFilterTitle}`,
         `${t("downloading.report.filterSource")}: ${sourceFilterTitle}`,
         `${t("downloading.report.filterWrite")}: ${writeFilterTitle}`,
