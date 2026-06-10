@@ -12,6 +12,7 @@ import {
 } from "@/utils/fileUtils.ts";
 import {
     getLocalPath,
+    getMediaUniqueKey,
     isSameMediaItem,
 } from "@/utils/mediaUtils";
 import { patchMediaExtra } from "@/utils/mediaExtra";
@@ -34,6 +35,43 @@ interface ILocalMusicResumeReport {
     failedCount: number;
     failureReasons: string[];
 }
+
+type LocalPathStatus = "exists" | "missing" | "unknown";
+
+interface ILocalMusicWeakMatchInfo {
+    title: string;
+    artist: string;
+    album: string;
+    duration: number;
+}
+
+interface ILocalMusicMatchContext {
+    localPathStatusByKey: Map<string, LocalPathStatus>;
+    weakCandidates: Array<{
+        index: number;
+        info: ILocalMusicWeakMatchInfo;
+    }>;
+}
+
+interface ILocalMusicImportMergeReport {
+    addedCount: number;
+    exactMatchedCount: number;
+    weakMatchedCount: number;
+}
+
+const weakMatchDurationToleranceSeconds = 2;
+const unknownComparableValues = new Set([
+    "unknown",
+    "unknown song",
+    "unknown title",
+    "unknown artist",
+    "unknown album",
+    "未知",
+    "未知歌曲",
+    "未知歌手",
+    "未知专辑",
+    "未知專輯",
+]);
 
 function createResumeReport(): ILocalMusicResumeReport {
     return {
@@ -62,7 +100,7 @@ export async function addMusic(
     }
     let newSheet = [...localSheet];
     musicItem.forEach(mi => {
-        if (localSheet.findIndex(_ => isSameMediaItem(mi, _)) === -1) {
+        if (newSheet.findIndex(_ => isSameMediaItem(mi, _)) === -1) {
             newSheet.push(mi);
         }
     });
@@ -77,7 +115,7 @@ function addMusicDraft(musicItem: IMusic.IMusicItem | IMusic.IMusicItem[]) {
     }
     let newSheet = [...localSheet];
     musicItem.forEach(mi => {
-        if (localSheet.findIndex(_ => isSameMediaItem(mi, _)) === -1) {
+        if (newSheet.findIndex(_ => isSameMediaItem(mi, _)) === -1) {
             newSheet.push(mi);
         }
     });
@@ -157,6 +195,82 @@ function normalizeFsPath(filePath: string) {
     }
 }
 
+function normalizeComparableText(value: unknown) {
+    return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isUsefulComparableText(value: string) {
+    return !!value && !unknownComparableValues.has(value);
+}
+
+function getWeakMatchInfo(
+    musicItem: IMusic.IMusicItem,
+): ILocalMusicWeakMatchInfo | null {
+    const title = normalizeComparableText(musicItem.title);
+    const artist = normalizeComparableText(musicItem.artist);
+    const album = normalizeComparableText(musicItem.album);
+    const durationValue = Number(musicItem.duration);
+    const duration = Number.isFinite(durationValue)
+        ? Math.max(0, durationValue)
+        : 0;
+
+    if (!isUsefulComparableText(title) || !isUsefulComparableText(artist)) {
+        return null;
+    }
+    if (!isUsefulComparableText(album) && !duration) {
+        return null;
+    }
+
+    return {
+        title,
+        artist,
+        album: isUsefulComparableText(album) ? album : "",
+        duration,
+    };
+}
+
+function isWeakMatch(
+    left: ILocalMusicWeakMatchInfo,
+    right: ILocalMusicWeakMatchInfo,
+) {
+    if (left.title !== right.title || left.artist !== right.artist) {
+        return false;
+    }
+
+    const albumMatched =
+        !!left.album && !!right.album && left.album === right.album;
+    const durationMatched =
+        !!left.duration &&
+        !!right.duration &&
+        Math.abs(left.duration - right.duration) <=
+            weakMatchDurationToleranceSeconds;
+
+    return albumMatched || durationMatched;
+}
+
+function isDifferentLocalPath(left: string | null, right: string | null) {
+    if (!left || !right) {
+        return true;
+    }
+    return normalizeFsPath(left) !== normalizeFsPath(right);
+}
+
+async function resolveLocalPathStatus(
+    musicItem: IMusic.IMusicItem,
+): Promise<LocalPathStatus> {
+    const localPath = getLocalPath(musicItem);
+    if (!localPath) {
+        return "missing";
+    }
+    if (localPath.startsWith("content://")) {
+        return "unknown";
+    }
+
+    return (await exists(normalizeFsPath(localPath)).catch(() => false))
+        ? "exists"
+        : "missing";
+}
+
 const metadataUnsafeExtensions = new Set([
     ".ape",
     ".asf",
@@ -209,6 +323,21 @@ function patchLocalPath(
             localPath,
         },
     };
+}
+
+async function syncLocalMusicPathReferences(musicItem: IMusic.IMusicItem) {
+    const localPath = getLocalPath(musicItem);
+    if (!localPath) {
+        return;
+    }
+
+    patchMediaExtra(musicItem, {
+        downloaded: true,
+        localPath,
+    });
+    await MusicSheet.updateMusicItemReferences(musicItem, item =>
+        patchLocalPath(item, localPath),
+    );
 }
 
 function pushLimitedReason(reasons: string[], reason: string) {
@@ -295,11 +424,170 @@ async function readMusicMetas(
     return metas;
 }
 
+async function createLocalMusicMatchContext(): Promise<ILocalMusicMatchContext> {
+    const localPathStatusByKey = new Map<string, LocalPathStatus>();
+    const weakCandidates: ILocalMusicMatchContext["weakCandidates"] = [];
+
+    for (let index = 0; index < localSheet.length; index += 1) {
+        const musicItem = localSheet[index];
+        const status = await resolveLocalPathStatus(musicItem);
+        localPathStatusByKey.set(getMediaUniqueKey(musicItem), status);
+
+        if (status !== "missing" || musicItem.platform !== localPluginPlatform) {
+            continue;
+        }
+
+        const info = getWeakMatchInfo(musicItem);
+        if (info) {
+            weakCandidates.push({
+                index,
+                info,
+            });
+        }
+    }
+
+    return {
+        localPathStatusByKey,
+        weakCandidates,
+    };
+}
+
+function findUniqueWeakMatchIndex(
+    importedMusicItem: IMusic.IMusicItem,
+    context: ILocalMusicMatchContext,
+    usedWeakMatchIndices: Set<number>,
+) {
+    if (importedMusicItem.platform !== localPluginPlatform) {
+        return -1;
+    }
+
+    const importedInfo = getWeakMatchInfo(importedMusicItem);
+    if (!importedInfo) {
+        return -1;
+    }
+
+    let matchedIndex = -1;
+    let matchedCount = 0;
+    for (const candidate of context.weakCandidates) {
+        if (usedWeakMatchIndices.has(candidate.index)) {
+            continue;
+        }
+        if (!isWeakMatch(candidate.info, importedInfo)) {
+            continue;
+        }
+
+        matchedIndex = candidate.index;
+        matchedCount += 1;
+        if (matchedCount > 1) {
+            return -1;
+        }
+    }
+
+    return matchedCount === 1 ? matchedIndex : -1;
+}
+
+async function mergeImportedMusicItems(
+    musicItems: IMusic.IMusicItem[],
+    token: string,
+): Promise<ILocalMusicImportMergeReport> {
+    const report: ILocalMusicImportMergeReport = {
+        addedCount: 0,
+        exactMatchedCount: 0,
+        weakMatchedCount: 0,
+    };
+    if (!musicItems.length) {
+        return report;
+    }
+    if (token !== importToken) {
+        throw new Error("Import Broken");
+    }
+
+    const context = await createLocalMusicMatchContext();
+    if (token !== importToken) {
+        throw new Error("Import Broken");
+    }
+
+    const existingIndexByKey = new Map<string, number>();
+    localSheet.forEach((musicItem, index) => {
+        existingIndexByKey.set(getMediaUniqueKey(musicItem), index);
+    });
+
+    const nextSheet = [...localSheet];
+    const referenceUpdates: IMusic.IMusicItem[] = [];
+    const usedWeakMatchIndices = new Set<number>();
+    const itemsToAdd: IMusic.IMusicItem[] = [];
+
+    musicItems.forEach(importedMusicItem => {
+        const importedLocalPath = getLocalPath(importedMusicItem);
+        const importedKey = getMediaUniqueKey(importedMusicItem);
+        const exactMatchIndex = existingIndexByKey.get(importedKey);
+
+        if (exactMatchIndex !== undefined) {
+            const existingMusicItem = nextSheet[exactMatchIndex];
+            if (
+                importedLocalPath &&
+                context.localPathStatusByKey.get(importedKey) === "missing" &&
+                isDifferentLocalPath(
+                    getLocalPath(existingMusicItem),
+                    importedLocalPath,
+                )
+            ) {
+                const updatedMusicItem = patchLocalPath(
+                    existingMusicItem,
+                    importedLocalPath,
+                );
+                nextSheet[exactMatchIndex] = updatedMusicItem;
+                referenceUpdates.push(updatedMusicItem);
+                report.exactMatchedCount += 1;
+            }
+            return;
+        }
+
+        const weakMatchIndex = findUniqueWeakMatchIndex(
+            importedMusicItem,
+            context,
+            usedWeakMatchIndices,
+        );
+        if (weakMatchIndex !== -1 && importedLocalPath) {
+            const updatedMusicItem = patchLocalPath(
+                nextSheet[weakMatchIndex],
+                importedLocalPath,
+            );
+            nextSheet[weakMatchIndex] = updatedMusicItem;
+            usedWeakMatchIndices.add(weakMatchIndex);
+            referenceUpdates.push(updatedMusicItem);
+            report.weakMatchedCount += 1;
+            return;
+        }
+
+        itemsToAdd.push(importedMusicItem);
+    });
+
+    if (referenceUpdates.length) {
+        if (token !== importToken) {
+            throw new Error("Import Broken");
+        }
+        await updateMusicList(nextSheet);
+        for (const updatedMusicItem of referenceUpdates) {
+            await syncLocalMusicPathReferences(updatedMusicItem);
+        }
+    }
+
+    if (itemsToAdd.length) {
+        if (token !== importToken) {
+            throw new Error("Import Broken");
+        }
+        await addMusic(itemsToAdd);
+        report.addedCount = itemsToAdd.length;
+    }
+
+    return report;
+}
+
 async function importLocal(_folderPaths: string[]) {
     const folderPaths = [..._folderPaths.map(normalizeFsPath)];
     trace("本地音乐扫描开始", {
         folderCount: folderPaths.length,
-        folders: folderPaths,
     });
     const { musicList, token } = await getMusicStats(folderPaths);
     if (token !== importToken) {
@@ -336,11 +624,16 @@ async function importLocal(_folderPaths: string[]) {
     if (token !== importToken) {
         throw new Error("Import Broken");
     }
-    await addMusic(musicItems);
+    const mergeReport = await mergeImportedMusicItems(musicItems, token);
     if (token === importToken) {
         importToken = null;
     }
-    trace("本地音乐扫描导入完成", { count: musicItems.length });
+    trace("本地音乐扫描导入完成", {
+        count: musicItems.length,
+        addedCount: mergeReport.addedCount,
+        exactMatchedCount: mergeReport.exactMatchedCount,
+        weakMatchedCount: mergeReport.weakMatchedCount,
+    });
     return musicItems;
 }
 
@@ -436,13 +729,7 @@ async function relocateMusic(
     const nextSheet = [...localSheet];
     nextSheet[targetIndex] = updatedMusicItem;
     await updateMusicList(nextSheet);
-    patchMediaExtra(updatedMusicItem, {
-        downloaded: true,
-        localPath: nextLocalPath,
-    });
-    await MusicSheet.updateMusicItemReferences(updatedMusicItem, item =>
-        patchLocalPath(item, nextLocalPath),
-    );
+    await syncLocalMusicPathReferences(updatedMusicItem);
 
     return updatedMusicItem;
 }
