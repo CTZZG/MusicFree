@@ -59,6 +59,10 @@ interface ILocalMusicImportMergeReport {
     weakMatchedCount: number;
 }
 
+interface ILocalMusicImportReport extends ILocalMusicImportMergeReport {
+    scannedCount: number;
+}
+
 const weakMatchDurationToleranceSeconds = 2;
 const unknownComparableValues = new Set([
     "unknown",
@@ -634,7 +638,12 @@ async function importLocal(_folderPaths: string[]) {
         exactMatchedCount: mergeReport.exactMatchedCount,
         weakMatchedCount: mergeReport.weakMatchedCount,
     });
-    return musicItems;
+    return {
+        scannedCount: musicItems.length,
+        addedCount: mergeReport.addedCount,
+        exactMatchedCount: mergeReport.exactMatchedCount,
+        weakMatchedCount: mergeReport.weakMatchedCount,
+    } as ILocalMusicImportReport;
 }
 
 /** 是否为本地音乐 */

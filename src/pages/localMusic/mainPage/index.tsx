@@ -13,6 +13,39 @@ export default function MainPage() {
     const navigate = useNavigate();
     const { t } = useI18N();
 
+    function showScanResultReport(
+        report: Awaited<ReturnType<typeof LocalMusicSheet.importLocal>>,
+    ) {
+        const repairedCount =
+            report.exactMatchedCount + report.weakMatchedCount;
+        const unchangedCount = Math.max(
+            0,
+            report.scannedCount - report.addedCount - repairedCount,
+        );
+
+        showDialog("SimpleDialog", {
+            title: t("localMusic.scanResult.title"),
+            content: [
+                t("localMusic.scanResult.scanned", {
+                    count: report.scannedCount,
+                }),
+                t("localMusic.scanResult.added", {
+                    count: report.addedCount,
+                }),
+                t("localMusic.scanResult.exactMatched", {
+                    count: report.exactMatchedCount,
+                }),
+                t("localMusic.scanResult.weakMatched", {
+                    count: report.weakMatchedCount,
+                }),
+                t("localMusic.scanResult.unchanged", {
+                    count: unchangedCount,
+                }),
+            ].join("\n"),
+            okText: t("common.done"),
+        });
+    }
+
     return (
         <>
             <AppBar
@@ -49,6 +82,7 @@ export default function MainPage() {
                                             onResolve(data, hideDialog) {
                                                 Toast.success(t("toast.importSuccess"));
                                                 hideDialog();
+                                                showScanResultReport(data);
                                                 resolve(true);
                                             },
                                             onReject(reason, hideDialog) {
