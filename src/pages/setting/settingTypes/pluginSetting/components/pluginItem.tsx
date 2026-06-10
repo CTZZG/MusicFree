@@ -17,6 +17,10 @@ import { useI18N } from "@/core/i18n";
 import IconButton from "@/components/base/iconButton";
 import useRerender from "@/hooks/useRerender";
 import { getPluginDiagnosticEvents } from "@/core/pluginManager/diagnostics";
+import {
+    getPluginCapabilityLabels,
+    getPluginSourceInfo,
+} from "../capabilityUtils";
 
 interface IPluginItemProps {
     plugin: Plugin;
@@ -29,83 +33,6 @@ interface IOption {
     show?: boolean;
 }
 
-const capabilityConfigs: Array<{
-    labelKey: Parameters<ReturnType<typeof useI18N>["t"]>[0];
-    methods: Array<keyof IPlugin.IPluginInstanceMethods>;
-}> = [
-    {
-        labelKey: "home.sourceCapability.search",
-        methods: ["search"],
-    },
-    {
-        labelKey: "home.sourceCapability.source",
-        methods: ["getMediaSource"],
-    },
-    {
-        labelKey: "home.sourceCapability.lyric",
-        methods: ["getLyric"],
-    },
-    {
-        labelKey: "home.sourceCapability.wordLyric",
-        methods: ["getWordByWordLyric"],
-    },
-    {
-        labelKey: "home.sourceCapability.topList",
-        methods: ["getTopLists", "getTopListDetail"],
-    },
-    {
-        labelKey: "home.sourceCapability.recommend",
-        methods: ["getRecommendSheetTags", "getRecommendSheetsByTag"],
-    },
-    {
-        labelKey: "home.sourceCapability.album",
-        methods: ["getAlbumInfo"],
-    },
-    {
-        labelKey: "home.sourceCapability.artist",
-        methods: ["getArtistWorks"],
-    },
-    {
-        labelKey: "home.sourceCapability.import",
-        methods: ["importMusicItem", "importMusicSheet"],
-    },
-    {
-        labelKey: "home.sourceCapability.comment",
-        methods: ["getMusicComments"],
-    },
-    {
-        labelKey: "pluginSetting.pluginItem.capability.sync",
-        methods: ["syncMusicSheet"],
-    },
-];
-
-function getPluginSourceInfo(plugin: Plugin, t: ReturnType<typeof useI18N>["t"]) {
-    if (plugin.instance.srcUrl) {
-        return {
-            label: t("pluginSetting.pluginItem.source.network"),
-            detail: plugin.instance.srcUrl as string,
-        };
-    }
-    if (plugin.path) {
-        return {
-            label: t("pluginSetting.pluginItem.source.localFile"),
-            detail: plugin.path as string,
-        };
-    }
-    return {
-        label: t("pluginSetting.pluginItem.source.unknown"),
-        detail: "",
-    };
-}
-
-function getCapabilityLabels(plugin: Plugin, t: ReturnType<typeof useI18N>["t"]) {
-    return capabilityConfigs
-        .filter(config =>
-            config.methods.some(method => plugin.supportedMethods.has(method)),
-        )
-        .map(config => t(config.labelKey));
-}
-
 function _PluginItem(props: IPluginItemProps) {
     const { plugin } = props;
     const colors = useColors();
@@ -115,7 +42,7 @@ function _PluginItem(props: IPluginItemProps) {
 
     const alternativePluginName = pluginManager.getAlternativePluginName(plugin);
     const sourceInfo = getPluginSourceInfo(plugin, t);
-    const capabilityLabels = getCapabilityLabels(plugin, t);
+    const capabilityLabels = getPluginCapabilityLabels(plugin, t);
     const visibleCapabilityLabels = capabilityLabels.slice(0, 6);
     const hiddenCapabilityCount =
         capabilityLabels.length - visibleCapabilityLabels.length;

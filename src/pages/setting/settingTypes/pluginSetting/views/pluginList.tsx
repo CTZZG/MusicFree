@@ -121,6 +121,13 @@ export default function PluginList() {
             },
         },
         {
+            icon: "check-circle",
+            title: t("pluginSetting.menu.capabilityMatrix"),
+            onPress() {
+                navigator.navigate("/pluginsetting/capability-matrix");
+            },
+        },
+        {
             icon: "document-outline",
             title: t("pluginSetting.menu.copyDiagnosticReport"),
             onPress: onCopyPluginDiagnosticReport,

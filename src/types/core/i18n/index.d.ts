@@ -370,6 +370,7 @@ export interface ILanguageData {
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
     "pluginSetting.menu.diagnostics": string; // 插件诊断
+    "pluginSetting.menu.capabilityMatrix": string; // 插件能力矩阵
     "pluginSetting.menu.copyDiagnosticReport": string; // 复制诊断报告
     "pluginSetting.menu.exportDiagnosticReport": string; // 导出诊断报告
     "pluginSetting.menu.uninstallAll": string; // 卸载所有
@@ -411,6 +412,14 @@ export interface ILanguageData {
     "pluginSetting.diagnostics.exportReportAction": string; // 导出诊断报告到此处
     "pluginSetting.diagnostics.exportReportSuccess": string; // 导出诊断报告成功
     "pluginSetting.diagnostics.exportReportFailed": string; // 导出诊断报告失败
+    "pluginSetting.capabilityMatrix.summary": string; // 插件能力矩阵摘要
+    "pluginSetting.capabilityMatrix.empty": string; // 无插件能力信息
+    "pluginSetting.capabilityMatrix.plugin": string; // 插件能力矩阵插件列
+    "pluginSetting.capabilityMatrix.status": string; // 插件能力矩阵状态列
+    "pluginSetting.capabilityMatrix.source": string; // 插件能力矩阵来源列
+    "pluginSetting.capabilityMatrix.supportedCount": string; // 插件能力矩阵支持数列
+    "pluginSetting.capabilityMatrix.enabled": string; // 已启用
+    "pluginSetting.capabilityMatrix.disabled": string; // 已禁用
     "pluginSetting.failReason": string; // 失败原因
     "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
     "pluginSetting.installResult.success": string; // 安装成功
