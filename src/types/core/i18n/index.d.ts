@@ -142,6 +142,8 @@ export interface ILanguageData {
     "localMusic.relocateFileAction": string; // 使用此文件
     "localMusic.relocateSuccess": string; // 重新定位成功
     "localMusic.relocateFailed": string; // 重新定位失败
+    "localMusic.artistFilter.all": string; // 全部歌手
+    "localMusic.albumFilter.all": string; // 全部专辑
 
     // 歌词相关
     "lyric.lyricLinkedFrom": string; // 歌词来自

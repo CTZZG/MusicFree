@@ -118,6 +118,8 @@
     "localMusic.relocateFileAction": "使用此文件",
     "localMusic.relocateSuccess": "重新定位成功",
     "localMusic.relocateFailed": "重新定位失败：{reason}",
+    "localMusic.artistFilter.all": "全部歌手",
+    "localMusic.albumFilter.all": "全部专辑",
     "lyric.lyricLinkedFrom": "歌词关联自「{platform} - {title}」",
     "lyric.unlinkLyric": "解除关联",
     "lyric.noLyric": "暂无歌词",

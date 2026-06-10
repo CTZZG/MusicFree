@@ -118,6 +118,8 @@
     "localMusic.relocateFileAction": "Use This File",
     "localMusic.relocateSuccess": "File relocated",
     "localMusic.relocateFailed": "Failed to relocate file: {reason}",
+    "localMusic.artistFilter.all": "All Artists",
+    "localMusic.albumFilter.all": "All Albums",
     "lyric.lyricLinkedFrom": "Lyrics linked from「{platform} - {title}」",
     "lyric.unlinkLyric": "Unlink Lyrics",
     "lyric.noLyric": "No lyrics available",

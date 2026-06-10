@@ -714,6 +714,48 @@
 - 包含丢失本地文件的备份恢复后，恢复报告显示跳过数量和简短原因。
 ```
 
+## Prompt 19：本地音乐按歌手和专辑筛选
+
+状态：已完成。本次把本地音乐从单一来源筛选扩展到歌手和专辑筛选，让下载后的音乐库更像可浏览的资料库。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/pages/localMusic/mainPage/localMusicList.tsx
+- src/core/localMusicSheet.ts
+- src/components/panels/types/simpleSelect.tsx
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+让本地音乐页支持按歌手和专辑进一步筛选，和现有来源筛选组合使用。
+
+范围：
+- 在本地音乐页增加歌手筛选。
+- 在本地音乐页增加专辑筛选。
+- 歌手/专辑候选项按当前来源过滤后的列表生成。
+- 切换来源时重置歌手/专辑筛选，避免空列表困惑。
+- 复用现有 SimpleSelect 面板完成候选选择。
+- 补齐中/英/繁体文案和 i18n 类型。
+
+不要做：
+- 不新建独立筛选页面。
+- 不改普通歌单编辑逻辑。
+- 不做复杂搜索索引。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 本地音乐页可按来源筛选。
+- 本地音乐页可按歌手筛选。
+- 本地音乐页可按专辑筛选。
+- 三个筛选可以组合使用。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 18。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议进入下载中心筛选/元数据状态展示，或继续完善 WebDAV 自动备份设置。
+当前已经完成 Prompt 01 到 Prompt 19。下一步可以继续推进下载/本地资料库的元数据状态展示，或继续完善 WebDAV 自动备份设置。
