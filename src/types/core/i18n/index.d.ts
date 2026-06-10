@@ -144,6 +144,12 @@ export interface ILanguageData {
     "localMusic.relocateFailed": string; // 重新定位失败
     "localMusic.artistFilter.all": string; // 全部歌手
     "localMusic.albumFilter.all": string; // 全部专辑
+    "localMusic.fileStatusFilter.title": string; // 文件状态
+    "localMusic.fileStatusFilter.all": string; // 全部文件状态
+    "localMusic.fileStatusFilter.exists": string; // 文件存在
+    "localMusic.fileStatusFilter.missing": string; // 文件不存在
+    "localMusic.fileStatusFilter.unknown": string; // 状态未知
+    "localMusic.fileStatusSummary": string; // 文件状态摘要
     "localMusic.metadataStatus.success": string; // 元数据已写入
     "localMusic.metadataStatus.failed": string; // 元数据失败
     "localMusic.metadataStatus.skipped": string; // 元数据未写入

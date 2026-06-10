@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import MusicList from "@/components/musicList";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { localMusicSheetId, localPluginPlatform, RequestStateCode } from "@/constants/commonConst";
@@ -12,6 +12,59 @@ import useColors from "@/hooks/useColors";
 import Color from "color";
 import { showPanel } from "@/components/panels/usePanel";
 import Icon, { IIconName } from "@/components/base/icon";
+import { exists } from "react-native-fs";
+import { removeFileScheme } from "@/utils/fileUtils";
+import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
+
+type LocalMusicFileStatus = "exists" | "missing" | "unknown" | "unavailable";
+type LocalMusicFileStatusFilter = "all" | "exists" | "missing" | "unknown";
+
+function normalizeLocalMusicFsPath(filePath: string) {
+    const rawPath = removeFileScheme(filePath);
+    try {
+        return decodeURI(rawPath);
+    } catch {
+        return rawPath;
+    }
+}
+
+async function resolveLocalMusicFileStatus(
+    musicItem: IMusic.IMusicItem,
+): Promise<LocalMusicFileStatus> {
+    const localPath = getLocalPath(musicItem);
+    if (!localPath) {
+        return "unavailable";
+    }
+    if (localPath.startsWith("content://")) {
+        return "unknown";
+    }
+    const fsPath = normalizeLocalMusicFsPath(localPath);
+    const fileExists = await exists(fsPath).catch(() => false);
+    return fileExists ? "exists" : "missing";
+}
+
+function getLocalMusicFileStatus(
+    musicItem: IMusic.IMusicItem,
+    fileStatusMap: Record<string, LocalMusicFileStatus>,
+) {
+    const key = getMediaUniqueKey(musicItem);
+    return fileStatusMap[key] ?? "unknown";
+}
+
+function matchLocalMusicFileStatusFilter(
+    musicItem: IMusic.IMusicItem,
+    fileStatusMap: Record<string, LocalMusicFileStatus>,
+    filter: LocalMusicFileStatusFilter,
+) {
+    if (filter === "all") {
+        return true;
+    }
+    const status = getLocalMusicFileStatus(musicItem, fileStatusMap);
+    if (filter === "unknown") {
+        return status === "unknown" || status === "unavailable";
+    }
+    return status === filter;
+}
 
 export default function LocalMusicList() {
     const musicList = LocalMusicSheet.useMusicList();
@@ -20,6 +73,11 @@ export default function LocalMusicList() {
     const [sourceFilter, setSourceFilter] = useState<string>("all");
     const [artistFilter, setArtistFilter] = useState<string>("all");
     const [albumFilter, setAlbumFilter] = useState<string>("all");
+    const [fileStatusFilter, setFileStatusFilter] =
+        useState<LocalMusicFileStatusFilter>("all");
+    const [fileStatusMap, setFileStatusMap] = useState<
+        Record<string, LocalMusicFileStatus>
+    >({});
 
     const sourceFilters = useMemo(
         () => [
@@ -69,7 +127,7 @@ export default function LocalMusicList() {
         ],
         [sourceFilteredMusicList],
     );
-    const filteredMusicList = useMemo(
+    const artistAlbumFilteredMusicList = useMemo(
         () =>
             sourceFilteredMusicList.filter(musicItem => {
                 if (artistFilter !== "all" && musicItem.artist !== artistFilter) {
@@ -82,24 +140,117 @@ export default function LocalMusicList() {
             }),
         [sourceFilteredMusicList, artistFilter, albumFilter],
     );
+    const fileStatusStats = useMemo(
+        () => {
+            const stats = {
+                exists: 0,
+                missing: 0,
+                unknown: 0,
+            };
+            artistAlbumFilteredMusicList.forEach(musicItem => {
+                const status = getLocalMusicFileStatus(
+                    musicItem,
+                    fileStatusMap,
+                );
+                if (status === "exists") {
+                    stats.exists += 1;
+                } else if (status === "missing") {
+                    stats.missing += 1;
+                } else {
+                    stats.unknown += 1;
+                }
+            });
+            return stats;
+        },
+        [artistAlbumFilteredMusicList, fileStatusMap],
+    );
+    const filteredMusicList = useMemo(
+        () =>
+            artistAlbumFilteredMusicList.filter(musicItem =>
+                matchLocalMusicFileStatusFilter(
+                    musicItem,
+                    fileStatusMap,
+                    fileStatusFilter,
+                ),
+            ),
+        [artistAlbumFilteredMusicList, fileStatusMap, fileStatusFilter],
+    );
     const artistFilterTitle =
         artistFilter === "all" ? t("localMusic.artistFilter.all") : artistFilter;
     const albumFilterTitle =
         albumFilter === "all" ? t("localMusic.albumFilter.all") : albumFilter;
+    const fileStatusFilterItems: Array<{
+        key: LocalMusicFileStatusFilter;
+        title: string;
+    }> = [
+        {
+            key: "all",
+            title: t("localMusic.fileStatusFilter.all"),
+        },
+        {
+            key: "exists",
+            title: t("localMusic.fileStatusFilter.exists"),
+        },
+        {
+            key: "missing",
+            title: t("localMusic.fileStatusFilter.missing"),
+        },
+        {
+            key: "unknown",
+            title: t("localMusic.fileStatusFilter.unknown"),
+        },
+    ];
+    const fileStatusFilterTitle =
+        fileStatusFilter === "all"
+            ? t("localMusic.fileStatusFilter.title")
+            : fileStatusFilterItems.find(item => item.key === fileStatusFilter)
+                ?.title ?? t("localMusic.fileStatusFilter.title");
+
+    useEffect(() => {
+        let cancelled = false;
+        const initialStatusMap: Record<string, LocalMusicFileStatus> = {};
+
+        musicList.forEach(musicItem => {
+            initialStatusMap[getMediaUniqueKey(musicItem)] = "unknown";
+        });
+        setFileStatusMap(prev => {
+            const next = { ...initialStatusMap };
+            Object.keys(next).forEach(key => {
+                if (prev[key]) {
+                    next[key] = prev[key];
+                }
+            });
+            return next;
+        });
+
+        Promise.all(
+            musicList.map(async musicItem => [
+                getMediaUniqueKey(musicItem),
+                await resolveLocalMusicFileStatus(musicItem),
+            ] as const),
+        ).then(entries => {
+            if (!cancelled) {
+                setFileStatusMap(Object.fromEntries(entries));
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [musicList]);
 
     function showFilterSelect(
         header: string,
         candidates: string[],
         onSelect: (value: string) => void,
+        allTitle: string,
     ) {
         showPanel("SimpleSelect", {
             header,
             candidates: candidates.map(candidate => ({
                 title:
                     candidate === "all"
-                        ? header === t("common.artist")
-                            ? t("localMusic.artistFilter.all")
-                            : t("localMusic.albumFilter.all")
+                        ? allTitle
                         : candidate,
                 value: candidate,
             })),
@@ -161,6 +312,7 @@ export default function LocalMusicList() {
         setSourceFilter(source);
         setArtistFilter("all");
         setAlbumFilter("all");
+        setFileStatusFilter("all");
     }
 
     function handleArtistPress() {
@@ -168,6 +320,7 @@ export default function LocalMusicList() {
             t("common.artist"),
             artistFilters,
             setArtistFilter,
+            t("localMusic.artistFilter.all"),
         );
     }
 
@@ -176,7 +329,22 @@ export default function LocalMusicList() {
             t("common.album"),
             albumFilters,
             setAlbumFilter,
+            t("localMusic.albumFilter.all"),
         );
+    }
+
+    function handleFileStatusPress() {
+        showPanel("SimpleSelect", {
+            header: t("localMusic.fileStatusFilter.title"),
+            candidates: fileStatusFilterItems.map(item => ({
+                title: item.title,
+                value: item.key,
+                icon: "folder-outline",
+            })),
+            onPress(item) {
+                setFileStatusFilter(item.value as LocalMusicFileStatusFilter);
+            },
+        });
     }
 
     return (
@@ -211,7 +379,23 @@ export default function LocalMusicList() {
                         onPress: handleAlbumPress,
                         icon: "album-outline",
                     })}
+                    {renderFilterChip({
+                        key: "file-status-filter",
+                        title: fileStatusFilterTitle,
+                        selected: fileStatusFilter !== "all",
+                        onPress: handleFileStatusPress,
+                        icon: "folder-outline",
+                    })}
                 </ScrollView>
+                {artistAlbumFilteredMusicList.length ? (
+                    <View style={style.summary}>
+                        <ThemeText
+                            fontSize="description"
+                            fontColor="textSecondary">
+                            {t("localMusic.fileStatusSummary", fileStatusStats)}
+                        </ThemeText>
+                    </View>
+                ) : null}
                 <MusicList
                     musicList={filteredMusicList}
                     showIndex
@@ -232,6 +416,10 @@ const style = StyleSheet.create({
     filterBar: {
         paddingHorizontal: rpx(24),
         paddingVertical: rpx(16),
+    },
+    summary: {
+        paddingHorizontal: rpx(24),
+        paddingBottom: rpx(16),
     },
     filterChip: {
         height: rpx(56),
