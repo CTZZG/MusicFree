@@ -1800,6 +1800,38 @@
 - 筛选结果为空时也能复制一份事件数为 0 的报告。
 ```
 
+## Prompt 50：插件诊断报告补充构建信息
+
+状态：已完成。本次让插件诊断报告包含应用构建和关键依赖信息。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+目标：
+- 用户复制插件诊断报告时，报告里能看到应用版本、构建版本、Git 引用、构建时间和播放器依赖基线。
+- 反馈插件不能搜、不能播、安装失败时，不需要再额外截图关于页的构建信息。
+- 全量报告和当前筛选报告都包含同一份构建信息。
+
+实现要求：
+- 在 buildPluginDiagnosticReport 中加入 Build 小节。
+- 复用 src/constants/buildInfo.generated.ts 的基线字段。
+- 构建运行 URL 为空时不输出空行。
+- 输出字段做 sanitizeReportValue 处理，保持单行且避免敏感信息泄露。
+- 不新增 i18n，因为报告主体目前是固定英文诊断文本。
+
+非目标：
+- 不改诊断事件存储结构。
+- 不改关于页构建信息展示。
+- 不新增文件导出、上传或分享。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 复制插件诊断报告时包含 Build 小节。
+- Build 小节包含 app version、versionCode、Git、build date、signing、RN/Expo/React、nitro player。
+- 当前筛选报告也包含 Build 小节。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 49。下一步可以继续完善下载中心资料库体验，例如打开文件位置（需确认 Android 能力边界）、下载记录导出为文件，或继续补插件诊断报告导出细节。
+当前已经完成 Prompt 01 到 Prompt 50。下一步可以继续完善下载中心资料库体验，例如打开文件位置（需确认 Android 能力边界）、下载记录导出为文件，或继续补插件诊断报告导出细节。

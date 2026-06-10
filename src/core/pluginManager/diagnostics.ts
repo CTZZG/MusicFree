@@ -1,6 +1,7 @@
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse, safeStringify } from "@/utils/jsonUtil";
 import type { IInstallPluginResult } from "@/types/core/pluginManager";
+import { buildInfo } from "@/constants/buildInfo.generated";
 
 const storage = getOrCreateMMKV("plugin-diagnostics");
 const storageKey = "events";
@@ -147,6 +148,20 @@ function getPluginDiagnosticEventLines(events: PluginDiagnosticEvent[]) {
             ? `  ${sanitizeReportValue(event.estimatedLocation)}`
             : "",
     ].filter(Boolean).join("\n"));
+}
+
+function getBuildInfoLines() {
+    return [
+        `App version: ${sanitizeReportValue(buildInfo.appVersion)} (${sanitizeReportValue(buildInfo.versionCode)})`,
+        `Git: ${sanitizeReportValue(buildInfo.shortSha)} ${sanitizeReportValue(buildInfo.gitRef)}`,
+        buildInfo.buildRunUrl
+            ? `Build run: ${sanitizeReportValue(buildInfo.buildRunUrl)}`
+            : "",
+        `Build date: ${sanitizeReportValue(buildInfo.buildDate)}`,
+        `Signing: ${sanitizeReportValue(buildInfo.signing)}`,
+        `Runtime: RN ${sanitizeReportValue(buildInfo.reactNative)} / Expo ${sanitizeReportValue(buildInfo.expo)} / React ${sanitizeReportValue(buildInfo.react)}`,
+        `Player: ${sanitizeReportValue(buildInfo.nitroPlayer)}`,
+    ].filter(Boolean);
 }
 
 function getPluginReportLines(
@@ -309,6 +324,9 @@ export function buildPluginDiagnosticReport(
         `Plugins: ${plugins.length}`,
         `Diagnostic events: ${events.length}`,
         ...filterLines,
+        "",
+        "Build",
+        ...getBuildInfoLines(),
         "",
         "Plugins",
         ...getPluginReportLines(plugins, events),
