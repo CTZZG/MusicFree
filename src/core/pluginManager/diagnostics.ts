@@ -273,6 +273,23 @@ export function getAllPluginDiagnosticEvents(limit = maxEventsTotal) {
     return getStoredEvents().slice(0, limit);
 }
 
+export function clearPluginDiagnosticEvents(eventIds?: string[]) {
+    const events = getStoredEvents();
+    if (!eventIds) {
+        setStoredEvents([]);
+        return events.length;
+    }
+
+    const idSet = new Set(eventIds);
+    if (!idSet.size) {
+        return 0;
+    }
+
+    const nextEvents = events.filter(event => !idSet.has(event.id));
+    setStoredEvents(nextEvents);
+    return events.length - nextEvents.length;
+}
+
 export function buildPluginDiagnosticReport(
     plugins: IPluginDiagnosticReportPlugin[],
 ) {

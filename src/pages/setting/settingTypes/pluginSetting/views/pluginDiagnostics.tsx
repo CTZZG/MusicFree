@@ -19,6 +19,7 @@ import { useSortedPlugins } from "@/core/pluginManager";
 import {
     buildPluginDiagnosticEventReport,
     buildPluginDiagnosticReport,
+    clearPluginDiagnosticEvents,
     getAllPluginDiagnosticEvents,
     PluginDiagnosticEvent,
 } from "@/core/pluginManager/diagnostics";
@@ -27,6 +28,7 @@ import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import type { ILanguageData } from "@/types/core/i18n";
 import { showPanel } from "@/components/panels/usePanel";
+import { showDialog } from "@/components/dialogs/useDialog";
 
 type DiagnosticFilter = "all" | "search" | "source" | "lyric" | "install" | "other";
 
@@ -173,6 +175,26 @@ export default function PluginDiagnostics() {
         Toast.success(t("toast.copiedToClipboard"));
     }
 
+    function clearFilteredDiagnostics() {
+        showDialog("SimpleDialog", {
+            title: t("pluginSetting.diagnostics.clearFiltered"),
+            content: t("pluginSetting.diagnostics.clearFilteredConfirm", {
+                count: filteredEvents.length,
+            }),
+            onOk() {
+                const count = clearPluginDiagnosticEvents(
+                    filteredEvents.map(event => event.id),
+                );
+                setEvents(getAllPluginDiagnosticEvents());
+                if (count) {
+                    Toast.success(t("pluginSetting.diagnostics.clearSuccess", {
+                        count,
+                    }));
+                }
+            },
+        });
+    }
+
     function showPluginFilterSelect() {
         showPanel("SimpleSelect", {
             header: t("pluginSetting.diagnostics.pluginFilter.title"),
@@ -215,6 +237,14 @@ export default function PluginDiagnostics() {
                         icon: "arrow-path",
                         onPress: refreshDiagnostics,
                     },
+                    ...(
+                        filteredEvents.length
+                            ? [{
+                                icon: "trash-outline" as const,
+                                onPress: clearFilteredDiagnostics,
+                            }]
+                            : []
+                    ),
                     {
                         icon: "document-outline",
                         onPress: copyDiagnosticReport,
