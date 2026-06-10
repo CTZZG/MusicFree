@@ -371,6 +371,7 @@ export interface ILanguageData {
     "pluginSetting.menu.sort": string; // 排序
     "pluginSetting.menu.diagnostics": string; // 插件诊断
     "pluginSetting.menu.copyDiagnosticReport": string; // 复制诊断报告
+    "pluginSetting.menu.exportDiagnosticReport": string; // 导出诊断报告
     "pluginSetting.menu.uninstallAll": string; // 卸载所有
     "pluginSetting.menu.uninstallAllContent": string; // 确定卸载所有插件吗？
     "pluginSetting.menu.installPlugin": string; // 安装插件

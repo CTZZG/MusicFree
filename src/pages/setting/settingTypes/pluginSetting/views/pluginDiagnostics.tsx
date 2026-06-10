@@ -7,7 +7,6 @@ import {
     View,
 } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
-import { writeFile } from "react-native-fs";
 import Color from "color";
 import AppBar from "@/components/base/appBar";
 import Empty from "@/components/base/empty";
@@ -31,6 +30,7 @@ import type { ILanguageData } from "@/types/core/i18n";
 import { showPanel } from "@/components/panels/usePanel";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
+import { writePluginDiagnosticReport } from "../reportExportUtils";
 
 type DiagnosticFilter = "all" | "search" | "source" | "lyric" | "install" | "other";
 type DiagnosticTimeFilter = "all" | "today" | "last24h" | "last7d" | "last30d";
@@ -185,27 +185,6 @@ function formatDiagnosticTime(timestamp: number) {
     ].join(" ");
 }
 
-function padTime(value: number) {
-    return `${value}`.padStart(2, "0");
-}
-
-function getPluginDiagnosticReportFileName() {
-    const date = new Date();
-    return [
-        "MusicFree-plugin-diagnostics",
-        date.getFullYear(),
-        padTime(date.getMonth() + 1),
-        padTime(date.getDate()),
-        padTime(date.getHours()),
-        padTime(date.getMinutes()),
-        padTime(date.getSeconds()),
-    ].join("-") + ".txt";
-}
-
-function joinFolderPath(folder: string, filename: string) {
-    return `${folder.replace(/[\\/]+$/, "")}/${filename}`;
-}
-
 export default function PluginDiagnostics() {
     const { t } = useI18N();
     const colors = useColors();
@@ -322,12 +301,10 @@ export default function PluginDiagnostics() {
                 if (!folder) {
                     return false;
                 }
-                const filename = getPluginDiagnosticReportFileName();
                 try {
-                    await writeFile(
-                        joinFolderPath(folder, filename),
+                    const filename = await writePluginDiagnosticReport(
+                        folder,
                         getPluginDiagnosticReportText(),
-                        "utf8",
                     );
                     Toast.success(t(
                         "pluginSetting.diagnostics.exportReportSuccess",

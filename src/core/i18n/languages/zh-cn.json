@@ -323,6 +323,7 @@
     "pluginSetting.menu.sort": "插件排序",
     "pluginSetting.menu.diagnostics": "插件诊断",
     "pluginSetting.menu.copyDiagnosticReport": "复制诊断报告",
+    "pluginSetting.menu.exportDiagnosticReport": "导出诊断报告",
     "pluginSetting.menu.uninstallAll": "卸载全部插件",
     "pluginSetting.menu.uninstallAllContent": "确认卸载全部插件吗？此操作不可恢复！",
     "pluginSetting.menu.installPlugin": "安装插件",

@@ -323,6 +323,7 @@
     "pluginSetting.menu.sort": "外掛排序",
     "pluginSetting.menu.diagnostics": "外掛診斷",
     "pluginSetting.menu.copyDiagnosticReport": "複製診斷報告",
+    "pluginSetting.menu.exportDiagnosticReport": "匯出診斷報告",
     "pluginSetting.menu.uninstallAll": "卸載全部外掛",
     "pluginSetting.menu.uninstallAllContent": "確認卸載全部外掛嗎？此操作不可恢復！",
     "pluginSetting.menu.installPlugin": "安裝外掛",

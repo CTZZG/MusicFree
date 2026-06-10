@@ -323,6 +323,7 @@
     "pluginSetting.menu.sort": "Plugin Sort",
     "pluginSetting.menu.diagnostics": "Plugin Diagnostics",
     "pluginSetting.menu.copyDiagnosticReport": "Copy Diagnostic Report",
+    "pluginSetting.menu.exportDiagnosticReport": "Export Diagnostic Report",
     "pluginSetting.menu.uninstallAll": "Uninstall All Plugins",
     "pluginSetting.menu.uninstallAllContent": "Are you sure to uninstall all plugins? This action cannot be undone!",
     "pluginSetting.menu.installPlugin": "Install Plugin",

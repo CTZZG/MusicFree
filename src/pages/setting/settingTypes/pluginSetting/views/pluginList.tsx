@@ -29,6 +29,7 @@ import {
     installPluginFromUrlText,
     showPluginInstallResults,
 } from "../installPluginUtils";
+import { writePluginDiagnosticReport } from "../reportExportUtils";
 
 interface IOption {
     icon: IIconName;
@@ -66,6 +67,37 @@ export default function PluginList() {
         Toast.success(t("toast.copiedToClipboard"));
     }
 
+    function onExportPluginDiagnosticReport() {
+        navigate(ROUTE_PATH.FILE_SELECTOR, {
+            fileType: "folder",
+            multi: false,
+            actionText: t("pluginSetting.diagnostics.exportReportAction"),
+            async onAction(selectedFiles) {
+                const folder = selectedFiles[0]?.path;
+                if (!folder) {
+                    return false;
+                }
+                try {
+                    const filename = await writePluginDiagnosticReport(
+                        folder,
+                        buildPluginDiagnosticReport(plugins),
+                    );
+                    Toast.success(t(
+                        "pluginSetting.diagnostics.exportReportSuccess",
+                        { filename },
+                    ));
+                    return true;
+                } catch (e: any) {
+                    Toast.warn(t(
+                        "pluginSetting.diagnostics.exportReportFailed",
+                        { reason: e?.message ?? e },
+                    ));
+                    return false;
+                }
+            },
+        });
+    }
+
     const menuOptions: IOption[] = [
         {
             icon: "bookmark-square",
@@ -92,6 +124,11 @@ export default function PluginList() {
             icon: "document-outline",
             title: t("pluginSetting.menu.copyDiagnosticReport"),
             onPress: onCopyPluginDiagnosticReport,
+        },
+        {
+            icon: "arrow-up-tray",
+            title: t("pluginSetting.menu.exportDiagnosticReport"),
+            onPress: onExportPluginDiagnosticReport,
         },
         {
             icon: "trash-outline",
