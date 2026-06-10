@@ -1005,6 +1005,20 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         return paused;
     }
 
+    async pauseTasks(musicItems?: IMusic.IMusicItem[]) {
+        const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+        const candidates = musicItems ?? downloadQueue;
+        let pausedCount = 0;
+
+        for (const musicItem of candidates) {
+            if (await this.pause(musicItem)) {
+                pausedCount += 1;
+            }
+        }
+
+        return pausedCount;
+    }
+
     async resume(musicItem: IMusic.IMusicItem) {
         if (!this.canUseNativeDownload()) {
             return false;
@@ -1024,6 +1038,20 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             });
         }
         return resumed;
+    }
+
+    async resumeTasks(musicItems?: IMusic.IMusicItem[]) {
+        const downloadQueue = getDefaultStore().get(downloadQueueAtom);
+        const candidates = musicItems ?? downloadQueue;
+        let resumedCount = 0;
+
+        for (const musicItem of candidates) {
+            if (await this.resume(musicItem)) {
+                resumedCount += 1;
+            }
+        }
+
+        return resumedCount;
     }
 
     retry(musicItem: IMusic.IMusicItem) {

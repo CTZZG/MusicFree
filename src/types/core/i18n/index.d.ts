@@ -278,6 +278,10 @@ export interface ILanguageData {
     "downloading.retryFailedSuccess": string; // 重试失败任务成功
     "downloading.clearFailed": string; // 清理失败记录
     "downloading.clearFailedSuccess": string; // 清理失败记录成功
+    "downloading.pauseActive": string; // 暂停进行中任务
+    "downloading.pauseActiveSuccess": string; // 暂停进行中任务成功
+    "downloading.resumePaused": string; // 恢复暂停任务
+    "downloading.resumePausedSuccess": string; // 恢复暂停任务成功
 
     // 艺术家详情相关
     "artistDetail.fansCount": string; // 粉丝数量

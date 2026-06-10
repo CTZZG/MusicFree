@@ -211,6 +211,7 @@ export default function DownloadingList() {
     const { t } = useI18N();
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
+    const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
 
     const filterItems: Array<{
         key: DownloadFilter;
@@ -282,6 +283,47 @@ export default function DownloadingList() {
         [downloadQueue, downloadTasks, sourceFilter],
     );
     const failedTaskCount = failedDownloadItems.length;
+    const pausableDownloadItems = useMemo(
+        () =>
+            downloadQueue.filter(musicItem => {
+                const status =
+                    downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
+                    DownloadStatus.Error;
+                if (
+                    status !== DownloadStatus.Preparing &&
+                    status !== DownloadStatus.Downloading
+                ) {
+                    return false;
+                }
+                if (
+                    sourceFilter !== "all" &&
+                    musicItem.platform !== sourceFilter
+                ) {
+                    return false;
+                }
+                return true;
+            }),
+        [downloadQueue, downloadTasks, sourceFilter],
+    );
+    const resumableDownloadItems = useMemo(
+        () =>
+            downloadQueue.filter(musicItem => {
+                const status =
+                    downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
+                    DownloadStatus.Error;
+                if (status !== DownloadStatus.Paused) {
+                    return false;
+                }
+                if (
+                    sourceFilter !== "all" &&
+                    musicItem.platform !== sourceFilter
+                ) {
+                    return false;
+                }
+                return true;
+            }),
+        [downloadQueue, downloadTasks, sourceFilter],
+    );
 
     useEffect(() => {
         if (!sourceFilters.includes(sourceFilter)) {
@@ -326,6 +368,20 @@ export default function DownloadingList() {
         }
     }
 
+    async function pauseActiveTasks() {
+        const count = await downloader.pauseTasks(pausableDownloadItems);
+        if (count) {
+            Toast.success(t("downloading.pauseActiveSuccess", { count }));
+        }
+    }
+
+    async function resumePausedTasks() {
+        const count = await downloader.resumeTasks(resumableDownloadItems);
+        if (count) {
+            Toast.success(t("downloading.resumePausedSuccess", { count }));
+        }
+    }
+
     const filteredQueue = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
@@ -367,6 +423,22 @@ export default function DownloadingList() {
                     onPress={showSourceFilterSelect}
                     icon="code-bracket-square"
                 />
+                {canUseNativeControls && pausableDownloadItems.length ? (
+                    <FilterChip
+                        title={t("downloading.pauseActive")}
+                        selected={false}
+                        onPress={pauseActiveTasks}
+                        icon="pause"
+                    />
+                ) : null}
+                {canUseNativeControls && resumableDownloadItems.length ? (
+                    <FilterChip
+                        title={t("downloading.resumePaused")}
+                        selected={false}
+                        onPress={resumePausedTasks}
+                        icon="play"
+                    />
+                ) : null}
                 {completedTaskCount ? (
                     <FilterChip
                         title={t("downloading.clearCompleted")}
