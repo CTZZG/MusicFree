@@ -375,15 +375,23 @@ export default function DownloadingList() {
                     Toast.success(t("downloading.clearCompletedSuccess", {
                         count,
                     }));
+                } else {
+                    showNoBatchTasksToast();
                 }
             },
         });
+    }
+
+    function showNoBatchTasksToast() {
+        Toast.warn(t("downloading.batchActionNoTasks"));
     }
 
     function retryFailedTasks() {
         const count = downloader.retryFailedTasks(failedDownloadItems);
         if (count) {
             Toast.success(t("downloading.retryFailedSuccess", { count }));
+        } else {
+            showNoBatchTasksToast();
         }
     }
 
@@ -399,6 +407,8 @@ export default function DownloadingList() {
                     Toast.success(t("downloading.clearFailedSuccess", {
                         count,
                     }));
+                } else {
+                    showNoBatchTasksToast();
                 }
             },
         });
@@ -408,6 +418,8 @@ export default function DownloadingList() {
         const count = await downloader.pauseTasks(pausableDownloadItems);
         if (count) {
             Toast.success(t("downloading.pauseActiveSuccess", { count }));
+        } else {
+            showNoBatchTasksToast();
         }
     }
 
@@ -415,6 +427,8 @@ export default function DownloadingList() {
         const count = await downloader.resumeTasks(resumableDownloadItems);
         if (count) {
             Toast.success(t("downloading.resumePausedSuccess", { count }));
+        } else {
+            showNoBatchTasksToast();
         }
     }
 

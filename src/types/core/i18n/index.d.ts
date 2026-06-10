@@ -277,6 +277,7 @@ export interface ILanguageData {
     "downloading.clearCompletedSuccess": string; // 清理已完成成功
     "downloading.retryFailed": string; // 重试失败任务
     "downloading.retryFailedSuccess": string; // 重试失败任务成功
+    "downloading.batchActionNoTasks": string; // 当前筛选下没有可处理任务
     "downloading.clearFailed": string; // 清理失败记录
     "downloading.clearFailedConfirm": string; // 清理失败记录确认
     "downloading.clearFailedSuccess": string; // 清理失败记录成功

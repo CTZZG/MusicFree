@@ -233,6 +233,7 @@
     "downloading.clearCompletedSuccess": "Cleared {count} completed records",
     "downloading.retryFailed": "Retry Failed",
     "downloading.retryFailedSuccess": "Retried {count} failed tasks",
+    "downloading.batchActionNoTasks": "No actionable tasks in the current filter",
     "downloading.clearFailed": "Clear Failed",
     "downloading.clearFailedConfirm": "This will clear {count} failed records from Downloading only. Local music files will not be deleted. Continue?",
     "downloading.clearFailedSuccess": "Cleared {count} failed records",

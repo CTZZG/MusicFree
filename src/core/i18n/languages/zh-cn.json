@@ -233,6 +233,7 @@
     "downloading.clearCompletedSuccess": "已清理 {count} 条完成记录",
     "downloading.retryFailed": "重试失败",
     "downloading.retryFailedSuccess": "已重试 {count} 个失败任务",
+    "downloading.batchActionNoTasks": "当前筛选下没有可处理任务",
     "downloading.clearFailed": "清理失败",
     "downloading.clearFailedConfirm": "将清理 {count} 条失败记录，仅删除下载中心记录，不会删除本地音乐文件。确定继续吗？",
     "downloading.clearFailedSuccess": "已清理 {count} 条失败记录",
