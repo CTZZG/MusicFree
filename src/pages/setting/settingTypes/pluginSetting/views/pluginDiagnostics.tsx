@@ -260,6 +260,28 @@ export default function PluginDiagnostics() {
         [filter, pluginFilter, timeFilter, keywordFilter, t],
     );
     const hasActiveFilters = activeFilterLabels.length > 0;
+    const reportPlugins = useMemo(() => {
+        if (!hasActiveFilters) {
+            return plugins;
+        }
+        if (pluginFilter !== "all") {
+            return plugins.filter(plugin => plugin.name === pluginFilter);
+        }
+
+        const eventPluginHashes = new Set(
+            filteredEvents
+                .map(event => event.pluginHash)
+                .filter(Boolean),
+        );
+        const eventPluginNames = new Set(
+            filteredEvents.map(event => event.pluginName),
+        );
+
+        return plugins.filter(plugin =>
+            (plugin.hash && eventPluginHashes.has(plugin.hash)) ||
+            eventPluginNames.has(plugin.name),
+        );
+    }, [filteredEvents, hasActiveFilters, pluginFilter, plugins]);
 
     useEffect(() => {
         if (initialPluginName) {
@@ -279,7 +301,7 @@ export default function PluginDiagnostics() {
 
     function getPluginDiagnosticReportText() {
         if (hasActiveFilters) {
-            return buildPluginDiagnosticReport(plugins, {
+            return buildPluginDiagnosticReport(reportPlugins, {
                 events: filteredEvents,
                 filterSummary: activeFilterLabels.join(" / "),
             });
