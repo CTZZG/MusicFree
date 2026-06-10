@@ -994,6 +994,9 @@ export default function DownloadingList() {
                 completed: 0,
                 metadataFailed: 0,
                 lyricFailed: 0,
+                fileExists: 0,
+                fileMissing: 0,
+                fileUnknown: 0,
             };
             downloadQueue.forEach(musicItem => {
                 const status =
@@ -1023,10 +1026,27 @@ export default function DownloadingList() {
                 ) {
                     stats.lyricFailed += 1;
                 }
+                const fileStatus = getCompletedDownloadFileStatus(
+                    musicItem,
+                    completedFileStatusMap,
+                );
+                if (fileStatus === "exists") {
+                    stats.fileExists += 1;
+                } else if (fileStatus === "missing") {
+                    stats.fileMissing += 1;
+                } else {
+                    stats.fileUnknown += 1;
+                }
             });
             return stats;
         },
-        [downloadQueue, downloadTasks, sourceFilter, mediaExtraVersion],
+        [
+            downloadQueue,
+            downloadTasks,
+            sourceFilter,
+            completedFileStatusMap,
+            mediaExtraVersion,
+        ],
     );
     const failedDownloadItems = useMemo(
         () =>
@@ -1430,6 +1450,15 @@ export default function DownloadingList() {
                             lyricFailed: completedWriteStats.lyricFailed,
                         })}
                     </ThemeText>
+                    <ThemeText
+                        fontSize="description"
+                        fontColor="textSecondary">
+                        {t("downloading.fileStatusSummary", {
+                            exists: completedWriteStats.fileExists,
+                            missing: completedWriteStats.fileMissing,
+                            unknown: completedWriteStats.fileUnknown,
+                        })}
+                    </ThemeText>
                 </View>
             ) : null}
             <ScrollView
@@ -1562,6 +1591,7 @@ const style = StyleSheet.create({
     writeSummary: {
         paddingHorizontal: rpx(24),
         paddingTop: rpx(16),
+        gap: rpx(8),
     },
     detailContent: {
         gap: rpx(20),

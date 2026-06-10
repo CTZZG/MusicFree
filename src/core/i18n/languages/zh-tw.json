@@ -230,6 +230,7 @@
     "downloading.fileStatusFilter.missing": "文件不存在",
     "downloading.fileStatusFilter.unknown": "狀態未知",
     "downloading.writeStatusSummary": "已完成 {completed} · 元數據失敗 {metadataFailed} · 歌詞失敗 {lyricFailed}",
+    "downloading.fileStatusSummary": "文件存在 {exists} · 文件不存在 {missing} · 狀態未知 {unknown}",
     "downloading.sort.title": "排序",
     "downloading.sort.default": "預設順序",
     "downloading.sort.completedNewest": "完成時間從新到舊",

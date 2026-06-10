@@ -274,6 +274,7 @@ export interface ILanguageData {
     "downloading.fileStatusFilter.missing": string; // 文件不存在
     "downloading.fileStatusFilter.unknown": string; // 状态未知
     "downloading.writeStatusSummary": string; // 写入结果摘要
+    "downloading.fileStatusSummary": string; // 文件状态摘要
     "downloading.sort.title": string; // 排序
     "downloading.sort.default": string; // 默认顺序
     "downloading.sort.completedNewest": string; // 完成时间从新到旧

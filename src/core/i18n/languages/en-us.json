@@ -230,6 +230,7 @@
     "downloading.fileStatusFilter.missing": "File Missing",
     "downloading.fileStatusFilter.unknown": "Status Unknown",
     "downloading.writeStatusSummary": "Completed {completed} · Metadata failed {metadataFailed} · Lyric failed {lyricFailed}",
+    "downloading.fileStatusSummary": "File exists {exists} · Missing {missing} · Unknown {unknown}",
     "downloading.sort.title": "Sort",
     "downloading.sort.default": "Default Order",
     "downloading.sort.completedNewest": "Completed Newest First",
