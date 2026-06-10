@@ -336,6 +336,8 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.options.updatePlugin": string; // 更新插件
     "pluginSetting.pluginItem.options.viewDetails": string; // 详情
     "pluginSetting.pluginItem.options.sharePlugin": string; // 分享插件
+    "pluginSetting.pluginItem.options.testSearch": string; // 测试搜索
+    "pluginSetting.pluginItem.options.testSearchPlaceHolder": string; // 测试搜索关键词
     "pluginSetting.pluginItem.options.uninstallPlugin": string; // 卸载插件
     "pluginSetting.pluginItem.options.uninstallPluginContent": string; // 确定卸载该插件吗？
     "pluginSetting.pluginItem.options.alternativePlugin": string; // 替代插件
@@ -420,6 +422,14 @@ export interface ILanguageData {
     "pluginSetting.capabilityMatrix.supportedCount": string; // 插件能力矩阵支持数列
     "pluginSetting.capabilityMatrix.enabled": string; // 已启用
     "pluginSetting.capabilityMatrix.disabled": string; // 已禁用
+    "pluginSetting.testSearch.loading": string; // 测试搜索加载文案
+    "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题
+    "pluginSetting.testSearch.resultSummary": string; // 测试搜索结果摘要
+    "pluginSetting.testSearch.noResults": string; // 测试搜索无结果
+    "pluginSetting.testSearch.isEnd.yes": string; // 测试搜索已到末页
+    "pluginSetting.testSearch.isEnd.no": string; // 测试搜索未到末页
+    "pluginSetting.testSearch.emptyKeyword": string; // 测试搜索空关键词
+    "pluginSetting.testSearch.failed": string; // 测试搜索失败
     "pluginSetting.failReason": string; // 失败原因
     "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
     "pluginSetting.installResult.success": string; // 安装成功

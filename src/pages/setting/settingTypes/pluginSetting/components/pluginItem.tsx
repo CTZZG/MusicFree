@@ -33,6 +33,25 @@ interface IOption {
     show?: boolean;
 }
 
+function getPluginTestSearchType(plugin: Plugin): ICommon.SupportMediaType {
+    const supportedTypes = plugin.instance.supportedSearchType;
+    const defaultType = plugin.instance.defaultSearchType;
+    if (defaultType && (!supportedTypes || supportedTypes.includes(defaultType))) {
+        return defaultType;
+    }
+    return supportedTypes?.[0] ?? "music";
+}
+
+function formatTestSearchResultItem(item: any) {
+    return [
+        item?.title,
+        item?.artist,
+        item?.album,
+        item?.author,
+        item?.platform,
+    ].filter(Boolean).join(" - ") || "-";
+}
+
 function _PluginItem(props: IPluginItemProps) {
     const { plugin } = props;
     const colors = useColors();
@@ -46,6 +65,80 @@ function _PluginItem(props: IPluginItemProps) {
     const visibleCapabilityLabels = capabilityLabels.slice(0, 6);
     const hiddenCapabilityCount =
         capabilityLabels.length - visibleCapabilityLabels.length;
+
+    function showTestSearchResult(
+        keyword: string,
+        type: ICommon.SupportMediaType,
+        result: IPlugin.ISearchResult<ICommon.SupportMediaType>,
+    ) {
+        const resultLines = result.data?.slice(0, 5).map((item, index) =>
+            `${index + 1}. ${formatTestSearchResultItem(item)}`,
+        ) ?? [];
+        showDialog("SimpleDialog", {
+            title: t("pluginSetting.testSearch.resultTitle", {
+                name: plugin.name,
+            }),
+            content: [
+                t("pluginSetting.testSearch.resultSummary", {
+                    keyword,
+                    type,
+                    count: result.data?.length ?? 0,
+                    isEnd: result.isEnd
+                        ? t("pluginSetting.testSearch.isEnd.yes")
+                        : t("pluginSetting.testSearch.isEnd.no"),
+                }),
+                resultLines.length
+                    ? resultLines.join("\n")
+                    : t("pluginSetting.testSearch.noResults"),
+            ].join("\n\n"),
+        });
+    }
+
+    function onTestSearch() {
+        showPanel("SimpleInput", {
+            title: t("pluginSetting.pluginItem.options.testSearch"),
+            placeholder: t(
+                "pluginSetting.pluginItem.options.testSearchPlaceHolder",
+            ),
+            maxLength: 80,
+            async onOk(text, closePanel) {
+                const keyword = text.trim();
+                if (!keyword) {
+                    Toast.warn(t("pluginSetting.testSearch.emptyKeyword"));
+                    return;
+                }
+                const searchType = getPluginTestSearchType(plugin);
+                closePanel();
+                setTimeout(() => {
+                    showDialog("LoadingDialog", {
+                        title: t("pluginSetting.pluginItem.options.testSearch"),
+                        loadingText: t("pluginSetting.testSearch.loading"),
+                        task() {
+                            return plugin.methods.search(
+                                keyword,
+                                1,
+                                searchType,
+                            );
+                        },
+                        onResolve(result, hideDialog) {
+                            hideDialog();
+                            showTestSearchResult(
+                                keyword,
+                                searchType,
+                                result as IPlugin.ISearchResult<ICommon.SupportMediaType>,
+                            );
+                        },
+                        onReject(reason, hideDialog) {
+                            hideDialog();
+                            Toast.warn(t("pluginSetting.testSearch.failed", {
+                                reason: reason?.message ?? reason,
+                            }));
+                        },
+                    });
+                }, 0);
+            },
+        });
+    }
 
     const options: IOption[] = [
         {
@@ -109,6 +202,12 @@ function _PluginItem(props: IPluginItemProps) {
                 }
             },
             show: !!plugin.instance.srcUrl,
+        },
+        {
+            title: t("pluginSetting.pluginItem.options.testSearch"),
+            icon: "magnifying-glass",
+            onPress: onTestSearch,
+            show: !!plugin.supportedMethods.has("search"),
         },
         {
             title: t("pluginSetting.pluginItem.options.sharePlugin"),
