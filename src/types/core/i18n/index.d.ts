@@ -645,6 +645,7 @@ export interface ILanguageData {
     "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly": string; // 当前不是 Wi-Fi 网络
     "backupAndResume.resumePreviewTitle": string; // 恢复前预览
     "backupAndResume.resumeReportTitle": string; // 恢复结果
+    "backupAndResume.copyResumePreview": string; // 复制恢复预览
     "backupAndResume.copyResumeReport": string; // 复制恢复报告
     "backupAndResume.startResume": string; // 开始恢复
     "backupAndResume.report.musicSheets": string; // 歌单

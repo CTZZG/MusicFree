@@ -231,10 +231,21 @@ export default function BackupSetting() {
     function showResumePreview(raw: string | object) {
         try {
             const preview = Backup.preview(raw);
+            const previewText = formatResumePreview(preview);
             showDialog("SimpleDialog", {
                 title: t("backupAndResume.resumePreviewTitle"),
-                content: formatResumePreview(preview),
+                content: previewText,
                 okText: t("backupAndResume.startResume"),
+                extraActions: [
+                    {
+                        title: t("backupAndResume.copyResumePreview"),
+                        type: "normal",
+                        onPress() {
+                            Clipboard.setString(previewText);
+                            Toast.success(t("toast.copiedToClipboard"));
+                        },
+                    },
+                ],
                 onOk() {
                     setTimeout(() => {
                         showResumeLoading(raw);

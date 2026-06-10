@@ -590,6 +590,7 @@
     "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly": "Current network is not Wi-Fi",
     "backupAndResume.resumePreviewTitle": "Restore Preview",
     "backupAndResume.resumeReportTitle": "Restore Report",
+    "backupAndResume.copyResumePreview": "Copy Preview",
     "backupAndResume.copyResumeReport": "Copy Report",
     "backupAndResume.startResume": "Start Restore",
     "backupAndResume.report.musicSheets": "Playlists",

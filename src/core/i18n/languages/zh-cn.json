@@ -590,6 +590,7 @@
     "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly": "当前不是 Wi-Fi 网络",
     "backupAndResume.resumePreviewTitle": "恢复前预览",
     "backupAndResume.resumeReportTitle": "恢复结果",
+    "backupAndResume.copyResumePreview": "复制预览",
     "backupAndResume.copyResumeReport": "复制报告",
     "backupAndResume.startResume": "开始恢复",
     "backupAndResume.report.musicSheets": "歌单",

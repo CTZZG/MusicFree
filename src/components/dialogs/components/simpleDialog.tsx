@@ -8,14 +8,39 @@ interface ISimpleDialogProps {
     content: string | JSX.Element;
     okText?: string;
     cancelText?: string;
+    extraActions?: Array<{
+        title: string;
+        type?: "normal" | "primary";
+        show?: boolean;
+        closeOnPress?: boolean;
+        onPress?: () => void;
+    }>;
     onOk?: () => void;
     onCancel?: () => void;
     onDismiss?: () => void;
 }
 export default function SimpleDialog(props: ISimpleDialogProps) {
-    const { title, content, onOk, onCancel, onDismiss, okText, cancelText } = props;
+    const {
+        title,
+        content,
+        onOk,
+        onCancel,
+        onDismiss,
+        okText,
+        cancelText,
+        extraActions = [],
+    } = props;
 
     const { t } = useI18N();
+    const mappedExtraActions = extraActions.map(action => ({
+        ...action,
+        onPress() {
+            action.onPress?.();
+            if (action.closeOnPress) {
+                hideDialog();
+            }
+        },
+    }));
 
     const actions = onOk
         ? [
@@ -27,6 +52,7 @@ export default function SimpleDialog(props: ISimpleDialogProps) {
                     hideDialog();
                 },
             },
+            ...mappedExtraActions,
             {
                 title: okText ?? t("common.confirm"),
                 type: "primary",
@@ -37,6 +63,7 @@ export default function SimpleDialog(props: ISimpleDialogProps) {
             },
         ]
         : ([
+            ...mappedExtraActions,
             {
                 title: okText ?? t("dialog.errorLogKnow"),
                 type: "primary",

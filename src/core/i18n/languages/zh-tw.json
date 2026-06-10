@@ -590,6 +590,7 @@
     "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly": "目前不是 Wi-Fi 網路",
     "backupAndResume.resumePreviewTitle": "恢復前預覽",
     "backupAndResume.resumeReportTitle": "恢復結果",
+    "backupAndResume.copyResumePreview": "複製預覽",
     "backupAndResume.copyResumeReport": "複製報告",
     "backupAndResume.startResume": "開始恢復",
     "backupAndResume.report.musicSheets": "歌單",
