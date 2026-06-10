@@ -5,11 +5,16 @@ import {
     supportLocalMediaType,
 } from "@/constants/commonConst";
 import mp3Util, { IBasicMeta } from "@/native/mp3Util";
-import { getFileName, removeFileScheme } from "@/utils/fileUtils.ts";
+import {
+    addFileScheme,
+    getFileName,
+    removeFileScheme,
+} from "@/utils/fileUtils.ts";
 import {
     getLocalPath,
     isSameMediaItem,
 } from "@/utils/mediaUtils";
+import { patchMediaExtra } from "@/utils/mediaExtra";
 import { trace } from "@/utils/log";
 import StateMapper from "@/utils/stateMapper";
 import { getStorage, setStorage } from "@/utils/storage";
@@ -17,9 +22,11 @@ import CryptoJs from "crypto-js";
 import { nanoid } from "nanoid";
 import { useEffect, useState } from "react";
 import { ReadDirItem, exists, readDir, unlink } from "react-native-fs";
+import MusicSheet from "./musicSheet";
 
 let localSheet: IMusic.IMusicItem[] = [];
 const localSheetStateMapper = new StateMapper(() => localSheet);
+const resumeFailureReasonLimit = 10;
 
 interface ILocalMusicResumeReport {
     successCount: number;
@@ -137,6 +144,10 @@ function localMediaFilter(filename: string) {
     return supportLocalMediaType.some(ext => filename.toLowerCase().endsWith(ext));
 }
 
+function isSupportedLocalMediaFile(filename: string) {
+    return localMediaFilter(filename);
+}
+
 function normalizeFsPath(filePath: string) {
     const rawPath = removeFileScheme(filePath);
     try {
@@ -168,6 +179,42 @@ function getLowerFileExtension(filePath: string) {
 
 function shouldReadSystemMetadata(filePath: string) {
     return !metadataUnsafeExtensions.has(getLowerFileExtension(filePath));
+}
+
+function formatMusicLabel(
+    musicItem: Partial<IMusic.IMusicItem> | null | undefined,
+) {
+    const title = typeof musicItem?.title === "string" && musicItem.title.trim()
+        ? musicItem.title.trim()
+        : "未知歌曲";
+    const artist = typeof musicItem?.artist === "string" && musicItem.artist.trim()
+        ? musicItem.artist.trim()
+        : "未知歌手";
+    return `${title} - ${artist}`;
+}
+
+function patchLocalPath(
+    musicItem: IMusic.IMusicItem,
+    localPath: string,
+): IMusic.IMusicItem {
+    const shouldPatchUrl =
+        typeof musicItem.url === "string" &&
+        (musicItem.url.startsWith("file://") ||
+            musicItem.url.startsWith("content://"));
+    return {
+        ...musicItem,
+        ...(shouldPatchUrl ? { url: addFileScheme(localPath) } : {}),
+        [internalSerializeKey]: {
+            ...(musicItem[internalSerializeKey] ?? {}),
+            localPath,
+        },
+    };
+}
+
+function pushLimitedReason(reasons: string[], reason: string) {
+    if (reasons.length < resumeFailureReasonLimit) {
+        reasons.push(reason);
+    }
 }
 
 let importToken: string | null = null;
@@ -366,8 +413,42 @@ async function updateMusicList(newSheet: IMusic.IMusicItem[]) {
     } catch {}
 }
 
+async function relocateMusic(
+    musicItem: IMusic.IMusicItem,
+    newPath: string,
+) {
+    const nextLocalPath = normalizeFsPath(newPath);
+    if (!isSupportedLocalMediaFile(nextLocalPath)) {
+        throw new Error("不支持的音频格式");
+    }
+    if (!(await exists(nextLocalPath))) {
+        throw new Error("文件不存在");
+    }
+
+    const targetIndex = localSheet.findIndex(item =>
+        isSameMediaItem(item, musicItem),
+    );
+    if (targetIndex === -1) {
+        throw new Error("未找到本地音乐记录");
+    }
+
+    const updatedMusicItem = patchLocalPath(localSheet[targetIndex], nextLocalPath);
+    const nextSheet = [...localSheet];
+    nextSheet[targetIndex] = updatedMusicItem;
+    await updateMusicList(nextSheet);
+    patchMediaExtra(updatedMusicItem, {
+        downloaded: true,
+        localPath: nextLocalPath,
+    });
+    await MusicSheet.updateMusicItemReferences(updatedMusicItem, item =>
+        patchLocalPath(item, nextLocalPath),
+    );
+
+    return updatedMusicItem;
+}
+
 async function resumeMusicList(
-    musicItems?: IMusic.IMusicItem[],
+    musicItems?: unknown,
 ): Promise<ILocalMusicResumeReport> {
     const report = createResumeReport();
     if (!Array.isArray(musicItems) || !musicItems.length) {
@@ -375,30 +456,63 @@ async function resumeMusicList(
     }
 
     const validMusicItems: IMusic.IMusicItem[] = [];
+    const skippedReasons: string[] = [];
     for (let musicItem of musicItems) {
         try {
-            const localPath = getLocalPath(musicItem);
+            if (!musicItem || typeof musicItem !== "object") {
+                report.skippedCount += 1;
+                pushLimitedReason(skippedReasons, "无效本地音乐记录: 已跳过");
+                continue;
+            }
+
+            const partialMusicItem = musicItem as Partial<IMusic.IMusicItem>;
+            const localPath = getLocalPath(partialMusicItem as IMusic.IMusicItem);
             const fsPath = localPath ? normalizeFsPath(localPath) : null;
-            if (fsPath && (await exists(fsPath))) {
+            if (!fsPath) {
+                report.skippedCount += 1;
+                pushLimitedReason(
+                    skippedReasons,
+                    `${formatMusicLabel(partialMusicItem)}: 缺少本地路径`,
+                );
+            } else if (await exists(fsPath)) {
                 validMusicItems.push({
-                    ...musicItem,
+                    ...partialMusicItem,
                     id:
-                        musicItem.id ??
+                        partialMusicItem.id ??
                         CryptoJs.MD5(fsPath).toString(CryptoJs.enc.Hex),
-                    platform: musicItem.platform ?? localPluginPlatform,
-                    title: musicItem.title ?? getFileName(fsPath),
-                    artist: musicItem.artist ?? "未知歌手",
+                    platform: partialMusicItem.platform ?? localPluginPlatform,
+                    title: partialMusicItem.title ?? getFileName(fsPath),
+                    artist: partialMusicItem.artist ?? "未知歌手",
                     [internalSerializeKey]: {
-                        ...(musicItem[internalSerializeKey] ?? {}),
+                        ...(partialMusicItem[internalSerializeKey] ?? {}),
                         localPath,
                     },
-                });
+                } as IMusic.IMusicItem);
             } else {
                 report.skippedCount += 1;
+                pushLimitedReason(
+                    skippedReasons,
+                    `${formatMusicLabel(partialMusicItem)}: 文件不存在`,
+                );
             }
         } catch (e: any) {
-            report.failedCount += 1;
-            report.failureReasons.push(e?.message ?? String(e));
+            report.skippedCount += 1;
+            pushLimitedReason(
+                skippedReasons,
+                `${formatMusicLabel(musicItem as Partial<IMusic.IMusicItem>)}: ${
+                    e?.message ?? String(e)
+                }`,
+            );
+        }
+    }
+
+    if (skippedReasons.length) {
+        report.failureReasons.push(...skippedReasons);
+        const omittedReasonCount = report.skippedCount - skippedReasons.length;
+        if (omittedReasonCount > 0) {
+            report.failureReasons.push(
+                `还有 ${omittedReasonCount} 首本地音乐被跳过`,
+            );
         }
     }
 
@@ -424,11 +538,13 @@ const LocalMusicSheet = {
     importLocal,
     cancelImportLocal,
     isLocalMusic,
+    isSupportedLocalMediaFile,
     useIsLocal,
     getMusicList,
     useMusicList: localSheetStateMapper.useMappedState,
     useLocalFileExists,
     updateMusicList,
+    relocateMusic,
     resumeMusicList,
 };
 

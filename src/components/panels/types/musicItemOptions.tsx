@@ -11,7 +11,7 @@ import FastImage from "@/components/base/fastImage";
 import Toast from "@/utils/toast";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { localMusicSheetId, musicHistorySheetId } from "@/constants/commonConst";
-import { ROUTE_PATH } from "@/core/router";
+import { ROUTE_PATH, useNavigate } from "@/core/router";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PanelBase from "../base/panelBase";
@@ -57,10 +57,12 @@ interface IOption {
 export default function MusicItemOptions(props: IMusicItemOptionsProps) {
     const { musicItem, musicSheet, from } = props ?? {};
     const { t } = useI18N();
+    const navigate = useNavigate();
 
     const safeAreaInsets = useSafeAreaInsets();
 
     const downloaded = LocalMusicSheet.isLocalMusic(musicItem);
+    const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
     const associatedLrc = getMediaExtraProperty(musicItem, "associatedLrc");
     const formatDiagnostics = getMediaFormatDiagnostics(musicItem);
 
@@ -141,6 +143,41 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             icon: "check-circle-outline",
             title: t("panel.musicItemOptions.downloaded"),
             show: !!downloaded,
+        },
+        {
+            icon: "folder-music-outline",
+            title: t("localMusic.relocateFile"),
+            show: !!downloaded && localFileExists === false,
+            onPress: () => {
+                hidePanel();
+                navigate(ROUTE_PATH.FILE_SELECTOR, {
+                    fileType: "file",
+                    multi: false,
+                    actionText: t("localMusic.relocateFileAction"),
+                    matchExtension: LocalMusicSheet.isSupportedLocalMediaFile,
+                    async onAction(selectedFiles) {
+                        const selectedPath = selectedFiles[0]?.path;
+                        if (!selectedPath) {
+                            return false;
+                        }
+                        try {
+                            await LocalMusicSheet.relocateMusic(
+                                musicItem,
+                                selectedPath,
+                            );
+                            Toast.success(t("localMusic.relocateSuccess"));
+                            return true;
+                        } catch (e: any) {
+                            Toast.warn(
+                                t("localMusic.relocateFailed", {
+                                    reason: e?.message ?? e,
+                                }),
+                            );
+                            return false;
+                        }
+                    },
+                });
+            },
         },
         {
             icon: "information-circle",

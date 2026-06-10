@@ -78,7 +78,7 @@ function normalizeResumeSheet(
 const ee = new EventEmitter<{
     UpdateMusicList: (updateInfo: {
         sheetId: string;
-        updateType: "length" | "resort"; // 更新类型
+        updateType: "length" | "resort" | "content"; // 更新类型
     }) => void;
     UpdateSheetBasic: (data: {
         sheetId: string;
@@ -532,6 +532,35 @@ class MusicSheetClazz implements IInjectable {
             sheetId,
             updateType: "length",
         });
+    }
+
+    async updateMusicItemReferences(
+        musicItem: IMusic.IMusicItem,
+        updater: (item: IMusic.IMusicItem) => IMusic.IMusicItem,
+    ) {
+        let updatedCount = 0;
+        const allSheets = getDefaultStore().get(musicSheetsBaseAtom);
+
+        for (const sheet of allSheets) {
+            const musicList = musicListMap.get(sheet.id);
+            if (!musicList) {
+                continue;
+            }
+
+            const sheetUpdatedCount = musicList.update(musicItem, updater);
+            if (!sheetUpdatedCount) {
+                continue;
+            }
+
+            updatedCount += sheetUpdatedCount;
+            await storage.setMusicList(sheet.id, musicList.musicList);
+            ee.emit("UpdateMusicList", {
+                sheetId: sheet.id,
+                updateType: "content",
+            });
+        }
+
+        return updatedCount;
     }
 
 

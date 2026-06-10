@@ -137,6 +137,11 @@ export interface ILanguageData {
     "localMusic.downloadList": string; // 下载列表
     "localMusic.sourceFilter.all": string; // 全部来源
     "localMusic.fileMissing": string; // 文件不存在
+    "localMusic.fileMissingTapHint": string; // 文件不存在点击提示
+    "localMusic.relocateFile": string; // 重新定位文件
+    "localMusic.relocateFileAction": string; // 使用此文件
+    "localMusic.relocateSuccess": string; // 重新定位成功
+    "localMusic.relocateFailed": string; // 重新定位失败
 
     // 歌词相关
     "lyric.lyricLinkedFrom": string; // 歌词来自

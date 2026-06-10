@@ -668,6 +668,52 @@
 - WebDAV 有历史备份时可选择恢复文件。
 ```
 
+## Prompt 18：本地文件丢失修复与重新定位
+
+状态：已完成。本次让缺失的本地音乐文件可见、可阻止误播放、可从歌曲菜单重新定位，并在恢复报告中输出缺失原因摘要。
+
+```text
+你在 MusicFree 仓库的 codex/plugin-center-mvp 分支上工作。
+
+先阅读：
+- docs/feishin-inspired-roadmap.md
+- src/core/localMusicSheet.ts
+- src/core/musicSheet/index.ts
+- src/components/mediaItem/musicItem.tsx
+- src/components/panels/types/musicItemOptions.tsx
+- src/core/i18n/languages/zh-cn.json
+- src/core/i18n/languages/en-us.json
+- src/core/i18n/languages/zh-tw.json
+- src/types/core/i18n/index.d.ts
+
+任务：
+修复本地音乐文件丢失后的体验，让用户知道文件缺失、避免误触播放，并能为同一首本地歌重新选择文件路径。
+
+范围：
+- LocalMusicSheet 暴露支持音频扩展名判断和 relocateMusic。
+- 重新定位只更新 localPath，保留 id/platform/title/artist。
+- MusicSheet 同步更新所有普通歌单中同一 media key 的本地歌引用。
+- 本地文件不存在时点击歌曲不进入播放，改为提示。
+- 缺失本地歌的更多菜单增加“重新定位文件”。
+- 恢复本地音乐时记录缺少路径、文件不存在、无效记录等原因摘要。
+- 补齐中/英/繁体文案和 i18n 类型。
+
+不要做：
+- 不做 WebDAV 自动备份。
+- 不重写播放器。
+- 不重新生成本地音乐 ID。
+- 不处理 Android SAF 持久授权迁移。
+- 恢复报告不输出完整本地路径。
+
+验收：
+- npx tsc --noEmit 通过。
+- git diff --check 通过。
+- 删除或改名本地文件后，列表显示文件不存在。
+- 点击缺失本地歌只提示，不进入播放。
+- 通过更多菜单重新定位后，本地音乐页和普通歌单中的同一首歌都能播放。
+- 包含丢失本地文件的备份恢复后，恢复报告显示跳过数量和简短原因。
+```
+
 ## 当前推进建议
 
-当前已经完成 Prompt 01 到 Prompt 17。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议进入下载/本地资料库的后续增强，或继续完善 WebDAV 自动备份设置。
+当前已经完成 Prompt 01 到 Prompt 18。下一步可以从 `docs/feishin-inspired-roadmap.md` 里选择下一个独立切片继续推进，建议进入下载中心筛选/元数据状态展示，或继续完善 WebDAV 自动备份设置。

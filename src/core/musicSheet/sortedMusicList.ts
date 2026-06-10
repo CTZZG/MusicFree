@@ -157,6 +157,27 @@ export default class SortedMusicList {
         this.removeFromCountMap(removedItems);
     }
 
+    update(
+        musicItem: IMusic.IMusicItem,
+        updater: (item: IMusic.IMusicItem) => IMusic.IMusicItem,
+    ) {
+        let updatedCount = 0;
+        this.array = this.array.map(item => {
+            if (!isSameMediaItem(item, musicItem)) {
+                return item;
+            }
+
+            updatedCount += 1;
+            const updatedItem = updater(item);
+            return {
+                ...updatedItem,
+                id: item.id,
+                platform: item.platform,
+            };
+        });
+        return updatedCount;
+    }
+
     clearAll() {
         this.array = [];
     }

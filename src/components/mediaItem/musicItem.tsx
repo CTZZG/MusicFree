@@ -18,6 +18,7 @@ import {
 } from "@/utils/qualities";
 import DownloadStatusIndicator from "@/components/downloadStatusIndicator";
 import { useI18N } from "@/core/i18n";
+import Toast from "@/utils/toast";
 
 interface IMusicItemProps {
     index?: string | number;
@@ -88,6 +89,7 @@ export default function MusicItem(props: IMusicItemProps) {
     );
     const { t } = useI18N();
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
+    const localMusicItem = LocalMusicSheet.isLocalMusic(musicItem);
     const durationText = useMemo(
         () => showDuration ? formatDuration(musicItem.duration) : "",
         [musicItem.duration, showDuration],
@@ -102,6 +104,10 @@ export default function MusicItem(props: IMusicItemProps) {
             rightPadding={itemPaddingRight}
             onLongPress={onItemLongPress}
             onPress={() => {
+                if (localMusicItem && localFileExists === false) {
+                    Toast.warn(t("localMusic.fileMissingTapHint"));
+                    return;
+                }
                 if (onItemPress) {
                     onItemPress(musicItem);
                 } else {
@@ -136,7 +142,7 @@ export default function MusicItem(props: IMusicItemProps) {
                 }
                 description={
                     <View style={styles.descContainer}>
-                        {LocalMusicSheet.isLocalMusic(musicItem) && (
+                        {localMusicItem && (
                             <Icon
                                 style={styles.icon}
                                 color={localFileExists === false ? "#e66767" : "#11659a"}
