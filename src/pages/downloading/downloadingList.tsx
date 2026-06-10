@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
+import { writeFile } from "react-native-fs";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
 import { sizeFormatter } from "@/utils/fileUtils";
@@ -23,6 +24,7 @@ import { showPanel } from "@/components/panels/usePanel";
 import Icon, { IIconName } from "@/components/base/icon";
 import Toast from "@/utils/toast";
 import { showDialog } from "@/components/dialogs/useDialog";
+import { ROUTE_PATH, useNavigate } from "@/core/router";
 import {
     getMediaExtraProperty,
     useMediaExtraProperty,
@@ -84,6 +86,23 @@ function getCompletedDownloadRecordStats(items: IMusic.IMusicItem[]) {
         );
     });
     return { metadata, lyric };
+}
+
+function getDownloadReportFileName() {
+    const date = new Date();
+    return [
+        "MusicFree-download-records",
+        date.getFullYear(),
+        padTime(date.getMonth() + 1),
+        padTime(date.getDate()),
+        padTime(date.getHours()),
+        padTime(date.getMinutes()),
+        padTime(date.getSeconds()),
+    ].join("-") + ".txt";
+}
+
+function joinFolderPath(folder: string, filename: string) {
+    return `${folder.replace(/[\\/]+$/, "")}/${filename}`;
 }
 
 function getCompletedDownloadDetailText(
@@ -530,6 +549,7 @@ export default function DownloadingList() {
     const downloadQueue = useDownloadQueue();
     const downloadTasks = useDownloadTasksSnapshot();
     const { t } = useI18N();
+    const navigate = useNavigate();
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
     const [writeFilter, setWriteFilter] = useState<DownloadWriteFilter>("all");
@@ -954,7 +974,14 @@ export default function DownloadingList() {
             return;
         }
 
-        Clipboard.setString(buildCompletedDownloadRecordsReport({
+        Clipboard.setString(getCompletedDownloadReportText());
+        Toast.success(t("downloading.copyCompletedRecordsSuccess", {
+            count: completedFilteredQueue.length,
+        }));
+    }
+
+    function getCompletedDownloadReportText() {
+        return buildCompletedDownloadRecordsReport({
             items: completedFilteredQueue,
             downloadTasks,
             statusFilterTitle,
@@ -962,10 +989,43 @@ export default function DownloadingList() {
             writeFilterTitle: writeFilterReportTitle,
             sortTitle: sortReportTitle,
             t,
-        }));
-        Toast.success(t("downloading.copyCompletedRecordsSuccess", {
-            count: completedFilteredQueue.length,
-        }));
+        });
+    }
+
+    function exportCompletedDownloadRecords() {
+        if (!completedFilteredQueue.length) {
+            showNoBatchTasksToast();
+            return;
+        }
+
+        navigate(ROUTE_PATH.FILE_SELECTOR, {
+            fileType: "folder",
+            multi: false,
+            actionText: t("downloading.exportCompletedRecordsAction"),
+            async onAction(selectedFiles) {
+                const folder = selectedFiles[0]?.path;
+                if (!folder) {
+                    return false;
+                }
+                const filename = getDownloadReportFileName();
+                try {
+                    await writeFile(
+                        joinFolderPath(folder, filename),
+                        getCompletedDownloadReportText(),
+                        "utf8",
+                    );
+                    Toast.success(t("downloading.exportCompletedRecordsSuccess", {
+                        filename,
+                    }));
+                    return true;
+                } catch (e: any) {
+                    Toast.warn(t("downloading.exportCompletedRecordsFailed", {
+                        reason: e?.message ?? e,
+                    }));
+                    return false;
+                }
+            },
+        });
     }
 
 
@@ -1016,12 +1076,20 @@ export default function DownloadingList() {
                     icon="sort-outline"
                 />
                 {completedFilteredQueue.length ? (
-                    <FilterChip
-                        title={t("downloading.copyCompletedRecords")}
-                        selected={false}
-                        onPress={copyCompletedDownloadRecords}
-                        icon="document-outline"
-                    />
+                    <>
+                        <FilterChip
+                            title={t("downloading.copyCompletedRecords")}
+                            selected={false}
+                            onPress={copyCompletedDownloadRecords}
+                            icon="document-outline"
+                        />
+                        <FilterChip
+                            title={t("downloading.exportCompletedRecords")}
+                            selected={false}
+                            onPress={exportCompletedDownloadRecords}
+                            icon="arrow-up-tray"
+                        />
+                    </>
                 ) : null}
                 {canUseNativeControls && pausableDownloadItems.length ? (
                     <FilterChip

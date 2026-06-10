@@ -289,6 +289,10 @@ export interface ILanguageData {
     "downloading.detail.close": string; // 关闭
     "downloading.copyCompletedRecords": string; // 复制记录
     "downloading.copyCompletedRecordsSuccess": string; // 复制完成记录成功
+    "downloading.exportCompletedRecords": string; // 导出记录
+    "downloading.exportCompletedRecordsAction": string; // 导出到此处
+    "downloading.exportCompletedRecordsSuccess": string; // 导出记录成功
+    "downloading.exportCompletedRecordsFailed": string; // 导出记录失败
     "downloading.report.title": string; // 下载记录报告
     "downloading.report.generatedAt": string; // 生成时间
     "downloading.report.count": string; // 记录数量
