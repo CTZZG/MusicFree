@@ -21,7 +21,7 @@ import { ToastAndroid } from "react-native";
 import { copyFile, readDir, readFile, unlink, writeFile } from "react-native-fs";
 import { devLog, errorLog, trace } from "../../utils/log";
 import pluginMeta from "./meta";
-import { localFilePlugin, Plugin, PluginState } from "./plugin";
+import { localFilePlugin, Plugin, PluginErrorReason, PluginState } from "./plugin";
 import i18n from "../i18n";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse } from "@/utils/jsonUtil";
@@ -31,6 +31,22 @@ import delay from "@/utils/delay";
 
 const pluginsAtom = atom<Plugin[]>([]);
 const pluginCacheStore = getOrCreateMMKV("plugin.cache");
+
+function getHttpStatus(error: any) {
+    return (
+        error?.response?.status ??
+        error?.response?.statusCode ??
+        error?.status ??
+        error?.statusCode
+    );
+}
+
+function getPluginInstallParseFailureReason(plugin: Plugin) {
+    return plugin.errorMessage ||
+        plugin.errorReason === PluginErrorReason.VersionNotMatch
+        ? "parse"
+        : "unrecognized";
+}
 
 const ee = new EventEmitter<{
     "order-updated": () => void;
@@ -199,14 +215,25 @@ class PluginManager implements IPluginManager, IInjectable {
             useExpoFs?: boolean;
         },
     ): Promise<IInstallPluginResult> {
+        let funcCode: string;
         try {
-            let funcCode: string;
             if (config?.useExpoFs) {
                 funcCode = await readAsStringAsync(pluginPath);
             } else {
                 funcCode = await readFile(pluginPath, "utf8");
             }
+        } catch (e: any) {
+            return {
+                success: false,
+                message: e?.message ?? "本地插件读取失败",
+                pluginUrl: pluginPath,
+                sourceType: "local-file",
+                failureReason: "file-read",
+                retryable: true,
+            };
+        }
 
+        try {
             if (funcCode) {
                 const plugin = new Plugin(funcCode, pluginPath);
                 let allPlugins = [...this.getPlugins()];
@@ -243,6 +270,8 @@ class PluginManager implements IPluginManager, IInjectable {
                             pluginHash: plugin.hash,
                             pluginVersion: plugin.instance.version,
                             sourceType: "local-file",
+                            failureReason: "newer-version-installed",
+                            retryable: false,
                         };
                     }
                 }
@@ -283,19 +312,25 @@ class PluginManager implements IPluginManager, IInjectable {
                     pluginName: plugin.name || undefined,
                     pluginVersion: plugin.instance.version,
                     sourceType: "local-file",
+                    failureReason: getPluginInstallParseFailureReason(plugin),
+                    retryable: false,
                 };
             }
             return {
                 success: false,
                 message: "插件无法识别",
                 sourceType: "local-file",
+                failureReason: "unrecognized",
+                retryable: false,
             };
         } catch (e: any) {
             return {
                 success: false,
-                message: e?.message ?? "本地插件读取失败",
+                message: e?.message ?? "插件安装失败",
                 pluginUrl: pluginPath,
                 sourceType: "local-file",
+                failureReason: "unknown",
+                retryable: false,
             };
         }
     }
@@ -311,8 +346,9 @@ class PluginManager implements IPluginManager, IInjectable {
         url: string,
         config?: IInstallPluginConfig,
     ): Promise<IInstallPluginResult> {
+        let funcCode: string;
         try {
-            const funcCode = (
+            funcCode = (
                 await axios.get(url, {
                     headers: {
                         "Cache-Control": "no-cache",
@@ -321,6 +357,24 @@ class PluginManager implements IPluginManager, IInjectable {
                     },
                 })
             ).data;
+        } catch (e: any) {
+            devLog("error", "URL安装插件失败", e, e?.message);
+            errorLog("URL安装插件失败", e);
+
+            const isNotFound = getHttpStatus(e) === 404;
+            return {
+                success: false,
+                message: isNotFound
+                    ? "插件不存在，请联系插件作者"
+                    : e?.message ?? "",
+                pluginUrl: url,
+                sourceType: "network",
+                failureReason: isNotFound ? "not-found" : "network",
+                retryable: !isNotFound,
+            };
+        }
+
+        try {
             if (funcCode) {
                 const plugin = new Plugin(funcCode, "");
                 let allPlugins = [...this.getPlugins()];
@@ -358,11 +412,13 @@ class PluginManager implements IPluginManager, IInjectable {
                             pluginUrl: url,
                             pluginVersion: plugin.instance.version,
                             sourceType: "network",
+                            failureReason: "newer-version-installed",
+                            retryable: false,
                         };
                     }
                 }
 
-                if (plugin.hash !== "") {
+                if (plugin.state === PluginState.Mounted) {
                     const fn = nanoid();
                     const _pluginPath = `${pathConst.pluginPath}${fn}.js`;
                     await writeFile(_pluginPath, funcCode, "utf8");
@@ -395,6 +451,8 @@ class PluginManager implements IPluginManager, IInjectable {
                     pluginName: plugin.name || undefined,
                     pluginVersion: plugin.instance.version,
                     sourceType: "network",
+                    failureReason: getPluginInstallParseFailureReason(plugin),
+                    retryable: false,
                 };
             } else {
                 return {
@@ -402,27 +460,22 @@ class PluginManager implements IPluginManager, IInjectable {
                     message: "插件无法识别",
                     pluginUrl: url,
                     sourceType: "network",
+                    failureReason: "unrecognized",
+                    retryable: false,
                 };
             }
         } catch (e: any) {
             devLog("error", "URL安装插件失败", e, e?.message);
             errorLog("URL安装插件失败", e);
 
-            if (e?.response?.statusCode === 404) {
-                return {
-                    success: false,
-                    message: "插件不存在，请联系插件作者",
-                    pluginUrl: url,
-                    sourceType: "network",
-                };
-            } else {
-                return {
-                    success: false,
-                    message: e?.message ?? "",
-                    pluginUrl: url,
-                    sourceType: "network",
-                };
-            }
+            return {
+                success: false,
+                message: e?.message ?? "",
+                pluginUrl: url,
+                sourceType: "network",
+                failureReason: "unknown",
+                retryable: false,
+            };
         }
     }
 

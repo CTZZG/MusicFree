@@ -333,6 +333,17 @@ export interface ILanguageData {
     "pluginSetting.installResult.success": string; // 安装成功
     "pluginSetting.installResult.failed": string; // 安装失败
     "pluginSetting.installResult.source": string; // 来源
+    "pluginSetting.installResult.failureType": string; // 失败类型
+    "pluginSetting.installResult.retryable": string; // 是否建议重试
+    "pluginSetting.installResult.retryable.yes": string; // 建议重试
+    "pluginSetting.installResult.retryable.no": string; // 不建议重试
+    "pluginSetting.installResult.failureReason.file-read": string; // 本地文件读取失败
+    "pluginSetting.installResult.failureReason.network": string; // 网络请求失败
+    "pluginSetting.installResult.failureReason.not-found": string; // 插件地址不存在
+    "pluginSetting.installResult.failureReason.parse": string; // 插件解析失败
+    "pluginSetting.installResult.failureReason.newer-version-installed": string; // 已安装更新版本
+    "pluginSetting.installResult.failureReason.unrecognized": string; // 无法识别插件内容
+    "pluginSetting.installResult.failureReason.unknown": string; // 未知错误
     "pluginSetting.pluginInstallFailedDialogContent": string; // 插件安装失败对话框内容
     "pluginSetting.pluginUpdateFailedDialogContent": string; // 插件更新失败对话框内容
 

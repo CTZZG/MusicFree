@@ -19,8 +19,12 @@ import AppBar from "@/components/base/appBar";
 import Fab from "@/components/base/fab";
 import PluginItem from "../components/pluginItem";
 import { IIconName } from "@/components/base/icon.tsx";
-import { IInstallPluginResult } from "@/types/core/pluginManager";
+import {
+    IInstallPluginFailureReason,
+    IInstallPluginResult,
+} from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
+import type { ILanguageData } from "@/types/core/i18n";
 import ListItem from "@/components/base/listItem";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import Clipboard from "@react-native-clipboard/clipboard";
@@ -30,6 +34,29 @@ interface IOption {
     icon: IIconName;
     title: string;
     onPress?: () => void;
+}
+
+const installFailureReasonI18nKeys: Record<
+    IInstallPluginFailureReason,
+    keyof ILanguageData
+> = {
+    "file-read": "pluginSetting.installResult.failureReason.file-read",
+    network: "pluginSetting.installResult.failureReason.network",
+    "not-found": "pluginSetting.installResult.failureReason.not-found",
+    parse: "pluginSetting.installResult.failureReason.parse",
+    "newer-version-installed":
+        "pluginSetting.installResult.failureReason.newer-version-installed",
+    unrecognized: "pluginSetting.installResult.failureReason.unrecognized",
+    unknown: "pluginSetting.installResult.failureReason.unknown",
+};
+
+function getHttpStatus(error: any) {
+    return (
+        error?.response?.status ??
+        error?.response?.statusCode ??
+        error?.status ??
+        error?.statusCode
+    );
 }
 
 export default function PluginList() {
@@ -67,6 +94,14 @@ export default function PluginList() {
         return t("pluginSetting.pluginItem.source.unknown");
     }
 
+    function getInstallFailureReasonLabel(result: IInstallPluginResult) {
+        const reason = result.failureReason ?? "unknown";
+        return t(
+            installFailureReasonI18nKeys[reason] ??
+                installFailureReasonI18nKeys.unknown,
+        );
+    }
+
     function formatInstallResult(result: IInstallPluginResult) {
         const title =
             result.pluginName ??
@@ -81,6 +116,16 @@ export default function PluginList() {
             `${t("pluginSetting.installResult.source")}: ${getInstallResultSourceLabel(result)}`,
             result.pluginUrl ? `${result.pluginUrl}` : "",
             result.success
+                ? ""
+                : `${t("pluginSetting.installResult.failureType")}: ${getInstallFailureReasonLabel(result)}`,
+            result.success
+                ? ""
+                : `${t("pluginSetting.installResult.retryable")}: ${
+                    result.retryable
+                        ? t("pluginSetting.installResult.retryable.yes")
+                        : t("pluginSetting.installResult.retryable.no")
+                }`,
+            result.success || !result.message
                 ? ""
                 : t("pluginSetting.failReason", {
                     reason: result.message ?? "",
@@ -327,9 +372,7 @@ export default function PluginList() {
                         showDialog("SimpleDialog", {
                             title: t("pluginSetting.menu.pluginUpdateFailedDialogTitle"),
                             content: t("pluginSetting.pluginUpdateFailedDialogContent", {
-                                detail: failResults.map(it => (it.pluginUrl ?? "") + "\n" + t("pluginSetting.failReason", {
-                                    reason: it.message ?? "",
-                                })).join("\n-----\n"),
+                                detail: failResults.map(formatInstallResult).join("\n-----\n"),
                             }),
                         });
                     },
@@ -486,11 +529,16 @@ async function installPluginFromUrl(text: string): Promise<IInstallPluginResult[
             ),
         );
     } catch (e: any) {
+        const isNotFound = getHttpStatus(e) === 404;
         return [{
             success: false,
-            message: e?.message,
+            message: isNotFound
+                ? "插件不存在，请联系插件作者"
+                : e?.message,
             pluginUrl: text,
             sourceType: "network",
+            failureReason: isNotFound ? "not-found" : "network",
+            retryable: !isNotFound,
         }];
     }
 }

@@ -8,6 +8,14 @@ export interface IInstallPluginConfig {
 }
 
 export type IInstallPluginSourceType = "network" | "local-file" | "unknown";
+export type IInstallPluginFailureReason =
+    | "file-read"
+    | "network"
+    | "not-found"
+    | "parse"
+    | "newer-version-installed"
+    | "unrecognized"
+    | "unknown";
 
 /**
  * 插件安装结果接口
@@ -20,6 +28,8 @@ export interface IInstallPluginResult {
     pluginUrl?: string;
     pluginVersion?: string;
     sourceType?: IInstallPluginSourceType;
+    failureReason?: IInstallPluginFailureReason;
+    retryable?: boolean;
 }
 
 /**
