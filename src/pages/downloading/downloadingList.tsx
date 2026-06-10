@@ -43,6 +43,7 @@ type DownloadWriteFilter =
     | "metadata-skipped"
     | "lyric-success"
     | "lyric-failed";
+type DownloadFileStatusFilter = "all" | "exists" | "missing" | "unknown";
 type DownloadSortMode =
     | "default"
     | "completed-newest"
@@ -50,6 +51,11 @@ type DownloadSortMode =
     | "title"
     | "artist";
 type DownloadWriteStatus = "success" | "failed" | "skipped";
+type CompletedDownloadFileStatus =
+    | "exists"
+    | "missing"
+    | "unknown"
+    | "unavailable";
 type DownloadWriteStatusStats = Record<DownloadWriteStatus | "pending", number>;
 type DownloadTaskDetailInfo = {
     filename?: string;
@@ -136,6 +142,34 @@ async function resolveCompletedDownloadFileExists(filePath: string | null) {
     }
 }
 
+function getCompletedDownloadFileStatusFromExists(
+    filePath: string | null,
+    fileExists: boolean | null,
+): CompletedDownloadFileStatus {
+    if (!filePath) {
+        return "unavailable";
+    }
+    if (fileExists === true) {
+        return "exists";
+    }
+    if (fileExists === false) {
+        return "missing";
+    }
+    return "unknown";
+}
+
+function getCompletedDownloadFileExistsFromStatus(
+    status: CompletedDownloadFileStatus | undefined,
+) {
+    if (status === "exists") {
+        return true;
+    }
+    if (status === "missing") {
+        return false;
+    }
+    return null;
+}
+
 function getCompletedDownloadDetailText(
     musicItem: IMusic.IMusicItem,
     taskInfo: DownloadTaskDetailInfo | null | undefined,
@@ -170,6 +204,7 @@ function buildCompletedDownloadRecordsReport(params: {
     statusFilterTitle: string;
     sourceFilterTitle: string;
     writeFilterTitle: string;
+    fileStatusFilterTitle: string;
     sortTitle: string;
     t: ReturnType<typeof useI18N>["t"];
 }) {
@@ -179,6 +214,7 @@ function buildCompletedDownloadRecordsReport(params: {
         statusFilterTitle,
         sourceFilterTitle,
         writeFilterTitle,
+        fileStatusFilterTitle,
         sortTitle,
         t,
     } = params;
@@ -203,6 +239,7 @@ function buildCompletedDownloadRecordsReport(params: {
         `${t("downloading.report.filterStatus")}: ${statusFilterTitle}`,
         `${t("downloading.report.filterSource")}: ${sourceFilterTitle}`,
         `${t("downloading.report.filterWrite")}: ${writeFilterTitle}`,
+        `${t("downloading.report.filterFileStatus")}: ${fileStatusFilterTitle}`,
         `${t("downloading.report.sort")}: ${sortTitle}`,
         "",
         records.join("\n\n"),
@@ -211,9 +248,14 @@ function buildCompletedDownloadRecordsReport(params: {
 
 interface DownloadingListItemProps {
     musicItem: IMusic.IMusicItem;
+    fileStatus?: CompletedDownloadFileStatus;
+    onFileStatusChange?: (
+        musicItem: IMusic.IMusicItem,
+        status: CompletedDownloadFileStatus,
+    ) => void;
 }
 function DownloadingListItem(props: DownloadingListItemProps) {
-    const { musicItem } = props;
+    const { musicItem, fileStatus, onFileStatusChange } = props;
     const taskInfo = useDownloadTask(musicItem);
     const { t } = useI18N();
     const colors = useColors();
@@ -231,29 +273,7 @@ function DownloadingListItem(props: DownloadingListItemProps) {
         status === DownloadStatus.Completed
             ? getCompletedDownloadLocalPath(musicItem)
             : null;
-    const [localFileExists, setLocalFileExists] = useState<boolean | null>(
-        null,
-    );
-
-    useEffect(() => {
-        let cancelled = false;
-
-        if (status !== DownloadStatus.Completed || !completedLocalPath) {
-            setLocalFileExists(null);
-            return;
-        }
-
-        setLocalFileExists(null);
-        resolveCompletedDownloadFileExists(completedLocalPath).then(result => {
-            if (!cancelled) {
-                setLocalFileExists(result);
-            }
-        });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [status, completedLocalPath]);
+    const localFileExists = getCompletedDownloadFileExistsFromStatus(fileStatus);
 
     let description = "";
 
@@ -323,7 +343,13 @@ function DownloadingListItem(props: DownloadingListItemProps) {
         const folderPath = getCompletedDownloadFolderPath(filePath);
         const checkedFileExists =
             await resolveCompletedDownloadFileExists(filePath);
-        setLocalFileExists(checkedFileExists);
+        onFileStatusChange?.(
+            musicItem,
+            getCompletedDownloadFileStatusFromExists(
+                filePath,
+                checkedFileExists,
+            ),
+        );
 
         function copyDetailValue(value: string, successText: string) {
             Clipboard.setString(value);
@@ -540,6 +566,50 @@ function matchDownloadWriteFilter(
     return true;
 }
 
+function getCompletedDownloadFileStatus(
+    musicItem: IMusic.IMusicItem,
+    fileStatusMap: Record<string, CompletedDownloadFileStatus>,
+) {
+    const key = getMediaUniqueKey(musicItem);
+    const knownStatus = fileStatusMap[key];
+    if (knownStatus) {
+        return knownStatus;
+    }
+    return getCompletedDownloadFileStatusFromExists(
+        getCompletedDownloadLocalPath(musicItem),
+        null,
+    );
+}
+
+function matchDownloadFileStatusFilter(
+    musicItem: IMusic.IMusicItem,
+    status: DownloadStatus,
+    filter: DownloadFileStatusFilter,
+    fileStatusMap: Record<string, CompletedDownloadFileStatus>,
+) {
+    if (filter === "all") {
+        return true;
+    }
+    if (status !== DownloadStatus.Completed) {
+        return false;
+    }
+
+    const fileStatus = getCompletedDownloadFileStatus(
+        musicItem,
+        fileStatusMap,
+    );
+    if (filter === "exists") {
+        return fileStatus === "exists";
+    }
+    if (filter === "missing") {
+        return fileStatus === "missing";
+    }
+    if (filter === "unknown") {
+        return fileStatus === "unknown" || fileStatus === "unavailable";
+    }
+    return true;
+}
+
 function getDownloadTaskCompletedAt(
     downloadTasks: Map<string, { completedAt?: number }>,
     musicItem: IMusic.IMusicItem,
@@ -723,7 +793,12 @@ export default function DownloadingList() {
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
     const [writeFilter, setWriteFilter] = useState<DownloadWriteFilter>("all");
+    const [fileStatusFilter, setFileStatusFilter] =
+        useState<DownloadFileStatusFilter>("all");
     const [sortMode, setSortMode] = useState<DownloadSortMode>("default");
+    const [completedFileStatusMap, setCompletedFileStatusMap] = useState<
+        Record<string, CompletedDownloadFileStatus>
+    >({});
     const mediaExtraVersion = useMediaExtraVersion();
     const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
 
@@ -810,6 +885,35 @@ export default function DownloadingList() {
     const writeFilterReportTitle =
         writeFilterItems.find(item => item.key === writeFilter)?.title ??
         t("downloading.writeStatusFilter.all");
+    const fileStatusFilterItems: Array<{
+        key: DownloadFileStatusFilter;
+        title: string;
+    }> = [
+        {
+            key: "all",
+            title: t("downloading.fileStatusFilter.all"),
+        },
+        {
+            key: "exists",
+            title: t("downloading.fileStatusFilter.exists"),
+        },
+        {
+            key: "missing",
+            title: t("downloading.fileStatusFilter.missing"),
+        },
+        {
+            key: "unknown",
+            title: t("downloading.fileStatusFilter.unknown"),
+        },
+    ];
+    const fileStatusFilterTitle =
+        fileStatusFilter === "all"
+            ? t("downloading.fileStatusFilter.title")
+            : fileStatusFilterItems.find(item => item.key === fileStatusFilter)
+                ?.title ?? t("downloading.fileStatusFilter.title");
+    const fileStatusFilterReportTitle =
+        fileStatusFilterItems.find(item => item.key === fileStatusFilter)
+            ?.title ?? t("downloading.fileStatusFilter.all");
     const sortItems: Array<{
         key: DownloadSortMode;
         title: string;
@@ -861,6 +965,16 @@ export default function DownloadingList() {
                 if (!matchDownloadWriteFilter(musicItem, status, writeFilter)) {
                     return false;
                 }
+                if (
+                    !matchDownloadFileStatusFilter(
+                        musicItem,
+                        status,
+                        fileStatusFilter,
+                        completedFileStatusMap,
+                    )
+                ) {
+                    return false;
+                }
                 return true;
             }),
         [
@@ -868,6 +982,8 @@ export default function DownloadingList() {
             downloadTasks,
             sourceFilter,
             writeFilter,
+            fileStatusFilter,
+            completedFileStatusMap,
             mediaExtraVersion,
         ],
     );
@@ -975,6 +1091,65 @@ export default function DownloadingList() {
     );
 
     useEffect(() => {
+        let cancelled = false;
+        const completedItems = downloadQueue.filter(musicItem => {
+            const status =
+                downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
+                DownloadStatus.Error;
+            return status === DownloadStatus.Completed;
+        });
+        const initialStatusMap: Record<string, CompletedDownloadFileStatus> =
+            {};
+
+        completedItems.forEach(musicItem => {
+            const key = getMediaUniqueKey(musicItem);
+            initialStatusMap[key] = getCompletedDownloadFileStatusFromExists(
+                getCompletedDownloadLocalPath(musicItem),
+                null,
+            );
+        });
+
+        setCompletedFileStatusMap(prev => {
+            const next = { ...initialStatusMap };
+            Object.keys(next).forEach(key => {
+                const prevStatus = prev[key];
+                if (
+                    prevStatus &&
+                    next[key] !== "unavailable" &&
+                    next[key] !== "exists" &&
+                    next[key] !== "missing"
+                ) {
+                    next[key] = prevStatus;
+                }
+            });
+            return next;
+        });
+
+        Promise.all(
+            completedItems.map(async musicItem => {
+                const filePath = getCompletedDownloadLocalPath(musicItem);
+                const fileExists =
+                    await resolveCompletedDownloadFileExists(filePath);
+                return [
+                    getMediaUniqueKey(musicItem),
+                    getCompletedDownloadFileStatusFromExists(
+                        filePath,
+                        fileExists,
+                    ),
+                ] as const;
+            }),
+        ).then(entries => {
+            if (!cancelled) {
+                setCompletedFileStatusMap(Object.fromEntries(entries));
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [downloadQueue, downloadTasks, mediaExtraVersion]);
+
+    useEffect(() => {
         if (!sourceFilters.includes(sourceFilter)) {
             setSourceFilter("all");
         }
@@ -1008,6 +1183,35 @@ export default function DownloadingList() {
                 setWriteFilter(item.value as DownloadWriteFilter);
             },
         });
+    }
+
+    function showFileStatusFilterSelect() {
+        showPanel("SimpleSelect", {
+            header: t("downloading.fileStatusFilter.title"),
+            candidates: fileStatusFilterItems.map(item => ({
+                title: item.title,
+                value: item.key,
+                icon: "folder-outline",
+            })),
+            onPress(item) {
+                setFileStatusFilter(item.value as DownloadFileStatusFilter);
+            },
+        });
+    }
+
+    function updateCompletedFileStatus(
+        musicItem: IMusic.IMusicItem,
+        fileStatus: CompletedDownloadFileStatus,
+    ) {
+        const key = getMediaUniqueKey(musicItem);
+        setCompletedFileStatusMap(prev =>
+            prev[key] === fileStatus
+                ? prev
+                : {
+                    ...prev,
+                    [key]: fileStatus,
+                },
+        );
     }
 
     function showSortSelect() {
@@ -1113,6 +1317,16 @@ export default function DownloadingList() {
                 if (!matchDownloadWriteFilter(musicItem, status, writeFilter)) {
                     return false;
                 }
+                if (
+                    !matchDownloadFileStatusFilter(
+                        musicItem,
+                        status,
+                        fileStatusFilter,
+                        completedFileStatusMap,
+                    )
+                ) {
+                    return false;
+                }
                 return true;
             });
             return sortDownloadItems(items, downloadTasks, sortMode);
@@ -1123,6 +1337,8 @@ export default function DownloadingList() {
             filter,
             sourceFilter,
             writeFilter,
+            fileStatusFilter,
+            completedFileStatusMap,
             sortMode,
             mediaExtraVersion,
         ],
@@ -1157,6 +1373,7 @@ export default function DownloadingList() {
             statusFilterTitle,
             sourceFilterTitle,
             writeFilterTitle: writeFilterReportTitle,
+            fileStatusFilterTitle: fileStatusFilterReportTitle,
             sortTitle: sortReportTitle,
             t,
         });
@@ -1240,6 +1457,12 @@ export default function DownloadingList() {
                     icon="save-outline"
                 />
                 <FilterChip
+                    title={fileStatusFilterTitle}
+                    selected={fileStatusFilter !== "all"}
+                    onPress={showFileStatusFilterSelect}
+                    icon="folder-outline"
+                />
+                <FilterChip
                     title={sortTitle}
                     selected={sortMode !== "default"}
                     onPress={showSortSelect}
@@ -1310,7 +1533,17 @@ export default function DownloadingList() {
                 data={filteredQueue}
                 keyExtractor={_ => `dl${_.platform}.${_.id}`}
                 renderItem={({ item }) => {
-                    return <DownloadingListItem musicItem={item} />;
+                    return (
+                        <DownloadingListItem
+                            musicItem={item}
+                            fileStatus={
+                                completedFileStatusMap[
+                                    getMediaUniqueKey(item)
+                                ]
+                            }
+                            onFileStatusChange={updateCompletedFileStatus}
+                        />
+                    );
                 }}
             />
         </View>

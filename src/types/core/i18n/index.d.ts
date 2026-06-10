@@ -268,6 +268,11 @@ export interface ILanguageData {
     "downloading.writeStatusFilter.metadataSkipped": string; // 元数据未写入
     "downloading.writeStatusFilter.lyricSuccess": string; // 歌词已写入
     "downloading.writeStatusFilter.lyricFailed": string; // 歌词失败
+    "downloading.fileStatusFilter.title": string; // 文件状态
+    "downloading.fileStatusFilter.all": string; // 全部文件状态
+    "downloading.fileStatusFilter.exists": string; // 文件存在
+    "downloading.fileStatusFilter.missing": string; // 文件不存在
+    "downloading.fileStatusFilter.unknown": string; // 状态未知
     "downloading.writeStatusSummary": string; // 写入结果摘要
     "downloading.sort.title": string; // 排序
     "downloading.sort.default": string; // 默认顺序
@@ -310,6 +315,7 @@ export interface ILanguageData {
     "downloading.report.filterStatus": string; // 状态筛选
     "downloading.report.filterSource": string; // 来源筛选
     "downloading.report.filterWrite": string; // 写入筛选
+    "downloading.report.filterFileStatus": string; // 文件状态筛选
     "downloading.report.sort": string; // 排序
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
