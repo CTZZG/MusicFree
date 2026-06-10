@@ -300,6 +300,8 @@
     "pluginSetting.diagnostics.filter.lyric": "歌詞",
     "pluginSetting.diagnostics.filter.install": "安裝",
     "pluginSetting.diagnostics.filter.other": "其他",
+    "pluginSetting.diagnostics.pluginFilter.title": "外掛篩選",
+    "pluginSetting.diagnostics.pluginFilter.all": "全部外掛",
     "pluginSetting.failReason": "失敗原因: {reason}",
     "pluginSetting.installResult.dialogTitle": "外掛安裝結果",
     "pluginSetting.installResult.success": "安裝成功",

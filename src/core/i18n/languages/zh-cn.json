@@ -300,6 +300,8 @@
     "pluginSetting.diagnostics.filter.lyric": "歌词",
     "pluginSetting.diagnostics.filter.install": "安装",
     "pluginSetting.diagnostics.filter.other": "其他",
+    "pluginSetting.diagnostics.pluginFilter.title": "插件筛选",
+    "pluginSetting.diagnostics.pluginFilter.all": "全部插件",
     "pluginSetting.failReason": "失败原因: {reason}",
     "pluginSetting.installResult.dialogTitle": "插件安装结果",
     "pluginSetting.installResult.success": "安装成功",

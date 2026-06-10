@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
     FlatList,
     Pressable,
@@ -26,6 +26,7 @@ import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import type { ILanguageData } from "@/types/core/i18n";
+import { showPanel } from "@/components/panels/usePanel";
 
 type DiagnosticFilter = "all" | "search" | "source" | "lyric" | "install" | "other";
 
@@ -104,11 +105,44 @@ export default function PluginDiagnostics() {
     const plugins = useSortedPlugins();
     const [events, setEvents] = useState(() => getAllPluginDiagnosticEvents());
     const [filter, setFilter] = useState<DiagnosticFilter>("all");
+    const [pluginFilter, setPluginFilter] = useState("all");
 
     const filteredEvents = useMemo(
-        () => events.filter(event => matchFilter(event, filter)),
-        [events, filter],
+        () =>
+            events.filter(event => {
+                if (!matchFilter(event, filter)) {
+                    return false;
+                }
+                return (
+                    pluginFilter === "all" ||
+                    event.pluginName === pluginFilter
+                );
+            }),
+        [events, filter, pluginFilter],
     );
+    const pluginFilterItems = useMemo(
+        () => [
+            "all",
+            ...Array.from(
+                new Set(
+                    events
+                        .map(event => event.pluginName)
+                        .filter(Boolean),
+                ),
+            ).sort((a, b) => a.localeCompare(b)),
+        ],
+        [events],
+    );
+    const pluginFilterTitle =
+        pluginFilter === "all"
+            ? t("pluginSetting.diagnostics.pluginFilter.all")
+            : pluginFilter;
+
+    useEffect(() => {
+        if (!pluginFilterItems.includes(pluginFilter)) {
+            setPluginFilter("all");
+        }
+    }, [pluginFilter, pluginFilterItems]);
 
     function refreshDiagnostics() {
         setEvents(getAllPluginDiagnosticEvents());
@@ -117,6 +151,26 @@ export default function PluginDiagnostics() {
     function copyDiagnosticReport() {
         Clipboard.setString(buildPluginDiagnosticReport(plugins));
         Toast.success(t("toast.copiedToClipboard"));
+    }
+
+    function showPluginFilterSelect() {
+        showPanel("SimpleSelect", {
+            header: t("pluginSetting.diagnostics.pluginFilter.title"),
+            candidates: pluginFilterItems.map(pluginName => ({
+                title:
+                    pluginName === "all"
+                        ? t("pluginSetting.diagnostics.pluginFilter.all")
+                        : pluginName,
+                value: pluginName,
+                icon:
+                    pluginName === "all"
+                        ? "document-outline"
+                        : "javascript",
+            })),
+            onPress(item) {
+                setPluginFilter(item.value);
+            },
+        });
     }
 
     return (
@@ -155,6 +209,12 @@ export default function PluginDiagnostics() {
                             onPress={() => setFilter(config.key)}
                         />
                     ))}
+                    <FilterChip
+                        icon="javascript"
+                        title={pluginFilterTitle}
+                        selected={pluginFilter !== "all"}
+                        onPress={showPluginFilterSelect}
+                    />
                 </ScrollView>
                 <FlatList
                     style={styles.list}

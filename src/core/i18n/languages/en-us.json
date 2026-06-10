@@ -300,6 +300,8 @@
     "pluginSetting.diagnostics.filter.lyric": "Lyrics",
     "pluginSetting.diagnostics.filter.install": "Install",
     "pluginSetting.diagnostics.filter.other": "Other",
+    "pluginSetting.diagnostics.pluginFilter.title": "Plugin Filter",
+    "pluginSetting.diagnostics.pluginFilter.all": "All Plugins",
     "pluginSetting.failReason": "Failure reason: {reason}",
     "pluginSetting.installResult.dialogTitle": "Plugin Installation Result",
     "pluginSetting.installResult.success": "Installed",

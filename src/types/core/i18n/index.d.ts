@@ -348,6 +348,8 @@ export interface ILanguageData {
     "pluginSetting.diagnostics.filter.lyric": string; // 歌词诊断
     "pluginSetting.diagnostics.filter.install": string; // 安装诊断
     "pluginSetting.diagnostics.filter.other": string; // 其他诊断
+    "pluginSetting.diagnostics.pluginFilter.title": string; // 插件筛选标题
+    "pluginSetting.diagnostics.pluginFilter.all": string; // 全部插件筛选
     "pluginSetting.failReason": string; // 失败原因
     "pluginSetting.installResult.dialogTitle": string; // 插件安装结果
     "pluginSetting.installResult.success": string; // 安装成功
