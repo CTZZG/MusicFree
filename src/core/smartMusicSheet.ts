@@ -2,13 +2,14 @@ import { localPluginPlatform } from "@/constants/commonConst";
 import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
 import { useMemo } from "react";
 import LocalMusicSheet from "./localMusicSheet";
-import { useMusicHistory } from "./musicHistory";
+import { useMostPlayedMusic, useMusicHistory } from "./musicHistory";
 import MusicSheet, { useSheetsBase } from "./musicSheet";
 import { useSortedPlugins } from "./pluginManager";
 
 export type SmartSheetType =
     | "recent-played"
     | "recent-added"
+    | "most-played"
     | "favorite"
     | "local"
     | "downloaded"
@@ -117,6 +118,7 @@ export function useSmartSheetMusicList(
     value?: string,
 ) {
     const history = useMusicHistory();
+    const mostPlayedMusic = useMostPlayedMusic();
     const localMusicList = LocalMusicSheet.useMusicList();
     const sheetsBase = useSheetsBase();
 
@@ -126,6 +128,9 @@ export function useSmartSheetMusicList(
         }
         if (type === "recent-added") {
             return getRecentAddedMusicList();
+        }
+        if (type === "most-played") {
+            return mostPlayedMusic;
         }
         if (type === "favorite") {
             return getFavoriteMusicList();
@@ -149,7 +154,7 @@ export function useSmartSheetMusicList(
                 .filter(musicItem => getFacetValue(musicItem, type) === value);
         }
         return [];
-    }, [history, localMusicList, platform, sheetsBase, type, value]);
+    }, [history, localMusicList, mostPlayedMusic, platform, sheetsBase, type, value]);
 }
 
 export function useSmartSheetSourcePlatforms() {

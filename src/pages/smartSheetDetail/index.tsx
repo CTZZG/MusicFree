@@ -21,6 +21,9 @@ function getSmartSheetTitle(
     if (type === "recent-added") {
         return t("smartSheet.recentAdded");
     }
+    if (type === "most-played") {
+        return t("smartSheet.mostPlayed");
+    }
     if (type === "favorite") {
         return t("smartSheet.favorite");
     }

@@ -139,6 +139,7 @@ interface RouterParams extends RouterParamsBase {
         type:
             | "recent-played"
             | "recent-added"
+            | "most-played"
             | "favorite"
             | "local"
             | "downloaded"

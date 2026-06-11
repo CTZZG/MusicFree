@@ -124,6 +124,7 @@ export default function GlobalSearch() {
             keywords: [
                 t("home.smartSheets"),
                 t("smartSheet.recentAdded"),
+                t("smartSheet.mostPlayed"),
                 t("smartSheet.favorite"),
                 t("smartSheet.downloaded"),
                 t("smartSheet.artists"),

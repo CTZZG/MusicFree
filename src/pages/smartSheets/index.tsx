@@ -44,6 +44,12 @@ export default function SmartSheets() {
             icon: "plus",
         },
         {
+            key: "most-played",
+            type: "most-played",
+            title: t("smartSheet.mostPlayed"),
+            icon: "fire",
+        },
+        {
             key: "favorite",
             type: "favorite",
             title: t("smartSheet.favorite"),
