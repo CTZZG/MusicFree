@@ -384,6 +384,8 @@
     "pluginSetting.pluginItem.options.uninstallPluginContent": "Are you sure to uninstall plugin「{name}」?",
     "pluginSetting.pluginItem.options.alternativePlugin": "Plugin Redirect",
     "pluginSetting.pluginItem.alternativePlugin": "This plugin actually uses「{name}」plugin to parse music sources",
+    "pluginSetting.pluginItem.userVariablesConfiguredSummary": "User variables: {configured}/{total} configured",
+    "pluginSetting.pluginItem.userVariablesMissingSummary": "Missing config: {names}",
     "pluginSetting.pluginItem.noRecentDiagnostic": "No recent errors",
     "pluginSetting.pluginItem.recentDiagnostic": "Recent error: {method} · {time} · {message}",
     "pluginSetting.pluginItem.diagnosticTime.now": "just now",

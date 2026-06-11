@@ -397,6 +397,8 @@
     "pluginSetting.pluginItem.versionHint": "版本号: {version}",
     "pluginSetting.pluginItem.author": "作者: {author}",
     "pluginSetting.pluginItem.alternativePlugin": "该插件实际使用「{name}」插件解析音乐的音源",
+    "pluginSetting.pluginItem.userVariablesConfiguredSummary": "用户变量：已配置 {configured}/{total}",
+    "pluginSetting.pluginItem.userVariablesMissingSummary": "缺少配置：{names}",
     "pluginSetting.pluginItem.noRecentDiagnostic": "最近无错误",
     "pluginSetting.pluginItem.recentDiagnostic": "最近错误：{method} · {time} · {message}",
     "pluginSetting.pluginItem.diagnosticTime.now": "刚刚",

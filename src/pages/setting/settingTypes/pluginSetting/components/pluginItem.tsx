@@ -180,6 +180,32 @@ function _PluginItem(props: IPluginItemProps) {
     const visibleCapabilityLabels = capabilityLabels.slice(0, 6);
     const hiddenCapabilityCount =
         capabilityLabels.length - visibleCapabilityLabels.length;
+    const declaredUserVariables = Array.isArray(plugin.instance.userVariables)
+        ? plugin.instance.userVariables
+        : [];
+    const userVariables = pluginManager.getUserVariables(plugin);
+    const configuredUserVariableCount = getConfiguredUserVariableCount(
+        declaredUserVariables,
+        userVariables,
+    );
+    const missingUserVariableLabels = getMissingUserVariableLabels(
+        declaredUserVariables,
+        userVariables,
+    );
+    const userVariableSummary = declaredUserVariables.length
+        ? missingUserVariableLabels.length
+            ? t("pluginSetting.pluginItem.userVariablesMissingSummary", {
+                count: missingUserVariableLabels.length,
+                names: formatSingleLine(
+                    missingUserVariableLabels.join(", "),
+                    80,
+                ),
+            })
+            : t("pluginSetting.pluginItem.userVariablesConfiguredSummary", {
+                configured: configuredUserVariableCount,
+                total: declaredUserVariables.length,
+            })
+        : null;
     const latestDiagnostic = getLatestPluginDiagnosticEvent(
         plugin.hash,
         plugin.name,
@@ -498,6 +524,22 @@ function _PluginItem(props: IPluginItemProps) {
         });
     }
 
+    function openUserVariablesPanel() {
+        if (!declaredUserVariables.length) {
+            return;
+        }
+        showPanel("SetUserVariables", {
+            async onOk(newValue, closePanel) {
+                pluginManager.setUserVariables(plugin, newValue);
+                Toast.success(t("toast.settingSuccess"));
+                rerender();
+                closePanel();
+            },
+            variables: declaredUserVariables,
+            initValues: pluginManager.getUserVariables(plugin),
+        });
+    }
+
     async function onReselectLocalPluginFile() {
         try {
             const result = await DocumentPicker.getDocumentAsync({
@@ -561,20 +603,6 @@ function _PluginItem(props: IPluginItemProps) {
                     plugin.name,
                     5,
                 );
-                const userVariables = pluginManager.getUserVariables(plugin);
-                const declaredVariables = Array.isArray(
-                    plugin.instance.userVariables,
-                )
-                    ? plugin.instance.userVariables
-                    : [];
-                const missingVariableLabels = getMissingUserVariableLabels(
-                    declaredVariables,
-                    userVariables,
-                );
-                const configuredVariableCount = getConfiguredUserVariableCount(
-                    declaredVariables,
-                    userVariables,
-                );
                 const supportedCapabilityLabels = pluginCapabilityConfigs
                     .filter(config => pluginSupportsCapability(plugin, config))
                     .map(config => t(config.labelKey));
@@ -605,14 +633,14 @@ function _PluginItem(props: IPluginItemProps) {
                         : t("pluginSetting.pluginItem.detail.noUnsupportedCapabilities"),
                     "",
                     `${t("pluginSetting.pluginItem.detail.config")}:`,
-                    declaredVariables.length
+                    declaredUserVariables.length
                         ? `${t("pluginSetting.pluginItem.detail.userVariables")}: ${t("pluginSetting.pluginItem.detail.userVariablesSummary", {
-                            configured: configuredVariableCount,
-                            total: declaredVariables.length,
+                            configured: configuredUserVariableCount,
+                            total: declaredUserVariables.length,
                         })}`
                         : `${t("pluginSetting.pluginItem.detail.userVariables")}: ${t("pluginSetting.pluginItem.detail.userVariablesNone")}`,
-                    missingVariableLabels.length
-                        ? `${t("pluginSetting.pluginItem.detail.userVariablesMissing")}: ${missingVariableLabels.join(", ")}`
+                    missingUserVariableLabels.length
+                        ? `${t("pluginSetting.pluginItem.detail.userVariablesMissing")}: ${missingUserVariableLabels.join(", ")}`
                         : "",
                     `${t("pluginSetting.pluginItem.detail.alternativePlugin")}: ${alternativePluginName ?? t("pluginSetting.pluginItem.detail.noAlternativePlugin")}`,
                     "",
@@ -821,20 +849,8 @@ function _PluginItem(props: IPluginItemProps) {
         {
             title: t("pluginSetting.pluginItem.options.userVariables"),
             icon: "code-bracket-square",
-            onPress() {
-                if (Array.isArray(plugin.instance.userVariables)) {
-                    showPanel("SetUserVariables", {
-                        async onOk(newValue, closePanel) {
-                            pluginManager.setUserVariables(plugin, newValue);
-                            Toast.success(t("toast.settingSuccess"));
-                            closePanel();
-                        },
-                        variables: plugin.instance.userVariables,
-                        initValues: pluginManager.getUserVariables(plugin),
-                    });
-                }
-            },
-            show: Array.isArray(plugin.instance.userVariables),
+            onPress: openUserVariablesPanel,
+            show: declaredUserVariables.length > 0,
         },
     ];
 
@@ -904,6 +920,22 @@ function _PluginItem(props: IPluginItemProps) {
                     <PluginTag>{`+${hiddenCapabilityCount}`}</PluginTag>
                 ) : null}
             </View>
+            {userVariableSummary ? (
+                <Pressable
+                    style={styles.configSummary}
+                    onPress={openUserVariablesPanel}>
+                    <ThemeText
+                        fontSize="description"
+                        fontColor={
+                            missingUserVariableLabels.length
+                                ? "text"
+                                : "textSecondary"
+                        }
+                        numberOfLines={2}>
+                        {userVariableSummary}
+                    </ThemeText>
+                </Pressable>
+            ) : null}
             <Pressable
                 style={styles.diagnosticSummary}
                 onPress={() => {
@@ -1045,6 +1077,10 @@ const styles = StyleSheet.create({
     diagnosticSummary: {
         marginHorizontal: rpx(16),
         marginBottom: rpx(24),
+    },
+    configSummary: {
+        marginHorizontal: rpx(16),
+        marginBottom: rpx(12),
     },
     tag: {
         maxWidth: rpx(160),

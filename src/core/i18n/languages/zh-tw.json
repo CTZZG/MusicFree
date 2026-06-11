@@ -384,6 +384,8 @@
     "pluginSetting.pluginItem.options.uninstallPluginContent": "確認卸載外掛「{name}」嗎？",
     "pluginSetting.pluginItem.options.alternativePlugin": "音源重定向",
     "pluginSetting.pluginItem.alternativePlugin": "該外掛實際使用「{name}」外掛解析音樂的音源",
+    "pluginSetting.pluginItem.userVariablesConfiguredSummary": "使用者變數：已設定 {configured}/{total}",
+    "pluginSetting.pluginItem.userVariablesMissingSummary": "缺少設定：{names}",
     "pluginSetting.pluginItem.noRecentDiagnostic": "最近無錯誤",
     "pluginSetting.pluginItem.recentDiagnostic": "最近錯誤：{method} · {time} · {message}",
     "pluginSetting.pluginItem.diagnosticTime.now": "剛剛",

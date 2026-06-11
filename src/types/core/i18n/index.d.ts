@@ -445,6 +445,8 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.options.userVariables": string; // 用户变量
     "pluginSetting.pluginItem.versionHint": string; // 版本提示
     "pluginSetting.pluginItem.author": string; // 作者
+    "pluginSetting.pluginItem.userVariablesConfiguredSummary": string; // 用户变量配置摘要
+    "pluginSetting.pluginItem.userVariablesMissingSummary": string; // 缺少用户变量配置
     "pluginSetting.pluginItem.noRecentDiagnostic": string; // 最近无错误
     "pluginSetting.pluginItem.recentDiagnostic": string; // 最近错误摘要
     "pluginSetting.pluginItem.diagnosticTime.now": string; // 刚刚
