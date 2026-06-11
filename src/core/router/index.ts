@@ -92,6 +92,9 @@ interface RouterParams extends RouterParamsBase {
         initialPluginName?: string;
         initialPluginSettingRoute?:
             | "/pluginsetting/list"
+            | "/pluginsetting/sort"
+            | "/pluginsetting/subscribe"
+            | "/pluginsetting/capability-matrix"
             | "/pluginsetting/diagnostics";
         // anchor?: string | number;
     };

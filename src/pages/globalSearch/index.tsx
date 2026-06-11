@@ -239,6 +239,71 @@ export default function GlobalSearch() {
             onPress: () => navigate(ROUTE_PATH.SETTING, { type: "plugin" }),
         },
         {
+            id: "setting-plugin-subscribe",
+            type: "setting",
+            title: t("pluginSetting.menu.subscriptionSetting"),
+            description: t("globalSearch.settingDescription"),
+            icon: "bookmark-square",
+            keywords: [
+                t("sidebar.pluginManagement"),
+                t("pluginSetting.menu.installPlugin"),
+            ],
+            onPress: () =>
+                navigate(ROUTE_PATH.SETTING, {
+                    type: "plugin",
+                    initialPluginSettingRoute: "/pluginsetting/subscribe",
+                }),
+        },
+        {
+            id: "setting-plugin-sort",
+            type: "setting",
+            title: t("pluginSetting.menu.sort"),
+            description: t("globalSearch.settingDescription"),
+            icon: "bars-3",
+            keywords: [
+                t("sidebar.pluginManagement"),
+                t("pluginSetting.menu.sort"),
+            ],
+            onPress: () =>
+                navigate(ROUTE_PATH.SETTING, {
+                    type: "plugin",
+                    initialPluginSettingRoute: "/pluginsetting/sort",
+                }),
+        },
+        {
+            id: "setting-plugin-diagnostics",
+            type: "setting",
+            title: t("pluginSetting.menu.diagnostics"),
+            description: t("globalSearch.settingDescription"),
+            icon: "exclamation-circle",
+            keywords: [
+                t("sidebar.pluginManagement"),
+                t("pluginSetting.pluginItem.detail.diagnostics"),
+            ],
+            onPress: () =>
+                navigate(ROUTE_PATH.SETTING, {
+                    type: "plugin",
+                    initialPluginSettingRoute: "/pluginsetting/diagnostics",
+                }),
+        },
+        {
+            id: "setting-plugin-capability-matrix",
+            type: "setting",
+            title: t("pluginSetting.menu.capabilityMatrix"),
+            description: t("globalSearch.settingDescription"),
+            icon: "check-circle",
+            keywords: [
+                t("sidebar.pluginManagement"),
+                t("pluginSetting.filter.capability.all"),
+            ],
+            onPress: () =>
+                navigate(ROUTE_PATH.SETTING, {
+                    type: "plugin",
+                    initialPluginSettingRoute:
+                        "/pluginsetting/capability-matrix",
+                }),
+        },
+        {
             id: "setting-theme",
             type: "setting",
             title: t("sidebar.themeSettings"),
