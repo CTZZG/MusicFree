@@ -147,6 +147,7 @@
     "localMusic.sort.byArtist": "按歌手名排序",
     "localMusic.sort.byAlbum": "按专辑名排序",
     "localMusic.sort.bySource": "按来源排序",
+    "localMusic.clearFilters": "清除筛选",
     "localMusic.report.title": "MusicFree 本地音乐缺失文件报告",
     "localMusic.report.generatedAt": "生成时间",
     "localMusic.report.count": "缺失数量",

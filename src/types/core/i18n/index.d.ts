@@ -171,6 +171,7 @@ export interface ILanguageData {
     "localMusic.sort.byArtist": string; // 本地音乐按歌手名排序
     "localMusic.sort.byAlbum": string; // 本地音乐按专辑名排序
     "localMusic.sort.bySource": string; // 本地音乐按来源排序
+    "localMusic.clearFilters": string; // 清除本地音乐筛选
     "localMusic.report.title": string; // 本地音乐缺失文件报告
     "localMusic.report.generatedAt": string; // 生成时间
     "localMusic.report.count": string; // 缺失数量

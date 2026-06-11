@@ -147,6 +147,7 @@
     "localMusic.sort.byArtist": "Sort by artist",
     "localMusic.sort.byAlbum": "Sort by album",
     "localMusic.sort.bySource": "Sort by source",
+    "localMusic.clearFilters": "Clear Filters",
     "localMusic.report.title": "MusicFree Local Music Missing Files Report",
     "localMusic.report.generatedAt": "Generated At",
     "localMusic.report.count": "Missing Count",

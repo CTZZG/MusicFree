@@ -331,6 +331,12 @@ export default function LocalMusicList() {
             ? t("localMusic.sort.title")
             : sortItems.find(item => item.key === sortMode)?.title ??
                 t("localMusic.sort.title");
+    const hasActiveListControls =
+        sourceFilter !== "all" ||
+        artistFilter !== "all" ||
+        albumFilter !== "all" ||
+        fileStatusFilter !== "all" ||
+        sortMode !== "default";
 
     useEffect(() => {
         let cancelled = false;
@@ -487,6 +493,14 @@ export default function LocalMusicList() {
         });
     }
 
+    function clearListControls() {
+        setSourceFilter("all");
+        setArtistFilter("all");
+        setAlbumFilter("all");
+        setFileStatusFilter("all");
+        setSortMode("default");
+    }
+
     function copyMissingFilesReport() {
         if (!missingFileMusicList.length) {
             Toast.warn(t("localMusic.noMissingFiles"));
@@ -550,6 +564,15 @@ export default function LocalMusicList() {
                         onPress: handleSortPress,
                         icon: "sort-outline",
                     })}
+                    {hasActiveListControls
+                        ? renderFilterChip({
+                            key: "clear-filters",
+                            title: t("localMusic.clearFilters"),
+                            selected: false,
+                            onPress: clearListControls,
+                            icon: "x-mark",
+                        })
+                        : null}
                     {renderFilterChip({
                         key: "missing-files-report",
                         title: t("localMusic.copyMissingFilesReport"),
