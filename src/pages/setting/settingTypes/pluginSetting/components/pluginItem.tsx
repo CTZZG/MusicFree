@@ -24,6 +24,8 @@ import type { PluginDiagnosticEvent } from "@/core/pluginManager/diagnostics";
 import {
     getPluginCapabilityLabels,
     getPluginSourceInfo,
+    pluginCapabilityConfigs,
+    pluginSupportsCapability,
 } from "../capabilityUtils";
 import { buildPluginHealthCheckReport } from "../healthCheckUtils";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
@@ -97,6 +99,30 @@ function sanitizeTestSearchFailureReason(reason: unknown) {
         return "-";
     }
     return raw.length > 240 ? `${raw.slice(0, 240)}...` : raw;
+}
+
+function getUserVariableLabel(variable: IPlugin.IUserVariable) {
+    return variable.name
+        ? `${variable.name} (${variable.key})`
+        : variable.key;
+}
+
+function getConfiguredUserVariableCount(
+    declaredVariables: IPlugin.IUserVariable[],
+    userVariables: Record<string, string>,
+) {
+    return declaredVariables.filter(variable =>
+        String(userVariables[variable.key] ?? "").trim(),
+    ).length;
+}
+
+function getMissingUserVariableLabels(
+    declaredVariables: IPlugin.IUserVariable[],
+    userVariables: Record<string, string>,
+) {
+    return declaredVariables
+        .filter(variable => !String(userVariables[variable.key] ?? "").trim())
+        .map(getUserVariableLabel);
 }
 
 function _PluginItem(props: IPluginItemProps) {
@@ -484,19 +510,60 @@ function _PluginItem(props: IPluginItemProps) {
                     plugin.name,
                     5,
                 );
+                const userVariables = pluginManager.getUserVariables(plugin);
+                const declaredVariables = Array.isArray(
+                    plugin.instance.userVariables,
+                )
+                    ? plugin.instance.userVariables
+                    : [];
+                const missingVariableLabels = getMissingUserVariableLabels(
+                    declaredVariables,
+                    userVariables,
+                );
+                const configuredVariableCount = getConfiguredUserVariableCount(
+                    declaredVariables,
+                    userVariables,
+                );
+                const supportedCapabilityLabels = pluginCapabilityConfigs
+                    .filter(config => pluginSupportsCapability(plugin, config))
+                    .map(config => t(config.labelKey));
+                const unsupportedCapabilityLabels = pluginCapabilityConfigs
+                    .filter(config => !pluginSupportsCapability(plugin, config))
+                    .map(config => t(config.labelKey));
                 const detailContent = [
+                    `${t("pluginSetting.pluginItem.detail.status")}: ${enabled
+                        ? t("pluginSetting.pluginItem.detail.enabled")
+                        : t("pluginSetting.pluginItem.detail.disabled")}`,
                     `${t("pluginSetting.pluginItem.detail.version")}: ${plugin.instance.version ?? "-"}`,
                     `${t("pluginSetting.pluginItem.detail.author")}: ${plugin.instance.author ?? "-"}`,
+                    `${t("pluginSetting.pluginItem.detail.platform")}: ${plugin.instance.platform ?? plugin.name}`,
                     `${t("pluginSetting.pluginItem.detail.source")}: ${sourceInfo.label}`,
                     sourceInfo.detail
                         ? `${t("pluginSetting.pluginItem.detail.sourceDetail")}: ${sourceInfo.detail}`
                         : "",
                     `${t("pluginSetting.pluginItem.detail.hash")}: ${plugin.hash}`,
                     "",
-                    `${t("pluginSetting.pluginItem.detail.capabilities")}:`,
-                    capabilityLabels.length
-                        ? capabilityLabels.map(label => `- ${label}`).join("\n")
+                    `${t("pluginSetting.pluginItem.detail.supportedCapabilities")}:`,
+                    supportedCapabilityLabels.length
+                        ? supportedCapabilityLabels.map(label => `- ${label}`).join("\n")
                         : t("pluginSetting.pluginItem.detail.noCapabilities"),
+                    "",
+                    `${t("pluginSetting.pluginItem.detail.unsupportedCapabilities")}:`,
+                    unsupportedCapabilityLabels.length
+                        ? unsupportedCapabilityLabels.map(label => `- ${label}`).join("\n")
+                        : t("pluginSetting.pluginItem.detail.noUnsupportedCapabilities"),
+                    "",
+                    `${t("pluginSetting.pluginItem.detail.config")}:`,
+                    declaredVariables.length
+                        ? `${t("pluginSetting.pluginItem.detail.userVariables")}: ${t("pluginSetting.pluginItem.detail.userVariablesSummary", {
+                            configured: configuredVariableCount,
+                            total: declaredVariables.length,
+                        })}`
+                        : `${t("pluginSetting.pluginItem.detail.userVariables")}: ${t("pluginSetting.pluginItem.detail.userVariablesNone")}`,
+                    missingVariableLabels.length
+                        ? `${t("pluginSetting.pluginItem.detail.userVariablesMissing")}: ${missingVariableLabels.join(", ")}`
+                        : "",
+                    `${t("pluginSetting.pluginItem.detail.alternativePlugin")}: ${alternativePluginName ?? t("pluginSetting.pluginItem.detail.noAlternativePlugin")}`,
                     "",
                     `${t("pluginSetting.pluginItem.detail.diagnostics")}:`,
                     diagnostics.length
@@ -521,12 +588,10 @@ function _PluginItem(props: IPluginItemProps) {
                 showDialog("SimpleDialog", {
                     title: plugin.name,
                     content: detailContent,
-                    okText: t("pluginSetting.pluginItem.detail.copyDiagnostic"),
+                    okText: t("pluginSetting.pluginItem.detail.copyDetails"),
                     cancelText: t("pluginSetting.pluginItem.detail.closeDetails"),
                     onOk() {
-                        Clipboard.setString(
-                            buildCurrentHealthCheckReport(10).reportText,
-                        );
+                        Clipboard.setString(detailContent);
                         Toast.success(t("toast.copiedToClipboard"));
                     },
                 });

@@ -459,11 +459,26 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.detail.source": string; // 来源
     "pluginSetting.pluginItem.detail.sourceDetail": string; // 来源详情
     "pluginSetting.pluginItem.detail.hash": string; // 插件 Hash
+    "pluginSetting.pluginItem.detail.status": string; // 状态
+    "pluginSetting.pluginItem.detail.enabled": string; // 已启用
+    "pluginSetting.pluginItem.detail.disabled": string; // 已禁用
+    "pluginSetting.pluginItem.detail.platform": string; // 平台
     "pluginSetting.pluginItem.detail.capabilities": string; // 支持能力
+    "pluginSetting.pluginItem.detail.supportedCapabilities": string; // 支持能力
+    "pluginSetting.pluginItem.detail.unsupportedCapabilities": string; // 暂不支持
     "pluginSetting.pluginItem.detail.noCapabilities": string; // 暂无可识别能力
+    "pluginSetting.pluginItem.detail.noUnsupportedCapabilities": string; // 已支持所有已识别能力
+    "pluginSetting.pluginItem.detail.config": string; // 配置
+    "pluginSetting.pluginItem.detail.userVariables": string; // 用户变量
+    "pluginSetting.pluginItem.detail.userVariablesSummary": string; // 用户变量配置摘要
+    "pluginSetting.pluginItem.detail.userVariablesNone": string; // 无用户变量
+    "pluginSetting.pluginItem.detail.userVariablesMissing": string; // 未配置用户变量
+    "pluginSetting.pluginItem.detail.alternativePlugin": string; // 替代插件
+    "pluginSetting.pluginItem.detail.noAlternativePlugin": string; // 未设置替代插件
     "pluginSetting.pluginItem.detail.diagnostics": string; // 最近诊断
     "pluginSetting.pluginItem.detail.noDiagnostics": string; // 最近无错误
     "pluginSetting.pluginItem.detail.copyDiagnostic": string; // 复制插件诊断
+    "pluginSetting.pluginItem.detail.copyDetails": string; // 复制插件详情
     "pluginSetting.pluginItem.detail.closeDetails": string; // 关闭插件详情
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
