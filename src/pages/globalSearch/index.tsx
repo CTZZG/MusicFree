@@ -12,6 +12,7 @@ import LocalMusicSheet from "@/core/localMusicSheet";
 import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useSheetsBase } from "@/core/musicSheet";
+import { useSmartSheetFacets } from "@/core/smartMusicSheet";
 import TrackPlayer from "@/core/trackPlayer";
 import { iconSizeConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
@@ -49,6 +50,7 @@ interface IGlobalSearchResult {
 }
 
 const maxDirectLocalMusicResults = 5;
+const maxLocalFacetResults = 5;
 
 const onlineSearchTargets: Array<{
     searchType: ICommon.SupportMediaType;
@@ -104,6 +106,16 @@ function matchesMusicQuery(query: string, musicItem: IMusic.IMusicItem) {
     ].map(normalizeKeyword).some(text => text.includes(normalizedQuery));
 }
 
+function matchesTextQuery(query: string, ...values: Array<string | undefined>) {
+    const normalizedQuery = normalizeKeyword(query);
+    if (!normalizedQuery) {
+        return false;
+    }
+    return values.map(normalizeKeyword).some(text =>
+        text.includes(normalizedQuery),
+    );
+}
+
 function formatLocalMusicDescription(musicItem: IMusic.IMusicItem) {
     return [
         musicItem.artist,
@@ -118,6 +130,8 @@ export default function GlobalSearch() {
     const colors = useColors();
     const plugins = useSortedPlugins();
     const sheets = useSheetsBase();
+    const artistFacets = useSmartSheetFacets("artist");
+    const albumFacets = useSmartSheetFacets("album");
     const localMusicList = LocalMusicSheet.useMusicList();
     const [query, setQuery] = useState("");
     const [commandRevision, setCommandRevision] = useState(0);
@@ -350,6 +364,70 @@ export default function GlobalSearch() {
                     },
                 ]
                 : [];
+        const localArtistResults: IGlobalSearchResult[] = artistFacets
+            .filter(facet =>
+                matchesTextQuery(
+                    normalizedQuery,
+                    facet.title,
+                    facet.value,
+                    t("smartSheet.artists"),
+                    t("common.artist"),
+                ),
+            )
+            .slice(0, maxLocalFacetResults)
+            .map(facet => ({
+                id: `local-artist-${facet.value}`,
+                type: "local-music",
+                title: t("smartSheet.artistTitle", {
+                    artist: facet.title,
+                }),
+                description: t("home.songCount", {
+                    count: facet.count,
+                }),
+                icon: "user",
+                keywords: [
+                    facet.value,
+                    t("smartSheet.artists"),
+                    t("common.artist"),
+                ],
+                onPress: () =>
+                    navigate(ROUTE_PATH.SMART_SHEET_DETAIL, {
+                        type: "artist",
+                        value: facet.value,
+                    }),
+            }));
+        const localAlbumResults: IGlobalSearchResult[] = albumFacets
+            .filter(facet =>
+                matchesTextQuery(
+                    normalizedQuery,
+                    facet.title,
+                    facet.value,
+                    t("smartSheet.albums"),
+                    t("common.album"),
+                ),
+            )
+            .slice(0, maxLocalFacetResults)
+            .map(facet => ({
+                id: `local-album-${facet.value}`,
+                type: "local-music",
+                title: t("smartSheet.albumTitle", {
+                    album: facet.title,
+                }),
+                description: t("home.songCount", {
+                    count: facet.count,
+                }),
+                icon: "album-outline",
+                keywords: [
+                    facet.value,
+                    t("smartSheet.albums"),
+                    t("common.album"),
+                ],
+                onPress: () =>
+                    navigate(ROUTE_PATH.SMART_SHEET_DETAIL, {
+                        type: "album",
+                        value: facet.value,
+                    }),
+            }));
         const pluginResults: IGlobalSearchResult[] = plugins.flatMap(plugin => {
             const pluginEnabled = PluginManager.isPluginEnabled(plugin);
             const pluginKeywords = [
@@ -455,8 +533,25 @@ export default function GlobalSearch() {
         ].filter(
             item => matchesQuery(normalizedQuery, item),
         );
-        return [...localMusicResults, ...otherLocalResults];
-    }, [commandRevision, localMusicList, navigate, normalizedQuery, pageTargets, plugins, settingTargets, sheets, t]);
+        return [
+            ...localMusicResults,
+            ...localArtistResults,
+            ...localAlbumResults,
+            ...otherLocalResults,
+        ];
+    }, [
+        albumFacets,
+        artistFacets,
+        commandRevision,
+        localMusicList,
+        navigate,
+        normalizedQuery,
+        pageTargets,
+        plugins,
+        settingTargets,
+        sheets,
+        t,
+    ]);
 
     const onlineSearchResults = useMemo<IGlobalSearchResult[]>(() => {
         if (!normalizedQuery) {
