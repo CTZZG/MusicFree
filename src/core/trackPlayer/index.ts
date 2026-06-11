@@ -77,6 +77,25 @@ export interface IPlaybackDiagnosticSnapshot {
         code?: string;
         createdAt: number;
     }>;
+    recovery: {
+        persistedMusic: {
+            title?: string;
+            artist?: string;
+            platform?: string;
+        } | null;
+        persistedProgress: number | null;
+        progressSavedAt: number | null;
+        lastPersistedProgress: number | null;
+        lastPersistedAt: number | null;
+        lastRestoredMusic: {
+            title?: string;
+            artist?: string;
+            platform?: string;
+        } | null;
+        lastRestoredProgress: number | null;
+        lastRestoredAt: number | null;
+        lastRestoredQueueLength: number | null;
+    };
     native?: IPlaybackNativeDiagnostics;
 }
 
@@ -146,6 +165,10 @@ class TrackPlayer extends EventEmitter<{
     private isForceExiting = false;
     private lastProgressPersistedAt = 0;
     private lastProgressPersistedPosition = 0;
+    private lastPlaybackRestoredAt: number | null = null;
+    private lastPlaybackRestoredProgress: number | null = null;
+    private lastPlaybackRestoredMusic: IMusic.IMusicItem | null = null;
+    private lastPlaybackRestoredQueueLength: number | null = null;
     private recentPlaybackErrors: IPlaybackDiagnosticSnapshot["recentErrors"] = [];
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
@@ -218,6 +241,7 @@ class TrackPlayer extends EventEmitter<{
         const musicQueue = PersistStatus.get("music.playList");
         const repeatMode = PersistStatus.get("music.repeatMode");
         const progress = PersistStatus.get("music.progress");
+        const progressSavedAt = PersistStatus.get("music.progressSavedAt");
         let track = PersistStatus.get("music.musicItem"); // <--- 改为 let
         const quality =
             PersistStatus.get("music.quality") ||
@@ -228,6 +252,11 @@ class TrackPlayer extends EventEmitter<{
         // 状态恢复
         if (rate) {
             await this.backend.setRate(+rate / 100);
+        }
+        if (typeof progressSavedAt === "number") {
+            this.lastProgressPersistedAt = progressSavedAt;
+            this.lastProgressPersistedPosition =
+                this.normalizeProgress(progress) ?? 0;
         }
         if (repeatMode) {
             getDefaultStore().set(repeatModeAtom, repeatMode as MusicRepeatMode);
@@ -249,6 +278,11 @@ class TrackPlayer extends EventEmitter<{
             if (!this.configService.getConfig("basic.autoPlayWhenAppStart")) {
                 track.isInit = true;
             }
+            this.lastPlaybackRestoredAt = Date.now();
+            this.lastPlaybackRestoredProgress =
+                this.normalizeProgress(progress) ?? 0;
+            this.lastPlaybackRestoredMusic = track;
+            this.lastPlaybackRestoredQueueLength = this.playList.length;
             // 添加 UA
             track.userAgent = track.userAgent || getAppUserAgent();
 
@@ -937,7 +971,7 @@ class TrackPlayer extends EventEmitter<{
 
         await this.backend.reset();
         PersistStatus.set("music.musicItem", undefined);
-        PersistStatus.set("music.progress", 0);
+        this.setPersistedPlaybackProgress(0);
     }
 
     async skipToNext(): Promise<void> {
@@ -1082,7 +1116,7 @@ class TrackPlayer extends EventEmitter<{
     }
 
     async seekTo(progress: number) {
-        PersistStatus.set("music.progress", progress);
+        this.setPersistedPlaybackProgress(progress);
         return this.backend.seekTo(progress);
     }
 
@@ -1152,6 +1186,26 @@ class TrackPlayer extends EventEmitter<{
                 }
                 : null,
             recentErrors: [...this.recentPlaybackErrors],
+            recovery: {
+                persistedMusic: this.getDiagnosticMusicIdentity(
+                    PersistStatus.get("music.musicItem"),
+                ),
+                persistedProgress: this.normalizeProgress(
+                    PersistStatus.get("music.progress"),
+                ) ?? null,
+                progressSavedAt:
+                    PersistStatus.get("music.progressSavedAt") ?? null,
+                lastPersistedProgress: this.lastProgressPersistedAt
+                    ? this.lastProgressPersistedPosition
+                    : null,
+                lastPersistedAt: this.lastProgressPersistedAt || null,
+                lastRestoredMusic: this.getDiagnosticMusicIdentity(
+                    this.lastPlaybackRestoredMusic,
+                ),
+                lastRestoredProgress: this.lastPlaybackRestoredProgress,
+                lastRestoredAt: this.lastPlaybackRestoredAt,
+                lastRestoredQueueLength: this.lastPlaybackRestoredQueueLength,
+            },
             native: nativeDiagnostics,
         };
     }
@@ -1165,7 +1219,7 @@ class TrackPlayer extends EventEmitter<{
             this.currentIndex = -1;
             getDefaultStore().set(currentMusicAtom, null);
             PersistStatus.set("music.musicItem", undefined);
-            PersistStatus.set("music.progress", 0);
+            this.setPersistedPlaybackProgress(0);
 
             this.emit(TrackPlayerEvents.CurrentMusicChanged, null);
             return;
@@ -1247,7 +1301,25 @@ class TrackPlayer extends EventEmitter<{
 
         this.lastProgressPersistedAt = now;
         this.lastProgressPersistedPosition = normalizedProgress;
-        PersistStatus.set("music.progress", normalizedProgress);
+        this.setPersistedPlaybackProgress(normalizedProgress, now);
+    }
+
+    private setPersistedPlaybackProgress(progress: number, savedAt = Date.now()) {
+        PersistStatus.set("music.progress", progress);
+        PersistStatus.set("music.progressSavedAt", savedAt);
+    }
+
+    private getDiagnosticMusicIdentity(
+        musicItem?: IMusic.IMusicItem | null,
+    ) {
+        if (!musicItem) {
+            return null;
+        }
+        return {
+            title: musicItem.title,
+            artist: musicItem.artist,
+            platform: musicItem.platform,
+        };
     }
 
     private async ensureNitroAutoPlay(targetKey: string) {
@@ -1345,7 +1417,7 @@ class TrackPlayer extends EventEmitter<{
                 );
             });
         PersistStatus.set("music.musicItem", track as IMusic.IMusicItem);
-        PersistStatus.set("music.progress", initialProgress);
+        this.setPersistedPlaybackProgress(initialProgress);
         const currentProgress = setPlayerProgress({
             position: initialProgress,
             duration: Number(track.duration) || 0,
@@ -1671,7 +1743,7 @@ class TrackPlayer extends EventEmitter<{
         this.setCurrentMusic(syncedMusic);
         PersistStatus.set("music.musicItem", syncedMusic);
         if (shouldResetProgress) {
-            PersistStatus.set("music.progress", 0);
+            this.setPersistedPlaybackProgress(0);
             setPlayerProgress({
                 position: 0,
                 duration: Number(syncedMusic.duration) || 0,

@@ -36,6 +36,25 @@ export interface IPlaybackDiagnosticSnapshot {
         code?: string;
         createdAt: number;
     }>;
+    recovery: {
+        persistedMusic: {
+            title?: string;
+            artist?: string;
+            platform?: string;
+        } | null;
+        persistedProgress: number | null;
+        progressSavedAt: number | null;
+        lastPersistedProgress: number | null;
+        lastPersistedAt: number | null;
+        lastRestoredMusic: {
+            title?: string;
+            artist?: string;
+            platform?: string;
+        } | null;
+        lastRestoredProgress: number | null;
+        lastRestoredAt: number | null;
+        lastRestoredQueueLength: number | null;
+    };
     native?: IPlaybackNativeDiagnostics;
 }
 

@@ -84,6 +84,32 @@ export default function AboutSetting() {
         return value ? "yes" : "no";
     }
 
+    function formatTimestamp(value?: number | null) {
+        if (!value) {
+            return "-";
+        }
+        return new Date(value).toLocaleString();
+    }
+
+    function formatSeconds(value?: number | null) {
+        if (value === null || value === undefined) {
+            return "-";
+        }
+        return timeformat(value);
+    }
+
+    function formatDiagnosticMusic(
+        music?: IPlaybackDiagnosticSnapshot["recovery"]["persistedMusic"],
+    ) {
+        if (!music) {
+            return "-";
+        }
+        const title = formatValue(music.title);
+        const artist = formatValue(music.artist);
+        const platform = formatValue(music.platform);
+        return `${title} / ${artist} / ${platform}`;
+    }
+
     function formatNativeMediaSession(
         mediaSession?: NativeDiagnostics["mediaSession"],
     ) {
@@ -142,6 +168,7 @@ export default function AboutSetting() {
                 return `${createdAt} ${error.code ? `[${error.code}] ` : ""}${error.message}`;
             })
             : ["-"];
+        const recovery = snapshot.recovery;
         const native = snapshot.native;
 
         return [
@@ -167,6 +194,17 @@ export default function AboutSetting() {
             `Native 活动索引: ${formatValue(snapshot.activeTrackIndex)}`,
             `音源类型: ${formatValue(snapshot.activeTrack?.urlType)}`,
             `Headers: ${snapshot.activeTrack?.hasHeaders ? "yes" : "no"}`,
+            "",
+            "恢复状态",
+            `持久化歌曲: ${formatDiagnosticMusic(recovery.persistedMusic)}`,
+            `持久化进度: ${formatSeconds(recovery.persistedProgress)}`,
+            `进度保存时间: ${formatTimestamp(recovery.progressSavedAt)}`,
+            `最近内存保存进度: ${formatSeconds(recovery.lastPersistedProgress)}`,
+            `最近内存保存时间: ${formatTimestamp(recovery.lastPersistedAt)}`,
+            `本次恢复歌曲: ${formatDiagnosticMusic(recovery.lastRestoredMusic)}`,
+            `本次恢复进度: ${formatSeconds(recovery.lastRestoredProgress)}`,
+            `本次恢复时间: ${formatTimestamp(recovery.lastRestoredAt)}`,
+            `本次恢复队列长度: ${formatValue(recovery.lastRestoredQueueLength)}`,
             "",
             "Native / 系统",
             `包名: ${formatValue(native?.packageName)}`,

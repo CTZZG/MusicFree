@@ -16,6 +16,8 @@ interface IPersistStatus {
     "music.musicItem": IMusic.IMusicItem;
     /** 进度 */
     "music.progress": number;
+    /** 最近一次保存进度的时间 */
+    "music.progressSavedAt": number;
     /** 模式 */
     "music.repeatMode": string;
     /** 列表 */
