@@ -21,7 +21,13 @@ import { ToastAndroid } from "react-native";
 import { copyFile, readDir, readFile, unlink, writeFile } from "react-native-fs";
 import { devLog, errorLog, trace } from "../../utils/log";
 import pluginMeta from "./meta";
-import { localFilePlugin, Plugin, PluginErrorReason, PluginState } from "./plugin";
+import {
+    builtinLyricPlugins,
+    localFilePlugin,
+    Plugin,
+    PluginErrorReason,
+    PluginState,
+} from "./plugin";
 import i18n from "../i18n";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse } from "@/utils/jsonUtil";
@@ -585,7 +591,8 @@ class PluginManager implements IPluginManager, IInjectable {
     getByName(name: string) {
         return name === localPluginPlatform
             ? localFilePlugin
-            : this.getPlugins().find(_ => _.name === name);
+            : builtinLyricPlugins.find(_ => _.name === name) ??
+                this.getPlugins().find(_ => _.name === name);
     }
 
     /**
@@ -596,7 +603,8 @@ class PluginManager implements IPluginManager, IInjectable {
     getByHash(hash: string) {
         return hash === localPluginHash
             ? localFilePlugin
-            : this.getPlugins().find(_ => _.hash === hash);
+            : builtinLyricPlugins.find(_ => _.hash === hash) ??
+                this.getPlugins().find(_ => _.hash === hash);
     }
 
     /**
@@ -628,16 +636,23 @@ class PluginManager implements IPluginManager, IInjectable {
      * @returns 可搜索的插件实例数组
      */
     getSearchablePlugins(supportedSearchType?: ICommon.SupportMediaType) {
-        return this.getPlugins().filter(
+        const pluginMatches = (it: Plugin) =>
+            it.supportedMethods.has("search") &&
+            (supportedSearchType && it.instance.supportedSearchType
+                ? it.instance.supportedSearchType.includes(
+                    supportedSearchType,
+                )
+                : true);
+
+        const installedPlugins = this.getPlugins().filter(
             it =>
                 pluginMeta.isPluginEnabled(it.name) &&
-                it.supportedMethods.has("search") &&
-                (supportedSearchType && it.instance.supportedSearchType
-                    ? it.instance.supportedSearchType.includes(
-                        supportedSearchType,
-                    )
-                    : true),
+                pluginMatches(it),
         );
+        const builtinPlugins = supportedSearchType === "lyric"
+            ? builtinLyricPlugins.filter(pluginMatches)
+            : [];
+        return installedPlugins.concat(builtinPlugins);
     }
 
     /**
@@ -648,10 +663,15 @@ class PluginManager implements IPluginManager, IInjectable {
     getSortedSearchablePlugins(supportedSearchType?: ICommon.SupportMediaType) {
         const order = pluginMeta.getPluginOrder();
         return [...this.getSearchablePlugins(supportedSearchType)].sort(
-            (a, b) =>
-                (order[a.name] ?? Infinity) - (order[b.name] ?? Infinity) < 0
-                    ? -1
-                    : 1,
+            (a, b) => {
+                const aOrder = order[a.name] ?? Number.MAX_SAFE_INTEGER;
+                const bOrder = order[b.name] ?? Number.MAX_SAFE_INTEGER;
+                const diff = aOrder - bOrder;
+                if (diff === 0) {
+                    return 0;
+                }
+                return diff < 0 ? -1 : 1;
+            },
         );
     }
 

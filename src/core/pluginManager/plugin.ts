@@ -31,6 +31,10 @@ import { Buffer } from "buffer";
 import { devLog, errorLog, trace } from "../../utils/log";
 import Network from "../../utils/network";
 import MediaCache from "../mediaCache";
+import {
+    lrcLibLyricPluginDefine,
+    neteaseLyricPluginDefine,
+} from "./builtinLyricPlugins";
 import { recordPluginDiagnosticError } from "./diagnostics";
 import _internalPluginMeta from "./meta";
 import { IPluginManager } from "@/types/core/pluginManager";
@@ -1598,3 +1602,12 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
 export const localFilePlugin = new Plugin(function () {
     return localFilePluginDefine;
 }, "internal-plugin://local-file-plugin");
+
+export const builtinLyricPlugins = [
+    new Plugin(function () {
+        return neteaseLyricPluginDefine;
+    }, "internal-plugin://netease-lyric-plugin"),
+    new Plugin(function () {
+        return lrcLibLyricPluginDefine;
+    }, "internal-plugin://lrclib-lyric-plugin"),
+];
