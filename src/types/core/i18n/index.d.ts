@@ -162,9 +162,6 @@ export interface ILanguageData {
     "localMusic.fileStatusFilter.missing": string; // 文件不存在
     "localMusic.fileStatusFilter.unknown": string; // 状态未知
     "localMusic.fileStatusSummary": string; // 文件状态摘要
-    "localMusic.copyMissingFilesReport": string; // 复制缺失报告
-    "localMusic.copyMissingFilesReportSuccess": string; // 复制缺失报告成功
-    "localMusic.noMissingFiles": string; // 当前范围没有缺失文件
     "localMusic.sort.title": string; // 本地音乐排序
     "localMusic.sort.default": string; // 本地音乐默认顺序
     "localMusic.sort.byTitle": string; // 本地音乐按歌曲名排序
@@ -172,17 +169,6 @@ export interface ILanguageData {
     "localMusic.sort.byAlbum": string; // 本地音乐按专辑名排序
     "localMusic.sort.bySource": string; // 本地音乐按来源排序
     "localMusic.clearFilters": string; // 清除本地音乐筛选
-    "localMusic.report.title": string; // 本地音乐缺失文件报告
-    "localMusic.report.generatedAt": string; // 生成时间
-    "localMusic.report.count": string; // 缺失数量
-    "localMusic.report.filterSource": string; // 来源筛选
-    "localMusic.report.filterArtist": string; // 歌手筛选
-    "localMusic.report.filterAlbum": string; // 专辑筛选
-    "localMusic.report.song": string; // 歌曲
-    "localMusic.report.artist": string; // 歌手
-    "localMusic.report.album": string; // 专辑
-    "localMusic.report.source": string; // 来源
-    "localMusic.report.reason": string; // 原因
     "localMusic.metadataStatus.success": string; // 元数据已写入
     "localMusic.metadataStatus.failed": string; // 元数据失败
     "localMusic.metadataStatus.skipped": string; // 元数据未写入
@@ -274,8 +260,6 @@ export interface ILanguageData {
     "globalSearch.pluginDisableDescription": string; // 禁用插件命令描述
     "globalSearch.pluginEnabledToast": string; // 已启用插件
     "globalSearch.pluginDisabledToast": string; // 已禁用插件
-    "globalSearch.pluginDiagnosticsTitle": string; // 查看插件诊断命令标题
-    "globalSearch.pluginDiagnosticsDescription": string; // 查看插件诊断命令描述
     "globalSearch.smartSheetDescription": string; // 智能歌单结果描述
     "globalSearch.pageDescription": string; // 功能页面结果描述
     "globalSearch.sheetDescription": string; // 歌单结果描述
@@ -387,24 +371,6 @@ export interface ILanguageData {
     "downloading.detail.fileStatusExists": string; // 文件存在
     "downloading.detail.fileStatusMissing": string; // 文件不存在
     "downloading.detail.fileStatusUnknown": string; // 状态未知
-    "downloading.copyCompletedRecords": string; // 复制记录
-    "downloading.copyCompletedRecordsSuccess": string; // 复制完成记录成功
-    "downloading.exportCompletedRecords": string; // 导出记录
-    "downloading.exportCompletedRecordsAction": string; // 导出到此处
-    "downloading.exportCompletedRecordsSuccess": string; // 导出记录成功
-    "downloading.exportCompletedRecordsFailed": string; // 导出记录失败
-    "downloading.report.title": string; // 下载记录报告
-    "downloading.report.generatedAt": string; // 生成时间
-    "downloading.report.count": string; // 记录数量
-    "downloading.report.metadataSummary": string; // 元数据统计
-    "downloading.report.lyricSummary": string; // 歌词文件统计
-    "downloading.report.filterStatus": string; // 状态筛选
-    "downloading.report.filterSource": string; // 来源筛选
-    "downloading.report.filterArtist": string; // 歌手筛选
-    "downloading.report.filterAlbum": string; // 专辑筛选
-    "downloading.report.filterWrite": string; // 写入筛选
-    "downloading.report.filterFileStatus": string; // 文件状态筛选
-    "downloading.report.sort": string; // 排序
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源
@@ -439,8 +405,6 @@ export interface ILanguageData {
     // 插件设置相关
     "pluginSetting.pluginItem.options.updatePlugin": string; // 更新插件
     "pluginSetting.pluginItem.options.viewDetails": string; // 详情
-    "pluginSetting.pluginItem.options.healthCheck": string; // 健康检查
-    "pluginSetting.pluginItem.options.viewDiagnostics": string; // 查看诊断
     "pluginSetting.pluginItem.options.reselectLocalFile": string; // 重新选择本地插件文件
     "pluginSetting.pluginItem.options.sharePlugin": string; // 分享插件
     "pluginSetting.pluginItem.options.testSearch": string; // 测试搜索
@@ -482,9 +446,6 @@ export interface ILanguageData {
     "pluginSetting.filter.enabled.all": string; // 全部启用状态
     "pluginSetting.filter.enabled.enabled": string; // 已启用
     "pluginSetting.filter.enabled.disabled": string; // 已禁用
-    "pluginSetting.filter.diagnostics.all": string; // 全部诊断状态
-    "pluginSetting.filter.diagnostics.hasRecentError": string; // 有最近错误
-    "pluginSetting.filter.diagnostics.noRecentError": string; // 无最近错误
     "pluginSetting.pluginItem.source.network": string; // 网络安装
     "pluginSetting.pluginItem.source.localFile": string; // 本地文件
     "pluginSetting.pluginItem.source.unknown": string; // 来源未知
@@ -510,17 +471,11 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.detail.userVariablesMissing": string; // 未配置用户变量
     "pluginSetting.pluginItem.detail.alternativePlugin": string; // 替代插件
     "pluginSetting.pluginItem.detail.noAlternativePlugin": string; // 未设置替代插件
-    "pluginSetting.pluginItem.detail.diagnostics": string; // 最近诊断
-    "pluginSetting.pluginItem.detail.noDiagnostics": string; // 最近无错误
-    "pluginSetting.pluginItem.detail.copyDiagnostic": string; // 复制插件诊断
     "pluginSetting.pluginItem.detail.copyDetails": string; // 复制插件详情
     "pluginSetting.pluginItem.detail.closeDetails": string; // 关闭插件详情
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
-    "pluginSetting.menu.diagnostics": string; // 插件诊断
     "pluginSetting.menu.capabilityMatrix": string; // 插件能力矩阵
-    "pluginSetting.menu.copyDiagnosticReport": string; // 复制诊断报告
-    "pluginSetting.menu.exportDiagnosticReport": string; // 导出诊断报告
     "pluginSetting.menu.uninstallAll": string; // 卸载所有
     "pluginSetting.menu.uninstallAllContent": string; // 确定卸载所有插件吗？
     "pluginSetting.menu.installPlugin": string; // 安装插件
@@ -534,39 +489,6 @@ export interface ILanguageData {
     "pluginSetting.subscription.urlType.singlePlugin": string; // 单插件订阅
     "pluginSetting.subscription.urlType.collection": string; // 订阅集合
     "pluginSetting.subscription.urlType.invalid": string; // 地址格式无效
-    "pluginSetting.diagnostics.eventCount": string; // 插件诊断记录数量
-    "pluginSetting.diagnostics.empty": string; // 暂无插件诊断记录
-    "pluginSetting.diagnostics.filter.all": string; // 全部诊断
-    "pluginSetting.diagnostics.filter.search": string; // 搜索诊断
-    "pluginSetting.diagnostics.filter.source": string; // 播放源诊断
-    "pluginSetting.diagnostics.filter.lyric": string; // 歌词诊断
-    "pluginSetting.diagnostics.filter.install": string; // 安装诊断
-    "pluginSetting.diagnostics.filter.other": string; // 其他诊断
-    "pluginSetting.diagnostics.pluginFilter.title": string; // 插件筛选标题
-    "pluginSetting.diagnostics.pluginFilter.all": string; // 全部插件筛选
-    "pluginSetting.diagnostics.timeFilter.title": string; // 诊断时间范围标题
-    "pluginSetting.diagnostics.timeFilter.all": string; // 全部时间
-    "pluginSetting.diagnostics.timeFilter.today": string; // 今天
-    "pluginSetting.diagnostics.timeFilter.last24h": string; // 最近 24 小时
-    "pluginSetting.diagnostics.timeFilter.last7d": string; // 最近 7 天
-    "pluginSetting.diagnostics.timeFilter.last30d": string; // 最近 30 天
-    "pluginSetting.diagnostics.keywordFilter.title": string; // 诊断关键字筛选标题
-    "pluginSetting.diagnostics.keywordFilter.placeholder": string; // 诊断关键字筛选占位文案
-    "pluginSetting.diagnostics.clearFiltered": string; // 清理当前诊断
-    "pluginSetting.diagnostics.clearFilteredConfirm": string; // 清理当前诊断确认
-    "pluginSetting.diagnostics.clearSuccess": string; // 清理诊断成功
-    "pluginSetting.diagnostics.activeFilters": string; // 当前诊断筛选摘要
-    "pluginSetting.diagnostics.copyFilteredReportSuccess": string; // 复制当前筛选诊断报告成功
-    "pluginSetting.diagnostics.exportReportAction": string; // 导出诊断报告到此处
-    "pluginSetting.diagnostics.exportReportSuccess": string; // 导出诊断报告成功
-    "pluginSetting.diagnostics.exportReportFailed": string; // 导出诊断报告失败
-    "pluginSetting.diagnostics.exportEventAction": string; // 导出单条诊断到此处
-    "pluginSetting.diagnostics.exportEventSuccess": string; // 导出单条诊断成功
-    "pluginSetting.diagnostics.exportEventFailed": string; // 导出单条诊断失败
-    "pluginSetting.diagnostics.eventDetailTitle": string; // 单条诊断详情标题
-    "pluginSetting.diagnostics.copyEventReport": string; // 复制单条诊断报告
-    "pluginSetting.diagnostics.viewPlugin": string; // 从诊断详情查看插件
-    "pluginSetting.diagnostics.closeEventDetail": string; // 关闭单条诊断详情
     "pluginSetting.capabilityMatrix.summary": string; // 插件能力矩阵摘要
     "pluginSetting.capabilityMatrix.empty": string; // 无插件能力信息
     "pluginSetting.capabilityMatrix.plugin": string; // 插件能力矩阵插件列
@@ -575,55 +497,13 @@ export interface ILanguageData {
     "pluginSetting.capabilityMatrix.supportedCount": string; // 插件能力矩阵支持数列
     "pluginSetting.capabilityMatrix.enabled": string; // 已启用
     "pluginSetting.capabilityMatrix.disabled": string; // 已禁用
-    "pluginSetting.healthCheck.title": string; // 插件健康检查标题
-    "pluginSetting.healthCheck.copyReport": string; // 复制健康检查报告
-    "pluginSetting.healthCheck.exportReport": string; // 导出健康检查报告
-    "pluginSetting.healthCheck.exportReportAction": string; // 导出健康检查报告到此处
-    "pluginSetting.healthCheck.exportReportSuccess": string; // 导出健康检查报告成功
-    "pluginSetting.healthCheck.exportReportFailed": string; // 导出健康检查报告失败
-    "pluginSetting.healthCheck.generatedAt": string; // 健康检查生成时间
-    "pluginSetting.healthCheck.status": string; // 健康检查状态
-    "pluginSetting.healthCheck.enabled": string; // 健康检查已启用
-    "pluginSetting.healthCheck.disabled": string; // 健康检查已禁用
-    "pluginSetting.healthCheck.source": string; // 健康检查来源
-    "pluginSetting.healthCheck.capabilities": string; // 健康检查能力
-    "pluginSetting.healthCheck.noCapabilities": string; // 健康检查无能力
-    "pluginSetting.healthCheck.userVariables": string; // 健康检查用户变量
-    "pluginSetting.healthCheck.userVariablesSummary": string; // 健康检查用户变量摘要
-    "pluginSetting.healthCheck.userVariablesNone": string; // 健康检查无用户变量
-    "pluginSetting.healthCheck.userVariablesMissing": string; // 健康检查未配置用户变量
-    "pluginSetting.healthCheck.recentDiagnostics": string; // 健康检查最近诊断
-    "pluginSetting.healthCheck.noRecentDiagnostics": string; // 健康检查无最近诊断
-    "pluginSetting.healthCheck.attention": string; // 健康检查提醒
-    "pluginSetting.healthCheck.attentionNone": string; // 健康检查无提醒
-    "pluginSetting.healthCheck.attentionDisabled": string; // 健康检查插件禁用提醒
-    "pluginSetting.healthCheck.attentionUnknownSource": string; // 健康检查未知来源提醒
-    "pluginSetting.healthCheck.attentionNoCapabilities": string; // 健康检查无能力提醒
-    "pluginSetting.healthCheck.attentionMissingVariables": string; // 健康检查用户变量未配置提醒
-    "pluginSetting.healthCheck.attentionRecentDiagnostics": string; // 健康检查最近诊断提醒
     "pluginSetting.testSearch.loading": string; // 测试搜索加载文案
     "pluginSetting.testSearch.selectType": string; // 选择测试搜索类型
-    "pluginSetting.testSearch.combinedReportTitle": string; // 测试搜索综合报告标题
-    "pluginSetting.testSearch.generatedAt": string; // 测试搜索报告生成时间
-    "pluginSetting.testSearch.searchSection": string; // 测试搜索报告搜索小节
-    "pluginSetting.testSearch.healthCheckSection": string; // 测试搜索报告健康检查小节
     "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题
     "pluginSetting.testSearch.resultSummary": string; // 测试搜索结果摘要
     "pluginSetting.testSearch.failureTitle": string; // 测试搜索失败标题
     "pluginSetting.testSearch.failureSummary": string; // 测试搜索失败摘要
-    "pluginSetting.testSearch.failureDiagnosticTitle": string; // 测试搜索失败诊断标题
-    "pluginSetting.testSearch.failureDiagnosticMethod": string; // 测试搜索失败诊断方法
-    "pluginSetting.testSearch.failureDiagnosticTime": string; // 测试搜索失败诊断时间
-    "pluginSetting.testSearch.failureDiagnosticLocation": string; // 测试搜索失败诊断位置
-    "pluginSetting.testSearch.failureNoDiagnostic": string; // 测试搜索失败无诊断
     "pluginSetting.testSearch.noResults": string; // 测试搜索无结果
-    "pluginSetting.testSearch.copyResult": string; // 复制测试搜索结果
-    "pluginSetting.testSearch.copyFailureReport": string; // 复制测试搜索失败报告
-    "pluginSetting.testSearch.copyCombinedReport": string; // 复制测试搜索综合报告
-    "pluginSetting.testSearch.exportReport": string; // 导出测试搜索报告
-    "pluginSetting.testSearch.exportReportAction": string; // 导出测试搜索报告到此处
-    "pluginSetting.testSearch.exportReportSuccess": string; // 导出测试搜索报告成功
-    "pluginSetting.testSearch.exportReportFailed": string; // 导出测试搜索报告失败
     "pluginSetting.testSearch.isEnd.yes": string; // 测试搜索已到末页
     "pluginSetting.testSearch.isEnd.no": string; // 测试搜索未到末页
     "pluginSetting.testSearch.emptyKeyword": string; // 测试搜索空关键词
@@ -1009,8 +889,6 @@ export interface ILanguageData {
     "panel.musicItemOptions.clearPluginCache": string; // 清除插件缓存
     "panel.musicItemOptions.cacheCleared": string; // 缓存已清除
     "panel.musicItemOptions.deleteFailed": string; // 删除失败
-    "panel.musicItemOptions.formatDiagnostics": string; // 格式支持诊断
-    "panel.musicItemOptions.formatDiagnosticsTitle": string; // 格式支持诊断标题
 
     // 面板相关 - 音质设置
     "panel.musicQuality.title": string; // 设置音质

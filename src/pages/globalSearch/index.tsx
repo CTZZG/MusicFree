@@ -271,22 +271,6 @@ export default function GlobalSearch() {
                 }),
         },
         {
-            id: "setting-plugin-diagnostics",
-            type: "setting",
-            title: t("pluginSetting.menu.diagnostics"),
-            description: t("globalSearch.settingDescription"),
-            icon: "exclamation-circle",
-            keywords: [
-                t("sidebar.pluginManagement"),
-                t("pluginSetting.pluginItem.detail.diagnostics"),
-            ],
-            onPress: () =>
-                navigate(ROUTE_PATH.SETTING, {
-                    type: "plugin",
-                    initialPluginSettingRoute: "/pluginsetting/diagnostics",
-                }),
-        },
-        {
             id: "setting-plugin-capability-matrix",
             type: "setting",
             title: t("pluginSetting.menu.capabilityMatrix"),
@@ -675,28 +659,6 @@ export default function GlobalSearch() {
                                 }),
                         );
                     },
-                },
-                {
-                    id: `plugin-command-diagnostics-${plugin.hash}`,
-                    type: "plugin-command",
-                    title: t("globalSearch.pluginDiagnosticsTitle", {
-                        name: plugin.name,
-                    }),
-                    description: t("globalSearch.pluginDiagnosticsDescription"),
-                    icon: "exclamation-circle",
-                    trailingIcon: "chevron-right",
-                    keywords: [
-                        ...pluginKeywords,
-                        plugin.name,
-                        t("pluginSetting.menu.diagnostics"),
-                        t("pluginSetting.pluginItem.detail.diagnostics"),
-                    ],
-                    onPress: () =>
-                        navigate(ROUTE_PATH.SETTING, {
-                            type: "plugin",
-                            initialPluginName: plugin.name,
-                            initialPluginSettingRoute: "/pluginsetting/diagnostics",
-                        }),
                 },
             ];
         });

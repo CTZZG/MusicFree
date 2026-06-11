@@ -15,22 +15,10 @@ import useOrientation from "@/hooks/useOrientation";
 import Divider from "@/components/base/divider";
 import { buildInfo } from "@/constants/buildInfo.generated";
 import DeviceInfo from "react-native-device-info";
-import TrackPlayer, {
-    IPlaybackDiagnosticSnapshot,
-} from "@/core/trackPlayer";
-import PluginManager from "@/core/pluginManager";
-import timeformat from "@/utils/timeformat";
-import Clipboard from "@react-native-clipboard/clipboard";
-import Toast from "@/utils/toast";
-import { showDialog } from "@/components/dialogs/useDialog";
-import { useI18N } from "@/core/i18n";
-
-type NativeDiagnostics = NonNullable<IPlaybackDiagnosticSnapshot["native"]>;
 
 export default function AboutSetting() {
     const checkAndShowResult = useCheckUpdate();
     const orientation = useOrientation();
-    const { t } = useI18N();
     const buildRows = [
         {
             label: "应用版本",
@@ -69,198 +57,6 @@ export default function AboutSetting() {
             value: buildInfo.nitroPlayer,
         },
     ];
-
-    function formatValue(value?: string | number | null) {
-        if (value === null || value === undefined || value === "") {
-            return "-";
-        }
-        return `${value}`;
-    }
-
-    function formatBoolean(value?: boolean | null) {
-        if (value === null || value === undefined) {
-            return "-";
-        }
-        return value ? "yes" : "no";
-    }
-
-    function formatTimestamp(value?: number | null) {
-        if (!value) {
-            return "-";
-        }
-        return new Date(value).toLocaleString();
-    }
-
-    function formatSeconds(value?: number | null) {
-        if (value === null || value === undefined) {
-            return "-";
-        }
-        return timeformat(value);
-    }
-
-    function formatDiagnosticMusic(
-        music?: IPlaybackDiagnosticSnapshot["recovery"]["persistedMusic"],
-    ) {
-        if (!music) {
-            return "-";
-        }
-        const title = formatValue(music.title);
-        const artist = formatValue(music.artist);
-        const platform = formatValue(music.platform);
-        return `${title} / ${artist} / ${platform}`;
-    }
-
-    function formatNativeMediaSession(
-        mediaSession?: NativeDiagnostics["mediaSession"],
-    ) {
-        if (!mediaSession) {
-            return "-";
-        }
-        const playbackStates = mediaSession.playbackStates?.length
-            ? mediaSession.playbackStates.join(",")
-            : "-";
-        return [
-            `access=${mediaSession.access}`,
-            `ownActive=${formatBoolean(mediaSession.hasOwnActiveSession)}`,
-            `count=${formatValue(mediaSession.activeSessionCount)}`,
-            `states=${playbackStates}`,
-            mediaSession.reason ? `reason=${mediaSession.reason}` : "",
-        ].filter(Boolean).join(" ");
-    }
-
-    function formatNativeServiceLines(
-        services?: NativeDiagnostics["playbackServices"],
-    ) {
-        if (!services?.length) {
-            return ["服务: -"];
-        }
-        return services.map(service => {
-            const shortName =
-                service.className.split(".").pop() ?? service.className;
-            return [
-                `服务: ${shortName}`,
-                `declared=${formatBoolean(service.declared)}`,
-                `running=${formatBoolean(service.running)}`,
-                `shutdown=${formatValue(service.shutdownAction)}`,
-            ].join(" ");
-        });
-    }
-
-    function formatProgress(snapshot: IPlaybackDiagnosticSnapshot) {
-        const duration =
-            snapshot.progress.duration ||
-            snapshot.currentMusic?.duration ||
-            snapshot.activeTrack?.duration ||
-            0;
-        return `${timeformat(snapshot.progress.position)} / ${timeformat(duration)}`;
-    }
-
-    function formatPlaybackDiagnostic(snapshot: IPlaybackDiagnosticSnapshot) {
-        const currentMusic = snapshot.currentMusic;
-        const currentPlugin = currentMusic
-            ? PluginManager.getByMedia(currentMusic)
-            : null;
-        const queueIndex =
-            snapshot.queueIndex >= 0 ? snapshot.queueIndex + 1 : "-";
-        const recentErrors = snapshot.recentErrors.length
-            ? snapshot.recentErrors.map(error => {
-                const createdAt = new Date(error.createdAt).toLocaleString();
-                return `${createdAt} ${error.code ? `[${error.code}] ` : ""}${error.message}`;
-            })
-            : ["-"];
-        const recovery = snapshot.recovery;
-        const native = snapshot.native;
-
-        return [
-            "构建",
-            ...buildRows.map(row => `${row.label}: ${row.value}`),
-            "",
-            "当前播放",
-            `歌曲: ${formatValue(currentMusic?.title)}`,
-            `歌手: ${formatValue(currentMusic?.artist)}`,
-            `专辑: ${formatValue(currentMusic?.album)}`,
-            `平台: ${formatValue(currentMusic?.platform)}`,
-            `插件: ${formatValue(currentPlugin?.name ?? currentMusic?.platform)}`,
-            `队列索引: ${queueIndex} / ${snapshot.queueLength}`,
-            `进度: ${formatProgress(snapshot)}`,
-            `播放状态: ${snapshot.backendState}`,
-            `播放模式: ${snapshot.repeatMode}`,
-            `音质: ${snapshot.quality}`,
-            `速率: ${snapshot.rate}`,
-            "",
-            "播放后端",
-            `后端: ${snapshot.backendName}`,
-            `后端循环模式: ${formatValue(snapshot.backendRepeatMode)}`,
-            `Native 活动索引: ${formatValue(snapshot.activeTrackIndex)}`,
-            `音源类型: ${formatValue(snapshot.activeTrack?.urlType)}`,
-            `Headers: ${snapshot.activeTrack?.hasHeaders ? "yes" : "no"}`,
-            "",
-            "恢复状态",
-            `持久化歌曲: ${formatDiagnosticMusic(recovery.persistedMusic)}`,
-            `持久化进度: ${formatSeconds(recovery.persistedProgress)}`,
-            `进度保存时间: ${formatTimestamp(recovery.progressSavedAt)}`,
-            `最近内存保存进度: ${formatSeconds(recovery.lastPersistedProgress)}`,
-            `最近内存保存时间: ${formatTimestamp(recovery.lastPersistedAt)}`,
-            `本次恢复歌曲: ${formatDiagnosticMusic(recovery.lastRestoredMusic)}`,
-            `本次恢复进度: ${formatSeconds(recovery.lastRestoredProgress)}`,
-            `本次恢复时间: ${formatTimestamp(recovery.lastRestoredAt)}`,
-            `本次恢复队列长度: ${formatValue(recovery.lastRestoredQueueLength)}`,
-            "",
-            "Native / 系统",
-            `包名: ${formatValue(native?.packageName)}`,
-            `进程: ${formatValue(native?.processId)}`,
-            `通知权限: ${formatBoolean(native?.notificationPermission)}`,
-            `电池优化豁免: ${formatBoolean(native?.batteryOptimizationIgnored)}`,
-            `App importance: ${formatValue(native?.appImportanceLabel ?? native?.appImportance)}`,
-            `MediaSession: ${formatNativeMediaSession(native?.mediaSession)}`,
-            ...formatNativeServiceLines(native?.playbackServices),
-            ...(native?.error ? [`Native 诊断错误: ${native.error}`] : []),
-            "",
-            "最近错误",
-            ...recentErrors,
-        ].join("\n");
-    }
-
-    function renderDiagnosticContent(diagnosticText: string) {
-        return (
-            <View>
-                <TouchableOpacity
-                    style={style.diagnosticRefresh}
-                    onPress={showPlaybackDiagnostics}>
-                    <ThemeText fontSize="description" fontWeight="bold">
-                        刷新
-                    </ThemeText>
-                </TouchableOpacity>
-                <ThemeText
-                    selectable
-                    fontSize="description"
-                    style={style.diagnosticText}>
-                    {diagnosticText}
-                </ThemeText>
-            </View>
-        );
-    }
-
-    async function showPlaybackDiagnostics() {
-        try {
-            const snapshot =
-                await TrackPlayer.getPlaybackDiagnosticSnapshot();
-            const diagnosticText = formatPlaybackDiagnostic(snapshot);
-            showDialog("SimpleDialog", {
-                title: "播放诊断",
-                content: renderDiagnosticContent(diagnosticText),
-                okText: "复制诊断",
-                onOk() {
-                    Clipboard.setString(diagnosticText);
-                    Toast.success(t("toast.copiedToClipboard"));
-                },
-            });
-        } catch (e: any) {
-            Toast.warn(t("toast.unknownError", {
-                reason: e?.message ?? e,
-            }));
-        }
-    }
 
     return (
         <View
@@ -327,13 +123,6 @@ export default function AboutSetting() {
                             </ThemeText>
                         </View>
                     ))}
-                    <TouchableOpacity
-                        style={style.diagnosticEntry}
-                        onPress={showPlaybackDiagnostics}>
-                        <ThemeText fontSize="description" fontWeight="bold">
-                            播放诊断
-                        </ThemeText>
-                    </TouchableOpacity>
                 </View>
                 <Divider style={style.content} />
 
@@ -469,16 +258,6 @@ const style = StyleSheet.create({
     buildInfoValue: {
         flex: 1,
         lineHeight: rpx(34),
-    },
-    diagnosticEntry: {
-        marginTop: rpx(20),
-    },
-    diagnosticRefresh: {
-        alignSelf: "flex-start",
-        marginBottom: rpx(20),
-    },
-    diagnosticText: {
-        lineHeight: rpx(38),
     },
     wcChannel: {
         width: rpx(330),

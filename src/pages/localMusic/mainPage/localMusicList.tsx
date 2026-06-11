@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import Clipboard from "@react-native-clipboard/clipboard";
 import MusicList from "@/components/musicList";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { localMusicSheetId, localPluginPlatform, RequestStateCode } from "@/constants/commonConst";
@@ -16,7 +15,6 @@ import Icon, { IIconName } from "@/components/base/icon";
 import { exists } from "react-native-fs";
 import { removeFileScheme } from "@/utils/fileUtils";
 import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
-import Toast from "@/utils/toast";
 
 type LocalMusicFileStatus = "exists" | "missing" | "unknown" | "unavailable";
 type LocalMusicFileStatusFilter = "all" | "exists" | "missing" | "unknown";
@@ -105,45 +103,6 @@ function sortLocalMusicItems(
             compareLocalMusicText(a.title, b.title)
         );
     });
-}
-
-function buildLocalMusicMissingFilesReport(params: {
-    items: IMusic.IMusicItem[];
-    sourceFilterTitle: string;
-    artistFilterTitle: string;
-    albumFilterTitle: string;
-    t: ReturnType<typeof useI18N>["t"];
-}) {
-    const {
-        items,
-        sourceFilterTitle,
-        artistFilterTitle,
-        albumFilterTitle,
-        t,
-    } = params;
-    const records = items.map((musicItem, index) => [
-        `#${index + 1}`,
-        `${t("localMusic.report.song")}: ${
-            musicItem.title || t("common.unknownName")
-        }`,
-        `${t("localMusic.report.artist")}: ${
-            musicItem.artist || t("common.unknownName")
-        }`,
-        `${t("localMusic.report.album")}: ${musicItem.album || "-"}`,
-        `${t("localMusic.report.source")}: ${musicItem.platform || "-"}`,
-        `${t("localMusic.report.reason")}: ${t("localMusic.fileMissing")}`,
-    ].join("\n"));
-
-    return [
-        t("localMusic.report.title"),
-        `${t("localMusic.report.generatedAt")}: ${new Date().toISOString()}`,
-        `${t("localMusic.report.count")}: ${items.length}`,
-        `${t("localMusic.report.filterSource")}: ${sourceFilterTitle}`,
-        `${t("localMusic.report.filterArtist")}: ${artistFilterTitle}`,
-        `${t("localMusic.report.filterAlbum")}: ${albumFilterTitle}`,
-        "",
-        records.join("\n\n"),
-    ].join("\n");
 }
 
 export default function LocalMusicList() {
@@ -259,15 +218,6 @@ export default function LocalMusicList() {
     const sortedMusicList = useMemo(
         () => sortLocalMusicItems(filteredMusicList, sortMode),
         [filteredMusicList, sortMode],
-    );
-    const missingFileMusicList = useMemo(
-        () =>
-            artistAlbumFilteredMusicList.filter(
-                musicItem =>
-                    getLocalMusicFileStatus(musicItem, fileStatusMap) ===
-                    "missing",
-            ),
-        [artistAlbumFilteredMusicList, fileStatusMap],
     );
     const sourceFilterTitle =
         sourceFilter === "all" ? t("localMusic.sourceFilter.all") : sourceFilter;
@@ -501,24 +451,6 @@ export default function LocalMusicList() {
         setSortMode("default");
     }
 
-    function copyMissingFilesReport() {
-        if (!missingFileMusicList.length) {
-            Toast.warn(t("localMusic.noMissingFiles"));
-            return;
-        }
-
-        Clipboard.setString(buildLocalMusicMissingFilesReport({
-            items: missingFileMusicList,
-            sourceFilterTitle,
-            artistFilterTitle,
-            albumFilterTitle,
-            t,
-        }));
-        Toast.success(t("localMusic.copyMissingFilesReportSuccess", {
-            count: missingFileMusicList.length,
-        }));
-    }
-
     return (
         <HorizontalSafeAreaView style={globalStyle.flex1}>
             <View style={globalStyle.flex1}>
@@ -573,13 +505,6 @@ export default function LocalMusicList() {
                             icon: "x-mark",
                         })
                         : null}
-                    {renderFilterChip({
-                        key: "missing-files-report",
-                        title: t("localMusic.copyMissingFilesReport"),
-                        selected: false,
-                        onPress: copyMissingFilesReport,
-                        icon: "document-outline",
-                    })}
                 </ScrollView>
                 {artistAlbumFilteredMusicList.length ? (
                     <View style={style.summary}>

@@ -22,23 +22,17 @@ import { IInstallPluginResult } from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
 import ListItem from "@/components/base/listItem";
 import ThemeText from "@/components/base/themeText";
-import { ROUTE_PATH, useNavigate } from "@/core/router";
-import Clipboard from "@react-native-clipboard/clipboard";
-import {
-    buildPluginDiagnosticReport,
-    getLatestPluginDiagnosticEvent,
-} from "@/core/pluginManager/diagnostics";
 import {
     formatPluginInstallResult,
     installPluginFromUrlText,
     showPluginInstallResults,
 } from "../installPluginUtils";
-import { writePluginDiagnosticReport } from "../reportExportUtils";
 import {
     pluginCapabilityConfigs,
     pluginSupportsCapability,
 } from "../capabilityUtils";
 import useColors from "@/hooks/useColors";
+import { ROUTE_PATH, useNavigate } from "@/core/router";
 
 interface IOption {
     icon: IIconName;
@@ -50,10 +44,6 @@ type PluginSourceFilter = "all" | "network" | "local-file" | "unknown";
 type PluginCapabilityFilter = "all" | string;
 type PluginConfigFilter = "all" | "needs-config" | "configured" | "no-config";
 type PluginEnabledFilter = "all" | "enabled" | "disabled";
-type PluginDiagnosticFilter =
-    | "all"
-    | "has-recent-error"
-    | "no-recent-error";
 
 function getPluginSourceFilterValue(
     plugin: Plugin,
@@ -89,20 +79,12 @@ function getPluginEnabledFilterValue(
     return PluginManager.isPluginEnabled(plugin) ? "enabled" : "disabled";
 }
 
-function getPluginDiagnosticFilterValue(
-    plugin: Plugin,
-): Exclude<PluginDiagnosticFilter, "all"> {
-    return getLatestPluginDiagnosticEvent(plugin.hash, plugin.name)
-        ? "has-recent-error"
-        : "no-recent-error";
-}
-
 export default function PluginList() {
     const plugins = useSortedPlugins();
     const { t } = useI18N();
     const colors = useColors();
-    const route = useRoute<any>();
     const navigate = useNavigate();
+    const route = useRoute<any>();
     const initialPluginName = `${route.params?.initialPluginName ?? ""}`.trim();
     const [filterText, setFilterText] = useState(initialPluginName);
     const [sourceFilter, setSourceFilter] =
@@ -115,8 +97,6 @@ export default function PluginList() {
     const [enabledFilter, setEnabledFilter] =
         useState<PluginEnabledFilter>("all");
     const [enabledRevision, setEnabledRevision] = useState(0);
-    const [diagnosticFilter, setDiagnosticFilter] =
-        useState<PluginDiagnosticFilter>("all");
     useEffect(() => {
         setFilterText(initialPluginName);
     }, [initialPluginName]);
@@ -194,24 +174,6 @@ export default function PluginList() {
         },
     ], [t]);
 
-    const diagnosticFilterItems: Array<{
-        value: PluginDiagnosticFilter;
-        label: string;
-    }> = useMemo(() => [
-        {
-            value: "all",
-            label: t("pluginSetting.filter.diagnostics.all"),
-        },
-        {
-            value: "has-recent-error",
-            label: t("pluginSetting.filter.diagnostics.hasRecentError"),
-        },
-        {
-            value: "no-recent-error",
-            label: t("pluginSetting.filter.diagnostics.noRecentError"),
-        },
-    ], [t]);
-
     const visiblePlugins = useMemo(() => {
         const keyword = filterText.trim().toLowerCase();
         const capabilityConfig = pluginCapabilityConfigs.find(
@@ -237,22 +199,17 @@ export default function PluginList() {
             const matchesEnabled =
                 enabledFilter === "all" ||
                 getPluginEnabledFilterValue(plugin) === enabledFilter;
-            const matchesDiagnostics =
-                diagnosticFilter === "all" ||
-                getPluginDiagnosticFilterValue(plugin) === diagnosticFilter;
 
             return matchesKeyword &&
                 matchesSource &&
                 matchesCapability &&
                 matchesConfig &&
-                matchesEnabled &&
-                matchesDiagnostics;
+                matchesEnabled;
         });
     }, [
         capabilityFilter,
         configFilter,
         configRevision,
-        diagnosticFilter,
         enabledFilter,
         enabledRevision,
         filterText,
@@ -270,7 +227,6 @@ export default function PluginList() {
         setCapabilityFilter("all");
         setConfigFilter("all");
         setEnabledFilter("all");
-        setDiagnosticFilter("all");
     }
 
     function renderFilterChip(
@@ -309,8 +265,7 @@ export default function PluginList() {
             sourceFilter !== "all" ||
             capabilityFilter !== "all" ||
             configFilter !== "all" ||
-            enabledFilter !== "all" ||
-            diagnosticFilter !== "all";
+            enabledFilter !== "all";
         return (
             <View style={style.headerWrapper}>
                 {filterText ? (
@@ -399,56 +354,8 @@ export default function PluginList() {
                         ),
                     )}
                 </ScrollView>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={style.filterRow}>
-                    {diagnosticFilterItems.map(item =>
-                        renderFilterChip(
-                            item.label,
-                            diagnosticFilter === item.value,
-                            () => setDiagnosticFilter(item.value),
-                        ),
-                    )}
-                </ScrollView>
             </View>
         );
-    }
-
-    function onCopyPluginDiagnosticReport() {
-        Clipboard.setString(buildPluginDiagnosticReport(plugins));
-        Toast.success(t("toast.copiedToClipboard"));
-    }
-
-    function onExportPluginDiagnosticReport() {
-        navigate(ROUTE_PATH.FILE_SELECTOR, {
-            fileType: "folder",
-            multi: false,
-            actionText: t("pluginSetting.diagnostics.exportReportAction"),
-            async onAction(selectedFiles) {
-                const folder = selectedFiles[0]?.path;
-                if (!folder) {
-                    return false;
-                }
-                try {
-                    const filename = await writePluginDiagnosticReport(
-                        folder,
-                        buildPluginDiagnosticReport(plugins),
-                    );
-                    Toast.success(t(
-                        "pluginSetting.diagnostics.exportReportSuccess",
-                        { filename },
-                    ));
-                    return true;
-                } catch (e: any) {
-                    Toast.warn(t(
-                        "pluginSetting.diagnostics.exportReportFailed",
-                        { reason: e?.message ?? e },
-                    ));
-                    return false;
-                }
-            },
-        });
     }
 
     const menuOptions: IOption[] = [
@@ -467,28 +374,11 @@ export default function PluginList() {
             },
         },
         {
-            icon: "exclamation-circle",
-            title: t("pluginSetting.menu.diagnostics"),
-            onPress() {
-                navigator.navigate("/pluginsetting/diagnostics");
-            },
-        },
-        {
             icon: "check-circle",
             title: t("pluginSetting.menu.capabilityMatrix"),
             onPress() {
                 navigator.navigate("/pluginsetting/capability-matrix");
             },
-        },
-        {
-            icon: "document-outline",
-            title: t("pluginSetting.menu.copyDiagnosticReport"),
-            onPress: onCopyPluginDiagnosticReport,
-        },
-        {
-            icon: "arrow-up-tray",
-            title: t("pluginSetting.menu.exportDiagnosticReport"),
-            onPress: onExportPluginDiagnosticReport,
         },
         {
             icon: "trash-outline",

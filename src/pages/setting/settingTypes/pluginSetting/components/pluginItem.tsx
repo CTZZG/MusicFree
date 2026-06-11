@@ -6,7 +6,6 @@ import pluginManager, { Plugin, usePluginEnabled } from "@/core/pluginManager";
 import Toast from "@/utils/toast";
 import Clipboard from "@react-native-clipboard/clipboard";
 import * as DocumentPicker from "expo-document-picker";
-import { useNavigation } from "@react-navigation/native";
 import Config from "@/core/appConfig";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
@@ -23,7 +22,6 @@ import {
     getLatestPluginDiagnosticEvent,
     getPluginDiagnosticEvents,
 } from "@/core/pluginManager/diagnostics";
-import type { PluginDiagnosticEvent } from "@/core/pluginManager/diagnostics";
 import {
     getPluginCapabilityLabels,
     getPluginSourceInfo,
@@ -31,12 +29,6 @@ import {
     pluginCapabilityConfigs,
     pluginSupportsCapability,
 } from "../capabilityUtils";
-import { buildPluginHealthCheckReport } from "../healthCheckUtils";
-import { ROUTE_PATH, useNavigate } from "@/core/router";
-import {
-    writePluginHealthCheckReport,
-    writePluginTestSearchReport,
-} from "../reportExportUtils";
 import { showPluginInstallResults } from "../installPluginUtils";
 
 interface IPluginItemProps {
@@ -173,8 +165,6 @@ function _PluginItem(props: IPluginItemProps) {
     const enabled = usePluginEnabled(plugin);
     const { t } = useI18N();
     const rerender = useRerender();
-    const navigate = useNavigate();
-    const navigator = useNavigation<any>();
 
     const alternativePluginName = pluginManager.getAlternativePluginName(plugin);
     const sourceInfo = getPluginSourceInfo(plugin, t);
@@ -236,106 +226,6 @@ function _PluginItem(props: IPluginItemProps) {
         }
     }
 
-    function exportTestSearchReport(reportText: string) {
-        setTimeout(() => {
-            navigate(ROUTE_PATH.FILE_SELECTOR, {
-                fileType: "folder",
-                multi: false,
-                actionText: t("pluginSetting.testSearch.exportReportAction"),
-                async onAction(selectedFiles) {
-                    const folder = selectedFiles[0]?.path;
-                    if (!folder) {
-                        return false;
-                    }
-                    try {
-                        const filename = await writePluginTestSearchReport(
-                            folder,
-                            reportText,
-                        );
-                        Toast.success(t(
-                            "pluginSetting.testSearch.exportReportSuccess",
-                            { filename },
-                        ));
-                        return true;
-                    } catch (e: any) {
-                        Toast.warn(t(
-                            "pluginSetting.testSearch.exportReportFailed",
-                            { reason: e?.message ?? e },
-                        ));
-                        return false;
-                    }
-                },
-            });
-        }, 0);
-    }
-
-    function exportHealthCheckReport(reportText: string) {
-        setTimeout(() => {
-            navigate(ROUTE_PATH.FILE_SELECTOR, {
-                fileType: "folder",
-                multi: false,
-                actionText: t("pluginSetting.healthCheck.exportReportAction"),
-                async onAction(selectedFiles) {
-                    const folder = selectedFiles[0]?.path;
-                    if (!folder) {
-                        return false;
-                    }
-                    try {
-                        const filename = await writePluginHealthCheckReport(
-                            folder,
-                            reportText,
-                        );
-                        Toast.success(t(
-                            "pluginSetting.healthCheck.exportReportSuccess",
-                            { filename },
-                        ));
-                        return true;
-                    } catch (e: any) {
-                        Toast.warn(t(
-                            "pluginSetting.healthCheck.exportReportFailed",
-                            { reason: e?.message ?? e },
-                        ));
-                        return false;
-                    }
-                },
-            });
-        }, 0);
-    }
-
-    function buildCurrentHealthCheckReport(diagnosticsLimit = 3) {
-        return buildPluginHealthCheckReport({
-            plugin,
-            enabled,
-            sourceLabel: sourceInfo.label,
-            sourceKnown: !!(plugin.instance.srcUrl || plugin.path),
-            capabilityLabels,
-            userVariables: pluginManager.getUserVariables(plugin),
-            diagnostics: getPluginDiagnosticEvents(
-                plugin.hash,
-                plugin.name,
-                diagnosticsLimit,
-            ),
-            t,
-        });
-    }
-
-    function buildCombinedTestSearchReport(searchReport: string) {
-        const healthCheckReport = buildCurrentHealthCheckReport();
-        return [
-            t("pluginSetting.testSearch.combinedReportTitle", {
-                name: plugin.name,
-            }),
-            "",
-            `${t("pluginSetting.testSearch.generatedAt")}: ${new Date().toLocaleString()}`,
-            "",
-            `## ${t("pluginSetting.testSearch.searchSection")}`,
-            searchReport,
-            "",
-            `## ${t("pluginSetting.testSearch.healthCheckSection")}`,
-            healthCheckReport.reportText,
-        ].join("\n");
-    }
-
     function showTestSearchResult(
         keyword: string,
         type: ICommon.SupportMediaType,
@@ -360,21 +250,9 @@ function _PluginItem(props: IPluginItemProps) {
                 ? resultLines.join("\n")
                 : t("pluginSetting.testSearch.noResults"),
         ].join("\n\n");
-        const reportText = buildCombinedTestSearchReport(
-            [title, "", content].join("\n"),
-        );
         showDialog("SimpleDialog", {
             title,
             content,
-            okText: t("pluginSetting.testSearch.copyCombinedReport"),
-            cancelText: t("pluginSetting.testSearch.exportReport"),
-            onCancel() {
-                exportTestSearchReport(reportText);
-            },
-            onOk() {
-                Clipboard.setString(reportText);
-                Toast.success(t("toast.copiedToClipboard"));
-            },
         });
     }
 
@@ -382,47 +260,23 @@ function _PluginItem(props: IPluginItemProps) {
         keyword: string,
         type: ICommon.SupportMediaType,
         reason: any,
-        diagnostic?: PluginDiagnosticEvent,
+        recentErrorMessage?: string,
     ) {
-        const reasonText = diagnostic?.message ??
+        const reasonText = recentErrorMessage ??
             sanitizeTestSearchFailureReason(reason?.message ?? reason);
         const title = t("pluginSetting.testSearch.failureTitle", {
             name: plugin.name,
         });
-        const diagnosticLines = diagnostic
-            ? [
-                `${t("pluginSetting.testSearch.failureDiagnosticMethod")}: ${diagnostic.method}`,
-                `${t("pluginSetting.testSearch.failureDiagnosticTime")}: ${new Date(diagnostic.createdAt).toLocaleString()}`,
-                diagnostic.estimatedLocation
-                    ? `${t("pluginSetting.testSearch.failureDiagnosticLocation")}: ${diagnostic.estimatedLocation}`
-                    : "",
-            ].filter(Boolean)
-            : [t("pluginSetting.testSearch.failureNoDiagnostic")];
         const content = [
             t("pluginSetting.testSearch.failureSummary", {
                 keyword,
                 type,
                 reason: reasonText,
             }),
-            "",
-            t("pluginSetting.testSearch.failureDiagnosticTitle"),
-            ...diagnosticLines,
         ].join("\n");
-        const reportText = buildCombinedTestSearchReport(
-            [title, "", content].join("\n"),
-        );
         showDialog("SimpleDialog", {
             title,
             content,
-            okText: t("pluginSetting.testSearch.copyCombinedReport"),
-            cancelText: t("pluginSetting.testSearch.exportReport"),
-            onCancel() {
-                exportTestSearchReport(reportText);
-            },
-            onOk() {
-                Clipboard.setString(reportText);
-                Toast.success(t("toast.copiedToClipboard"));
-            },
         });
         Toast.warn(t("pluginSetting.testSearch.failed", {
             reason: reasonText,
@@ -477,7 +331,7 @@ function _PluginItem(props: IPluginItemProps) {
                                 keyword,
                                 searchType,
                                 reason,
-                                latestDiagnostic,
+                                latestDiagnostic?.message,
                             );
                         },
                     });
@@ -504,24 +358,6 @@ function _PluginItem(props: IPluginItemProps) {
                 setTimeout(() => {
                     showTestSearchInput(item.value as ICommon.SupportMediaType);
                 }, 0);
-            },
-        });
-    }
-
-    function onHealthCheck() {
-        const report = buildCurrentHealthCheckReport();
-
-        showDialog("SimpleDialog", {
-            title: report.title,
-            content: report.content,
-            okText: t("pluginSetting.healthCheck.copyReport"),
-            cancelText: t("pluginSetting.healthCheck.exportReport"),
-            onCancel() {
-                exportHealthCheckReport(report.reportText);
-            },
-            onOk() {
-                Clipboard.setString(report.reportText);
-                Toast.success(t("toast.copiedToClipboard"));
             },
         });
     }
@@ -601,11 +437,6 @@ function _PluginItem(props: IPluginItemProps) {
             title: t("pluginSetting.pluginItem.options.viewDetails"),
             icon: "information-circle",
             onPress() {
-                const diagnostics = getPluginDiagnosticEvents(
-                    plugin.hash,
-                    plugin.name,
-                    5,
-                );
                 const supportedCapabilityLabels = pluginCapabilityConfigs
                     .filter(config => pluginSupportsCapability(plugin, config))
                     .map(config => t(config.labelKey));
@@ -646,24 +477,6 @@ function _PluginItem(props: IPluginItemProps) {
                         ? `${t("pluginSetting.pluginItem.detail.userVariablesMissing")}: ${missingUserVariableLabels.join(", ")}`
                         : "",
                     `${t("pluginSetting.pluginItem.detail.alternativePlugin")}: ${alternativePluginName ?? t("pluginSetting.pluginItem.detail.noAlternativePlugin")}`,
-                    "",
-                    `${t("pluginSetting.pluginItem.detail.diagnostics")}:`,
-                    diagnostics.length
-                        ? diagnostics.map(event => {
-                            const time = new Date(
-                                event.createdAt,
-                            ).toLocaleString();
-                            return [
-                                `- ${time} ${event.method}`,
-                                `  ${event.message}`,
-                                event.estimatedLocation
-                                    ? `  ${event.estimatedLocation}`
-                                    : "",
-                            ]
-                                .filter(Boolean)
-                                .join("\n");
-                        }).join("\n")
-                        : t("pluginSetting.pluginItem.detail.noDiagnostics"),
                 ]
                     .filter(Boolean)
                     .join("\n");
@@ -676,22 +489,6 @@ function _PluginItem(props: IPluginItemProps) {
                         Clipboard.setString(detailContent);
                         Toast.success(t("toast.copiedToClipboard"));
                     },
-                });
-            },
-            show: true,
-        },
-        {
-            title: t("pluginSetting.pluginItem.options.healthCheck"),
-            icon: "shield-keyhole-outline",
-            onPress: onHealthCheck,
-            show: true,
-        },
-        {
-            title: t("pluginSetting.pluginItem.options.viewDiagnostics"),
-            icon: "exclamation-circle",
-            onPress() {
-                navigator.navigate("/pluginsetting/diagnostics", {
-                    initialPluginName: plugin.name,
                 });
             },
             show: true,
@@ -940,13 +737,7 @@ function _PluginItem(props: IPluginItemProps) {
                     </ThemeText>
                 </Pressable>
             ) : null}
-            <Pressable
-                style={styles.diagnosticSummary}
-                onPress={() => {
-                    navigator.navigate("/pluginsetting/diagnostics", {
-                        initialPluginName: plugin.name,
-                    });
-                }}>
+            <View style={styles.diagnosticSummary}>
                 <ThemeText
                     fontSize="description"
                     fontColor={
@@ -955,7 +746,7 @@ function _PluginItem(props: IPluginItemProps) {
                     numberOfLines={2}>
                     {diagnosticSummary}
                 </ThemeText>
-            </Pressable>
+            </View>
             <View style={styles.contents}>
                 {options.map((it, index) =>
                     it.show !== false ? (

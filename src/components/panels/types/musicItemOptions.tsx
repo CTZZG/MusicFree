@@ -31,10 +31,6 @@ import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import lyricManager from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
 import pluginManager from "@/core/pluginManager";
-import {
-    formatMediaFormatDiagnosticsText,
-    getMediaFormatDiagnostics,
-} from "@/utils/mediaFormatDiagnostics";
 import { useNavigation } from "@react-navigation/native";
 
 interface IMusicItemOptionsProps {
@@ -66,7 +62,6 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
     const downloaded = LocalMusicSheet.isLocalMusic(musicItem);
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
     const associatedLrc = getMediaExtraProperty(musicItem, "associatedLrc");
-    const formatDiagnostics = getMediaFormatDiagnostics(musicItem);
 
     const options: IOption[] = [
         {
@@ -221,17 +216,6 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
                             return false;
                         }
                     },
-                });
-            },
-        },
-        {
-            icon: "information-circle",
-            title: t("panel.musicItemOptions.formatDiagnostics"),
-            onPress: () => {
-                showDialog("SimpleDialog", {
-                    title: t("panel.musicItemOptions.formatDiagnosticsTitle"),
-                    content:
-                        formatMediaFormatDiagnosticsText(formatDiagnostics),
                 });
             },
         },

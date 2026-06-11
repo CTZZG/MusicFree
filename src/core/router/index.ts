@@ -94,8 +94,7 @@ interface RouterParams extends RouterParamsBase {
             | "/pluginsetting/list"
             | "/pluginsetting/sort"
             | "/pluginsetting/subscribe"
-            | "/pluginsetting/capability-matrix"
-            | "/pluginsetting/diagnostics";
+            | "/pluginsetting/capability-matrix";
         // anchor?: string | number;
     };
     local: undefined;
