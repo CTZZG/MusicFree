@@ -214,6 +214,7 @@
     "globalSearch.localMusicTitle": "本地音乐「{query}」",
     "globalSearch.localMusicDescription": "{count} 首本地歌曲",
     "globalSearch.pluginDescription": "打开插件管理并定位插件",
+    "globalSearch.pageDescription": "打开功能页面",
     "globalSearch.sheetDescription": "本地歌单，{count} 首歌曲",
     "globalSearch.settingDescription": "打开设置页",
     "globalSearch.emptyQuery": "输入关键词快速跳转",

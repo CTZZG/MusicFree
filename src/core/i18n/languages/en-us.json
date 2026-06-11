@@ -214,6 +214,7 @@
     "globalSearch.localMusicTitle": "Local music for「{query}」",
     "globalSearch.localMusicDescription": "{count} local songs",
     "globalSearch.pluginDescription": "Open plugin management and locate this plugin",
+    "globalSearch.pageDescription": "Open app page",
     "globalSearch.sheetDescription": "Local playlist, {count} songs",
     "globalSearch.settingDescription": "Open settings page",
     "globalSearch.emptyQuery": "Type to jump quickly",

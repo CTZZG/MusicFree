@@ -24,6 +24,7 @@ type GlobalSearchResultType =
     | "local-music"
     | "music-sheet"
     | "plugin"
+    | "page"
     | "setting";
 
 interface IGlobalSearchResult {
@@ -72,6 +73,65 @@ export default function GlobalSearch() {
     const localMusicList = LocalMusicSheet.useMusicList();
     const [query, setQuery] = useState("");
     const normalizedQuery = query.trim();
+
+    const pageTargets = useMemo<IGlobalSearchResult[]>(() => [
+        {
+            id: "page-local-music",
+            type: "page",
+            title: t("home.localMusic"),
+            description: t("globalSearch.pageDescription"),
+            icon: "folder-music-outline",
+            keywords: [
+                t("localMusic.scanLocalMusic"),
+                t("localMusic.beginScan"),
+                t("smartSheet.localMusic"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.LOCAL),
+        },
+        {
+            id: "page-downloading",
+            type: "page",
+            title: t("downloading.title"),
+            description: t("globalSearch.pageDescription"),
+            icon: "arrow-down-tray",
+            keywords: [
+                t("localMusic.downloadList"),
+                t("downloading.filter.active"),
+                t("downloading.filter.completed"),
+                t("downloading.filter.error"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.DOWNLOADING),
+        },
+        {
+            id: "page-history",
+            type: "page",
+            title: t("history.title"),
+            description: t("globalSearch.pageDescription"),
+            icon: "clock-outline",
+            keywords: [
+                t("smartSheet.recentPlayed"),
+                t("history.clearHistory"),
+                t("searchPage.history"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.HISTORY),
+        },
+        {
+            id: "page-smart-sheets",
+            type: "page",
+            title: t("smartSheet.title"),
+            description: t("globalSearch.pageDescription"),
+            icon: "strategy",
+            keywords: [
+                t("home.smartSheets"),
+                t("smartSheet.recentAdded"),
+                t("smartSheet.favorite"),
+                t("smartSheet.downloaded"),
+                t("smartSheet.artists"),
+                t("smartSheet.albums"),
+            ],
+            onPress: () => navigate(ROUTE_PATH.SMART_SHEETS),
+        },
+    ], [navigate, t]);
 
     const settingTargets = useMemo<IGlobalSearchResult[]>(() => [
         {
@@ -204,13 +264,14 @@ export default function GlobalSearch() {
 
         const otherLocalResults = [
             ...pluginResults,
+            ...pageTargets,
             ...sheetResults,
             ...settingTargets,
         ].filter(
             item => matchesQuery(normalizedQuery, item),
         );
         return [...localMusicResults, ...otherLocalResults];
-    }, [localMusicList, navigate, normalizedQuery, plugins, settingTargets, sheets, t]);
+    }, [localMusicList, navigate, normalizedQuery, pageTargets, plugins, settingTargets, sheets, t]);
 
     const searchMusicResult = useMemo<IGlobalSearchResult | null>(() => {
         if (!normalizedQuery) {
