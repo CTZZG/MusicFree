@@ -421,6 +421,10 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.versionHint": string; // 版本提示
     "pluginSetting.pluginItem.author": string; // 作者
     "pluginSetting.filteringByPlugin": string; // 插件筛选提示
+    "pluginSetting.filter.title": string; // 插件筛选标题
+    "pluginSetting.filter.clear": string; // 清除插件筛选
+    "pluginSetting.filter.source.all": string; // 全部插件来源
+    "pluginSetting.filter.capability.all": string; // 全部插件能力
     "pluginSetting.pluginItem.source.network": string; // 网络安装
     "pluginSetting.pluginItem.source.localFile": string; // 本地文件
     "pluginSetting.pluginItem.source.unknown": string; // 来源未知
