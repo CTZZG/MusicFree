@@ -8,7 +8,7 @@ import MusicBar from "@/components/musicBar";
 import { localMusicSheetId } from "@/constants/commonConst";
 import { useI18N } from "@/core/i18n";
 import LocalMusicSheet from "@/core/localMusicSheet";
-import { useSortedPlugins } from "@/core/pluginManager";
+import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useSheetsBase } from "@/core/musicSheet";
 import TrackPlayer from "@/core/trackPlayer";
@@ -30,6 +30,7 @@ type GlobalSearchResultType =
     | "local-music-item"
     | "music-sheet"
     | "plugin"
+    | "plugin-command"
     | "page"
     | "setting";
 
@@ -39,6 +40,7 @@ interface IGlobalSearchResult {
     title: string;
     description: string;
     icon: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
+    trailingIcon?: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
     keywords?: string[];
     musicItem?: IMusic.IMusicItem;
     onPress: () => void | Promise<void>;
@@ -116,6 +118,7 @@ export default function GlobalSearch() {
     const sheets = useSheetsBase();
     const localMusicList = LocalMusicSheet.useMusicList();
     const [query, setQuery] = useState("");
+    const [commandRevision, setCommandRevision] = useState(0);
     const normalizedQuery = query.trim();
 
     const pageTargets = useMemo<IGlobalSearchResult[]>(() => [
@@ -297,22 +300,66 @@ export default function GlobalSearch() {
                     },
                 ]
                 : [];
-        const pluginResults: IGlobalSearchResult[] = plugins.map(plugin => ({
-            id: `plugin-${plugin.hash}`,
-            type: "plugin",
-            title: plugin.name,
-            description: t("globalSearch.pluginDescription"),
-            icon: "javascript",
-            keywords: [
+        const pluginResults: IGlobalSearchResult[] = plugins.flatMap(plugin => {
+            const pluginEnabled = PluginManager.isPluginEnabled(plugin);
+            const pluginKeywords = [
                 plugin.instance.author ?? "",
                 plugin.instance.description ?? "",
-            ],
-            onPress: () =>
-                navigate(ROUTE_PATH.SETTING, {
+                plugin.instance.platform ?? "",
+            ];
+            return [
+                {
+                    id: `plugin-${plugin.hash}`,
                     type: "plugin",
-                    initialPluginName: plugin.name,
-                }),
-        }));
+                    title: plugin.name,
+                    description: t("globalSearch.pluginDescription"),
+                    icon: "javascript",
+                    keywords: pluginKeywords,
+                    onPress: () =>
+                        navigate(ROUTE_PATH.SETTING, {
+                            type: "plugin",
+                            initialPluginName: plugin.name,
+                        }),
+                },
+                {
+                    id: `plugin-command-toggle-${plugin.hash}`,
+                    type: "plugin-command",
+                    title: pluginEnabled
+                        ? t("globalSearch.pluginDisableTitle", {
+                            name: plugin.name,
+                        })
+                        : t("globalSearch.pluginEnableTitle", {
+                            name: plugin.name,
+                        }),
+                    description: pluginEnabled
+                        ? t("globalSearch.pluginDisableDescription")
+                        : t("globalSearch.pluginEnableDescription"),
+                    icon: "power-outline",
+                    trailingIcon: pluginEnabled
+                        ? "x-mark"
+                        : "check-circle",
+                    keywords: [
+                        ...pluginKeywords,
+                        plugin.name,
+                        t("pluginSetting.pluginItem.detail.enabled"),
+                        t("pluginSetting.pluginItem.detail.disabled"),
+                    ],
+                    onPress: () => {
+                        PluginManager.setPluginEnabled(plugin, !pluginEnabled);
+                        setCommandRevision(value => value + 1);
+                        Toast.success(
+                            pluginEnabled
+                                ? t("globalSearch.pluginDisabledToast", {
+                                    name: plugin.name,
+                                })
+                                : t("globalSearch.pluginEnabledToast", {
+                                    name: plugin.name,
+                                }),
+                        );
+                    },
+                },
+            ];
+        });
         const sheetResults: IGlobalSearchResult[] = sheets.map(sheet => ({
             id: `sheet-${sheet.id}`,
             type: "music-sheet",
@@ -337,7 +384,7 @@ export default function GlobalSearch() {
             item => matchesQuery(normalizedQuery, item),
         );
         return [...localMusicResults, ...otherLocalResults];
-    }, [localMusicList, navigate, normalizedQuery, pageTargets, plugins, settingTargets, sheets, t]);
+    }, [commandRevision, localMusicList, navigate, normalizedQuery, pageTargets, plugins, settingTargets, sheets, t]);
 
     const onlineSearchResults = useMemo<IGlobalSearchResult[]>(() => {
         if (!normalizedQuery) {
@@ -479,7 +526,9 @@ function GlobalSearchListItem(props: { item: IGlobalSearchResult }) {
             />
             <ListItem.ListItemIcon
                 icon={
-                    item.type === "local-music-item"
+                    item.trailingIcon
+                        ? item.trailingIcon
+                        : item.type === "local-music-item"
                         ? "play"
                         : "chevron-right"
                 }

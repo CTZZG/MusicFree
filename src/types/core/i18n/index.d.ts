@@ -263,6 +263,12 @@ export interface ILanguageData {
     "globalSearch.localMusicTitle": string; // 本地音乐搜索结果标题
     "globalSearch.localMusicDescription": string; // 本地音乐搜索结果描述
     "globalSearch.pluginDescription": string; // 插件结果描述
+    "globalSearch.pluginEnableTitle": string; // 启用插件命令标题
+    "globalSearch.pluginDisableTitle": string; // 禁用插件命令标题
+    "globalSearch.pluginEnableDescription": string; // 启用插件命令描述
+    "globalSearch.pluginDisableDescription": string; // 禁用插件命令描述
+    "globalSearch.pluginEnabledToast": string; // 已启用插件
+    "globalSearch.pluginDisabledToast": string; // 已禁用插件
     "globalSearch.pageDescription": string; // 功能页面结果描述
     "globalSearch.sheetDescription": string; // 歌单结果描述
     "globalSearch.settingDescription": string; // 设置结果描述
