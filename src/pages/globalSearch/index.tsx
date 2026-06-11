@@ -11,9 +11,12 @@ import LocalMusicSheet from "@/core/localMusicSheet";
 import { useSortedPlugins } from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useSheetsBase } from "@/core/musicSheet";
+import TrackPlayer from "@/core/trackPlayer";
 import { iconSizeConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
+import Toast from "@/utils/toast";
+import { getMediaUniqueKey } from "@/utils/mediaUtils";
 import Color from "color";
 import React, { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
@@ -22,6 +25,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 type GlobalSearchResultType =
     | "music"
     | "local-music"
+    | "local-music-item"
     | "music-sheet"
     | "plugin"
     | "page"
@@ -34,8 +38,11 @@ interface IGlobalSearchResult {
     description: string;
     icon: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
     keywords?: string[];
-    onPress: () => void;
+    musicItem?: IMusic.IMusicItem;
+    onPress: () => void | Promise<void>;
 }
+
+const maxDirectLocalMusicResults = 5;
 
 function normalizeKeyword(text?: string) {
     return (text ?? "").trim().toLowerCase();
@@ -62,6 +69,14 @@ function matchesMusicQuery(query: string, musicItem: IMusic.IMusicItem) {
         musicItem.album,
         musicItem.platform,
     ].map(normalizeKeyword).some(text => text.includes(normalizedQuery));
+}
+
+function formatLocalMusicDescription(musicItem: IMusic.IMusicItem) {
+    return [
+        musicItem.artist,
+        musicItem.album,
+        musicItem.platform,
+    ].filter(Boolean).join(" · ");
 }
 
 export default function GlobalSearch() {
@@ -206,9 +221,30 @@ export default function GlobalSearch() {
         const matchedLocalMusic = (localMusicList ?? []).filter(item =>
             matchesMusicQuery(normalizedQuery, item),
         );
+        const directLocalMusicResults: IGlobalSearchResult[] = matchedLocalMusic
+            .slice(0, maxDirectLocalMusicResults)
+            .map((musicItem, index) => ({
+                id: `local-music-item-${getMediaUniqueKey(musicItem)}-${index}`,
+                type: "local-music-item",
+                title: musicItem.title,
+                description: formatLocalMusicDescription(musicItem),
+                icon: "musical-note",
+                musicItem,
+                keywords: [
+                    musicItem.artist,
+                    musicItem.album,
+                    musicItem.platform,
+                ],
+                onPress: () =>
+                    TrackPlayer.playWithReplacePlayList(
+                        musicItem,
+                        matchedLocalMusic,
+                    ),
+            }));
         const localMusicResults: IGlobalSearchResult[] =
             matchedLocalMusic.length
                 ? [
+                    ...directLocalMusicResults,
                     {
                         id: "local-music-results",
                         type: "local-music",
@@ -372,16 +408,39 @@ export default function GlobalSearch() {
 
 function GlobalSearchListItem(props: { item: IGlobalSearchResult }) {
     const { item } = props;
+    const { t } = useI18N();
+    const localFileExists = LocalMusicSheet.useLocalFileExists(
+        item.musicItem ?? null,
+    );
+    const localMusicFileMissing = !!item.musicItem && localFileExists === false;
 
     return (
-        <ListItem withHorizontalPadding onPress={item.onPress}>
-            <ListItem.ListItemIcon icon={item.icon} />
+        <ListItem
+            withHorizontalPadding
+            onPress={() => {
+                if (localMusicFileMissing) {
+                    Toast.warn(t("localMusic.fileMissingTapHint"));
+                    return;
+                }
+                item.onPress();
+            }}>
+            <ListItem.ListItemIcon
+                icon={localMusicFileMissing ? "exclamation-circle" : item.icon}
+            />
             <ListItem.Content
                 title={item.title}
-                description={item.description}
+                description={
+                    localMusicFileMissing
+                        ? t("localMusic.fileMissing")
+                        : item.description
+                }
             />
             <ListItem.ListItemIcon
-                icon="chevron-right"
+                icon={
+                    item.type === "local-music-item"
+                        ? "play"
+                        : "chevron-right"
+                }
                 position="right"
                 fixedWidth
             />
