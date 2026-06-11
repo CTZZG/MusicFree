@@ -20,6 +20,7 @@ import Toast from "@/utils/toast";
 
 type LocalMusicFileStatus = "exists" | "missing" | "unknown" | "unavailable";
 type LocalMusicFileStatusFilter = "all" | "exists" | "missing" | "unknown";
+type LocalMusicSortMode = "default" | "title" | "artist" | "album" | "source";
 
 function normalizeLocalMusicFsPath(filePath: string) {
     const rawPath = removeFileScheme(filePath);
@@ -66,6 +67,44 @@ function matchLocalMusicFileStatusFilter(
         return status === "unknown" || status === "unavailable";
     }
     return status === filter;
+}
+
+function compareLocalMusicText(left?: string | null, right?: string | null) {
+    return `${left ?? ""}`.localeCompare(`${right ?? ""}`);
+}
+
+function sortLocalMusicItems(
+    items: IMusic.IMusicItem[],
+    sortMode: LocalMusicSortMode,
+) {
+    if (sortMode === "default") {
+        return items;
+    }
+
+    return [...items].sort((a, b) => {
+        if (sortMode === "title") {
+            return (
+                compareLocalMusicText(a.title, b.title) ||
+                compareLocalMusicText(a.artist, b.artist)
+            );
+        }
+        if (sortMode === "artist") {
+            return (
+                compareLocalMusicText(a.artist, b.artist) ||
+                compareLocalMusicText(a.title, b.title)
+            );
+        }
+        if (sortMode === "album") {
+            return (
+                compareLocalMusicText(a.album, b.album) ||
+                compareLocalMusicText(a.title, b.title)
+            );
+        }
+        return (
+            compareLocalMusicText(a.platform, b.platform) ||
+            compareLocalMusicText(a.title, b.title)
+        );
+    });
 }
 
 function buildLocalMusicMissingFilesReport(params: {
@@ -116,6 +155,7 @@ export default function LocalMusicList() {
     const [albumFilter, setAlbumFilter] = useState<string>("all");
     const [fileStatusFilter, setFileStatusFilter] =
         useState<LocalMusicFileStatusFilter>("all");
+    const [sortMode, setSortMode] = useState<LocalMusicSortMode>("default");
     const [fileStatusMap, setFileStatusMap] = useState<
         Record<string, LocalMusicFileStatus>
     >({});
@@ -216,6 +256,10 @@ export default function LocalMusicList() {
         ),
         [artistAlbumFilteredMusicList, fileStatusMap, fileStatusFilter],
     );
+    const sortedMusicList = useMemo(
+        () => sortLocalMusicItems(filteredMusicList, sortMode),
+        [filteredMusicList, sortMode],
+    );
     const missingFileMusicList = useMemo(
         () =>
             artistAlbumFilteredMusicList.filter(
@@ -257,6 +301,36 @@ export default function LocalMusicList() {
             ? t("localMusic.fileStatusFilter.title")
             : fileStatusFilterItems.find(item => item.key === fileStatusFilter)
                 ?.title ?? t("localMusic.fileStatusFilter.title");
+    const sortItems: Array<{
+        key: LocalMusicSortMode;
+        title: string;
+    }> = [
+        {
+            key: "default",
+            title: t("localMusic.sort.default"),
+        },
+        {
+            key: "title",
+            title: t("localMusic.sort.byTitle"),
+        },
+        {
+            key: "artist",
+            title: t("localMusic.sort.byArtist"),
+        },
+        {
+            key: "album",
+            title: t("localMusic.sort.byAlbum"),
+        },
+        {
+            key: "source",
+            title: t("localMusic.sort.bySource"),
+        },
+    ];
+    const sortTitle =
+        sortMode === "default"
+            ? t("localMusic.sort.title")
+            : sortItems.find(item => item.key === sortMode)?.title ??
+                t("localMusic.sort.title");
 
     useEffect(() => {
         let cancelled = false;
@@ -399,6 +473,20 @@ export default function LocalMusicList() {
         });
     }
 
+    function handleSortPress() {
+        showPanel("SimpleSelect", {
+            header: t("localMusic.sort.title"),
+            candidates: sortItems.map(item => ({
+                title: item.title,
+                value: item.key,
+                icon: sortMode === item.key ? "check" : "sort-outline",
+            })),
+            onPress(item) {
+                setSortMode(item.value as LocalMusicSortMode);
+            },
+        });
+    }
+
     function copyMissingFilesReport() {
         if (!missingFileMusicList.length) {
             Toast.warn(t("localMusic.noMissingFiles"));
@@ -456,6 +544,13 @@ export default function LocalMusicList() {
                         icon: "folder-outline",
                     })}
                     {renderFilterChip({
+                        key: "sort",
+                        title: sortTitle,
+                        selected: sortMode !== "default",
+                        onPress: handleSortPress,
+                        icon: "sort-outline",
+                    })}
+                    {renderFilterChip({
                         key: "missing-files-report",
                         title: t("localMusic.copyMissingFilesReport"),
                         selected: false,
@@ -473,14 +568,14 @@ export default function LocalMusicList() {
                     </View>
                 ) : null}
                 <MusicList
-                    musicList={filteredMusicList}
+                    musicList={sortedMusicList}
                     showIndex
                     state={RequestStateCode.IDLE}
                     musicSheet={{
                         id: localMusicSheetId,
                         title: t("common.local"),
                         platform: localPluginPlatform,
-                        musicList: filteredMusicList,
+                        musicList: sortedMusicList,
                     }}
                 />
             </View>

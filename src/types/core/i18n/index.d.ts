@@ -162,6 +162,12 @@ export interface ILanguageData {
     "localMusic.copyMissingFilesReport": string; // 复制缺失报告
     "localMusic.copyMissingFilesReportSuccess": string; // 复制缺失报告成功
     "localMusic.noMissingFiles": string; // 当前范围没有缺失文件
+    "localMusic.sort.title": string; // 本地音乐排序
+    "localMusic.sort.default": string; // 本地音乐默认顺序
+    "localMusic.sort.byTitle": string; // 本地音乐按歌曲名排序
+    "localMusic.sort.byArtist": string; // 本地音乐按歌手名排序
+    "localMusic.sort.byAlbum": string; // 本地音乐按专辑名排序
+    "localMusic.sort.bySource": string; // 本地音乐按来源排序
     "localMusic.report.title": string; // 本地音乐缺失文件报告
     "localMusic.report.generatedAt": string; // 生成时间
     "localMusic.report.count": string; // 缺失数量
