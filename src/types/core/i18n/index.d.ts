@@ -275,6 +275,7 @@ export interface ILanguageData {
     "globalSearch.pluginDisabledToast": string; // 已禁用插件
     "globalSearch.pluginDiagnosticsTitle": string; // 查看插件诊断命令标题
     "globalSearch.pluginDiagnosticsDescription": string; // 查看插件诊断命令描述
+    "globalSearch.smartSheetDescription": string; // 智能歌单结果描述
     "globalSearch.pageDescription": string; // 功能页面结果描述
     "globalSearch.sheetDescription": string; // 歌单结果描述
     "globalSearch.settingDescription": string; // 设置结果描述

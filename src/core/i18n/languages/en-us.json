@@ -239,6 +239,7 @@
     "globalSearch.pluginDisabledToast": "Disabled plugin「{name}」",
     "globalSearch.pluginDiagnosticsTitle": "View plugin diagnostics「{name}」",
     "globalSearch.pluginDiagnosticsDescription": "Open recent errors and diagnostic records for this plugin",
+    "globalSearch.smartSheetDescription": "Open smart playlist",
     "globalSearch.pageDescription": "Open app page",
     "globalSearch.sheetDescription": "Local playlist, {count} songs",
     "globalSearch.settingDescription": "Open settings page",

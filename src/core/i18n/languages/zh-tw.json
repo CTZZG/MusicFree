@@ -239,6 +239,7 @@
     "globalSearch.pluginDisabledToast": "已停用外掛「{name}」",
     "globalSearch.pluginDiagnosticsTitle": "查看外掛診斷「{name}」",
     "globalSearch.pluginDiagnosticsDescription": "開啟該外掛的最近錯誤和診斷記錄",
+    "globalSearch.smartSheetDescription": "開啟智慧歌單",
     "globalSearch.pageDescription": "開啟功能頁面",
     "globalSearch.sheetDescription": "本地歌單，{count} 首歌曲",
     "globalSearch.settingDescription": "開啟設定頁",

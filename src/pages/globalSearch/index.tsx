@@ -16,6 +16,7 @@ import {
     useSmartSheetFacets,
     useSmartSheetSourceFacets,
 } from "@/core/smartMusicSheet";
+import type { SmartSheetType } from "@/core/smartMusicSheet";
 import TrackPlayer from "@/core/trackPlayer";
 import { iconSizeConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
@@ -50,6 +51,14 @@ interface IGlobalSearchResult {
     keywords?: string[];
     musicItem?: IMusic.IMusicItem;
     onPress: () => void | Promise<void>;
+}
+
+interface ISmartSheetTemplateSearchTarget {
+    id: string;
+    type: SmartSheetType;
+    title: string;
+    icon: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
+    keywords: string[];
 }
 
 const maxDirectLocalMusicResults = 5;
@@ -265,6 +274,88 @@ export default function GlobalSearch() {
             onPress: () => navigate(ROUTE_PATH.SETTING, { type: "about" }),
         },
     ], [navigate, t]);
+
+    const smartSheetTemplateTargets = useMemo<IGlobalSearchResult[]>(() => {
+        const templates: ISmartSheetTemplateSearchTarget[] = [
+            {
+                id: "smart-sheet-recent-played",
+                type: "recent-played",
+                title: t("smartSheet.recentPlayed"),
+                icon: "clock-outline",
+                keywords: [
+                    t("history.title"),
+                    t("searchPage.history"),
+                ],
+            },
+            {
+                id: "smart-sheet-recent-added",
+                type: "recent-added",
+                title: t("smartSheet.recentAdded"),
+                icon: "plus",
+                keywords: [
+                    t("smartSheet.recentAdded"),
+                    t("musicListEditor.addToSheet"),
+                ],
+            },
+            {
+                id: "smart-sheet-most-played",
+                type: "most-played",
+                title: t("smartSheet.mostPlayed"),
+                icon: "fire",
+                keywords: [
+                    t("smartSheet.mostPlayed"),
+                    t("smartSheet.title"),
+                ],
+            },
+            {
+                id: "smart-sheet-favorite",
+                type: "favorite",
+                title: t("smartSheet.favorite"),
+                icon: "heart",
+                keywords: [
+                    t("smartSheet.favorite"),
+                    t("smartSheet.title"),
+                ],
+            },
+            {
+                id: "smart-sheet-local",
+                type: "local",
+                title: t("smartSheet.localMusic"),
+                icon: "folder-music-outline",
+                keywords: [
+                    t("home.localMusic"),
+                    t("localMusic.scanLocalMusic"),
+                ],
+            },
+            {
+                id: "smart-sheet-downloaded",
+                type: "downloaded",
+                title: t("smartSheet.downloaded"),
+                icon: "arrow-down-tray",
+                keywords: [
+                    t("localMusic.downloadList"),
+                    t("downloading.filter.completed"),
+                ],
+            },
+        ];
+
+        return templates.map(template => ({
+            id: template.id,
+            type: "page",
+            title: template.title,
+            description: t("globalSearch.smartSheetDescription"),
+            icon: template.icon,
+            keywords: [
+                t("smartSheet.title"),
+                t("home.smartSheets"),
+                ...template.keywords,
+            ],
+            onPress: () =>
+                navigate(ROUTE_PATH.SMART_SHEET_DETAIL, {
+                    type: template.type,
+                }),
+        }));
+    }, [navigate, t]);
 
     const localResults = useMemo(() => {
         if (!normalizedQuery) {
@@ -561,6 +652,7 @@ export default function GlobalSearch() {
 
         const otherLocalResults = [
             ...pluginResults,
+            ...smartSheetTemplateTargets,
             ...pageTargets,
             ...sheetResults,
             ...settingTargets,
@@ -585,6 +677,7 @@ export default function GlobalSearch() {
         plugins,
         settingTargets,
         sheets,
+        smartSheetTemplateTargets,
         sourceFacets,
         t,
     ]);
