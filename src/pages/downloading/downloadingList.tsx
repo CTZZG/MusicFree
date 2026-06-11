@@ -1031,6 +1031,14 @@ export default function DownloadingList() {
     const sortReportTitle =
         sortItems.find(item => item.key === sortMode)?.title ??
         t("downloading.sort.default");
+    const hasActiveListControls =
+        filter !== "all" ||
+        sourceFilter !== "all" ||
+        artistFilter !== "all" ||
+        albumFilter !== "all" ||
+        writeFilter !== "all" ||
+        fileStatusFilter !== "all" ||
+        sortMode !== "default";
     const completedDownloadItems = useMemo(
         () =>
             downloadQueue.filter(musicItem => {
@@ -1402,6 +1410,16 @@ export default function DownloadingList() {
         });
     }
 
+    function clearListControls() {
+        setFilter("all");
+        setSourceFilter("all");
+        setArtistFilter("all");
+        setAlbumFilter("all");
+        setWriteFilter("all");
+        setFileStatusFilter("all");
+        setSortMode("default");
+    }
+
     function clearCompletedTasks() {
         showDialog("SimpleDialog", {
             title: t("downloading.clearCompleted"),
@@ -1671,6 +1689,14 @@ export default function DownloadingList() {
                     onPress={showSortSelect}
                     icon="sort-outline"
                 />
+                {hasActiveListControls ? (
+                    <FilterChip
+                        title={t("downloading.clearFilters")}
+                        selected={false}
+                        onPress={clearListControls}
+                        icon="x-mark"
+                    />
+                ) : null}
                 {completedFilteredQueue.length ? (
                     <>
                         <FilterChip

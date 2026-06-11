@@ -320,6 +320,7 @@
     "downloading.sort.artistName": "By Artist",
     "downloading.sort.albumName": "By Album",
     "downloading.sort.sourceName": "By Plugin Source",
+    "downloading.clearFilters": "Clear Filters",
     "downloading.detail.title": "Download Record Details",
     "downloading.detail.song": "Song",
     "downloading.detail.artist": "Artist",

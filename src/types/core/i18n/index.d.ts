@@ -364,6 +364,7 @@ export interface ILanguageData {
     "downloading.sort.artistName": string; // 按歌手名
     "downloading.sort.albumName": string; // 按专辑名
     "downloading.sort.sourceName": string; // 按插件来源
+    "downloading.clearFilters": string; // 清除下载中心筛选
     "downloading.detail.title": string; // 下载记录详情
     "downloading.detail.song": string; // 歌曲
     "downloading.detail.artist": string; // 歌手

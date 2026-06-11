@@ -320,6 +320,7 @@
     "downloading.sort.artistName": "按歌手名",
     "downloading.sort.albumName": "按專輯名",
     "downloading.sort.sourceName": "按外掛來源",
+    "downloading.clearFilters": "清除篩選",
     "downloading.detail.title": "下載記錄詳情",
     "downloading.detail.song": "歌曲",
     "downloading.detail.artist": "歌手",
