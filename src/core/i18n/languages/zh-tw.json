@@ -806,6 +806,7 @@
     "panel.musicItemLyricOptions.desktopLyricPermissionError": "開啟桌面歌詞失敗，無懸浮窗權限",
     "panel.musicItemLyricOptions.uploadLocalLyric": "上傳本地歌詞",
     "panel.musicItemLyricOptions.uploadLocalLyricTranslation": "上傳本地歌詞翻譯",
+    "panel.musicItemLyricOptions.uploadLocalLyricRomanization": "上傳本地音譯歌詞",
     "panel.musicItemLyricOptions.deleteLocalLyric": "刪除本地歌詞",
     "panel.musicItemLyricOptions.settingFail": "設定失敗: {reason}",
     "panel.musicItemLyricOptions.deleteFail": "刪除失敗: {reason}",

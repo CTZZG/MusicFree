@@ -890,6 +890,7 @@ export interface ILanguageData {
     "panel.musicItemLyricOptions.desktopLyricPermissionError": string; // 桌面歌词权限错误
     "panel.musicItemLyricOptions.uploadLocalLyric": string; // 上传本地歌词
     "panel.musicItemLyricOptions.uploadLocalLyricTranslation": string; // 上传本地歌词翻译
+    "panel.musicItemLyricOptions.uploadLocalLyricRomanization": string; // 上传本地音译歌词
     "panel.musicItemLyricOptions.deleteLocalLyric": string; // 删除本地歌词
     "panel.musicItemLyricOptions.settingFail": string; // 设置失败
     "panel.musicItemLyricOptions.deleteFail": string; // 删除失败

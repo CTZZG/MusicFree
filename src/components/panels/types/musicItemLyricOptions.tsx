@@ -46,6 +46,31 @@ export default function MusicItemLyricOptions(
     const safeAreaInsets = useSafeAreaInsets();
     const { t } = useI18N();
 
+    const pickAndUploadLocalLyric = async (
+        type: "raw" | "translation" | "romanization" = "raw",
+    ) => {
+        try {
+            const result = await getDocumentAsync({
+                copyToCacheDirectory: true,
+            });
+            if (result.canceled) {
+                return;
+            }
+            const pickedDoc = result.assets[0].uri;
+            const lyricContent = await readAsStringAsync(pickedDoc, {
+                encoding: "utf8",
+            });
+            await lyricManager.uploadLocalLyric(musicItem, lyricContent, type);
+            Toast.success(t("toast.settingSuccess"));
+            hidePanel();
+        } catch (e: any) {
+            console.log(e);
+            Toast.warn(t("panel.musicItemLyricOptions.settingFail", {
+                reason: e?.message,
+            }));
+        }
+    };
+
     const options: IOption[] = [
         {
             icon: "identification",
@@ -133,50 +158,21 @@ export default function MusicItemLyricOptions(
             icon: "arrow-up-tray",
             title: t("panel.musicItemLyricOptions.uploadLocalLyric"),
             async onPress() {
-                try {
-                    const result = await getDocumentAsync({
-                        copyToCacheDirectory: true,
-                    });
-                    if (result.canceled) {
-                        return;
-                    }
-                    const pickedDoc = result.assets[0].uri;
-                    const lyricContent = await readAsStringAsync(pickedDoc, {
-                        encoding: "utf8",
-                    });                    await lyricManager.uploadLocalLyric(musicItem, lyricContent);
-                    Toast.success(t("toast.settingSuccess"));
-                    hidePanel();
-                } catch (e: any) {
-                    console.log(e);
-                    Toast.warn(t("panel.musicItemLyricOptions.settingFail", {
-                        reason: e?.message,
-                    }));
-                }
+                await pickAndUploadLocalLyric();
             },
         },
         {
             icon: "arrow-up-tray",
             title: t("panel.musicItemLyricOptions.uploadLocalLyricTranslation"),
             async onPress() {
-                try {
-                    const result = await getDocumentAsync({
-                        copyToCacheDirectory: true,
-                    });
-                    if (result.canceled) {
-                        return;
-                    }
-                    const pickedDoc = result.assets[0].uri;
-                    const lyricContent = await readAsStringAsync(pickedDoc, {
-                        encoding: "utf8",
-                    });                    await lyricManager.uploadLocalLyric(musicItem, lyricContent, "translation");
-                    Toast.success(t("toast.settingSuccess"));
-                    hidePanel();
-                } catch (e: any) {
-                    console.log(e);
-                    Toast.warn(t("panel.musicItemLyricOptions.settingFail", {
-                        reason: e?.message,
-                    }));
-                }
+                await pickAndUploadLocalLyric("translation");
+            },
+        },
+        {
+            icon: "language",
+            title: t("panel.musicItemLyricOptions.uploadLocalLyricRomanization"),
+            async onPress() {
+                await pickAndUploadLocalLyric("romanization");
             },
         },
         {

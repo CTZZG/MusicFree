@@ -806,6 +806,7 @@
     "panel.musicItemLyricOptions.desktopLyricPermissionError": "开启桌面歌词失败，无悬浮窗权限",
     "panel.musicItemLyricOptions.uploadLocalLyric": "上传本地歌词",
     "panel.musicItemLyricOptions.uploadLocalLyricTranslation": "上传本地歌词翻译",
+    "panel.musicItemLyricOptions.uploadLocalLyricRomanization": "上传本地音译歌词",
     "panel.musicItemLyricOptions.deleteLocalLyric": "删除本地歌词",
     "panel.musicItemLyricOptions.settingFail": "设置失败: {reason}",
     "panel.musicItemLyricOptions.deleteFail": "删除失败: {reason}",

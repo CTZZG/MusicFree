@@ -46,6 +46,7 @@ interface ILyricSourceStatus {
 }
 
 type LyricLineType = "original" | "translation" | "romanization";
+type LocalLyricType = "raw" | "translation" | "romanization";
 
 const defaultLyricDisplayOrder: LyricLineType[] = [
     "original",
@@ -285,7 +286,7 @@ class LyricManager implements IInjectable {
     async uploadLocalLyric(
         musicItem: IMusic.IMusicItem,
         lyricContent: string,
-        type: "raw" | "translation" = "raw",
+        type: LocalLyricType = "raw",
     ) {
         if (!musicItem) {
             return;
@@ -305,7 +306,11 @@ class LyricManager implements IInjectable {
                 platformHash +
                 "/" +
                 idHash +
-                (type === "raw" ? "" : ".tran") +
+                (type === "raw"
+                    ? ""
+                    : type === "translation"
+                      ? ".tran"
+                      : ".roma") +
                 ".lrc",
             lyricContent,
             "utf8",
@@ -332,6 +337,7 @@ class LyricManager implements IInjectable {
 
         await unlink(basePath + ".lrc").catch(() => {});
         await unlink(basePath + ".tran.lrc").catch(() => {});
+        await unlink(basePath + ".roma.lrc").catch(() => {});
 
         if (this.trackPlayer.isCurrentMusic(musicItem)) {
             this.refreshLyric(false, false);

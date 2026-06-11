@@ -806,6 +806,7 @@
     "panel.musicItemLyricOptions.desktopLyricPermissionError": "Failed to enable desktop lyrics, no float window permission",
     "panel.musicItemLyricOptions.uploadLocalLyric": "Upload Local Lyrics",
     "panel.musicItemLyricOptions.uploadLocalLyricTranslation": "Upload Local Lyrics Translation",
+    "panel.musicItemLyricOptions.uploadLocalLyricRomanization": "Upload Local Romanized Lyrics",
     "panel.musicItemLyricOptions.deleteLocalLyric": "Delete Local Lyrics",
     "panel.musicItemLyricOptions.settingFail": "Settings failed: {reason}",
     "panel.musicItemLyricOptions.deleteFail": "Delete failed: {reason}",
