@@ -408,6 +408,28 @@ export default function GlobalSearch() {
                         );
                     },
                 },
+                {
+                    id: `plugin-command-diagnostics-${plugin.hash}`,
+                    type: "plugin-command",
+                    title: t("globalSearch.pluginDiagnosticsTitle", {
+                        name: plugin.name,
+                    }),
+                    description: t("globalSearch.pluginDiagnosticsDescription"),
+                    icon: "exclamation-circle",
+                    trailingIcon: "chevron-right",
+                    keywords: [
+                        ...pluginKeywords,
+                        plugin.name,
+                        t("pluginSetting.menu.diagnostics"),
+                        t("pluginSetting.pluginItem.detail.diagnostics"),
+                    ],
+                    onPress: () =>
+                        navigate(ROUTE_PATH.SETTING, {
+                            type: "plugin",
+                            initialPluginName: plugin.name,
+                            initialPluginSettingRoute: "/pluginsetting/diagnostics",
+                        }),
+                },
             ];
         });
         const sheetResults: IGlobalSearchResult[] = sheets.map(sheet => ({

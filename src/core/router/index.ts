@@ -90,6 +90,9 @@ interface RouterParams extends RouterParamsBase {
     setting: {
         type: string;
         initialPluginName?: string;
+        initialPluginSettingRoute?:
+            | "/pluginsetting/list"
+            | "/pluginsetting/diagnostics";
         // anchor?: string | number;
     };
     local: undefined;

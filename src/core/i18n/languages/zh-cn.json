@@ -237,6 +237,8 @@
     "globalSearch.pluginDisableDescription": "当前已启用，点按禁用",
     "globalSearch.pluginEnabledToast": "已启用插件「{name}」",
     "globalSearch.pluginDisabledToast": "已禁用插件「{name}」",
+    "globalSearch.pluginDiagnosticsTitle": "查看插件诊断「{name}」",
+    "globalSearch.pluginDiagnosticsDescription": "打开该插件的最近错误和诊断记录",
     "globalSearch.pageDescription": "打开功能页面",
     "globalSearch.sheetDescription": "本地歌单，{count} 首歌曲",
     "globalSearch.settingDescription": "打开设置页",

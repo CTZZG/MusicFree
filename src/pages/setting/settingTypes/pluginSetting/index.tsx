@@ -35,10 +35,17 @@ const routes = [
 
 export default function PluginSetting() {
     const params = useParams<"setting">();
+    const requestedInitialRouteName = params?.initialPluginSettingRoute;
+    const initialRouteName = requestedInitialRouteName &&
+        routes.some(route => route.path === requestedInitialRouteName)
+        ? requestedInitialRouteName
+        : routes[0].path;
+    const navigatorKey = `${initialRouteName}:${params?.initialPluginName ?? ""}`;
 
     return (
         <Stack.Navigator
-            initialRouteName={routes[0].path}
+            key={navigatorKey}
+            initialRouteName={initialRouteName}
             screenOptions={{
                 headerShown: false,
                 animation: "slide_from_right",
