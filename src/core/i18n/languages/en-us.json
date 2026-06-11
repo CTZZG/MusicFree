@@ -766,6 +766,8 @@
     "basicSettings.lyric.width": "Lyrics Width",
     "basicSettings.lyric.fontSize": "Font Size",
     "basicSettings.lyric.detailSecondaryFontScale": "Detail Secondary Line Size",
+    "basicSettings.lyric.detailShowTranslation": "Show translation in detail lyrics",
+    "basicSettings.lyric.detailShowRomanization": "Show romanization in detail lyrics",
     "basicSettings.lyric.statusBarShowTranslation": "Show translation in desktop lyrics",
     "basicSettings.lyric.statusBarShowRomanization": "Show romanization in desktop lyrics",
     "basicSettings.lyric.enableWordByWord": "Detail word-by-word lyrics",

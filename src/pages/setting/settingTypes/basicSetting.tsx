@@ -18,6 +18,7 @@ import appMeta from "@/utils/appMeta";
 import { clearCache, getCacheSize, sizeFormatter } from "@/utils/fileUtils";
 import { clearLog, getErrorLogContent } from "@/utils/log";
 import { getQualityKeys, getQualityText } from "@/utils/qualities";
+import PersistStatus from "@/utils/persistStatus";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import Clipboard from "@react-native-clipboard/clipboard";
@@ -39,6 +40,21 @@ function createSwitch(
         } else {
             Config.setConfig(changeKey, !value);
         }
+    };
+    return {
+        title,
+        onPress,
+        right: <ThemeSwitch value={value} onValueChange={onPress} />,
+    };
+}
+
+function createPersistSwitch(
+    title: string,
+    changeKey: "lyric.showTranslation" | "lyric.showRomanization",
+    value: boolean,
+) {
+    const onPress = () => {
+        PersistStatus.set(changeKey, !value);
     };
     return {
         title,
@@ -748,6 +764,14 @@ function LyricSetting() {
     const widthPercent = useAppConfig("lyric.widthPercent");
     const fontSize = useAppConfig("lyric.fontSize");
     const detailSecondaryFontScale = useAppConfig("lyric.detailSecondaryFontScale");
+    const detailShowTranslation = PersistStatus.useValue(
+        "lyric.showTranslation",
+        false,
+    );
+    const detailShowRomanization = PersistStatus.useValue(
+        "lyric.showRomanization",
+        false,
+    );
     const statusBarShowTranslation = useAppConfig("lyric.statusBarShowTranslation");
     const statusBarShowRomanization = useAppConfig("lyric.statusBarShowRomanization");
     const enableAutoSearchLyric = useAppConfig("lyric.autoSearchLyric");
@@ -790,6 +814,18 @@ function LyricSetting() {
         t("basicSettings.lyric.enableBreathingDots"),
         "lyric.enableBreathingDots",
         enableBreathingDots ?? true,
+    );
+
+    const detailTranslation = createPersistSwitch(
+        t("basicSettings.lyric.detailShowTranslation"),
+        "lyric.showTranslation",
+        detailShowTranslation ?? false,
+    );
+
+    const detailRomanization = createPersistSwitch(
+        t("basicSettings.lyric.detailShowRomanization"),
+        "lyric.showRomanization",
+        detailShowRomanization ?? false,
     );
 
     const openStatusBarLyric = createSwitch(
@@ -912,6 +948,20 @@ function LyricSetting() {
                 onPress={breathingDots.onPress}>
                 <ListItem.Content title={breathingDots.title} />
                 {breathingDots.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={detailTranslation.onPress}>
+                <ListItem.Content title={detailTranslation.title} />
+                {detailTranslation.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={detailRomanization.onPress}>
+                <ListItem.Content title={detailRomanization.title} />
+                {detailRomanization.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding

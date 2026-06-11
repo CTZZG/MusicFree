@@ -766,6 +766,8 @@
     "basicSettings.lyric.width": "歌詞寬度",
     "basicSettings.lyric.fontSize": "字體大小",
     "basicSettings.lyric.detailSecondaryFontScale": "詳情頁副行字號",
+    "basicSettings.lyric.detailShowTranslation": "詳情頁顯示翻譯",
+    "basicSettings.lyric.detailShowRomanization": "詳情頁顯示音譯",
     "basicSettings.lyric.statusBarShowTranslation": "桌面歌詞顯示翻譯",
     "basicSettings.lyric.statusBarShowRomanization": "桌面歌詞顯示音譯",
     "basicSettings.lyric.enableWordByWord": "詳情頁逐字歌詞",
