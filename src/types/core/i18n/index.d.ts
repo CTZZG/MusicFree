@@ -300,6 +300,10 @@ export interface ILanguageData {
     "downloading.filter.error": string; // 失败
     "downloading.sourceFilter.title": string; // 插件来源
     "downloading.sourceFilter.all": string; // 全部来源
+    "downloading.artistFilter.title": string; // 歌手筛选
+    "downloading.artistFilter.all": string; // 全部歌手
+    "downloading.albumFilter.title": string; // 专辑筛选
+    "downloading.albumFilter.all": string; // 全部专辑
     "downloading.writeStatusFilter.title": string; // 写入结果
     "downloading.writeStatusFilter.all": string; // 全部写入结果
     "downloading.writeStatusFilter.metadataSuccess": string; // 元数据已写入
@@ -354,6 +358,8 @@ export interface ILanguageData {
     "downloading.report.lyricSummary": string; // 歌词文件统计
     "downloading.report.filterStatus": string; // 状态筛选
     "downloading.report.filterSource": string; // 来源筛选
+    "downloading.report.filterArtist": string; // 歌手筛选
+    "downloading.report.filterAlbum": string; // 专辑筛选
     "downloading.report.filterWrite": string; // 写入筛选
     "downloading.report.filterFileStatus": string; // 文件状态筛选
     "downloading.report.sort": string; // 排序

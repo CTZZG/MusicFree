@@ -203,6 +203,8 @@ function buildCompletedDownloadRecordsReport(params: {
     downloadTasks: ReadonlyMap<string, DownloadTaskDetailInfo>;
     statusFilterTitle: string;
     sourceFilterTitle: string;
+    artistFilterTitle: string;
+    albumFilterTitle: string;
     writeFilterTitle: string;
     fileStatusFilterTitle: string;
     sortTitle: string;
@@ -213,6 +215,8 @@ function buildCompletedDownloadRecordsReport(params: {
         downloadTasks,
         statusFilterTitle,
         sourceFilterTitle,
+        artistFilterTitle,
+        albumFilterTitle,
         writeFilterTitle,
         fileStatusFilterTitle,
         sortTitle,
@@ -238,6 +242,8 @@ function buildCompletedDownloadRecordsReport(params: {
         t("downloading.report.lyricSummary", stats.lyric),
         `${t("downloading.report.filterStatus")}: ${statusFilterTitle}`,
         `${t("downloading.report.filterSource")}: ${sourceFilterTitle}`,
+        `${t("downloading.report.filterArtist")}: ${artistFilterTitle}`,
+        `${t("downloading.report.filterAlbum")}: ${albumFilterTitle}`,
         `${t("downloading.report.filterWrite")}: ${writeFilterTitle}`,
         `${t("downloading.report.filterFileStatus")}: ${fileStatusFilterTitle}`,
         `${t("downloading.report.sort")}: ${sortTitle}`,
@@ -621,6 +627,43 @@ function compareText(left?: string, right?: string) {
     return (left ?? "").localeCompare(right ?? "");
 }
 
+function normalizeFilterValue(value?: string | null) {
+    return `${value ?? ""}`.trim();
+}
+
+function buildTextFilters(values: Array<string | null | undefined>) {
+    return [
+        "all",
+        ...Array.from(
+            new Set(values.map(normalizeFilterValue).filter(Boolean)),
+        ).sort((a, b) => a.localeCompare(b)),
+    ];
+}
+
+function matchDownloadLibraryFilters(
+    musicItem: IMusic.IMusicItem,
+    sourceFilter: string,
+    artistFilter: string,
+    albumFilter: string,
+) {
+    if (sourceFilter !== "all" && musicItem.platform !== sourceFilter) {
+        return false;
+    }
+    if (
+        artistFilter !== "all" &&
+        normalizeFilterValue(musicItem.artist) !== artistFilter
+    ) {
+        return false;
+    }
+    if (
+        albumFilter !== "all" &&
+        normalizeFilterValue(musicItem.album) !== albumFilter
+    ) {
+        return false;
+    }
+    return true;
+}
+
 function sortDownloadItems(
     items: IMusic.IMusicItem[],
     downloadTasks: Map<string, { completedAt?: number }>,
@@ -792,6 +835,8 @@ export default function DownloadingList() {
     const navigate = useNavigate();
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
+    const [artistFilter, setArtistFilter] = useState("all");
+    const [albumFilter, setAlbumFilter] = useState("all");
     const [writeFilter, setWriteFilter] = useState<DownloadWriteFilter>("all");
     const [fileStatusFilter, setFileStatusFilter] =
         useState<DownloadFileStatusFilter>("all");
@@ -832,22 +877,37 @@ export default function DownloadingList() {
         t("downloading.filter.all");
 
     const sourceFilters = useMemo(
-        () => [
-            "all",
-            ...Array.from(
-                new Set(
-                    downloadQueue
-                        .map(musicItem => musicItem.platform)
-                        .filter(Boolean),
-                ),
-            ).sort((a, b) => a.localeCompare(b)),
-        ],
+        () => buildTextFilters(downloadQueue.map(musicItem => musicItem.platform)),
         [downloadQueue],
     );
     const sourceFilterTitle =
         sourceFilter === "all"
             ? t("downloading.sourceFilter.all")
             : sourceFilter;
+    const artistFilters = useMemo(
+        () => buildTextFilters(downloadQueue.map(musicItem => musicItem.artist)),
+        [downloadQueue],
+    );
+    const artistFilterTitle =
+        artistFilter === "all"
+            ? t("downloading.artistFilter.all")
+            : artistFilter;
+    const artistFilterReportTitle =
+        artistFilter === "all"
+            ? t("downloading.artistFilter.all")
+            : artistFilter;
+    const albumFilters = useMemo(
+        () => buildTextFilters(downloadQueue.map(musicItem => musicItem.album)),
+        [downloadQueue],
+    );
+    const albumFilterTitle =
+        albumFilter === "all"
+            ? t("downloading.albumFilter.all")
+            : albumFilter;
+    const albumFilterReportTitle =
+        albumFilter === "all"
+            ? t("downloading.albumFilter.all")
+            : albumFilter;
     const writeFilterItems: Array<{
         key: DownloadWriteFilter;
         title: string;
@@ -957,8 +1017,12 @@ export default function DownloadingList() {
                     return false;
                 }
                 if (
-                    sourceFilter !== "all" &&
-                    musicItem.platform !== sourceFilter
+                    !matchDownloadLibraryFilters(
+                        musicItem,
+                        sourceFilter,
+                        artistFilter,
+                        albumFilter,
+                    )
                 ) {
                     return false;
                 }
@@ -981,6 +1045,8 @@ export default function DownloadingList() {
             downloadQueue,
             downloadTasks,
             sourceFilter,
+            artistFilter,
+            albumFilter,
             writeFilter,
             fileStatusFilter,
             completedFileStatusMap,
@@ -1006,8 +1072,12 @@ export default function DownloadingList() {
                     return;
                 }
                 if (
-                    sourceFilter !== "all" &&
-                    musicItem.platform !== sourceFilter
+                    !matchDownloadLibraryFilters(
+                        musicItem,
+                        sourceFilter,
+                        artistFilter,
+                        albumFilter,
+                    )
                 ) {
                     return;
                 }
@@ -1044,6 +1114,8 @@ export default function DownloadingList() {
             downloadQueue,
             downloadTasks,
             sourceFilter,
+            artistFilter,
+            albumFilter,
             completedFileStatusMap,
             mediaExtraVersion,
         ],
@@ -1058,14 +1130,18 @@ export default function DownloadingList() {
                     return false;
                 }
                 if (
-                    sourceFilter !== "all" &&
-                    musicItem.platform !== sourceFilter
+                    !matchDownloadLibraryFilters(
+                        musicItem,
+                        sourceFilter,
+                        artistFilter,
+                        albumFilter,
+                    )
                 ) {
                     return false;
                 }
                 return true;
             }),
-        [downloadQueue, downloadTasks, sourceFilter],
+        [downloadQueue, downloadTasks, sourceFilter, artistFilter, albumFilter],
     );
     const failedTaskCount = failedDownloadItems.length;
     const pausableDownloadItems = useMemo(
@@ -1081,14 +1157,18 @@ export default function DownloadingList() {
                     return false;
                 }
                 if (
-                    sourceFilter !== "all" &&
-                    musicItem.platform !== sourceFilter
+                    !matchDownloadLibraryFilters(
+                        musicItem,
+                        sourceFilter,
+                        artistFilter,
+                        albumFilter,
+                    )
                 ) {
                     return false;
                 }
                 return true;
             }),
-        [downloadQueue, downloadTasks, sourceFilter],
+        [downloadQueue, downloadTasks, sourceFilter, artistFilter, albumFilter],
     );
     const resumableDownloadItems = useMemo(
         () =>
@@ -1100,14 +1180,18 @@ export default function DownloadingList() {
                     return false;
                 }
                 if (
-                    sourceFilter !== "all" &&
-                    musicItem.platform !== sourceFilter
+                    !matchDownloadLibraryFilters(
+                        musicItem,
+                        sourceFilter,
+                        artistFilter,
+                        albumFilter,
+                    )
                 ) {
                     return false;
                 }
                 return true;
             }),
-        [downloadQueue, downloadTasks, sourceFilter],
+        [downloadQueue, downloadTasks, sourceFilter, artistFilter, albumFilter],
     );
 
     useEffect(() => {
@@ -1175,6 +1259,18 @@ export default function DownloadingList() {
         }
     }, [sourceFilter, sourceFilters]);
 
+    useEffect(() => {
+        if (!artistFilters.includes(artistFilter)) {
+            setArtistFilter("all");
+        }
+    }, [artistFilter, artistFilters]);
+
+    useEffect(() => {
+        if (!albumFilters.includes(albumFilter)) {
+            setAlbumFilter("all");
+        }
+    }, [albumFilter, albumFilters]);
+
     function showSourceFilterSelect() {
         showPanel("SimpleSelect", {
             header: t("downloading.sourceFilter.title"),
@@ -1187,6 +1283,40 @@ export default function DownloadingList() {
             })),
             onPress(item) {
                 setSourceFilter(item.value);
+            },
+        });
+    }
+
+    function showArtistFilterSelect() {
+        showPanel("SimpleSelect", {
+            header: t("downloading.artistFilter.title"),
+            candidates: artistFilters.map(artist => ({
+                title:
+                    artist === "all"
+                        ? t("downloading.artistFilter.all")
+                        : artist,
+                value: artist,
+                icon: "user",
+            })),
+            onPress(item) {
+                setArtistFilter(item.value);
+            },
+        });
+    }
+
+    function showAlbumFilterSelect() {
+        showPanel("SimpleSelect", {
+            header: t("downloading.albumFilter.title"),
+            candidates: albumFilters.map(album => ({
+                title:
+                    album === "all"
+                        ? t("downloading.albumFilter.all")
+                        : album,
+                value: album,
+                icon: "album-outline",
+            })),
+            onPress(item) {
+                setAlbumFilter(item.value);
             },
         });
     }
@@ -1329,8 +1459,12 @@ export default function DownloadingList() {
                     return false;
                 }
                 if (
-                    sourceFilter !== "all" &&
-                    musicItem.platform !== sourceFilter
+                    !matchDownloadLibraryFilters(
+                        musicItem,
+                        sourceFilter,
+                        artistFilter,
+                        albumFilter,
+                    )
                 ) {
                     return false;
                 }
@@ -1356,6 +1490,8 @@ export default function DownloadingList() {
             downloadTasks,
             filter,
             sourceFilter,
+            artistFilter,
+            albumFilter,
             writeFilter,
             fileStatusFilter,
             completedFileStatusMap,
@@ -1392,6 +1528,8 @@ export default function DownloadingList() {
             downloadTasks,
             statusFilterTitle,
             sourceFilterTitle,
+            artistFilterTitle: artistFilterReportTitle,
+            albumFilterTitle: albumFilterReportTitle,
             writeFilterTitle: writeFilterReportTitle,
             fileStatusFilterTitle: fileStatusFilterReportTitle,
             sortTitle: sortReportTitle,
@@ -1478,6 +1616,18 @@ export default function DownloadingList() {
                     selected={sourceFilter !== "all"}
                     onPress={showSourceFilterSelect}
                     icon="code-bracket-square"
+                />
+                <FilterChip
+                    title={artistFilterTitle}
+                    selected={artistFilter !== "all"}
+                    onPress={showArtistFilterSelect}
+                    icon="user"
+                />
+                <FilterChip
+                    title={albumFilterTitle}
+                    selected={albumFilter !== "all"}
+                    onPress={showAlbumFilterSelect}
+                    icon="album-outline"
                 />
                 <FilterChip
                     title={writeFilterTitle}
