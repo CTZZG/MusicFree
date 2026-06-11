@@ -13,6 +13,7 @@ import Toast from "@/utils/toast";
 import React, { useMemo, useState } from "react";
 
 type SmartSheetSortMode = "default" | "title" | "artist" | "album";
+type SmartSheetLimitMode = "all" | 25 | 50 | 100;
 
 function getSmartSheetTitle(
     t: ReturnType<typeof useI18N>["t"],
@@ -77,9 +78,17 @@ export default function SmartSheetDetail() {
     const { t } = useI18N();
     const smartMusicList = useSmartSheetMusicList(type, platform, value);
     const [sortMode, setSortMode] = useState<SmartSheetSortMode>("default");
-    const musicList = useMemo(
+    const [limitMode, setLimitMode] = useState<SmartSheetLimitMode>("all");
+    const sortedMusicList = useMemo(
         () => sortSmartMusicList(smartMusicList, sortMode),
         [smartMusicList, sortMode],
+    );
+    const musicList = useMemo(
+        () =>
+            limitMode === "all"
+                ? sortedMusicList
+                : sortedMusicList.slice(0, limitMode),
+        [limitMode, sortedMusicList],
     );
     const title = getSmartSheetTitle(t, type, platform, value);
     const navMenu = useMemo(
@@ -127,6 +136,34 @@ export default function SmartSheetDetail() {
                 },
             },
             {
+                icon: "playlist" as const,
+                title: t("smartSheet.limit.title"),
+                onPress() {
+                    showPanel("SimpleSelect", {
+                        header: t("smartSheet.limit.title"),
+                        candidates: [
+                            {
+                                title: t("smartSheet.limit.all"),
+                                value: "all",
+                                icon: limitMode === "all"
+                                    ? "check"
+                                    : undefined,
+                            },
+                            ...([25, 50, 100] as const).map(count => ({
+                                title: t("smartSheet.limit.count", { count }),
+                                value: count,
+                                icon: limitMode === count
+                                    ? "check"
+                                    : undefined,
+                            } as const)),
+                        ],
+                        onPress(item) {
+                            setLimitMode(item.value as SmartSheetLimitMode);
+                        },
+                    });
+                },
+            },
+            {
                 icon: "folder-plus" as const,
                 title: t("smartSheet.saveAsMusicSheet"),
                 onPress() {
@@ -151,7 +188,7 @@ export default function SmartSheetDetail() {
                 },
             },
         ],
-        [musicList, sortMode, t, title],
+        [limitMode, musicList, sortMode, t, title],
     );
 
     const sheetInfo = useMemo(

@@ -312,6 +312,9 @@ export interface ILanguageData {
     "smartSheet.sort.byTitle": string; // 智能歌单按歌曲名排序
     "smartSheet.sort.byArtist": string; // 智能歌单按歌手名排序
     "smartSheet.sort.byAlbum": string; // 智能歌单按专辑名排序
+    "smartSheet.limit.title": string; // 智能歌单显示数量
+    "smartSheet.limit.all": string; // 智能歌单显示全部
+    "smartSheet.limit.count": string; // 智能歌单显示前 N 首
 
     // 下载相关
     "downloading.title": string; // 下载
