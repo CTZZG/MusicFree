@@ -64,13 +64,16 @@ function getRecentAddedMusicList() {
     );
 }
 
-function getFacetValue(musicItem: IMusic.IMusicItem, type: "artist" | "album") {
+function getFacetValue(
+    musicItem: IMusic.IMusicItem,
+    type: "artist" | "album" | "platform",
+) {
     return normalizeFacetValue(musicItem[type]);
 }
 
 function buildSmartSheetFacets(
     musicList: IMusic.IMusicItem[],
-    type: "artist" | "album",
+    type: "artist" | "album" | "platform",
 ) {
     const facetMap = new Map<string, ISmartSheetFacet>();
     musicList.forEach(musicItem => {
@@ -190,6 +193,23 @@ export function useSmartSheetFacets(type: "artist" | "album") {
             type,
         );
     }, [history, localMusicList, sheetsBase, type]);
+}
+
+export function useSmartSheetSourceFacets() {
+    const history = useMusicHistory();
+    const localMusicList = LocalMusicSheet.useMusicList();
+    const sheetsBase = useSheetsBase();
+
+    return useMemo(() => {
+        return buildSmartSheetFacets(
+            getKnownMusicList(history, localMusicList)
+                .filter(musicItem =>
+                    musicItem.platform &&
+                    musicItem.platform !== localPluginPlatform,
+                ),
+            "platform",
+        );
+    }, [history, localMusicList, sheetsBase]);
 }
 
 export function getSmartSheetId(

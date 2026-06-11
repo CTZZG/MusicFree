@@ -12,7 +12,10 @@ import LocalMusicSheet from "@/core/localMusicSheet";
 import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useSheetsBase } from "@/core/musicSheet";
-import { useSmartSheetFacets } from "@/core/smartMusicSheet";
+import {
+    useSmartSheetFacets,
+    useSmartSheetSourceFacets,
+} from "@/core/smartMusicSheet";
 import TrackPlayer from "@/core/trackPlayer";
 import { iconSizeConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
@@ -132,6 +135,7 @@ export default function GlobalSearch() {
     const sheets = useSheetsBase();
     const artistFacets = useSmartSheetFacets("artist");
     const albumFacets = useSmartSheetFacets("album");
+    const sourceFacets = useSmartSheetSourceFacets();
     const localMusicList = LocalMusicSheet.useMusicList();
     const [query, setQuery] = useState("");
     const [commandRevision, setCommandRevision] = useState(0);
@@ -428,6 +432,36 @@ export default function GlobalSearch() {
                         value: facet.value,
                     }),
             }));
+        const localSourceResults: IGlobalSearchResult[] = sourceFacets
+            .filter(facet =>
+                matchesTextQuery(
+                    normalizedQuery,
+                    facet.title,
+                    facet.value,
+                    t("smartSheet.pluginSources"),
+                ),
+            )
+            .slice(0, maxLocalFacetResults)
+            .map(facet => ({
+                id: `local-source-${facet.value}`,
+                type: "local-music",
+                title: t("smartSheet.pluginSourceTitle", {
+                    platform: facet.title,
+                }),
+                description: t("home.songCount", {
+                    count: facet.count,
+                }),
+                icon: "javascript",
+                keywords: [
+                    facet.value,
+                    t("smartSheet.pluginSources"),
+                ],
+                onPress: () =>
+                    navigate(ROUTE_PATH.SMART_SHEET_DETAIL, {
+                        type: "plugin-source",
+                        platform: facet.value,
+                    }),
+            }));
         const pluginResults: IGlobalSearchResult[] = plugins.flatMap(plugin => {
             const pluginEnabled = PluginManager.isPluginEnabled(plugin);
             const pluginKeywords = [
@@ -537,6 +571,7 @@ export default function GlobalSearch() {
             ...localMusicResults,
             ...localArtistResults,
             ...localAlbumResults,
+            ...localSourceResults,
             ...otherLocalResults,
         ];
     }, [
@@ -550,6 +585,7 @@ export default function GlobalSearch() {
         plugins,
         settingTargets,
         sheets,
+        sourceFacets,
         t,
     ]);
 
