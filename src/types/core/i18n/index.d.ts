@@ -861,6 +861,14 @@ export interface ILanguageData {
     "panel.searchLrc.inputPlaceholder": string; // 搜索歌词输入占位符
     "panel.searchLrc.toast.settingSuccess": string; // 设置成功
     "panel.searchLrc.toast.failToSearch": string; // 设置失败
+    "panel.searchLrc.previewLoading": string; // 歌词预览加载中
+    "panel.searchLrc.previewEmpty": string; // 无可预览歌词
+    "panel.searchLrc.previewFailed": string; // 歌词预览失败
+    "panel.searchLrc.useThisLyric": string; // 使用这条歌词
+    "panel.searchLrc.match.exact": string; // 标题和歌手匹配
+    "panel.searchLrc.match.title": string; // 标题匹配
+    "panel.searchLrc.match.artist": string; // 歌手匹配
+    "panel.searchLrc.match.possible": string; // 可能匹配
 
     // 面板相关 - 添加到歌单
     "panel.addToMusicSheet.title": string; // 添加到歌单
