@@ -318,6 +318,8 @@
     "downloading.sort.completedOldest": "完成时间从旧到新",
     "downloading.sort.titleName": "按歌曲名",
     "downloading.sort.artistName": "按歌手名",
+    "downloading.sort.albumName": "按专辑名",
+    "downloading.sort.sourceName": "按插件来源",
     "downloading.detail.title": "下载记录详情",
     "downloading.detail.song": "歌曲",
     "downloading.detail.artist": "歌手",

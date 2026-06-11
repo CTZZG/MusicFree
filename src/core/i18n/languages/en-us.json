@@ -318,6 +318,8 @@
     "downloading.sort.completedOldest": "Completed Oldest First",
     "downloading.sort.titleName": "By Song Title",
     "downloading.sort.artistName": "By Artist",
+    "downloading.sort.albumName": "By Album",
+    "downloading.sort.sourceName": "By Plugin Source",
     "downloading.detail.title": "Download Record Details",
     "downloading.detail.song": "Song",
     "downloading.detail.artist": "Artist",

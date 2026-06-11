@@ -49,7 +49,9 @@ type DownloadSortMode =
     | "completed-newest"
     | "completed-oldest"
     | "title"
-    | "artist";
+    | "artist"
+    | "album"
+    | "source";
 type DownloadWriteStatus = "success" | "failed" | "skipped";
 type CompletedDownloadFileStatus =
     | "exists"
@@ -699,6 +701,20 @@ function sortDownloadItems(
                 compareText(a.title, b.title)
             );
         }
+        if (sortMode === "album") {
+            return (
+                compareText(a.album, b.album) ||
+                compareText(a.artist, b.artist) ||
+                compareText(a.title, b.title)
+            );
+        }
+        if (sortMode === "source") {
+            return (
+                compareText(a.platform, b.platform) ||
+                compareText(a.artist, b.artist) ||
+                compareText(a.title, b.title)
+            );
+        }
         return 0;
     });
 }
@@ -997,6 +1013,14 @@ export default function DownloadingList() {
         {
             key: "artist",
             title: t("downloading.sort.artistName"),
+        },
+        {
+            key: "album",
+            title: t("downloading.sort.albumName"),
+        },
+        {
+            key: "source",
+            title: t("downloading.sort.sourceName"),
         },
     ];
     const sortTitle =

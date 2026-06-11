@@ -362,6 +362,8 @@ export interface ILanguageData {
     "downloading.sort.completedOldest": string; // 完成时间从旧到新
     "downloading.sort.titleName": string; // 按歌曲名
     "downloading.sort.artistName": string; // 按歌手名
+    "downloading.sort.albumName": string; // 按专辑名
+    "downloading.sort.sourceName": string; // 按插件来源
     "downloading.detail.title": string; // 下载记录详情
     "downloading.detail.song": string; // 歌曲
     "downloading.detail.artist": string; // 歌手
