@@ -228,6 +228,8 @@
     "globalSearch.localMusicDescription": "{count} 首本地歌曲",
     "globalSearch.localMusicPlayNextTitle": "下一首播放「{title}」",
     "globalSearch.localMusicPlayNextDescription": "添加到当前播放队列下一首",
+    "globalSearch.localMusicAddToSheetTitle": "加入歌单「{title}」",
+    "globalSearch.localMusicAddToSheetDescription": "选择歌单或新建歌单",
     "globalSearch.pluginDescription": "打开插件管理并定位插件",
     "globalSearch.pluginEnableTitle": "启用插件「{name}」",
     "globalSearch.pluginDisableTitle": "禁用插件「{name}」",

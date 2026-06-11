@@ -228,6 +228,8 @@
     "globalSearch.localMusicDescription": "{count} local songs",
     "globalSearch.localMusicPlayNextTitle": "Play next「{title}」",
     "globalSearch.localMusicPlayNextDescription": "Add to the current queue as next",
+    "globalSearch.localMusicAddToSheetTitle": "Add to playlist「{title}」",
+    "globalSearch.localMusicAddToSheetDescription": "Choose or create a playlist",
     "globalSearch.pluginDescription": "Open plugin management and locate this plugin",
     "globalSearch.pluginEnableTitle": "Enable plugin「{name}」",
     "globalSearch.pluginDisableTitle": "Disable plugin「{name}」",

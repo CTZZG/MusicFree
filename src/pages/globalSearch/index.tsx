@@ -5,6 +5,7 @@ import IconButton from "@/components/base/iconButton";
 import Input from "@/components/base/input";
 import ListItem, { ListItemHeader } from "@/components/base/listItem";
 import MusicBar from "@/components/musicBar";
+import { showPanel } from "@/components/panels/usePanel";
 import { localMusicSheetId } from "@/constants/commonConst";
 import { useI18N } from "@/core/i18n";
 import LocalMusicSheet from "@/core/localMusicSheet";
@@ -296,6 +297,28 @@ export default function GlobalSearch() {
                         onPress: () => {
                             TrackPlayer.addNext(musicItem);
                             Toast.success(t("toast.addToNextPlay"));
+                        },
+                    },
+                    {
+                        id: `local-music-command-sheet-${itemKey}`,
+                        type: "local-music-command",
+                        title: t("globalSearch.localMusicAddToSheetTitle", {
+                            title: musicItem.title,
+                        }),
+                        description: formatLocalMusicDescription(musicItem) ||
+                            t("globalSearch.localMusicAddToSheetDescription"),
+                        icon: "playlist",
+                        trailingIcon: "plus",
+                        musicItem,
+                        keywords: [
+                            ...keywords,
+                            t("musicListEditor.addToSheet"),
+                            t("panel.addToMusicSheet.newMusicSheet"),
+                        ],
+                        onPress: () => {
+                            showPanel("AddToMusicSheet", {
+                                musicItem,
+                            });
                         },
                     },
                 ];
