@@ -468,6 +468,10 @@ export interface ILanguageData {
     "pluginSetting.filter.clear": string; // 清除插件筛选
     "pluginSetting.filter.source.all": string; // 全部插件来源
     "pluginSetting.filter.capability.all": string; // 全部插件能力
+    "pluginSetting.filter.config.all": string; // 全部插件配置
+    "pluginSetting.filter.config.needsConfig": string; // 缺少配置
+    "pluginSetting.filter.config.configured": string; // 已配置
+    "pluginSetting.filter.config.noConfig": string; // 无配置
     "pluginSetting.pluginItem.source.network": string; // 网络安装
     "pluginSetting.pluginItem.source.localFile": string; // 本地文件
     "pluginSetting.pluginItem.source.unknown": string; // 来源未知

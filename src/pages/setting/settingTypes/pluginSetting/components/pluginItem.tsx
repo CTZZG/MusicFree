@@ -41,6 +41,7 @@ import { showPluginInstallResults } from "../installPluginUtils";
 
 interface IPluginItemProps {
     plugin: Plugin;
+    onPluginConfigChanged?: () => void;
 }
 
 interface IOption {
@@ -166,7 +167,7 @@ function getMissingUserVariableLabels(
 }
 
 function _PluginItem(props: IPluginItemProps) {
-    const { plugin } = props;
+    const { plugin, onPluginConfigChanged } = props;
     const colors = useColors();
     const enabled = usePluginEnabled(plugin);
     const { t } = useI18N();
@@ -533,6 +534,7 @@ function _PluginItem(props: IPluginItemProps) {
                 pluginManager.setUserVariables(plugin, newValue);
                 Toast.success(t("toast.settingSuccess"));
                 rerender();
+                onPluginConfigChanged?.();
                 closePanel();
             },
             variables: declaredUserVariables,

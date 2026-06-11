@@ -45,6 +45,7 @@ interface IOption {
 
 type PluginSourceFilter = "all" | "network" | "local-file" | "unknown";
 type PluginCapabilityFilter = "all" | string;
+type PluginConfigFilter = "all" | "needs-config" | "configured" | "no-config";
 
 function getPluginSourceFilterValue(
     plugin: Plugin,
@@ -56,6 +57,22 @@ function getPluginSourceFilterValue(
         return "local-file";
     }
     return "unknown";
+}
+
+function getPluginConfigFilterValue(
+    plugin: Plugin,
+): Exclude<PluginConfigFilter, "all"> {
+    const declaredVariables = Array.isArray(plugin.instance.userVariables)
+        ? plugin.instance.userVariables
+        : [];
+    if (!declaredVariables.length) {
+        return "no-config";
+    }
+    const userVariables = PluginManager.getUserVariables(plugin);
+    const hasMissingVariable = declaredVariables.some(variable =>
+        !String(userVariables[variable.key] ?? "").trim(),
+    );
+    return hasMissingVariable ? "needs-config" : "configured";
 }
 
 export default function PluginList() {
@@ -70,6 +87,9 @@ export default function PluginList() {
         useState<PluginSourceFilter>("all");
     const [capabilityFilter, setCapabilityFilter] =
         useState<PluginCapabilityFilter>("all");
+    const [configFilter, setConfigFilter] =
+        useState<PluginConfigFilter>("all");
+    const [configRevision, setConfigRevision] = useState(0);
     useEffect(() => {
         setFilterText(initialPluginName);
     }, [initialPluginName]);
@@ -107,6 +127,28 @@ export default function PluginList() {
         })),
     ], [t]);
 
+    const configFilterItems: Array<{
+        value: PluginConfigFilter;
+        label: string;
+    }> = useMemo(() => [
+        {
+            value: "all",
+            label: t("pluginSetting.filter.config.all"),
+        },
+        {
+            value: "needs-config",
+            label: t("pluginSetting.filter.config.needsConfig"),
+        },
+        {
+            value: "configured",
+            label: t("pluginSetting.filter.config.configured"),
+        },
+        {
+            value: "no-config",
+            label: t("pluginSetting.filter.config.noConfig"),
+        },
+    ], [t]);
+
     const visiblePlugins = useMemo(() => {
         const keyword = filterText.trim().toLowerCase();
         const capabilityConfig = pluginCapabilityConfigs.find(
@@ -126,10 +168,16 @@ export default function PluginList() {
                 (capabilityConfig
                     ? pluginSupportsCapability(plugin, capabilityConfig)
                     : true);
+            const matchesConfig =
+                configFilter === "all" ||
+                getPluginConfigFilterValue(plugin) === configFilter;
 
-            return matchesKeyword && matchesSource && matchesCapability;
+            return matchesKeyword &&
+                matchesSource &&
+                matchesCapability &&
+                matchesConfig;
         });
-    }, [capabilityFilter, filterText, plugins, sourceFilter]);
+    }, [capabilityFilter, configFilter, configRevision, filterText, plugins, sourceFilter]);
 
     const [loading, setLoading] = useState(false);
 
@@ -139,6 +187,7 @@ export default function PluginList() {
         setFilterText("");
         setSourceFilter("all");
         setCapabilityFilter("all");
+        setConfigFilter("all");
     }
 
     function renderFilterChip(
@@ -175,7 +224,8 @@ export default function PluginList() {
         const hasActiveFilters =
             !!filterText ||
             sourceFilter !== "all" ||
-            capabilityFilter !== "all";
+            capabilityFilter !== "all" ||
+            configFilter !== "all";
         return (
             <View style={style.headerWrapper}>
                 {filterText ? (
@@ -237,6 +287,18 @@ export default function PluginList() {
                             item.label,
                             capabilityFilter === item.value,
                             () => setCapabilityFilter(item.value),
+                        ),
+                    )}
+                </ScrollView>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={style.filterRow}>
+                    {configFilterItems.map(item =>
+                        renderFilterChip(
+                            item.label,
+                            configFilter === item.value,
+                            () => setConfigFilter(item.value),
                         ),
                     )}
                 </ScrollView>
@@ -536,7 +598,13 @@ export default function PluginList() {
                             data={visiblePlugins ?? []}
                             keyExtractor={_ => _.hash}
                             renderItem={({ item: plugin }) => (
-                                <PluginItem key={plugin.hash} plugin={plugin} />
+                                <PluginItem
+                                    key={plugin.hash}
+                                    plugin={plugin}
+                                    onPluginConfigChanged={() =>
+                                        setConfigRevision(value => value + 1)
+                                    }
+                                />
                             )}
                         />
                     )}
