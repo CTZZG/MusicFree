@@ -3,7 +3,6 @@ import MusicDetail from "@/pages/musicDetail";
 import TopList from "@/pages/topList";
 import TopListDetail from "@/pages/topListDetail";
 import SearchPage from "@/pages/searchPage";
-import GlobalSearch from "@/pages/globalSearch";
 import SheetDetail from "@/pages/sheetDetail";
 import AlbumDetail from "@/pages/albumDetail";
 import ArtistDetail from "@/pages/artistDetail";
@@ -43,10 +42,6 @@ export const routes: Array<IRoutes> = [
     {
         path: ROUTE_PATH.MUSIC_DETAIL,
         component: MusicDetail,
-    },
-    {
-        path: ROUTE_PATH.GLOBAL_SEARCH,
-        component: GlobalSearch,
     },
     {
         path: ROUTE_PATH.TOP_LIST,

@@ -105,11 +105,6 @@ function ContinueListening(props: {
                 <View
                     style={[styles.emptyStart, { backgroundColor: colors.card }]}>
                     <QuickPill
-                        icon="magnifying-glass"
-                        title={t("home.startSearch")}
-                        onPress={() => navigate(ROUTE_PATH.GLOBAL_SEARCH)}
-                    />
-                    <QuickPill
                         icon="inbox-arrow-down"
                         title={t("home.importPlaylist.a11y")}
                         onPress={() => showPanel("ImportMusicSheet")}

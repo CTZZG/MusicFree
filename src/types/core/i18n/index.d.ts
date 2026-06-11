@@ -77,7 +77,6 @@ export interface ILanguageData {
     "home.myPlaylistsCount.a11y": string; // 我的歌单数量
     "home.starredPlaylistsCount.a11y": string; // 我喜欢的歌单数量
     "home.songCount": string; // 歌曲数量
-    "home.clickToSearch": string; // 点击搜索
     "home.allSources": string; // 全部源
     "home.continueListening": string; // 继续听
     "home.recentListening": string; // 最近播放
@@ -88,7 +87,6 @@ export interface ILanguageData {
     "home.quickAccess": string; // 快捷入口
     "home.discovery": string; // 发现
     "home.myMusic": string; // 我的音乐
-    "home.startSearch": string; // 开始搜索
     "home.scanLocal": string; // 扫描本地
     "home.playById.short": string; // 播放ID
     "home.multiSourceSearch": string; // 多源搜索
@@ -250,35 +248,6 @@ export interface ILanguageData {
     "searchPage.albumDetailFallback": string; // 专辑详情不可用时回退搜索
     "searchPage.sourceEmptyResult": string; // 某来源无搜索结果
     "searchPage.sourceLoadFailed": string; // 某来源加载失败
-    "globalSearch.title": string; // 全局搜索
-    "globalSearch.placeholder": string; // 全局搜索占位
-    "globalSearch.searchLabel.a11y": string; // 全局搜索标签
-    "globalSearch.onlineSection": string; // 在线搜索分组
-    "globalSearch.localSection": string; // 本地入口分组
-    "globalSearch.musicTitle": string; // 搜索歌曲结果标题
-    "globalSearch.musicDescription": string; // 搜索歌曲结果描述
-    "globalSearch.onlineSearchTitle": string; // 在线搜索结果标题
-    "globalSearch.onlineSearchDescription": string; // 在线搜索结果描述
-    "globalSearch.localMusicTitle": string; // 本地音乐搜索结果标题
-    "globalSearch.localMusicDescription": string; // 本地音乐搜索结果描述
-    "globalSearch.localMusicPlayNextTitle": string; // 本地歌曲下一首播放标题
-    "globalSearch.localMusicPlayNextDescription": string; // 本地歌曲下一首播放描述
-    "globalSearch.localMusicAddToSheetTitle": string; // 本地歌曲加入歌单标题
-    "globalSearch.localMusicAddToSheetDescription": string; // 本地歌曲加入歌单描述
-    "globalSearch.pluginDescription": string; // 插件结果描述
-    "globalSearch.pluginEnableTitle": string; // 启用插件命令标题
-    "globalSearch.pluginDisableTitle": string; // 禁用插件命令标题
-    "globalSearch.pluginEnableDescription": string; // 启用插件命令描述
-    "globalSearch.pluginDisableDescription": string; // 禁用插件命令描述
-    "globalSearch.pluginEnabledToast": string; // 已启用插件
-    "globalSearch.pluginDisabledToast": string; // 已禁用插件
-    "globalSearch.smartSheetDescription": string; // 智能歌单结果描述
-    "globalSearch.pageDescription": string; // 功能页面结果描述
-    "globalSearch.sheetDescription": string; // 歌单结果描述
-    "globalSearch.settingDescription": string; // 设置结果描述
-    "globalSearch.emptyQuery": string; // 全局搜索空输入
-    "globalSearch.noLocalResult": string; // 全局搜索无本地结果
-
     // 榜单相关
     "topList.title": string; // 榜单
 
@@ -446,18 +415,6 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.diagnosticTime.minutes": string; // 分钟前
     "pluginSetting.pluginItem.diagnosticTime.hours": string; // 小时前
     "pluginSetting.pluginItem.diagnosticTime.days": string; // 天前
-    "pluginSetting.filteringByPlugin": string; // 插件筛选提示
-    "pluginSetting.filter.title": string; // 插件筛选标题
-    "pluginSetting.filter.clear": string; // 清除插件筛选
-    "pluginSetting.filter.source.all": string; // 全部插件来源
-    "pluginSetting.filter.capability.all": string; // 全部插件能力
-    "pluginSetting.filter.config.all": string; // 全部插件配置
-    "pluginSetting.filter.config.needsConfig": string; // 缺少配置
-    "pluginSetting.filter.config.configured": string; // 已配置
-    "pluginSetting.filter.config.noConfig": string; // 无配置
-    "pluginSetting.filter.enabled.all": string; // 全部启用状态
-    "pluginSetting.filter.enabled.enabled": string; // 已启用
-    "pluginSetting.filter.enabled.disabled": string; // 已禁用
     "pluginSetting.pluginItem.source.network": string; // 网络安装
     "pluginSetting.pluginItem.source.localFile": string; // 本地文件
     "pluginSetting.pluginItem.source.unknown": string; // 来源未知
@@ -487,7 +444,6 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.detail.closeDetails": string; // 关闭插件详情
     "pluginSetting.menu.subscriptionSetting": string; // 订阅设置
     "pluginSetting.menu.sort": string; // 排序
-    "pluginSetting.menu.capabilityMatrix": string; // 插件能力矩阵
     "pluginSetting.menu.uninstallAll": string; // 卸载所有
     "pluginSetting.menu.uninstallAllContent": string; // 确定卸载所有插件吗？
     "pluginSetting.menu.installPlugin": string; // 安装插件
@@ -501,14 +457,6 @@ export interface ILanguageData {
     "pluginSetting.subscription.urlType.singlePlugin": string; // 单插件订阅
     "pluginSetting.subscription.urlType.collection": string; // 订阅集合
     "pluginSetting.subscription.urlType.invalid": string; // 地址格式无效
-    "pluginSetting.capabilityMatrix.summary": string; // 插件能力矩阵摘要
-    "pluginSetting.capabilityMatrix.empty": string; // 无插件能力信息
-    "pluginSetting.capabilityMatrix.plugin": string; // 插件能力矩阵插件列
-    "pluginSetting.capabilityMatrix.status": string; // 插件能力矩阵状态列
-    "pluginSetting.capabilityMatrix.source": string; // 插件能力矩阵来源列
-    "pluginSetting.capabilityMatrix.supportedCount": string; // 插件能力矩阵支持数列
-    "pluginSetting.capabilityMatrix.enabled": string; // 已启用
-    "pluginSetting.capabilityMatrix.disabled": string; // 已禁用
     "pluginSetting.testSearch.loading": string; // 测试搜索加载文案
     "pluginSetting.testSearch.selectType": string; // 选择测试搜索类型
     "pluginSetting.testSearch.resultTitle": string; // 测试搜索结果标题

@@ -483,6 +483,7 @@ export default function LocalMusicList() {
 
         return (
             <ScrollView
+                style={style.filterScroll}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={style.filterBar}>
@@ -548,6 +549,7 @@ export default function LocalMusicList() {
 
         return (
             <ScrollView
+                style={style.secondaryFilterScroll}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={style.secondaryFilterBar}>
@@ -710,10 +712,20 @@ export default function LocalMusicList() {
 }
 
 const style = StyleSheet.create({
+    filterScroll: {
+        flexGrow: 0,
+        height: rpx(80),
+        maxHeight: rpx(80),
+    },
     filterBar: {
         paddingHorizontal: rpx(20),
         paddingTop: rpx(16),
         paddingBottom: rpx(8),
+    },
+    secondaryFilterScroll: {
+        flexGrow: 0,
+        height: rpx(68),
+        maxHeight: rpx(68),
     },
     secondaryFilterBar: {
         paddingHorizontal: rpx(20),

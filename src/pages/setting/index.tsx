@@ -7,26 +7,18 @@ import { useParams } from "@/core/router";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import AppBar from "@/components/base/appBar";
 import { useI18N } from "@/core/i18n";
-import { ROUTE_PATH, useNavigate } from "@/core/router";
 
 export default function Setting() {
     const { type } = useParams<"setting">();
     const settingItem = settingTypes[type];
 
     const { t } = useI18N();
-    const navigate = useNavigate();
 
     return (
         <SafeAreaView edges={["bottom", "top"]} style={style.wrapper}>
             <StatusBar />
             {settingItem.showNav === false ? null : (
-                <AppBar
-                    actions={[
-                        {
-                            icon: "magnifying-glass",
-                            onPress: () => navigate(ROUTE_PATH.GLOBAL_SEARCH),
-                        },
-                    ]}>
+                <AppBar>
                     {t(settingItem.i18nKey as any)}
                 </AppBar>
             )}

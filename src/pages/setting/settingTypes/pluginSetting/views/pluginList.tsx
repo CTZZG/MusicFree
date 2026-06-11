@@ -1,14 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import React, { useState } from "react";
+import { FlatList, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import * as DocumentPicker from "expo-document-picker";
 import Loading from "@/components/base/loading";
 
-import PluginManager, { Plugin, useSortedPlugins } from "@/core/pluginManager";
+import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
 import { trace } from "@/utils/log";
 
 import Toast from "@/utils/toast";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import Config from "@/core/appConfig";
 import Empty from "@/components/base/empty";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
@@ -20,19 +20,11 @@ import PluginItem from "../components/pluginItem";
 import { IIconName } from "@/components/base/icon.tsx";
 import { IInstallPluginResult } from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
-import ListItem from "@/components/base/listItem";
-import ThemeText from "@/components/base/themeText";
 import {
     formatPluginInstallResult,
     installPluginFromUrlText,
     showPluginInstallResults,
 } from "../installPluginUtils";
-import {
-    pluginCapabilityConfigs,
-    pluginSupportsCapability,
-} from "../capabilityUtils";
-import useColors from "@/hooks/useColors";
-import { ROUTE_PATH, useNavigate } from "@/core/router";
 
 interface IOption {
     icon: IIconName;
@@ -40,323 +32,12 @@ interface IOption {
     onPress?: () => void;
 }
 
-type PluginSourceFilter = "all" | "network" | "local-file" | "unknown";
-type PluginCapabilityFilter = "all" | string;
-type PluginConfigFilter = "all" | "needs-config" | "configured" | "no-config";
-type PluginEnabledFilter = "all" | "enabled" | "disabled";
-
-function getPluginSourceFilterValue(
-    plugin: Plugin,
-): Exclude<PluginSourceFilter, "all"> {
-    if (plugin.instance.srcUrl) {
-        return "network";
-    }
-    if (plugin.path) {
-        return "local-file";
-    }
-    return "unknown";
-}
-
-function getPluginConfigFilterValue(
-    plugin: Plugin,
-): Exclude<PluginConfigFilter, "all"> {
-    const declaredVariables = Array.isArray(plugin.instance.userVariables)
-        ? plugin.instance.userVariables
-        : [];
-    if (!declaredVariables.length) {
-        return "no-config";
-    }
-    const userVariables = PluginManager.getUserVariables(plugin);
-    const hasMissingVariable = declaredVariables.some(variable =>
-        !String(userVariables[variable.key] ?? "").trim(),
-    );
-    return hasMissingVariable ? "needs-config" : "configured";
-}
-
-function getPluginEnabledFilterValue(
-    plugin: Plugin,
-): Exclude<PluginEnabledFilter, "all"> {
-    return PluginManager.isPluginEnabled(plugin) ? "enabled" : "disabled";
-}
-
 export default function PluginList() {
     const plugins = useSortedPlugins();
     const { t } = useI18N();
-    const colors = useColors();
-    const navigate = useNavigate();
-    const route = useRoute<any>();
-    const initialPluginName = `${route.params?.initialPluginName ?? ""}`.trim();
-    const [filterText, setFilterText] = useState(initialPluginName);
-    const [sourceFilter, setSourceFilter] =
-        useState<PluginSourceFilter>("all");
-    const [capabilityFilter, setCapabilityFilter] =
-        useState<PluginCapabilityFilter>("all");
-    const [configFilter, setConfigFilter] =
-        useState<PluginConfigFilter>("all");
-    const [configRevision, setConfigRevision] = useState(0);
-    const [enabledFilter, setEnabledFilter] =
-        useState<PluginEnabledFilter>("all");
-    const [enabledRevision, setEnabledRevision] = useState(0);
-    useEffect(() => {
-        setFilterText(initialPluginName);
-    }, [initialPluginName]);
-
-    const sourceFilterItems: Array<{
-        value: PluginSourceFilter;
-        label: string;
-    }> = useMemo(() => [
-        {
-            value: "all",
-            label: t("pluginSetting.filter.source.all"),
-        },
-        {
-            value: "network",
-            label: t("pluginSetting.pluginItem.source.network"),
-        },
-        {
-            value: "local-file",
-            label: t("pluginSetting.pluginItem.source.localFile"),
-        },
-        {
-            value: "unknown",
-            label: t("pluginSetting.pluginItem.source.unknown"),
-        },
-    ], [t]);
-
-    const capabilityFilterItems = useMemo(() => [
-        {
-            value: "all",
-            label: t("pluginSetting.filter.capability.all"),
-        },
-        ...pluginCapabilityConfigs.map(config => ({
-            value: config.key,
-            label: t(config.labelKey),
-        })),
-    ], [t]);
-
-    const configFilterItems: Array<{
-        value: PluginConfigFilter;
-        label: string;
-    }> = useMemo(() => [
-        {
-            value: "all",
-            label: t("pluginSetting.filter.config.all"),
-        },
-        {
-            value: "needs-config",
-            label: t("pluginSetting.filter.config.needsConfig"),
-        },
-        {
-            value: "configured",
-            label: t("pluginSetting.filter.config.configured"),
-        },
-        {
-            value: "no-config",
-            label: t("pluginSetting.filter.config.noConfig"),
-        },
-    ], [t]);
-
-    const enabledFilterItems: Array<{
-        value: PluginEnabledFilter;
-        label: string;
-    }> = useMemo(() => [
-        {
-            value: "all",
-            label: t("pluginSetting.filter.enabled.all"),
-        },
-        {
-            value: "enabled",
-            label: t("pluginSetting.filter.enabled.enabled"),
-        },
-        {
-            value: "disabled",
-            label: t("pluginSetting.filter.enabled.disabled"),
-        },
-    ], [t]);
-
-    const visiblePlugins = useMemo(() => {
-        const keyword = filterText.trim().toLowerCase();
-        const capabilityConfig = pluginCapabilityConfigs.find(
-            config => config.key === capabilityFilter,
-        );
-        return plugins.filter(plugin => {
-            const matchesKeyword = !keyword || [
-                plugin.name,
-                plugin.instance.author ?? "",
-                plugin.instance.description ?? "",
-            ].some(text => text.toLowerCase().includes(keyword));
-            const matchesSource =
-                sourceFilter === "all" ||
-                getPluginSourceFilterValue(plugin) === sourceFilter;
-            const matchesCapability =
-                capabilityFilter === "all" ||
-                (capabilityConfig
-                    ? pluginSupportsCapability(plugin, capabilityConfig)
-                    : true);
-            const matchesConfig =
-                configFilter === "all" ||
-                getPluginConfigFilterValue(plugin) === configFilter;
-            const matchesEnabled =
-                enabledFilter === "all" ||
-                getPluginEnabledFilterValue(plugin) === enabledFilter;
-
-            return matchesKeyword &&
-                matchesSource &&
-                matchesCapability &&
-                matchesConfig &&
-                matchesEnabled;
-        });
-    }, [
-        capabilityFilter,
-        configFilter,
-        configRevision,
-        enabledFilter,
-        enabledRevision,
-        filterText,
-        plugins,
-        sourceFilter,
-    ]);
-
     const [loading, setLoading] = useState(false);
 
     const navigator = useNavigation<any>();
-
-    function clearFilters() {
-        setFilterText("");
-        setSourceFilter("all");
-        setCapabilityFilter("all");
-        setConfigFilter("all");
-        setEnabledFilter("all");
-    }
-
-    function renderFilterChip(
-        label: string,
-        active: boolean,
-        onPress: () => void,
-    ) {
-        return (
-            <Pressable
-                key={label}
-                onPress={onPress}
-                style={[
-                    style.filterChip,
-                    {
-                        backgroundColor: active
-                            ? colors.card
-                            : colors.placeholder,
-                        borderColor: active
-                            ? colors.primary
-                            : colors.divider,
-                    },
-                ]}>
-                <ThemeText
-                    fontSize="description"
-                    color={active ? colors.primary : colors.textSecondary}
-                    numberOfLines={1}>
-                    {label}
-                </ThemeText>
-            </Pressable>
-        );
-    }
-
-    function renderPluginListHeader() {
-        const hasActiveFilters =
-            !!filterText ||
-            sourceFilter !== "all" ||
-            capabilityFilter !== "all" ||
-            configFilter !== "all" ||
-            enabledFilter !== "all";
-        return (
-            <View style={style.headerWrapper}>
-                {filterText ? (
-                    <ListItem
-                        withHorizontalPadding
-                        heightType="smallest"
-                        onPress={() => setFilterText("")}>
-                        <ListItem.Content
-                            title={t(
-                                "pluginSetting.filteringByPlugin",
-                                {
-                                    name: filterText,
-                                },
-                            )}
-                        />
-                        <ListItem.ListItemIcon
-                            icon="x-mark"
-                            position="right"
-                        />
-                    </ListItem>
-                ) : null}
-                <View style={style.filterHeader}>
-                    <ThemeText
-                        fontSize="subTitle"
-                        fontWeight="semibold">
-                        {t("pluginSetting.filter.title", {
-                            count: visiblePlugins.length,
-                            total: plugins.length,
-                        })}
-                    </ThemeText>
-                    {hasActiveFilters ? (
-                        <Pressable onPress={clearFilters} hitSlop={rpx(18)}>
-                            <ThemeText
-                                fontSize="description"
-                                color={colors.primary}>
-                                {t("pluginSetting.filter.clear")}
-                            </ThemeText>
-                        </Pressable>
-                    ) : null}
-                </View>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={style.filterRow}>
-                    {sourceFilterItems.map(item =>
-                        renderFilterChip(
-                            item.label,
-                            sourceFilter === item.value,
-                            () => setSourceFilter(item.value),
-                        ),
-                    )}
-                </ScrollView>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={style.filterRow}>
-                    {capabilityFilterItems.map(item =>
-                        renderFilterChip(
-                            item.label,
-                            capabilityFilter === item.value,
-                            () => setCapabilityFilter(item.value),
-                        ),
-                    )}
-                </ScrollView>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={style.filterRow}>
-                    {configFilterItems.map(item =>
-                        renderFilterChip(
-                            item.label,
-                            configFilter === item.value,
-                            () => setConfigFilter(item.value),
-                        ),
-                    )}
-                </ScrollView>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={style.filterRow}>
-                    {enabledFilterItems.map(item =>
-                        renderFilterChip(
-                            item.label,
-                            enabledFilter === item.value,
-                            () => setEnabledFilter(item.value),
-                        ),
-                    )}
-                </ScrollView>
-            </View>
-        );
-    }
 
     const menuOptions: IOption[] = [
         {
@@ -371,13 +52,6 @@ export default function PluginList() {
             title: t("pluginSetting.menu.sort"),
             onPress() {
                 navigator.navigate("/pluginsetting/sort");
-            },
-        },
-        {
-            icon: "check-circle",
-            title: t("pluginSetting.menu.capabilityMatrix"),
-            onPress() {
-                navigator.navigate("/pluginsetting/capability-matrix");
             },
         },
         {
@@ -575,14 +249,7 @@ export default function PluginList() {
 
     return (
         <>
-            <AppBar
-                actions={[
-                    {
-                        icon: "magnifying-glass",
-                        onPress: () => navigate(ROUTE_PATH.GLOBAL_SEARCH),
-                    },
-                ]}
-                menu={menuOptions}>
+            <AppBar menu={menuOptions}>
                 {t("sidebar.pluginManagement")}
             </AppBar>
             <HorizontalSafeAreaView style={style.wrapper}>
@@ -592,20 +259,13 @@ export default function PluginList() {
                     ) : (
                         <FlatList
                             ListEmptyComponent={Empty}
-                            ListHeaderComponent={renderPluginListHeader}
                             ListFooterComponent={<View style={style.blank} />}
-                            data={visiblePlugins ?? []}
+                            data={plugins ?? []}
                             keyExtractor={_ => _.hash}
                             renderItem={({ item: plugin }) => (
                                 <PluginItem
                                     key={plugin.hash}
                                     plugin={plugin}
-                                    onPluginConfigChanged={() =>
-                                        setConfigRevision(value => value + 1)
-                                    }
-                                    onPluginEnabledChanged={() =>
-                                        setEnabledRevision(value => value + 1)
-                                    }
                                 />
                             )}
                         />
@@ -660,30 +320,6 @@ const style = StyleSheet.create({
     wrapper: {
         width: "100%",
         flex: 1,
-    },
-    headerWrapper: {
-        paddingTop: rpx(20),
-    },
-    filterHeader: {
-        paddingHorizontal: rpx(24),
-        paddingBottom: rpx(8),
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-    },
-    filterRow: {
-        paddingHorizontal: rpx(24),
-        paddingVertical: rpx(8),
-        columnGap: rpx(12),
-    },
-    filterChip: {
-        maxWidth: rpx(220),
-        minHeight: rpx(52),
-        borderRadius: rpx(26),
-        borderWidth: 1,
-        paddingHorizontal: rpx(18),
-        alignItems: "center",
-        justifyContent: "center",
     },
     blank: {
         height: rpx(200),
