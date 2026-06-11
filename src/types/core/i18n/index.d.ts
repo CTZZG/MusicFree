@@ -151,6 +151,9 @@ export interface ILanguageData {
     "localMusic.relocateFileAction": string; // 使用此文件
     "localMusic.relocateSuccess": string; // 重新定位成功
     "localMusic.relocateFailed": string; // 重新定位失败
+    "localMusic.relocateMismatchTitle": string; // 重新定位不匹配确认标题
+    "localMusic.relocateMismatchContent": string; // 重新定位不匹配确认内容
+    "localMusic.relocateMismatchConfirm": string; // 重新定位不匹配确认按钮
     "localMusic.artistFilter.all": string; // 全部歌手
     "localMusic.albumFilter.all": string; // 全部专辑
     "localMusic.fileStatusFilter.title": string; // 文件状态

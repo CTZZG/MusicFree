@@ -35,6 +35,7 @@ import {
     formatMediaFormatDiagnosticsText,
     getMediaFormatDiagnostics,
 } from "@/utils/mediaFormatDiagnostics";
+import { useNavigation } from "@react-navigation/native";
 
 interface IMusicItemOptionsProps {
     /** 歌曲信息 */
@@ -58,6 +59,7 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
     const { musicItem, musicSheet, from } = props ?? {};
     const { t } = useI18N();
     const navigate = useNavigate();
+    const navigation = useNavigation();
 
     const safeAreaInsets = useSafeAreaInsets();
 
@@ -160,13 +162,56 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
                         if (!selectedPath) {
                             return false;
                         }
+                        async function relocateSelectedFile(
+                            closeSelectorOnSuccess: boolean,
+                        ) {
+                            try {
+                                await LocalMusicSheet.relocateMusic(
+                                    musicItem,
+                                    selectedPath,
+                                );
+                                Toast.success(t("localMusic.relocateSuccess"));
+                                if (closeSelectorOnSuccess) {
+                                    navigation.goBack();
+                                }
+                                return true;
+                            } catch (e: any) {
+                                Toast.warn(
+                                    t("localMusic.relocateFailed", {
+                                        reason: e?.message ?? e,
+                                    }),
+                                );
+                                return false;
+                            }
+                        }
+
                         try {
-                            await LocalMusicSheet.relocateMusic(
-                                musicItem,
-                                selectedPath,
-                            );
-                            Toast.success(t("localMusic.relocateSuccess"));
-                            return true;
+                            const preview =
+                                await LocalMusicSheet.previewRelocateMusic(
+                                    musicItem,
+                                    selectedPath,
+                                );
+                            if (preview.needsConfirmation) {
+                                showDialog("SimpleDialog", {
+                                    title: t("localMusic.relocateMismatchTitle"),
+                                    content: t(
+                                        "localMusic.relocateMismatchContent",
+                                        {
+                                            current: preview.currentLabel,
+                                            selected: preview.selectedLabel,
+                                        },
+                                    ),
+                                    okText: t(
+                                        "localMusic.relocateMismatchConfirm",
+                                    ),
+                                    onOk() {
+                                        void relocateSelectedFile(true);
+                                    },
+                                });
+                                return false;
+                            }
+
+                            return await relocateSelectedFile(false);
                         } catch (e: any) {
                             Toast.warn(
                                 t("localMusic.relocateFailed", {

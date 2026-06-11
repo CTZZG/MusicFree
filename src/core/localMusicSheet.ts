@@ -63,6 +63,12 @@ interface ILocalMusicImportReport extends ILocalMusicImportMergeReport {
     scannedCount: number;
 }
 
+interface ILocalMusicRelocatePreview {
+    currentLabel: string;
+    selectedLabel: string;
+    needsConfirmation: boolean;
+}
+
 const weakMatchDurationToleranceSeconds = 2;
 const unknownComparableValues = new Set([
     "unknown",
@@ -252,6 +258,22 @@ function isWeakMatch(
     return albumMatched || durationMatched;
 }
 
+function isComparableTextClose(left: unknown, right: unknown) {
+    const normalizedLeft = normalizeComparableText(left);
+    const normalizedRight = normalizeComparableText(right);
+    if (
+        !isUsefulComparableText(normalizedLeft) ||
+        !isUsefulComparableText(normalizedRight)
+    ) {
+        return null;
+    }
+    return (
+        normalizedLeft === normalizedRight ||
+        normalizedLeft.includes(normalizedRight) ||
+        normalizedRight.includes(normalizedLeft)
+    );
+}
+
 function isDifferentLocalPath(left: string | null, right: string | null) {
     if (!left || !right) {
         return true;
@@ -273,6 +295,20 @@ async function resolveLocalPathStatus(
     return (await exists(normalizeFsPath(localPath)).catch(() => false))
         ? "exists"
         : "missing";
+}
+
+async function readMusicMeta(musicPath: string) {
+    if (!shouldReadSystemMetadata(musicPath)) {
+        return null;
+    }
+
+    try {
+        const metas = await mp3Util.getMediaMeta([musicPath]);
+        return metas[0] ?? null;
+    } catch (e: any) {
+        trace("本地音乐读取元信息失败", e?.message ?? String(e));
+        return null;
+    }
 }
 
 const metadataUnsafeExtensions = new Set([
@@ -426,6 +462,28 @@ async function readMusicMetas(
     }
 
     return metas;
+}
+
+async function createLocalMusicItemFromPath(
+    musicPath: string,
+): Promise<IMusic.IMusicItem> {
+    const normalizedPath = normalizeFsPath(musicPath);
+    const parsed = parseFilename(getFileName(normalizedPath, true)) ?? {};
+    const meta = await readMusicMeta(normalizedPath);
+    const duration = parseInt(meta?.duration ?? "0", 10) / 1000;
+
+    return {
+        id: parsed.id ?? CryptoJs.MD5(normalizedPath).toString(CryptoJs.enc.Hex),
+        platform: parsed.platform ?? localPluginPlatform,
+        title: parsed.title ?? meta?.title ?? getFileName(normalizedPath),
+        artist: parsed.artist ?? meta?.artist ?? "未知歌手",
+        duration: Number.isFinite(duration) ? duration : 0,
+        album: meta?.album ?? "未知专辑",
+        artwork: "",
+        [internalSerializeKey]: {
+            localPath: normalizedPath,
+        },
+    } as IMusic.IMusicItem;
 }
 
 async function createLocalMusicMatchContext(): Promise<ILocalMusicMatchContext> {
@@ -743,6 +801,35 @@ async function relocateMusic(
     return updatedMusicItem;
 }
 
+async function previewRelocateMusic(
+    musicItem: IMusic.IMusicItem,
+    newPath: string,
+): Promise<ILocalMusicRelocatePreview> {
+    const nextLocalPath = normalizeFsPath(newPath);
+    if (!isSupportedLocalMediaFile(nextLocalPath)) {
+        throw new Error("不支持的音频格式");
+    }
+    if (!(await exists(nextLocalPath))) {
+        throw new Error("文件不存在");
+    }
+
+    const selectedMusicItem = await createLocalMusicItemFromPath(nextLocalPath);
+    const titleMatched = isComparableTextClose(
+        musicItem.title,
+        selectedMusicItem.title,
+    );
+    const artistMatched = isComparableTextClose(
+        musicItem.artist,
+        selectedMusicItem.artist,
+    );
+
+    return {
+        currentLabel: formatMusicLabel(musicItem),
+        selectedLabel: formatMusicLabel(selectedMusicItem),
+        needsConfirmation: titleMatched === false || artistMatched === false,
+    };
+}
+
 async function resumeMusicList(
     musicItems?: unknown,
 ): Promise<ILocalMusicResumeReport> {
@@ -840,6 +927,7 @@ const LocalMusicSheet = {
     useMusicList: localSheetStateMapper.useMappedState,
     useLocalFileExists,
     updateMusicList,
+    previewRelocateMusic,
     relocateMusic,
     resumeMusicList,
 };
