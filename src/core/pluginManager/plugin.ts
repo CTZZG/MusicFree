@@ -716,7 +716,17 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             }, "local");
         }
 
-        // 2. 缓存歌词 / 对象上本身的歌词
+        // 2. 本地音乐优先读取内嵌歌词或同目录同名 .lrc
+        const localFilePath = getLocalPath(originalMusicItem);
+        if (localFilePath && !isRemoteMediaUrl(localFilePath)) {
+            const res = await localFilePluginDefine!.getLyric!(originalMusicItem);
+            if (res) {
+                devLog("info", "本地文件歌词");
+                return withSourceMeta(res, res.sourceType ?? "local");
+            }
+        }
+
+        // 3. 缓存歌词 / 对象上本身的歌词
         if (musicItemCache?.lyric) {
             // 缓存的远程结果
             let cacheLyric: ILyric.ILyricSource | null =
@@ -775,7 +785,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             }
         }
 
-        // 3. 无缓存歌词/无自带歌词/无本地歌词
+        // 4. 无缓存歌词/无自带歌词/无本地歌词
         let lrcSource: ILyric.ILyricSource | null;
         if (isSameMediaItem(originalMusicItem, musicItem)) {
             lrcSource =
@@ -865,19 +875,6 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             }
         }
 
-        // 6. 如果是本地文件
-        const localFilePath = getLocalPath(originalMusicItem);
-        if (
-            originalMusicItem.platform !== localPluginPlatform &&
-            localFilePath
-        ) {
-            const res = await localFilePluginDefine!.getLyric!(originalMusicItem);
-            devLog("info", "本地文件歌词");
-
-            if (res) {
-                return withSourceMeta(res, res.sourceType ?? "local");
-            }
-        }
         devLog("warn", "无歌词");
 
         return null;

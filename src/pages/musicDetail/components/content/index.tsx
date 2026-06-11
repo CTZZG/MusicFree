@@ -6,7 +6,12 @@ import useOrientation from "@/hooks/useOrientation";
 import Config from "@/core/appConfig";
 import globalStyle from "@/constants/globalStyle";
 
-export default function Content() {
+interface IContentProps {
+    immersiveMode?: boolean;
+}
+
+export default function Content(props: IContentProps) {
+    const { immersiveMode = false } = props;
     const [tab, selectTab] = useState<"album" | "lyric">(
         Config.getConfig("basic.musicDetailDefault") || "album",
     );
@@ -27,9 +32,15 @@ export default function Content() {
     return (
         <View style={globalStyle.fwflex1}>
             {showAlbumCover ? (
-                <AlbumCover onTurnPageClick={onTurnPageClick} />
+                <AlbumCover
+                    immersiveMode={immersiveMode}
+                    onTurnPageClick={onTurnPageClick}
+                />
             ) : (
-                <Lyric onTurnPageClick={onTurnPageClick} />
+                <Lyric
+                    immersiveMode={immersiveMode}
+                    onTurnPageClick={onTurnPageClick}
+                />
             )}
         </View>
     );

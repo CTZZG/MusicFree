@@ -9,11 +9,12 @@ import Bottom from "./components/bottom";
 import Content from "./components/content";
 import Lyric from "./components/content/lyric";
 import NavBar from "./components/navBar";
-import Config from "@/core/appConfig";
+import Config, { useAppConfig } from "@/core/appConfig";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 export default function MusicDetail() {
     const orientation = useOrientation();
+    const immersiveMode = useAppConfig("basic.musicDetailImmersiveMode") ?? false;
 
     useEffect(() => {
         const needAwake = Config.getConfig("basic.musicDetailAwake");
@@ -30,17 +31,22 @@ export default function MusicDetail() {
     return (
         <>
             <Background />
-            <SafeAreaView style={globalStyle.fwflex1}>
-                <StatusBar backgroundColor={"transparent"} />
+            <SafeAreaView
+                edges={immersiveMode ? ["left", "right", "bottom"] : undefined}
+                style={globalStyle.fwflex1}>
+                <StatusBar
+                    hidden={immersiveMode}
+                    backgroundColor={"transparent"}
+                />
                 <View style={style.bodyWrapper}>
                     <View style={globalStyle.flex1}>
-                        <NavBar />
-                        <Content />
+                        {immersiveMode ? null : <NavBar />}
+                        <Content immersiveMode={immersiveMode} />
                         <Bottom />
                     </View>
                     {orientation === "horizontal" ? (
                         <View style={globalStyle.flex1}>
-                            <Lyric />
+                            <Lyric immersiveMode={immersiveMode} />
                         </View>
                     ) : null}
                 </View>

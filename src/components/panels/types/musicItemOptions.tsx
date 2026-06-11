@@ -61,6 +61,7 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
 
     const downloaded = LocalMusicSheet.isLocalMusic(musicItem);
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
+    const hiddenLocalMusic = LocalMusicSheet.useIsHidden(musicItem);
     const associatedLrc = getMediaExtraProperty(musicItem, "associatedLrc");
 
     const options: IOption[] = [
@@ -140,6 +141,23 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             icon: "check-circle-outline",
             title: t("panel.musicItemOptions.downloaded"),
             show: !!downloaded,
+        },
+        {
+            icon: "archive-box-x-mark",
+            title: hiddenLocalMusic
+                ? t("localMusic.unhideMusic")
+                : t("localMusic.hideMusic"),
+            show: !!downloaded,
+            onPress: async () => {
+                if (hiddenLocalMusic) {
+                    await LocalMusicSheet.unhideMusic(musicItem);
+                    Toast.success(t("localMusic.unhideSuccess"));
+                } else {
+                    await LocalMusicSheet.hideMusic(musicItem);
+                    Toast.success(t("localMusic.hideSuccess"));
+                }
+                hidePanel();
+            },
         },
         {
             icon: "folder-music-outline",

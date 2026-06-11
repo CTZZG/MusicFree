@@ -140,6 +140,9 @@ export default function BasicSetting() {
     const downloadQualityOrder = useAppConfig("basic.downloadQualityOrder");
     const musicDetailDefault = useAppConfig("basic.musicDetailDefault");
     const musicDetailAwake = useAppConfig("basic.musicDetailAwake");
+    const musicDetailImmersiveMode = useAppConfig(
+        "basic.musicDetailImmersiveMode",
+    );
     const maxHistoryLen = useAppConfig("basic.maxHistoryLen");
     const autoUpdatePlugin = useAppConfig("basic.autoUpdatePlugin");
     const notCheckPluginVersion = useAppConfig("basic.notCheckPluginVersion");
@@ -203,6 +206,11 @@ export default function BasicSetting() {
                     t("basicSettings.musicDetailAwake"),
                     "basic.musicDetailAwake",
                     musicDetailAwake ?? false,
+                ),
+                createSwitch(
+                    t("basicSettings.musicDetailImmersiveMode"),
+                    "basic.musicDetailImmersiveMode",
+                    musicDetailImmersiveMode ?? false,
                 ),
                 createRadio(
                     t("basicSettings.associateLyricType"),

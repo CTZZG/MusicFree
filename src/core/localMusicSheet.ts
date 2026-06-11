@@ -7,6 +7,7 @@ import {
 import mp3Util, { IBasicMeta } from "@/native/mp3Util";
 import {
     addFileScheme,
+    getDirectory,
     getFileName,
     removeFileScheme,
 } from "@/utils/fileUtils.ts";
@@ -21,12 +22,18 @@ import StateMapper from "@/utils/stateMapper";
 import { getStorage, setStorage } from "@/utils/storage";
 import CryptoJs from "crypto-js";
 import { nanoid } from "nanoid";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ReadDirItem, exists, readDir, unlink } from "react-native-fs";
 import MusicSheet from "./musicSheet";
 
 let localSheet: IMusic.IMusicItem[] = [];
 const localSheetStateMapper = new StateMapper(() => localSheet);
+let hiddenMusicKeys = new Set<string>();
+let hiddenFolders: string[] = [];
+const hiddenStateMapper = new StateMapper(() => ({
+    hiddenMusicKeys: [...hiddenMusicKeys],
+    hiddenFolders,
+}));
 const resumeFailureReasonLimit = 10;
 
 interface ILocalMusicResumeReport {
@@ -61,6 +68,7 @@ interface ILocalMusicImportMergeReport {
 
 interface ILocalMusicImportReport extends ILocalMusicImportMergeReport {
     scannedCount: number;
+    filteredCount: number;
 }
 
 interface ILocalMusicRelocatePreview {
@@ -99,7 +107,22 @@ export async function setup() {
     } else {
         await setStorage(StorageKeys.LocalMusicSheet, []);
     }
+    const storedHiddenKeys = await getStorage(StorageKeys.LocalMusicHiddenKeys);
+    hiddenMusicKeys = new Set(
+        Array.isArray(storedHiddenKeys)
+            ? storedHiddenKeys.filter(item => typeof item === "string")
+            : [],
+    );
+    const storedHiddenFolders = await getStorage(
+        StorageKeys.LocalMusicHiddenFolders,
+    );
+    hiddenFolders = Array.isArray(storedHiddenFolders)
+        ? storedHiddenFolders
+            .filter(item => typeof item === "string")
+            .map(normalizeFolderPath)
+        : [];
     localSheetStateMapper.notify();
+    hiddenStateMapper.notify();
 }
 
 export async function addMusic(
@@ -205,6 +228,96 @@ function normalizeFsPath(filePath: string) {
     }
 }
 
+function normalizeFolderPath(folderPath: string) {
+    const normalizedPath = normalizeFsPath(folderPath).replace(/\\/g, "/");
+    return normalizedPath.replace(/\/+$/, "");
+}
+
+function getLocalMusicFolder(musicItem: IMusic.IMusicItem) {
+    const localPath = getLocalPath(musicItem);
+    if (!localPath || localPath.startsWith("content://")) {
+        return "";
+    }
+    return normalizeFolderPath(getDirectory(normalizeFsPath(localPath)));
+}
+
+function isPathInHiddenFolder(localPath: string | null) {
+    if (!localPath || localPath.startsWith("content://")) {
+        return false;
+    }
+    const normalizedPath = normalizeFsPath(localPath).replace(/\\/g, "/");
+    return hiddenFolders.some(folder => {
+        const normalizedFolder = normalizeFolderPath(folder);
+        return (
+            normalizedPath === normalizedFolder ||
+            normalizedPath.startsWith(`${normalizedFolder}/`)
+        );
+    });
+}
+
+function isHiddenMusic(musicItem: IMusic.IMusicItem) {
+    return (
+        hiddenMusicKeys.has(getMediaUniqueKey(musicItem)) ||
+        isPathInHiddenFolder(getLocalPath(musicItem))
+    );
+}
+
+function useIsHidden(musicItem: IMusic.IMusicItem | null) {
+    const hiddenState = hiddenStateMapper.useMappedState();
+    return useMemo(() => {
+        if (!musicItem) {
+            return false;
+        }
+        return isHiddenMusic(musicItem);
+    }, [hiddenState, musicItem]);
+}
+
+async function saveHiddenState() {
+    hiddenFolders = [...new Set(hiddenFolders.map(normalizeFolderPath))];
+    await Promise.all([
+        setStorage(StorageKeys.LocalMusicHiddenKeys, [...hiddenMusicKeys]),
+        setStorage(StorageKeys.LocalMusicHiddenFolders, hiddenFolders),
+    ]);
+    hiddenStateMapper.notify();
+    localSheetStateMapper.notify();
+}
+
+async function hideMusic(musicItem: IMusic.IMusicItem) {
+    hiddenMusicKeys.add(getMediaUniqueKey(musicItem));
+    await saveHiddenState();
+}
+
+async function unhideMusic(musicItem: IMusic.IMusicItem) {
+    hiddenMusicKeys.delete(getMediaUniqueKey(musicItem));
+    await saveHiddenState();
+}
+
+async function hideFolder(folderPath: string) {
+    const normalizedFolder = normalizeFolderPath(folderPath);
+    if (!normalizedFolder) {
+        return;
+    }
+    if (!hiddenFolders.includes(normalizedFolder)) {
+        hiddenFolders = [...hiddenFolders, normalizedFolder];
+        await saveHiddenState();
+    }
+}
+
+async function unhideFolder(folderPath: string) {
+    const normalizedFolder = normalizeFolderPath(folderPath);
+    const nextFolders = hiddenFolders.filter(
+        folder => normalizeFolderPath(folder) !== normalizedFolder,
+    );
+    if (nextFolders.length !== hiddenFolders.length) {
+        hiddenFolders = nextFolders;
+        await saveHiddenState();
+    }
+}
+
+function useHiddenState() {
+    return hiddenStateMapper.useMappedState();
+}
+
 function normalizeComparableText(value: unknown) {
     return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -279,6 +392,27 @@ function isDifferentLocalPath(left: string | null, right: string | null) {
         return true;
     }
     return normalizeFsPath(left) !== normalizeFsPath(right);
+}
+
+function isLikelyNonMusicAudio(
+    musicPath: string,
+    meta: IBasicMeta | null,
+) {
+    const durationSeconds = parseInt(meta?.duration ?? "0", 10) / 1000;
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        return false;
+    }
+    if (durationSeconds < 8) {
+        return true;
+    }
+    if (durationSeconds >= 20) {
+        return false;
+    }
+
+    const fileName = getFileName(musicPath, true).toLowerCase();
+    return /(^|[-_\s])(alarm|alert|beep|ding|message|notification|ringtone|sms|sound|tone|提示|提示音|通知|铃声|鈴聲)([-_\s]|$)/i.test(
+        fileName,
+    );
 }
 
 async function resolveLocalPathStatus(
@@ -660,11 +794,16 @@ async function importLocal(_folderPaths: string[]) {
     if (token !== importToken) {
         throw new Error("Import Broken");
     }
+    const scannedItems = musicList
+        .map((musicPath, index) => ({
+            musicPath,
+            meta: metas[index],
+        }))
+        .filter(item => !isLikelyNonMusicAudio(item.musicPath, item.meta));
     const musicItems: IMusic.IMusicItem[] = await Promise.all(
-        musicList.map(async (musicPath, index) => {
+        scannedItems.map(async ({ musicPath, meta }) => {
             let { platform, id, title, artist } =
                 parseFilename(getFileName(musicPath, true)) ?? {};
-            const meta = metas[index];
             if (!platform || !id) {
                 platform = "本地";
                 id = CryptoJs.MD5(musicPath).toString(CryptoJs.enc.Hex);
@@ -692,12 +831,14 @@ async function importLocal(_folderPaths: string[]) {
     }
     trace("本地音乐扫描导入完成", {
         count: musicItems.length,
+        filteredCount: musicList.length - musicItems.length,
         addedCount: mergeReport.addedCount,
         exactMatchedCount: mergeReport.exactMatchedCount,
         weakMatchedCount: mergeReport.weakMatchedCount,
     });
     return {
         scannedCount: musicItems.length,
+        filteredCount: musicList.length - musicItems.length,
         addedCount: mergeReport.addedCount,
         exactMatchedCount: mergeReport.exactMatchedCount,
         weakMatchedCount: mergeReport.weakMatchedCount,
@@ -857,7 +998,7 @@ async function resumeMusicList(
                     skippedReasons,
                     `${formatMusicLabel(partialMusicItem)}: 缺少本地路径`,
                 );
-            } else if (await exists(fsPath)) {
+            } else {
                 validMusicItems.push({
                     ...partialMusicItem,
                     id:
@@ -866,17 +1007,20 @@ async function resumeMusicList(
                     platform: partialMusicItem.platform ?? localPluginPlatform,
                     title: partialMusicItem.title ?? getFileName(fsPath),
                     artist: partialMusicItem.artist ?? "未知歌手",
+                    duration: partialMusicItem.duration ?? 0,
+                    album: partialMusicItem.album ?? "未知专辑",
+                    artwork: partialMusicItem.artwork ?? "",
                     [internalSerializeKey]: {
                         ...(partialMusicItem[internalSerializeKey] ?? {}),
                         localPath,
                     },
                 } as IMusic.IMusicItem);
-            } else {
-                report.skippedCount += 1;
-                pushLimitedReason(
-                    skippedReasons,
-                    `${formatMusicLabel(partialMusicItem)}: 文件不存在`,
-                );
+                if (!(await exists(fsPath))) {
+                    pushLimitedReason(
+                        skippedReasons,
+                        `${formatMusicLabel(partialMusicItem)}: 文件不存在，可重新定位`,
+                    );
+                }
             }
         } catch (e: any) {
             report.skippedCount += 1;
@@ -891,7 +1035,10 @@ async function resumeMusicList(
 
     if (skippedReasons.length) {
         report.failureReasons.push(...skippedReasons);
-        const omittedReasonCount = report.skippedCount - skippedReasons.length;
+        const omittedReasonCount = Math.max(
+            0,
+            report.skippedCount - skippedReasons.length,
+        );
         if (omittedReasonCount > 0) {
             report.failureReasons.push(
                 `还有 ${omittedReasonCount} 首本地音乐被跳过`,
@@ -922,11 +1069,19 @@ const LocalMusicSheet = {
     cancelImportLocal,
     isLocalMusic,
     isSupportedLocalMediaFile,
+    isHiddenMusic,
+    getLocalMusicFolder,
     useIsLocal,
+    useIsHidden,
+    useHiddenState,
     getMusicList,
     useMusicList: localSheetStateMapper.useMappedState,
     useLocalFileExists,
     updateMusicList,
+    hideMusic,
+    unhideMusic,
+    hideFolder,
+    unhideFolder,
     previewRelocateMusic,
     relocateMusic,
     resumeMusicList,

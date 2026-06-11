@@ -1,24 +1,44 @@
 import React, { useEffect, useMemo, useState } from "react";
-import MusicList from "@/components/musicList";
-import LocalMusicSheet from "@/core/localMusicSheet";
-import { localMusicSheetId, localPluginPlatform, RequestStateCode } from "@/constants/commonConst";
-import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
-import globalStyle from "@/constants/globalStyle";
-import { useI18N } from "@/core/i18n";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import rpx from "@/utils/rpx";
-import ThemeText from "@/components/base/themeText";
-import useColors from "@/hooks/useColors";
-import Color from "color";
-import { showPanel } from "@/components/panels/usePanel";
-import Icon, { IIconName } from "@/components/base/icon";
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { exists } from "react-native-fs";
-import { removeFileScheme } from "@/utils/fileUtils";
+
+import Icon, { IIconName } from "@/components/base/icon";
+import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
+import ListItem from "@/components/base/listItem";
+import ThemeText from "@/components/base/themeText";
+import { showDialog } from "@/components/dialogs/useDialog";
+import { showPanel } from "@/components/panels/usePanel";
+import MusicList from "@/components/musicList";
+import { localMusicSheetId, localPluginPlatform, RequestStateCode } from "@/constants/commonConst";
+import globalStyle from "@/constants/globalStyle";
+import LocalMusicSheet from "@/core/localMusicSheet";
+import { useI18N } from "@/core/i18n";
+import useColors from "@/hooks/useColors";
 import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
+import { removeFileScheme } from "@/utils/fileUtils";
+import rpx from "@/utils/rpx";
+import Toast from "@/utils/toast";
+import Color from "color";
 
 type LocalMusicFileStatus = "exists" | "missing" | "unknown" | "unavailable";
-type LocalMusicFileStatusFilter = "all" | "exists" | "missing" | "unknown";
-type LocalMusicSortMode = "default" | "title" | "artist" | "album" | "source";
+type LocalMusicSortMode = "default" | "title" | "artist" | "album" | "folder";
+type LocalMusicViewMode =
+    | "songs"
+    | "artists"
+    | "albums"
+    | "folders"
+    | "downloaded"
+    | "missing"
+    | "hidden";
+
+interface IGroupItem {
+    count: number;
+    description: string;
+    icon: IIconName;
+    key: string;
+    title: string;
+    value: string;
+}
 
 function normalizeLocalMusicFsPath(filePath: string) {
     const rawPath = removeFileScheme(filePath);
@@ -50,21 +70,6 @@ function getLocalMusicFileStatus(
 ) {
     const key = getMediaUniqueKey(musicItem);
     return fileStatusMap[key] ?? "unknown";
-}
-
-function matchLocalMusicFileStatusFilter(
-    musicItem: IMusic.IMusicItem,
-    fileStatusMap: Record<string, LocalMusicFileStatus>,
-    filter: LocalMusicFileStatusFilter,
-) {
-    if (filter === "all") {
-        return true;
-    }
-    const status = getLocalMusicFileStatus(musicItem, fileStatusMap);
-    if (filter === "unknown") {
-        return status === "unknown" || status === "unavailable";
-    }
-    return status === filter;
 }
 
 function compareLocalMusicText(left?: string | null, right?: string | null) {
@@ -99,87 +104,112 @@ function sortLocalMusicItems(
             );
         }
         return (
-            compareLocalMusicText(a.platform, b.platform) ||
-            compareLocalMusicText(a.title, b.title)
+            compareLocalMusicText(
+                LocalMusicSheet.getLocalMusicFolder(a),
+                LocalMusicSheet.getLocalMusicFolder(b),
+            ) || compareLocalMusicText(a.title, b.title)
         );
     });
 }
 
+function normalizeFacetValue(value?: string | null) {
+    return `${value ?? ""}`.trim();
+}
+
+function isDownloadedLocalMusic(musicItem: IMusic.IMusicItem) {
+    return musicItem.platform !== localPluginPlatform && !!getLocalPath(musicItem);
+}
+
+function buildGroupItems(
+    musicList: IMusic.IMusicItem[],
+    getValue: (musicItem: IMusic.IMusicItem) => string,
+    fallbackTitle: string,
+    icon: IIconName,
+    descriptionPrefix: string,
+) {
+    const groupMap = new Map<string, IGroupItem>();
+    musicList.forEach(musicItem => {
+        const value = getValue(musicItem) || fallbackTitle;
+        const current = groupMap.get(value);
+        if (current) {
+            current.count += 1;
+        } else {
+            groupMap.set(value, {
+                count: 1,
+                description: "",
+                icon,
+                key: value,
+                title: value,
+                value,
+            });
+        }
+    });
+
+    return [...groupMap.values()]
+        .map(item => ({
+            ...item,
+            description: `${descriptionPrefix} · ${item.count}`,
+        }))
+        .sort((a, b) => a.title.localeCompare(b.title));
+}
+
 export default function LocalMusicList() {
     const musicList = LocalMusicSheet.useMusicList();
+    const hiddenState = LocalMusicSheet.useHiddenState();
     const { t } = useI18N();
     const colors = useColors();
-    const [sourceFilter, setSourceFilter] = useState<string>("all");
+    const [viewMode, setViewMode] = useState<LocalMusicViewMode>("songs");
     const [artistFilter, setArtistFilter] = useState<string>("all");
     const [albumFilter, setAlbumFilter] = useState<string>("all");
-    const [fileStatusFilter, setFileStatusFilter] =
-        useState<LocalMusicFileStatusFilter>("all");
+    const [folderFilter, setFolderFilter] = useState<string>("all");
     const [sortMode, setSortMode] = useState<LocalMusicSortMode>("default");
     const [fileStatusMap, setFileStatusMap] = useState<
         Record<string, LocalMusicFileStatus>
     >({});
 
-    const sourceFilters = useMemo(
-        () => [
-            "all",
-            ...Array.from(
-                new Set(
-                    musicList
-                        .map(musicItem => musicItem.platform)
-                        .filter(Boolean),
-                ),
-            ).sort((a, b) => a.localeCompare(b)),
-        ],
-        [musicList],
+    const visibleMusicList = useMemo(
+        () => musicList.filter(musicItem => !LocalMusicSheet.isHiddenMusic(musicItem)),
+        [hiddenState, musicList],
     );
-    const sourceFilteredMusicList = useMemo(
+    const hiddenMusicList = useMemo(
+        () => musicList.filter(musicItem => LocalMusicSheet.isHiddenMusic(musicItem)),
+        [hiddenState, musicList],
+    );
+
+    const artistGroups = useMemo(
         () =>
-            sourceFilter === "all"
-                ? musicList
-                : musicList.filter(
-                    musicItem => musicItem.platform === sourceFilter,
-                ),
-        [musicList, sourceFilter],
+            buildGroupItems(
+                visibleMusicList,
+                musicItem => normalizeFacetValue(musicItem.artist),
+                t("localMusic.unknownArtist"),
+                "user",
+                t("localMusic.group.songCount"),
+            ),
+        [t, visibleMusicList],
     );
-    const artistFilters = useMemo(
-        () => [
-            "all",
-            ...Array.from(
-                new Set(
-                    sourceFilteredMusicList
-                        .map(musicItem => musicItem.artist)
-                        .filter(Boolean),
-                ),
-            ).sort((a, b) => a.localeCompare(b)),
-        ],
-        [sourceFilteredMusicList],
-    );
-    const albumFilters = useMemo(
-        () => [
-            "all",
-            ...Array.from(
-                new Set(
-                    sourceFilteredMusicList
-                        .map(musicItem => musicItem.album)
-                        .filter(Boolean),
-                ),
-            ).sort((a, b) => a.localeCompare(b)),
-        ],
-        [sourceFilteredMusicList],
-    );
-    const artistAlbumFilteredMusicList = useMemo(
+    const albumGroups = useMemo(
         () =>
-            sourceFilteredMusicList.filter(musicItem => {
-                if (artistFilter !== "all" && musicItem.artist !== artistFilter) {
-                    return false;
-                }
-                if (albumFilter !== "all" && musicItem.album !== albumFilter) {
-                    return false;
-                }
-                return true;
-            }),
-        [sourceFilteredMusicList, artistFilter, albumFilter],
+            buildGroupItems(
+                visibleMusicList,
+                musicItem => normalizeFacetValue(musicItem.album),
+                t("localMusic.unknownAlbum"),
+                "album-outline",
+                t("localMusic.group.songCount"),
+            ),
+        [t, visibleMusicList],
     );
+    const folderGroups = useMemo(
+        () =>
+            buildGroupItems(
+                visibleMusicList,
+                musicItem => LocalMusicSheet.getLocalMusicFolder(musicItem),
+                t("localMusic.unknownFolder"),
+                "folder-outline",
+                t("localMusic.group.songCount"),
+            ),
+        [t, visibleMusicList],
+    );
+
     const fileStatusStats = useMemo(
         () => {
             const stats = {
@@ -187,7 +217,7 @@ export default function LocalMusicList() {
                 missing: 0,
                 unknown: 0,
             };
-            artistAlbumFilteredMusicList.forEach(musicItem => {
+            visibleMusicList.forEach(musicItem => {
                 const status = getLocalMusicFileStatus(
                     musicItem,
                     fileStatusMap,
@@ -202,55 +232,60 @@ export default function LocalMusicList() {
             });
             return stats;
         },
-        [artistAlbumFilteredMusicList, fileStatusMap],
+        [visibleMusicList, fileStatusMap],
     );
+
+    const downloadedCount = useMemo(
+        () => visibleMusicList.filter(isDownloadedLocalMusic).length,
+        [visibleMusicList],
+    );
+    const listBaseMusicList = useMemo(() => {
+        if (viewMode === "downloaded") {
+            return visibleMusicList.filter(isDownloadedLocalMusic);
+        }
+        if (viewMode === "missing") {
+            return visibleMusicList.filter(
+                musicItem =>
+                    getLocalMusicFileStatus(musicItem, fileStatusMap) ===
+                    "missing",
+            );
+        }
+        if (viewMode === "hidden") {
+            return hiddenMusicList;
+        }
+        return visibleMusicList;
+    }, [fileStatusMap, hiddenMusicList, viewMode, visibleMusicList]);
+
     const filteredMusicList = useMemo(
         () =>
-            artistAlbumFilteredMusicList.filter(musicItem =>
-                matchLocalMusicFileStatusFilter(
-                    musicItem,
-                    fileStatusMap,
-                    fileStatusFilter,
-                ),
-        ),
-        [artistAlbumFilteredMusicList, fileStatusMap, fileStatusFilter],
+            listBaseMusicList.filter(musicItem => {
+                if (
+                    artistFilter !== "all" &&
+                    normalizeFacetValue(musicItem.artist) !== artistFilter
+                ) {
+                    return false;
+                }
+                if (
+                    albumFilter !== "all" &&
+                    normalizeFacetValue(musicItem.album) !== albumFilter
+                ) {
+                    return false;
+                }
+                if (
+                    folderFilter !== "all" &&
+                    LocalMusicSheet.getLocalMusicFolder(musicItem) !== folderFilter
+                ) {
+                    return false;
+                }
+                return true;
+            }),
+        [albumFilter, artistFilter, folderFilter, listBaseMusicList],
     );
     const sortedMusicList = useMemo(
         () => sortLocalMusicItems(filteredMusicList, sortMode),
         [filteredMusicList, sortMode],
     );
-    const sourceFilterTitle =
-        sourceFilter === "all" ? t("localMusic.sourceFilter.all") : sourceFilter;
-    const artistFilterTitle =
-        artistFilter === "all" ? t("localMusic.artistFilter.all") : artistFilter;
-    const albumFilterTitle =
-        albumFilter === "all" ? t("localMusic.albumFilter.all") : albumFilter;
-    const fileStatusFilterItems: Array<{
-        key: LocalMusicFileStatusFilter;
-        title: string;
-    }> = [
-        {
-            key: "all",
-            title: t("localMusic.fileStatusFilter.all"),
-        },
-        {
-            key: "exists",
-            title: t("localMusic.fileStatusFilter.exists"),
-        },
-        {
-            key: "missing",
-            title: t("localMusic.fileStatusFilter.missing"),
-        },
-        {
-            key: "unknown",
-            title: t("localMusic.fileStatusFilter.unknown"),
-        },
-    ];
-    const fileStatusFilterTitle =
-        fileStatusFilter === "all"
-            ? t("localMusic.fileStatusFilter.title")
-            : fileStatusFilterItems.find(item => item.key === fileStatusFilter)
-                ?.title ?? t("localMusic.fileStatusFilter.title");
+
     const sortItems: Array<{
         key: LocalMusicSortMode;
         title: string;
@@ -272,8 +307,8 @@ export default function LocalMusicList() {
             title: t("localMusic.sort.byAlbum"),
         },
         {
-            key: "source",
-            title: t("localMusic.sort.bySource"),
+            key: "folder",
+            title: t("localMusic.sort.byFolder"),
         },
     ];
     const sortTitle =
@@ -282,10 +317,9 @@ export default function LocalMusicList() {
             : sortItems.find(item => item.key === sortMode)?.title ??
                 t("localMusic.sort.title");
     const hasActiveListControls =
-        sourceFilter !== "all" ||
         artistFilter !== "all" ||
         albumFilter !== "all" ||
-        fileStatusFilter !== "all" ||
+        folderFilter !== "all" ||
         sortMode !== "default";
 
     useEffect(() => {
@@ -321,25 +355,28 @@ export default function LocalMusicList() {
         };
     }, [musicList]);
 
-    function showFilterSelect(
-        header: string,
-        candidates: string[],
-        onSelect: (value: string) => void,
-        allTitle: string,
+    function selectViewMode(nextViewMode: LocalMusicViewMode) {
+        setViewMode(nextViewMode);
+        setArtistFilter("all");
+        setAlbumFilter("all");
+        setFolderFilter("all");
+    }
+
+    function openGroup(
+        filterType: "artist" | "album" | "folder",
+        value: string,
     ) {
-        showPanel("SimpleSelect", {
-            header,
-            candidates: candidates.map(candidate => ({
-                title:
-                    candidate === "all"
-                        ? allTitle
-                        : candidate,
-                value: candidate,
-            })),
-            onPress(item) {
-                onSelect(item.value);
-            },
-        });
+        setViewMode("songs");
+        setArtistFilter(filterType === "artist" ? value : "all");
+        setAlbumFilter(filterType === "album" ? value : "all");
+        setFolderFilter(filterType === "folder" ? value : "all");
+    }
+
+    function clearListControls() {
+        setArtistFilter("all");
+        setAlbumFilter("all");
+        setFolderFilter("all");
+        setSortMode("default");
     }
 
     function renderFilterChip(props: {
@@ -390,46 +427,136 @@ export default function LocalMusicList() {
         );
     }
 
-    function handleSourceChange(source: string) {
-        setSourceFilter(source);
-        setArtistFilter("all");
-        setAlbumFilter("all");
-        setFileStatusFilter("all");
-    }
-
-    function handleArtistPress() {
-        showFilterSelect(
-            t("common.artist"),
-            artistFilters,
-            setArtistFilter,
-            t("localMusic.artistFilter.all"),
-        );
-    }
-
-    function handleAlbumPress() {
-        showFilterSelect(
-            t("common.album"),
-            albumFilters,
-            setAlbumFilter,
-            t("localMusic.albumFilter.all"),
-        );
-    }
-
-    function handleFileStatusPress() {
-        showPanel("SimpleSelect", {
-            header: t("localMusic.fileStatusFilter.title"),
-            candidates: fileStatusFilterItems.map(item => ({
-                title: item.title,
-                value: item.key,
-                icon: "folder-outline",
-            })),
-            onPress(item) {
-                setFileStatusFilter(item.value as LocalMusicFileStatusFilter);
+    function renderModeChips() {
+        const viewModeItems: Array<{
+            key: LocalMusicViewMode;
+            title: string;
+            count: number;
+            icon: IIconName;
+        }> = [
+            {
+                key: "songs",
+                title: t("localMusic.view.songs"),
+                count: visibleMusicList.length,
+                icon: "musical-note",
             },
-        });
+            {
+                key: "artists",
+                title: t("localMusic.view.artists"),
+                count: artistGroups.length,
+                icon: "user",
+            },
+            {
+                key: "albums",
+                title: t("localMusic.view.albums"),
+                count: albumGroups.length,
+                icon: "album-outline",
+            },
+            {
+                key: "folders",
+                title: t("localMusic.view.folders"),
+                count: folderGroups.length,
+                icon: "folder-outline",
+            },
+            {
+                key: "downloaded",
+                title: t("localMusic.view.downloaded"),
+                count: downloadedCount,
+                icon: "arrow-down-tray",
+            },
+            {
+                key: "missing",
+                title: t("localMusic.view.missing"),
+                count: fileStatusStats.missing,
+                icon: "exclamation-circle",
+            },
+        ];
+
+        if (hiddenMusicList.length || hiddenState.hiddenFolders.length) {
+            viewModeItems.push({
+                key: "hidden",
+                title: t("localMusic.view.hidden"),
+                count: hiddenMusicList.length + hiddenState.hiddenFolders.length,
+                icon: "archive-box-x-mark",
+            });
+        }
+
+        return (
+            <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={style.filterBar}>
+                {viewModeItems.map(item =>
+                    renderFilterChip({
+                        key: `view-${item.key}`,
+                        title: `${item.title} ${item.count}`,
+                        selected: viewMode === item.key,
+                        onPress: () => selectViewMode(item.key),
+                        icon: item.icon,
+                    }),
+                )}
+            </ScrollView>
+        );
     }
 
-    function handleSortPress() {
+    function renderListControls() {
+        const chips: React.ReactElement[] = [];
+
+        if (artistFilter !== "all") {
+            chips.push(renderFilterChip({
+                key: "artist-filter",
+                title: artistFilter,
+                selected: true,
+                onPress: () => setArtistFilter("all"),
+                icon: "user",
+            }));
+        }
+        if (albumFilter !== "all") {
+            chips.push(renderFilterChip({
+                key: "album-filter",
+                title: albumFilter,
+                selected: true,
+                onPress: () => setAlbumFilter("all"),
+                icon: "album-outline",
+            }));
+        }
+        if (folderFilter !== "all") {
+            chips.push(renderFilterChip({
+                key: "folder-filter",
+                title: folderFilter,
+                selected: true,
+                onPress: () => setFolderFilter("all"),
+                icon: "folder-outline",
+            }));
+        }
+        chips.push(renderFilterChip({
+            key: "sort",
+            title: sortTitle,
+            selected: sortMode !== "default",
+            onPress: showSortSelect,
+            icon: "sort-outline",
+        }));
+        if (hasActiveListControls) {
+            chips.push(renderFilterChip({
+                key: "clear-filters",
+                title: t("localMusic.clearFilters"),
+                selected: false,
+                onPress: clearListControls,
+                icon: "x-mark",
+            }));
+        }
+
+        return (
+            <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={style.secondaryFilterBar}>
+                {chips}
+            </ScrollView>
+        );
+    }
+
+    function showSortSelect() {
         showPanel("SimpleSelect", {
             header: t("localMusic.sort.title"),
             candidates: sortItems.map(item => ({
@@ -443,76 +570,110 @@ export default function LocalMusicList() {
         });
     }
 
-    function clearListControls() {
-        setSourceFilter("all");
-        setArtistFilter("all");
-        setAlbumFilter("all");
-        setFileStatusFilter("all");
-        setSortMode("default");
+    function renderGroupItem(
+        item: IGroupItem,
+        filterType: "artist" | "album" | "folder",
+    ) {
+        return (
+            <ListItem
+                withHorizontalPadding
+                heightType="normal"
+                onPress={() => openGroup(filterType, item.value)}>
+                <ListItem.ListItemIcon icon={item.icon} />
+                <ListItem.Content
+                    title={item.title}
+                    description={item.description}
+                />
+                {filterType === "folder" ? (
+                    <ListItem.ListItemIcon
+                        icon="archive-box-x-mark"
+                        position="right"
+                        onPress={() => {
+                            showDialog("SimpleDialog", {
+                                title: t("localMusic.hideFolder"),
+                                content: t("localMusic.hideFolderConfirm", {
+                                    folder: item.title,
+                                }),
+                                async onOk() {
+                                    await LocalMusicSheet.hideFolder(item.value);
+                                    Toast.success(t("localMusic.hideSuccess"));
+                                },
+                            });
+                        }}
+                    />
+                ) : null}
+            </ListItem>
+        );
     }
+
+    function renderGroupList(
+        data: IGroupItem[],
+        filterType: "artist" | "album" | "folder",
+    ) {
+        return (
+            <FlatList
+                data={data}
+                keyExtractor={item => item.key}
+                renderItem={({ item }) => renderGroupItem(item, filterType)}
+                ListFooterComponent={<View style={style.listFooter} />}
+            />
+        );
+    }
+
+    function renderHiddenHeader() {
+        if (!hiddenState.hiddenFolders.length) {
+            return null;
+        }
+
+        return (
+            <View>
+                {hiddenState.hiddenFolders.map(folder => (
+                    <ListItem
+                        key={folder}
+                        withHorizontalPadding
+                        heightType="normal">
+                        <ListItem.ListItemIcon icon="folder-outline" />
+                        <ListItem.Content
+                            title={folder}
+                            description={t("localMusic.hiddenFolder")}
+                        />
+                        <ListItem.ListItemIcon
+                            icon="x-mark"
+                            position="right"
+                            onPress={async () => {
+                                await LocalMusicSheet.unhideFolder(folder);
+                                Toast.success(t("localMusic.unhideSuccess"));
+                            }}
+                        />
+                    </ListItem>
+                ))}
+            </View>
+        );
+    }
+
+    const isGroupMode =
+        viewMode === "artists" ||
+        viewMode === "albums" ||
+        viewMode === "folders";
 
     return (
         <HorizontalSafeAreaView style={globalStyle.flex1}>
             <View style={globalStyle.flex1}>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={style.filterBar}>
-                    {sourceFilters.map(source =>
-                        renderFilterChip({
-                            key: `source-${source}`,
-                            title: source === "all"
-                                ? t("localMusic.sourceFilter.all")
-                                : source,
-                            selected: sourceFilter === source,
-                            onPress: () => handleSourceChange(source),
-                        }),
-                    )}
-                    {renderFilterChip({
-                        key: "artist-filter",
-                        title: artistFilterTitle,
-                        selected: artistFilter !== "all",
-                        onPress: handleArtistPress,
-                        icon: "user",
-                    })}
-                    {renderFilterChip({
-                        key: "album-filter",
-                        title: albumFilterTitle,
-                        selected: albumFilter !== "all",
-                        onPress: handleAlbumPress,
-                        icon: "album-outline",
-                    })}
-                    {renderFilterChip({
-                        key: "file-status-filter",
-                        title: fileStatusFilterTitle,
-                        selected: fileStatusFilter !== "all",
-                        onPress: handleFileStatusPress,
-                        icon: "folder-outline",
-                    })}
-                    {renderFilterChip({
-                        key: "sort",
-                        title: sortTitle,
-                        selected: sortMode !== "default",
-                        onPress: handleSortPress,
-                        icon: "sort-outline",
-                    })}
-                    {hasActiveListControls
-                        ? renderFilterChip({
-                            key: "clear-filters",
-                            title: t("localMusic.clearFilters"),
-                            selected: false,
-                            onPress: clearListControls,
-                            icon: "x-mark",
-                        })
-                        : null}
-                </ScrollView>
+                {renderModeChips()}
+                {!isGroupMode ? renderListControls() : null}
                 {musicList.length ? (
                     <View style={style.summary}>
                         <ThemeText
                             fontSize="description"
                             fontColor="textSecondary">
                             {t("localMusic.librarySummary", {
-                                shown: sortedMusicList.length,
+                                shown: isGroupMode
+                                    ? viewMode === "artists"
+                                        ? artistGroups.length
+                                        : viewMode === "albums"
+                                          ? albumGroups.length
+                                          : folderGroups.length
+                                    : sortedMusicList.length,
                                 total: musicList.length,
                             })}
                         </ThemeText>
@@ -523,17 +684,26 @@ export default function LocalMusicList() {
                         </ThemeText>
                     </View>
                 ) : null}
-                <MusicList
-                    musicList={sortedMusicList}
-                    showIndex
-                    state={RequestStateCode.IDLE}
-                    musicSheet={{
-                        id: localMusicSheetId,
-                        title: t("common.local"),
-                        platform: localPluginPlatform,
-                        musicList: sortedMusicList,
-                    }}
-                />
+                {viewMode === "artists" ? (
+                    renderGroupList(artistGroups, "artist")
+                ) : viewMode === "albums" ? (
+                    renderGroupList(albumGroups, "album")
+                ) : viewMode === "folders" ? (
+                    renderGroupList(folderGroups, "folder")
+                ) : (
+                    <MusicList
+                        Header={viewMode === "hidden" ? renderHiddenHeader : undefined}
+                        musicList={sortedMusicList}
+                        showIndex
+                        state={RequestStateCode.IDLE}
+                        musicSheet={{
+                            id: localMusicSheetId,
+                            title: t("common.local"),
+                            platform: localPluginPlatform,
+                            musicList: sortedMusicList,
+                        }}
+                    />
+                )}
             </View>
         </HorizontalSafeAreaView>
     );
@@ -541,28 +711,39 @@ export default function LocalMusicList() {
 
 const style = StyleSheet.create({
     filterBar: {
-        paddingHorizontal: rpx(24),
-        paddingVertical: rpx(16),
+        paddingHorizontal: rpx(20),
+        paddingTop: rpx(16),
+        paddingBottom: rpx(8),
     },
-    summary: {
-        paddingHorizontal: rpx(24),
-        paddingBottom: rpx(16),
-        gap: rpx(8),
+    secondaryFilterBar: {
+        paddingHorizontal: rpx(20),
+        paddingTop: rpx(4),
+        paddingBottom: rpx(8),
     },
     filterChip: {
         height: rpx(56),
+        minWidth: rpx(96),
+        maxWidth: rpx(260),
         paddingHorizontal: rpx(18),
-        borderRadius: rpx(28),
-        borderWidth: StyleSheet.hairlineWidth,
         marginRight: rpx(12),
-        alignItems: "center",
+        borderRadius: rpx(6),
+        borderWidth: StyleSheet.hairlineWidth,
         justifyContent: "center",
     },
     filterChipContent: {
+        minWidth: 0,
         flexDirection: "row",
         alignItems: "center",
     },
     filterChipIcon: {
         marginRight: rpx(8),
+    },
+    summary: {
+        paddingHorizontal: rpx(28),
+        paddingTop: rpx(4),
+        paddingBottom: rpx(8),
+    },
+    listFooter: {
+        height: rpx(160),
     },
 });

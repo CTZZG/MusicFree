@@ -1,5 +1,4 @@
 import React from "react";
-import Clipboard from "@react-native-clipboard/clipboard";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import LocalMusicList from "./localMusicList";
@@ -14,52 +13,18 @@ export default function MainPage() {
     const navigate = useNavigate();
     const { t } = useI18N();
 
-    function buildScanResultReport(
+    function showScanResultToast(
         report: Awaited<ReturnType<typeof LocalMusicSheet.importLocal>>,
     ) {
         const repairedCount =
             report.exactMatchedCount + report.weakMatchedCount;
-        const unchangedCount = Math.max(
-            0,
-            report.scannedCount - report.addedCount - repairedCount,
-        );
 
-        return [
-            t("localMusic.scanResult.title"),
-            `${t("localMusic.scanResult.generatedAt")}: ${new Date().toISOString()}`,
-            t("localMusic.scanResult.scanned", {
-                count: report.scannedCount,
-            }),
-            t("localMusic.scanResult.added", {
-                count: report.addedCount,
-            }),
-            t("localMusic.scanResult.exactMatched", {
-                count: report.exactMatchedCount,
-            }),
-            t("localMusic.scanResult.weakMatched", {
-                count: report.weakMatchedCount,
-            }),
-            t("localMusic.scanResult.unchanged", {
-                count: unchangedCount,
-            }),
-        ].join("\n");
-    }
-
-    function showScanResultReport(
-        report: Awaited<ReturnType<typeof LocalMusicSheet.importLocal>>,
-    ) {
-        const reportText = buildScanResultReport(report);
-
-        showDialog("SimpleDialog", {
-            title: t("localMusic.scanResult.title"),
-            content: reportText,
-            okText: t("localMusic.scanResult.copyReport"),
-            cancelText: t("common.done"),
-            onOk() {
-                Clipboard.setString(reportText);
-                Toast.success(t("localMusic.scanResult.copyReportSuccess"));
-            },
-        });
+        Toast.success(t("localMusic.scanResult.summary", {
+            scanned: report.scannedCount,
+            added: report.addedCount,
+            repaired: repairedCount,
+            filtered: report.filteredCount,
+        }));
     }
 
     return (
@@ -98,7 +63,7 @@ export default function MainPage() {
                                             onResolve(data, hideDialog) {
                                                 Toast.success(t("toast.importSuccess"));
                                                 hideDialog();
-                                                showScanResultReport(data);
+                                                showScanResultToast(data);
                                                 resolve(true);
                                             },
                                             onReject(reason, hideDialog) {

@@ -135,18 +135,28 @@ export interface ILanguageData {
     "localMusic.scanLocalMusic": string; // 扫描本地音乐
     "localMusic.beginScan": string; // 开始扫描
     "localMusic.downloadList": string; // 下载列表
-    "localMusic.scanResult.title": string; // 本地音乐扫描结果
-    "localMusic.scanResult.generatedAt": string; // 生成时间
-    "localMusic.scanResult.scanned": string; // 扫描到歌曲
-    "localMusic.scanResult.added": string; // 新增歌曲
-    "localMusic.scanResult.exactMatched": string; // 按原始 ID 修复
-    "localMusic.scanResult.weakMatched": string; // 按歌曲信息修复
-    "localMusic.scanResult.unchanged": string; // 已存在或未变化
-    "localMusic.scanResult.copyReport": string; // 复制报告
-    "localMusic.scanResult.copyReportSuccess": string; // 复制报告成功
+    "localMusic.scanResult.summary": string; // 扫描摘要
     "localMusic.sourceFilter.all": string; // 全部来源
+    "localMusic.view.songs": string; // 全部歌曲
+    "localMusic.view.artists": string; // 歌手
+    "localMusic.view.albums": string; // 专辑
+    "localMusic.view.folders": string; // 文件夹
+    "localMusic.view.downloaded": string; // 已下载
+    "localMusic.view.missing": string; // 缺失
+    "localMusic.view.hidden": string; // 已隐藏
+    "localMusic.group.songCount": string; // 歌曲数量
+    "localMusic.unknownArtist": string; // 未知歌手
+    "localMusic.unknownAlbum": string; // 未知专辑
+    "localMusic.unknownFolder": string; // 未知文件夹
     "localMusic.fileMissing": string; // 文件不存在
     "localMusic.fileMissingTapHint": string; // 文件不存在点击提示
+    "localMusic.hideMusic": string; // 隐藏歌曲
+    "localMusic.unhideMusic": string; // 取消隐藏歌曲
+    "localMusic.hideFolder": string; // 隐藏文件夹
+    "localMusic.hideFolderConfirm": string; // 隐藏文件夹确认
+    "localMusic.hiddenFolder": string; // 隐藏文件夹
+    "localMusic.hideSuccess": string; // 隐藏成功
+    "localMusic.unhideSuccess": string; // 取消隐藏成功
     "localMusic.relocateFile": string; // 重新定位文件
     "localMusic.relocateFileAction": string; // 使用此文件
     "localMusic.relocateSuccess": string; // 重新定位成功
@@ -168,6 +178,7 @@ export interface ILanguageData {
     "localMusic.sort.byTitle": string; // 本地音乐按歌曲名排序
     "localMusic.sort.byArtist": string; // 本地音乐按歌手名排序
     "localMusic.sort.byAlbum": string; // 本地音乐按专辑名排序
+    "localMusic.sort.byFolder": string; // 本地音乐按文件夹排序
     "localMusic.sort.bySource": string; // 本地音乐按来源排序
     "localMusic.clearFilters": string; // 清除本地音乐筛选
     "localMusic.metadataStatus.success": string; // 元数据已写入
@@ -647,6 +658,7 @@ export interface ILanguageData {
     "basicSettings.musicDetailDefault.album": string; // 专辑
     "basicSettings.musicDetailDefault.lyric": string; // 歌词
     "basicSettings.musicDetailAwake": string; // 唤醒音乐详情
+    "basicSettings.musicDetailImmersiveMode": string; // 播放详情沉浸模式
     "basicSettings.associateLyricType": string; // 关联歌词类型
     "basicSettings.associateLyricType.input": string; // 输入
     "basicSettings.associateLyricType.search": string; // 搜索

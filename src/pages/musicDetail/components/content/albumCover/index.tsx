@@ -30,11 +30,12 @@ export function getCoverLeftMargin() {
 }
 
 interface IProps {
+    immersiveMode?: boolean;
     onTurnPageClick?: () => void;
 }
 
 export default function AlbumCover(props: IProps) {
-    const { onTurnPageClick } = props;
+    const { immersiveMode = false, onTurnPageClick } = props;
 
     const musicItem = useCurrentMusic();
     const musicState = useMusicState();
@@ -176,7 +177,7 @@ export default function AlbumCover(props: IProps) {
                         </Animated.View>
                     </View>
                 </Pressable>
-                <Operations />
+                {immersiveMode ? null : <Operations />}
             </View>
         );
     }
@@ -204,7 +205,7 @@ export default function AlbumCover(props: IProps) {
                     </Animated.View>
                 </View>
             </Pressable>
-            <SongInfo />
+            {immersiveMode ? null : <SongInfo />}
             {miniLyricLayout === "hidden" ? null : (
                 <MiniLyric
                     compact={miniLyricLayout === "compact"}
@@ -217,7 +218,7 @@ export default function AlbumCover(props: IProps) {
                     const layout = event.nativeEvent.layout;
                     setOperationsBottom(layout.y + layout.height);
                 }}>
-                <Operations />
+                {immersiveMode ? null : <Operations />}
             </View>
         </View>
     );

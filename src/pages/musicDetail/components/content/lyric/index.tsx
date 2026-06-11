@@ -42,6 +42,7 @@ interface IItemHeights {
 }
 
 interface IProps {
+    immersiveMode?: boolean;
     onTurnPageClick?: () => void;
 }
 
@@ -143,7 +144,7 @@ function buildDetailLyricLines(
 }
 
 export default function Lyric(props: IProps) {
-    const { onTurnPageClick } = props;
+    const { immersiveMode = false, onTurnPageClick } = props;
 
     const {
         loading,
@@ -565,9 +566,11 @@ export default function Lyric(props: IProps) {
                     )}
                 </View>
             </GestureDetector>
-            <LyricOperations
-                scrollToCurrentLrcItem={delayedScrollToCurrentLrcItem}
-            />
+            {immersiveMode ? null : (
+                <LyricOperations
+                    scrollToCurrentLrcItem={delayedScrollToCurrentLrcItem}
+                />
+            )}
         </>
     );
 }
