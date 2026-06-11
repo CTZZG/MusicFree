@@ -217,6 +217,8 @@
     "globalSearch.localSection": "本地结果",
     "globalSearch.musicTitle": "搜索歌曲「{query}」",
     "globalSearch.musicDescription": "使用现有搜索页搜索歌曲",
+    "globalSearch.onlineSearchTitle": "搜索{type}「{query}」",
+    "globalSearch.onlineSearchDescription": "使用现有搜索页搜索{type}",
     "globalSearch.localMusicTitle": "查看本地音乐「{query}」",
     "globalSearch.localMusicDescription": "{count} 首本地歌曲",
     "globalSearch.pluginDescription": "打开插件管理并定位插件",

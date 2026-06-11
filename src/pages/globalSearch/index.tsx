@@ -17,12 +17,14 @@ import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import { getMediaUniqueKey } from "@/utils/mediaUtils";
+import type { ILanguageData } from "@/types/core/i18n";
 import Color from "color";
 import React, { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type GlobalSearchResultType =
+    | "online-search"
     | "music"
     | "local-music"
     | "local-music-item"
@@ -43,6 +45,33 @@ interface IGlobalSearchResult {
 }
 
 const maxDirectLocalMusicResults = 5;
+
+const onlineSearchTargets: Array<{
+    searchType: ICommon.SupportMediaType;
+    labelKey: keyof ILanguageData;
+    icon: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
+}> = [
+    {
+        searchType: "music",
+        labelKey: "common.singleMusic",
+        icon: "magnifying-glass",
+    },
+    {
+        searchType: "sheet",
+        labelKey: "common.sheet",
+        icon: "playlist",
+    },
+    {
+        searchType: "album",
+        labelKey: "common.album",
+        icon: "album-outline",
+    },
+    {
+        searchType: "artist",
+        labelKey: "common.artist",
+        icon: "user",
+    },
+];
 
 function normalizeKeyword(text?: string) {
     return (text ?? "").trim().toLowerCase();
@@ -310,22 +339,30 @@ export default function GlobalSearch() {
         return [...localMusicResults, ...otherLocalResults];
     }, [localMusicList, navigate, normalizedQuery, pageTargets, plugins, settingTargets, sheets, t]);
 
-    const searchMusicResult = useMemo<IGlobalSearchResult | null>(() => {
+    const onlineSearchResults = useMemo<IGlobalSearchResult[]>(() => {
         if (!normalizedQuery) {
-            return null;
+            return [];
         }
-        return {
-            id: "music-search",
-            type: "music",
-            title: t("globalSearch.musicTitle", { query: normalizedQuery }),
-            description: t("globalSearch.musicDescription"),
-            icon: "magnifying-glass",
-            onPress: () =>
-                navigate(ROUTE_PATH.SEARCH_PAGE, {
-                    initialQuery: normalizedQuery,
-                    initialSearchType: "music",
+        return onlineSearchTargets.map(target => {
+            const typeLabel = t(target.labelKey);
+            return {
+                id: `online-search-${target.searchType}`,
+                type: "online-search",
+                title: t("globalSearch.onlineSearchTitle", {
+                    type: typeLabel,
+                    query: normalizedQuery,
                 }),
-        };
+                description: t("globalSearch.onlineSearchDescription", {
+                    type: typeLabel,
+                }),
+                icon: target.icon,
+                onPress: () =>
+                    navigate(ROUTE_PATH.SEARCH_PAGE, {
+                        initialQuery: normalizedQuery,
+                        initialSearchType: target.searchType,
+                    }),
+            };
+        });
     }, [navigate, normalizedQuery, t]);
 
     const hintTextColor = Color(colors.text).alpha(0.6).toString();
@@ -375,12 +412,17 @@ export default function GlobalSearch() {
                     <ScrollView
                         style={styles.resultWrapper}
                         keyboardShouldPersistTaps="handled">
-                        {searchMusicResult ? (
+                        {onlineSearchResults.length ? (
                             <>
                                 <ListItemHeader>
                                     {t("globalSearch.onlineSection")}
                                 </ListItemHeader>
-                                <GlobalSearchListItem item={searchMusicResult} />
+                                {onlineSearchResults.map(item => (
+                                    <GlobalSearchListItem
+                                        key={item.id}
+                                        item={item}
+                                    />
+                                ))}
                             </>
                         ) : null}
                         {localResults.length ? (

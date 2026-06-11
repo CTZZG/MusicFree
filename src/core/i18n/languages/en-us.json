@@ -217,6 +217,8 @@
     "globalSearch.localSection": "Local results",
     "globalSearch.musicTitle": "Search songs for「{query}」",
     "globalSearch.musicDescription": "Use the existing search page for songs",
+    "globalSearch.onlineSearchTitle": "Search {type} for「{query}」",
+    "globalSearch.onlineSearchDescription": "Use the search page for {type}",
     "globalSearch.localMusicTitle": "View local music for「{query}」",
     "globalSearch.localMusicDescription": "{count} local songs",
     "globalSearch.pluginDescription": "Open plugin management and locate this plugin",
