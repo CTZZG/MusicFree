@@ -11,7 +11,7 @@ import Config from "@/core/appConfig";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import rpx from "@/utils/rpx";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import ThemeText from "@/components/base/themeText";
 import IconTextButton from "@/components/base/iconTextButton";
 import ThemeSwitch from "@/components/base/switch";
@@ -19,11 +19,15 @@ import { IIconName } from "@/components/base/icon.tsx";
 import { useI18N } from "@/core/i18n";
 import IconButton from "@/components/base/iconButton";
 import useRerender from "@/hooks/useRerender";
-import { getPluginDiagnosticEvents } from "@/core/pluginManager/diagnostics";
+import {
+    getLatestPluginDiagnosticEvent,
+    getPluginDiagnosticEvents,
+} from "@/core/pluginManager/diagnostics";
 import type { PluginDiagnosticEvent } from "@/core/pluginManager/diagnostics";
 import {
     getPluginCapabilityLabels,
     getPluginSourceInfo,
+    type IPluginSettingTranslate,
     pluginCapabilityConfigs,
     pluginSupportsCapability,
 } from "../capabilityUtils";
@@ -101,6 +105,42 @@ function sanitizeTestSearchFailureReason(reason: unknown) {
     return raw.length > 240 ? `${raw.slice(0, 240)}...` : raw;
 }
 
+function formatSingleLine(value: unknown, maxLength = 120) {
+    const text = String(value ?? "-").replace(/\s+/g, " ").trim();
+    if (!text) {
+        return "-";
+    }
+    return text.length > maxLength
+        ? `${text.slice(0, maxLength)}...`
+        : text;
+}
+
+function formatDiagnosticRelativeTime(
+    timestamp: number,
+    t: IPluginSettingTranslate,
+) {
+    const diff = Date.now() - timestamp;
+    if (diff < 60_000) {
+        return t("pluginSetting.pluginItem.diagnosticTime.now");
+    }
+    if (diff < 3_600_000) {
+        return t("pluginSetting.pluginItem.diagnosticTime.minutes", {
+            count: Math.max(1, Math.floor(diff / 60_000)),
+        });
+    }
+    if (diff < 86_400_000) {
+        return t("pluginSetting.pluginItem.diagnosticTime.hours", {
+            count: Math.max(1, Math.floor(diff / 3_600_000)),
+        });
+    }
+    if (diff < 604_800_000) {
+        return t("pluginSetting.pluginItem.diagnosticTime.days", {
+            count: Math.max(1, Math.floor(diff / 86_400_000)),
+        });
+    }
+    return new Date(timestamp).toLocaleDateString();
+}
+
 function getUserVariableLabel(variable: IPlugin.IUserVariable) {
     return variable.name
         ? `${variable.name} (${variable.key})`
@@ -140,6 +180,17 @@ function _PluginItem(props: IPluginItemProps) {
     const visibleCapabilityLabels = capabilityLabels.slice(0, 6);
     const hiddenCapabilityCount =
         capabilityLabels.length - visibleCapabilityLabels.length;
+    const latestDiagnostic = getLatestPluginDiagnosticEvent(
+        plugin.hash,
+        plugin.name,
+    );
+    const diagnosticSummary = latestDiagnostic
+        ? t("pluginSetting.pluginItem.recentDiagnostic", {
+            method: latestDiagnostic.method,
+            time: formatDiagnosticRelativeTime(latestDiagnostic.createdAt, t),
+            message: formatSingleLine(latestDiagnostic.message, 80),
+        })
+        : t("pluginSetting.pluginItem.noRecentDiagnostic");
 
     function getSearchTypeLabel(type: ICommon.SupportMediaType) {
         switch (type) {
@@ -853,6 +904,22 @@ function _PluginItem(props: IPluginItemProps) {
                     <PluginTag>{`+${hiddenCapabilityCount}`}</PluginTag>
                 ) : null}
             </View>
+            <Pressable
+                style={styles.diagnosticSummary}
+                onPress={() => {
+                    navigator.navigate("/pluginsetting/diagnostics", {
+                        initialPluginName: plugin.name,
+                    });
+                }}>
+                <ThemeText
+                    fontSize="description"
+                    fontColor={
+                        latestDiagnostic ? "text" : "textSecondary"
+                    }
+                    numberOfLines={2}>
+                    {diagnosticSummary}
+                </ThemeText>
+            </Pressable>
             <View style={styles.contents}>
                 {options.map((it, index) =>
                     it.show !== false ? (
@@ -974,6 +1041,10 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         flexWrap: "wrap",
         gap: rpx(10),
+    },
+    diagnosticSummary: {
+        marginHorizontal: rpx(16),
+        marginBottom: rpx(24),
     },
     tag: {
         maxWidth: rpx(160),

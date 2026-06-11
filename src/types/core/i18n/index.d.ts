@@ -445,6 +445,12 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.options.userVariables": string; // 用户变量
     "pluginSetting.pluginItem.versionHint": string; // 版本提示
     "pluginSetting.pluginItem.author": string; // 作者
+    "pluginSetting.pluginItem.noRecentDiagnostic": string; // 最近无错误
+    "pluginSetting.pluginItem.recentDiagnostic": string; // 最近错误摘要
+    "pluginSetting.pluginItem.diagnosticTime.now": string; // 刚刚
+    "pluginSetting.pluginItem.diagnosticTime.minutes": string; // 分钟前
+    "pluginSetting.pluginItem.diagnosticTime.hours": string; // 小时前
+    "pluginSetting.pluginItem.diagnosticTime.days": string; // 天前
     "pluginSetting.filteringByPlugin": string; // 插件筛选提示
     "pluginSetting.filter.title": string; // 插件筛选标题
     "pluginSetting.filter.clear": string; // 清除插件筛选
