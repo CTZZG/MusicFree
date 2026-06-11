@@ -163,6 +163,8 @@
     "lyric.lyricLinkedFrom": "歌词关联自「{platform} - {title}」",
     "lyric.unlinkLyric": "解除关联",
     "lyric.noLyric": "暂无歌词",
+    "lyric.noTranslation": "当前歌曲无翻译",
+    "lyric.noRomanization": "当前歌曲无音译",
     "lyric.searchLyric": "搜索歌词",
     "lyric.source.plugin": "歌词来源：{plugin}",
     "lyric.source.local": "歌词来源：本地歌词",

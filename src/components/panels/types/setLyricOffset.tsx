@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ThemeText from "@/components/base/themeText";
@@ -15,19 +15,39 @@ import { useI18N } from "@/core/i18n";
 
 interface IProps {
     musicItem: IMusic.IMusicItem;
+    /** 临时预览回调 */
+    onPreview?: (offset: number) => void;
     /** 点击回调 */
     onSubmit?: (offset: number) => void;
 }
 
+function normalizeOffset(offset: number) {
+    return Math.round(offset * 10) / 10;
+}
+
 export default function SetLyricOffset(props: IProps) {
-    const { musicItem, onSubmit } = props ?? {};
+    const { musicItem, onPreview, onSubmit } = props ?? {};
     const { t } = useI18N();
 
-    const [offset, setOffset] = useState(
-        getMediaExtraProperty(musicItem, "lyricOffset") ?? 0
+    const initialOffset = useMemo(
+        () =>
+            normalizeOffset(
+                getMediaExtraProperty(musicItem, "lyricOffset") ?? 0,
+            ),
+        [musicItem],
     );
+    const [offset, setOffset] = useState(initialOffset);
 
     const colors = useColors();
+    const updateOffset = (updater: number | ((prev: number) => number)) => {
+        setOffset(prev => {
+            const next = normalizeOffset(
+                typeof updater === "function" ? updater(prev) : updater,
+            );
+            onPreview?.(next);
+            return next;
+        });
+    };
 
     let titleStr =
         offset === 0
@@ -47,13 +67,28 @@ export default function SetLyricOffset(props: IProps) {
                         onOk={() => {
                             onSubmit?.(offset);
                         }}
-                        onCancel={hidePanel}
+                        onCancel={() => {
+                            onPreview?.(initialOffset);
+                            hidePanel();
+                        }}
                     />
                     <View style={styles.container}>
                         <TouchableOpacity
                             style={styles.btn}
                             onPress={() => {
-                                setOffset(prev => prev - 0.2);
+                                updateOffset(prev => prev - 1);
+                            }}>
+                            <Icon
+                                name="minus"
+                                size={iconSizeConst.big}
+                                color={colors.text}
+                            />
+                            <ThemeText>-1s</ThemeText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.btn}
+                            onPress={() => {
+                                updateOffset(prev => prev - 0.2);
                             }}>
                             <Icon
                                 name="minus"
@@ -65,7 +100,7 @@ export default function SetLyricOffset(props: IProps) {
                         <TouchableOpacity
                             style={styles.btn}
                             onPress={() => {
-                                setOffset(0);
+                                updateOffset(0);
                             }}>
                             <Icon
                                 name="arrow-uturn-left"
@@ -77,7 +112,7 @@ export default function SetLyricOffset(props: IProps) {
                         <TouchableOpacity
                             style={styles.btn}
                             onPress={() => {
-                                setOffset(prev => prev + 0.2);
+                                updateOffset(prev => prev + 0.2);
                             }}>
                             <Icon
                                 name="plus"
@@ -85,6 +120,18 @@ export default function SetLyricOffset(props: IProps) {
                                 color={colors.text}
                             />
                             <ThemeText>+0.2s</ThemeText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.btn}
+                            onPress={() => {
+                                updateOffset(prev => prev + 1);
+                            }}>
+                            <Icon
+                                name="plus"
+                                size={iconSizeConst.big}
+                                color={colors.text}
+                            />
+                            <ThemeText>+1s</ThemeText>
                         </TouchableOpacity>
                     </View>
                 </>
@@ -109,8 +156,8 @@ const styles = StyleSheet.create({
         justifyContent: "space-around",
     },
     btn: {
-        width: rpx(144),
-        height: rpx(144),
+        width: rpx(112),
+        height: rpx(132),
         alignItems: "center",
         justifyContent: "space-around",
     },

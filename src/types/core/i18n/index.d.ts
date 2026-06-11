@@ -189,6 +189,8 @@ export interface ILanguageData {
     "lyric.lyricLinkedFrom": string; // 歌词来自
     "lyric.unlinkLyric": string; // 取消链接歌词
     "lyric.noLyric": string; // 暂无歌词
+    "lyric.noTranslation": string; // 当前歌曲无翻译
+    "lyric.noRomanization": string; // 当前歌曲无音译
     "lyric.searchLyric": string; // 搜索歌词
     "lyric.source.plugin": string; // 插件歌词来源
     "lyric.source.local": string; // 本地歌词来源

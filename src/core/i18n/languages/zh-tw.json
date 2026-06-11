@@ -163,6 +163,8 @@
     "lyric.lyricLinkedFrom": "歌詞關聯自「{platform} - {title}」",
     "lyric.unlinkLyric": "解除關聯",
     "lyric.noLyric": "暫無歌詞",
+    "lyric.noTranslation": "目前歌曲無翻譯",
+    "lyric.noRomanization": "目前歌曲無音譯",
     "lyric.searchLyric": "搜尋歌詞",
     "lyric.source.plugin": "歌詞來源：{plugin}",
     "lyric.source.local": "歌詞來源：本地歌詞",

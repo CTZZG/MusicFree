@@ -163,6 +163,8 @@
     "lyric.lyricLinkedFrom": "Lyrics linked from「{platform} - {title}」",
     "lyric.unlinkLyric": "Unlink Lyrics",
     "lyric.noLyric": "No lyrics available",
+    "lyric.noTranslation": "No translation for the current song",
+    "lyric.noRomanization": "No romanization for the current song",
     "lyric.searchLyric": "Search Lyrics",
     "lyric.source.plugin": "Lyrics source: {plugin}",
     "lyric.source.local": "Lyrics source: local lyrics",

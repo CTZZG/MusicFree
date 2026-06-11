@@ -100,8 +100,18 @@ export default function LyricOperations(props: ILyricOperationsProps) {
                     if (currentMusicItem) {
                         showPanel("SetLyricOffset", {
                             musicItem: currentMusicItem,
+                            onPreview(offset) {
+                                lyricManager.updateLyricOffset(
+                                    currentMusicItem,
+                                    offset,
+                                );
+                                scrollToCurrentLrcItem();
+                            },
                             onSubmit(offset) {
-                                lyricManager.updateLyricOffset(currentMusicItem, offset);
+                                lyricManager.updateLyricOffset(
+                                    currentMusicItem,
+                                    offset,
+                                );
                                 scrollToCurrentLrcItem();
                                 hidePanel();
                             },
@@ -143,7 +153,7 @@ export default function LyricOperations(props: ILyricOperationsProps) {
                 // style={}
                 onPress={() => {
                     if (!hasTranslation) {
-                        Toast.warn("当前歌曲无翻译");
+                        Toast.warn(t("lyric.noTranslation"));
                         return;
                     }
 
@@ -165,7 +175,7 @@ export default function LyricOperations(props: ILyricOperationsProps) {
                 }
                 onPress={() => {
                     if (!hasRomanization) {
-                        Toast.warn("当前歌曲无音译");
+                        Toast.warn(t("lyric.noRomanization"));
                         return;
                     }
 
