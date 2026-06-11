@@ -10,6 +10,7 @@ import TrackPlayer, { useCurrentMusic, useMusicState, useProgress } from "@/core
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 import MusicInfo from "./musicInfo";
 import Icon from "@/components/base/icon.tsx";
+import PlayingIndicator from "@/components/base/playingIndicator";
 
 function CircularPlayBtn() {
     const progress = useProgress();
@@ -19,6 +20,7 @@ function CircularPlayBtn() {
 
     const isPaused = musicIsPaused(musicState);
     const isBuffering = musicIsBuffering(musicState);
+    const indicatorColor = colors.musicBarText ?? colors.text ?? "#ffffff";
 
     if (isBuffering) {
         return <View style={styles.bufferingContainer}>
@@ -83,11 +85,19 @@ function CircularPlayBtn() {
                         await TrackPlayer.pause();
                     }
                 }}>
-                <Icon
-                    name={isPaused ? "play" : "pause"}
-                    size={rpx(34)}
-                    color={colors.musicBarText}
-                />
+                {isPaused ? (
+                    <Icon
+                        name="play"
+                        size={rpx(34)}
+                        color={colors.musicBarText}
+                    />
+                ) : (
+                    <PlayingIndicator
+                        active
+                        size={rpx(34)}
+                        color={indicatorColor}
+                    />
+                )}
             </Pressable>
         </View>
     );
