@@ -294,6 +294,11 @@ export interface ILanguageData {
     "smartSheet.saveAsMusicSheetEmpty": string; // 智能歌单为空
     "smartSheet.saveAsMusicSheetSuccess": string; // 保存智能歌单成功
     "smartSheet.saveAsMusicSheetFailed": string; // 保存智能歌单失败
+    "smartSheet.sort.title": string; // 智能歌单排序
+    "smartSheet.sort.default": string; // 智能歌单默认顺序
+    "smartSheet.sort.byTitle": string; // 智能歌单按歌曲名排序
+    "smartSheet.sort.byArtist": string; // 智能歌单按歌手名排序
+    "smartSheet.sort.byAlbum": string; // 智能歌单按专辑名排序
 
     // 下载相关
     "downloading.title": string; // 下载

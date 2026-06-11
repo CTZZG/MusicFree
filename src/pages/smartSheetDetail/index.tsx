@@ -10,7 +10,9 @@ import {
     useSmartSheetMusicList,
 } from "@/core/smartMusicSheet";
 import Toast from "@/utils/toast";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+
+type SmartSheetSortMode = "default" | "title" | "artist" | "album";
 
 function getSmartSheetTitle(
     t: ReturnType<typeof useI18N>["t"],
@@ -48,13 +50,82 @@ function getSmartSheetTitle(
     return t("smartSheet.title");
 }
 
+function sortSmartMusicList(
+    musicList: IMusic.IMusicItem[],
+    sortMode: SmartSheetSortMode,
+) {
+    if (sortMode === "default") {
+        return musicList;
+    }
+
+    const getText = (musicItem: IMusic.IMusicItem, key: "title" | "artist" | "album") =>
+        `${musicItem[key] ?? ""}`.trim();
+
+    return [...musicList].sort((a, b) => {
+        const left = getText(a, sortMode);
+        const right = getText(b, sortMode);
+        return (
+            left.localeCompare(right) ||
+            getText(a, "title").localeCompare(getText(b, "title")) ||
+            getText(a, "artist").localeCompare(getText(b, "artist"))
+        );
+    });
+}
+
 export default function SmartSheetDetail() {
     const { type, platform, value } = useParams<"smart-sheet-detail">();
     const { t } = useI18N();
-    const musicList = useSmartSheetMusicList(type, platform, value);
+    const smartMusicList = useSmartSheetMusicList(type, platform, value);
+    const [sortMode, setSortMode] = useState<SmartSheetSortMode>("default");
+    const musicList = useMemo(
+        () => sortSmartMusicList(smartMusicList, sortMode),
+        [smartMusicList, sortMode],
+    );
     const title = getSmartSheetTitle(t, type, platform, value);
     const navMenu = useMemo(
         () => [
+            {
+                icon: "sort-outline" as const,
+                title: t("smartSheet.sort.title"),
+                onPress() {
+                    showPanel("SimpleSelect", {
+                        header: t("smartSheet.sort.title"),
+                        candidates: [
+                            {
+                                title: t("smartSheet.sort.default"),
+                                value: "default",
+                                icon: sortMode === "default"
+                                    ? "check"
+                                    : undefined,
+                            },
+                            {
+                                title: t("smartSheet.sort.byTitle"),
+                                value: "title",
+                                icon: sortMode === "title"
+                                    ? "check"
+                                    : undefined,
+                            },
+                            {
+                                title: t("smartSheet.sort.byArtist"),
+                                value: "artist",
+                                icon: sortMode === "artist"
+                                    ? "check"
+                                    : undefined,
+                            },
+                            {
+                                title: t("smartSheet.sort.byAlbum"),
+                                value: "album",
+                                icon: sortMode === "album"
+                                    ? "check"
+                                    : undefined,
+                            },
+                        ],
+                        onPress(item) {
+                            setSortMode(item.value as SmartSheetSortMode);
+                        },
+                    });
+                },
+            },
             {
                 icon: "folder-plus" as const,
                 title: t("smartSheet.saveAsMusicSheet"),
@@ -80,7 +151,7 @@ export default function SmartSheetDetail() {
                 },
             },
         ],
-        [musicList, t, title],
+        [musicList, sortMode, t, title],
     );
 
     const sheetInfo = useMemo(
