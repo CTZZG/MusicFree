@@ -208,7 +208,7 @@ function _PluginItem(props: IPluginItemProps) {
             time: formatDiagnosticRelativeTime(latestDiagnostic.createdAt, t),
             message: formatSingleLine(latestDiagnostic.message, 80),
         })
-        : t("pluginSetting.pluginItem.noRecentDiagnostic");
+        : null;
 
     function getSearchTypeLabel(type: ICommon.SupportMediaType) {
         switch (type) {
@@ -737,16 +737,16 @@ function _PluginItem(props: IPluginItemProps) {
                     </ThemeText>
                 </Pressable>
             ) : null}
-            <View style={styles.diagnosticSummary}>
-                <ThemeText
-                    fontSize="description"
-                    fontColor={
-                        latestDiagnostic ? "text" : "textSecondary"
-                    }
-                    numberOfLines={2}>
-                    {diagnosticSummary}
-                </ThemeText>
-            </View>
+            {diagnosticSummary ? (
+                <View style={styles.diagnosticSummary}>
+                    <ThemeText
+                        fontSize="description"
+                        fontColor="text"
+                        numberOfLines={2}>
+                        {diagnosticSummary}
+                    </ThemeText>
+                </View>
+            ) : null}
             <View style={styles.contents}>
                 {options.map((it, index) =>
                     it.show !== false ? (

@@ -506,8 +506,16 @@ export default function LocalMusicList() {
                         })
                         : null}
                 </ScrollView>
-                {artistAlbumFilteredMusicList.length ? (
+                {musicList.length ? (
                     <View style={style.summary}>
+                        <ThemeText
+                            fontSize="description"
+                            fontColor="textSecondary">
+                            {t("localMusic.librarySummary", {
+                                shown: sortedMusicList.length,
+                                total: musicList.length,
+                            })}
+                        </ThemeText>
                         <ThemeText
                             fontSize="description"
                             fontColor="textSecondary">
@@ -539,6 +547,7 @@ const style = StyleSheet.create({
     summary: {
         paddingHorizontal: rpx(24),
         paddingBottom: rpx(16),
+        gap: rpx(8),
     },
     filterChip: {
         height: rpx(56),

@@ -161,6 +161,7 @@ export interface ILanguageData {
     "localMusic.fileStatusFilter.exists": string; // 文件存在
     "localMusic.fileStatusFilter.missing": string; // 文件不存在
     "localMusic.fileStatusFilter.unknown": string; // 状态未知
+    "localMusic.librarySummary": string; // 本地音乐列表显示数量
     "localMusic.fileStatusSummary": string; // 文件状态摘要
     "localMusic.sort.title": string; // 本地音乐排序
     "localMusic.sort.default": string; // 本地音乐默认顺序
@@ -339,6 +340,7 @@ export interface ILanguageData {
     "downloading.fileStatusFilter.exists": string; // 文件存在
     "downloading.fileStatusFilter.missing": string; // 文件不存在
     "downloading.fileStatusFilter.unknown": string; // 状态未知
+    "downloading.librarySummary": string; // 下载中心列表显示数量
     "downloading.writeStatusSummary": string; // 写入结果摘要
     "downloading.fileStatusSummary": string; // 文件状态摘要
     "downloading.sort.title": string; // 排序
@@ -428,7 +430,6 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.author": string; // 作者
     "pluginSetting.pluginItem.userVariablesConfiguredSummary": string; // 用户变量配置摘要
     "pluginSetting.pluginItem.userVariablesMissingSummary": string; // 缺少用户变量配置
-    "pluginSetting.pluginItem.noRecentDiagnostic": string; // 最近无错误
     "pluginSetting.pluginItem.recentDiagnostic": string; // 最近错误摘要
     "pluginSetting.pluginItem.diagnosticTime.now": string; // 刚刚
     "pluginSetting.pluginItem.diagnosticTime.minutes": string; // 分钟前
@@ -825,6 +826,10 @@ export interface ILanguageData {
     "panel.searchLrc.previewLoading": string; // 歌词预览加载中
     "panel.searchLrc.previewEmpty": string; // 无可预览歌词
     "panel.searchLrc.previewFailed": string; // 歌词预览失败
+    "panel.searchLrc.previewContentTypes": string; // 歌词预览包含内容
+    "panel.searchLrc.previewPart.original": string; // 原文歌词
+    "panel.searchLrc.previewPart.translation": string; // 翻译歌词
+    "panel.searchLrc.previewPart.romanization": string; // 音译歌词
     "panel.searchLrc.useThisLyric": string; // 使用这条歌词
     "panel.searchLrc.match.exact": string; // 标题和歌手匹配
     "panel.searchLrc.match.title": string; // 标题匹配

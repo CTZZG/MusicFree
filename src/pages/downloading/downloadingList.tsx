@@ -1412,27 +1412,39 @@ export default function DownloadingList() {
     );
     return (
         <View style={style.wrapper}>
-            {completedWriteStats.completed ? (
+            {downloadQueue.length ? (
                 <View style={style.writeSummary}>
                     <ThemeText
                         fontSize="description"
                         fontColor="textSecondary">
-                        {t("downloading.writeStatusSummary", {
-                            completed: completedWriteStats.completed,
-                            metadataFailed:
-                                completedWriteStats.metadataFailed,
-                            lyricFailed: completedWriteStats.lyricFailed,
+                        {t("downloading.librarySummary", {
+                            shown: filteredQueue.length,
+                            total: downloadQueue.length,
                         })}
                     </ThemeText>
-                    <ThemeText
-                        fontSize="description"
-                        fontColor="textSecondary">
-                        {t("downloading.fileStatusSummary", {
-                            exists: completedWriteStats.fileExists,
-                            missing: completedWriteStats.fileMissing,
-                            unknown: completedWriteStats.fileUnknown,
-                        })}
-                    </ThemeText>
+                    {completedWriteStats.completed ? (
+                        <>
+                            <ThemeText
+                                fontSize="description"
+                                fontColor="textSecondary">
+                                {t("downloading.writeStatusSummary", {
+                                    completed: completedWriteStats.completed,
+                                    metadataFailed:
+                                        completedWriteStats.metadataFailed,
+                                    lyricFailed: completedWriteStats.lyricFailed,
+                                })}
+                            </ThemeText>
+                            <ThemeText
+                                fontSize="description"
+                                fontColor="textSecondary">
+                                {t("downloading.fileStatusSummary", {
+                                    exists: completedWriteStats.fileExists,
+                                    missing: completedWriteStats.fileMissing,
+                                    unknown: completedWriteStats.fileUnknown,
+                                })}
+                            </ThemeText>
+                        </>
+                    ) : null}
                 </View>
             ) : null}
             <ScrollView

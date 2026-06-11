@@ -40,8 +40,11 @@ interface IPreviewState {
     itemKey?: string;
     loading: boolean;
     lines: string[];
+    parts?: LyricPreviewPart[];
     error?: boolean;
 }
+
+type LyricPreviewPart = "original" | "translation" | "romanization";
 
 function normalizeText(text?: string | number | null) {
     return `${text ?? ""}`
@@ -90,9 +93,20 @@ function stripLyricMarkup(line: string) {
         .trim();
 }
 
-async function getPreviewLines(source: ILyric.ILyricSource | null) {
-    const content =
-        source?.rawLrc || source?.translation || source?.romanization || "";
+function getPreviewPartLabel(
+    part: LyricPreviewPart,
+    t: ReturnType<typeof useI18N>["t"],
+) {
+    if (part === "translation") {
+        return t("panel.searchLrc.previewPart.translation");
+    }
+    if (part === "romanization") {
+        return t("panel.searchLrc.previewPart.romanization");
+    }
+    return t("panel.searchLrc.previewPart.original");
+}
+
+async function getPreviewLinesFromContent(content?: string | null) {
     if (!content) {
         return [];
     }
@@ -103,6 +117,38 @@ async function getPreviewLines(source: ILyric.ILyricSource | null) {
         .map(stripLyricMarkup)
         .filter(Boolean)
         .slice(0, 5);
+}
+
+async function getPreviewContent(source: ILyric.ILyricSource | null) {
+    const sections: Array<{
+        part: LyricPreviewPart;
+        content?: string | null;
+    }> = [
+        {
+            part: "original",
+            content: source?.rawLrc,
+        },
+        {
+            part: "translation",
+            content: source?.translation,
+        },
+        {
+            part: "romanization",
+            content: source?.romanization,
+        },
+    ];
+    const parts = sections
+        .filter(section => !!section.content?.trim())
+        .map(section => section.part);
+
+    for (let section of sections) {
+        const lines = await getPreviewLinesFromContent(section.content);
+        if (lines.length) {
+            return { parts, lines };
+        }
+    }
+
+    return { parts, lines: [] };
 }
 
 function LyricListImpl(props: ILyricListProps) {
@@ -163,13 +209,14 @@ function LyricListImpl(props: ILyricListProps) {
                 PluginManager.getByHash(pluginHash) ??
                 PluginManager.getByMedia(item);
             const source = await plugin?.methods?.getLyric?.(item);
-            const lines = await getPreviewLines(source ?? null);
+            const previewContent = await getPreviewContent(source ?? null);
             setPreviewState(prev =>
                 prev.itemKey === itemKey
                     ? {
                         itemKey,
                         loading: false,
-                        lines,
+                        lines: previewContent.lines,
+                        parts: previewContent.parts,
                     }
                     : prev,
             );
@@ -233,6 +280,27 @@ function LyricListImpl(props: ILyricListProps) {
                                     </ThemeText>
                                 ) : previewState.lines.length ? (
                                     <>
+                                        {previewState.parts?.length ? (
+                                            <ThemeText
+                                                numberOfLines={1}
+                                                fontSize="description"
+                                                fontColor="textSecondary"
+                                                style={styles.previewMeta}>
+                                                {t(
+                                                    "panel.searchLrc.previewContentTypes",
+                                                    {
+                                                        types: previewState.parts
+                                                            .map(part =>
+                                                                getPreviewPartLabel(
+                                                                    part,
+                                                                    t,
+                                                                ),
+                                                            )
+                                                            .join(" · "),
+                                                    },
+                                                )}
+                                            </ThemeText>
+                                        ) : null}
                                         {previewState.lines.map((line, index) => (
                                             <ThemeText
                                                 key={`${line}-${index}`}
@@ -290,6 +358,10 @@ const styles = StyleSheet.create({
     previewLine: {
         lineHeight: rpx(34),
         marginBottom: rpx(8),
+    },
+    previewMeta: {
+        lineHeight: rpx(34),
+        marginBottom: rpx(12),
     },
     previewAction: {
         marginTop: rpx(8),
