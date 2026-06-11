@@ -226,6 +226,8 @@
     "globalSearch.onlineSearchDescription": "使用現有搜尋頁搜尋{type}",
     "globalSearch.localMusicTitle": "查看本地音樂「{query}」",
     "globalSearch.localMusicDescription": "{count} 首本地歌曲",
+    "globalSearch.localMusicPlayNextTitle": "下一首播放「{title}」",
+    "globalSearch.localMusicPlayNextDescription": "加入目前播放佇列下一首",
     "globalSearch.pluginDescription": "開啟外掛管理並定位外掛",
     "globalSearch.pluginEnableTitle": "啟用外掛「{name}」",
     "globalSearch.pluginDisableTitle": "停用外掛「{name}」",

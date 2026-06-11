@@ -226,6 +226,8 @@
     "globalSearch.onlineSearchDescription": "Use the search page for {type}",
     "globalSearch.localMusicTitle": "View local music for「{query}」",
     "globalSearch.localMusicDescription": "{count} local songs",
+    "globalSearch.localMusicPlayNextTitle": "Play next「{title}」",
+    "globalSearch.localMusicPlayNextDescription": "Add to the current queue as next",
     "globalSearch.pluginDescription": "Open plugin management and locate this plugin",
     "globalSearch.pluginEnableTitle": "Enable plugin「{name}」",
     "globalSearch.pluginDisableTitle": "Disable plugin「{name}」",

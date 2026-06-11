@@ -28,6 +28,7 @@ type GlobalSearchResultType =
     | "music"
     | "local-music"
     | "local-music-item"
+    | "local-music-command"
     | "music-sheet"
     | "plugin"
     | "plugin-command"
@@ -255,24 +256,50 @@ export default function GlobalSearch() {
         );
         const directLocalMusicResults: IGlobalSearchResult[] = matchedLocalMusic
             .slice(0, maxDirectLocalMusicResults)
-            .map((musicItem, index) => ({
-                id: `local-music-item-${getMediaUniqueKey(musicItem)}-${index}`,
-                type: "local-music-item",
-                title: musicItem.title,
-                description: formatLocalMusicDescription(musicItem),
-                icon: "musical-note",
-                musicItem,
-                keywords: [
+            .flatMap((musicItem, index) => {
+                const itemKey = `${getMediaUniqueKey(musicItem)}-${index}`;
+                const keywords = [
                     musicItem.artist,
                     musicItem.album,
                     musicItem.platform,
-                ],
-                onPress: () =>
-                    TrackPlayer.playWithReplacePlayList(
+                ];
+                return [
+                    {
+                        id: `local-music-item-${itemKey}`,
+                        type: "local-music-item",
+                        title: musicItem.title,
+                        description: formatLocalMusicDescription(musicItem),
+                        icon: "musical-note",
                         musicItem,
-                        matchedLocalMusic,
-                    ),
-            }));
+                        keywords,
+                        onPress: () =>
+                            TrackPlayer.playWithReplacePlayList(
+                                musicItem,
+                                matchedLocalMusic,
+                            ),
+                    },
+                    {
+                        id: `local-music-command-next-${itemKey}`,
+                        type: "local-music-command",
+                        title: t("globalSearch.localMusicPlayNextTitle", {
+                            title: musicItem.title,
+                        }),
+                        description: formatLocalMusicDescription(musicItem) ||
+                            t("globalSearch.localMusicPlayNextDescription"),
+                        icon: "plus",
+                        trailingIcon: "playlist",
+                        musicItem,
+                        keywords: [
+                            ...keywords,
+                            t("musicListEditor.addToNextPlay"),
+                        ],
+                        onPress: () => {
+                            TrackPlayer.addNext(musicItem);
+                            Toast.success(t("toast.addToNextPlay"));
+                        },
+                    },
+                ];
+            });
         const localMusicResults: IGlobalSearchResult[] =
             matchedLocalMusic.length
                 ? [

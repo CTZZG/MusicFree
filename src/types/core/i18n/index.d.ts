@@ -262,6 +262,8 @@ export interface ILanguageData {
     "globalSearch.onlineSearchDescription": string; // 在线搜索结果描述
     "globalSearch.localMusicTitle": string; // 本地音乐搜索结果标题
     "globalSearch.localMusicDescription": string; // 本地音乐搜索结果描述
+    "globalSearch.localMusicPlayNextTitle": string; // 本地歌曲下一首播放标题
+    "globalSearch.localMusicPlayNextDescription": string; // 本地歌曲下一首播放描述
     "globalSearch.pluginDescription": string; // 插件结果描述
     "globalSearch.pluginEnableTitle": string; // 启用插件命令标题
     "globalSearch.pluginDisableTitle": string; // 禁用插件命令标题
