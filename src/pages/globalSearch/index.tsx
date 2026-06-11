@@ -5,7 +5,9 @@ import IconButton from "@/components/base/iconButton";
 import Input from "@/components/base/input";
 import ListItem, { ListItemHeader } from "@/components/base/listItem";
 import MusicBar from "@/components/musicBar";
+import { localMusicSheetId } from "@/constants/commonConst";
 import { useI18N } from "@/core/i18n";
+import LocalMusicSheet from "@/core/localMusicSheet";
 import { useSortedPlugins } from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useSheetsBase } from "@/core/musicSheet";
@@ -17,7 +19,12 @@ import React, { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type GlobalSearchResultType = "music" | "music-sheet" | "plugin" | "setting";
+type GlobalSearchResultType =
+    | "music"
+    | "local-music"
+    | "music-sheet"
+    | "plugin"
+    | "setting";
 
 interface IGlobalSearchResult {
     id: string;
@@ -43,12 +50,26 @@ function matchesQuery(query: string, item: IGlobalSearchResult) {
         .some(text => text.includes(normalizedQuery));
 }
 
+function matchesMusicQuery(query: string, musicItem: IMusic.IMusicItem) {
+    const normalizedQuery = normalizeKeyword(query);
+    if (!normalizedQuery) {
+        return false;
+    }
+    return [
+        musicItem.title,
+        musicItem.artist,
+        musicItem.album,
+        musicItem.platform,
+    ].map(normalizeKeyword).some(text => text.includes(normalizedQuery));
+}
+
 export default function GlobalSearch() {
     const { t } = useI18N();
     const navigate = useNavigate();
     const colors = useColors();
     const plugins = useSortedPlugins();
     const sheets = useSheetsBase();
+    const localMusicList = LocalMusicSheet.useMusicList();
     const [query, setQuery] = useState("");
     const normalizedQuery = query.trim();
 
@@ -121,6 +142,35 @@ export default function GlobalSearch() {
         if (!normalizedQuery) {
             return [];
         }
+        const matchedLocalMusic = (localMusicList ?? []).filter(item =>
+            matchesMusicQuery(normalizedQuery, item),
+        );
+        const localMusicResults: IGlobalSearchResult[] =
+            matchedLocalMusic.length
+                ? [
+                    {
+                        id: "local-music-results",
+                        type: "local-music",
+                        title: t("globalSearch.localMusicTitle", {
+                            query: normalizedQuery,
+                        }),
+                        description: t("globalSearch.localMusicDescription", {
+                            count: matchedLocalMusic.length,
+                        }),
+                        icon: "musical-note",
+                        onPress: () =>
+                            navigate(ROUTE_PATH.SEARCH_MUSIC_LIST, {
+                                musicList: matchedLocalMusic,
+                                musicSheet: {
+                                    id: localMusicSheetId,
+                                    title: t("home.localMusic"),
+                                    musicList: matchedLocalMusic,
+                                    worksNum: matchedLocalMusic.length,
+                                } as IMusic.IMusicSheetItem,
+                            }),
+                    },
+                ]
+                : [];
         const pluginResults: IGlobalSearchResult[] = plugins.map(plugin => ({
             id: `plugin-${plugin.hash}`,
             type: "plugin",
@@ -152,10 +202,15 @@ export default function GlobalSearch() {
                 }),
         }));
 
-        return [...pluginResults, ...sheetResults, ...settingTargets].filter(
+        const otherLocalResults = [
+            ...pluginResults,
+            ...sheetResults,
+            ...settingTargets,
+        ].filter(
             item => matchesQuery(normalizedQuery, item),
         );
-    }, [navigate, normalizedQuery, plugins, settingTargets, sheets, t]);
+        return [...localMusicResults, ...otherLocalResults];
+    }, [localMusicList, navigate, normalizedQuery, plugins, settingTargets, sheets, t]);
 
     const searchMusicResult = useMemo<IGlobalSearchResult | null>(() => {
         if (!normalizedQuery) {

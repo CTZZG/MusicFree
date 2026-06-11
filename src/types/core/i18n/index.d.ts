@@ -247,6 +247,8 @@ export interface ILanguageData {
     "globalSearch.localSection": string; // 本地入口分组
     "globalSearch.musicTitle": string; // 搜索歌曲结果标题
     "globalSearch.musicDescription": string; // 搜索歌曲结果描述
+    "globalSearch.localMusicTitle": string; // 本地音乐搜索结果标题
+    "globalSearch.localMusicDescription": string; // 本地音乐搜索结果描述
     "globalSearch.pluginDescription": string; // 插件结果描述
     "globalSearch.sheetDescription": string; // 歌单结果描述
     "globalSearch.settingDescription": string; // 设置结果描述

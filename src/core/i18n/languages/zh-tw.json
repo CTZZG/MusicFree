@@ -211,6 +211,8 @@
     "globalSearch.localSection": "本地入口",
     "globalSearch.musicTitle": "搜尋歌曲「{query}」",
     "globalSearch.musicDescription": "使用現有搜尋頁搜尋歌曲",
+    "globalSearch.localMusicTitle": "本地音樂「{query}」",
+    "globalSearch.localMusicDescription": "{count} 首本地歌曲",
     "globalSearch.pluginDescription": "開啟外掛管理並定位外掛",
     "globalSearch.sheetDescription": "本地歌單，{count} 首歌曲",
     "globalSearch.settingDescription": "開啟設定頁",

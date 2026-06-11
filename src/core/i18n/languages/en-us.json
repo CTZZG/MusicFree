@@ -211,6 +211,8 @@
     "globalSearch.localSection": "Local Shortcuts",
     "globalSearch.musicTitle": "Search songs for「{query}」",
     "globalSearch.musicDescription": "Use the existing search page for songs",
+    "globalSearch.localMusicTitle": "Local music for「{query}」",
+    "globalSearch.localMusicDescription": "{count} local songs",
     "globalSearch.pluginDescription": "Open plugin management and locate this plugin",
     "globalSearch.sheetDescription": "Local playlist, {count} songs",
     "globalSearch.settingDescription": "Open settings page",
