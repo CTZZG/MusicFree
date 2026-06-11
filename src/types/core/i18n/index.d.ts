@@ -290,6 +290,10 @@ export interface ILanguageData {
     "smartSheet.artistTitle": string; // 歌手歌曲
     "smartSheet.albumTitle": string; // 专辑歌曲
     "smartSheet.pluginSourceTitle": string; // 插件来源歌曲
+    "smartSheet.saveAsMusicSheet": string; // 保存为普通歌单
+    "smartSheet.saveAsMusicSheetEmpty": string; // 智能歌单为空
+    "smartSheet.saveAsMusicSheetSuccess": string; // 保存智能歌单成功
+    "smartSheet.saveAsMusicSheetFailed": string; // 保存智能歌单失败
 
     // 下载相关
     "downloading.title": string; // 下载

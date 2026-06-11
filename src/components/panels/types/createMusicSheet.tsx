@@ -13,7 +13,7 @@ import { useI18N } from "@/core/i18n";
 
 interface ICreateMusicSheetProps {
     defaultName?: string;
-    onSheetCreated?: (sheetId: string) => void;
+    onSheetCreated?: (sheetId: string) => void | Promise<void>;
     onCancel?: () => void;
 }
 
@@ -40,7 +40,7 @@ export default function CreateMusicSheet(props: ICreateMusicSheetProps) {
                             const sheetId = await MusicSheet.addSheet(
                                 input || defaultName,
                             );
-                            onSheetCreated?.(sheetId);
+                            await onSheetCreated?.(sheetId);
                             hidePanel();
                         }}
                     />

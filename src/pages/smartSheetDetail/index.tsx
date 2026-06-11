@@ -1,12 +1,15 @@
 import MusicSheetPage from "@/components/musicSheetPage";
+import { showPanel } from "@/components/panels/usePanel";
 import { RequestStateCode, localPluginPlatform } from "@/constants/commonConst";
 import { useI18N } from "@/core/i18n";
+import MusicSheet from "@/core/musicSheet";
 import { useParams } from "@/core/router";
 import {
     getSmartSheetId,
     SmartSheetType,
     useSmartSheetMusicList,
 } from "@/core/smartMusicSheet";
+import Toast from "@/utils/toast";
 import React, { useMemo } from "react";
 
 function getSmartSheetTitle(
@@ -50,6 +53,35 @@ export default function SmartSheetDetail() {
     const { t } = useI18N();
     const musicList = useSmartSheetMusicList(type, platform, value);
     const title = getSmartSheetTitle(t, type, platform, value);
+    const navMenu = useMemo(
+        () => [
+            {
+                icon: "folder-plus" as const,
+                title: t("smartSheet.saveAsMusicSheet"),
+                onPress() {
+                    if (!musicList.length) {
+                        Toast.warn(t("smartSheet.saveAsMusicSheetEmpty"));
+                        return;
+                    }
+                    showPanel("CreateMusicSheet", {
+                        defaultName: title,
+                        async onSheetCreated(sheetId) {
+                            try {
+                                await MusicSheet.addMusic(sheetId, musicList);
+                                Toast.success(t(
+                                    "smartSheet.saveAsMusicSheetSuccess",
+                                    { count: musicList.length },
+                                ));
+                            } catch {
+                                Toast.warn(t("smartSheet.saveAsMusicSheetFailed"));
+                            }
+                        },
+                    });
+                },
+            },
+        ],
+        [musicList, t, title],
+    );
 
     const sheetInfo = useMemo(
         () => ({
@@ -68,6 +100,7 @@ export default function SmartSheetDetail() {
             sheetInfo={sheetInfo}
             musicList={musicList}
             canStar={false}
+            navMenu={navMenu}
             state={RequestStateCode.IDLE}
         />
     );

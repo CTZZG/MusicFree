@@ -6,6 +6,7 @@ import StatusBar from "@/components/base/statusBar";
 import globalStyle from "@/constants/globalStyle";
 import VerticalSafeAreaView from "../base/verticalSafeAreaView";
 import { RequestStateCode } from "@/constants/commonConst";
+import { IIconName } from "../base/icon.tsx";
 
 interface IMusicSheetPageProps {
     navTitle: string;
@@ -17,10 +18,16 @@ interface IMusicSheetPageProps {
     state: RequestStateCode;
     onRetry?: () => void;
     onLoadMore?: () => void;
+    navMenu?: Array<{
+        icon: IIconName;
+        title: string;
+        show?: boolean;
+        onPress?: () => void;
+    }>;
 }
 
 export default function MusicSheetPage(props: IMusicSheetPageProps) {
-    const { navTitle, sheetInfo, musicList, canStar, onLoadMore, onRetry, state } =
+    const { navTitle, sheetInfo, musicList, canStar, onLoadMore, onRetry, state, navMenu } =
         props;
 
     return (
@@ -29,6 +36,7 @@ export default function MusicSheetPage(props: IMusicSheetPageProps) {
             <NavBar
                 musicList={musicList ?? sheetInfo?.musicList ?? []}
                 navTitle={navTitle}
+                menu={navMenu}
             />
             <SheetMusicList
                 canStar={canStar}
