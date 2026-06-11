@@ -472,6 +472,9 @@ export interface ILanguageData {
     "pluginSetting.filter.config.needsConfig": string; // 缺少配置
     "pluginSetting.filter.config.configured": string; // 已配置
     "pluginSetting.filter.config.noConfig": string; // 无配置
+    "pluginSetting.filter.enabled.all": string; // 全部启用状态
+    "pluginSetting.filter.enabled.enabled": string; // 已启用
+    "pluginSetting.filter.enabled.disabled": string; // 已禁用
     "pluginSetting.pluginItem.source.network": string; // 网络安装
     "pluginSetting.pluginItem.source.localFile": string; // 本地文件
     "pluginSetting.pluginItem.source.unknown": string; // 来源未知

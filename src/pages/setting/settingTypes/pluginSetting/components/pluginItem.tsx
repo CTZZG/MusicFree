@@ -42,6 +42,7 @@ import { showPluginInstallResults } from "../installPluginUtils";
 interface IPluginItemProps {
     plugin: Plugin;
     onPluginConfigChanged?: () => void;
+    onPluginEnabledChanged?: () => void;
 }
 
 interface IOption {
@@ -167,7 +168,7 @@ function getMissingUserVariableLabels(
 }
 
 function _PluginItem(props: IPluginItemProps) {
-    const { plugin, onPluginConfigChanged } = props;
+    const { plugin, onPluginConfigChanged, onPluginEnabledChanged } = props;
     const colors = useColors();
     const enabled = usePluginEnabled(plugin);
     const { t } = useI18N();
@@ -885,6 +886,7 @@ function _PluginItem(props: IPluginItemProps) {
                     value={enabled}
                     onValueChange={val => {
                         pluginManager.setPluginEnabled(plugin, val);
+                        onPluginEnabledChanged?.();
                     }}
                 />
             </View>

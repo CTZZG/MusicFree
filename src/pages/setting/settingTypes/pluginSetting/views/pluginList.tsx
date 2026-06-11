@@ -46,6 +46,7 @@ interface IOption {
 type PluginSourceFilter = "all" | "network" | "local-file" | "unknown";
 type PluginCapabilityFilter = "all" | string;
 type PluginConfigFilter = "all" | "needs-config" | "configured" | "no-config";
+type PluginEnabledFilter = "all" | "enabled" | "disabled";
 
 function getPluginSourceFilterValue(
     plugin: Plugin,
@@ -75,6 +76,12 @@ function getPluginConfigFilterValue(
     return hasMissingVariable ? "needs-config" : "configured";
 }
 
+function getPluginEnabledFilterValue(
+    plugin: Plugin,
+): Exclude<PluginEnabledFilter, "all"> {
+    return PluginManager.isPluginEnabled(plugin) ? "enabled" : "disabled";
+}
+
 export default function PluginList() {
     const plugins = useSortedPlugins();
     const { t } = useI18N();
@@ -90,6 +97,9 @@ export default function PluginList() {
     const [configFilter, setConfigFilter] =
         useState<PluginConfigFilter>("all");
     const [configRevision, setConfigRevision] = useState(0);
+    const [enabledFilter, setEnabledFilter] =
+        useState<PluginEnabledFilter>("all");
+    const [enabledRevision, setEnabledRevision] = useState(0);
     useEffect(() => {
         setFilterText(initialPluginName);
     }, [initialPluginName]);
@@ -149,6 +159,24 @@ export default function PluginList() {
         },
     ], [t]);
 
+    const enabledFilterItems: Array<{
+        value: PluginEnabledFilter;
+        label: string;
+    }> = useMemo(() => [
+        {
+            value: "all",
+            label: t("pluginSetting.filter.enabled.all"),
+        },
+        {
+            value: "enabled",
+            label: t("pluginSetting.filter.enabled.enabled"),
+        },
+        {
+            value: "disabled",
+            label: t("pluginSetting.filter.enabled.disabled"),
+        },
+    ], [t]);
+
     const visiblePlugins = useMemo(() => {
         const keyword = filterText.trim().toLowerCase();
         const capabilityConfig = pluginCapabilityConfigs.find(
@@ -171,13 +199,17 @@ export default function PluginList() {
             const matchesConfig =
                 configFilter === "all" ||
                 getPluginConfigFilterValue(plugin) === configFilter;
+            const matchesEnabled =
+                enabledFilter === "all" ||
+                getPluginEnabledFilterValue(plugin) === enabledFilter;
 
             return matchesKeyword &&
                 matchesSource &&
                 matchesCapability &&
-                matchesConfig;
+                matchesConfig &&
+                matchesEnabled;
         });
-    }, [capabilityFilter, configFilter, configRevision, filterText, plugins, sourceFilter]);
+    }, [capabilityFilter, configFilter, configRevision, enabledFilter, enabledRevision, filterText, plugins, sourceFilter]);
 
     const [loading, setLoading] = useState(false);
 
@@ -188,6 +220,7 @@ export default function PluginList() {
         setSourceFilter("all");
         setCapabilityFilter("all");
         setConfigFilter("all");
+        setEnabledFilter("all");
     }
 
     function renderFilterChip(
@@ -225,7 +258,8 @@ export default function PluginList() {
             !!filterText ||
             sourceFilter !== "all" ||
             capabilityFilter !== "all" ||
-            configFilter !== "all";
+            configFilter !== "all" ||
+            enabledFilter !== "all";
         return (
             <View style={style.headerWrapper}>
                 {filterText ? (
@@ -299,6 +333,18 @@ export default function PluginList() {
                             item.label,
                             configFilter === item.value,
                             () => setConfigFilter(item.value),
+                        ),
+                    )}
+                </ScrollView>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={style.filterRow}>
+                    {enabledFilterItems.map(item =>
+                        renderFilterChip(
+                            item.label,
+                            enabledFilter === item.value,
+                            () => setEnabledFilter(item.value),
                         ),
                     )}
                 </ScrollView>
@@ -603,6 +649,9 @@ export default function PluginList() {
                                     plugin={plugin}
                                     onPluginConfigChanged={() =>
                                         setConfigRevision(value => value + 1)
+                                    }
+                                    onPluginEnabledChanged={() =>
+                                        setEnabledRevision(value => value + 1)
                                     }
                                 />
                             )}
