@@ -477,6 +477,9 @@ export interface ILanguageData {
     "pluginSetting.filter.enabled.all": string; // 全部启用状态
     "pluginSetting.filter.enabled.enabled": string; // 已启用
     "pluginSetting.filter.enabled.disabled": string; // 已禁用
+    "pluginSetting.filter.diagnostics.all": string; // 全部诊断状态
+    "pluginSetting.filter.diagnostics.hasRecentError": string; // 有最近错误
+    "pluginSetting.filter.diagnostics.noRecentError": string; // 无最近错误
     "pluginSetting.pluginItem.source.network": string; // 网络安装
     "pluginSetting.pluginItem.source.localFile": string; // 本地文件
     "pluginSetting.pluginItem.source.unknown": string; // 来源未知

@@ -24,7 +24,10 @@ import ListItem from "@/components/base/listItem";
 import ThemeText from "@/components/base/themeText";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import Clipboard from "@react-native-clipboard/clipboard";
-import { buildPluginDiagnosticReport } from "@/core/pluginManager/diagnostics";
+import {
+    buildPluginDiagnosticReport,
+    getLatestPluginDiagnosticEvent,
+} from "@/core/pluginManager/diagnostics";
 import {
     formatPluginInstallResult,
     installPluginFromUrlText,
@@ -47,6 +50,10 @@ type PluginSourceFilter = "all" | "network" | "local-file" | "unknown";
 type PluginCapabilityFilter = "all" | string;
 type PluginConfigFilter = "all" | "needs-config" | "configured" | "no-config";
 type PluginEnabledFilter = "all" | "enabled" | "disabled";
+type PluginDiagnosticFilter =
+    | "all"
+    | "has-recent-error"
+    | "no-recent-error";
 
 function getPluginSourceFilterValue(
     plugin: Plugin,
@@ -82,6 +89,14 @@ function getPluginEnabledFilterValue(
     return PluginManager.isPluginEnabled(plugin) ? "enabled" : "disabled";
 }
 
+function getPluginDiagnosticFilterValue(
+    plugin: Plugin,
+): Exclude<PluginDiagnosticFilter, "all"> {
+    return getLatestPluginDiagnosticEvent(plugin.hash, plugin.name)
+        ? "has-recent-error"
+        : "no-recent-error";
+}
+
 export default function PluginList() {
     const plugins = useSortedPlugins();
     const { t } = useI18N();
@@ -100,6 +115,8 @@ export default function PluginList() {
     const [enabledFilter, setEnabledFilter] =
         useState<PluginEnabledFilter>("all");
     const [enabledRevision, setEnabledRevision] = useState(0);
+    const [diagnosticFilter, setDiagnosticFilter] =
+        useState<PluginDiagnosticFilter>("all");
     useEffect(() => {
         setFilterText(initialPluginName);
     }, [initialPluginName]);
@@ -177,6 +194,24 @@ export default function PluginList() {
         },
     ], [t]);
 
+    const diagnosticFilterItems: Array<{
+        value: PluginDiagnosticFilter;
+        label: string;
+    }> = useMemo(() => [
+        {
+            value: "all",
+            label: t("pluginSetting.filter.diagnostics.all"),
+        },
+        {
+            value: "has-recent-error",
+            label: t("pluginSetting.filter.diagnostics.hasRecentError"),
+        },
+        {
+            value: "no-recent-error",
+            label: t("pluginSetting.filter.diagnostics.noRecentError"),
+        },
+    ], [t]);
+
     const visiblePlugins = useMemo(() => {
         const keyword = filterText.trim().toLowerCase();
         const capabilityConfig = pluginCapabilityConfigs.find(
@@ -202,14 +237,28 @@ export default function PluginList() {
             const matchesEnabled =
                 enabledFilter === "all" ||
                 getPluginEnabledFilterValue(plugin) === enabledFilter;
+            const matchesDiagnostics =
+                diagnosticFilter === "all" ||
+                getPluginDiagnosticFilterValue(plugin) === diagnosticFilter;
 
             return matchesKeyword &&
                 matchesSource &&
                 matchesCapability &&
                 matchesConfig &&
-                matchesEnabled;
+                matchesEnabled &&
+                matchesDiagnostics;
         });
-    }, [capabilityFilter, configFilter, configRevision, enabledFilter, enabledRevision, filterText, plugins, sourceFilter]);
+    }, [
+        capabilityFilter,
+        configFilter,
+        configRevision,
+        diagnosticFilter,
+        enabledFilter,
+        enabledRevision,
+        filterText,
+        plugins,
+        sourceFilter,
+    ]);
 
     const [loading, setLoading] = useState(false);
 
@@ -221,6 +270,7 @@ export default function PluginList() {
         setCapabilityFilter("all");
         setConfigFilter("all");
         setEnabledFilter("all");
+        setDiagnosticFilter("all");
     }
 
     function renderFilterChip(
@@ -259,7 +309,8 @@ export default function PluginList() {
             sourceFilter !== "all" ||
             capabilityFilter !== "all" ||
             configFilter !== "all" ||
-            enabledFilter !== "all";
+            enabledFilter !== "all" ||
+            diagnosticFilter !== "all";
         return (
             <View style={style.headerWrapper}>
                 {filterText ? (
@@ -345,6 +396,18 @@ export default function PluginList() {
                             item.label,
                             enabledFilter === item.value,
                             () => setEnabledFilter(item.value),
+                        ),
+                    )}
+                </ScrollView>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={style.filterRow}>
+                    {diagnosticFilterItems.map(item =>
+                        renderFilterChip(
+                            item.label,
+                            diagnosticFilter === item.value,
+                            () => setDiagnosticFilter(item.value),
                         ),
                     )}
                 </ScrollView>
