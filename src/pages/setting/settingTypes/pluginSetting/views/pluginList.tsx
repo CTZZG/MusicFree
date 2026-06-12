@@ -55,6 +55,13 @@ export default function PluginList() {
             },
         },
         {
+            icon: "javascript",
+            title: t("lxSource.title"),
+            onPress() {
+                navigator.navigate("/pluginsetting/lx-source");
+            },
+        },
+        {
             icon: "trash-outline",
             title: t("pluginSetting.menu.uninstallAll"),
             onPress() {
@@ -145,6 +152,105 @@ export default function PluginList() {
 
 
                 setLoading(false);
+            },
+        });
+    }
+
+    async function onInstallLxSourceFromLocalClick() {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                copyToCacheDirectory: true,
+                multiple: false,
+                type: [
+                    "application/javascript",
+                    "application/x-javascript",
+                    "text/javascript",
+                    "text/plain",
+                    "application/octet-stream",
+                    "*/*",
+                ],
+            });
+            if (result.canceled) {
+                return;
+            }
+            const asset = result.assets[0];
+            if (!asset?.uri) {
+                return;
+            }
+            setLoading(true);
+            const installResult = await (await import("@/core/lxSource")).default
+                .installFromLocalFile(asset.uri, {
+                    useExpoFs: true,
+                });
+            if (installResult.success) {
+                Toast.success(t("lxSource.installSuccess", {
+                    name: installResult.item?.metadata.name ?? asset.name ?? "",
+                }));
+                navigator.navigate("/pluginsetting/lx-source");
+            } else {
+                Toast.warn(t("lxSource.installFailed", {
+                    reason: installResult.message ?? "",
+                }));
+            }
+        } catch (e: any) {
+            Toast.warn(t("lxSource.installFailed", {
+                reason: e?.message ?? "",
+            }));
+        }
+        setLoading(false);
+    }
+
+    function onInstallLxSourceClick() {
+        showPanel("SimpleSelect", {
+            header: t("lxSource.import"),
+            candidates: [
+                {
+                    value: "url",
+                    title: t("lxSource.importFromUrl"),
+                },
+                {
+                    value: "local",
+                    title: t("lxSource.importFromLocal"),
+                },
+            ],
+            onPress(item) {
+                if (item.value === "local") {
+                    void onInstallLxSourceFromLocalClick();
+                } else if (item.value === "url") {
+                    showPanel("SimpleInput", {
+                        title: t("lxSource.importFromUrl"),
+                        placeholder: t("lxSource.importUrlPlaceholder"),
+                        maxLength: 500,
+                        async onOk(text, closePanel) {
+                            const url = text.trim();
+                            if (!url) {
+                                return;
+                            }
+                            closePanel();
+                            setLoading(true);
+                            try {
+                                const installResult = await (await import("@/core/lxSource")).default
+                                    .installFromUrl(url);
+                                if (installResult.success) {
+                                    Toast.success(t("lxSource.installSuccess", {
+                                        name: installResult.item?.metadata.name ?? "",
+                                    }));
+                                    navigator.navigate("/pluginsetting/lx-source");
+                                } else {
+                                    Toast.warn(t("lxSource.installFailed", {
+                                        reason: installResult.message ?? "",
+                                    }));
+                                }
+                            } catch (e: any) {
+                                Toast.warn(t("lxSource.installFailed", {
+                                    reason: e?.message ?? "",
+                                }));
+                            } finally {
+                                setLoading(false);
+                            }
+                        },
+                    });
+                }
             },
         });
     }
@@ -286,6 +392,10 @@ export default function PluginList() {
                                         title: t("pluginSetting.fabOptions.installFromNetwork"),
                                     },
                                     {
+                                        value: "导入LX自定义源",
+                                        title: t("pluginSetting.fabOptions.importLxSource"),
+                                    },
+                                    {
                                         value: "更新全部插件",
                                         title: t("pluginSetting.fabOptions.updateAllPlugins"),
                                     },
@@ -301,6 +411,8 @@ export default function PluginList() {
                                         item.value === "从网络安装插件"
                                     ) {
                                         onInstallFromNetworkClick();
+                                    } else if (item.value === "导入LX自定义源") {
+                                        onInstallLxSourceClick();
                                     } else if (item.value === "更新订阅") {
                                         onSubscribeClick();
                                     } else if (item.value === "更新全部插件") {

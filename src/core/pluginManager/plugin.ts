@@ -44,6 +44,7 @@ import {
     convertToLegacyQuality,
     normalizePluginMusicItem,
 } from "@/utils/qualities";
+import LxSource from "@/core/lxSource";
 
 
 axios.defaults.timeout = 15000;
@@ -374,6 +375,33 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         }
     }
 
+    private async getLxMediaSourceFallback(
+        musicItem: IMusic.IMusicItemBase,
+        quality: IMusic.IQualityKey,
+    ) {
+        try {
+            const result = await LxSource.getMediaSource(musicItem, quality);
+            if (!result?.url) {
+                return null;
+            }
+            const authFormattedResult = formatAuthUrl(result.url);
+            if (authFormattedResult.auth) {
+                return {
+                    ...result,
+                    url: authFormattedResult.url,
+                    headers: {
+                        ...(result.headers ?? {}),
+                        Authorization: authFormattedResult.auth,
+                    },
+                };
+            }
+            return result;
+        } catch (e: any) {
+            errorLog("LX自定义源fallback失败", e?.message ?? e);
+            return null;
+        }
+    }
+
 
     /** 搜索 */
     async search<T extends ICommon.SupportMediaType>(
@@ -509,8 +537,12 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             const qualityInfo =
                 musicItem?.qualities?.[normalizedQuality] ??
                 (legacyQuality ? musicItem?.qualities?.[legacyQuality] : undefined);
+            const directUrl = qualityInfo?.url ?? musicItem.url;
+            if (!directUrl) {
+                return this.getLxMediaSourceFallback(musicItem, normalizedQuality);
+            }
             const { url, auth } = formatAuthUrl(
-                qualityInfo?.url ?? musicItem.url,
+                directUrl,
             );
             return {
                 url: url,
@@ -580,7 +612,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             this.recordError("getMediaSource", e, parserPlugin);
             errorLog("获取真实源失败", e?.message);
             devLog("error", "获取真实源失败", e, e?.message);
-            return null;
+            return this.getLxMediaSourceFallback(musicItem, normalizedQuality);
         }
     }
 

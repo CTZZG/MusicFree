@@ -453,6 +453,7 @@ export interface ILanguageData {
     "pluginSetting.menu.pluginUpdateFailedDialogTitle": string; // 插件更新失败对话框标题
     "pluginSetting.fabOptions.installFromLocal": string; // 从本地安装
     "pluginSetting.fabOptions.installFromNetwork": string; // 从网络安装
+    "pluginSetting.fabOptions.importLxSource": string; // 导入 LX 自定义源
     "pluginSetting.fabOptions.updateAllPlugins": string; // 更新所有插件
     "pluginSetting.fabOptions.updateSubscription": string; // 更新订阅
     "pluginSetting.subscription.urlType.singlePlugin": string; // 单插件订阅
@@ -946,6 +947,28 @@ export interface ILanguageData {
 
     // 面板相关 - 歌单标签
     "panel.sheetTags.title": string; // 歌单类别
+
+    // LX 自定义源相关
+    "lxSource.title": string; // LX 自定义源
+    "lxSource.import": string; // 导入 LX 自定义源
+    "lxSource.importFromUrl": string; // 从 URL 导入 LX 自定义源
+    "lxSource.importFromLocal": string; // 从本地文件导入 LX 自定义源
+    "lxSource.importUrlPlaceholder": string; // LX 自定义源 URL 输入提示
+    "lxSource.empty": string; // LX 自定义源空列表
+    "lxSource.enabled": string; // 已启用
+    "lxSource.disabled": string; // 已停用
+    "lxSource.delete": string; // 删除 LX 自定义源
+    "lxSource.deleteConfirm": string; // 删除 LX 自定义源确认
+    "lxSource.update": string; // 更新 LX 自定义源
+    "lxSource.updateSuccess": string; // LX 自定义源更新成功
+    "lxSource.updateFailed": string; // LX 自定义源更新失败
+    "lxSource.installSuccess": string; // LX 自定义源安装成功
+    "lxSource.installFailed": string; // LX 自定义源安装失败
+    "lxSource.missingName": string; // LX 自定义源缺少名称
+    "lxSource.invalid": string; // LX 自定义源无效
+    "lxSource.sourceUrl": string; // LX 自定义源来源 URL
+    "lxSource.author": string; // LX 自定义源作者
+    "lxSource.version": string; // LX 自定义源版本
 
     // 播放模式相关
     "repeatMode.SHUFFLE": string; // 随机播放

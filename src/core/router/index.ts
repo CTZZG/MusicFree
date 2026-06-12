@@ -90,7 +90,8 @@ interface RouterParams extends RouterParamsBase {
         initialPluginSettingRoute?:
             | "/pluginsetting/list"
             | "/pluginsetting/sort"
-            | "/pluginsetting/subscribe";
+            | "/pluginsetting/subscribe"
+            | "/pluginsetting/lx-source";
         // anchor?: string | number;
     };
     local: undefined;

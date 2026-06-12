@@ -5,6 +5,7 @@ import PluginList from "./views/pluginList";
 import PluginSort from "./views/pluginSort";
 import PluginSubscribe from "./views/pluginSubscribe";
 import { useParams } from "@/core/router";
+import LxSourceList from "./views/lxSourceList";
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -20,6 +21,10 @@ const routes = [
     {
         path: "/pluginsetting/subscribe",
         component: PluginSubscribe,
+    },
+    {
+        path: "/pluginsetting/lx-source",
+        component: LxSourceList,
     },
 ];
 
