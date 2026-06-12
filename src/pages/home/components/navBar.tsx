@@ -1,10 +1,13 @@
+import { ROUTE_PATH } from "@/core/router";
 import { useNavigation } from "@react-navigation/native";
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import ThemeText from "@/components/base/themeText";
+import Color from "color";
 import IconButton from "@/components/base/iconButton";
+import Icon from "@/components/base/icon.tsx";
 import { useI18N } from "@/core/i18n";
 
 export default function NavBar() {
@@ -24,14 +27,31 @@ export default function NavBar() {
                 }}
             />
 
-            <View style={styles.titleBar}>
+            <Pressable
+                style={[
+                    styles.searchBar,
+                    {
+                        backgroundColor: colors.placeholder,
+                    },
+                ]}
+                accessible
+                accessibilityLabel={t("home.clickToSearch")}
+                onPress={() => {
+                    navigation.navigate(ROUTE_PATH.SEARCH_PAGE);
+                }}>
+                <Icon
+                    accessible={false}
+                    name="magnifying-glass"
+                    size={rpx(32)}
+                    color={Color(colors.text).alpha(0.6).toString()}
+                />
                 <ThemeText
-                    fontSize="appbar"
-                    fontWeight="bold"
-                    numberOfLines={1}>
-                    MusicFree
+                    accessible={false}
+                    fontSize="subTitle"
+                    style={styles.text}>
+                    {t("home.clickToSearch")}
                 </ThemeText>
-            </View>
+            </Pressable>
         </View>
     );
 }
@@ -45,12 +65,19 @@ const styles = StyleSheet.create({
         width: "100%",
         height: rpx(88),
     },
-    titleBar: {
+    searchBar: {
         marginHorizontal: rpx(24),
+        flexDirection: "row",
+        alignItems: "center",
         flex: 1,
         height: "72%",
         maxHeight: rpx(64),
-        justifyContent: "center",
+        borderRadius: rpx(36),
+        paddingHorizontal: rpx(20),
+    },
+    text: {
+        marginLeft: rpx(12),
+        opacity: 0.6,
     },
     menu: {
         marginLeft: rpx(24),

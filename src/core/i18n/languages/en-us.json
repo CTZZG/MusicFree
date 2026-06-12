@@ -63,6 +63,7 @@
     "home.myPlaylistsCount.a11y": "My Playlists, {count} total",
     "home.starredPlaylistsCount.a11y": "Starred Playlists, {count} total",
     "home.songCount": "{count} songs",
+    "home.clickToSearch": "Search songs, artists, albums",
     "home.allSources": "All Sources",
     "home.continueListening": "Continue Listening",
     "home.recentListening": "Recently Played",

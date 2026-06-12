@@ -63,6 +63,7 @@
     "home.myPlaylistsCount.a11y": "我的歌单，共{count}个",
     "home.starredPlaylistsCount.a11y": "收藏歌单，共{count}个",
     "home.songCount": "{count}首",
+    "home.clickToSearch": "搜索歌曲、歌手、专辑",
     "home.allSources": "全部源",
     "home.continueListening": "继续听",
     "home.recentListening": "最近播放",
