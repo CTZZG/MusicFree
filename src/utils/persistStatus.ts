@@ -22,6 +22,8 @@ interface IPersistStatus {
     "music.repeatMode": string;
     /** 列表 */
     "music.playList": IMusic.IMusicItem[];
+    /** 稍后播放队列 */
+    "music.playLaterQueue": IMusic.IMusicItem[];
     /** 速度 */
     "music.rate": number;
     /** 音质 */

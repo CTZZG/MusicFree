@@ -22,6 +22,7 @@ import { atom, getDefaultStore, useAtomValue } from "jotai";
 import shuffle from "lodash.shuffle";
 import { useEffect } from "react";
 import LocalMusicSheet from "../localMusicSheet";
+import DislikeMusic from "../dislikeMusic";
 
 import { MusicRepeatMode, TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import type { IAppConfig } from "@/types/core/config";
@@ -103,6 +104,7 @@ const currentMusicAtom = atom<IMusic.IMusicItem | null>(null);
 const repeatModeAtom = atom<MusicRepeatMode>(MusicRepeatMode.QUEUE);
 const qualityAtom = atom<IMusic.IQualityKey>("standard");
 const playListAtom = atom<IMusic.IMusicItem[]>([]);
+const playLaterQueueAtom = atom<IMusic.IMusicItem[]>([]);
 const musicStateAtom = atom<PlayerBackendState>("idle");
 const progressAtom = atom<PlayerAdapterProgress>({
     position: 0,
@@ -220,6 +222,10 @@ class TrackPlayer extends EventEmitter<{
         return getDefaultStore().get(playListAtom);
     }
 
+    public get playLaterQueue() {
+        return getDefaultStore().get(playLaterQueueAtom);
+    }
+
     public get playerAdapter() {
         return this.backend;
     }
@@ -239,6 +245,7 @@ class TrackPlayer extends EventEmitter<{
         this.lockBackend();
         const rate = PersistStatus.get("music.rate");
         const musicQueue = PersistStatus.get("music.playList");
+        const playLaterQueue = PersistStatus.get("music.playLaterQueue");
         const repeatMode = PersistStatus.get("music.repeatMode");
         const progress = PersistStatus.get("music.progress");
         const progressSavedAt = PersistStatus.get("music.progressSavedAt");
@@ -269,6 +276,9 @@ class TrackPlayer extends EventEmitter<{
                 undefined,
                 repeatMode === MusicRepeatMode.SHUFFLE,
             );
+        }
+        if (playLaterQueue && Array.isArray(playLaterQueue)) {
+            this.setPlayLaterQueue(playLaterQueue);
         }
         if (track && !this.isInPlayList(track)) {
             this.add(track);
@@ -335,6 +345,16 @@ class TrackPlayer extends EventEmitter<{
                         musicId: syncedMusic?.id,
                         platform: syncedMusic?.platform,
                     });
+                    if (evt.reason === "end") {
+                        const playedLater = await this.playNextLaterQueue();
+                        if (playedLater) {
+                            this.emit(TrackPlayerEvents.PlayEnd);
+                            return;
+                        }
+                        if (DislikeMusic.isDisliked(syncedMusic)) {
+                            await this.skipAutoDislikedMusic();
+                        }
+                    }
                     if (evt.reason === "end" || evt.reason === "repeat") {
                         this.emit(TrackPlayerEvents.PlayEnd);
                     }
@@ -551,6 +571,37 @@ class TrackPlayer extends EventEmitter<{
         if (shouldAutoPlay) {
             this.play(Array.isArray(musicItem) ? musicItem[0] : musicItem);
         }
+    }
+
+    addPlayLater(musicItem: IMusic.IMusicItem | IMusic.IMusicItem[]): void {
+        const musicItems = Array.isArray(musicItem) ? musicItem : [musicItem];
+        const nextQueue = [...this.playLaterQueue];
+
+        musicItems.forEach(item => {
+            if (
+                !nextQueue.some(queueItem => isSameMediaItem(queueItem, item)) &&
+                !this.isCurrentMusic(item)
+            ) {
+                nextQueue.push(item);
+            }
+        });
+
+        this.setPlayLaterQueue(nextQueue);
+        if (!this.currentMusic && nextQueue.length) {
+            this.playNextLaterQueue().catch(error => {
+                errorLog("稍后播放启动失败", error?.message ?? error);
+            });
+        }
+    }
+
+    removePlayLater(musicItem: IMusic.IMusicItem): void {
+        this.setPlayLaterQueue(
+            this.playLaterQueue.filter(item => !isSameMediaItem(item, musicItem)),
+        );
+    }
+
+    clearPlayLaterQueue(): void {
+        this.setPlayLaterQueue([]);
     }
 
     async remove(musicItem: IMusic.IMusicItem): Promise<void> {
@@ -975,6 +1026,10 @@ class TrackPlayer extends EventEmitter<{
     }
 
     async skipToNext(): Promise<void> {
+        if (await this.playNextLaterQueue()) {
+            return;
+        }
+
         if (this.isPlayListEmpty()) {
             this.setCurrentMusic(null);
             return;
@@ -1459,6 +1514,50 @@ class TrackPlayer extends EventEmitter<{
         this.currentIndex = this.getMusicIndexInPlayList(this.currentMusic);
     }
 
+    private setPlayLaterQueue(queue: IMusic.IMusicItem[]) {
+        getDefaultStore().set(playLaterQueueAtom, queue);
+        PersistStatus.set("music.playLaterQueue", queue);
+    }
+
+    private async playNextLaterQueue() {
+        const [nextMusic, ...restQueue] = this.playLaterQueue;
+        if (!nextMusic) {
+            return false;
+        }
+
+        this.setPlayLaterQueue(restQueue);
+        if (!this.isInPlayList(nextMusic)) {
+            this.add(
+                nextMusic,
+                this.currentIndex >= 0 ? this.currentIndex + 1 : undefined,
+            );
+        }
+        await this.play(nextMusic, true);
+        return true;
+    }
+
+    private async skipAutoDislikedMusic() {
+        const currentMusic = this.currentMusic;
+        if (!currentMusic || !DislikeMusic.isDisliked(currentMusic)) {
+            return false;
+        }
+
+        for (let offset = 1; offset <= this.playList.length; offset += 1) {
+            const candidate = this.getPlayListMusicAt(this.currentIndex + offset);
+            if (
+                candidate &&
+                !isSameMediaItem(candidate, currentMusic) &&
+                !DislikeMusic.isDisliked(candidate)
+            ) {
+                await this.play(candidate, true);
+                return true;
+            }
+        }
+
+        await this.pause().catch(() => undefined);
+        return false;
+    }
+
 
     /**************** 辅助函数 -- 工具方法 ****************/
     private shrinkPlayListToSize = (
@@ -1897,6 +1996,7 @@ class TrackPlayer extends EventEmitter<{
 }
 
 export const usePlayList = () => useAtomValue(playListAtom);
+export const usePlayLaterQueue = () => useAtomValue(playLaterQueueAtom);
 export const useCurrentMusic = () => useAtomValue(currentMusicAtom);
 export const useRepeatMode = () => useAtomValue(repeatModeAtom);
 export const useMusicQuality = () => useAtomValue(qualityAtom);

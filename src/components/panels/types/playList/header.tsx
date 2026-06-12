@@ -2,7 +2,11 @@ import IconTextButton from "@/components/base/iconTextButton";
 import ThemeText from "@/components/base/themeText";
 import { MusicRepeatModeInfo } from "@/constants/trackPlayerConst";
 import { useI18N } from "@/core/i18n";
-import TrackPlayer, { usePlayList, useRepeatMode } from "@/core/trackPlayer";
+import TrackPlayer, {
+    usePlayLaterQueue,
+    usePlayList,
+    useRepeatMode,
+} from "@/core/trackPlayer";
 import delay from "@/utils/delay";
 import rpx from "@/utils/rpx";
 import React from "react";
@@ -11,6 +15,7 @@ import { InteractionManager, StyleSheet, View } from "react-native";
 export default function Header() {
     const repeatMode = useRepeatMode();
     const playList = usePlayList();
+    const playLaterQueue = usePlayLaterQueue();
     const { t } = useI18N();
 
     return (
@@ -22,7 +27,7 @@ export default function Header() {
                 {t("panel.playList.title")}
                 <ThemeText fontColor="textSecondary">
                     {t("panel.playList.count", {
-                        count: playList.length,
+                        count: playList.length + playLaterQueue.length,
                     })}
                 </ThemeText>
             </ThemeText>

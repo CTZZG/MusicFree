@@ -206,10 +206,31 @@ export interface ILanguageData {
     "lyric.noLyricReason.timeout": string; // 歌词获取超时
     "lyric.noLyricReason.unknown": string; // 未知无歌词原因
 
+    // 不喜欢歌曲与稍后播放
+    "dislikeMusic.title": string; // 不喜欢歌曲
+    "dislikeMusic.manage": string; // 不喜欢歌曲管理
+    "dislikeMusic.empty": string; // 无不喜欢规则
+    "dislikeMusic.ruleType.music": string; // 单曲规则
+    "dislikeMusic.ruleType.artist-title": string; // 歌手与歌曲规则
+    "dislikeMusic.ruleType.artist": string; // 歌手规则
+    "dislikeMusic.addMusicRule": string; // 不喜欢这首歌
+    "dislikeMusic.addArtistTitleRule": string; // 不喜欢该歌手这首歌
+    "dislikeMusic.addArtistRule": string; // 不喜欢该歌手
+    "dislikeMusic.removeMatchedRules": string; // 取消不喜欢
+    "dislikeMusic.added": string; // 添加不喜欢成功
+    "dislikeMusic.removed": string; // 取消不喜欢成功
+    "dislikeMusic.addFailed": string; // 添加不喜欢失败
+    "playLater.title": string; // 稍后播放
+    "playLater.add": string; // 添加到稍后播放
+    "playLater.empty": string; // 稍后播放空列表
+    "playLater.clear": string; // 清空稍后播放
+    "playLater.added": string; // 添加到稍后播放成功
+
     // 音乐列表编辑器相关
     "musicListEditor.selectMusicCount": string; // 选择的音乐数量
     "musicListEditor.addToNextPlay": string; // 添加到下一曲
     "musicListEditor.addToSheet": string; // 添加到歌单
+    "musicList.selection.selectedCount": string; // 通用音乐列表选择数量
     "musicSheetEditor.selectSheetCount": string; // 选择的歌单数量
 
     // 权限设置相关
@@ -692,6 +713,20 @@ export interface ILanguageData {
     "basicSettings.cache.clearLyricCache": string; // 清除歌词缓存
     "basicSettings.cache.clearImageCache": string; // 清除图片缓存
 
+    "cacheManagement.title": string; // 缓存管理
+    "cacheManagement.playbackCache": string; // 播放缓存
+    "cacheManagement.pluginCache": string; // 插件缓存
+    "cacheManagement.localFileCount": string; // 本地文件数量
+    "cacheManagement.cacheSummary": string; // 缓存概要
+    "cacheManagement.pluginCacheCount": string; // 插件缓存数量
+    "cacheManagement.fileCount": string; // 文件数量
+    "cacheManagement.actions": string; // 操作
+    "cacheManagement.clearPlaybackCache": string; // 清理播放缓存
+    "cacheManagement.clearPlaybackCacheConfirm": string; // 清理播放缓存确认
+    "cacheManagement.clearPluginCache": string; // 清理插件缓存
+    "cacheManagement.refresh": string; // 刷新缓存统计
+    "cacheManagement.cacheCleared": string; // 缓存已清理
+
     "basicSettings.developer": string; // 开发选项
     "basicSettings.developer.errorLog": string; // 记录错误日志
     "basicSettings.developer.traceLog": string; // 记录详细日志
@@ -951,6 +986,8 @@ export interface ILanguageData {
     "repeatMode.SHUFFLE": string; // 随机播放
     "repeatMode.QUEUE": string; // 列表循环
     "repeatMode.SINGLE": string; // 单曲循环
+
+    "scheme.searchPlayFailed": string; // Scheme 搜索播放失败
 }
 
 // 语言接口定义

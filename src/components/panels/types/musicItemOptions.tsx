@@ -22,6 +22,7 @@ import { hidePanel, showPanel } from "../usePanel";
 import Divider from "@/components/base/divider";
 import { iconSizeConst } from "@/constants/uiConst";
 import Config from "@/core/appConfig";
+import DislikeMusic, { IDislikeRuleType } from "@/core/dislikeMusic";
 import TrackPlayer from "@/core/trackPlayer";
 import mediaCache from "@/core/mediaCache";
 import { IIconName } from "@/components/base/icon.tsx";
@@ -63,6 +64,17 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
     const hiddenLocalMusic = LocalMusicSheet.useIsHidden(musicItem);
     const associatedLrc = getMediaExtraProperty(musicItem, "associatedLrc");
+    const disliked = DislikeMusic.getMatchedRules(musicItem).length > 0;
+
+    function addDislikeRule(type: IDislikeRuleType) {
+        const rule = DislikeMusic.addRuleForMusic(musicItem, type);
+        if (rule) {
+            Toast.success(t("dislikeMusic.added"));
+        } else {
+            Toast.warn(t("dislikeMusic.addFailed"));
+        }
+        hidePanel();
+    }
 
     const options: IOption[] = [
         {
@@ -113,6 +125,16 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             title: t("musicListEditor.addToNextPlay"),
             onPress: () => {
                 TrackPlayer.addNext(musicItem);
+                Toast.success(t("toast.addToNextPlay"));
+                hidePanel();
+            },
+        },
+        {
+            icon: "clock-outline",
+            title: t("playLater.add"),
+            onPress: () => {
+                TrackPlayer.addPlayLater(musicItem);
+                Toast.success(t("playLater.added"));
                 hidePanel();
             },
         },
@@ -250,6 +272,37 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
                     await MusicSheet.removeMusic(musicSheet!.id, musicItem);
                 }
                 Toast.success(t("toast.deleteSuccess"));
+                hidePanel();
+            },
+        },
+        {
+            icon: "heart",
+            title: t("dislikeMusic.addMusicRule"),
+            onPress: () => {
+                addDislikeRule("music");
+            },
+        },
+        {
+            icon: "heart-outline",
+            title: t("dislikeMusic.addArtistTitleRule"),
+            onPress: () => {
+                addDislikeRule("artist-title");
+            },
+        },
+        {
+            icon: "user",
+            title: t("dislikeMusic.addArtistRule"),
+            onPress: () => {
+                addDislikeRule("artist");
+            },
+        },
+        {
+            icon: "x-mark",
+            title: t("dislikeMusic.removeMatchedRules"),
+            show: disliked,
+            onPress: () => {
+                DislikeMusic.removeMatchedRules(musicItem);
+                Toast.success(t("dislikeMusic.removed"));
                 hidePanel();
             },
         },

@@ -2,6 +2,8 @@ import deviceInfoModule from "react-native-device-info";
 import AboutSetting from "./aboutSetting";
 import BackupSetting from "./backupSetting";
 import BasicSetting from "./basicSetting";
+import CacheManagementSetting from "./cacheManagementSetting";
+import DislikeMusicSetting from "./dislikeMusicSetting";
 import PluginSetting from "./pluginSetting";
 import ThemeSetting from "./themeSetting";
 
@@ -24,6 +26,16 @@ const settingTypes: Record<
         i18nKey: "sidebar.pluginManagement",
         component: PluginSetting,
         showNav: false,
+    },
+    dislikeMusic: {
+        title: "不喜欢歌曲管理",
+        i18nKey: "dislikeMusic.title",
+        component: DislikeMusicSetting,
+    },
+    cacheManagement: {
+        title: "缓存管理",
+        i18nKey: "cacheManagement.title",
+        component: CacheManagementSetting,
     },
     theme: {
         title: "主题设置",

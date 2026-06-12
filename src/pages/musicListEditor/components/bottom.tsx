@@ -77,6 +77,22 @@ export default function Bottom() {
                 }}
             />
             <BottomIcon
+                icon="clock-outline"
+                title={t("playLater.add")}
+                color={
+                    selectedItems.length && musicSheet?.id
+                        ? "text"
+                        : "textSecondary"
+                }
+                onPress={async () => {
+                    if (selectedItems.length) {
+                        TrackPlayer.addPlayLater(selectedItems);
+                        resetSelectedIndices();
+                        Toast.success(t("playLater.added"));
+                    }
+                }}
+            />
+            <BottomIcon
                 icon="arrow-down-tray"
                 title={t("common.download")}
                 color={

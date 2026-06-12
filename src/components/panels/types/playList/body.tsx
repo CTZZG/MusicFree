@@ -4,41 +4,71 @@ import rpx from "@/utils/rpx";
 import Tag from "@/components/base/tag";
 import ThemeText from "@/components/base/themeText";
 import { fontSizeConst } from "@/constants/uiConst";
-import { isSameMediaItem } from "@/utils/mediaUtils";
+import { getMediaUniqueKey, isSameMediaItem } from "@/utils/mediaUtils";
 import IconButton from "@/components/base/iconButton";
 import Loading from "@/components/base/loading";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useColors from "@/hooks/useColors";
-import TrackPlayer, { useCurrentMusic, usePlayList } from "@/core/trackPlayer";
+import TrackPlayer, {
+    useCurrentMusic,
+    usePlayLaterQueue,
+    usePlayList,
+} from "@/core/trackPlayer";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
 import Icon from "@/components/base/icon.tsx";
+import { useI18N } from "@/core/i18n";
 
 const ITEM_HEIGHT = rpx(108);
 const ITEM_WIDTH = rpx(750);
 
+type IPlayListRow =
+    | {
+          type: "header";
+          key: string;
+          title: string;
+          count: number;
+          onClear?: () => void;
+      }
+    | {
+          type: "normal" | "later";
+          key: string;
+          item: IMusic.IMusicItem;
+      };
+
 interface IPlayListProps {
     item: IMusic.IMusicItem;
     isCurrentMusic: boolean;
+    isPlayLater?: boolean;
 }
 
 function _PlayListItem(props: IPlayListProps) {
     const colors = useColors();
-    const { item, isCurrentMusic } = props;
+    const { item, isCurrentMusic, isPlayLater } = props;
 
     return (
         <Pressable
             onPress={() => {
-                TrackPlayer.play(item);
+                if (isPlayLater) {
+                    TrackPlayer.removePlayLater(item);
+                }
+                TrackPlayer.play(item, true);
             }}
             style={style.musicItem}>
-            {isCurrentMusic && (
+            {isPlayLater ? (
+                <Icon
+                    name="clock-outline"
+                    color={colors.primary}
+                    size={fontSizeConst.content}
+                    style={style.currentPlaying}
+                />
+            ) : isCurrentMusic ? (
                 <Icon
                     name="musical-note"
                     color={colors.textHighlight ?? colors.primary}
                     size={fontSizeConst.content}
                     style={style.currentPlaying}
                 />
-            )}
+            ) : null}
             <ThemeText
                 style={[
                     style.musicItemTitle,
@@ -64,7 +94,11 @@ function _PlayListItem(props: IPlayListProps) {
                 name="x-mark"
                 sizeType="small"
                 onPress={() => {
-                    TrackPlayer.remove(item);
+                    if (isPlayLater) {
+                        TrackPlayer.removePlayLater(item);
+                    } else {
+                        TrackPlayer.remove(item);
+                    }
                 }}
             />
         </Pressable>
@@ -75,7 +109,8 @@ const PlayListItem = React.memo(
     _PlayListItem,
     (prev, next) =>
         !!isSameMediaItem(prev.item, next.item) &&
-        prev.isCurrentMusic === next.isCurrentMusic,
+        prev.isCurrentMusic === next.isCurrentMusic &&
+        prev.isPlayLater === next.isPlayLater,
 );
 
 interface IBodyProps {
@@ -84,26 +119,80 @@ interface IBodyProps {
 export default function Body(props: IBodyProps) {
     const { loading } = props;
     const playList = usePlayList();
+    const playLaterQueue = usePlayLaterQueue();
     const currentMusicItem = useCurrentMusic();
-    const listRef = useRef<FlashListRef<IMusic.IMusicItem> | null>(null);
+    const { t } = useI18N();
+    const listRef = useRef<FlashListRef<IPlayListRow> | null>(null);
     const safeAreaInsets = useSafeAreaInsets();
 
-    const initIndex = useMemo(() => {
-        const id = playList.findIndex(_ =>
-            isSameMediaItem(currentMusicItem, _),
-        );
-
-        if (id !== -1) {
-            return id;
+    const listData = useMemo<IPlayListRow[]>(() => {
+        const rows: IPlayListRow[] = [];
+        if (playLaterQueue.length) {
+            rows.push({
+                type: "header",
+                key: "play-later-header",
+                title: t("playLater.title"),
+                count: playLaterQueue.length,
+                onClear: () => {
+                    TrackPlayer.clearPlayLaterQueue();
+                },
+            });
+            playLaterQueue.forEach(item => {
+                rows.push({
+                    type: "later",
+                    key: `later:${getMediaUniqueKey(item)}`,
+                    item,
+                });
+            });
+            rows.push({
+                type: "header",
+                key: "playlist-header",
+                title: t("panel.playList.title"),
+                count: playList.length,
+            });
         }
-        return undefined;
+        playList.forEach(item => {
+            rows.push({
+                type: "normal",
+                key: `normal:${getMediaUniqueKey(item)}`,
+                item,
+            });
+        });
+        return rows;
+    }, [playLaterQueue, playList, t]);
+
+    const initIndex = useMemo(() => {
+        const index = listData.findIndex(row =>
+            row.type === "normal" && isSameMediaItem(row.item, currentMusicItem),
+        );
+        return index === -1 ? undefined : index;
     }, []);
 
-    const renderItem = ({ item }: { item: IMusic.IMusicItem; index: number }) => {
-        return (
+    const renderItem = ({ item }: { item: IPlayListRow; index: number }) => {
+        return item.type === "header" ? (
+            <View style={style.sectionHeader}>
+                <ThemeText
+                    fontSize="subTitle"
+                    fontWeight="bold"
+                    fontColor="textSecondary">
+                    {item.title}
+                    <ThemeText fontColor="textSecondary">
+                        {t("panel.playList.count", { count: item.count })}
+                    </ThemeText>
+                </ThemeText>
+                {item.onClear ? (
+                    <IconButton
+                        name="trash-outline"
+                        sizeType="small"
+                        onPress={item.onClear}
+                    />
+                ) : null}
+            </View>
+        ) : (
             <PlayListItem
-                item={item}
-                isCurrentMusic={!!isSameMediaItem(item, currentMusicItem)}
+                item={item.item}
+                isCurrentMusic={!!isSameMediaItem(item.item, currentMusicItem)}
+                isPlayLater={item.type === "later"}
             />
         );
     };
@@ -123,8 +212,9 @@ export default function Body(props: IBodyProps) {
                     listRef.current = _;
                 }}
                 extraData={{ currentMusicItem }}
-                data={playList}
+                data={listData}
                 initialScrollIndex={initIndex}
+                keyExtractor={item => item.key}
                 renderItem={renderItem}
             />
         </View>
@@ -138,6 +228,14 @@ const style = StyleSheet.create({
     },
     currentPlaying: {
         marginRight: rpx(6),
+    },
+    sectionHeader: {
+        width: ITEM_WIDTH,
+        height: rpx(72),
+        paddingHorizontal: rpx(24),
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
     },
     musicItem: {
         width: ITEM_WIDTH,

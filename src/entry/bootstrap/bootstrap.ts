@@ -280,9 +280,98 @@ async function extraMakeup() {
         }
     }
 
+    function readSchemeQueryParam(url: string, key: string) {
+        const queryIndex = url.indexOf("?");
+        if (queryIndex === -1) {
+            return "";
+        }
+        const query = url.slice(queryIndex + 1).split("#")[0];
+        const params = query.split("&");
+        for (const param of params) {
+            const [rawKey, ...rawValue] = param.split("=");
+            if (decodeURIComponent(rawKey) === key) {
+                return decodeURIComponent(rawValue.join("=") ?? "");
+            }
+        }
+        return "";
+    }
+
+    async function searchAndPlayFirst(keyword: string) {
+        const trimmedKeyword = keyword.trim();
+        if (!trimmedKeyword) {
+            Toast.warn(i18n.t("scheme.searchPlayFailed"));
+            return;
+        }
+        const plugins = PluginManager.getSortedSearchablePlugins("music");
+        for (const plugin of plugins) {
+            try {
+                const result = await plugin.methods.search(
+                    trimmedKeyword,
+                    1,
+                    "music",
+                );
+                const musicItem = result?.data?.[0];
+                if (musicItem) {
+                    await TrackPlayer.play(musicItem as IMusic.IMusicItem, true);
+                    return;
+                }
+            } catch (e: any) {
+                trace("外部搜索播放失败，尝试下一个插件", {
+                    plugin: plugin.name,
+                    message: e?.message ?? String(e),
+                });
+            }
+        }
+        Toast.warn(i18n.t("scheme.searchPlayFailed"));
+    }
+
+    async function handlePlayerSchemeUrl(url: string) {
+        if (!url.startsWith("musicfree://")) {
+            return false;
+        }
+        const command = url
+            .slice("musicfree://".length)
+            .split("?")[0]
+            .replace(/\/$/, "");
+
+        if (command === "play") {
+            await TrackPlayer.play();
+            return true;
+        }
+        if (command === "pause") {
+            await TrackPlayer.pause();
+            return true;
+        }
+        if (command === "toggle-play") {
+            const state = await TrackPlayer.playerAdapter.getState();
+            if (state === "playing") {
+                await TrackPlayer.pause();
+            } else {
+                await TrackPlayer.play();
+            }
+            return true;
+        }
+        if (command === "next") {
+            await TrackPlayer.skipToNext();
+            return true;
+        }
+        if (command === "previous") {
+            await TrackPlayer.skipToPrevious();
+            return true;
+        }
+        if (command === "search-play") {
+            await searchAndPlayFirst(readSchemeQueryParam(url, "keyword"));
+            return true;
+        }
+        return false;
+    }
+
     async function handleLinkingUrl(url: string) {
         // 插件
         try {
+            if (await handlePlayerSchemeUrl(url)) {
+                return;
+            }
             if (url.startsWith("musicfree://install/")) {
                 const plugins = url
                     .slice(20)

@@ -102,6 +102,11 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
     readonly playList: IMusic.IMusicItem[];
 
     /**
+     * 稍后播放优先队列
+     */
+    readonly playLaterQueue: IMusic.IMusicItem[];
+
+    /**
      * 初始化音乐播放器，恢复上次播放状态
      */
     setupTrackPlayer(): Promise<void>;
@@ -160,6 +165,22 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
      * @param musicItem 单曲或音乐列表
      */
     addNext(musicItem: IMusic.IMusicItem | IMusic.IMusicItem[]): void;
+
+    /**
+     * 添加音乐到稍后播放优先队列
+     * @param musicItem 单曲或音乐列表
+     */
+    addPlayLater(musicItem: IMusic.IMusicItem | IMusic.IMusicItem[]): void;
+
+    /**
+     * 从稍后播放队列移除指定音乐
+     */
+    removePlayLater(musicItem: IMusic.IMusicItem): void;
+
+    /**
+     * 清空稍后播放队列
+     */
+    clearPlayLaterQueue(): void;
 
     /**
      * 从播放列表中移除指定音乐

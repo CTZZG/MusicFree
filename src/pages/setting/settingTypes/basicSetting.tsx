@@ -345,6 +345,21 @@ export default function BasicSetting() {
                     "basic.autoStopWhenError",
                     autoStopWhenError ?? false,
                 ),
+                {
+                    title: t("dislikeMusic.manage"),
+                    right: (
+                        <ThemeText
+                            fontSize="subTitle"
+                            style={styles.centerText}>
+                            {t("common.setting")}
+                        </ThemeText>
+                    ),
+                    onPress() {
+                        navigate(ROUTE_PATH.SETTING, {
+                            type: "dislikeMusic",
+                        });
+                    },
+                },
                 createRadio(
                     t("basicSettings.tempRemoteDuck"),
                     "basic.tempRemoteDuck",
@@ -497,6 +512,21 @@ export default function BasicSetting() {
         {
             title: t("basicSettings.cache"),
             data: [
+                {
+                    title: t("cacheManagement.title"),
+                    right: (
+                        <ThemeText
+                            fontSize="subTitle"
+                            style={styles.centerText}>
+                            {t("common.open")}
+                        </ThemeText>
+                    ),
+                    onPress() {
+                        navigate(ROUTE_PATH.SETTING, {
+                            type: "cacheManagement",
+                        });
+                    },
+                },
                 {
                     title: t("basicSettings.cache.musicCacheLimit"),
                     right: (

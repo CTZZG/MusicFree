@@ -48,7 +48,10 @@ const setMediaCache = (mediaItem: ICommon.IMediaBase) => {
     return false;
 };
 
-async function clearLocalCaches(cacheData: IMusic.IMusicItemCache) {
+async function clearLocalCaches(cacheData?: IMusic.IMusicItemCache | null) {
+    if (!cacheData) {
+        return;
+    }
     if (cacheData.$localLyric) {
         await checkPathAndRemove(cacheData.$localLyric.rawLrc);
         await checkPathAndRemove(cacheData.$localLyric.translation);
@@ -74,10 +77,39 @@ const removeMediaCache = (mediaItem: ICommon.IMediaBase) => {
     return false;
 };
 
+const getMediaCacheStats = () => {
+    const keys = mediaCacheStore.getAllKeys();
+    let approximateSize = 0;
+    keys.forEach(key => {
+        approximateSize += mediaCacheStore.getString(key)?.length ?? 0;
+    });
+
+    return {
+        count: keys.length,
+        approximateSize,
+    };
+};
+
+const clearAllMediaCache = async () => {
+    const keys = mediaCacheStore.getAllKeys();
+    await Promise.all(
+        keys.map(async key => {
+            const rawCacheMedia = mediaCacheStore.getString(key);
+            const cacheData = rawCacheMedia
+                ? safeParse<IMusic.IMusicItemCache>(rawCacheMedia)
+                : null;
+            await clearLocalCaches(cacheData as IMusic.IMusicItemCache);
+        }),
+    );
+    mediaCacheStore.clearAll();
+};
+
 const MediaCache = {
     getMediaCache,
     setMediaCache,
     removeMediaCache,
+    getMediaCacheStats,
+    clearAllMediaCache,
 };
 
 export default MediaCache;
