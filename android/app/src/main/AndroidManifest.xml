@@ -42,6 +42,12 @@
               <data android:scheme="musicfree" android:host="app"/>
               <data android:scheme="musicfree" android:host="install"/>
           </intent-filter>          
+          <intent-filter>
+              <action android:name="android.intent.action.VIEW" />
+              <category android:name="android.intent.category.DEFAULT" />
+              <category android:name="android.intent.category.BROWSABLE" />
+              <data android:scheme="musicfree" />
+          </intent-filter>
           <!-- 处理音频文件 -->
           <intent-filter>
               <action android:name="android.intent.action.VIEW" />

@@ -314,30 +314,6 @@ function createRuntimeGlobal(lx: any) {
     return globalThisObject;
 }
 
-function createRuntimeSandbox(globalThisObject: Record<string, any>) {
-    return new Proxy(globalThisObject, {
-        has(_target, key) {
-            return key !== Symbol.unscopables;
-        },
-        get(target, key) {
-            if (key === Symbol.unscopables) {
-                return undefined;
-            }
-            if (key in target) {
-                return target[key as keyof typeof target];
-            }
-            if (key in globalThis) {
-                return (globalThis as any)[key];
-            }
-            return undefined;
-        },
-        set(target, key, value) {
-            target[key as keyof typeof target] = value;
-            return true;
-        },
-    });
-}
-
 function normalizeMusicUrlResult(raw: any): IPlugin.IMediaSourceResult | null {
     if (!raw) {
         return null;
@@ -365,6 +341,23 @@ function normalizeMusicUrlResult(raw: any): IPlugin.IMediaSourceResult | null {
         };
     }
     return null;
+}
+
+function isValidIdentifier(name: string) {
+    return /^[A-Za-z_$][\w$]*$/.test(name);
+}
+
+function runScriptInRuntimeGlobal(
+    script: string,
+    globalThisObject: Record<string, any>,
+) {
+    const paramNames = Object.keys(globalThisObject).filter(isValidIdentifier);
+    const paramValues = paramNames.map(name => globalThisObject[name]);
+
+    // Hermes does not support `with`, so expose LX/browser-like globals as
+    // function parameters while keeping top-level `this` as the sandbox global.
+    // eslint-disable-next-line no-new-func
+    Function(...paramNames, script).apply(globalThisObject, paramValues);
 }
 
 export async function createLxSourceRuntime(
@@ -401,18 +394,7 @@ export async function createLxSourceRuntime(
     };
 
     const globalThisObject = createRuntimeGlobal(lx);
-    const sandbox = createRuntimeSandbox(globalThisObject);
-
-    // Some LX sources are bundled as browser globals, so free variables need
-    // to resolve through the sandbox instead of a strict parameter list.
-    // eslint-disable-next-line no-new-func
-    Function(`
-        return function(sandbox) {
-            with (sandbox) {
-            ${script}
-            }
-        }
-    `)()(sandbox);
+    runScriptInRuntimeGlobal(script, globalThisObject);
 
     const requestHandler = handlers[EVENT_NAMES.request] as ILxRequestHandler | undefined;
     if (!requestHandler) {
