@@ -895,5 +895,14 @@
     "lxSource.sourceUrl": "Source URL",
     "lxSource.author": "Author",
     "lxSource.version": "Version",
-    "scheme.searchPlayFailed": "No playable search result found"
+    "scheme.searchPlayFailed": "No playable search result found",
+    "dislikeMusic.skipped": "Skipped a disliked song",
+    "dislikeMusic.noPlayableMusic": "No playable songs available",
+    "cacheManagement.lyricCache": "Lyric cache",
+    "cacheManagement.imageCache": "Image cache",
+    "cacheManagement.totalCache": "Total cache size",
+    "cacheManagement.clearAllSafeCaches": "Clear all caches",
+    "cacheManagement.clearAllSafeCachesConfirm": "This clears playback, lyric, image, and plugin lazy-load caches. Downloaded music, local music, playlists, and settings will not be deleted. Continue?",
+    "cacheManagement.allSafeCachesCleared": "Caches cleared",
+    "downloading.selectionRemoveConfirm": "This will delete {count} records from Downloading. Local music files will not be deleted. Continue?"
 }

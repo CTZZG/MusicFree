@@ -1,4 +1,8 @@
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+    createNavigationContainerRef,
+    useNavigation,
+    useRoute,
+} from "@react-navigation/native";
 import { useCallback } from "react";
 import { LogBox } from "react-native";
 
@@ -62,6 +66,8 @@ type ValueOf<T> = T[keyof T];
 type RoutePaths = ValueOf<typeof ROUTE_PATH>;
 
 type RouterParamsBase = Record<RoutePaths, any>;
+
+export const navigationRef = createNavigationContainerRef<RouterParams>();
 /** 路由参数 */
 interface RouterParams extends RouterParamsBase {
     home: undefined;

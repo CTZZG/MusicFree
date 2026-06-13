@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { exists } from "react-native-fs";
 import rpx from "@/utils/rpx";
+import CheckBox from "@/components/base/checkbox";
 import ListItem from "@/components/base/listItem";
 import {
     getDirectory,
@@ -27,6 +28,7 @@ import { RequestStateCode } from "@/constants/commonConst";
 import { showPanel } from "@/components/panels/usePanel";
 import Icon, { IIconName } from "@/components/base/icon";
 import Toast from "@/utils/toast";
+import TrackPlayer from "@/core/trackPlayer";
 import { showDialog } from "@/components/dialogs/useDialog";
 import {
     getMediaExtraProperty,
@@ -148,13 +150,25 @@ function getCompletedDownloadDetailText(
 interface DownloadingListItemProps {
     musicItem: IMusic.IMusicItem;
     fileStatus?: CompletedDownloadFileStatus;
+    selectionMode?: boolean;
+    selected?: boolean;
+    onSelectPress?: () => void;
+    onLongPress?: () => void;
     onFileStatusChange?: (
         musicItem: IMusic.IMusicItem,
         status: CompletedDownloadFileStatus,
     ) => void;
 }
 function DownloadingListItem(props: DownloadingListItemProps) {
-    const { musicItem, fileStatus, onFileStatusChange } = props;
+    const {
+        musicItem,
+        fileStatus,
+        selectionMode,
+        selected,
+        onSelectPress,
+        onLongPress,
+        onFileStatusChange,
+    } = props;
     const taskInfo = useDownloadTask(musicItem);
     const { t } = useI18N();
     const colors = useColors();
@@ -351,23 +365,31 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     return <ListItem
         withHorizontalPadding
         rightPadding={rpx(4)}
+        onLongPress={onLongPress}
         onPress={
-            status === DownloadStatus.Completed
+            selectionMode
+                ? onSelectPress
+                : status === DownloadStatus.Completed
                 ? showCompletedDownloadDetail
                 : undefined
         }>
+        {selectionMode ? (
+            <View style={style.checkBoxWrapper}>
+                <CheckBox checked={selected} />
+            </View>
+        ) : null}
         <ListItem.Content
             title={musicItem.title}
             description={description}
         />
-        {canRetry ? (
+        {!selectionMode && canRetry ? (
             <ListItem.ListItemIcon
                 icon="arrow-path"
                 position="right"
                 onPress={() => downloader.retry(musicItem)}
             />
         ) : null}
-        {canPause ? (
+        {!selectionMode && canPause ? (
             <ListItem.ListItemIcon
                 icon="pause"
                 position="right"
@@ -376,7 +398,7 @@ function DownloadingListItem(props: DownloadingListItemProps) {
                 }}
             />
         ) : null}
-        {canResume ? (
+        {!selectionMode && canResume ? (
             <ListItem.ListItemIcon
                 icon="play"
                 position="right"
@@ -385,7 +407,7 @@ function DownloadingListItem(props: DownloadingListItemProps) {
                 }}
             />
         ) : null}
-        {canRemove ? (
+        {!selectionMode && canRemove ? (
             <ListItem.ListItemIcon
                 icon="trash-outline"
                 position="right"
@@ -739,6 +761,7 @@ export default function DownloadingList() {
     const downloadQueue = useDownloadQueue();
     const downloadTasks = useDownloadTasksSnapshot();
     const { t } = useI18N();
+    const colors = useColors();
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
     const [artistFilter, setArtistFilter] = useState("all");
@@ -750,8 +773,14 @@ export default function DownloadingList() {
     const [completedFileStatusMap, setCompletedFileStatusMap] = useState<
         Record<string, CompletedDownloadFileStatus>
     >({});
+    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+        () => new Set(),
+    );
+    const [selectionAnchorIndex, setSelectionAnchorIndex] =
+        useState<number | null>(null);
     const mediaExtraVersion = useMediaExtraVersion();
     const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
+    const selectionMode = selectedKeys.size > 0;
 
     const filterItems: Array<{
         key: DownloadFilter;
@@ -1410,6 +1439,121 @@ export default function DownloadingList() {
             mediaExtraVersion,
         ],
     );
+
+    useEffect(() => {
+        if (!filteredQueue.length) {
+            setSelectedKeys(new Set());
+            setSelectionAnchorIndex(null);
+            return;
+        }
+        setSelectedKeys(prev => {
+            const validKeys = new Set(filteredQueue.map(item => getMediaUniqueKey(item)));
+            const next = new Set([...prev].filter(key => validKeys.has(key)));
+            if (!next.size) {
+                setSelectionAnchorIndex(null);
+            }
+            return next;
+        });
+    }, [filteredQueue]);
+
+    const selectedItems = useMemo(
+        () =>
+            filteredQueue.filter(item =>
+                selectedKeys.has(getMediaUniqueKey(item)),
+            ),
+        [filteredQueue, selectedKeys],
+    );
+    const selectedCount = selectedItems.length;
+
+    function clearSelection() {
+        setSelectedKeys(new Set());
+        setSelectionAnchorIndex(null);
+    }
+
+    function selectAllVisible() {
+        setSelectedKeys(new Set(filteredQueue.map(item => getMediaUniqueKey(item))));
+        setSelectionAnchorIndex(filteredQueue.length ? 0 : null);
+    }
+
+    function toggleSelectionAt(index: number, musicItem: IMusic.IMusicItem) {
+        const key = getMediaUniqueKey(musicItem);
+        setSelectedKeys(prev => {
+            if (
+                selectionAnchorIndex !== null &&
+                prev.size === 1 &&
+                !prev.has(key)
+            ) {
+                const start = Math.min(selectionAnchorIndex, index);
+                const end = Math.max(selectionAnchorIndex, index);
+                const next = new Set(prev);
+                filteredQueue.slice(start, end + 1).forEach(item => {
+                    next.add(getMediaUniqueKey(item));
+                });
+                return next;
+            }
+
+            const next = new Set(prev);
+            if (next.has(key)) {
+                next.delete(key);
+                if (!next.size) {
+                    setSelectionAnchorIndex(null);
+                }
+            } else {
+                next.add(key);
+                if (selectionAnchorIndex === null) {
+                    setSelectionAnchorIndex(index);
+                }
+            }
+            return next;
+        });
+    }
+
+    function enterSelectionMode(index: number, musicItem: IMusic.IMusicItem) {
+        setSelectedKeys(new Set([getMediaUniqueKey(musicItem)]));
+        setSelectionAnchorIndex(index);
+    }
+
+    function removeSelectedDownloadRecords() {
+        showDialog("SimpleDialog", {
+            title: t("common.delete"),
+            content: t("downloading.selectionRemoveConfirm", {
+                count: selectedCount,
+            }),
+            onOk() {
+                const completedItems: IMusic.IMusicItem[] = [];
+                const failedItems: IMusic.IMusicItem[] = [];
+                const activeItems: IMusic.IMusicItem[] = [];
+                selectedItems.forEach(item => {
+                    const status =
+                        downloadTasks.get(getMediaUniqueKey(item))?.status ??
+                        DownloadStatus.Error;
+                    if (status === DownloadStatus.Completed) {
+                        completedItems.push(item);
+                    } else if (status === DownloadStatus.Error) {
+                        failedItems.push(item);
+                    } else {
+                        activeItems.push(item);
+                    }
+                });
+
+                let count = 0;
+                count += downloader.clearCompletedTasks(completedItems);
+                count += downloader.clearFailedTasks(failedItems);
+                activeItems.forEach(item => {
+                    if (downloader.remove(item)) {
+                        count += 1;
+                    }
+                });
+                if (count) {
+                    Toast.success(t("toast.deleteSuccess"));
+                } else {
+                    showNoBatchTasksToast();
+                }
+                clearSelection();
+            },
+        });
+    }
+
     return (
         <View style={style.wrapper}>
             {downloadQueue.length ? (
@@ -1549,12 +1693,61 @@ export default function DownloadingList() {
                 ListEmptyComponent={
                     <ListEmpty state={RequestStateCode.IDLE} />
                 }
+                ListHeaderComponent={
+                    selectionMode ? (
+                        <View style={style.selectionHeader}>
+                            <ThemeText fontWeight="bold">
+                                {t("musicList.selection.selectedCount", {
+                                    count: selectedCount,
+                                })}
+                            </ThemeText>
+                            <View style={style.selectionHeaderActions}>
+                                <Pressable
+                                    style={style.selectionTextButton}
+                                    onPress={
+                                        selectedCount === filteredQueue.length
+                                            ? clearSelection
+                                            : selectAllVisible
+                                    }>
+                                    <ThemeText fontColor="primary">
+                                        {selectedCount === filteredQueue.length
+                                            ? t("common.unselectAll")
+                                            : t("common.selectAll")}
+                                    </ThemeText>
+                                </Pressable>
+                                <Pressable
+                                    style={style.selectionTextButton}
+                                    onPress={clearSelection}>
+                                    <ThemeText fontColor="primary">
+                                        {t("common.cancel")}
+                                    </ThemeText>
+                                </Pressable>
+                            </View>
+                        </View>
+                    ) : null
+                }
+                ListFooterComponent={
+                    selectionMode ? <View style={style.selectionSpacer} /> : null
+                }
+                extraData={{
+                    completedFileStatusMap,
+                    selectedKeys,
+                    selectionMode,
+                }}
                 data={filteredQueue}
                 keyExtractor={_ => `dl${_.platform}.${_.id}`}
-                renderItem={({ item }) => {
+                renderItem={({ item, index }) => {
                     return (
                         <DownloadingListItem
                             musicItem={item}
+                            selectionMode={selectionMode}
+                            selected={selectedKeys.has(getMediaUniqueKey(item))}
+                            onSelectPress={() => {
+                                toggleSelectionAt(index, item);
+                            }}
+                            onLongPress={() => {
+                                enterSelectionMode(index, item);
+                            }}
                             fileStatus={
                                 completedFileStatusMap[
                                     getMediaUniqueKey(item)
@@ -1565,7 +1758,82 @@ export default function DownloadingList() {
                     );
                 }}
             />
+            {selectionMode ? (
+                <View
+                    style={[
+                        style.selectionBottomBar,
+                        { backgroundColor: colors.appBar },
+                    ]}>
+                    <SelectionAction
+                        icon="motion-play"
+                        title={t("musicListEditor.addToNextPlay")}
+                        disabled={!selectedCount}
+                        onPress={() => {
+                            TrackPlayer.addNext(selectedItems);
+                            Toast.success(t("toast.addToNextPlay"));
+                            clearSelection();
+                        }}
+                    />
+                    <SelectionAction
+                        icon="clock-outline"
+                        title={t("playLater.add")}
+                        disabled={!selectedCount}
+                        onPress={() => {
+                            TrackPlayer.addPlayLater(selectedItems);
+                            Toast.success(t("playLater.added"));
+                            clearSelection();
+                        }}
+                    />
+                    <SelectionAction
+                        icon="folder-plus"
+                        title={t("musicListEditor.addToSheet")}
+                        disabled={!selectedCount}
+                        onPress={() => {
+                            showPanel("AddToMusicSheet", {
+                                musicItem: selectedItems,
+                            });
+                            clearSelection();
+                        }}
+                    />
+                    <SelectionAction
+                        icon="trash-outline"
+                        title={t("common.delete")}
+                        disabled={!selectedCount}
+                        onPress={removeSelectedDownloadRecords}
+                    />
+                </View>
+            ) : null}
         </View>
+    );
+}
+
+function SelectionAction(props: {
+    icon: IIconName;
+    title: string;
+    disabled?: boolean;
+    onPress: () => void;
+}) {
+    const { icon, title, disabled, onPress } = props;
+    const colors = useColors();
+
+    return (
+        <Pressable
+            onPress={disabled ? undefined : onPress}
+            style={style.selectionAction}>
+            <Icon
+                name={icon}
+                size={rpx(42)}
+                color={colors.appBarText}
+                style={disabled ? style.disabledAction : undefined}
+            />
+            <ThemeText
+                numberOfLines={1}
+                fontSize="description"
+                color={colors.appBarText}
+                style={disabled ? style.disabledAction : undefined}>
+                {title}
+            </ThemeText>
+        </Pressable>
     );
 }
 
@@ -1582,6 +1850,50 @@ const style = StyleSheet.create({
         paddingHorizontal: rpx(24),
         paddingTop: rpx(16),
         gap: rpx(8),
+    },
+    checkBoxWrapper: {
+        marginRight: rpx(18),
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    selectionHeader: {
+        minHeight: rpx(76),
+        paddingHorizontal: rpx(24),
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+    selectionHeaderActions: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    selectionTextButton: {
+        paddingHorizontal: rpx(12),
+        height: rpx(56),
+        justifyContent: "center",
+    },
+    selectionSpacer: {
+        height: rpx(132),
+    },
+    selectionBottomBar: {
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: rpx(120),
+        flexDirection: "row",
+        justifyContent: "space-around",
+        alignItems: "center",
+    },
+    selectionAction: {
+        width: rpx(150),
+        height: rpx(104),
+        alignItems: "center",
+        justifyContent: "center",
+        gap: rpx(8),
+    },
+    disabledAction: {
+        opacity: 0.45,
     },
     detailContent: {
         gap: rpx(20),

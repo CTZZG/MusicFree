@@ -17,6 +17,7 @@ import { StatusBar } from "react-native";
 import { ReduceMotion, ReducedMotionConfig } from "react-native-reanimated";
 import { routes } from "@/core/router/routes.tsx";
 import ErrorBoundary from "@/components/errorBoundary";
+import { navigationRef } from "@/core/router";
 
 /**
  * 字体颜色
@@ -38,6 +39,7 @@ export default function Pages() {
             <GestureHandlerRootView style={globalStyle.flex1}>
                 <SafeAreaProvider>
                     <NavigationContainer 
+                        ref={navigationRef}
                         theme={theme}
                     >
                         <PageBackground />

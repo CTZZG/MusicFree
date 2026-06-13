@@ -14,6 +14,7 @@ import MusicSheet from "@/core/musicSheet";
 import downloadNotificationManager from "@/core/downloadNotificationManager";
 import LxSource from "@/core/lxSource";
 import PluginManager from "@/core/pluginManager";
+import { ROUTE_PATH, navigationRef } from "@/core/router";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
 import { maybeRunAutoWebdavBackup } from "@/core/webdavBackup";
@@ -326,6 +327,26 @@ async function extraMakeup() {
         Toast.warn(i18n.t("scheme.searchPlayFailed"));
     }
 
+    function openSearchPage(keyword: string, retryCount = 20) {
+        const trimmedKeyword = keyword.trim();
+        if (!trimmedKeyword) {
+            return;
+        }
+        if (!navigationRef.isReady()) {
+            if (retryCount > 0) {
+                setTimeout(
+                    () => openSearchPage(trimmedKeyword, retryCount - 1),
+                    300,
+                );
+            }
+            return;
+        }
+        navigationRef.navigate(ROUTE_PATH.SEARCH_PAGE, {
+            initialQuery: trimmedKeyword,
+            initialSearchType: "music",
+        });
+    }
+
     async function handlePlayerSchemeUrl(url: string) {
         if (!url.startsWith("musicfree://")) {
             return false;
@@ -343,7 +364,7 @@ async function extraMakeup() {
             await TrackPlayer.pause();
             return true;
         }
-        if (command === "toggle-play") {
+        if (command === "toggle-play" || command === "toggle") {
             const state = await TrackPlayer.playerAdapter.getState();
             if (state === "playing") {
                 await TrackPlayer.pause();
@@ -352,12 +373,16 @@ async function extraMakeup() {
             }
             return true;
         }
-        if (command === "next") {
+        if (command === "next" || command === "skip-next") {
             await TrackPlayer.skipToNext();
             return true;
         }
-        if (command === "previous") {
+        if (command === "previous" || command === "skip-prev") {
             await TrackPlayer.skipToPrevious();
+            return true;
+        }
+        if (command === "search") {
+            openSearchPage(readSchemeQueryParam(url, "keyword"));
             return true;
         }
         if (command === "search-play") {

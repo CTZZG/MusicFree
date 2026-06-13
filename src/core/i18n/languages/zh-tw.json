@@ -895,5 +895,14 @@
     "lxSource.sourceUrl": "來源 URL",
     "lxSource.author": "作者",
     "lxSource.version": "版本",
-    "scheme.searchPlayFailed": "未找到可播放的搜尋結果"
+    "scheme.searchPlayFailed": "未找到可播放的搜尋結果",
+    "dislikeMusic.skipped": "已跳過不喜歡的歌曲",
+    "dislikeMusic.noPlayableMusic": "沒有可播放的歌曲",
+    "cacheManagement.lyricCache": "歌詞快取",
+    "cacheManagement.imageCache": "圖片快取",
+    "cacheManagement.totalCache": "總快取占用",
+    "cacheManagement.clearAllSafeCaches": "清理全部快取",
+    "cacheManagement.clearAllSafeCachesConfirm": "將清理播放快取、歌詞快取、圖片快取和插件懶載入快取，不會刪除已下載音樂、本機音樂、歌單和設定。確定繼續嗎？",
+    "cacheManagement.allSafeCachesCleared": "快取已清理",
+    "downloading.selectionRemoveConfirm": "將刪除 {count} 條下載中心記錄，不會刪除本機音樂檔案。確定繼續嗎？"
 }

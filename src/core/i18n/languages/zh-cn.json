@@ -895,5 +895,14 @@
     "lxSource.sourceUrl": "来源 URL",
     "lxSource.author": "作者",
     "lxSource.version": "版本",
-    "scheme.searchPlayFailed": "未找到可播放的搜索结果"
+    "scheme.searchPlayFailed": "未找到可播放的搜索结果",
+    "dislikeMusic.skipped": "已跳过不喜欢的歌曲",
+    "dislikeMusic.noPlayableMusic": "没有可播放的歌曲",
+    "cacheManagement.lyricCache": "歌词缓存",
+    "cacheManagement.imageCache": "图片缓存",
+    "cacheManagement.totalCache": "总缓存占用",
+    "cacheManagement.clearAllSafeCaches": "清理全部缓存",
+    "cacheManagement.clearAllSafeCachesConfirm": "将清理播放缓存、歌词缓存、图片缓存和插件懒加载缓存，不会删除已下载音乐、本地音乐、歌单和配置。确定继续吗？",
+    "cacheManagement.allSafeCachesCleared": "缓存已清理",
+    "downloading.selectionRemoveConfirm": "将删除 {count} 条下载中心记录，不会删除本地音乐文件。确定继续吗？"
 }

@@ -220,6 +220,8 @@ export interface ILanguageData {
     "dislikeMusic.added": string; // 添加不喜欢成功
     "dislikeMusic.removed": string; // 取消不喜欢成功
     "dislikeMusic.addFailed": string; // 添加不喜欢失败
+    "dislikeMusic.skipped": string; // 已跳过不喜欢歌曲
+    "dislikeMusic.noPlayableMusic": string; // 没有可播放歌曲
     "playLater.title": string; // 稍后播放
     "playLater.add": string; // 添加到稍后播放
     "playLater.empty": string; // 稍后播放空列表
@@ -400,6 +402,7 @@ export interface ILanguageData {
     "downloading.pauseActiveSuccess": string; // 暂停进行中任务成功
     "downloading.resumePaused": string; // 恢复暂停任务
     "downloading.resumePausedSuccess": string; // 恢复暂停任务成功
+    "downloading.selectionRemoveConfirm": string; // 多选删除下载记录确认
 
     // 艺术家详情相关
     "artistDetail.fansCount": string; // 粉丝数量
@@ -717,6 +720,9 @@ export interface ILanguageData {
     "cacheManagement.title": string; // 缓存管理
     "cacheManagement.playbackCache": string; // 播放缓存
     "cacheManagement.pluginCache": string; // 插件缓存
+    "cacheManagement.lyricCache": string; // 歌词缓存
+    "cacheManagement.imageCache": string; // 图片缓存
+    "cacheManagement.totalCache": string; // 总缓存
     "cacheManagement.localFileCount": string; // 本地文件数量
     "cacheManagement.cacheSummary": string; // 缓存概要
     "cacheManagement.pluginCacheCount": string; // 插件缓存数量
@@ -725,6 +731,9 @@ export interface ILanguageData {
     "cacheManagement.clearPlaybackCache": string; // 清理播放缓存
     "cacheManagement.clearPlaybackCacheConfirm": string; // 清理播放缓存确认
     "cacheManagement.clearPluginCache": string; // 清理插件缓存
+    "cacheManagement.clearAllSafeCaches": string; // 清理全部安全缓存
+    "cacheManagement.clearAllSafeCachesConfirm": string; // 清理全部安全缓存确认
+    "cacheManagement.allSafeCachesCleared": string; // 全部安全缓存已清理
     "cacheManagement.refresh": string; // 刷新缓存统计
     "cacheManagement.cacheCleared": string; // 缓存已清理
 

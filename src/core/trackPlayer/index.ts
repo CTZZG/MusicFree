@@ -16,6 +16,7 @@ import { hasEncryptedMediaSource } from "@/utils/mflac";
 import Network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
+import Toast from "@/utils/toast";
 import EventEmitter from "eventemitter3";
 import { produce } from "immer";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
@@ -23,6 +24,7 @@ import shuffle from "lodash.shuffle";
 import { useEffect } from "react";
 import LocalMusicSheet from "../localMusicSheet";
 import DislikeMusic from "../dislikeMusic";
+import i18n from "../i18n";
 
 import { MusicRepeatMode, TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import type { IAppConfig } from "@/types/core/config";
@@ -1549,12 +1551,14 @@ class TrackPlayer extends EventEmitter<{
                 !isSameMediaItem(candidate, currentMusic) &&
                 !DislikeMusic.isDisliked(candidate)
             ) {
+                Toast.success(i18n.t("dislikeMusic.skipped"));
                 await this.play(candidate, true);
                 return true;
             }
         }
 
         await this.pause().catch(() => undefined);
+        Toast.warn(i18n.t("dislikeMusic.noPlayableMusic"));
         return false;
     }
 

@@ -14,6 +14,8 @@ import Toast from "@/utils/toast";
 interface ICacheStats {
     playbackCacheCount: number;
     playbackCacheSize: number;
+    lyricCacheSize: number;
+    imageCacheSize: number;
     pluginCacheCount: number;
     localFileCount: number;
 }
@@ -21,6 +23,8 @@ interface ICacheStats {
 const initialStats: ICacheStats = {
     playbackCacheCount: 0,
     playbackCacheSize: 0,
+    lyricCacheSize: 0,
+    imageCacheSize: 0,
     pluginCacheCount: 0,
     localFileCount: 0,
 };
@@ -30,17 +34,25 @@ export default function CacheManagementSetting() {
     const [stats, setStats] = useState<ICacheStats>(initialStats);
 
     const refreshStats = useCallback(async () => {
-        const [mediaStats, musicCacheSize] = await Promise.all([
+        const [mediaStats, musicCacheSize, lyricCacheSize, imageCacheSize] =
+            await Promise.all([
             Promise.resolve(MediaCache.getMediaCacheStats()),
             getCacheSize("music"),
+            getCacheSize("lyric"),
+            getCacheSize("image"),
         ]);
         setStats({
             playbackCacheCount: mediaStats.count,
             playbackCacheSize: musicCacheSize + mediaStats.approximateSize,
+            lyricCacheSize,
+            imageCacheSize,
             pluginCacheCount: PluginManager.getPluginCacheCount(),
             localFileCount: LocalMusicSheet.getMusicList().length,
         });
     }, []);
+
+    const totalCacheSize =
+        stats.playbackCacheSize + stats.lyricCacheSize + stats.imageCacheSize;
 
     useEffect(() => {
         void refreshStats();
@@ -73,6 +85,24 @@ export default function CacheManagementSetting() {
         });
     }
 
+    function showClearAllSafeCachesDialog() {
+        showDialog("SimpleDialog", {
+            title: t("cacheManagement.clearAllSafeCaches"),
+            content: t("cacheManagement.clearAllSafeCachesConfirm"),
+            async onOk() {
+                await Promise.all([
+                    clearCache("music"),
+                    clearCache("lyric"),
+                    clearCache("image"),
+                    MediaCache.clearAllMediaCache(),
+                ]);
+                PluginManager.clearPluginCache();
+                await refreshStats();
+                Toast.success(t("cacheManagement.allSafeCachesCleared"));
+            },
+        });
+    }
+
     return (
         <ScrollView style={style.wrapper}>
             <View style={style.sectionHeader}>
@@ -98,6 +128,24 @@ export default function CacheManagementSetting() {
                     {t("cacheManagement.pluginCacheCount", {
                         count: stats.pluginCacheCount,
                     })}
+                </ThemeText>
+            </ListItem>
+            <ListItem withHorizontalPadding heightType="small">
+                <ListItem.Content title={t("cacheManagement.lyricCache")} />
+                <ThemeText style={style.value}>
+                    {sizeFormatter(stats.lyricCacheSize)}
+                </ThemeText>
+            </ListItem>
+            <ListItem withHorizontalPadding heightType="small">
+                <ListItem.Content title={t("cacheManagement.imageCache")} />
+                <ThemeText style={style.value}>
+                    {sizeFormatter(stats.imageCacheSize)}
+                </ThemeText>
+            </ListItem>
+            <ListItem withHorizontalPadding heightType="small">
+                <ListItem.Content title={t("cacheManagement.totalCache")} />
+                <ThemeText style={style.value}>
+                    {sizeFormatter(totalCacheSize)}
                 </ThemeText>
             </ListItem>
             <ListItem withHorizontalPadding heightType="small">
@@ -127,6 +175,12 @@ export default function CacheManagementSetting() {
                 heightType="small"
                 onPress={showClearPluginCacheDialog}>
                 <ListItem.Content title={t("cacheManagement.clearPluginCache")} />
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={showClearAllSafeCachesDialog}>
+                <ListItem.Content title={t("cacheManagement.clearAllSafeCaches")} />
             </ListItem>
             <ListItem
                 withHorizontalPadding
