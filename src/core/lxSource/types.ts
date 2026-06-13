@@ -2,7 +2,7 @@ export type ILxSourceKey = "kw" | "kg" | "tx" | "wy" | "mg" | "local";
 
 export type ILxSourceAction = "musicUrl" | "lyric" | "pic";
 
-export type ILxQuality = "128k" | "320k" | "flac" | "flac24bit";
+export type ILxQuality = "128k" | "192k" | "320k" | "flac" | "flac24bit";
 
 export interface ILxSourceMetadata {
     name: string;

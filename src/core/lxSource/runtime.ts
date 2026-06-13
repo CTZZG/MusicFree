@@ -1,4 +1,7 @@
 import axios, { AxiosRequestConfig } from "axios";
+import asyncToGenerator from "@babel/runtime/helpers/asyncToGenerator";
+import babelRegenerator from "@babel/runtime/helpers/regenerator";
+import babelTypeof from "@babel/runtime/helpers/typeof";
 import { Buffer } from "buffer";
 import CryptoJs from "crypto-js";
 import { URL, URLSearchParams } from "react-native-url-polyfill";
@@ -7,6 +10,7 @@ import { devLog } from "@/utils/log";
 import {
     ILxRequestHandler,
     ILxRequestPayload,
+    ILxQuality,
     ILxSourceInitSources,
     ILxSourceMetadata,
     ILxSourceRuntime,
@@ -19,6 +23,78 @@ const EVENT_NAMES = {
 } as const;
 
 const supportedBufferEncodings = new Set(["base64", "hex", "utf8", "utf-8"]);
+const supportedActions = new Set(["musicUrl", "lyric", "pic"]);
+const supportedSourceKeys = ["kw", "kg", "tx", "wy", "mg", "local"] as const;
+
+function regeneratorDefine(target: any, key?: string, value?: any, notEnumerable?: boolean) {
+    let defineProperty: typeof Object.defineProperty | null = Object.defineProperty;
+    try {
+        defineProperty({}, "", {});
+    } catch {
+        defineProperty = null;
+    }
+
+    function defineInvoke(methodName: string, arg: number) {
+        regeneratorDefine(target, methodName, function(this: any, payload: any) {
+            return this._invoke(methodName, arg, payload);
+        });
+    }
+
+    if (key) {
+        if (defineProperty) {
+            defineProperty(target, key, {
+                value,
+                enumerable: !notEnumerable,
+                configurable: !notEnumerable,
+                writable: !notEnumerable,
+            });
+        } else {
+            target[key] = value;
+        }
+    } else {
+        defineInvoke("next", 0);
+        defineInvoke("throw", 1);
+        defineInvoke("return", 2);
+    }
+}
+
+const regeneratorRuntimeCompat = babelRegenerator();
+
+function asyncGeneratorStep(
+    generator: any,
+    resolve: (value: any) => void,
+    reject: (error: any) => void,
+    next: (value: any) => void,
+    throwError: (error: any) => void,
+    key: "next" | "throw",
+    arg: any,
+) {
+    let info;
+    let value;
+    try {
+        info = generator[key](arg);
+        value = info.value;
+    } catch (e) {
+        reject(e);
+        return;
+    }
+    if (info.done) {
+        resolve(value);
+    } else {
+        Promise.resolve(value).then(next, throwError);
+    }
+}
+
+const babelHelpers = {
+    _regenerator: babelRegenerator,
+    _regeneratorRuntime: regeneratorRuntimeCompat,
+    regeneratorRuntime: regeneratorRuntimeCompat,
+    _regeneratorDefine: regeneratorDefine,
+    _regeneratorDefine2: regeneratorDefine,
+    _asyncToGenerator: asyncToGenerator,
+    asyncGeneratorStep,
+    _typeof: babelTypeof,
+};
 
 function normalizeBufferEncoding(format?: string) {
     const safeFormat = format?.toLowerCase() || "utf8";
@@ -149,13 +225,43 @@ function lxRequest(url: string, options?: any, callback?: (err: any, resp?: any,
     return () => controller.abort();
 }
 
+function normalizeLxQuality(rawQuality: string): ILxQuality | null {
+    const quality = String(rawQuality ?? "").trim().toLowerCase();
+    if (!quality) {
+        return null;
+    }
+    if (quality === "24bit" || quality === "hires" || quality === "master" || quality === "atmos") {
+        return "flac24bit";
+    }
+    if (quality === "128k" || quality === "192k" || quality === "320k" || quality === "flac" || quality === "flac24bit") {
+        return quality;
+    }
+    return null;
+}
+
+function normalizeLxQualities(rawQualities: any) {
+    if (!Array.isArray(rawQualities)) {
+        return [];
+    }
+    const seen = new Set<ILxQuality>();
+    const qualities: ILxQuality[] = [];
+    rawQualities.forEach(rawQuality => {
+        const quality = normalizeLxQuality(rawQuality);
+        if (quality && !seen.has(quality)) {
+            seen.add(quality);
+            qualities.push(quality);
+        }
+    });
+    return qualities;
+}
+
 function normalizeSources(rawSources: any): ILxSourceInitSources {
     if (!rawSources || typeof rawSources !== "object") {
         return {};
     }
 
     const result: ILxSourceInitSources = {};
-    (["kw", "kg", "tx", "wy", "mg", "local"] as const).forEach(key => {
+    supportedSourceKeys.forEach(key => {
         const rawSource = rawSources[key];
         if (!rawSource || typeof rawSource !== "object") {
             return;
@@ -165,18 +271,71 @@ function normalizeSources(rawSources: any): ILxSourceInitSources {
             type: rawSource.type,
             actions: Array.isArray(rawSource.actions)
                 ? rawSource.actions.filter((action: string) =>
-                    ["musicUrl", "lyric", "pic"].includes(action),
+                    supportedActions.has(action),
                 )
                 : [],
-            qualitys: Array.isArray(rawSource.qualitys)
-                ? rawSource.qualitys.filter((quality: string) =>
-                    ["128k", "320k", "flac", "flac24bit"].includes(quality),
-                )
-                : [],
+            qualitys: normalizeLxQualities(rawSource.qualitys),
         };
     });
 
     return result;
+}
+
+function createRuntimeGlobal(lx: any) {
+    const globalThisObject: Record<string, any> = {
+        lx,
+        setTimeout,
+        clearTimeout,
+        URL,
+        URLSearchParams,
+        Buffer,
+        process: {
+            env: {},
+        },
+        exports: {},
+        module: {
+            exports: {},
+        },
+        DEV_ENABLE: false,
+        UPDATE_ENABLE: false,
+        API_URL: "",
+        API_KEY: "",
+        MUSIC_SOURCE: {},
+        MUSIC_SOURCES: {},
+        MUSIC_QUALITY: {},
+        httpFetch: lxRequest,
+        ...babelHelpers,
+    };
+
+    globalThisObject.window = globalThisObject;
+    globalThisObject.self = globalThisObject;
+    globalThisObject.global = globalThisObject;
+    globalThisObject.globalThis = globalThisObject;
+    return globalThisObject;
+}
+
+function createRuntimeSandbox(globalThisObject: Record<string, any>) {
+    return new Proxy(globalThisObject, {
+        has(_target, key) {
+            return key !== Symbol.unscopables;
+        },
+        get(target, key) {
+            if (key === Symbol.unscopables) {
+                return undefined;
+            }
+            if (key in target) {
+                return target[key as keyof typeof target];
+            }
+            if (key in globalThis) {
+                return (globalThis as any)[key];
+            }
+            return undefined;
+        },
+        set(target, key, value) {
+            target[key as keyof typeof target] = value;
+            return true;
+        },
+    });
 }
 
 function normalizeMusicUrlResult(raw: any): IPlugin.IMediaSourceResult | null {
@@ -241,22 +400,19 @@ export async function createLxSourceRuntime(
         utils: createUtils(),
     };
 
-    const globalThisObject = {
-        lx,
-        setTimeout,
-        clearTimeout,
-        URL,
-        URLSearchParams,
-        Buffer,
-    };
+    const globalThisObject = createRuntimeGlobal(lx);
+    const sandbox = createRuntimeSandbox(globalThisObject);
 
+    // Some LX sources are bundled as browser globals, so free variables need
+    // to resolve through the sandbox instead of a strict parameter list.
     // eslint-disable-next-line no-new-func
     Function(`
-        'use strict';
-        return function(globalThis, console, setTimeout, clearTimeout, URL, URLSearchParams, Buffer) {
+        return function(sandbox) {
+            with (sandbox) {
             ${script}
+            }
         }
-    `)()(globalThisObject, console, setTimeout, clearTimeout, URL, URLSearchParams, Buffer);
+    `)()(sandbox);
 
     const requestHandler = handlers[EVENT_NAMES.request] as ILxRequestHandler | undefined;
     if (!requestHandler) {

@@ -35,7 +35,7 @@ const platformAliasMap: Array<{
 const lxQualityMap: Record<string, ILxQuality> = {
     "96k": "128k",
     "128k": "128k",
-    "192k": "128k",
+    "192k": "192k",
     "320k": "320k",
     flac: "flac",
     flac24bit: "flac24bit",
