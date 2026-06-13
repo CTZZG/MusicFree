@@ -1,6 +1,6 @@
 import React, { Fragment } from "react";
 import { ScrollView, StyleSheet } from "react-native";
-import rpx from "@/utils/rpx";
+import rpx, { vh } from "@/utils/rpx";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PanelBase from "../base/panelBase";
 import { hidePanel } from "../usePanel";
@@ -21,28 +21,38 @@ interface ISimpleSelectProps {
     onPress?: (item: ICandidateItem) => void;
 }
 
+const HEADER_HEIGHT = rpx(100);
+const ITEM_HEIGHT = rpx(96);
+const MIN_PANEL_HEIGHT = rpx(320);
+const MAX_PANEL_HEIGHT = vh(82);
+const MIN_BOTTOM_PADDING = rpx(24);
+
 export default function SimpleSelect(props: ISimpleSelectProps) {
     const {
-        height = rpx(520),
+        height,
         header = "",
         candidates = [],
         onPress,
     } = props ?? {};
 
     const safeAreaInsets = useSafeAreaInsets();
+    const bottomPadding = Math.max(safeAreaInsets.bottom, MIN_BOTTOM_PADDING);
+    const contentHeight = HEADER_HEIGHT + candidates.length * ITEM_HEIGHT + bottomPadding;
+    const panelHeight = height ?? Math.min(
+        Math.max(contentHeight, MIN_PANEL_HEIGHT),
+        MAX_PANEL_HEIGHT,
+    );
 
     return (
         <PanelBase
-            height={height}
+            height={panelHeight}
             renderBody={() => (
                 <>
                     <PanelHeader title={header} hideButtons />
 
                     <ScrollView
-                        style={[
-                            styles.body,
-                            { marginBottom: safeAreaInsets.bottom },
-                        ]}>
+                        style={styles.body}
+                        contentContainerStyle={{ paddingBottom: bottomPadding }}>
                         {candidates.map((it, index) => {
                             return (
                                 <Fragment key={`frag-${index}`}>
