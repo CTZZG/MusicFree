@@ -64,6 +64,18 @@ type DownloadTaskDetailInfo = {
     completedAt?: number;
 };
 
+function areCompletedFileStatusMapsEqual(
+    a: Record<string, CompletedDownloadFileStatus>,
+    b: Record<string, CompletedDownloadFileStatus>,
+) {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) {
+        return false;
+    }
+    return aKeys.every(key => a[key] === b[key]);
+}
+
 function getCompletedDownloadLocalPath(musicItem: IMusic.IMusicItem) {
     const localPath = getLocalPath(musicItem);
     if (!localPath) {
@@ -1156,6 +1168,9 @@ export default function DownloadingList() {
                     next[key] = prevStatus;
                 }
             });
+            if (areCompletedFileStatusMapsEqual(prev, next)) {
+                return prev;
+            }
             return next;
         });
 
@@ -1174,7 +1189,10 @@ export default function DownloadingList() {
             }),
         ).then(entries => {
             if (!cancelled) {
-                setCompletedFileStatusMap(Object.fromEntries(entries));
+                const next = Object.fromEntries(entries);
+                setCompletedFileStatusMap(prev =>
+                    areCompletedFileStatusMapsEqual(prev, next) ? prev : next,
+                );
             }
         });
 
@@ -1442,15 +1460,28 @@ export default function DownloadingList() {
 
     useEffect(() => {
         if (!filteredQueue.length) {
-            setSelectedKeys(new Set());
-            setSelectionAnchorIndex(null);
+            setSelectedKeys(prev => (prev.size ? new Set() : prev));
+            setSelectionAnchorIndex(prev => (prev === null ? prev : null));
             return;
         }
         setSelectedKeys(prev => {
             const validKeys = new Set(filteredQueue.map(item => getMediaUniqueKey(item)));
-            const next = new Set([...prev].filter(key => validKeys.has(key)));
+            const next = new Set<string>();
+            let changed = false;
+            prev.forEach(key => {
+                if (validKeys.has(key)) {
+                    next.add(key);
+                } else {
+                    changed = true;
+                }
+            });
+            if (!changed && next.size === prev.size) {
+                return prev;
+            }
             if (!next.size) {
-                setSelectionAnchorIndex(null);
+                setSelectionAnchorIndex(prevAnchor =>
+                    prevAnchor === null ? prevAnchor : null,
+                );
             }
             return next;
         });

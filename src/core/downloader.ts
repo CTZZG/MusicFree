@@ -25,7 +25,7 @@ import EventEmitter from "eventemitter3";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { nanoid } from "nanoid";
 import path from "path-browserify";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { copyFile, downloadFile, exists, unlink, writeFile } from "react-native-fs";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import Mp3Util, {
@@ -1269,7 +1269,7 @@ export function useDownloadTask(musicItem: IMusic.IMusicItem) {
 }
 
 export function useDownloadTasksSnapshot() {
-    const [, setVersion] = useState(0);
+    const [version, setVersion] = useState(0);
 
     useEffect(() => {
         const update = () => {
@@ -1286,7 +1286,7 @@ export function useDownloadTasksSnapshot() {
         };
     }, []);
 
-    return new Map(downloadTasks);
+    return useMemo(() => new Map(downloadTasks), [version]);
 }
 
 export const useDownloadQueue = () => useAtomValue(downloadQueueAtom);

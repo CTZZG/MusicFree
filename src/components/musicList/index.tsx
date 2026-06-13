@@ -133,15 +133,28 @@ export default function MusicList(props: IMusicListProps) {
 
     useEffect(() => {
         if (!musicList?.length) {
-            setSelectedKeys(new Set());
-            setSelectionAnchorIndex(null);
+            setSelectedKeys(prev => (prev.size ? new Set() : prev));
+            setSelectionAnchorIndex(prev => (prev === null ? prev : null));
             return;
         }
         setSelectedKeys(prev => {
             const validKeys = new Set(musicList.map(item => getMediaUniqueKey(item)));
-            const next = new Set([...prev].filter(key => validKeys.has(key)));
+            const next = new Set<string>();
+            let changed = false;
+            prev.forEach(key => {
+                if (validKeys.has(key)) {
+                    next.add(key);
+                } else {
+                    changed = true;
+                }
+            });
+            if (!changed && next.size === prev.size) {
+                return prev;
+            }
             if (!next.size) {
-                setSelectionAnchorIndex(null);
+                setSelectionAnchorIndex(prevAnchor =>
+                    prevAnchor === null ? prevAnchor : null,
+                );
             }
             return next;
         });
