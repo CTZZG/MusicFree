@@ -12,6 +12,7 @@ import lyricManager from "@/core/lyricManager";
 import musicHistory from "@/core/musicHistory";
 import MusicSheet from "@/core/musicSheet";
 import downloadNotificationManager from "@/core/downloadNotificationManager";
+import LxSource from "@/core/lxSource";
 import PluginManager from "@/core/pluginManager";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
@@ -369,10 +370,23 @@ async function extraMakeup() {
     async function handleLinkingUrl(url: string) {
         // 插件
         try {
-            if (await handlePlayerSchemeUrl(url)) {
+            if (url.startsWith("musicfree://install-lx-source/")) {
+                const sourceUrl = decodeURIComponent(
+                    url.slice("musicfree://install-lx-source/".length),
+                );
+                const result = await LxSource.installFromUrl(sourceUrl);
+                if (result.success) {
+                    Toast.success(i18n.t("lxSource.installSuccess", {
+                        name: result.item?.metadata.name ?? "",
+                    }));
+                } else {
+                    Toast.warn(i18n.t("lxSource.installFailed", {
+                        reason: result.message ?? "",
+                    }));
+                }
+            } else if (await handlePlayerSchemeUrl(url)) {
                 return;
-            }
-            if (url.startsWith("musicfree://install/")) {
+            } else if (url.startsWith("musicfree://install/")) {
                 const plugins = url
                     .slice(20)
                     .split(",")
