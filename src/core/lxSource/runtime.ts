@@ -286,6 +286,7 @@ function createRuntimeGlobal(lx: any) {
         lx,
         setTimeout,
         clearTimeout,
+        console,
         URL,
         URLSearchParams,
         Buffer,
@@ -347,15 +348,44 @@ function isValidIdentifier(name: string) {
     return /^[A-Za-z_$][\w$]*$/.test(name);
 }
 
+const runtimeParameterNames = new Set([
+    "lx",
+    "setTimeout",
+    "clearTimeout",
+    "console",
+    "URL",
+    "URLSearchParams",
+    "Buffer",
+    "process",
+    "exports",
+    "module",
+    "window",
+    "self",
+    "global",
+    "globalThis",
+    "_regenerator",
+    "_regeneratorRuntime",
+    "regeneratorRuntime",
+    "_regeneratorDefine",
+    "_regeneratorDefine2",
+    "_asyncToGenerator",
+    "asyncGeneratorStep",
+    "_typeof",
+]);
+
 function runScriptInRuntimeGlobal(
     script: string,
     globalThisObject: Record<string, any>,
 ) {
-    const paramNames = Object.keys(globalThisObject).filter(isValidIdentifier);
+    const paramNames = Object.keys(globalThisObject).filter(name =>
+        runtimeParameterNames.has(name) && isValidIdentifier(name),
+    );
     const paramValues = paramNames.map(name => globalThisObject[name]);
 
-    // Hermes does not support `with`, so expose LX/browser-like globals as
-    // function parameters while keeping top-level `this` as the sandbox global.
+    // Hermes does not support `with`, so expose only stable LX/browser-like
+    // globals as parameters. Common script-local names such as API_URL or
+    // MUSIC_QUALITY stay as globalThis properties to avoid top-level const
+    // redeclaration conflicts in real LX custom sources.
     // eslint-disable-next-line no-new-func
     Function(...paramNames, script).apply(globalThisObject, paramValues);
 }
