@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import NavBar from "./components/navBar";
 import { useAtom, useSetAtom } from "jotai";
@@ -27,20 +27,36 @@ export default function () {
     const { t } = useI18N();
     const params = useParams<"search-page">();
     const search = useSearch();
+    const searchRef = useRef(search);
 
     useEffect(() => {
-        setSearchResultsState(initSearchResults);
+        searchRef.current = search;
+    }, [search]);
+
+    useEffect(() => {
         const initialQuery = params?.initialQuery?.trim();
         if (initialQuery) {
+            setSearchResultsState(initSearchResults);
             setQuery(initialQuery);
             setPageStatus(PageStatus.SEARCHING);
-            void search(
+            void searchRef.current(
                 initialQuery,
                 1,
                 params?.initialSearchType,
                 params?.pluginHash,
             );
         }
+    }, [
+        params?.initialQuery,
+        params?.initialSearchType,
+        params?.initialSearchToken,
+        params?.pluginHash,
+        setPageStatus,
+        setQuery,
+        setSearchResultsState,
+    ]);
+
+    useEffect(() => {
         return () => {
             setPageStatus(PageStatus.EDITING);
             setQuery("");

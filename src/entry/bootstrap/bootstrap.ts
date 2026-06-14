@@ -344,6 +344,7 @@ async function extraMakeup() {
         navigationRef.navigate(ROUTE_PATH.SEARCH_PAGE, {
             initialQuery: trimmedKeyword,
             initialSearchType: "music",
+            initialSearchToken: Date.now(),
         });
     }
 

@@ -77,6 +77,7 @@ interface RouterParams extends RouterParamsBase {
         | {
               initialQuery?: string;
               initialSearchType?: ICommon.SupportMediaType;
+              initialSearchToken?: number;
               pluginHash?: string;
           };
     "local-sheet-detail": {

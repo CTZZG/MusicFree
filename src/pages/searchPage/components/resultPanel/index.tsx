@@ -1,7 +1,7 @@
 /**
  * 搜索结果面板 一级页
  */
-import React, { memo, useState } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { Text } from "react-native";
 import rpx, { vw } from "@/utils/rpx";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
@@ -35,6 +35,10 @@ function ResultPanel() {
     const [index, setIndex] = useState(initialIndex);
     const colors = useColors();
     const { t } = useI18N();
+
+    useEffect(() => {
+        setIndex(initialIndex);
+    }, [initialIndex]);
 
     return (
         <TabView

@@ -1,7 +1,10 @@
 import ListEmpty from "@/components/base/listEmpty";
 import ListFooter from "@/components/base/listFooter";
 import Loading from "@/components/base/loading";
+import MusicList from "@/components/musicList";
 import { RequestStateCode } from "@/constants/commonConst";
+import Config from "@/core/appConfig";
+import TrackPlayer from "@/core/trackPlayer";
 import useOrientation from "@/hooks/useOrientation";
 import rpx from "@/utils/rpx";
 import { FlashList } from "@shopify/flash-list";
@@ -98,6 +101,45 @@ function ResultWrapper(props: IResultWrapperProps) {
         return {};
     }, [pluginName, searchResult?.errorMessage, searchState, t]);
 
+    const retry = useCallback(() => {
+        search(query, 1, tab, pluginHash);
+    }, [pluginHash, query, search, tab]);
+
+    const loadMore = useCallback(() => {
+        search(undefined, undefined, tab, pluginHash);
+    }, [pluginHash, search, tab]);
+
+    const onMusicItemPress = useCallback(
+        (musicItem: IMusic.IMusicItem, musicList?: IMusic.IMusicItem[]) => {
+            const clickBehavior = Config.getConfig("basic.clickMusicInSearch");
+            if (clickBehavior === "playMusicAndReplace") {
+                TrackPlayer.playWithReplacePlayList(
+                    musicItem,
+                    musicList?.length ? musicList : [musicItem],
+                );
+            } else {
+                TrackPlayer.play(musicItem);
+            }
+        },
+        [],
+    );
+
+    if (tab === "music") {
+        return (
+            <MusicList
+                musicList={data as IMusic.IMusicItem[]}
+                state={searchState}
+                onRetry={retry}
+                onLoadMore={() => {
+                    (searchState === RequestStateCode.PARTLY_DONE ||
+                        searchState === RequestStateCode.IDLE) &&
+                        loadMore();
+                }}
+                onItemPress={onMusicItemPress}
+            />
+        );
+    }
+
     return searchState === RequestStateCode.PENDING_FIRST_PAGE ? (
         <Loading />
     ) : (
@@ -108,9 +150,7 @@ function ResultWrapper(props: IResultWrapperProps) {
                     state={searchState}
                     title={emptyStateText.title}
                     description={emptyStateText.description}
-                    onRetry={() => {
-                        search(query, 1, tab, pluginHash);
-                    }}
+                    onRetry={retry}
                 />
             }
             ListFooterComponent={data?.length ? <ListFooter state={searchState} onRetry={() => {
@@ -119,12 +159,12 @@ function ResultWrapper(props: IResultWrapperProps) {
             data={data}
             refreshing={false}
             onRefresh={() => {
-                search(query, 1, tab, pluginHash);
+                retry();
             }}
             onEndReached={() => {
                 (searchState === RequestStateCode.PARTLY_DONE ||
                     searchState === RequestStateCode.IDLE) &&
-                    search(undefined, undefined, tab, pluginHash);
+                    loadMore();
             }}
             numColumns={
                 tab === "sheet" ? (orientation === "vertical" ? 3 : 4) : 1
