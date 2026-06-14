@@ -53,6 +53,30 @@ function getCacheKey(item: ILxSourceItem) {
     return `${item.id}:${item.updatedAt}`;
 }
 
+async function isReachableMediaSource(result: IPlugin.IMediaSourceResult) {
+    if (!result.url) {
+        return false;
+    }
+
+    try {
+        const response = await axios.get(result.url, {
+            headers: {
+                ...(result.userAgent ? { "User-Agent": result.userAgent } : {}),
+                ...(result.headers ?? {}),
+                Range: "bytes=0-0",
+            },
+            maxRedirects: 5,
+            responseType: "arraybuffer",
+            timeout: 8000,
+            validateStatus: status => status >= 200 && status < 400,
+        });
+        const contentType = String(response.headers?.["content-type"] ?? "");
+        return !/^text\/html\b/i.test(contentType);
+    } catch {
+        return false;
+    }
+}
+
 class LxSourceManager {
     private runtimeCache = new Map<string, ILxSourceRuntime>();
 
@@ -248,6 +272,10 @@ class LxSourceManager {
                     },
                 });
                 if (result?.url) {
+                    if (!await isReachableMediaSource(result)) {
+                        trace("播放", `LX自定义源链接不可用: ${item.metadata.name}`, "error");
+                        continue;
+                    }
                     trace("播放", `LX自定义源解析: ${item.metadata.name}`);
                     return {
                         ...result,

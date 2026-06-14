@@ -16,7 +16,7 @@ const platformAliasMap: Array<{
     },
     {
         key: "tx",
-        aliases: ["tx", "qq", "qqmusic", "tencent", "腾讯", "QQ音乐"],
+        aliases: ["tx", "qq", "qqmusic", "tencent", "腾讯", "QQ音乐", "小秋音乐", "小秋", "xiaoqiu"],
     },
     {
         key: "wy",
@@ -143,18 +143,39 @@ export function convertMusicFreeItemToLxMusicInfo(
     }
 
     const raw = musicItem as any;
+    const rawSongMid = pickFirstString(raw, [
+        "songmid",
+        "mid",
+        "strMediaMid",
+        "mediaMid",
+        "media_mid",
+    ]);
+    const rawSongId = pickFirstString(raw, ["songId", "songid", "id"]);
+    const lxSongMid = source === "tx"
+        ? rawSongMid ?? rawSongId ?? ""
+        : rawSongId ?? rawSongMid ?? "";
+
     const musicInfo: ILxMusicInfo = {
         name: String(musicItem.title ?? ""),
         singer: String(musicItem.artist ?? ""),
         source,
-        songmid: musicItem.id ?? "",
+        songmid: lxSongMid,
         img: musicItem.artwork,
         albumName: musicItem.album,
         interval: formatDuration(musicItem.duration),
         types: getQualityTypes(musicItem),
     };
 
-    const albumId = pickFirstString(raw, ["albumId", "albumMid", "albummid"]);
+    if (rawSongId) {
+        musicInfo.id = rawSongId;
+        musicInfo.songId = rawSongId;
+    }
+    if (rawSongMid) {
+        musicInfo.mid = rawSongMid;
+        musicInfo.strMediaMid = rawSongMid;
+    }
+
+    const albumId = pickFirstString(raw, ["albumId", "albumid", "albumMid", "albummid"]);
     if (albumId) {
         musicInfo.albumId = albumId;
     }
@@ -165,10 +186,6 @@ export function convertMusicFreeItemToLxMusicInfo(
             ...item,
             hash: item.hash ?? hash,
         }));
-    }
-    const strMediaMid = pickFirstString(raw, ["strMediaMid", "mediaMid", "media_mid", "songmid"]);
-    if (strMediaMid) {
-        musicInfo.strMediaMid = strMediaMid;
     }
     const albumMid = pickFirstString(raw, ["albumMid", "albummid"]);
     if (albumMid) {
