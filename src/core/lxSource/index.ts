@@ -17,11 +17,23 @@ import { createLxSourceRuntime, requestLxMusicUrl } from "./runtime";
 import {
     ILxSourceInstallResult,
     ILxSourceItem,
+    ILxSourceKey,
+    ILxSourceRedirectTarget,
     ILxSourceRuntime,
 } from "./types";
 
 const store = getOrCreateMMKV("lx-source");
 const storageKey = "sources";
+const redirectTargetPrefix = "lx-source:";
+const lxSourceKeys: ILxSourceKey[] = ["kw", "kg", "tx", "wy", "mg", "local"];
+const lxSourceKeyLabels: Record<ILxSourceKey, string> = {
+    kw: "酷我音乐",
+    kg: "酷狗音乐",
+    tx: "QQ音乐",
+    wy: "网易云音乐",
+    mg: "咪咕音乐",
+    local: "本地音乐",
+};
 const sourcesAtom = atom<ILxSourceItem[]>([]);
 const ee = new EventEmitter<{
     updated: () => void;
@@ -51,6 +63,38 @@ function createFailure(message: string): ILxSourceInstallResult {
 
 function getCacheKey(item: ILxSourceItem) {
     return `${item.id}:${item.updatedAt}`;
+}
+
+export function encodeLxSourceRedirectTarget(
+    sourceId: string,
+    sourceKey: ILxSourceKey,
+) {
+    return `${redirectTargetPrefix}${sourceId}:${sourceKey}`;
+}
+
+export function parseLxSourceRedirectTarget(target?: string | null) {
+    if (!target?.startsWith(redirectTargetPrefix)) {
+        return null;
+    }
+
+    const body = target.slice(redirectTargetPrefix.length);
+    const [sourceId, sourceKey, ...rest] = body.split(":");
+    if (
+        !sourceId ||
+        rest.length ||
+        !lxSourceKeys.includes(sourceKey as ILxSourceKey)
+    ) {
+        return null;
+    }
+
+    return {
+        sourceId,
+        sourceKey: sourceKey as ILxSourceKey,
+    };
+}
+
+export function isLxSourceRedirectTarget(target?: string | null) {
+    return Boolean(parseLxSourceRedirectTarget(target));
 }
 
 async function isReachableMediaSource(result: IPlugin.IMediaSourceResult) {
@@ -223,6 +267,175 @@ class LxSourceManager {
         return runtime;
     }
 
+    isRedirectTarget(target?: string | null) {
+        return isLxSourceRedirectTarget(target);
+    }
+
+    private getSourceDisplayName(item: ILxSourceItem, sourceKey: ILxSourceKey) {
+        return item.sources?.[sourceKey]?.name ?? lxSourceKeyLabels[sourceKey];
+    }
+
+    private sourceSupportsMusicUrl(item: ILxSourceItem, sourceKey: ILxSourceKey) {
+        const sourceInfo = item.sources?.[sourceKey];
+        return Boolean(
+            sourceInfo &&
+            Array.isArray(sourceInfo.actions) &&
+            sourceInfo.actions.includes("musicUrl"),
+        );
+    }
+
+    private createRedirectTarget(
+        item: ILxSourceItem,
+        sourceKey: ILxSourceKey,
+    ): ILxSourceRedirectTarget {
+        return {
+            value: encodeLxSourceRedirectTarget(item.id, sourceKey),
+            sourceId: item.id,
+            sourceKey,
+            sourceName: this.getSourceDisplayName(item, sourceKey),
+            item,
+        };
+    }
+
+    getRedirectTargets() {
+        const targets: ILxSourceRedirectTarget[] = [];
+        this.getSources()
+            .filter(item => item.enabled)
+            .forEach(item => {
+                lxSourceKeys.forEach(sourceKey => {
+                    if (this.sourceSupportsMusicUrl(item, sourceKey)) {
+                        targets.push(this.createRedirectTarget(item, sourceKey));
+                    }
+                });
+            });
+        return targets;
+    }
+
+    getRedirectTarget(target?: string | null) {
+        const parsed = parseLxSourceRedirectTarget(target);
+        if (!parsed) {
+            return null;
+        }
+
+        const item = this.getSources().find(source => source.id === parsed.sourceId);
+        if (!item) {
+            return null;
+        }
+
+        return this.createRedirectTarget(item, parsed.sourceKey);
+    }
+
+    private resolveRequestQuality(
+        sourceInfo: ILxSourceRuntime["sources"][ILxSourceKey],
+        sourceKey: ILxSourceKey,
+        quality: IMusic.IQualityKey,
+    ) {
+        if (sourceKey === "local") {
+            return null;
+        }
+
+        const lxQuality = mapMusicFreeQualityToLx(quality);
+        if (!sourceInfo?.qualitys?.length || sourceInfo.qualitys.includes(lxQuality)) {
+            return lxQuality;
+        }
+
+        return sourceInfo.qualitys[0] ?? lxQuality;
+    }
+
+    private async requestMediaSourceFromItem(
+        item: ILxSourceItem,
+        sourceKey: ILxSourceKey,
+        musicItem: IMusic.IMusicItemBase,
+        quality: IMusic.IQualityKey,
+        options?: {
+            probeUrl?: boolean;
+        },
+    ) {
+        if (!this.sourceSupportsMusicUrl(item, sourceKey)) {
+            return null;
+        }
+
+        const musicInfo = convertMusicFreeItemToLxMusicInfo(musicItem, sourceKey);
+        if (!musicInfo) {
+            return null;
+        }
+
+        const runtime = await this.getRuntime(item);
+        const runtimeSourceInfo = runtime.sources?.[sourceKey];
+        if (
+            !runtimeSourceInfo ||
+            !Array.isArray(runtimeSourceInfo.actions) ||
+            !runtimeSourceInfo.actions.includes("musicUrl")
+        ) {
+            return null;
+        }
+
+        const requestQuality = this.resolveRequestQuality(
+            runtimeSourceInfo,
+            sourceKey,
+            quality,
+        );
+        const result = await requestLxMusicUrl(runtime, {
+            source: sourceKey,
+            action: "musicUrl",
+            info: {
+                type: requestQuality,
+                musicInfo: {
+                    ...musicInfo,
+                    source: sourceKey,
+                },
+            },
+        });
+
+        if (!result?.url) {
+            return null;
+        }
+        if (options?.probeUrl && !await isReachableMediaSource(result)) {
+            trace("播放", `LX自定义源链接不可用: ${item.metadata.name}`, "error");
+            return null;
+        }
+
+        trace("播放", `LX自定义源解析: ${item.metadata.name}`);
+        return {
+            ...result,
+            quality: result.quality ?? requestQuality ?? mapMusicFreeQualityToLx(quality),
+        };
+    }
+
+    async getMediaSourceByRedirectTarget(
+        target: string,
+        musicItem: IMusic.IMusicItemBase,
+        quality: IMusic.IQualityKey,
+    ): Promise<IPlugin.IMediaSourceResult | null> {
+        const parsed = parseLxSourceRedirectTarget(target);
+        if (!parsed) {
+            return null;
+        }
+
+        const item = this.getSources().find(source =>
+            source.id === parsed.sourceId && source.enabled,
+        );
+        if (!item) {
+            return null;
+        }
+
+        try {
+            return await this.requestMediaSourceFromItem(
+                item,
+                parsed.sourceKey,
+                musicItem,
+                quality,
+            );
+        } catch (e: any) {
+            errorLog("LX自定义源重定向解析失败", {
+                name: item.metadata.name,
+                source: parsed.sourceKey,
+                message: e?.message ?? String(e),
+            });
+            return null;
+        }
+    }
+
     async getMediaSource(
         musicItem: IMusic.IMusicItemBase,
         quality: IMusic.IQualityKey,
@@ -232,55 +445,20 @@ class LxSourceManager {
             return null;
         }
 
-        const lxQuality = mapMusicFreeQualityToLx(quality);
-        const requestQuality = musicInfo.source === "local" ? null : lxQuality;
         const enabledSources = this.getSources().filter(item => item.enabled);
         for (const item of enabledSources) {
-            const sourceInfo = item.sources?.[musicInfo.source];
-            if (
-                sourceInfo &&
-                Array.isArray(sourceInfo.actions) &&
-                !sourceInfo.actions.includes("musicUrl")
-            ) {
-                continue;
-            }
-            if (
-                requestQuality &&
-                sourceInfo?.qualitys?.length &&
-                !sourceInfo.qualitys.includes(requestQuality)
-            ) {
-                continue;
-            }
-
             try {
-                const runtime = await this.getRuntime(item);
-                const runtimeSourceInfo = runtime.sources?.[musicInfo.source];
-                if (
-                    runtimeSourceInfo &&
-                    Array.isArray(runtimeSourceInfo.actions) &&
-                    !runtimeSourceInfo.actions.includes("musicUrl")
-                ) {
-                    continue;
-                }
-
-                const result = await requestLxMusicUrl(runtime, {
-                    source: musicInfo.source,
-                    action: "musicUrl",
-                    info: {
-                        type: requestQuality,
-                        musicInfo,
+                const result = await this.requestMediaSourceFromItem(
+                    item,
+                    musicInfo.source,
+                    musicItem,
+                    quality,
+                    {
+                        probeUrl: true,
                     },
-                });
+                );
                 if (result?.url) {
-                    if (!await isReachableMediaSource(result)) {
-                        trace("播放", `LX自定义源链接不可用: ${item.metadata.name}`, "error");
-                        continue;
-                    }
-                    trace("播放", `LX自定义源解析: ${item.metadata.name}`);
-                    return {
-                        ...result,
-                        quality: result.quality ?? lxQuality,
-                    };
+                    return result;
                 }
             } catch (e: any) {
                 errorLog("LX自定义源解析失败", {

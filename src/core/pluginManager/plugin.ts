@@ -375,31 +375,31 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         }
     }
 
-    private async getLxMediaSourceFallback(
-        musicItem: IMusic.IMusicItemBase,
-        quality: IMusic.IQualityKey,
+    private normalizeMediaSourceResult(
+        mediaSourceResult: IPlugin.IMediaSourceResult,
     ) {
-        try {
-            const result = await LxSource.getMediaSource(musicItem, quality);
-            if (!result?.url) {
-                return null;
-            }
-            const authFormattedResult = formatAuthUrl(result.url);
-            if (authFormattedResult.auth) {
-                return {
-                    ...result,
-                    url: authFormattedResult.url,
-                    headers: {
-                        ...(result.headers ?? {}),
-                        Authorization: authFormattedResult.auth,
-                    },
-                };
-            }
+        const result = {
+            ...mediaSourceResult,
+            userAgent:
+                mediaSourceResult.userAgent ??
+                mediaSourceResult.headers?.["user-agent"] ??
+                mediaSourceResult.headers?.["User-Agent"],
+        } as IPlugin.IMediaSourceResult;
+
+        if (!result.url) {
             return result;
-        } catch (e: any) {
-            errorLog("LX自定义源fallback失败", e?.message ?? e);
-            return null;
         }
+
+        const authFormattedResult = formatAuthUrl(result.url);
+        if (authFormattedResult.auth) {
+            result.url = authFormattedResult.url;
+            result.headers = {
+                ...(result.headers ?? {}),
+                Authorization: authFormattedResult.auth,
+            };
+        }
+
+        return result;
     }
 
 
@@ -524,7 +524,43 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                     mediaCache.userAgent ?? mediaCache.headers?.["user-agent"],
             };
         }
-        // 3. 替代插件
+        // 3. 音源重定向
+        const alternativePluginTarget = Plugin.pluginManager?.getAlternativePluginName(this.plugin);
+        if (LxSource.isRedirectTarget(alternativePluginTarget)) {
+            devLog("info", "设置了LX自定义源重定向");
+            const lxMediaSourceResult = await LxSource.getMediaSourceByRedirectTarget(
+                alternativePluginTarget!,
+                musicItem,
+                normalizedQuality,
+            );
+            if (!lxMediaSourceResult?.url) {
+                return null;
+            }
+
+            const result = this.normalizeMediaSourceResult(lxMediaSourceResult);
+            if (
+                pluginCacheControl !== CacheControl.NoStore &&
+                !notUpdateCache
+            ) {
+                const cacheSource = {
+                    headers: result.headers,
+                    userAgent: result.userAgent,
+                    url: result.url!,
+                };
+                let realMusicItem = {
+                    ...musicItem,
+                    ...(mediaCache || {}),
+                };
+                realMusicItem.source = {
+                    ...(realMusicItem.source || {}),
+                    [normalizedQuality]: cacheSource,
+                };
+
+                MediaCache.setMediaCache(realMusicItem);
+            }
+            return result;
+        }
+
         const alternativePlugin = Plugin.pluginManager?.getAlternativePlugin(this.plugin) as Plugin | null;
         const parserPlugin = alternativePlugin?.instance?.getMediaSource ? alternativePlugin : this.plugin;
 
@@ -539,19 +575,11 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 (legacyQuality ? musicItem?.qualities?.[legacyQuality] : undefined);
             const directUrl = qualityInfo?.url ?? musicItem.url;
             if (!directUrl) {
-                return this.getLxMediaSourceFallback(musicItem, normalizedQuality);
+                return null;
             }
-            const { url, auth } = formatAuthUrl(
-                directUrl,
-            );
-            return {
-                url: url,
-                headers: auth
-                    ? {
-                        Authorization: auth,
-                    }
-                    : undefined,
-            };
+            return this.normalizeMediaSourceResult({
+                url: directUrl,
+            });
         }
         try {
             const qualityInfo =
@@ -567,20 +595,11 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 throw new Error("NOT RETRY");
             }
             trace("播放", "插件播放");
-            const result = {
+            const result = this.normalizeMediaSourceResult({
                 url,
                 headers,
-                userAgent: headers?.["user-agent"],
                 ekey,
-            } as IPlugin.IMediaSourceResult;
-            const authFormattedResult = formatAuthUrl(result.url!);
-            if (authFormattedResult.auth) {
-                result.url = authFormattedResult.url;
-                result.headers = {
-                    ...(result.headers ?? {}),
-                    Authorization: authFormattedResult.auth,
-                };
-            }
+            } as IPlugin.IMediaSourceResult);
 
             if (
                 pluginCacheControl !== CacheControl.NoStore &&
@@ -612,7 +631,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             this.recordError("getMediaSource", e, parserPlugin);
             errorLog("获取真实源失败", e?.message);
             devLog("error", "获取真实源失败", e, e?.message);
-            return this.getLxMediaSourceFallback(musicItem, normalizedQuality);
+            return null;
         }
     }
 

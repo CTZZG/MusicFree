@@ -742,7 +742,7 @@ class PluginManager implements IPluginManager, IInjectable {
         return pluginMeta.getUserVariables(plugin.name);
     }
 
-    setAlternativePluginName(plugin: Plugin, alternativePluginName: string) {
+    setAlternativePluginName(plugin: Plugin, alternativePluginName: string | null) {
         pluginMeta.setAlternativePlugin(plugin.name, alternativePluginName);
     }
 

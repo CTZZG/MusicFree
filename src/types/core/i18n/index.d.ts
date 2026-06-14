@@ -422,6 +422,7 @@ export interface ILanguageData {
     "pluginSetting.pluginItem.alternativePlugin": string; // 该插件实际使用的插件
     "pluginSetting.pluginItem.dialog.setAlternativePluginTitle": string; // 设置替代插件
     "pluginSetting.pluginItem.dialog.setAlternativePluginTip": string; // 将使用替代插件解析此插件的音乐源提示
+    "pluginSetting.pluginItem.dialog.noAlternativePlugin": string; // 不使用重定向
     "pluginSetting.pluginItem.options.importMusic": string; // 导入音乐
     "pluginSetting.pluginItem.options.importMusicPlaceHolder": string; // 导入音乐链接
     "pluginSetting.pluginItem.options.importDialogTitle": string; // 导入音乐对话框标题
@@ -1013,6 +1014,8 @@ export interface ILanguageData {
     "lxSource.sourceUrl": string; // LX 自定义源来源 URL
     "lxSource.author": string; // LX 自定义源作者
     "lxSource.version": string; // LX 自定义源版本
+    "lxSource.redirectTargetName": string; // LX 自定义源重定向目标名称
+    "lxSource.redirectTargetUnavailable": string; // LX 自定义源重定向目标不可用
 
     // 播放模式相关
     "repeatMode.SHUFFLE": string; // 随机播放

@@ -2,6 +2,7 @@ import React, { memo } from "react";
 
 import useColors from "@/hooks/useColors";
 import pluginManager, { Plugin, usePluginEnabled } from "@/core/pluginManager";
+import LxSource from "@/core/lxSource";
 
 import Toast from "@/utils/toast";
 import Clipboard from "@react-native-clipboard/clipboard";
@@ -43,6 +44,8 @@ interface IOption {
     onPress?: () => void;
     show?: boolean;
 }
+
+const noAlternativePluginTarget = "__musicfree_no_alternative_plugin__";
 
 function getPluginTestSearchType(plugin: Plugin): ICommon.SupportMediaType {
     const supportedTypes = plugin.instance.supportedSearchType;
@@ -167,6 +170,15 @@ function _PluginItem(props: IPluginItemProps) {
     const rerender = useRerender();
 
     const alternativePluginName = pluginManager.getAlternativePluginName(plugin);
+    const alternativeLxTarget = LxSource.getRedirectTarget(alternativePluginName);
+    const alternativePluginDisplayName = alternativeLxTarget
+        ? t("lxSource.redirectTargetName", {
+            name: alternativeLxTarget.item.metadata.name,
+            source: alternativeLxTarget.sourceName,
+        })
+        : LxSource.isRedirectTarget(alternativePluginName)
+            ? t("lxSource.redirectTargetUnavailable")
+            : alternativePluginName;
     const sourceInfo = getPluginSourceInfo(plugin, t);
     const capabilityLabels = getPluginCapabilityLabels(plugin, t);
     const visibleCapabilityLabels = capabilityLabels.slice(0, 6);
@@ -476,7 +488,7 @@ function _PluginItem(props: IPluginItemProps) {
                     missingUserVariableLabels.length
                         ? `${t("pluginSetting.pluginItem.detail.userVariablesMissing")}: ${missingUserVariableLabels.join(", ")}`
                         : "",
-                    `${t("pluginSetting.pluginItem.detail.alternativePlugin")}: ${alternativePluginName ?? t("pluginSetting.pluginItem.detail.noAlternativePlugin")}`,
+                    `${t("pluginSetting.pluginItem.detail.alternativePlugin")}: ${alternativePluginDisplayName ?? t("pluginSetting.pluginItem.detail.noAlternativePlugin")}`,
                 ]
                     .filter(Boolean)
                     .join("\n");
@@ -557,15 +569,37 @@ function _PluginItem(props: IPluginItemProps) {
             icon: "strategy",
             show: true,
             onPress() {
+                const musicFreePluginTargets = pluginManager
+                    .getSortedPluginsWithAbility("getMediaSource")
+                    .filter(it => it.name !== plugin.name)
+                    .map(it => ({
+                        label: it.name,
+                        value: it.name,
+                    }));
+                const lxSourceTargets = LxSource.getRedirectTargets()
+                    .map(target => ({
+                        label: t("lxSource.redirectTargetName", {
+                            name: target.item.metadata.name,
+                            source: target.sourceName,
+                        }),
+                        value: target.value,
+                    }));
                 showDialog("RadioDialog", {
-                    content: (pluginManager.getSortedPluginsWithAbility("getMediaSource").map(it => it.name)),
+                    content: [
+                        {
+                            label: t("pluginSetting.pluginItem.dialog.noAlternativePlugin"),
+                            value: noAlternativePluginTarget,
+                        },
+                        ...musicFreePluginTargets,
+                        ...lxSourceTargets,
+                    ],
                     title: t("pluginSetting.pluginItem.dialog.setAlternativePluginTitle"),
-                    defaultSelected: pluginManager.getAlternativePluginName(plugin) as any,
+                    defaultSelected: (pluginManager.getAlternativePluginName(plugin) ?? noAlternativePluginTarget) as any,
                     onOk(value) {
-                        if (value === plugin.name) {
-                            pluginManager.setAlternativePluginName(plugin, null as any);
+                        if (value === noAlternativePluginTarget || value === plugin.name) {
+                            pluginManager.setAlternativePluginName(plugin, null);
                         } else {
-                            pluginManager.setAlternativePluginName(plugin, value as any);
+                            pluginManager.setAlternativePluginName(plugin, value as string);
                         }
                         rerender();
                     },
@@ -705,10 +739,10 @@ function _PluginItem(props: IPluginItemProps) {
                     </ThemeText>
                 ) : null}
             </View>
-            {alternativePluginName ? <View style={styles.alternativePluginDescription}>
+            {alternativePluginDisplayName ? <View style={styles.alternativePluginDescription}>
                 <ThemeText fontSize="subTitle" fontColor="textSecondary">
                     {t("pluginSetting.pluginItem.alternativePlugin", {
-                        name: alternativePluginName,
+                        name: alternativePluginDisplayName,
                     })}
                 </ThemeText>
             </View> : null}

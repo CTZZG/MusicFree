@@ -33,6 +33,14 @@ export interface ILxSourceItem {
     updatedAt: number;
 }
 
+export interface ILxSourceRedirectTarget {
+    value: string;
+    sourceId: string;
+    sourceKey: ILxSourceKey;
+    sourceName: string;
+    item: ILxSourceItem;
+}
+
 export interface ILxSourceInstallResult {
     success: boolean;
     message?: string;

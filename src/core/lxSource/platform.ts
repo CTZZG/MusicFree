@@ -16,7 +16,7 @@ const platformAliasMap: Array<{
     },
     {
         key: "tx",
-        aliases: ["tx", "qq", "qqmusic", "tencent", "腾讯", "QQ音乐", "小秋音乐", "小秋", "xiaoqiu"],
+        aliases: ["tx", "qq", "qqmusic", "tencent", "腾讯", "QQ音乐"],
     },
     {
         key: "wy",
@@ -136,8 +136,9 @@ function pickFirstString(raw: any, keys: string[]) {
 
 export function convertMusicFreeItemToLxMusicInfo(
     musicItem: IMusic.IMusicItemBase,
+    sourceOverride?: ILxSourceKey,
 ): ILxMusicInfo | null {
-    const source = mapMusicFreePlatformToLx(musicItem.platform);
+    const source = sourceOverride ?? mapMusicFreePlatformToLx(musicItem.platform);
     if (!source) {
         return null;
     }

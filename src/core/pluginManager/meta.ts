@@ -116,7 +116,10 @@ class PluginMeta {
         this.setMetaStorage(`${pluginPlatform}.userVariables`, userVariables);
     }
 
-    setAlternativePlugin(pluginPlatform: IPluginPlatform, alternativePluginPlatform: IPluginPlatform) {
+    setAlternativePlugin(
+        pluginPlatform: IPluginPlatform,
+        alternativePluginPlatform: IPluginPlatform | null,
+    ) {
         this.setMetaStorage(`${pluginPlatform}.alternativePlugin`, alternativePluginPlatform);
     }
 
