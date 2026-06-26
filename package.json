@@ -162,10 +162,7 @@
     }
   },
   "lint-staged": {
-    "src/**/*.{ts,tsx}": [
-      "npm run lint",
-      "git add ."
-    ]
+    "src/**/*.{ts,tsx}": "eslint --fix"
   },
   "repository": {
     "type": "git",
