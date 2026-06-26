@@ -1,15 +1,13 @@
 import { useMusicHistory } from "@/core/musicHistory";
 import MusicSheet, { useSheetsBase, useStarredSheets } from "@/core/musicSheet";
 import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
-import { useCurrentMusic, useMusicState, useProgress } from "@/core/trackPlayer";
+import { useCurrentMusic } from "@/core/trackPlayer";
 import { isSameMediaItem } from "@/utils/mediaUtils";
 import { useMemo } from "react";
 
 export default function useHomeOverview() {
     const sortedPlugins = useSortedPlugins();
     const currentMusic = useCurrentMusic();
-    const musicState = useMusicState();
-    const progress = useProgress();
     const history = useMusicHistory();
     const sheets = useSheetsBase();
     const starredSheets = useStarredSheets();
@@ -58,8 +56,6 @@ export default function useHomeOverview() {
 
     return {
         currentMusic,
-        musicState,
-        progress,
         featuredMusic,
         recentMusics,
         topListPlugins,

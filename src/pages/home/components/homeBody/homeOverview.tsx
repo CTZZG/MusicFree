@@ -5,7 +5,7 @@ import { showPanel } from "@/components/panels/usePanel";
 import { ImgAsset } from "@/constants/assetsConst";
 import i18n, { useI18N } from "@/core/i18n";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import TrackPlayer from "@/core/trackPlayer";
+import TrackPlayer, { useMusicState, useProgress } from "@/core/trackPlayer";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import { musicIsPaused } from "@/utils/trackUtils";
@@ -62,9 +62,6 @@ export default function HomeOverview() {
             <ContinueListening
                 currentMusic={data.currentMusic}
                 featuredMusic={data.featuredMusic}
-                musicState={data.musicState}
-                position={data.progress.position}
-                duration={data.progress.duration}
             />
             <RecentListening musics={data.recentMusics} />
             <QuickAccess />
@@ -80,11 +77,11 @@ export default function HomeOverview() {
 function ContinueListening(props: {
     currentMusic: IMusic.IMusicItem | null;
     featuredMusic: IMusic.IMusicItem | null;
-    musicState: ReturnType<typeof useHomeOverview>["musicState"];
-    position?: number;
-    duration?: number;
 }) {
-    const { currentMusic, featuredMusic, musicState, position, duration } = props;
+    const { currentMusic, featuredMusic } = props;
+    // 进度/播放态是高频更新源，仅在本子组件内订阅，避免整个首页随进度每秒重渲染。
+    const musicState = useMusicState();
+    const { position, duration } = useProgress();
     const colors = useColors();
     const { t } = useI18N();
     const navigate = useNavigate();
