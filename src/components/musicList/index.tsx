@@ -225,6 +225,85 @@ export default function MusicList(props: IMusicListProps) {
         [],
     );
 
+    // 用 ref 持有最新依赖，使传给每个列表项的回调保持稳定引用，
+    // 避免 musicList / selectionAnchorIndex 变化时所有 item 的回调全部失效。
+    const itemPressContextRef = useRef({
+        selectionMode,
+        onItemPress,
+        musicList,
+        toggleSelectionAt,
+        enterSelectionMode,
+    });
+    itemPressContextRef.current = {
+        selectionMode,
+        onItemPress,
+        musicList,
+        toggleSelectionAt,
+        enterSelectionMode,
+    };
+
+    const handleItemPress = useCallback(
+        (index: number, musicItem: IMusic.IMusicItem) => {
+            const ctx = itemPressContextRef.current;
+            if (ctx.selectionMode) {
+                ctx.toggleSelectionAt(index, musicItem);
+            } else if (ctx.onItemPress) {
+                ctx.onItemPress(musicItem, ctx.musicList);
+            } else {
+                TrackPlayer.playWithReplacePlayList(
+                    musicItem,
+                    ctx.musicList ?? [musicItem],
+                );
+            }
+        },
+        [],
+    );
+
+    const handleItemLongPress = useCallback(
+        (index: number, musicItem: IMusic.IMusicItem) => {
+            itemPressContextRef.current.enterSelectionMode(index, musicItem);
+        },
+        [],
+    );
+
+    const renderItem = useCallback(
+        ({
+            index,
+            item: musicItem,
+        }: {
+            index: number;
+            item: IMusic.IMusicItem;
+        }) => {
+            return (
+                <MusicListItem
+                    musicItem={musicItem}
+                    rawIndex={index}
+                    displayIndex={showIndex ? index + 1 : undefined}
+                    selectionMode={selectionMode}
+                    selected={selectedKeys.has(getMediaUniqueKey(musicItem))}
+                    highlight={isSameMediaItem(musicItem, highlightMusicItem)}
+                    musicSheet={musicSheet}
+                    onPress={handleItemPress}
+                    onLongPress={handleItemLongPress}
+                />
+            );
+        },
+        [
+            showIndex,
+            selectionMode,
+            selectedKeys,
+            highlightMusicItem,
+            musicSheet,
+            handleItemPress,
+            handleItemLongPress,
+        ],
+    );
+
+    const keyExtractor = useCallback(
+        (item: IMusic.IMusicItem) => getMediaUniqueKey(item),
+        [],
+    );
+
     const removeSelectedItems = useCallback(async () => {
         if (!canRemoveSelected || !musicSheet?.id || !selectedItems.length) {
             return;
@@ -314,46 +393,11 @@ export default function MusicList(props: IMusicListProps) {
                     selectionMode,
                 }}
                 data={musicList ?? []}
+                keyExtractor={keyExtractor}
                 onScrollBeginDrag={handleScrollBegin}
                 onScrollEndDrag={handleScrollEnd}
                 onMomentumScrollEnd={handleScrollEnd}
-                renderItem={({ index, item: musicItem }) => {
-                    return (
-                        <MusicItem
-                            musicItem={musicItem}
-                            index={showIndex ? index + 1 : undefined}
-                            onItemPress={() => {
-                                if (selectionMode) {
-                                    toggleSelectionAt(index, musicItem);
-                                } else if (onItemPress) {
-                                    onItemPress(musicItem, musicList);
-                                } else {
-                                    TrackPlayer.playWithReplacePlayList(
-                                        musicItem,
-                                        musicList ?? [musicItem],
-                                    );
-                                }
-                            }}
-                            onItemLongPress={() => {
-                                enterSelectionMode(index, musicItem);
-                            }}
-                            left={selectionMode
-                                ? () => (
-                                    <View style={styles.checkBoxWrapper}>
-                                        <CheckBox
-                                            checked={selectedKeys.has(
-                                                getMediaUniqueKey(musicItem),
-                                            )}
-                                        />
-                                    </View>
-                                )
-                                : undefined}
-                            showMoreIcon={!selectionMode}
-                            musicSheet={musicSheet}
-                            highlight={isSameMediaItem(musicItem, highlightMusicItem)}
-                        />
-                    );
-                }}
+                renderItem={renderItem}
                 onEndReached={() => {
                     if (state === RequestStateCode.IDLE || state === RequestStateCode.PARTLY_DONE) {
                         onLoadMore?.();
@@ -449,6 +493,70 @@ export default function MusicList(props: IMusicListProps) {
         </View>
     );
 }
+
+interface IMusicListItemProps {
+    musicItem: IMusic.IMusicItem;
+    rawIndex: number;
+    displayIndex?: number;
+    selectionMode: boolean;
+    selected: boolean;
+    highlight: boolean;
+    musicSheet?: IMusic.IMusicSheetItem;
+    onPress: (index: number, musicItem: IMusic.IMusicItem) => void;
+    onLongPress: (index: number, musicItem: IMusic.IMusicItem) => void;
+}
+
+/**
+ * 单个列表项的稳定包装：把选中态/高亮态收敛为布尔 props，配合 React.memo，
+ * 让仅状态变化的少数行重渲染，而不是整张列表。
+ */
+function MusicListItemImpl(props: IMusicListItemProps) {
+    const {
+        musicItem,
+        rawIndex,
+        displayIndex,
+        selectionMode,
+        selected,
+        highlight,
+        musicSheet,
+        onPress,
+        onLongPress,
+    } = props;
+
+    const handlePress = useCallback(() => {
+        onPress(rawIndex, musicItem);
+    }, [onPress, rawIndex, musicItem]);
+
+    const handleLongPress = useCallback(() => {
+        onLongPress(rawIndex, musicItem);
+    }, [onLongPress, rawIndex, musicItem]);
+
+    const left = useMemo(() => {
+        if (!selectionMode) {
+            return undefined;
+        }
+        return () => (
+            <View style={styles.checkBoxWrapper}>
+                <CheckBox checked={selected} />
+            </View>
+        );
+    }, [selectionMode, selected]);
+
+    return (
+        <MusicItem
+            musicItem={musicItem}
+            index={displayIndex}
+            onItemPress={handlePress}
+            onItemLongPress={handleLongPress}
+            left={left}
+            showMoreIcon={!selectionMode}
+            musicSheet={musicSheet}
+            highlight={highlight}
+        />
+    );
+}
+
+const MusicListItem = React.memo(MusicListItemImpl);
 
 interface ISelectionActionProps {
     icon: IIconName;

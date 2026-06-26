@@ -70,7 +70,7 @@ function formatDuration(duration?: number | string) {
         : `${minutes}:${paddedSeconds}`;
 }
 
-export default function MusicItem(props: IMusicItemProps) {
+function MusicItem(props: IMusicItemProps) {
     const {
         musicItem,
         index,
@@ -279,6 +279,8 @@ export default function MusicItem(props: IMusicItemProps) {
         </ListItem>
     );
 }
+
+export default React.memo(MusicItem);
 
 const styles = StyleSheet.create({
     artwork: {
