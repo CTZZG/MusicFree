@@ -5,11 +5,19 @@ import {
 } from "@/constants/commonConst";
 import pathConst from "@/constants/pathConst";
 import Mp3Util from "@/native/mp3Util";
-import Base64 from "@/utils/base64";
 import delay from "@/utils/delay";
-import { addFileScheme, getFileName, removeFileScheme } from "@/utils/fileUtils";
+import { addFileScheme, getFileName } from "@/utils/fileUtils";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
 import { getLocalPath, isSameMediaItem, resetMediaItem } from "@/utils/mediaUtils";
+import {
+    formatAuthUrl,
+    formatPluginErrorMessage,
+    getAnonymousStackLocation,
+    getRemoteMediaTitle,
+    isRemoteMediaUrl,
+    normalizeLocalFilePath,
+    shouldReadLocalSystemMetadata,
+} from "./plugin.utils";
 import notImplementedFunction from "@/utils/notImplementedFunction.ts";
 import axios from "axios";
 import bigInt from "big-integer";
@@ -171,103 +179,6 @@ const _console = {
 
 const appVersion = deviceInfoModule.getVersion();
 
-function getAnonymousStackLocation(stack?: string) {
-    if (!stack) {
-        return null;
-    }
-    const match = stack.match(/<anonymous>:(\d+):(\d+)/);
-    if (!match) {
-        return null;
-    }
-    const generatedLine = Number(match[1]);
-    const column = Number(match[2]);
-    const pluginLine = Math.max(1, generatedLine - 4);
-    return `位置(估算): 第 ${pluginLine} 行, 第 ${column} 列`;
-}
-
-function formatPluginErrorMessage(error: any) {
-    const name = error?.name;
-    const message = error?.message ?? String(error ?? "未知错误");
-    const title = name && !String(message).startsWith(name)
-        ? `${name}: ${message}`
-        : String(message);
-    const location = getAnonymousStackLocation(error?.stack);
-    return location ? `${title}\n${location}` : title;
-}
-
-function formatAuthUrl(url: string) {
-    const urlObj = new URL(url);
-
-    try {
-        if (urlObj.username && urlObj.password) {
-            const auth = `Basic ${Base64.btoa(
-                `${decodeURIComponent(urlObj.username)}:${decodeURIComponent(
-                    urlObj.password,
-                )}`,
-            )}`;
-            urlObj.username = "";
-            urlObj.password = "";
-
-            return {
-                url: urlObj.toString(),
-                auth,
-            };
-        }
-    } catch (e) {
-        return {
-            url,
-        };
-    }
-    return {
-        url,
-    };
-}
-
-function normalizeLocalFilePath(localPath: string) {
-    if (isRemoteMediaUrl(localPath)) {
-        return localPath;
-    }
-    const filePath = removeFileScheme(localPath);
-    try {
-        return decodeURI(filePath);
-    } catch {
-        return filePath;
-    }
-}
-
-function isRemoteMediaUrl(urlLike?: string | null) {
-    return typeof urlLike === "string" && /^https?:\/\//i.test(urlLike);
-}
-
-function getRemoteMediaTitle(urlLike: string) {
-    const pathWithoutQuery = urlLike.split(/[?#]/)[0];
-    const fileName = getFileName(pathWithoutQuery);
-    return fileName || urlLike;
-}
-
-const localMetadataUnsafeExtensions = new Set([
-    ".ape",
-    ".asf",
-    ".dff",
-    ".dsf",
-    ".wma",
-]);
-
-function getLowerFileExtension(filePath: string) {
-    const pathWithoutQuery = filePath.split("?")[0];
-    const slashIndex = Math.max(
-        pathWithoutQuery.lastIndexOf("/"),
-        pathWithoutQuery.lastIndexOf("\\"),
-    );
-    const dotIndex = pathWithoutQuery.lastIndexOf(".");
-    return dotIndex > slashIndex
-        ? pathWithoutQuery.slice(dotIndex).toLowerCase()
-        : "";
-}
-
-function shouldReadLocalSystemMetadata(filePath: string) {
-    return !localMetadataUnsafeExtensions.has(getLowerFileExtension(filePath));
-}
 
 function normalizeResultItem<T extends Partial<IMusic.IMusicItem>>(item: T) {
     Object.assign(item, normalizePluginMusicItem(item));
