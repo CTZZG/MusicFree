@@ -294,7 +294,7 @@ export function convertApiQualityToQualities(apiQuality?: {
     target?: string;
     result?: string;
     size?: string | number;
-    [key: string]: any;
+    [key: string]: unknown;
 }): IMusic.IQuality | undefined {
     if (!apiQuality?.result) {
         return undefined;
@@ -322,7 +322,7 @@ export function parseQualityText(inputQualityText: string): IMusic.IQualityKey |
 
 export function transformMusicItemWithQuality<T extends Partial<IMusic.IMusicItem>>(
     rawMusicItem: T,
-    apiQualityData?: { target?: string; result?: string; [key: string]: any },
+    apiQualityData?: { target?: string; result?: string; [key: string]: unknown },
 ): T & { qualities?: IMusic.IQuality } {
     const convertedQualities = convertApiQualityToQualities(apiQualityData);
 
@@ -336,7 +336,7 @@ export function buildQualitiesFromArray(qualityArray: Array<{
     type: string;
     size?: string | number;
     url?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }>): IMusic.IQuality {
     const qualities: IMusic.IQuality = {};
 
