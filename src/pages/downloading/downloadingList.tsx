@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { exists } from "react-native-fs";
@@ -161,19 +161,21 @@ function getCompletedDownloadDetailText(
 
 interface DownloadingListItemProps {
     musicItem: IMusic.IMusicItem;
+    index: number;
     fileStatus?: CompletedDownloadFileStatus;
     selectionMode?: boolean;
     selected?: boolean;
-    onSelectPress?: () => void;
-    onLongPress?: () => void;
+    onSelectPress?: (index: number, musicItem: IMusic.IMusicItem) => void;
+    onLongPress?: (index: number, musicItem: IMusic.IMusicItem) => void;
     onFileStatusChange?: (
         musicItem: IMusic.IMusicItem,
         status: CompletedDownloadFileStatus,
     ) => void;
 }
-function DownloadingListItem(props: DownloadingListItemProps) {
+function DownloadingListItemImpl(props: DownloadingListItemProps) {
     const {
         musicItem,
+        index,
         fileStatus,
         selectionMode,
         selected,
@@ -181,6 +183,12 @@ function DownloadingListItem(props: DownloadingListItemProps) {
         onLongPress,
         onFileStatusChange,
     } = props;
+    const handleSelectPress = useCallback(() => {
+        onSelectPress?.(index, musicItem);
+    }, [onSelectPress, index, musicItem]);
+    const handleLongPress = useCallback(() => {
+        onLongPress?.(index, musicItem);
+    }, [onLongPress, index, musicItem]);
     const taskInfo = useDownloadTask(musicItem);
     const { t } = useI18N();
     const colors = useColors();
@@ -377,10 +385,10 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     return <ListItem
         withHorizontalPadding
         rightPadding={rpx(4)}
-        onLongPress={onLongPress}
+        onLongPress={handleLongPress}
         onPress={
             selectionMode
-                ? onSelectPress
+                ? handleSelectPress
                 : status === DownloadStatus.Completed
                 ? showCompletedDownloadDetail
                 : undefined
@@ -429,6 +437,8 @@ function DownloadingListItem(props: DownloadingListItemProps) {
     </ListItem>;
 
 }
+
+const DownloadingListItem = React.memo(DownloadingListItemImpl);
 
 function isActiveStatus(status: DownloadStatus) {
     return (
@@ -1297,20 +1307,23 @@ export default function DownloadingList() {
         });
     }
 
-    function updateCompletedFileStatus(
-        musicItem: IMusic.IMusicItem,
-        fileStatus: CompletedDownloadFileStatus,
-    ) {
-        const key = getMediaUniqueKey(musicItem);
-        setCompletedFileStatusMap(prev =>
-            prev[key] === fileStatus
-                ? prev
-                : {
-                    ...prev,
-                    [key]: fileStatus,
-                },
-        );
-    }
+    const updateCompletedFileStatus = useCallback(
+        (
+            musicItem: IMusic.IMusicItem,
+            fileStatus: CompletedDownloadFileStatus,
+        ) => {
+            const key = getMediaUniqueKey(musicItem);
+            setCompletedFileStatusMap(prev =>
+                prev[key] === fileStatus
+                    ? prev
+                    : {
+                        ...prev,
+                        [key]: fileStatus,
+                    },
+            );
+        },
+        [],
+    );
 
     function showSortSelect() {
         showPanel("SimpleSelect", {
@@ -1506,43 +1519,52 @@ export default function DownloadingList() {
         setSelectionAnchorIndex(filteredQueue.length ? 0 : null);
     }
 
-    function toggleSelectionAt(index: number, musicItem: IMusic.IMusicItem) {
-        const key = getMediaUniqueKey(musicItem);
-        setSelectedKeys(prev => {
-            if (
-                selectionAnchorIndex !== null &&
-                prev.size === 1 &&
-                !prev.has(key)
-            ) {
-                const start = Math.min(selectionAnchorIndex, index);
-                const end = Math.max(selectionAnchorIndex, index);
+    // 持有最新的选区上下文，使 toggleSelectionAt 保持稳定引用，
+    // 避免 filteredQueue / anchor 变化时让每个列表项的回调失效。
+    const selectionContextRef = useRef({ selectionAnchorIndex, filteredQueue });
+    selectionContextRef.current = { selectionAnchorIndex, filteredQueue };
+
+    const toggleSelectionAt = useCallback(
+        (index: number, musicItem: IMusic.IMusicItem) => {
+            const { selectionAnchorIndex: anchorIndex, filteredQueue: queue } =
+                selectionContextRef.current;
+            const key = getMediaUniqueKey(musicItem);
+            setSelectedKeys(prev => {
+                if (anchorIndex !== null && prev.size === 1 && !prev.has(key)) {
+                    const start = Math.min(anchorIndex, index);
+                    const end = Math.max(anchorIndex, index);
+                    const next = new Set(prev);
+                    queue.slice(start, end + 1).forEach(item => {
+                        next.add(getMediaUniqueKey(item));
+                    });
+                    return next;
+                }
+
                 const next = new Set(prev);
-                filteredQueue.slice(start, end + 1).forEach(item => {
-                    next.add(getMediaUniqueKey(item));
-                });
+                if (next.has(key)) {
+                    next.delete(key);
+                    if (!next.size) {
+                        setSelectionAnchorIndex(null);
+                    }
+                } else {
+                    next.add(key);
+                    if (anchorIndex === null) {
+                        setSelectionAnchorIndex(index);
+                    }
+                }
                 return next;
-            }
+            });
+        },
+        [],
+    );
 
-            const next = new Set(prev);
-            if (next.has(key)) {
-                next.delete(key);
-                if (!next.size) {
-                    setSelectionAnchorIndex(null);
-                }
-            } else {
-                next.add(key);
-                if (selectionAnchorIndex === null) {
-                    setSelectionAnchorIndex(index);
-                }
-            }
-            return next;
-        });
-    }
-
-    function enterSelectionMode(index: number, musicItem: IMusic.IMusicItem) {
-        setSelectedKeys(new Set([getMediaUniqueKey(musicItem)]));
-        setSelectionAnchorIndex(index);
-    }
+    const enterSelectionMode = useCallback(
+        (index: number, musicItem: IMusic.IMusicItem) => {
+            setSelectedKeys(new Set([getMediaUniqueKey(musicItem)]));
+            setSelectionAnchorIndex(index);
+        },
+        [],
+    );
 
     function removeSelectedDownloadRecords() {
         showDialog("SimpleDialog", {
@@ -1771,14 +1793,11 @@ export default function DownloadingList() {
                     return (
                         <DownloadingListItem
                             musicItem={item}
+                            index={index}
                             selectionMode={selectionMode}
                             selected={selectedKeys.has(getMediaUniqueKey(item))}
-                            onSelectPress={() => {
-                                toggleSelectionAt(index, item);
-                            }}
-                            onLongPress={() => {
-                                enterSelectionMode(index, item);
-                            }}
+                            onSelectPress={toggleSelectionAt}
+                            onLongPress={enterSelectionMode}
                             fileStatus={
                                 completedFileStatusMap[
                                     getMediaUniqueKey(item)
