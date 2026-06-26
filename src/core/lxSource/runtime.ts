@@ -4,6 +4,7 @@ import babelRegenerator from "@babel/runtime/helpers/regenerator";
 import babelTypeof from "@babel/runtime/helpers/typeof";
 import { Buffer } from "buffer";
 import CryptoJs from "crypto-js";
+import * as pako from "pako";
 import { URL, URLSearchParams } from "react-native-url-polyfill";
 import DeviceInfo from "react-native-device-info";
 import { devLog } from "@/utils/log";
@@ -125,31 +126,52 @@ function createUnsupportedUtil(name: string) {
     };
 }
 
+/** 把 Buffer/Uint8Array/字符串安全地转成 CryptoJS WordArray（二进制按字节，不做 UTF-8 强转） */
+function toWordArray(input: any): CryptoJs.lib.WordArray {
+    if (Buffer.isBuffer(input)) {
+        return CryptoJs.enc.Hex.parse(input.toString("hex"));
+    }
+    if (input instanceof Uint8Array) {
+        return CryptoJs.enc.Hex.parse(Buffer.from(input).toString("hex"));
+    }
+    return CryptoJs.enc.Utf8.parse(String(input ?? ""));
+}
+
+/** 把 Buffer/Uint8Array/字符串转成 Uint8Array（供 pako 使用） */
+function toUint8Array(input: any): Uint8Array {
+    if (input instanceof Uint8Array) {
+        return input;
+    }
+    if (Buffer.isBuffer(input)) {
+        return input;
+    }
+    return Buffer.from(String(input ?? ""));
+}
+
 function createCryptoUtils() {
     return {
-        md5(raw: string) {
-            return CryptoJs.MD5(raw).toString(CryptoJs.enc.Hex);
+        md5(raw: any) {
+            const input =
+                Buffer.isBuffer(raw) || raw instanceof Uint8Array
+                    ? toWordArray(raw)
+                    : String(raw ?? "");
+            return CryptoJs.MD5(input).toString(CryptoJs.enc.Hex);
         },
         randomBytes(size: number) {
             return randomBytes(size);
         },
         aesEncrypt(raw: any, mode: string, key: any, iv?: any) {
             const normalizedMode = String(mode ?? "").toLowerCase();
-            const keyWordArray = CryptoJs.enc.Utf8.parse(
-                Buffer.isBuffer(key) ? key.toString("utf8") : String(key ?? ""),
-            );
-            const rawWordArray = CryptoJs.enc.Utf8.parse(
-                Buffer.isBuffer(raw) ? raw.toString("utf8") : String(raw ?? ""),
-            );
+            // key/iv/data 可能是二进制 Buffer，按字节转换，避免 UTF-8 强转破坏密钥
+            const keyWordArray = toWordArray(key);
+            const rawWordArray = toWordArray(raw);
             const options: any = {
                 padding: CryptoJs.pad.Pkcs7,
             };
 
             if (normalizedMode === "aes-128-cbc") {
                 options.mode = CryptoJs.mode.CBC;
-                options.iv = CryptoJs.enc.Utf8.parse(
-                    Buffer.isBuffer(iv) ? iv.toString("utf8") : String(iv ?? ""),
-                );
+                options.iv = toWordArray(iv);
             } else if (normalizedMode === "aes-128-ecb") {
                 options.mode = CryptoJs.mode.ECB;
             } else {
@@ -178,8 +200,14 @@ function createUtils() {
         },
         crypto: createCryptoUtils(),
         zlib: {
-            inflate: createUnsupportedUtil("zlib.inflate"),
-            deflate: createUnsupportedUtil("zlib.deflate"),
+            // 同步实现，返回 Buffer（与 node zlib 的 *Sync 行为一致；
+            // 脚本里 `const out = zlib.inflate(buf)` 或 `await zlib.inflate(buf)` 均可用）。
+            inflate(data: any) {
+                return Buffer.from(pako.inflate(toUint8Array(data)));
+            },
+            deflate(data: any) {
+                return Buffer.from(pako.deflate(toUint8Array(data)));
+            },
         },
     };
 }
