@@ -20,7 +20,7 @@ import Toast from "@/utils/toast";
 import EventEmitter from "eventemitter3";
 import { produce } from "immer";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
-import shuffle from "lodash.shuffle";
+import shuffle from "@/utils/shuffle";
 import { useEffect } from "react";
 import LocalMusicSheet from "../localMusicSheet";
 import DislikeMusic from "../dislikeMusic";
