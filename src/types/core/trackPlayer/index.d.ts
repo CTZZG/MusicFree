@@ -65,6 +65,9 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
         position: number;
         duration: number;
     }) => void;
+    [TrackPlayerEvents.CellularPlayForbidden]: () => void;
+    [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
+    [TrackPlayerEvents.NoPlayableMusic]: () => void;
 }> {
     /**
      * 上一首歌曲

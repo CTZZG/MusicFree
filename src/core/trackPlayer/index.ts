@@ -1,4 +1,3 @@
-import { getCurrentDialog, showDialog } from "@/components/dialogs/useDialog";
 import {
     sortIndexSymbol,
     timeStampSymbol,
@@ -16,7 +15,6 @@ import { hasEncryptedMediaSource } from "@/utils/mflac";
 import Network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
-import Toast from "@/utils/toast";
 import EventEmitter from "eventemitter3";
 import { produce } from "immer";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
@@ -24,7 +22,6 @@ import shuffle from "@/utils/shuffle";
 import { useEffect } from "react";
 import LocalMusicSheet from "../localMusicSheet";
 import DislikeMusic from "../dislikeMusic";
-import i18n from "../i18n";
 
 import { MusicRepeatMode, TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import type { IAppConfig } from "@/types/core/config";
@@ -152,6 +149,9 @@ class TrackPlayer extends EventEmitter<{
         position: number;
         duration: number;
     }) => void;
+    [TrackPlayerEvents.CellularPlayForbidden]: () => void;
+    [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
+    [TrackPlayerEvents.NoPlayableMusic]: () => void;
 }> implements ITrackPlayer {
     // 依赖
     private configService!: IAppConfig;
@@ -965,13 +965,7 @@ class TrackPlayer extends EventEmitter<{
                 await this.backend.setup();
                 this.play(musicItem, forcePlay);
             } else if (message === PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY) {
-                if (getCurrentDialog()?.name !== "SimpleDialog") {
-                    showDialog("SimpleDialog", {
-                        title: "流量提醒",
-                        content:
-                            "当前非WIFI环境，侧边栏设置中打开【使用移动网络播放】功能后可继续播放",
-                    });
-                }
+                this.emit(TrackPlayerEvents.CellularPlayForbidden);
             } else if (message === PlayFailReason.INVALID_SOURCE) {
                 trace("音源为空，播放失败");
                 await this.handlePlayFail();
@@ -1551,14 +1545,14 @@ class TrackPlayer extends EventEmitter<{
                 !isSameMediaItem(candidate, currentMusic) &&
                 !DislikeMusic.isDisliked(candidate)
             ) {
-                Toast.success(i18n.t("dislikeMusic.skipped"));
+                this.emit(TrackPlayerEvents.AutoSkipDislikedMusic);
                 await this.play(candidate, true);
                 return true;
             }
         }
 
         await this.pause().catch(() => undefined);
-        Toast.warn(i18n.t("dislikeMusic.noPlayableMusic"));
+        this.emit(TrackPlayerEvents.NoPlayableMusic);
         return false;
     }
 

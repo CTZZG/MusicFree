@@ -17,6 +17,7 @@ import PluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, navigationRef } from "@/core/router";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
+import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import { maybeRunAutoWebdavBackup } from "@/core/webdavBackup";
 import NativeUtils from "@/native/utils";
 import { checkAndCreateDir } from "@/utils/fileUtils";
@@ -515,6 +516,25 @@ function bindEvents() {
 
     downloader.on(DownloaderEvent.DownloadQueueCompleted, () => {
         Toast.success("下载任务已完成");
+    });
+
+    // 播放器 UI 事件（core 只发事件，具体的弹窗/Toast 由应用层处理）
+    TrackPlayer.on(TrackPlayerEvents.CellularPlayForbidden, () => {
+        if (getCurrentDialog()?.name !== "SimpleDialog") {
+            showDialog("SimpleDialog", {
+                title: "流量提醒",
+                content:
+                    "当前非WIFI环境，侧边栏设置中打开【使用移动网络播放】功能后可继续播放",
+            });
+        }
+    });
+
+    TrackPlayer.on(TrackPlayerEvents.AutoSkipDislikedMusic, () => {
+        Toast.success(i18n.t("dislikeMusic.skipped"));
+    });
+
+    TrackPlayer.on(TrackPlayerEvents.NoPlayableMusic, () => {
+        Toast.warn(i18n.t("dislikeMusic.noPlayableMusic"));
     });
 }
 
