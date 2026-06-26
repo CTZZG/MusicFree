@@ -47,6 +47,7 @@ export interface ILanguageData {
     "sidebar.basicSettings": string; // 基本设置
     "sidebar.pluginManagement": string; // 插件管理
     "sidebar.themeSettings": string; // 主题设置
+    "sidebar.equalizer": string; // 均衡器
     "sidebar.scheduleClose": string; // 定时关闭
     "sidebar.backupAndResume": string; // 备份与恢复
     "sidebar.permissionManagement": string; // 权限管理

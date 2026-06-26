@@ -4,6 +4,7 @@ import BackupSetting from "./backupSetting";
 import BasicSetting from "./basicSetting";
 import CacheManagementSetting from "./cacheManagementSetting";
 import DislikeMusicSetting from "./dislikeMusicSetting";
+import EqualizerSetting from "./equalizerSetting";
 import PluginSetting from "./pluginSetting";
 import ThemeSetting from "./themeSetting";
 
@@ -41,6 +42,11 @@ const settingTypes: Record<
         title: "主题设置",
         i18nKey: "sidebar.themeSettings",
         component: ThemeSetting,
+    },
+    equalizer: {
+        title: "均衡器",
+        i18nKey: "sidebar.equalizer",
+        component: EqualizerSetting,
     },
     backup: {
         title: "备份与恢复",

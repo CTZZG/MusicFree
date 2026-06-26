@@ -56,6 +56,13 @@ function HomeDrawer(props: any) {
                 navigateToSetting("theme");
             },
         },
+        {
+            icon: "bars-3",
+            title: t("sidebar.equalizer"),
+            onPress: () => {
+                navigateToSetting("equalizer");
+            },
+        },
     ];
 
     const otherSetting: ISettingOptions[] = [
