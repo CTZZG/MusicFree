@@ -6,15 +6,18 @@ import React from "react";
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from "react-native";
 import ThemeText from "./themeText";
 import { useI18N } from "@/core/i18n";
+import { ListSkeleton } from "./skeleton";
 
 interface IEmptyProps {
     state: RequestStateCode
     onRetry?: () => void;
     title?: string;
     description?: string;
+    /** 首屏加载时是否使用骨架屏（默认 true），不需要时回退为转圈 */
+    skeletonOnLoading?: boolean;
 }
 export default function ListEmpty(props: IEmptyProps) {
-    const { state, onRetry, title, description } = props;
+    const { state, onRetry, title, description, skeletonOnLoading = true } = props;
 
     const colors = useColors();
     const { t } = useI18N();
@@ -34,6 +37,9 @@ export default function ListEmpty(props: IEmptyProps) {
             ) : null}
         </View>;
     } else if (state === RequestStateCode.PENDING_FIRST_PAGE) {
+        if (skeletonOnLoading) {
+            return <ListSkeleton />;
+        }
         return <View style={style.wrapper}>
             <ActivityIndicator animating color={colors.text} size={fontSizeConst.appbar}/>
             <ThemeText
