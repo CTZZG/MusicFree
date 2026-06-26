@@ -26,6 +26,9 @@ const supportedBufferEncodings = new Set(["base64", "hex", "utf8", "utf-8"]);
 const supportedActions = new Set(["musicUrl", "lyric", "pic"]);
 const supportedSourceKeys = ["kw", "kg", "tx", "wy", "mg", "local"] as const;
 
+/** 等待自定义源发送 inited 事件的超时时间（毫秒） */
+const INITED_TIMEOUT_MS = 10_000;
+
 function regeneratorDefine(target: any, key?: string, value?: any, notEnumerable?: boolean) {
     let defineProperty: typeof Object.defineProperty | null = Object.defineProperty;
     try {
@@ -209,6 +212,10 @@ function lxRequest(url: string, options?: any, callback?: (err: any, resp?: any,
     axios(url, {
         ...toAxiosConfig(options),
         signal: controller.signal,
+        // lx 的 request 是 request.js 风格：任何 HTTP 状态码都回调 resp，
+        // 让脚本自行根据 resp.statusCode / resp.body 处理（如 403 重试、读错误体）。
+        // axios 默认对非 2xx 抛错，会丢掉 resp，必须放开。
+        validateStatus: () => true,
     })
         .then(resp => {
             callback?.(null, {
@@ -397,6 +404,26 @@ export async function createLxSourceRuntime(
     const handlers: Record<string, (...args: any[]) => any> = {};
     let sources: ILxSourceInitSources = {};
 
+    // 脚本可能同步、也可能异步（拉取配置/密钥后）才发送 inited，
+    // 因此用 promise 等待该事件，而不是在脚本同步执行完后立刻检查。
+    let settleInited: (() => void) | undefined;
+    let failInited: ((error: Error) => void) | undefined;
+    let initedSettled = false;
+    const initedPromise = new Promise<void>((resolve, reject) => {
+        settleInited = () => {
+            if (!initedSettled) {
+                initedSettled = true;
+                resolve();
+            }
+        };
+        failInited = (error: Error) => {
+            if (!initedSettled) {
+                initedSettled = true;
+                reject(error);
+            }
+        };
+    });
+
     const lx = {
         version: DeviceInfo.getVersion(),
         env: "mobile",
@@ -410,7 +437,17 @@ export async function createLxSourceRuntime(
         },
         send(eventName: string, data: any) {
             if (eventName === EVENT_NAMES.inited) {
+                if (data?.status === false) {
+                    failInited?.(
+                        new Error(
+                            data?.errorMsg ||
+                                "LX custom source reported init failure",
+                        ),
+                    );
+                    return;
+                }
                 sources = normalizeSources(data?.sources);
+                settleInited?.();
             } else if (eventName === EVENT_NAMES.updateAlert) {
                 devLog("info", "LX custom source update alert", {
                     name: metadata.name,
@@ -425,6 +462,21 @@ export async function createLxSourceRuntime(
 
     const globalThisObject = createRuntimeGlobal(lx);
     runScriptInRuntimeGlobal(script, globalThisObject);
+
+    // 等待 inited（带超时），以支持异步初始化的自定义源。
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+            reject(new Error("LX custom source inited timeout"));
+        }, INITED_TIMEOUT_MS);
+    });
+    try {
+        await Promise.race([initedPromise, timeoutPromise]);
+    } finally {
+        if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+        }
+    }
 
     const requestHandler = handlers[EVENT_NAMES.request] as ILxRequestHandler | undefined;
     if (!requestHandler) {
