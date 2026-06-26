@@ -8,6 +8,7 @@ import * as pako from "pako";
 import { URL, URLSearchParams } from "react-native-url-polyfill";
 import DeviceInfo from "react-native-device-info";
 import { devLog } from "@/utils/log";
+import { rsaEncrypt } from "./rsa";
 import {
     ILxRequestHandler,
     ILxRequestPayload,
@@ -120,12 +121,6 @@ function wordArrayToBuffer(wordArray: CryptoJs.lib.WordArray) {
     return Buffer.from(wordArray.toString(CryptoJs.enc.Hex), "hex");
 }
 
-function createUnsupportedUtil(name: string) {
-    return () => {
-        throw new Error(`LX custom source util is not supported: ${name}`);
-    };
-}
-
 /** 把 Buffer/Uint8Array/字符串安全地转成 CryptoJS WordArray（二进制按字节，不做 UTF-8 强转） */
 function toWordArray(input: any): CryptoJs.lib.WordArray {
     if (Buffer.isBuffer(input)) {
@@ -182,7 +177,13 @@ function createCryptoUtils() {
                 CryptoJs.AES.encrypt(rawWordArray, keyWordArray, options).ciphertext,
             );
         },
-        rsaEncrypt: createUnsupportedUtil("crypto.rsaEncrypt"),
+        rsaEncrypt(raw: any, key: any) {
+            const dataBuffer =
+                Buffer.isBuffer(raw) || raw instanceof Uint8Array
+                    ? Buffer.from(raw)
+                    : Buffer.from(String(raw ?? ""));
+            return rsaEncrypt(dataBuffer, String(key ?? ""));
+        },
     };
 }
 
