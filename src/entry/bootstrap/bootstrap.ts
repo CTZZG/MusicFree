@@ -32,7 +32,10 @@ import { PERMISSIONS, check, request } from "react-native-permissions";
 import bootstrapAtom from "./bootstrap.atom";
 import playbackServiceObserver from "@/core/trackPlayer/playbackServiceObserver";
 import telemetry from "@/core/telemetry";
-import type { PlayerAdapterRemoteCapability } from "@/core/playerAdapter";
+import type {
+    PlayerAdapterConfig,
+    PlayerAdapterRemoteCapability,
+} from "@/core/playerAdapter";
 
 // 依赖管理
 PluginManager.injectDependencies(Config);
@@ -184,17 +187,6 @@ export async function initTrackPlayer() {
     playerTimestamp.Start = Date.now();
     TrackPlayer.lockBackend();
 
-    try {
-        await TrackPlayer.playerAdapter.setup({
-            maxCacheSize:
-                Config.getConfig("basic.maxCacheSize") ?? 1024 * 1024 * 512,
-        });
-    } catch (e: any) {
-        throw e;
-    }
-    playerTimestamp.BackendSetup = Date.now();
-    playerMetrics.BackendSetup = playerTimestamp.BackendSetup - playerTimestamp.Start;
-
     const capabilities = Config.getConfig("basic.showExitOnNotification")
         ? [
             "play",
@@ -211,7 +203,9 @@ export async function initTrackPlayer() {
         ];
     const remoteCapabilities = capabilities as PlayerAdapterRemoteCapability[];
 
-    await TrackPlayer.playerAdapter.configure({
+    const playerAdapterConfig: PlayerAdapterConfig = {
+        maxCacheSize:
+            Config.getConfig("basic.maxCacheSize") ?? 1024 * 1024 * 512,
         notificationIcon: ImgAsset.logoTransparent,
         progressUpdateEventInterval: 0.1,
         alwaysPauseOnInterruption: true,
@@ -220,7 +214,20 @@ export async function initTrackPlayer() {
         capabilities: remoteCapabilities,
         compactCapabilities: remoteCapabilities,
         notificationCapabilities: [...remoteCapabilities, "seek"],
-    });
+        remoteDuckMode: Config.getConfig("basic.tempRemoteDuck") ?? "pause",
+        remoteDuckVolume:
+            Config.getConfig("basic.tempRemoteDuckVolume") ?? 0.5,
+    };
+
+    try {
+        await TrackPlayer.playerAdapter.setup(playerAdapterConfig);
+    } catch (e: any) {
+        throw e;
+    }
+    playerTimestamp.BackendSetup = Date.now();
+    playerMetrics.BackendSetup = playerTimestamp.BackendSetup - playerTimestamp.Start;
+
+    await TrackPlayer.playerAdapter.configure(playerAdapterConfig);
     trace("播放器初始化完成");
     playerTimestamp.OptionsSetup = Date.now();
     playerMetrics.OptionsSetup = playerTimestamp.OptionsSetup - playerTimestamp.BackendSetup;

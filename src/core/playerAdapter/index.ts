@@ -1,17 +1,21 @@
 import type { PlayerAdapter, PlayerBackendName } from "./types";
-import nitroPlayerAdapter from "./nitroPlayerAdapter";
 
 export * from "./types";
-export {
-    default as nitroPlayerAdapter,
-    toNitroTrackItem,
-} from "./nitroPlayerAdapter";
 
+let nitroAdapterSingleton: PlayerAdapter<any> | null = null;
 let mpvAdapterSingleton: PlayerAdapter<any> | null = null;
+
+function getNitroPlayerAdapter(): PlayerAdapter<any> {
+    if (!nitroAdapterSingleton) {
+        nitroAdapterSingleton = require("./nitroPlayerAdapter")
+            .default as PlayerAdapter<any>;
+    }
+    return nitroAdapterSingleton;
+}
 
 /**
  * 按配置解析播放内核适配器。
- * 默认 nitro-player；选中 mpv 时延迟 require，避免在未选用（或 iOS）时初始化原生 mpv 模块。
+ * 默认 nitro-player；两个后端都延迟 require，避免未选用的原生模块抢先创建 MediaSession。
  */
 export function resolvePlayerAdapter(
     backend?: PlayerBackendName | null,
@@ -23,5 +27,5 @@ export function resolvePlayerAdapter(
         }
         return mpvAdapterSingleton;
     }
-    return nitroPlayerAdapter;
+    return getNitroPlayerAdapter();
 }

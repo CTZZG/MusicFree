@@ -124,6 +124,12 @@ export interface PlayerAdapterConfig {
     capabilities?: PlayerAdapterRemoteCapability[];
     compactCapabilities?: PlayerAdapterRemoteCapability[];
     notificationCapabilities?: PlayerAdapterRemoteCapability[];
+    remoteDuckMode?: "pause" | "lowerVolume";
+    remoteDuckVolume?: number;
+}
+
+export interface PlayerAdapterLoadQueueOptions {
+    autoPlay?: boolean;
 }
 
 export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
@@ -135,7 +141,11 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
 
     configure(config?: PlayerAdapterConfig): Promise<void>;
 
-    loadQueue(tracks: TTrack[], startIndex?: number): Promise<void>;
+    loadQueue(
+        tracks: TTrack[],
+        startIndex?: number,
+        options?: PlayerAdapterLoadQueueOptions,
+    ): Promise<void>;
 
     play(): Promise<void>;
 
@@ -186,6 +196,13 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
     ): Promise<Array<TTrack | null | undefined>>;
 
     updateTracks?(tracks: TTrack[]): Promise<void>;
+
+    /**
+     * 提前把应用层已经确认的下一首交给后端准备。
+     * 仅用于支持 gapless / 预载；传 null 表示撤销预备下一首。
+     * 后端不能据此改变应用层队列真相。
+     */
+    prepareNextTrack?(track?: TTrack | null): Promise<void>;
 
     /**
      * 把后端队列整体重排为最新的播放列表顺序（上层在每次 setPlayList 时调用）。

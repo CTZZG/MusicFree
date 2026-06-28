@@ -24,14 +24,24 @@ export type MpvRemoteCommand =
     | "next"
     | "previous"
     | "stop"
-    | "seek";
+    | "seek"
+    | "duck"
+    | "unduck";
 
 /** 初始化参数 */
 export interface MpvInitializeOptions {
     /** 全局 User-Agent，未在单曲覆盖时使用 */
     userAgent?: string;
+    /** mpv demuxer 缓存上限（字节） */
+    maxCacheSize?: number;
+    /** 音频焦点可闪避打断时的处理方式 */
+    remoteDuckMode?: "pause" | "lowerVolume";
+    /** remoteDuckMode=lowerVolume 时的目标音量比例（0-1） */
+    remoteDuckVolume?: number;
     /** 进度回调间隔（毫秒），默认 1000 */
     progressIntervalMs?: number;
+    /** 通知栏是否显示停止/关闭按钮 */
+    showStopAction?: boolean;
     /** 透传给 mpv 的额外属性（如 audio-buffer、cache 等） */
     mpvOptions?: Record<string, string>;
 }
@@ -48,12 +58,15 @@ export interface MpvLoadPayload {
     artwork?: string | null;
     /** 已知时长（秒），用于 seek 边界与通知进度，未知传 0 */
     duration?: number;
+    /** 是否在加载后立即播放；false 用于恢复队列但不自动出声 */
+    autoPlay?: boolean;
 }
 
 interface MpvPlayerNativeModule {
     initialize(options: MpvInitializeOptions): Promise<void>;
     destroy(): Promise<void>;
     loadAndPlay(payload: MpvLoadPayload): Promise<void>;
+    prepareNext(payload?: MpvLoadPayload | null): Promise<void>;
     pause(): Promise<void>;
     resume(): Promise<void>;
     stop(): Promise<void>;
@@ -65,7 +78,7 @@ interface MpvPlayerNativeModule {
     getPosition(): Promise<number>;
     getDuration(): Promise<number>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
-    updateMetadata(payload: Omit<MpvLoadPayload, "url" | "headers">): Promise<void>;
+    updateMetadata(payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">): Promise<void>;
 }
 
 export const ON_MPV_STATE_CHANGED = "onMpvStateChanged";
@@ -80,10 +93,13 @@ export interface MpvStateChangedEvent {
 export interface MpvProgressEvent {
     position: number;
     duration: number;
+    buffered?: number;
 }
 export interface MpvEndedEvent {
     /** 自然播放结束 vs 出错中断 */
     reason?: "end" | "error";
+    /** mpv playlist 已经自动切到 JS 指定的 prepared next */
+    autoAdvanced?: boolean;
 }
 export interface MpvErrorEvent {
     message: string;
@@ -93,6 +109,8 @@ export interface MpvRemoteCommandEvent {
     command: MpvRemoteCommand;
     /** seek 命令携带目标秒数 */
     position?: number;
+    /** duck 命令携带目标音量比例 */
+    volume?: number;
 }
 
 const nativeModule = NativeModules.MpvPlayer as MpvPlayerNativeModule | undefined;
@@ -135,6 +153,8 @@ const NativeMpvPlayer = {
     destroy: () => assertAvailable().destroy(),
     loadAndPlay: (payload: MpvLoadPayload) =>
         assertAvailable().loadAndPlay(payload),
+    prepareNext: (payload?: MpvLoadPayload | null) =>
+        assertAvailable().prepareNext(payload),
     pause: () => assertAvailable().pause(),
     resume: () => assertAvailable().resume(),
     stop: () => assertAvailable().stop(),
@@ -144,7 +164,7 @@ const NativeMpvPlayer = {
     getIsPlaying: () => assertAvailable().getIsPlaying(),
     getPosition: () => assertAvailable().getPosition(),
     getDuration: () => assertAvailable().getDuration(),
-    updateMetadata: (payload: Omit<MpvLoadPayload, "url" | "headers">) =>
+    updateMetadata: (payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">) =>
         assertAvailable().updateMetadata(payload),
 
     // 事件订阅

@@ -4,36 +4,66 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.facebook.react.bridge.*
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter
 import dev.jdtech.mpv.MPVLib
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.max
+import kotlin.math.min
 
 /**
- * mpv 单曲播放引擎（仅 Android）。
+ * mpv single-track playback engine.
  *
- * 管线：loadfile replace → pause=false（立即，不等待 FILE_LOADED）
- * 跟 dev-mpv1 一样的简单模式，已验证可靠。
- *
- * END_FILE 抑制：用时间窗口（lastLoadTime + 1s），避免 replace 导致的旧文件 END_FILE 误触发。
+ * JS owns queue/order/repeat. Native owns only libmpv, MediaSession-facing
+ * metadata, progress and remote command events. Loading is guarded by a
+ * generation counter so stale END_FILE events from replacing the old file do
+ * not look like a natural track end.
  */
 class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext),
     MPVLib.EventObserver {
 
     private val isInitialized = AtomicBoolean(false)
-    private var positionSecs = 0.0
-    private var durationSecs = 0.0
-    private var currentState = "idle"
-
-    /** 最后一次 loadAndPlay 的时间戳，用于抑制紧接着的 END_FILE */
-    private var lastLoadTimeMs = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private data class PreparedTrack(
+        val url: String,
+        val title: String,
+        val artist: String,
+        val album: String,
+        val artwork: String?,
+        val duration: Double,
+    )
+
+    private var positionSecs = 0.0
+    private var durationSecs = 0.0
+    private var cacheAheadSecs = 0.0
+    private var currentState = "idle"
+
+    private var currentLoadGeneration = 0L
+    private var loadingGeneration = -1L
+    private var pendingUnpauseGeneration = -1L
+    private var ignoreEndFileUntilMs = 0L
+    private var suppressIdleUntilMs = 0L
+    private var stopRequested = false
+
+    private var defaultUserAgent: String? = null
     private var cachedTitle = ""
     private var cachedArtist = ""
     private var cachedAlbum = ""
     private var cachedArtwork: String? = null
+    private var progressIntervalMs = 1000L
+    private var lastProgressEmitMs = 0L
+    private var preparedTrack: PreparedTrack? = null
+    private var hasPlaylistPreparedTrack = false
+    private var preparedPlaylistIndex = -1
+    private var pendingPlaylistCompaction = false
 
     companion object {
         private const val TAG = "MpvPlayerModule"
@@ -42,66 +72,301 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private const val ON_MPV_ENDED = "onMpvEnded"
         private const val ON_MPV_ERROR = "onMpvError"
         private const val ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand"
-        private const val END_FILE_SUPPRESS_MS = 800L // loadAndPlay 后 800ms 内抑制 END_FILE
+        private const val END_FILE_SUPPRESS_MS = 1200L
+        private val PLAYLIST_COMPACT_DELAYS_MS = longArrayOf(0L, 120L, 500L)
+        private val UNPAUSE_RETRY_DELAYS_MS = longArrayOf(0L, 80L, 250L, 700L)
     }
 
     override fun getName() = "MpvPlayer"
 
-    // ═══════════════════════════════════════════
-    // event helpers
-    // ═══════════════════════════════════════════
+    @ReactMethod
+    fun addListener(eventName: String) {
+        // Required by NativeEventEmitter.
+    }
+
+    @ReactMethod
+    fun removeListeners(count: Double) {
+        // Required by NativeEventEmitter.
+    }
 
     private fun sendEvent(name: String, params: WritableMap?) {
         reactContext.getJSModule(RCTDeviceEventEmitter::class.java)
             .emit(name, params ?: Arguments.createMap())
     }
 
-    private fun emitState(state: String) {
-        if (currentState == state) return
+    private fun emitState(state: String, force: Boolean = false) {
+        if (!force && currentState == state) return
         currentState = state
-        val p = Arguments.createMap().apply { putString("state", state) }
-        sendEvent(ON_MPV_STATE_CHANGED, p)
+        sendEvent(
+            ON_MPV_STATE_CHANGED,
+            Arguments.createMap().apply { putString("state", state) },
+        )
         MpvServiceBridge.service?.onPlaybackStateChanged(state)
     }
 
-    private fun emitProgress() {
-        val p = Arguments.createMap().apply {
-            putDouble("position", positionSecs)
-            putDouble("duration", durationSecs)
+    private fun bufferedPositionSecs(): Double {
+        if (durationSecs <= 0) {
+            return max(positionSecs, positionSecs + cacheAheadSecs)
         }
-        sendEvent(ON_MPV_PROGRESS, p)
-        MpvServiceBridge.service?.onProgressChanged(positionSecs, durationSecs)
+        return min(durationSecs, max(positionSecs, positionSecs + cacheAheadSecs))
+    }
+
+    private fun emitProgress(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastProgressEmitMs < progressIntervalMs) {
+            return
+        }
+        lastProgressEmitMs = now
+
+        val bufferedSecs = bufferedPositionSecs()
+        sendEvent(
+            ON_MPV_PROGRESS,
+            Arguments.createMap().apply {
+                putDouble("position", positionSecs)
+                putDouble("duration", durationSecs)
+                putDouble("buffered", bufferedSecs)
+            },
+        )
+        MpvServiceBridge.service?.onProgressChanged(
+            positionSecs,
+            durationSecs,
+            bufferedSecs,
+        )
     }
 
     private fun syncMetadata() {
         MpvServiceBridge.service?.onMetadataChanged(
-            cachedTitle, cachedArtist, cachedAlbum, cachedArtwork, durationSecs
+            cachedTitle,
+            cachedArtist,
+            cachedAlbum,
+            cachedArtwork,
+            durationSecs,
         )
     }
 
-    // ═══════════════════════════════════════════
-    // initialize / destroy
-    // ═══════════════════════════════════════════
+    private fun readString(map: ReadableMap, key: String): String? =
+        if (map.hasKey(key) && !map.isNull(key)) map.getString(key) else null
+
+    private fun readDouble(map: ReadableMap, key: String): Double? =
+        if (map.hasKey(key) && !map.isNull(key)) map.getDouble(key) else null
+
+    private fun readBoolean(map: ReadableMap, key: String): Boolean? =
+        if (map.hasKey(key) && !map.isNull(key)) map.getBoolean(key) else null
+
+    private fun readDuckMode(options: ReadableMap): String =
+        readString(options, "remoteDuckMode")
+            ?.takeIf { it == "pause" || it == "lowerVolume" }
+            ?: "pause"
+
+    private fun readDuckVolume(options: ReadableMap): Double =
+        (readDouble(options, "remoteDuckVolume") ?: 0.5)
+            .takeIf { !it.isNaN() && !it.isInfinite() }
+            ?.coerceIn(0.0, 1.0)
+            ?: 0.5
+
+    private fun readProgressIntervalMs(options: ReadableMap): Long {
+        val raw = readDouble(options, "progressIntervalMs") ?: 1000.0
+        if (raw.isNaN() || raw.isInfinite() || raw <= 0) {
+            return 1000L
+        }
+
+        // RN player configs commonly pass seconds, e.g. 0.1 means 100 ms.
+        val millis = if (raw < 10.0) raw * 1000.0 else raw
+        return millis.toLong().coerceIn(100L, 5000L)
+    }
+
+    private fun validDuration(value: Double?): Double =
+        if (value != null && !value.isNaN() && !value.isInfinite() && value > 0) {
+            value
+        } else {
+            0.0
+        }
+
+    private fun updateDurationFromMpv() {
+        try {
+            val nativeDuration = validDuration(MPVLib.getPropertyDouble("duration"))
+            if (nativeDuration > 0) {
+                durationSecs = nativeDuration
+                syncMetadata()
+            }
+            val nativePosition = MPVLib.getPropertyDouble("time-pos")
+            if (nativePosition != null && !nativePosition.isNaN() && nativePosition >= 0) {
+                positionSecs = nativePosition
+            }
+            emitProgress(force = true)
+        } catch (e: Exception) {
+            Log.d(TAG, "updateDurationFromMpv ignored", e)
+        }
+    }
+
+    private fun markLoading(autoPlay: Boolean): Long {
+        val generation = ++currentLoadGeneration
+        loadingGeneration = generation
+        pendingUnpauseGeneration = if (autoPlay) generation else -1L
+        val now = System.currentTimeMillis()
+        ignoreEndFileUntilMs = now + END_FILE_SUPPRESS_MS
+        suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
+        stopRequested = false
+        return generation
+    }
+
+    private fun isCurrentGeneration(generation: Long): Boolean =
+        generation == currentLoadGeneration
+
+    private fun forceUnpause(generation: Long) {
+        if (!isCurrentGeneration(generation) || stopRequested) {
+            return
+        }
+        try {
+            MPVLib.setPropertyBoolean("pause", false)
+            val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
+            if (!idle || loadingGeneration == generation) {
+                emitState("playing")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "forceUnpause failed", e)
+        }
+    }
+
+    private fun scheduleUnpauseRetries(generation: Long) {
+        UNPAUSE_RETRY_DELAYS_MS.forEach { delayMs ->
+            mainHandler.postDelayed({ forceUnpause(generation) }, delayMs)
+        }
+    }
+
+    private fun readPlaylistCount(): Int =
+        try {
+            MPVLib.getPropertyInt("playlist-count")?.toInt() ?: 0
+        } catch (_: Exception) {
+            0
+        }
+
+    private fun readPlaylistPosition(): Int =
+        try {
+            MPVLib.getPropertyInt("playlist-pos")?.toInt() ?: -1
+        } catch (_: Exception) {
+            -1
+        }
+
+    private fun removePlaylistIndex(index: Int) {
+        if (index < 0) {
+            return
+        }
+        try {
+            MPVLib.command(arrayOf("playlist-remove", index.toString()))
+        } catch (e: Exception) {
+            Log.d(TAG, "playlist item removal ignored", e)
+        }
+    }
+
+    private fun compactPlaylistBeforeCurrent() {
+        if (!pendingPlaylistCompaction) {
+            return
+        }
+
+        var position = readPlaylistPosition()
+        if (position <= 0) {
+            if (readPlaylistCount() <= 2) {
+                pendingPlaylistCompaction = false
+            }
+            return
+        }
+
+        while (position > 0) {
+            removePlaylistIndex(0)
+            if (preparedPlaylistIndex > 0) {
+                preparedPlaylistIndex -= 1
+            }
+            position -= 1
+        }
+        pendingPlaylistCompaction = false
+    }
+
+    private fun schedulePlaylistCompaction() {
+        PLAYLIST_COMPACT_DELAYS_MS.forEach { delayMs ->
+            mainHandler.postDelayed({ compactPlaylistBeforeCurrent() }, delayMs)
+        }
+    }
+
+    private fun clearPreparedTrack(removeFromPlaylist: Boolean) {
+        preparedTrack = null
+        if (removeFromPlaylist && hasPlaylistPreparedTrack) {
+            removePlaylistIndex(preparedPlaylistIndex)
+        }
+        hasPlaylistPreparedTrack = false
+        preparedPlaylistIndex = -1
+    }
+
+    private fun promotePreparedTrack(): Boolean {
+        val prepared = preparedTrack ?: return false
+        preparedTrack = null
+        hasPlaylistPreparedTrack = false
+        preparedPlaylistIndex = -1
+        pendingPlaylistCompaction = true
+        cachedTitle = prepared.title
+        cachedArtist = prepared.artist
+        cachedAlbum = prepared.album
+        cachedArtwork = prepared.artwork
+        durationSecs = validDuration(prepared.duration)
+        positionSecs = 0.0
+        cacheAheadSecs = 0.0
+        syncMetadata()
+        emitProgress(force = true)
+        schedulePlaylistCompaction()
+        return true
+    }
 
     @ReactMethod
     fun initialize(options: ReadableMap, promise: Promise) {
-        if (isInitialized.get()) { promise.resolve(null); return }
+        if (isInitialized.get()) {
+            promise.resolve(null)
+            return
+        }
+
         mainHandler.post {
             try {
                 MPVLib.create(reactContext.applicationContext)
                 MPVLib.setOptionString("ao", "audiotrack,opensles")
-                MPVLib.setOptionString("vo", "null"); MPVLib.setOptionString("vid", "no")
-                MPVLib.setOptionString("cache", "yes"); MPVLib.setOptionString("cache-secs", "2")
-                MPVLib.setOptionString("demuxer-max-bytes", (32 * 1024 * 1024).toString())
+                MPVLib.setOptionString("vo", "null")
+                MPVLib.setOptionString("vid", "no")
+                MPVLib.setOptionString("cache", "yes")
+                MPVLib.setOptionString("cache-secs", "2")
+                MPVLib.setOptionString(
+                    "demuxer-max-bytes",
+                    ((readDouble(options, "maxCacheSize") ?: (32.0 * 1024 * 1024))
+                        .toLong())
+                        .coerceAtLeast(8L * 1024 * 1024)
+                        .toString(),
+                )
                 MPVLib.setOptionString("demuxer-readahead-secs", "2")
                 MPVLib.setOptionString("network-timeout", "15")
-                MPVLib.setOptionString("msg-level", "all=warn"); MPVLib.setOptionString("hwdec", "no")
-                MPVLib.setOptionString("keep-open", "always")
+                MPVLib.setOptionString("msg-level", "all=warn")
+                MPVLib.setOptionString("hwdec", "no")
+                // Let mpv naturally advance appended prepared-next entries. JS
+                // handles the final ended state when there is no prepared next.
+                MPVLib.setOptionString("keep-open", "no")
+                MPVLib.setOptionString("gapless-audio", "yes")
 
-                options.getString("userAgent")?.let { if (it.isNotBlank()) MPVLib.setOptionString("user-agent", it) }
-                options.getMap("mpvOptions")?.let { opts ->
-                    val it = opts.keySetIterator()
-                    while (it.hasNextKey()) { val k = it.nextKey(); val v = opts.getString(k); if (!k.isNullOrBlank() && v != null) MPVLib.setOptionString(k, v) }
+                defaultUserAgent = readString(options, "userAgent")
+                    ?.takeIf { it.isNotBlank() }
+                defaultUserAgent?.let { MPVLib.setOptionString("user-agent", it) }
+                MpvServiceBridge.remoteDuckMode = readDuckMode(options)
+                MpvServiceBridge.remoteDuckVolume = readDuckVolume(options)
+                MpvServiceBridge.showStopAction =
+                    readBoolean(options, "showStopAction") ?: false
+                progressIntervalMs = readProgressIntervalMs(options)
+
+                if (options.hasKey("mpvOptions") && !options.isNull("mpvOptions")) {
+                    options.getMap("mpvOptions")?.let { opts ->
+                        val iterator = opts.keySetIterator()
+                        while (iterator.hasNextKey()) {
+                            val key = iterator.nextKey()
+                            val value = readString(opts, key)
+                            if (key.isNotBlank() && value != null) {
+                                MPVLib.setOptionString(key, value)
+                            }
+                        }
+                    }
                 }
 
                 MPVLib.init()
@@ -112,19 +377,44 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MPVLib.observeProperty("duration", MPVLib.MPV_FORMAT_DOUBLE)
                 MPVLib.observeProperty("idle-active", MPVLib.MPV_FORMAT_FLAG)
                 MPVLib.observeProperty("paused-for-cache", MPVLib.MPV_FORMAT_FLAG)
+                MPVLib.observeProperty("playback-error", MPVLib.MPV_FORMAT_STRING)
+                MPVLib.observeProperty(
+                    "demuxer-cache-duration",
+                    MPVLib.MPV_FORMAT_DOUBLE,
+                )
 
-                try { reactContext.startService(Intent(reactContext, MpvPlaybackService::class.java)) } catch (e: Exception) { Log.w(TAG, "startService", e) }
+                try {
+                    reactContext.startService(
+                        Intent(reactContext, MpvPlaybackService::class.java),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "startService failed", e)
+                }
 
-                MpvServiceBridge.onCommand = { cmd, pos ->
-                    val p = Arguments.createMap().apply { putString("command", cmd); if (pos != null) putDouble("position", pos) }
-                    sendEvent(ON_MPV_REMOTE_COMMAND, p)
+                MpvServiceBridge.onCommand = { command, position ->
+                    sendEvent(
+                        ON_MPV_REMOTE_COMMAND,
+                        Arguments.createMap().apply {
+                            putString("command", command)
+                            if (position != null) {
+                                if (command == "duck") {
+                                    putDouble("volume", position)
+                                } else {
+                                    putDouble("position", position)
+                                }
+                            }
+                        },
+                    )
                 }
 
                 isInitialized.set(true)
                 promise.resolve(null)
             } catch (e: Exception) {
-                Log.e(TAG, "init", e)
-                try { MPVLib.destroy() } catch (_: Exception) {}
+                Log.e(TAG, "init failed", e)
+                try {
+                    MPVLib.destroy()
+                } catch (_: Exception) {
+                }
                 isInitialized.set(false)
                 promise.reject("E_MPV_INIT", e.message, e)
             }
@@ -133,155 +423,492 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun destroy(promise: Promise) {
-        if (!isInitialized.getAndSet(false)) { promise.resolve(null); return }
+        if (!isInitialized.getAndSet(false)) {
+            promise.resolve(null)
+            return
+        }
+
         mainHandler.post {
             try {
+                stopRequested = true
+                pendingPlaylistCompaction = false
+                clearPreparedTrack(removeFromPlaylist = false)
                 MpvServiceBridge.onCommand = null
-                try { reactContext.stopService(Intent(reactContext, MpvPlaybackService::class.java)) } catch (_: Exception) {}
+                try {
+                    reactContext.stopService(
+                        Intent(reactContext, MpvPlaybackService::class.java),
+                    )
+                } catch (_: Exception) {
+                }
                 MPVLib.removeObserver(this@MpvPlayerModule)
                 MPVLib.command(arrayOf("stop"))
                 MPVLib.destroy()
-            } catch (e: Exception) { Log.e(TAG, "destroy", e) } finally { currentState = "idle"; promise.resolve(null) }
+            } catch (e: Exception) {
+                Log.e(TAG, "destroy failed", e)
+            } finally {
+                currentState = "idle"
+                promise.resolve(null)
+            }
         }
     }
 
-    // ═══════════════════════════════════════════
-    // playback
-    // ═══════════════════════════════════════════
-
     @ReactMethod
     fun loadAndPlay(payload: ReadableMap, promise: Promise) {
-        val url = payload.getString("url")
-        if (url.isNullOrBlank()) { promise.reject("E_NO_URL", "no URL"); return }
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+
+        val url = readString(payload, "url")
+        if (url.isNullOrBlank()) {
+            promise.reject("E_NO_URL", "no URL")
+            return
+        }
+
         mainHandler.post {
             try {
-                payload.getMap("headers")?.let { h -> val s = buildHeaderString(h); if (s.isNotEmpty()) MPVLib.setOptionString("http-header-fields", s) }
-                payload.getString("userAgent")?.let { if (it.isNotBlank()) MPVLib.setOptionString("user-agent", it) }
+                val headers =
+                    if (payload.hasKey("headers") && !payload.isNull("headers")) {
+                        payload.getMap("headers")
+                    } else {
+                        null
+                    }
+                MPVLib.setOptionString("http-header-fields", buildHeaderString(headers))
 
-                val dur = payload.getDouble("duration")
-                durationSecs = if (!dur.isNaN() && dur > 0) dur else 0.0
+                val trackUserAgent = readString(payload, "userAgent")
+                    ?.takeIf { it.isNotBlank() }
+                (trackUserAgent ?: defaultUserAgent)
+                    ?.let { MPVLib.setOptionString("user-agent", it) }
+
+                durationSecs = validDuration(readDouble(payload, "duration"))
+                val autoPlay = readBoolean(payload, "autoPlay") ?: true
                 positionSecs = 0.0
-                cachedTitle = payload.getString("title") ?: ""
-                cachedArtist = payload.getString("artist") ?: ""
-                cachedAlbum = payload.getString("album") ?: ""
-                cachedArtwork = payload.getString("artwork")
+                cacheAheadSecs = 0.0
+                cachedTitle = readString(payload, "title") ?: ""
+                cachedArtist = readString(payload, "artist") ?: ""
+                cachedAlbum = readString(payload, "album") ?: ""
+                cachedArtwork = readString(payload, "artwork")
+                pendingPlaylistCompaction = false
+                clearPreparedTrack(removeFromPlaylist = false)
 
-                // 记录时间戳，800ms 内 END_FILE 将被抑制（old file 被 replace 导致）
-                lastLoadTimeMs = System.currentTimeMillis()
-
-                Log.d(TAG, "loadAndPlay: $url")
-                MPVLib.command(arrayOf("loadfile", url, "replace"))
-                MPVLib.setPropertyBoolean("pause", false)
-
-                emitState("playing")
+                val generation = markLoading(autoPlay)
+                if (!autoPlay) {
+                    MPVLib.setPropertyBoolean("pause", true)
+                }
+                emitState(if (autoPlay) "buffering" else "paused")
                 syncMetadata()
+                emitProgress(force = true)
+
+                Log.d(TAG, "loadAndPlay[$generation]: $url")
+                MPVLib.command(arrayOf("loadfile", url, "replace"))
+                if (autoPlay) {
+                    scheduleUnpauseRetries(generation)
+                } else {
+                    MPVLib.setPropertyBoolean("pause", true)
+                    emitState("paused", force = true)
+                }
                 promise.resolve(null)
             } catch (e: Exception) {
-                Log.e(TAG, "loadAndPlay", e)
+                Log.e(TAG, "loadAndPlay failed", e)
                 promise.reject("E_LOAD", e.message, e)
             }
         }
     }
 
     @ReactMethod
+    fun prepareNext(payload: ReadableMap?, promise: Promise) {
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+
+        mainHandler.post {
+            try {
+                clearPreparedTrack(removeFromPlaylist = true)
+                val nextPayload = payload
+                val url = nextPayload?.let { readString(it, "url") }
+                if (nextPayload == null || url.isNullOrBlank()) {
+                    promise.resolve(null)
+                    return@post
+                }
+
+                val headers =
+                    if (nextPayload.hasKey("headers") && !nextPayload.isNull("headers")) {
+                        nextPayload.getMap("headers")
+                    } else {
+                        null
+                    }
+                MPVLib.setOptionString("http-header-fields", buildHeaderString(headers))
+
+                val trackUserAgent = readString(nextPayload, "userAgent")
+                    ?.takeIf { it.isNotBlank() }
+                (trackUserAgent ?: defaultUserAgent)
+                    ?.let { MPVLib.setOptionString("user-agent", it) }
+
+                preparedTrack = PreparedTrack(
+                    url = url,
+                    title = readString(nextPayload, "title") ?: "",
+                    artist = readString(nextPayload, "artist") ?: "",
+                    album = readString(nextPayload, "album") ?: "",
+                    artwork = readString(nextPayload, "artwork"),
+                    duration = validDuration(readDouble(nextPayload, "duration")),
+                )
+                val appendIndex = readPlaylistCount()
+                MPVLib.command(arrayOf("loadfile", url, "append"))
+                hasPlaylistPreparedTrack = true
+                preparedPlaylistIndex = appendIndex
+                promise.resolve(null)
+            } catch (e: Exception) {
+                Log.w(TAG, "prepareNext failed", e)
+                clearPreparedTrack(removeFromPlaylist = false)
+                promise.reject("E_PREPARE_NEXT", e.message, e)
+            }
+        }
+    }
+
+    @ReactMethod
     fun updateMetadata(payload: ReadableMap, promise: Promise) {
-        cachedTitle = payload.getString("title") ?: cachedTitle
-        cachedArtist = payload.getString("artist") ?: cachedArtist
-        cachedAlbum = payload.getString("album") ?: cachedAlbum
-        payload.getString("artwork")?.let { cachedArtwork = it }
-        val dur = payload.getDouble("duration")
-        if (!dur.isNaN() && dur > 0) durationSecs = dur
+        cachedTitle = readString(payload, "title") ?: cachedTitle
+        cachedArtist = readString(payload, "artist") ?: cachedArtist
+        cachedAlbum = readString(payload, "album") ?: cachedAlbum
+        if (payload.hasKey("artwork")) {
+            cachedArtwork = readString(payload, "artwork")
+        }
+        val duration = validDuration(readDouble(payload, "duration"))
+        if (duration > 0) {
+            durationSecs = duration
+        }
         syncMetadata()
+        emitProgress(force = true)
         promise.resolve(null)
     }
 
     @ReactMethod
     fun pause(promise: Promise) {
-        if (!isInitialized.get()) { promise.reject("E_NOT_INIT", "not init"); return }
-        mainHandler.post { MPVLib.setPropertyBoolean("pause", true); promise.resolve(null) }
-    }
-
-    @ReactMethod
-    fun resume(promise: Promise) {
-        if (!isInitialized.get()) { promise.reject("E_NOT_INIT", "not init"); return }
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
         mainHandler.post {
-            val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
-            if (idle) { MPVLib.command(arrayOf("seek", "0", "absolute")); lastLoadTimeMs = System.currentTimeMillis() }
-            MPVLib.setPropertyBoolean("pause", false)
+            MPVLib.setPropertyBoolean("pause", true)
+            emitState("paused")
             promise.resolve(null)
         }
     }
 
     @ReactMethod
+    fun resume(promise: Promise) {
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+        mainHandler.post {
+            try {
+                val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
+                if (idle || currentState == "ended") {
+                    MPVLib.command(arrayOf("seek", "0", "absolute"))
+                }
+                val generation = currentLoadGeneration
+                pendingUnpauseGeneration = generation
+                scheduleUnpauseRetries(generation)
+                emitState("playing")
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("E_RESUME", e.message, e)
+            }
+        }
+    }
+
+    @ReactMethod
     fun stop(promise: Promise) {
-        if (!isInitialized.get()) { promise.reject("E_NOT_INIT", "not init"); return }
-        mainHandler.post { MPVLib.command(arrayOf("stop")); emitState("idle"); promise.resolve(null) }
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+        mainHandler.post {
+            stopRequested = true
+            pendingPlaylistCompaction = false
+            clearPreparedTrack(removeFromPlaylist = true)
+            loadingGeneration = -1L
+            pendingUnpauseGeneration = -1L
+            ignoreEndFileUntilMs = System.currentTimeMillis() + END_FILE_SUPPRESS_MS
+            MPVLib.command(arrayOf("stop"))
+            positionSecs = 0.0
+            cacheAheadSecs = 0.0
+            emitProgress(force = true)
+            emitState("idle")
+            promise.resolve(null)
+        }
     }
 
     @ReactMethod
     fun seekTo(seconds: Double, promise: Promise) {
-        if (!isInitialized.get()) { promise.reject("E_NOT_INIT", "not init"); return }
-        mainHandler.post { MPVLib.command(arrayOf("seek", seconds.toString(), "absolute")); promise.resolve(null) }
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+        mainHandler.post {
+            MPVLib.command(arrayOf("seek", seconds.toString(), "absolute"))
+            positionSecs = seconds.coerceAtLeast(0.0)
+            emitProgress(force = true)
+            promise.resolve(null)
+        }
     }
 
-    @ReactMethod fun setVolume(volume: Double, promise: Promise) { if (!isInitialized.get()) { promise.reject("E_NOT_INIT", ""); return }; mainHandler.post { MPVLib.setPropertyInt("volume", (volume * 100).toInt().coerceIn(0, 100)); promise.resolve(null) } }
-    @ReactMethod fun setRate(rate: Double, promise: Promise) { if (!isInitialized.get()) { promise.reject("E_NOT_INIT", ""); return }; mainHandler.post { MPVLib.setPropertyDouble("speed", rate); promise.resolve(null) } }
-
-    @ReactMethod fun getIsPlaying(promise: Promise) { mainHandler.post { try { val p = MPVLib.getPropertyBoolean("pause") ?: true; val i = MPVLib.getPropertyBoolean("idle-active") ?: true; promise.resolve(!p && !i) } catch (_: Exception) { promise.resolve(false) } } }
-    @ReactMethod fun getPosition(promise: Promise) { mainHandler.post { try { promise.resolve(MPVLib.getPropertyDouble("time-pos") ?: positionSecs) } catch (_: Exception) { promise.resolve(positionSecs) } } }
-    @ReactMethod fun getDuration(promise: Promise) { mainHandler.post { try { promise.resolve(MPVLib.getPropertyDouble("duration") ?: durationSecs) } catch (_: Exception) { promise.resolve(durationSecs) } } }
-
-    private fun buildHeaderString(headers: ReadableMap): String {
-        val sb = StringBuilder(); val it = headers.keySetIterator()
-        while (it.hasNextKey()) { val k = it.nextKey(); val v = headers.getString(k); if (!k.isNullOrBlank() && v != null) sb.append("$k: $v\r\n") }
-        return sb.toString()
+    @ReactMethod
+    fun setVolume(volume: Double, promise: Promise) {
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+        mainHandler.post {
+            MPVLib.setPropertyInt("volume", (volume * 100).toInt().coerceIn(0, 100))
+            promise.resolve(null)
+        }
     }
 
-    // ═══════════════════════════════════════════
-    // MPVLib.EventObserver
-    // ═══════════════════════════════════════════
+    @ReactMethod
+    fun setRate(rate: Double, promise: Promise) {
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+        mainHandler.post {
+            MPVLib.setPropertyDouble("speed", rate)
+            promise.resolve(null)
+        }
+    }
 
-    override fun eventProperty(property: String) {}
-    override fun eventProperty(property: String, value: Long) {}
+    @ReactMethod
+    fun getIsPlaying(promise: Promise) {
+        mainHandler.post {
+            try {
+                val paused = MPVLib.getPropertyBoolean("pause") ?: true
+                val idle = MPVLib.getPropertyBoolean("idle-active") ?: true
+                promise.resolve(!paused && !idle)
+            } catch (_: Exception) {
+                promise.resolve(currentState == "playing")
+            }
+        }
+    }
+
+    @ReactMethod
+    fun getPosition(promise: Promise) {
+        mainHandler.post {
+            try {
+                promise.resolve(MPVLib.getPropertyDouble("time-pos") ?: positionSecs)
+            } catch (_: Exception) {
+                promise.resolve(positionSecs)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun getDuration(promise: Promise) {
+        mainHandler.post {
+            try {
+                val nativeDuration = validDuration(MPVLib.getPropertyDouble("duration"))
+                promise.resolve(if (nativeDuration > 0) nativeDuration else durationSecs)
+            } catch (_: Exception) {
+                promise.resolve(durationSecs)
+            }
+        }
+    }
+
+    private fun buildHeaderString(headers: ReadableMap?): String {
+        if (headers == null) {
+            return ""
+        }
+        val builder = StringBuilder()
+        val iterator = headers.keySetIterator()
+        while (iterator.hasNextKey()) {
+            val key = iterator.nextKey()
+            val value = readString(headers, key)
+            if (key.isNotBlank() && value != null) {
+                builder.append(key).append(": ").append(value).append("\r\n")
+            }
+        }
+        return builder.toString()
+    }
+
+    override fun eventProperty(property: String) {
+    }
+
+    override fun eventProperty(property: String, value: Long) {
+        when (property) {
+            "time-pos" -> {
+                positionSecs = value.toDouble()
+                emitProgress()
+            }
+            "duration" -> {
+                if (value > 0) {
+                    durationSecs = value.toDouble()
+                    syncMetadata()
+                    emitProgress(force = true)
+                }
+            }
+            "demuxer-cache-duration" -> {
+                cacheAheadSecs = value.toDouble().coerceAtLeast(0.0)
+                emitProgress()
+            }
+        }
+    }
 
     override fun eventProperty(property: String, value: Boolean) {
         when (property) {
-            "pause" -> emitState(if (value) "paused" else "playing")
-            "idle-active" -> { if (value) emitState("idle") }
-            "paused-for-cache" -> emitState(if (value) "buffering" else "playing")
+            "pause" -> {
+                val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
+                if (value) {
+                    if (!idle && currentState != "ended") emitState("paused")
+                } else if (!idle || loadingGeneration == currentLoadGeneration) {
+                    emitState("playing")
+                }
+            }
+            "idle-active" -> {
+                if (value) {
+                    val now = System.currentTimeMillis()
+                    if (
+                        now < suppressIdleUntilMs ||
+                        loadingGeneration == currentLoadGeneration ||
+                        currentState == "ended"
+                    ) {
+                        return
+                    }
+                    emitState("idle")
+                } else if (currentState != "paused" && currentState != "ended") {
+                    emitState("playing")
+                }
+            }
+            "paused-for-cache" -> {
+                if (value) {
+                    emitState("buffering")
+                } else {
+                    val paused = MPVLib.getPropertyBoolean("pause") ?: false
+                    val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
+                    if (!paused && !idle) {
+                        emitState("playing")
+                    }
+                }
+            }
         }
     }
 
     override fun eventProperty(property: String, value: Double) {
         when (property) {
-            "time-pos" -> { positionSecs = value; emitProgress() }
-            "duration" -> { if (value > 0) { durationSecs = value; emitProgress() } }
+            "time-pos" -> {
+                if (!value.isNaN() && value >= 0) {
+                    positionSecs = value
+                    emitProgress()
+                }
+            }
+            "duration" -> {
+                if (!value.isNaN() && value > 0) {
+                    durationSecs = value
+                    syncMetadata()
+                    emitProgress(force = true)
+                }
+            }
+            "demuxer-cache-duration" -> {
+                if (!value.isNaN() && value >= 0) {
+                    cacheAheadSecs = value
+                    emitProgress()
+                }
+            }
         }
     }
 
     override fun eventProperty(property: String, value: String) {
         if (property == "playback-error") {
             Log.e(TAG, "playback error: $value")
-            sendEvent(ON_MPV_ERROR, Arguments.createMap().apply { putString("message", value); putString("code", "mpv-playback-error") })
+            sendEvent(
+                ON_MPV_ERROR,
+                Arguments.createMap().apply {
+                    putString("message", value)
+                    putString("code", "mpv-playback-error")
+                },
+            )
             emitState("error")
         }
     }
 
     override fun event(eventId: Int) {
         when (eventId) {
+            MPVLib.MPV_EVENT_START_FILE -> {
+                val generation = currentLoadGeneration
+                loadingGeneration = generation
+                if (pendingUnpauseGeneration == generation) {
+                    emitState("buffering")
+                    scheduleUnpauseRetries(generation)
+                } else {
+                    MPVLib.setPropertyBoolean("pause", true)
+                    emitState("paused")
+                }
+            }
+            MPVLib.MPV_EVENT_FILE_LOADED -> {
+                val generation = currentLoadGeneration
+                if (loadingGeneration == generation) {
+                    loadingGeneration = -1L
+                }
+                updateDurationFromMpv()
+                if (pendingUnpauseGeneration == generation) {
+                    forceUnpause(generation)
+                } else {
+                    MPVLib.setPropertyBoolean("pause", true)
+                    emitState("paused")
+                }
+            }
+            MPVLib.MPV_EVENT_PLAYBACK_RESTART -> {
+                updateDurationFromMpv()
+                val generation = currentLoadGeneration
+                if (pendingUnpauseGeneration == generation) {
+                    forceUnpause(generation)
+                }
+            }
             MPVLib.MPV_EVENT_END_FILE -> {
-                // 时间窗口抑制：loadAndPlay/replace 后 800ms 内的 END_FILE 是旧文件的，跳过
-                if (System.currentTimeMillis() - lastLoadTimeMs < END_FILE_SUPPRESS_MS) {
-                    Log.d(TAG, "END_FILE suppressed (within ${END_FILE_SUPPRESS_MS}ms of load)")
+                val now = System.currentTimeMillis()
+                if (
+                    stopRequested ||
+                    now < ignoreEndFileUntilMs ||
+                    loadingGeneration == currentLoadGeneration
+                ) {
+                    Log.d(TAG, "END_FILE suppressed")
                     return
                 }
-                sendEvent(ON_MPV_ENDED, Arguments.createMap().apply { putString("reason", "end") })
-                emitState("ended")
+                pendingUnpauseGeneration = -1L
+                loadingGeneration = -1L
+                val autoAdvanced = promotePreparedTrack()
+                if (!autoAdvanced && durationSecs > 0) {
+                    positionSecs = durationSecs
+                    emitProgress(force = true)
+                }
+                sendEvent(
+                    ON_MPV_ENDED,
+                    Arguments.createMap().apply {
+                        putString("reason", "end")
+                        putBoolean("autoAdvanced", autoAdvanced)
+                    },
+                )
+                if (autoAdvanced) {
+                    pendingUnpauseGeneration = currentLoadGeneration
+                    suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
+                    scheduleUnpauseRetries(currentLoadGeneration)
+                    emitState("buffering")
+                } else {
+                    emitState("ended")
+                }
             }
             MPVLib.MPV_EVENT_SHUTDOWN -> {
                 Log.e(TAG, "MPV_EVENT_SHUTDOWN")
-                val err = MPVLib.getPropertyString("error") ?: MPVLib.getPropertyString("playback-error") ?: "mpv shutdown"
-                sendEvent(ON_MPV_ERROR, Arguments.createMap().apply { putString("message", err); putString("code", "mpv-shutdown") })
+                val error = MPVLib.getPropertyString("error")
+                    ?: MPVLib.getPropertyString("playback-error")
+                    ?: "mpv shutdown"
+                sendEvent(
+                    ON_MPV_ERROR,
+                    Arguments.createMap().apply {
+                        putString("message", error)
+                        putString("code", "mpv-shutdown")
+                    },
+                )
                 emitState("error")
             }
         }
