@@ -202,5 +202,10 @@ dependencies {
         implementation files("libs/musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar")
     }
 
+    // libmpv 播放内核（实验性），要求 minSdk≥26
+    implementation files("libs/libmpv-release.aar")
+    // MpvPlaybackService 所需的 MediaSession / 通知栏支持
+    implementation 'androidx.media:media:1.7.0'
+
     logger.lifecycle("[MusicFree] Nitro Media3 FFmpeg is the only packaged audio extension path.")
 }

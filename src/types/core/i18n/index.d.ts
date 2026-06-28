@@ -672,6 +672,10 @@ export interface ILanguageData {
     "basicSettings.qualityManagement": string; // 音质管理
     "basicSettings.qualityManagement.custom": string; // 自定义
     "basicSettings.defaultPlayQuality": string; // 默认播放音质
+    "basicSettings.playerBackend": string; // 播放内核
+    "basicSettings.playerBackend.nitro": string;
+    "basicSettings.playerBackend.mpv": string;
+    "basicSettings.playerBackend.restartHint": string;
     "basicSettings.playQualityOrder": string; // 默认播放音质缺失时
     "basicSettings.playQualityOrder.asc": string; // 播放更高音质
     "basicSettings.playQualityOrder.desc": string; // 播放更低音质

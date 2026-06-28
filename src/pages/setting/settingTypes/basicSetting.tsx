@@ -24,7 +24,7 @@ import Toast from "@/utils/toast";
 import Clipboard from "@react-native-clipboard/clipboard";
 import Slider from "@react-native-community/slider";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { SectionList, StyleSheet, TouchableOpacity, View } from "react-native";
+import { SectionList, StyleSheet, TouchableOpacity, View, Platform } from "react-native";
 import { readdir } from "react-native-fs";
 import { FlatList, ScrollView } from "react-native-gesture-handler";
 
@@ -135,6 +135,7 @@ export default function BasicSetting() {
     const autoStopWhenError = useAppConfig("basic.autoStopWhenError");
     const maxCacheSize = useAppConfig("basic.maxCacheSize");
     const defaultPlayQuality = useAppConfig("basic.defaultPlayQuality");
+    const playerBackend = useAppConfig("basic.playerBackend");
     const playQualityOrder = useAppConfig("basic.playQualityOrder");
     const defaultDownloadQuality = useAppConfig("basic.defaultDownloadQuality");
     const downloadQualityOrder = useAppConfig("basic.downloadQualityOrder");
@@ -413,6 +414,27 @@ export default function BasicSetting() {
                         desc: t("basicSettings.playQualityOrder.desc"),
                     },
                 ),
+                // mpv 播放内核为实验性，仅 Android 8.0+（libmpv 要求 API≥26）提供选项
+                ...(Platform.OS === "android" && Number(Platform.Version) >= 26
+                    ? [
+                        createRadio(
+                            t("basicSettings.playerBackend"),
+                            "basic.playerBackend",
+                            ["nitro-player", "mpv"],
+                            playerBackend ?? "nitro-player",
+                            {
+                                "nitro-player": t(
+                                    "basicSettings.playerBackend.nitro",
+                                ),
+                                mpv: t("basicSettings.playerBackend.mpv"),
+                            },
+                            () =>
+                                Toast.warn(
+                                    t("basicSettings.playerBackend.restartHint"),
+                                ),
+                        ),
+                    ]
+                    : []),
             ],
         },
         {

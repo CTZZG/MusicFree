@@ -65,6 +65,14 @@ function setupPlaybackObserver() {
             },
         });
     });
+    // 监听 mpv 锁屏/耳机键的「上一首/下一首」，走完整 App 逻辑（稍后播放队列、自动跳过不喜欢）。
+    // 仅 mpv 后端会发这些事件；Nitro 由原生会话处理，这里订阅是无副作用的空操作。
+    TrackPlayer.playerAdapter.addEventListener("remoteNext", () => {
+        TrackPlayer.skipToNext();
+    });
+    TrackPlayer.playerAdapter.addEventListener("remotePrevious", () => {
+        TrackPlayer.skipToPrevious();
+    });
 }
 
 export default { setupPlaybackObserver };

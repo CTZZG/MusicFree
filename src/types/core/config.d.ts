@@ -18,6 +18,8 @@ export interface IAppConfigProperties {
     "basic.pluginCacheControl": string;
     "basic.maxCacheSize": number;
     "basic.defaultPlayQuality": IMusic.IQualityKey;
+    // 播放内核：nitro-player（默认）或 mpv（实验性，仅 Android）
+    "basic.playerBackend": "nitro-player" | "mpv";
     "basic.playQualityOrder": "asc" | "desc";
     "basic.defaultDownloadQuality": IMusic.IQualityKey;
     "basic.downloadQualityOrder": "asc" | "desc";

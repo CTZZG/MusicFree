@@ -1,4 +1,4 @@
-export type PlayerBackendName = "nitro-player";
+export type PlayerBackendName = "nitro-player" | "mpv";
 
 export type PlayerBackendState =
     | "idle"
@@ -186,6 +186,13 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
     ): Promise<Array<TTrack | null | undefined>>;
 
     updateTracks?(tracks: TTrack[]): Promise<void>;
+
+    /**
+     * 把后端队列整体重排为最新的播放列表顺序（上层在每次 setPlayList 时调用）。
+     * 用于像 mpv 这种由 JS 维护队列的后端，在洗牌/增删/重排后重新对齐内部队列与当前下标；
+     * nitro 等以原生队列为准的后端无需实现。
+     */
+    syncQueueOrder?(tracks: TTrack[], activeKey?: string): Promise<void>;
 
     getCurrentQueueId?(): Promise<string | null | undefined>;
 

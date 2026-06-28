@@ -40,6 +40,7 @@ import type {
     PlayerAdapterTrack,
 } from "@/core/playerAdapter";
 import nitroPlayerAdapter from "@/core/playerAdapter/nitroPlayerAdapter";
+import { resolvePlayerAdapter } from "@/core/playerAdapter";
 import { normalizeMusicState } from "@/utils/trackUtils";
 import NativeUtils, {
     IPlaybackNativeDiagnostics,
@@ -240,7 +241,11 @@ class TrackPlayer extends EventEmitter<{
     }
 
     lockBackend() {
-        this.backend = nitroPlayerAdapter;
+        // 按配置选择播放内核（默认 nitro-player；mpv 为实验性可选后端）
+        const configuredBackend =
+            this.configService?.getConfig("basic.playerBackend") ??
+            "nitro-player";
+        this.backend = resolvePlayerAdapter(configuredBackend);
     }
 
     async setupTrackPlayer() {
@@ -1508,6 +1513,17 @@ class TrackPlayer extends EventEmitter<{
         }
 
         this.currentIndex = this.getMusicIndexInPlayList(this.currentMusic);
+        // 把最新队列顺序同步给后端：mpv 等「JS 维护队列」的后端据此在洗牌/增删/重排后
+        // 重新对齐内部队列与当前下标，避免下一首跳错；nitro 未实现该方法，无副作用。
+        const activeKey = this.currentMusic
+            ? getMediaUniqueKey(this.currentMusic)
+            : undefined;
+        this.backend.syncQueueOrder?.(
+            newPlayList as any,
+            activeKey,
+        )?.catch(error => {
+            errorLog("同步后端队列顺序失败", error?.message ?? error);
+        });
     }
 
     private setPlayLaterQueue(queue: IMusic.IMusicItem[]) {
