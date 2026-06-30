@@ -1,5 +1,6 @@
 package `fun`.upup.musicfree.mpvplayer
 
+import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -12,7 +13,7 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter
-import dev.jdtech.mpv.MPVLib
+import dev.jdtech.mpv.MPVLib as NativeMPVLib
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
@@ -27,10 +28,88 @@ import kotlin.math.min
  */
 class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext),
-    MPVLib.EventObserver {
+    NativeMPVLib.EventObserver {
 
     private val isInitialized = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var mpvInstance: NativeMPVLib? = null
+
+    @Suppress("PropertyName")
+    private val MPVLib = MpvCompat()
+
+    private fun requireMpv(): NativeMPVLib =
+        mpvInstance ?: throw IllegalStateException("mpv is not initialized")
+
+    private inner class MpvCompat {
+        val MPV_FORMAT_FLAG = NativeMPVLib.MpvFormat.MPV_FORMAT_FLAG
+        val MPV_FORMAT_DOUBLE = NativeMPVLib.MpvFormat.MPV_FORMAT_DOUBLE
+        val MPV_FORMAT_STRING = NativeMPVLib.MpvFormat.MPV_FORMAT_STRING
+
+        val MPV_EVENT_START_FILE = NativeMPVLib.MpvEvent.MPV_EVENT_START_FILE
+        val MPV_EVENT_FILE_LOADED = NativeMPVLib.MpvEvent.MPV_EVENT_FILE_LOADED
+        val MPV_EVENT_PLAYBACK_RESTART = NativeMPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART
+        val MPV_EVENT_END_FILE = NativeMPVLib.MpvEvent.MPV_EVENT_END_FILE
+        val MPV_EVENT_SHUTDOWN = NativeMPVLib.MpvEvent.MPV_EVENT_SHUTDOWN
+
+        fun create(context: Context) {
+            mpvInstance?.let { oldInstance ->
+                try {
+                    oldInstance.destroy()
+                } finally {
+                    mpvInstance = null
+                }
+            }
+            mpvInstance = NativeMPVLib.create(context)
+                ?: throw IllegalStateException("failed to create mpv instance")
+        }
+
+        fun init() = requireMpv().init()
+
+        fun destroy() {
+            mpvInstance?.let { instance ->
+                try {
+                    instance.destroy()
+                } finally {
+                    mpvInstance = null
+                }
+            }
+        }
+
+        fun command(command: Array<String>) = requireMpv().command(command)
+
+        fun setOptionString(name: String, value: String): Int =
+            requireMpv().setOptionString(name, value)
+
+        fun getPropertyInt(property: String): Int? =
+            mpvInstance?.getPropertyInt(property)
+
+        fun setPropertyInt(property: String, value: Int) =
+            requireMpv().setPropertyInt(property, value)
+
+        fun getPropertyDouble(property: String): Double? =
+            mpvInstance?.getPropertyDouble(property)
+
+        fun setPropertyDouble(property: String, value: Double) =
+            requireMpv().setPropertyDouble(property, value)
+
+        fun getPropertyBoolean(property: String): Boolean? =
+            mpvInstance?.getPropertyBoolean(property)
+
+        fun setPropertyBoolean(property: String, value: Boolean) =
+            requireMpv().setPropertyBoolean(property, value)
+
+        fun getPropertyString(property: String): String? =
+            mpvInstance?.getPropertyString(property)
+
+        fun observeProperty(property: String, format: Int) =
+            requireMpv().observeProperty(property, format)
+
+        fun addObserver(observer: NativeMPVLib.EventObserver) =
+            requireMpv().addObserver(observer)
+
+        fun removeObserver(observer: NativeMPVLib.EventObserver) =
+            mpvInstance?.removeObserver(observer)
+    }
 
     private data class PreparedTrack(
         val url: String,

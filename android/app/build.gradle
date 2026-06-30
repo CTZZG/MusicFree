@@ -209,3 +209,33 @@ dependencies {
 
     logger.lifecycle("[MusicFree] Nitro Media3 FFmpeg is the only packaged audio extension path.")
 }
+
+def libmpvAarFile = file("libs/libmpv-release.aar")
+
+afterEvaluate {
+    ["Debug", "Release"].each { variantName ->
+        def variantDir = variantName.substring(0, 1).toLowerCase() + variantName.substring(1)
+        def mergeTaskName = "merge${variantName}NativeLibs"
+        def copyTaskProvider = tasks.register("copyLibmpv${variantName}CxxRuntime", Copy) {
+            dependsOn tasks.named(mergeTaskName)
+            from(zipTree(libmpvAarFile)) {
+                include "jni/**/libc++_shared.so"
+                eachFile { details ->
+                    details.path = details.path.replaceFirst("^jni/", "lib/")
+                }
+                includeEmptyDirs = false
+            }
+            into layout.buildDirectory.dir("intermediates/merged_native_libs/${variantDir}/${mergeTaskName}/out")
+            doFirst {
+                if (!libmpvAarFile.exists()) {
+                    throw new GradleException("Missing libmpv AAR: ${libmpvAarFile}")
+                }
+                logger.lifecycle("[MusicFree] Using libmpv libc++_shared.so for ${variantName}.")
+            }
+        }
+
+        tasks.named("strip${variantName}DebugSymbols").configure {
+            dependsOn copyTaskProvider
+        }
+    }
+}

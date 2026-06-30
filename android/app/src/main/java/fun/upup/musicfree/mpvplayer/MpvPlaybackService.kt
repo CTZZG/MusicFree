@@ -326,7 +326,7 @@ class MpvPlaybackService : Service() {
             cachedState == PlaybackStateCompat.STATE_PLAYING ||
                 cachedState == PlaybackStateCompat.STATE_BUFFERING
         val playIcon =
-            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+            if (isPlaying) R.drawable.ic_notification_pause else R.drawable.ic_notification_play
         val playLabel = if (isPlaying) "暂停" else "播放"
 
         val playIntent = PendingIntent.getService(
@@ -388,14 +388,14 @@ class MpvPlaybackService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(isPlaying)
             .setShowWhen(false)
-            .addAction(NotificationCompat.Action(android.R.drawable.ic_media_previous, "上一首", prevIntent))
+            .addAction(NotificationCompat.Action(R.drawable.ic_notification_skip_previous, "上一首", prevIntent))
             .addAction(NotificationCompat.Action(playIcon, playLabel, playIntent))
-            .addAction(NotificationCompat.Action(android.R.drawable.ic_media_next, "下一首", nextIntent))
+            .addAction(NotificationCompat.Action(R.drawable.ic_notification_skip_next, "下一首", nextIntent))
 
         if (MpvServiceBridge.showStopAction) {
             builder.addAction(
                 NotificationCompat.Action(
-                    android.R.drawable.ic_menu_close_clear_cancel,
+                    R.drawable.ic_notification_stop,
                     "关闭",
                     stopIntent,
                 ),
