@@ -11,9 +11,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -40,6 +42,9 @@ class MpvPlaybackService : Service() {
         private const val CHANNEL_ID = "musicfree_mpv_playback"
         private const val NOTIFICATION_ID = 3001
         private const val NOTIFICATION_PROGRESS_UPDATE_MS = 1000L
+        private const val API_LIVE_UPDATE = 36
+        private const val CHIP_TEXT_MAX_CODE_POINTS = 12
+        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 
         private const val ACTION_PLAY_PAUSE = "mpv_play_pause"
         private const val ACTION_NEXT = "mpv_next"
@@ -75,6 +80,8 @@ class MpvPlaybackService : Service() {
     private var cachedAlbum = ""
     private var cachedArtwork: String? = null
     private var cachedArtworkBitmap: Bitmap? = null
+    private var cachedMediaNotificationLyric = ""
+    private var cachedLiveUpdateLyric = ""
     private var cachedDuration = 0L
     private var cachedPosition = 0L
     private var cachedBufferedPosition = 0L
@@ -163,6 +170,8 @@ class MpvPlaybackService : Service() {
             cachedPosition = 0L
             cachedBufferedPosition = 0L
             cachedArtworkBitmap = null
+            cachedMediaNotificationLyric = ""
+            cachedLiveUpdateLyric = ""
         }
 
         updateMediaSessionMetadata()
@@ -228,6 +237,41 @@ class MpvPlaybackService : Service() {
         }
     }
 
+    fun onMediaNotificationLyricChanged(lyric: String?) {
+        val nextLyric = lyric?.trim().orEmpty()
+        if (cachedMediaNotificationLyric == nextLyric) return
+        cachedMediaNotificationLyric = nextLyric
+        updateMediaSessionMetadata()
+        updateNotification()
+    }
+
+    fun onLiveUpdateLyricEnabledChanged(enabled: Boolean) {
+        if (MpvServiceBridge.useLiveUpdateLyricNotification == enabled) return
+        MpvServiceBridge.useLiveUpdateLyricNotification = enabled
+        if (enabled) {
+            cachedMediaNotificationLyric = ""
+            updateMediaSessionMetadata()
+        } else {
+            cachedLiveUpdateLyric = ""
+        }
+        updateNotification()
+    }
+
+    fun onLiveUpdateLyricChanged(lyric: String?): Boolean {
+        val nextLyric = lyric?.trim().orEmpty()
+        if (nextLyric.isNotEmpty()) {
+            MpvServiceBridge.useLiveUpdateLyricNotification = true
+        }
+        if (cachedLiveUpdateLyric == nextLyric && cachedMediaNotificationLyric.isBlank()) {
+            return canOwnLiveUpdateNotification()
+        }
+        cachedLiveUpdateLyric = nextLyric
+        cachedMediaNotificationLyric = ""
+        updateMediaSessionMetadata()
+        updateNotification()
+        return canOwnLiveUpdateNotification()
+    }
+
     private fun secondsToMillis(seconds: Double): Long =
         if (!seconds.isNaN() && !seconds.isInfinite() && seconds > 0) {
             (seconds * 1000).toLong()
@@ -241,9 +285,16 @@ class MpvPlaybackService : Service() {
     }
 
     private fun updateMediaSessionMetadata() {
+        val displayTitle = cachedMediaNotificationLyric.ifBlank { cachedTitle }
+        val displayArtist =
+            if (cachedMediaNotificationLyric.isNotBlank()) {
+                buildTrackIdentityText()
+            } else {
+                cachedArtist
+            }
         val builder = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, cachedTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, cachedArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, displayTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, displayArtist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, cachedAlbum)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, cachedDuration)
 
@@ -254,6 +305,31 @@ class MpvPlaybackService : Service() {
 
         mediaSession.setMetadata(builder.build())
     }
+
+    private fun buildTrackIdentityText(): String =
+        buildString {
+            if (cachedTitle.isNotBlank()) append(cachedTitle)
+            if (cachedArtist.isNotBlank()) {
+                if (isNotEmpty()) append(" - ")
+                append(cachedArtist)
+            }
+            if (isEmpty() && cachedAlbum.isNotBlank()) append(cachedAlbum)
+            if (isEmpty()) append("MusicFree")
+        }
+
+    private fun buildNotificationText(): String =
+        if (cachedMediaNotificationLyric.isNotBlank()) {
+            buildTrackIdentityText()
+        } else {
+            buildString {
+                if (cachedArtist.isNotBlank()) append(cachedArtist)
+                if (cachedAlbum.isNotBlank()) {
+                    if (isNotEmpty()) append(" - ")
+                    append(cachedAlbum)
+                }
+                if (isEmpty()) append("正在播放")
+            }
+        }
 
     private fun updatePlaybackState() {
         val speed =
@@ -364,18 +440,24 @@ class MpvPlaybackService : Service() {
                 )
             }
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(cachedTitle.ifBlank { "MusicFree" })
-            .setContentText(
-                buildString {
-                    if (cachedArtist.isNotBlank()) append(cachedArtist)
-                    if (cachedAlbum.isNotBlank()) {
-                        if (isNotEmpty()) append(" - ")
-                        append(cachedAlbum)
-                    }
-                    if (isEmpty()) append("正在播放")
-                },
+        if (shouldUseLiveUpdateNotificationStyle()) {
+            return buildLiveUpdateNotification(
+                isPlaying,
+                playIcon,
+                playLabel,
+                playIntent,
+                prevIntent,
+                nextIntent,
+                stopIntent,
+                contentIntent,
             )
+        }
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(
+                cachedMediaNotificationLyric.ifBlank { cachedTitle.ifBlank { "MusicFree" } },
+            )
+            .setContentText(buildNotificationText())
             .setSmallIcon(R.drawable.ic_stat_musicfree)
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
@@ -410,7 +492,116 @@ class MpvPlaybackService : Service() {
             builder.setSubText("${formatTime(cachedPosition)} / ${formatTime(cachedDuration)}")
         }
 
-        return builder.build()
+        return builder.build().apply {
+            if (MpvServiceBridge.useLiveUpdateLyricNotification) {
+                extras.putBoolean("NOT_SHOW_MEDIA_NOTIFICATION_FLG", true)
+                extras.putString("specialType", "")
+            }
+        }
+    }
+
+    private fun shouldUseLiveUpdateNotificationStyle(): Boolean =
+        MpvServiceBridge.useLiveUpdateLyricNotification &&
+            Build.VERSION.SDK_INT >= API_LIVE_UPDATE
+
+    private fun canOwnLiveUpdateNotification(): Boolean =
+        shouldUseLiveUpdateNotificationStyle() &&
+            (
+                isForeground ||
+                    cachedState == PlaybackStateCompat.STATE_PLAYING ||
+                    cachedState == PlaybackStateCompat.STATE_BUFFERING ||
+                    cachedState == PlaybackStateCompat.STATE_PAUSED
+                )
+
+    private fun buildLiveUpdateNotification(
+        isPlaying: Boolean,
+        playIcon: Int,
+        playLabel: String,
+        playIntent: PendingIntent,
+        prevIntent: PendingIntent,
+        nextIntent: PendingIntent,
+        stopIntent: PendingIntent,
+        contentIntent: PendingIntent?,
+    ): Notification {
+        val title = cachedLiveUpdateLyric.ifBlank { cachedTitle.ifBlank { "MusicFree" } }
+        val text =
+            if (cachedLiveUpdateLyric.isNotBlank()) {
+                buildTrackIdentityText()
+            } else {
+                buildNotificationText()
+            }
+        val style = Notification.ProgressStyle()
+            .setStyledByProgress(true)
+            .setProgressIndeterminate(cachedDuration <= 0)
+        val progressPercent = progressPercent(cachedPosition, cachedDuration)
+        if (cachedDuration > 0) {
+            style.setProgress(progressPercent)
+        }
+
+        return Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_musicfree)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setCategory(Notification.CATEGORY_PROGRESS)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOngoing(isPlaying)
+            .setOnlyAlertOnce(true)
+            .setLocalOnly(true)
+            .setShowWhen(false)
+            .setColor(Color.TRANSPARENT)
+            .setStyle(style)
+            .setProgress(100, progressPercent, cachedDuration <= 0)
+            .setContentIntent(contentIntent)
+            .addAction(Notification.Action.Builder(R.drawable.ic_notification_skip_previous, "上一首", prevIntent).build())
+            .addAction(Notification.Action.Builder(playIcon, playLabel, playIntent).build())
+            .addAction(Notification.Action.Builder(R.drawable.ic_notification_skip_next, "下一首", nextIntent).build())
+            .apply {
+                if (MpvServiceBridge.showStopAction) {
+                    addAction(Notification.Action.Builder(R.drawable.ic_notification_stop, "关闭", stopIntent).build())
+                }
+                cachedArtworkBitmap?.let { setLargeIcon(it) }
+                requestPromotedOngoing()
+                setShortCriticalText(toChipText(title))
+            }
+            .build()
+            .apply {
+                extras.putBoolean("NOT_SHOW_MEDIA_NOTIFICATION_FLG", true)
+                extras.putString("specialType", "")
+            }
+    }
+
+    private fun Notification.Builder.requestPromotedOngoing(): Notification.Builder {
+        try {
+            javaClass
+                .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
+                .invoke(this, true)
+        } catch (_: Throwable) {
+            addExtras(Bundle().apply {
+                putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
+            })
+        }
+        return this
+    }
+
+    private fun toChipText(text: String): String {
+        val normalized = text.replace(Regex("\\s+"), " ").trim()
+        if (normalized.isEmpty()) return ""
+
+        val builder = StringBuilder()
+        var count = 0
+        var index = 0
+        while (index < normalized.length && count < CHIP_TEXT_MAX_CODE_POINTS) {
+            val codePoint = normalized.codePointAt(index)
+            builder.appendCodePoint(codePoint)
+            index += Character.charCount(codePoint)
+            count += 1
+        }
+        return builder.toString()
+    }
+
+    private fun progressPercent(position: Long, duration: Long): Int {
+        if (duration <= 0) return 0
+        return ((position.coerceIn(0L, duration) * 100L) / duration).toInt()
     }
 
     private fun updateNotification() {

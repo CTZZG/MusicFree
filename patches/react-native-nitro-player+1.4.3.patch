@@ -5,21 +5,20 @@ index 8f1a469..94e2b88 100644
 @@ -35,6 +35,10 @@ def getExtOrIntegerDefault(name) {
    return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["NitroPlayer_" + name]).toInteger()
  }
--
-+
+
 +def enableMusicFreeWmaExtractor =
 +        findProperty("musicfreeEnableWmaExtractor") != "false" &&
 +        findProperty("musicfreeEnableExperimentalWmaExtractor") != "false"
 +
  android {
    namespace "com.margelo.nitro.nitroplayer"
- 
+
 @@ -45,6 +49,7 @@ android {
      minSdkVersion getExtOrIntegerDefault("minSdkVersion")
      targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
      buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
 +    buildConfigField "boolean", "MUSICFREE_ENABLE_WMA_EXTRACTOR", enableMusicFreeWmaExtractor.toString()
- 
+
      externalNativeBuild {
        cmake {
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerCore.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerCore.kt
@@ -36,21 +35,40 @@ index 1f772d4..999ab18 100644
          // Unbind so Android can clean up if needed.
          if (serviceBound) {
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt
-index f22bd71..b865521 100644
+index f22bd71..40737f6 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt
 @@ -3,6 +3,7 @@
  package com.margelo.nitro.nitroplayer.core
- 
+
  import androidx.media3.common.MediaItem
 +import androidx.media3.common.PlaybackException
  import androidx.media3.common.Player
  import com.margelo.nitro.nitroplayer.Reason
  import com.margelo.nitro.nitroplayer.RepeatMode
-@@ -108,6 +109,16 @@ internal class TrackPlayerEventListener(
+@@ -25,6 +26,18 @@ internal class TrackPlayerEventListener(
+             // TRACK repeat: REPEAT_MODE_ONE fires this every loop — not a real track change
+             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
+
++            // Metadata-only updates replace the current MediaItem with the same
++            // mediaId so MediaSession can refresh without notifying JS as a track
++            // change on every lyric line.
++            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
++                val previousTrackId = previousMediaItem?.mediaId?.let { extractTrackId(it) }
++                val nextTrackId = mediaItem?.mediaId?.let { extractTrackId(it) }
++                if (previousTrackId != null && previousTrackId == nextTrackId) {
++                    previousMediaItem = mediaItem
++                    return
++                }
++            }
++
+             // Remove the track that just finished/was skipped from temp lists
+             if ((
+                     reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+@@ -108,6 +121,16 @@ internal class TrackPlayerEventListener(
          core.emitStateChange()
      }
- 
+
 +    override fun onPlayerError(error: PlaybackException) {
 +        NitroPlayerLogger.log("TrackPlayerError") {
 +            "errorCode=${error.errorCode}, " +
@@ -73,15 +91,15 @@ index 650b1a0..384f98c 100644
  import androidx.media3.common.Player
  import com.margelo.nitro.nitroplayer.TrackItem
 +import com.margelo.nitro.nitroplayer.musicfree.MusicFreePlayerExtensions
- 
+
  /**
   * Queue-building helpers — called exclusively on the player thread.
 @@ -149,6 +150,7 @@ internal fun TrackPlayerCore.makeMediaItem(
      }
- 
+
      val effectiveUrl = downloadManager.getEffectiveUrl(track)
 +    MusicFreePlayerExtensions.registerTrackRequest(track, effectiveUrl)
- 
+
      // Register custom HTTP headers (e.g. Authorization) from extraPayload.headers so they are
      // injected into the request for this URL. Applies to remote streams only — see ExoPlayerBuilder.
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/ExoPlayerBuilder.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/ExoPlayerBuilder.kt
@@ -97,21 +115,20 @@ index efaf1aa..ead48dc 100644
  import androidx.media3.exoplayer.ExoPlayer
 -import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 +import com.margelo.nitro.nitroplayer.musicfree.MusicFreePlayerExtensions
- 
+
  /**
   * Builds an [ExoPlayer] with the standard NitroPlayer configuration.
 @@ -41,13 +40,11 @@ object ExoPlayerBuilder {
                  .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                  .build()
--
-+
+
 -        // DefaultDataSource routes http/https through AuthAwareHttpDataSourceFactory (so custom
 -        // request headers can be injected) while handling file://, content:// and asset:// natively.
 -        val dataSourceFactory = DefaultDataSource.Factory(context, AuthAwareHttpDataSourceFactory())
 -        val mediaSourceFactory = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory)
 +        val renderersFactory = MusicFreePlayerExtensions.createRenderersFactory(context)
 +        val mediaSourceFactory = MusicFreePlayerExtensions.createMediaSourceFactory(context)
- 
+
          return ExoPlayer
 -            .Builder(context)
 +            .Builder(context, renderersFactory)
@@ -119,31 +136,130 @@ index efaf1aa..ead48dc 100644
              .setMediaSourceFactory(mediaSourceFactory)
              .setAudioAttributes(audioAttrs, /* handleAudioFocus */ true)
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
-index dbb5018..e39c4f6 100644
+index dbb5018..5b33303 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
-@@ -1,7 +1,10 @@
+@@ -1,15 +1,29 @@
  package com.margelo.nitro.nitroplayer.media
- 
+
++import android.app.Notification
++import android.app.NotificationChannel
++import android.app.NotificationManager
 +import android.app.PendingIntent
 +import android.app.Service
  import android.content.Intent
++import android.graphics.Color
  import android.os.Binder
 +import android.os.Build
++import android.os.Bundle
  import android.os.Handler
  import android.os.IBinder
  import android.os.Looper
-@@ -30,6 +33,8 @@ class NitroPlayerPlaybackService : MediaSessionService() {
- 
++import androidx.media3.common.MediaItem
++import androidx.media3.common.MediaMetadata
++import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
+ import androidx.media3.exoplayer.ExoPlayer
++import androidx.media3.session.CommandButton
+ import androidx.media3.session.DefaultMediaNotificationProvider
++import androidx.media3.session.MediaNotification
+ import androidx.media3.session.MediaSession
+ import androidx.media3.session.MediaSessionService
++import com.google.common.collect.ImmutableList
+ import com.margelo.nitro.nitroplayer.core.NitroPlayerLogger
+ import com.margelo.nitro.nitroplayer.core.TrackPlayerCore
+ import com.margelo.nitro.nitroplayer.playlist.PlaylistManager
+@@ -30,6 +44,11 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+
      companion object {
          const val ACTION_LOCAL_BIND = "com.margelo.nitro.nitroplayer.LOCAL_BIND"
 +        const val ACTION_SHUTDOWN = "com.margelo.nitro.nitroplayer.SHUTDOWN"
 +        private const val SESSION_ACTIVITY_REQUEST_CODE = 2001
- 
++        private const val API_LIVE_UPDATE = 36
++        private const val CHIP_TEXT_MAX_CODE_POINTS = 12
++        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
+
          @Volatile
          var notificationSmallIconResName: String? = null
-@@ -75,10 +80,11 @@ class NitroPlayerPlaybackService : MediaSessionService() {
- 
+@@ -42,13 +61,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+
+         @Volatile
+         private var instance: NitroPlayerPlaybackService? = null
++        @Volatile
++        private var suppressMediaFloatingWindowForLiveUpdate = false
++
++        fun setMediaNotificationLyricText(lyric: String?) {
++            instance?.let { service ->
++                service.mainHandler.post {
++                    service.onMediaNotificationLyricChanged(lyric)
++                }
++            }
++        }
++
++        fun setSuppressMediaFloatingWindowForLiveUpdate(suppress: Boolean) {
++            suppressMediaFloatingWindowForLiveUpdate = suppress
++            instance?.let { service ->
++                service.mainHandler.post {
++                    if (suppress) {
++                        service.cachedMediaNotificationLyric = ""
++                        service.cachedLiveUpdateLyric = ""
++                        service.applyMediaSessionLyricMetadata()
++                        service.refreshNotification()
++                    } else {
++                        service.cachedLiveUpdateLyric = ""
++                        service.refreshNotification()
++                    }
++                }
++            }
++        }
++
++        fun setLiveUpdateLyricText(lyric: String?): Boolean {
++            if (!lyric.isNullOrBlank()) {
++                suppressMediaFloatingWindowForLiveUpdate = true
++            }
++            val service = instance ?: return false
++            service.mainHandler.post {
++                service.onLiveUpdateLyricChanged(lyric)
++            }
++            return true
++        }
+     }
+
+     // ── Created in onCreate ────────────────────────────────────────────────
+     private lateinit var player: ExoPlayer
+     private var mediaSession: MediaSession? = null
+-    private var notificationProvider: DefaultMediaNotificationProvider? = null
++    private var defaultNotificationProvider: DefaultMediaNotificationProvider? = null
++    private var notificationProvider: MediaNotification.Provider? = null
+     private val mainHandler = Handler(Looper.getMainLooper())
++    private var cachedMediaNotificationLyric = ""
++    private var cachedLiveUpdateLyric = ""
++    private var cachedMediaNotificationMediaId: String? = null
++    private val originalMediaMetadataByMediaId = mutableMapOf<String, MediaMetadata>()
++    private val mediaNotificationMetadataListener =
++        object : Player.Listener {
++            override fun onMediaItemTransition(
++                mediaItem: MediaItem?,
++                reason: Int,
++            ) {
++                val mediaId = mediaItem?.mediaId ?: return
++                if (cachedMediaNotificationMediaId == mediaId) return
++                cachedMediaNotificationMediaId = mediaId
++                cachedMediaNotificationLyric = ""
++                cachedLiveUpdateLyric = ""
++                applyMediaSessionLyricMetadata()
++                refreshNotification()
++            }
++        }
+
+     @Volatile
+     var trackPlayerCore: TrackPlayerCore? = null
+@@ -72,15 +149,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+
+         // Build ExoPlayer on main looper (default)
+         player = ExoPlayerBuilder.build(this)
++        player.addListener(mediaNotificationMetadataListener)
+
          // Build MediaSession
          val playlistManager = PlaylistManager.getInstance(this)
 -        mediaSession = MediaSession
@@ -153,13 +269,336 @@ index dbb5018..e39c4f6 100644
 -            .build()
 +        buildSessionActivity()?.let { sessionBuilder.setSessionActivity(it) }
 +        mediaSession = sessionBuilder.build()
- 
-         val provider = DefaultMediaNotificationProvider.Builder(this).build()
+
+-        val provider = DefaultMediaNotificationProvider.Builder(this).build()
++        val defaultProvider = DefaultMediaNotificationProvider.Builder(this).build()
++        defaultNotificationProvider = defaultProvider
++        val provider = buildNotificationProvider(defaultProvider)
          notificationProvider = provider
-@@ -121,6 +127,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+         applyNotificationSmallIcon()
+         setMediaNotificationProvider(provider)
+@@ -90,7 +171,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+
+     private fun applyNotificationSmallIcon() {
+         val name = notificationSmallIconResName ?: return
+-        val provider = notificationProvider ?: return
++        val provider = defaultNotificationProvider ?: return
+         val resId = resources.getIdentifier(name, "drawable", packageName)
+         if (resId == 0) {
+             NitroPlayerLogger.log("PlaybackService") {
+@@ -111,6 +192,308 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+         }
+     }
+
++    private fun onMediaNotificationLyricChanged(lyric: String?) {
++        val nextLyric = lyric?.trim().orEmpty()
++        if (cachedMediaNotificationLyric == nextLyric) return
++        cachedMediaNotificationLyric = nextLyric
++        applyMediaSessionLyricMetadata()
++        refreshNotification()
++    }
++
++    private fun onLiveUpdateLyricChanged(lyric: String?) {
++        val nextLyric = lyric?.trim().orEmpty()
++        if (cachedLiveUpdateLyric == nextLyric && cachedMediaNotificationLyric.isBlank()) return
++        cachedLiveUpdateLyric = nextLyric
++        cachedMediaNotificationLyric = ""
++        applyMediaSessionLyricMetadata()
++        refreshNotification()
++    }
++
++    private fun getOriginalMediaMetadata(mediaItem: MediaItem?): MediaMetadata {
++        if (mediaItem == null) return player.mediaMetadata
++        val mediaId = mediaItem.mediaId
++        return originalMediaMetadataByMediaId.getOrPut(mediaId) {
++            mediaItem.mediaMetadata
++        }
++    }
++
++    private fun applyMediaSessionLyricMetadata() {
++        val mediaItem = player.currentMediaItem ?: return
++        val mediaId = mediaItem.mediaId
++        val originalMetadata = getOriginalMediaMetadata(mediaItem)
++        cachedMediaNotificationMediaId = mediaId
++
++        val lyric = cachedMediaNotificationLyric
++        val nextMetadata =
++            if (lyric.isBlank()) {
++                originalMetadata
++            } else {
++                val title = originalMetadata.title?.toString().orEmpty()
++                val artist = originalMetadata.artist?.toString().orEmpty()
++                val album = originalMetadata.albumTitle?.toString().orEmpty()
++                originalMetadata
++                    .buildUpon()
++                    .setTitle(lyric)
++                    .setArtist(buildTrackIdentityText(title, artist, album))
++                    .build()
++            }
++
++        val index = player.currentMediaItemIndex
++        if (index < 0) return
++        val updatedItem =
++            mediaItem
++                .buildUpon()
++                .setMediaMetadata(nextMetadata)
++                .build()
++        if (updatedItem == mediaItem) return
++        player.replaceMediaItem(index, updatedItem)
++    }
++
++    private fun buildTrackIdentityText(
++        title: String,
++        artist: String,
++        album: String,
++    ): String =
++        buildString {
++            if (title.isNotBlank()) append(title)
++            if (artist.isNotBlank()) {
++                if (isNotEmpty()) append(" - ")
++                append(artist)
++            }
++            if (isEmpty() && album.isNotBlank()) append(album)
++            if (isEmpty()) append("MusicFree")
++        }
++
++    private fun buildNotificationProvider(
++        delegate: DefaultMediaNotificationProvider,
++    ): MediaNotification.Provider =
++        object : MediaNotification.Provider {
++            override fun createNotification(
++                mediaSession: MediaSession,
++                customLayout: ImmutableList<CommandButton>,
++                actionFactory: MediaNotification.ActionFactory,
++                onNotificationChangedCallback: MediaNotification.Provider.Callback,
++            ): MediaNotification {
++                if (shouldUseLiveUpdateNotificationStyle()) {
++                    return buildLiveUpdateMediaNotification(mediaSession, actionFactory)
++                }
++                val callback =
++                    MediaNotification.Provider.Callback { mediaNotification ->
++                        applyMediaFloatingWindowSuppression(mediaNotification.notification)
++                        applyMediaNotificationLyric(mediaSession, mediaNotification.notification)
++                        onNotificationChangedCallback.onNotificationChanged(mediaNotification)
++                    }
++                val mediaNotification =
++                    delegate.createNotification(
++                        mediaSession,
++                        customLayout,
++                        actionFactory,
++                        callback,
++                    )
++                applyMediaFloatingWindowSuppression(mediaNotification.notification)
++                applyMediaNotificationLyric(mediaSession, mediaNotification.notification)
++                return mediaNotification
++            }
++
++            override fun handleCustomCommand(
++                session: MediaSession,
++                action: String,
++                extras: Bundle,
++            ): Boolean = delegate.handleCustomCommand(session, action, extras)
++        }
++
++    private fun shouldUseLiveUpdateNotificationStyle(): Boolean =
++        suppressMediaFloatingWindowForLiveUpdate &&
++            Build.VERSION.SDK_INT >= API_LIVE_UPDATE
++
++    private fun buildLiveUpdateMediaNotification(
++        mediaSession: MediaSession,
++        actionFactory: MediaNotification.ActionFactory,
++    ): MediaNotification {
++        createLiveUpdateNotificationChannel()
++
++        val player = mediaSession.player
++        val metadata = getOriginalMediaMetadata(player.currentMediaItem)
++        val titleText = metadata.title?.toString().orEmpty()
++        val artistText = metadata.artist?.toString().orEmpty()
++        val albumText = metadata.albumTitle?.toString().orEmpty()
++        val title = cachedLiveUpdateLyric.ifBlank { titleText.ifBlank { "MusicFree" } }
++        val text =
++            if (cachedLiveUpdateLyric.isNotBlank()) {
++                buildTrackIdentityText(titleText, artistText, albumText)
++            } else {
++                buildTrackIdentityText("", artistText, albumText)
++            }
++        val duration = player.duration.takeIf { it > 0 } ?: 0L
++        val position = player.currentPosition.coerceAtLeast(0L)
++        val progress = progressPercent(position, duration)
++        val isPlaying = player.isPlaying
++        val playIcon =
++            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
++        val playLabel = if (isPlaying) "暂停" else "播放"
++
++        val style = Notification.ProgressStyle()
++            .setStyledByProgress(true)
++            .setProgressIndeterminate(duration <= 0)
++        if (duration > 0) {
++            style.setProgress(progress)
++        }
++
++        val notification = Notification.Builder(
++            this,
++            DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID,
++        )
++            .setSmallIcon(resolveNotificationSmallIcon())
++            .setContentTitle(title)
++            .setContentText(text)
++            .setCategory(Notification.CATEGORY_PROGRESS)
++            .setVisibility(Notification.VISIBILITY_PUBLIC)
++            .setOngoing(isPlaying)
++            .setOnlyAlertOnce(true)
++            .setLocalOnly(true)
++            .setShowWhen(false)
++            .setColor(Color.TRANSPARENT)
++            .setStyle(style)
++            .setProgress(100, progress, duration <= 0)
++            .setContentIntent(buildSessionActivity())
++            .addAction(
++                Notification.Action.Builder(
++                    android.R.drawable.ic_media_previous,
++                    "上一首",
++                    actionFactory.createMediaActionPendingIntent(
++                        mediaSession,
++                        Player.COMMAND_SEEK_TO_PREVIOUS.toLong(),
++                    ),
++                ).build(),
++            )
++            .addAction(
++                Notification.Action.Builder(
++                    playIcon,
++                    playLabel,
++                    actionFactory.createMediaActionPendingIntent(
++                        mediaSession,
++                        Player.COMMAND_PLAY_PAUSE.toLong(),
++                    ),
++                ).build(),
++            )
++            .addAction(
++                Notification.Action.Builder(
++                    android.R.drawable.ic_media_next,
++                    "下一首",
++                    actionFactory.createMediaActionPendingIntent(
++                        mediaSession,
++                        Player.COMMAND_SEEK_TO_NEXT.toLong(),
++                    ),
++                ).build(),
++            )
++            .requestPromotedOngoing()
++            .setShortCriticalText(toChipText(title))
++            .build()
++            .apply {
++                extras.putBoolean("NOT_SHOW_MEDIA_NOTIFICATION_FLG", true)
++                extras.putString("specialType", "")
++            }
++
++        return MediaNotification(
++            DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID,
++            notification,
++        )
++    }
++
++    private fun applyMediaNotificationLyric(
++        mediaSession: MediaSession,
++        notification: Notification,
++    ) {
++        val lyric = cachedMediaNotificationLyric
++        if (lyric.isBlank()) return
++
++        val metadata = getOriginalMediaMetadata(mediaSession.player.currentMediaItem)
++        val title = metadata.title?.toString().orEmpty()
++        val artist = metadata.artist?.toString().orEmpty()
++        val album = metadata.albumTitle?.toString().orEmpty()
++        val trackIdentity = buildTrackIdentityText(title, artist, album)
++
++        notification.extras.putCharSequence(Notification.EXTRA_TITLE, lyric)
++        notification.extras.putCharSequence(Notification.EXTRA_TITLE_BIG, lyric)
++        notification.extras.putCharSequence(Notification.EXTRA_TEXT, trackIdentity)
++    }
++
++    private fun applyMediaFloatingWindowSuppression(notification: Notification) {
++        if (!suppressMediaFloatingWindowForLiveUpdate) return
++
++        notification.extras.putBoolean("NOT_SHOW_MEDIA_NOTIFICATION_FLG", true)
++        notification.extras.putString("specialType", "")
++    }
++
++    private fun createLiveUpdateNotificationChannel() {
++        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
++
++        val manager = getSystemService(NotificationManager::class.java)
++        val channel = NotificationChannel(
++            DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID,
++            "MusicFree 播放",
++            NotificationManager.IMPORTANCE_LOW,
++        ).apply {
++            enableLights(false)
++            enableVibration(false)
++            setSound(null, null)
++            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
++        }
++        manager.createNotificationChannel(channel)
++    }
++
++    private fun resolveNotificationSmallIcon(): Int {
++        val name = notificationSmallIconResName
++        if (!name.isNullOrBlank()) {
++            val resId = resources.getIdentifier(name, "drawable", packageName)
++            if (resId != 0) return resId
++        }
++        return applicationInfo.icon
++    }
++
++    private fun progressPercent(position: Long, duration: Long): Int {
++        if (duration <= 0) return 0
++        return ((position.coerceIn(0L, duration) * 100L) / duration).toInt()
++    }
++
++    private fun Notification.Builder.requestPromotedOngoing(): Notification.Builder {
++        try {
++            javaClass
++                .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
++                .invoke(this, true)
++        } catch (_: Throwable) {
++            addExtras(Bundle().apply {
++                putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
++            })
++        }
++        return this
++    }
++
++    private fun toChipText(text: String): String {
++        val normalized = text.replace(Regex("\\s+"), " ").trim()
++        if (normalized.isEmpty()) return ""
++
++        val builder = StringBuilder()
++        var count = 0
++        var index = 0
++        while (index < normalized.length && count < CHIP_TEXT_MAX_CODE_POINTS) {
++            val codePoint = normalized.codePointAt(index)
++            builder.appendCodePoint(codePoint)
++            index += Character.charCount(codePoint)
++            count += 1
++        }
++        return builder.toString()
++    }
++
++    private fun refreshNotification() {
++        val session = mediaSession ?: return
++        try {
++            onUpdateNotification(session, false)
++        } catch (e: Exception) {
++            NitroPlayerLogger.log("PlaybackService") { "notification refresh failed: ${e.message}" }
++        }
++    }
++
+     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
+         mediaSession
+
+@@ -121,6 +504,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          return super.onBind(intent)
      }
- 
+
 +    override fun onStartCommand(
 +        intent: Intent?,
 +        flags: Int,
@@ -228,6 +667,14 @@ index dbb5018..e39c4f6 100644
      override fun onTaskRemoved(rootIntent: Intent?) {
          val session = mediaSession
          if (session == null || !session.player.playWhenReady) {
+@@ -133,6 +581,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+         NitroPlayerLogger.log("PlaybackService") { "onDestroy" }
+         if (instance === this) instance = null
+         notificationProvider = null
++        player.removeListener(mediaNotificationMetadataListener)
+         mediaSession?.release()
+         mediaSession = null
+         player.release()
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree/AsfWmaExtractor.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree/AsfWmaExtractor.kt
 new file mode 100644
 index 0000000..747ec1d

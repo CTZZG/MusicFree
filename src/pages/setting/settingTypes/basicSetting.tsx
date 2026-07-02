@@ -9,6 +9,7 @@ import { SortType } from "@/constants/commonConst.ts";
 import pathConst from "@/constants/pathConst";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { useI18N } from "@/core/i18n";
+import lyricManager from "@/core/lyricManager";
 import PluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import useColors from "@/hooks/useColors";
@@ -813,9 +814,14 @@ function LyricSetting() {
      *     "lyric.detailSecondaryFontScale": number;
      *     "lyric.statusBarShowTranslation": boolean;
      *     "lyric.statusBarShowRomanization": boolean;
+     *     "lyric.showMediaNotificationLyric": boolean;
      *     "lyric.autoSearchLyric": boolean;
      */
     const showStatusBarLyric = useAppConfig("lyric.showStatusBarLyric");
+    const showMediaNotificationLyric = useAppConfig(
+        "lyric.showMediaNotificationLyric",
+    );
+    const showLiveUpdateLyric = useAppConfig("lyric.showLiveUpdateLyric");
     const topPercent = useAppConfig("lyric.topPercent");
     const leftPercent = useAppConfig("lyric.leftPercent");
     const align = useAppConfig("lyric.align");
@@ -938,6 +944,41 @@ function LyricSetting() {
         statusBarShowRomanization ?? false,
     );
 
+    const mediaNotificationLyric = createSwitch(
+        t("basicSettings.lyric.showMediaNotificationLyric"),
+        "lyric.showMediaNotificationLyric",
+        showMediaNotificationLyric ?? false,
+        async newValue => {
+            Config.setConfig("lyric.showMediaNotificationLyric", newValue);
+            if (newValue) {
+                Config.setConfig("lyric.showLiveUpdateLyric", false);
+                await LyricUtil.setLiveUpdateLyricEnabled?.(false);
+                await LyricUtil.clearLiveUpdateLyricText?.();
+                lyricManager.refreshNativeNotificationLyric();
+            }
+            if (!newValue) {
+                await LyricUtil.clearMediaNotificationLyricText?.();
+            }
+        },
+    );
+
+    const liveUpdateLyric = createSwitch(
+        t("basicSettings.lyric.showLiveUpdateLyric"),
+        "lyric.showLiveUpdateLyric",
+        showLiveUpdateLyric ?? false,
+        async newValue => {
+            Config.setConfig("lyric.showLiveUpdateLyric", newValue);
+            await LyricUtil.setLiveUpdateLyricEnabled?.(newValue);
+            if (newValue) {
+                Config.setConfig("lyric.showMediaNotificationLyric", false);
+                await LyricUtil.clearMediaNotificationLyricText?.();
+                lyricManager.refreshNativeNotificationLyric();
+            } else {
+                await LyricUtil.clearLiveUpdateLyricText?.();
+            }
+        },
+    );
+
     const alignStatusBarLyric = createRadio(
         t("basicSettings.lyric.align"),
         "lyric.align",
@@ -1029,6 +1070,20 @@ function LyricSetting() {
                 onPress={openStatusBarLyric.onPress}>
                 <ListItem.Content title={openStatusBarLyric.title} />
                 {openStatusBarLyric.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={mediaNotificationLyric.onPress}>
+                <ListItem.Content title={mediaNotificationLyric.title} />
+                {mediaNotificationLyric.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={liveUpdateLyric.onPress}>
+                <ListItem.Content title={liveUpdateLyric.title} />
+                {liveUpdateLyric.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding

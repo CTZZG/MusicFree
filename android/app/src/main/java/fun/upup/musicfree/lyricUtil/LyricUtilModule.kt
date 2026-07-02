@@ -8,6 +8,8 @@ import android.provider.Settings
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.facebook.react.bridge.*
+import com.margelo.nitro.nitroplayer.media.NitroPlayerPlaybackService
+import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.util.*
@@ -16,6 +18,9 @@ import java.util.zip.Inflater
 class LyricUtilModule(private val reactContext: ReactApplicationContext): ReactContextBaseJavaModule(reactContext) {
     override fun getName() = "LyricUtil"
     private var lyricView: LyricView? = null
+    private val liveUpdateLyricNotifier by lazy {
+        LiveUpdateLyricNotifier(reactContext.applicationContext)
+    }
 
     @ReactMethod
     fun checkSystemAlertPermission(promise: Promise) {
@@ -103,6 +108,82 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext): ReactC
         try {
             UiThreadUtil.runOnUiThread {
                 lyricView?.setText(lyric)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setMediaNotificationLyricText(lyric: String, promise: Promise) {
+        try {
+            MpvServiceBridge.service?.onMediaNotificationLyricChanged(lyric)
+            NitroPlayerPlaybackService.setMediaNotificationLyricText(lyric)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun clearMediaNotificationLyricText(promise: Promise) {
+        try {
+            MpvServiceBridge.service?.onMediaNotificationLyricChanged(null)
+            NitroPlayerPlaybackService.setMediaNotificationLyricText(null)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setLiveUpdateLyricText(lyric: String, promise: Promise) {
+        try {
+            val handledByMpv = MpvServiceBridge.service?.onLiveUpdateLyricChanged(lyric) == true
+            val handledByNitro = NitroPlayerPlaybackService.setLiveUpdateLyricText(lyric)
+            if (handledByMpv || handledByNitro) {
+                liveUpdateLyricNotifier.clear()
+            } else {
+                liveUpdateLyricNotifier.show(lyric)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun clearLiveUpdateLyricText(promise: Promise) {
+        try {
+            MpvServiceBridge.service?.onLiveUpdateLyricChanged(null)
+            NitroPlayerPlaybackService.setLiveUpdateLyricText(null)
+            liveUpdateLyricNotifier.clear()
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getLiveUpdateLyricStatus(promise: Promise) {
+        try {
+            promise.resolve(liveUpdateLyricNotifier.status())
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setLiveUpdateLyricEnabled(enabled: Boolean, promise: Promise) {
+        try {
+            MpvServiceBridge.service?.onLiveUpdateLyricEnabledChanged(enabled)
+            NitroPlayerPlaybackService.setSuppressMediaFloatingWindowForLiveUpdate(enabled)
+            if (enabled) {
+                MpvServiceBridge.service?.onMediaNotificationLyricChanged(null)
+                NitroPlayerPlaybackService.setMediaNotificationLyricText(null)
+            } else {
+                liveUpdateLyricNotifier.clear()
             }
             promise.resolve(true)
         } catch (e: Exception) {

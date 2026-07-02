@@ -1,7 +1,7 @@
-import Config from '@/core/appConfig';
-import Toast from '@/utils/toast';
-import {NativeModule, NativeModules} from 'react-native';
-import {errorLog} from '@/utils/log.ts';
+import Config from "@/core/appConfig";
+import Toast from "@/utils/toast";
+import { NativeModule, NativeModules } from "react-native";
+import { errorLog } from "@/utils/log.ts";
 
 export enum NativeTextAlignment {
     // 左对齐
@@ -23,6 +23,24 @@ interface ILyricUtil extends NativeModule {
     hideStatusBarLyric: () => Promise<void>;
     /** 设置歌词文本 */
     setStatusBarLyricText: (lyric: string) => Promise<void>;
+    /** 设置媒体通知/系统媒体卡片歌词 */
+    setMediaNotificationLyricText?: (lyric: string) => Promise<void>;
+    /** 清除媒体通知/系统媒体卡片歌词 */
+    clearMediaNotificationLyricText?: () => Promise<void>;
+    /** 设置 Android 16 Live Update 歌词 */
+    setLiveUpdateLyricText?: (lyric: string) => Promise<void>;
+    /** 清除 Android 16 Live Update 歌词 */
+    clearLiveUpdateLyricText?: () => Promise<void>;
+    /** 获取 Android 16 Live Update 歌词状态 */
+    getLiveUpdateLyricStatus?: () => Promise<{
+        supported: boolean;
+        canPostPromotedNotifications: boolean;
+        lastPromotable: boolean;
+        posted: boolean;
+        lastLyric: string;
+    }>;
+    /** 设置 Live Update 歌词开关，同时调整媒体通知是否参与系统胶囊 */
+    setLiveUpdateLyricEnabled?: (enabled: boolean) => Promise<void>;
     /** 设置距离顶部的距离 */
     setStatusBarLyricTop: (percent: number) => Promise<void>;
     /** 设置距离左部的距离 */
@@ -55,16 +73,16 @@ const LyricUtil: ILyricUtil = NativeModules.LyricUtil;
 
 const originalShowStatusBarLyric = LyricUtil.showStatusBarLyric;
 
-const showStatusBarLyric: ILyricUtil['showStatusBarLyric'] = async (
+const showStatusBarLyric: ILyricUtil["showStatusBarLyric"] = async (
     initLyric,
     config,
 ) => {
     try {
         await originalShowStatusBarLyric(initLyric, config);
     } catch (e) {
-        errorLog('状态栏歌词开启失败', e);
-        Toast.warn('状态栏歌词开启失败，请到手机系统设置打开悬浮窗权限');
-        Config.setConfig('lyric.showStatusBarLyric', false);
+        errorLog("状态栏歌词开启失败", e);
+        Toast.warn("状态栏歌词开启失败，请到手机系统设置打开悬浮窗权限");
+        Config.setConfig("lyric.showStatusBarLyric", false);
     }
 };
 

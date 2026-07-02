@@ -16,6 +16,10 @@ object MpvServiceBridge {
     /** 通知栏是否显示停止/关闭按钮。 */
     var showStopAction: Boolean = false
 
+    /** Live Update 歌词模式下，播放服务通知切换为胶囊友好的 ProgressStyle。 */
+    @Volatile
+    var useLiveUpdateLyricNotification: Boolean = false
+
     /**
      * JS 侧回调：收到通知栏/锁屏/耳机键命令时调用。
      * 由 [MpvPlayerModule] 在 initialize 时设置。

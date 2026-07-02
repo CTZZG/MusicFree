@@ -8,7 +8,7 @@ import ThemeText from "../base/themeText";
 import useColors from "@/hooks/useColors";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import TrackPlayer, { useMusicState, usePlayList } from "@/core/trackPlayer";
+import TrackPlayer, { usePlayList } from "@/core/trackPlayer";
 import Animated, {
     SharedValue,
     runOnJS,
@@ -18,24 +18,16 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { timingConfig } from "@/constants/commonConst";
-import PlayingIndicator from "../base/playingIndicator";
-import { musicIsPaused } from "@/utils/trackUtils";
 
 interface IBarMusicItemProps {
     musicItem: IMusic.IMusicItem | null;
     activeIndex: number; // 当前展示的是0/1/2
     transformSharedValue: SharedValue<number>;
 }
-function _BarMusicItem(props: IBarMusicItemProps) {
+function BarMusicItemInner(props: IBarMusicItemProps) {
     const { musicItem, activeIndex, transformSharedValue } = props;
     const colors = useColors();
     const safeAreaInsets = useSafeAreaInsets();
-    const musicState = useMusicState();
-    const isPlaying = activeIndex === 0 && !musicIsPaused(musicState);
-    const indicatorColor = colors.musicBarText ?? colors.text ?? "#ffffff";
-    const badgeColor = Color(colors.musicBar ?? colors.card ?? "#000000")
-        .alpha(0.72)
-        .toString();
 
     const animatedStyles = useAnimatedStyle(() => {
         return {
@@ -66,21 +58,6 @@ function _BarMusicItem(props: IBarMusicItemProps) {
                     source={musicItem.artwork}
                     placeholderSource={ImgAsset.albumDefault}
                 />
-                {isPlaying ? (
-                    <View
-                        style={[
-                            styles.playingBadge,
-                            {
-                                backgroundColor: badgeColor,
-                            },
-                        ]}>
-                        <PlayingIndicator
-                            active
-                            size={rpx(24)}
-                            color={indicatorColor}
-                        />
-                    </View>
-                ) : null}
             </View>
             <Text
                 ellipsizeMode="tail"
@@ -106,7 +83,7 @@ function _BarMusicItem(props: IBarMusicItemProps) {
 }
 
 const BarMusicItem = memo(
-    _BarMusicItem,
+    BarMusicItemInner,
     (prev, curr) =>
         prev.musicItem === curr.musicItem &&
         prev.activeIndex === curr.activeIndex,
@@ -133,16 +110,6 @@ const styles = StyleSheet.create({
     artworkImg: {
         width: "100%",
         height: "100%",
-    },
-    playingBadge: {
-        position: "absolute",
-        right: 0,
-        bottom: 0,
-        width: rpx(36),
-        height: rpx(36),
-        alignItems: "center",
-        justifyContent: "center",
-        borderTopLeftRadius: rpx(16),
     },
 });
 

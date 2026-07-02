@@ -53,6 +53,8 @@ export interface IAppConfigProperties {
 
     // Lyric
     "lyric.showStatusBarLyric": boolean;
+    "lyric.showMediaNotificationLyric": boolean;
+    "lyric.showLiveUpdateLyric": boolean;
     "lyric.topPercent": number;
     "lyric.leftPercent": number;
     "lyric.align": number;

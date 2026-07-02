@@ -144,6 +144,7 @@ class LyricManager implements IInjectable {
                         LyricUtil.setStatusBarLyricText("MusicFree");
                     }
                 }
+                this.clearMediaNotificationLyricText();
             },
         );
 
@@ -174,6 +175,10 @@ class LyricManager implements IInjectable {
                             (newLyricItem?.lrc ?? ""),
                     );
                 }
+                this.setMediaNotificationLyricText(
+                    this.getStatusBarLyricText(newLyricItem) ||
+                        (newLyricItem?.lrc ?? ""),
+                );
             }
         });
 
@@ -244,6 +249,47 @@ class LyricManager implements IInjectable {
         return lines.join("\n");
     }
 
+    private setMediaNotificationLyricText(lyric: string) {
+        const text = lyric.trim();
+        const showLiveUpdateLyric = this.appConfig.getConfig(
+            "lyric.showLiveUpdateLyric",
+        );
+        if (
+            this.appConfig.getConfig("lyric.showMediaNotificationLyric") &&
+            !showLiveUpdateLyric
+        ) {
+            const task = text
+                ? LyricUtil.setMediaNotificationLyricText?.(text)
+                : LyricUtil.clearMediaNotificationLyricText?.();
+            task?.catch(() => undefined);
+        }
+        if (showLiveUpdateLyric) {
+            const task = text
+                ? LyricUtil.setLiveUpdateLyricText?.(text)
+                : LyricUtil.clearLiveUpdateLyricText?.();
+            task?.catch(() => undefined);
+        }
+    }
+
+    private clearMediaNotificationLyricText() {
+        if (this.appConfig.getConfig("lyric.showMediaNotificationLyric")) {
+            LyricUtil.clearMediaNotificationLyricText?.().catch(() => undefined);
+        }
+        if (this.appConfig.getConfig("lyric.showLiveUpdateLyric")) {
+            LyricUtil.clearLiveUpdateLyricText?.().catch(() => undefined);
+        }
+    }
+
+    refreshNativeNotificationLyric() {
+        const currentLyric = getDefaultStore().get(currentLyricItemAtom);
+        this.setMediaNotificationLyricText(
+            currentLyric
+                ? this.getStatusBarLyricText(currentLyric) ||
+                      (currentLyric?.lrc ?? "")
+                : "",
+        );
+    }
+
     associateLyric(
         musicItem: IMusic.IMusicItem,
         linkToMusicItem: ICommon.IMediaBase,
@@ -309,8 +355,8 @@ class LyricManager implements IInjectable {
                 (type === "raw"
                     ? ""
                     : type === "translation"
-                      ? ".tran"
-                      : ".roma") +
+                        ? ".tran"
+                        : ".roma") +
                 ".lrc",
             lyricContent,
             "utf8",
@@ -415,6 +461,7 @@ class LyricManager implements IInjectable {
                     : "MusicFree",
             );
         }
+        this.clearMediaNotificationLyricText();
     }
 
     private async refreshLyric(
@@ -591,6 +638,12 @@ class LyricManager implements IInjectable {
                     );
                 }
             }
+            this.setMediaNotificationLyricText(
+                currentLyric
+                    ? this.getStatusBarLyricText(currentLyric) ||
+                          (currentLyric?.lrc ?? "")
+                    : "",
+            );
         } catch (err) {
             if (this.trackPlayer.isCurrentMusic(currentMusicItem)) {
                 this.lyricParser = null;

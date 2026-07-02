@@ -697,6 +697,8 @@ export interface ILanguageData {
     "basicSettings.lyric": string; // 歌词
     "basicSettings.lyric.autoSearchLyric": string; // 歌词缺失时自动搜索歌词
     "basicSettings.lyric.showStatusBarLyric": string; // 开启桌面歌词
+    "basicSettings.lyric.showMediaNotificationLyric": string; // 开启媒体通知歌词
+    "basicSettings.lyric.showLiveUpdateLyric": string; // 开启 Live Update 歌词（实验）
     "basicSettings.lyric.align": string; // 对齐方式
     "basicSettings.lyric.align.left": string; // 左对齐
     "basicSettings.lyric.align.center": string; // 居中对齐
