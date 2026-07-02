@@ -530,10 +530,22 @@ class MpvPlaybackService : Service() {
             } else {
                 buildNotificationText()
             }
+        val progressPercent = progressPercent(cachedPosition, cachedDuration)
+        val progressText =
+            if (cachedDuration > 0) {
+                "${formatTime(cachedPosition)} / ${formatTime(cachedDuration)}"
+            } else {
+                ""
+            }
+        val contentText =
+            if (progressText.isNotBlank()) {
+                listOf(text, progressText).filter { it.isNotBlank() }.joinToString(" · ")
+            } else {
+                text
+            }
         val style = Notification.ProgressStyle()
             .setStyledByProgress(true)
             .setProgressIndeterminate(cachedDuration <= 0)
-        val progressPercent = progressPercent(cachedPosition, cachedDuration)
         if (cachedDuration > 0) {
             style.setProgress(progressPercent)
         }
@@ -541,7 +553,7 @@ class MpvPlaybackService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_musicfree)
             .setContentTitle(title)
-            .setContentText(text)
+            .setContentText(contentText)
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(isPlaying)
@@ -556,6 +568,9 @@ class MpvPlaybackService : Service() {
             .addAction(Notification.Action.Builder(playIcon, playLabel, playIntent).build())
             .addAction(Notification.Action.Builder(R.drawable.ic_notification_skip_next, "下一首", nextIntent).build())
             .apply {
+                if (progressText.isNotBlank()) {
+                    setSubText(progressText)
+                }
                 if (MpvServiceBridge.showStopAction) {
                     addAction(Notification.Action.Builder(R.drawable.ic_notification_stop, "关闭", stopIntent).build())
                 }

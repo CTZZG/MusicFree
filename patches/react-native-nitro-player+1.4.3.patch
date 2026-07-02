@@ -136,7 +136,7 @@ index efaf1aa..ead48dc 100644
              .setMediaSourceFactory(mediaSourceFactory)
              .setAudioAttributes(audioAttrs, /* handleAudioFocus */ true)
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
-index dbb5018..5b33303 100644
+index dbb5018..4ff28f4 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
 @@ -1,15 +1,29 @@
@@ -169,7 +169,7 @@ index dbb5018..5b33303 100644
  import com.margelo.nitro.nitroplayer.core.NitroPlayerLogger
  import com.margelo.nitro.nitroplayer.core.TrackPlayerCore
  import com.margelo.nitro.nitroplayer.playlist.PlaylistManager
-@@ -30,6 +44,11 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -30,6 +44,16 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
      companion object {
          const val ACTION_LOCAL_BIND = "com.margelo.nitro.nitroplayer.LOCAL_BIND"
@@ -178,10 +178,15 @@ index dbb5018..5b33303 100644
 +        private const val API_LIVE_UPDATE = 36
 +        private const val CHIP_TEXT_MAX_CODE_POINTS = 12
 +        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
++
++        private fun formatTime(ms: Long): String {
++            val totalSec = (ms / 1000).coerceAtLeast(0L)
++            return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
++        }
 
          @Volatile
          var notificationSmallIconResName: String? = null
-@@ -42,13 +61,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -42,13 +66,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
          @Volatile
          private var instance: NitroPlayerPlaybackService? = null
@@ -254,7 +259,7 @@ index dbb5018..5b33303 100644
 
      @Volatile
      var trackPlayerCore: TrackPlayerCore? = null
-@@ -72,15 +149,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -72,15 +154,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
          // Build ExoPlayer on main looper (default)
          player = ExoPlayerBuilder.build(this)
@@ -277,7 +282,7 @@ index dbb5018..5b33303 100644
          notificationProvider = provider
          applyNotificationSmallIcon()
          setMediaNotificationProvider(provider)
-@@ -90,7 +171,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -90,7 +176,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
      private fun applyNotificationSmallIcon() {
          val name = notificationSmallIconResName ?: return
@@ -286,7 +291,7 @@ index dbb5018..5b33303 100644
          val resId = resources.getIdentifier(name, "drawable", packageName)
          if (resId == 0) {
              NitroPlayerLogger.log("PlaybackService") {
-@@ -111,6 +192,308 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -111,6 +197,325 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          }
      }
 
@@ -425,6 +430,18 @@ index dbb5018..5b33303 100644
 +        val duration = player.duration.takeIf { it > 0 } ?: 0L
 +        val position = player.currentPosition.coerceAtLeast(0L)
 +        val progress = progressPercent(position, duration)
++        val progressText =
++            if (duration > 0) {
++                "${formatTime(position)} / ${formatTime(duration)}"
++            } else {
++                ""
++            }
++        val contentText =
++            if (progressText.isNotBlank()) {
++                listOf(text, progressText).filter { it.isNotBlank() }.joinToString(" · ")
++            } else {
++                text
++            }
 +        val isPlaying = player.isPlaying
 +        val playIcon =
 +            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
@@ -443,7 +460,7 @@ index dbb5018..5b33303 100644
 +        )
 +            .setSmallIcon(resolveNotificationSmallIcon())
 +            .setContentTitle(title)
-+            .setContentText(text)
++            .setContentText(contentText)
 +            .setCategory(Notification.CATEGORY_PROGRESS)
 +            .setVisibility(Notification.VISIBILITY_PUBLIC)
 +            .setOngoing(isPlaying)
@@ -484,6 +501,11 @@ index dbb5018..5b33303 100644
 +                    ),
 +                ).build(),
 +            )
++            .apply {
++                if (progressText.isNotBlank()) {
++                    setSubText(progressText)
++                }
++            }
 +            .requestPromotedOngoing()
 +            .setShortCriticalText(toChipText(title))
 +            .build()
@@ -595,7 +617,7 @@ index dbb5018..5b33303 100644
      override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
          mediaSession
 
-@@ -121,6 +504,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -121,6 +526,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          return super.onBind(intent)
      }
 
@@ -667,7 +689,7 @@ index dbb5018..5b33303 100644
      override fun onTaskRemoved(rootIntent: Intent?) {
          val session = mediaSession
          if (session == null || !session.player.playWhenReady) {
-@@ -133,6 +581,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -133,6 +603,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          NitroPlayerLogger.log("PlaybackService") { "onDestroy" }
          if (instance === this) instance = null
          notificationProvider = null
