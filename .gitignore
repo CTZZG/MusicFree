@@ -65,6 +65,15 @@ yarn-error.log
 
 # testing
 /coverage
+window.xml
+
+# Local planning / handoff docs
+doc/
+docs/
+/1.jpg
+/2.jpg
+/FINAL_SUMMARY.md
+/UPGRADE_REPORT.md
 
 # Yarn
 .yarn/*
