@@ -11,7 +11,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.drawable.Icon
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -574,7 +578,7 @@ class MpvPlaybackService : Service() {
                 if (MpvServiceBridge.showStopAction) {
                     addAction(Notification.Action.Builder(R.drawable.ic_notification_stop, "关闭", stopIntent).build())
                 }
-                cachedArtworkBitmap?.let { setLargeIcon(it) }
+                cachedArtworkBitmap?.let { setLiveUpdateArtworkIcons(it) }
                 requestPromotedOngoing()
                 setShortCriticalText(toChipText(title))
             }
@@ -596,6 +600,34 @@ class MpvPlaybackService : Service() {
             })
         }
         return this
+    }
+
+    private fun Notification.Builder.setLiveUpdateArtworkIcons(bitmap: Bitmap): Notification.Builder {
+        setLargeIcon(bitmap)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                setSmallIcon(Icon.createWithBitmap(bitmap.toLiveUpdateSmallIconBitmap()))
+            } catch (_: Throwable) {
+            }
+        }
+        return this
+    }
+
+    private fun Bitmap.toLiveUpdateSmallIconBitmap(): Bitmap {
+        val sourceSize = minOf(width, height)
+        val left = (width - sourceSize) / 2
+        val top = (height - sourceSize) / 2
+        val src = Rect(left, top, left + sourceSize, top + sourceSize)
+        val dstSize = 128
+        val dst = Rect(0, 0, dstSize, dstSize)
+        val output = Bitmap.createBitmap(dstSize, dstSize, Bitmap.Config.ARGB_8888)
+        Canvas(output).drawBitmap(
+            this,
+            src,
+            dst,
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
+        )
+        return output
     }
 
     private fun toChipText(text: String): String {
