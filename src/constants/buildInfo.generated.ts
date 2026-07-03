@@ -2,21 +2,21 @@
 // It is committed with a baseline value so TypeScript can compile before the first generated build.
 
 export const buildInfo = {
-    "appVersion": "0.6.5-nitro.1",
-    "packageVersion": "0.6.5-nitro.1",
-    "versionCode": "400014",
-    "gitSha": "0ddf399870a2fc9fd4ab4eed9eb9557d922884fb",
-    "shortSha": "0ddf399",
-    "gitRef": "codex/plugin-center-mvp",
+    "appVersion": "0.6.5-rebuild.5",
+    "packageVersion": "0.6.5-rebuild.5",
+    "versionCode": "400015",
+    "gitSha": "4d6af295574bfbcdf759b72cf1d99f2c68d36d71",
+    "shortSha": "4d6af29",
+    "gitRef": "feat/mpv-player",
     "gitRefType": "branch",
     "buildRunUrl": "",
-    "buildDate": "2026-06-09T13:34:08.788Z",
+    "buildDate": "2026-07-03T11:01:14.431Z",
     "signing": "configured",
     "node": "v24.15.0",
     "react": "19.2.3",
     "reactNative": "0.85.3",
     "expo": "56.0.8",
-    "nitroPlayer": "^1.4.1"
+    "nitroPlayer": "1.4.3",
 } as const;
 
 export type BuildInfo = typeof buildInfo;

@@ -1,3 +1,11 @@
-{"version":"0.6.2","changeLog":[
-  "【优化】优化了软件启动速度 (需要在【侧边栏-基本设置-插件】中打开【启用插件懒加载】开关)"
-],"download":["https://r0rvr854dd1.feishu.cn/drive/folder/KLqKfWOA3lx8MKdo8xNcYpR8n7t"]}
+{
+  "version": "0.6.5-rebuild.5",
+  "changeLog": [
+    "【新增】支持 Nitro 与 MPV 播放内核切换，MPV 补齐媒体会话、通知、歌词与自动下一曲能力",
+    "【新增】Live Update 灵动岛歌词通知支持歌曲封面、播放进度和展开卡片控制",
+    "【优化】升级 Nitro/MPV 原生依赖与格式支持，完善 ASF、M4A、WMA、DSF 等格式播放路径"
+  ],
+  "download": [
+    "https://r0rvr854dd1.feishu.cn/drive/folder/KLqKfWOA3lx8MKdo8xNcYpR8n7t"
+  ]
+}
