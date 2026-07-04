@@ -136,7 +136,7 @@ index efaf1aa..ead48dc 100644
              .setMediaSourceFactory(mediaSourceFactory)
              .setAudioAttributes(audioAttrs, /* handleAudioFocus */ true)
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
-index dbb5018..0ea8652 100644
+index dbb5018..97f0cde 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
 @@ -1,18 +1,42 @@
@@ -182,7 +182,7 @@ index dbb5018..0ea8652 100644
 
  /**
   * Foreground service that **owns** the ExoPlayer and MediaSession.
-@@ -30,6 +54,16 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -30,6 +54,17 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
      companion object {
          const val ACTION_LOCAL_BIND = "com.margelo.nitro.nitroplayer.LOCAL_BIND"
@@ -190,6 +190,7 @@ index dbb5018..0ea8652 100644
 +        private const val SESSION_ACTIVITY_REQUEST_CODE = 2001
 +        private const val API_LIVE_UPDATE = 36
 +        private const val CHIP_TEXT_MAX_CODE_POINTS = 12
++        private const val LIVE_UPDATE_PROGRESS_UPDATE_MS = 1000L
 +        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 +
 +        private fun formatTime(ms: Long): String {
@@ -199,7 +200,7 @@ index dbb5018..0ea8652 100644
 
          @Volatile
          var notificationSmallIconResName: String? = null
-@@ -42,13 +76,76 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -42,13 +77,94 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
          @Volatile
          private var instance: NitroPlayerPlaybackService? = null
@@ -259,6 +260,16 @@ index dbb5018..0ea8652 100644
 +            override fun sizeOf(key: String, value: Bitmap): Int = 1
 +        }
 +    private val loadingLiveUpdateArtworkUrls = mutableSetOf<String>()
++    private var liveUpdateProgressTickerScheduled = false
++    private val liveUpdateProgressTicker =
++        object : Runnable {
++            override fun run() {
++                liveUpdateProgressTickerScheduled = false
++                if (!shouldTickLiveUpdateProgress()) return
++                refreshNotification()
++                scheduleLiveUpdateProgressTicker()
++            }
++        }
 +    private val mediaNotificationMetadataListener =
 +        object : Player.Listener {
 +            override fun onMediaItemTransition(
@@ -273,11 +284,19 @@ index dbb5018..0ea8652 100644
 +                applyMediaSessionLyricMetadata()
 +                refreshNotification()
 +            }
++
++            override fun onIsPlayingChanged(isPlaying: Boolean) {
++                updateLiveUpdateProgressTicker()
++            }
++
++            override fun onPlaybackStateChanged(playbackState: Int) {
++                updateLiveUpdateProgressTicker()
++            }
 +        }
 
      @Volatile
      var trackPlayerCore: TrackPlayerCore? = null
-@@ -72,15 +169,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -72,15 +188,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
          // Build ExoPlayer on main looper (default)
          player = ExoPlayerBuilder.build(this)
@@ -300,7 +319,7 @@ index dbb5018..0ea8652 100644
          notificationProvider = provider
          applyNotificationSmallIcon()
          setMediaNotificationProvider(provider)
-@@ -90,7 +191,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -90,7 +210,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
      private fun applyNotificationSmallIcon() {
          val name = notificationSmallIconResName ?: return
@@ -309,7 +328,7 @@ index dbb5018..0ea8652 100644
          val resId = resources.getIdentifier(name, "drawable", packageName)
          if (resId == 0) {
              NitroPlayerLogger.log("PlaybackService") {
-@@ -111,6 +212,394 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -111,6 +231,418 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          }
      }
 
@@ -696,15 +715,39 @@ index dbb5018..0ea8652 100644
 +        val session = mediaSession ?: return
 +        try {
 +            onUpdateNotification(session, false)
++            updateLiveUpdateProgressTicker()
 +        } catch (e: Exception) {
 +            NitroPlayerLogger.log("PlaybackService") { "notification refresh failed: ${e.message}" }
 +        }
 +    }
 +
++    private fun shouldTickLiveUpdateProgress(): Boolean =
++        shouldUseLiveUpdateNotificationStyle() && player.isPlaying
++
++    private fun updateLiveUpdateProgressTicker() {
++        if (shouldTickLiveUpdateProgress()) {
++            scheduleLiveUpdateProgressTicker()
++        } else {
++            cancelLiveUpdateProgressTicker()
++        }
++    }
++
++    private fun scheduleLiveUpdateProgressTicker() {
++        if (liveUpdateProgressTickerScheduled || !shouldTickLiveUpdateProgress()) return
++        liveUpdateProgressTickerScheduled = true
++        mainHandler.postDelayed(liveUpdateProgressTicker, LIVE_UPDATE_PROGRESS_UPDATE_MS)
++    }
++
++    private fun cancelLiveUpdateProgressTicker() {
++        if (!liveUpdateProgressTickerScheduled) return
++        liveUpdateProgressTickerScheduled = false
++        mainHandler.removeCallbacks(liveUpdateProgressTicker)
++    }
++
      override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
          mediaSession
 
-@@ -121,6 +610,71 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -121,6 +653,72 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          return super.onBind(intent)
      }
 
@@ -722,6 +765,7 @@ index dbb5018..0ea8652 100644
 +
 +    private fun shutdownPlayback() {
 +        NitroPlayerLogger.log("PlaybackService") { "shutdownPlayback" }
++        cancelLiveUpdateProgressTicker()
 +        try {
 +            player.pause()
 +            player.clearMediaItems()
@@ -776,9 +820,11 @@ index dbb5018..0ea8652 100644
      override fun onTaskRemoved(rootIntent: Intent?) {
          val session = mediaSession
          if (session == null || !session.player.playWhenReady) {
-@@ -133,6 +687,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -132,7 +730,9 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+     override fun onDestroy() {
          NitroPlayerLogger.log("PlaybackService") { "onDestroy" }
          if (instance === this) instance = null
++        cancelLiveUpdateProgressTicker()
          notificationProvider = null
 +        player.removeListener(mediaNotificationMetadataListener)
          mediaSession?.release()

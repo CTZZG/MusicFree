@@ -46,6 +46,7 @@ class MpvPlaybackService : Service() {
         private const val CHANNEL_ID = "musicfree_mpv_playback"
         private const val NOTIFICATION_ID = 3001
         private const val NOTIFICATION_PROGRESS_UPDATE_MS = 1000L
+        private const val LIVE_UPDATE_PROGRESS_UPDATE_MS = 1000L
         private const val API_LIVE_UPDATE = 36
         private const val CHIP_TEXT_MAX_CODE_POINTS = 12
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
@@ -78,6 +79,8 @@ class MpvPlaybackService : Service() {
     private var pausedForTransientFocusLoss = false
     private var duckedForFocusLoss = false
     private var lastNotificationUpdateMs = 0L
+    private var cachedPositionUpdatedAtMs = 0L
+    private var liveUpdateProgressTickerScheduled = false
 
     private var cachedTitle = ""
     private var cachedArtist = ""
@@ -99,6 +102,16 @@ class MpvPlaybackService : Service() {
             PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
             PlaybackStateCompat.ACTION_STOP or
             PlaybackStateCompat.ACTION_SEEK_TO
+
+    private val liveUpdateProgressTicker = object : Runnable {
+        override fun run() {
+            liveUpdateProgressTickerScheduled = false
+            if (!shouldTickLiveUpdateProgress()) return
+            updatePlaybackState()
+            updateNotification()
+            scheduleLiveUpdateProgressTicker()
+        }
+    }
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -144,6 +157,7 @@ class MpvPlaybackService : Service() {
 
     override fun onDestroy() {
         MpvServiceBridge.service = null
+        cancelLiveUpdateProgressTicker()
         unregisterNoisyReceiver()
         stopForegroundSafely()
         mediaSession.release()
@@ -173,6 +187,7 @@ class MpvPlaybackService : Service() {
         if (isNewTrack) {
             cachedPosition = 0L
             cachedBufferedPosition = 0L
+            cachedPositionUpdatedAtMs = System.currentTimeMillis()
             cachedArtworkBitmap = null
             cachedMediaNotificationLyric = ""
             cachedLiveUpdateLyric = ""
@@ -191,19 +206,25 @@ class MpvPlaybackService : Service() {
                 requestAudioFocus()
                 startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_PLAYING
+                cachedPositionUpdatedAtMs = System.currentTimeMillis()
                 updateAll()
             }
             "buffering" -> {
                 requestAudioFocus()
                 startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_BUFFERING
+                cachedPositionUpdatedAtMs = System.currentTimeMillis()
                 updateAll()
             }
             "paused" -> {
+                cachedPosition = currentNotificationPosition()
+                cachedPositionUpdatedAtMs = System.currentTimeMillis()
                 cachedState = PlaybackStateCompat.STATE_PAUSED
                 updateAll()
             }
             "ended" -> {
+                cachedPosition = currentNotificationPosition()
+                cachedPositionUpdatedAtMs = System.currentTimeMillis()
                 cachedState = PlaybackStateCompat.STATE_PAUSED
                 updateAll()
             }
@@ -223,6 +244,7 @@ class MpvPlaybackService : Service() {
     ) {
         cachedPosition = secondsToMillis(positionSecs)
         cachedBufferedPosition = secondsToMillis(bufferedSecs)
+        cachedPositionUpdatedAtMs = System.currentTimeMillis()
         val nextDuration = secondsToMillis(durationSecs)
         val durationChanged = nextDuration > 0 && nextDuration != cachedDuration
         if (durationChanged) {
@@ -274,6 +296,47 @@ class MpvPlaybackService : Service() {
         updateMediaSessionMetadata()
         updateNotification()
         return canOwnLiveUpdateNotification()
+    }
+
+    private fun shouldTickLiveUpdateProgress(): Boolean =
+        shouldUseLiveUpdateNotificationStyle() &&
+            cachedState == PlaybackStateCompat.STATE_PLAYING
+
+    private fun updateLiveUpdateProgressTicker() {
+        if (shouldTickLiveUpdateProgress()) {
+            scheduleLiveUpdateProgressTicker()
+        } else {
+            cancelLiveUpdateProgressTicker()
+        }
+    }
+
+    private fun scheduleLiveUpdateProgressTicker() {
+        if (liveUpdateProgressTickerScheduled || !shouldTickLiveUpdateProgress()) return
+        liveUpdateProgressTickerScheduled = true
+        mainHandler.postDelayed(liveUpdateProgressTicker, LIVE_UPDATE_PROGRESS_UPDATE_MS)
+    }
+
+    private fun cancelLiveUpdateProgressTicker() {
+        if (!liveUpdateProgressTickerScheduled) return
+        liveUpdateProgressTickerScheduled = false
+        mainHandler.removeCallbacks(liveUpdateProgressTicker)
+    }
+
+    private fun currentNotificationPosition(): Long {
+        if (
+            cachedState != PlaybackStateCompat.STATE_PLAYING ||
+            cachedPositionUpdatedAtMs <= 0L
+        ) {
+            return cachedPosition
+        }
+
+        val elapsed = (System.currentTimeMillis() - cachedPositionUpdatedAtMs).coerceAtLeast(0L)
+        val estimated = cachedPosition + elapsed
+        return if (cachedDuration > 0) {
+            estimated.coerceIn(0L, cachedDuration)
+        } else {
+            estimated.coerceAtLeast(0L)
+        }
     }
 
     private fun secondsToMillis(seconds: Double): Long =
@@ -338,9 +401,10 @@ class MpvPlaybackService : Service() {
     private fun updatePlaybackState() {
         val speed =
             if (cachedState == PlaybackStateCompat.STATE_PLAYING) 1.0f else 0.0f
+        val position = currentNotificationPosition()
         mediaSession.setPlaybackState(
             PlaybackStateCompat.Builder()
-                .setState(cachedState, cachedPosition, speed)
+                .setState(cachedState, position, speed)
                 .setActions(allActions)
                 .setBufferedPosition(cachedBufferedPosition)
                 .build(),
@@ -405,6 +469,7 @@ class MpvPlaybackService : Service() {
         val isPlaying =
             cachedState == PlaybackStateCompat.STATE_PLAYING ||
                 cachedState == PlaybackStateCompat.STATE_BUFFERING
+        val notificationPosition = currentNotificationPosition()
         val playIcon =
             if (isPlaying) R.drawable.ic_notification_pause else R.drawable.ic_notification_play
         val playLabel = if (isPlaying) "暂停" else "播放"
@@ -492,8 +557,8 @@ class MpvPlaybackService : Service() {
         contentIntent?.let { builder.setContentIntent(it) }
 
         if (cachedDuration > 0) {
-            builder.setProgress(cachedDuration.toInt(), cachedPosition.toInt(), false)
-            builder.setSubText("${formatTime(cachedPosition)} / ${formatTime(cachedDuration)}")
+            builder.setProgress(cachedDuration.toInt(), notificationPosition.toInt(), false)
+            builder.setSubText("${formatTime(notificationPosition)} / ${formatTime(cachedDuration)}")
         }
 
         return builder.build().apply {
@@ -527,6 +592,7 @@ class MpvPlaybackService : Service() {
         stopIntent: PendingIntent,
         contentIntent: PendingIntent?,
     ): Notification {
+        val notificationPosition = currentNotificationPosition()
         val title = cachedLiveUpdateLyric.ifBlank { cachedTitle.ifBlank { "MusicFree" } }
         val text =
             if (cachedLiveUpdateLyric.isNotBlank()) {
@@ -534,10 +600,10 @@ class MpvPlaybackService : Service() {
             } else {
                 buildNotificationText()
             }
-        val progressPercent = progressPercent(cachedPosition, cachedDuration)
+        val progressPercent = progressPercent(notificationPosition, cachedDuration)
         val progressText =
             if (cachedDuration > 0) {
-                "${formatTime(cachedPosition)} / ${formatTime(cachedDuration)}"
+                "${formatTime(notificationPosition)} / ${formatTime(cachedDuration)}"
             } else {
                 ""
             }
@@ -654,6 +720,7 @@ class MpvPlaybackService : Service() {
     private fun updateNotification() {
         lastNotificationUpdateMs = System.currentTimeMillis()
         notificationManager?.notify(NOTIFICATION_ID, buildNotification())
+        updateLiveUpdateProgressTicker()
     }
 
     private fun startForegroundSafely() {
@@ -683,6 +750,7 @@ class MpvPlaybackService : Service() {
             }
             isForeground = false
         }
+        cancelLiveUpdateProgressTicker()
         notificationManager?.cancel(NOTIFICATION_ID)
     }
 
