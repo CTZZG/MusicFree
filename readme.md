@@ -17,78 +17,40 @@
 
 一个插件化、定制化、无广告的免费音乐播放器，目前只支持 Android 和 Harmony OS。
 
-## 本分支说明：`feat/mpv-player` 播放内核实验分支
+## 本分支说明
 
-本仓库是基于上游项目 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，不代表上游官方发布。当前分支版本为 `0.6.5-rebuild.5`，核心目标是把 Android 播放层从单一播放器路线整理为 `PlayerAdapter + Nitro/mpv 双后端`：Nitro 是默认后端，mpv 是面向格式兼容性和 libmpv 能力的实验后端。
+这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.6.5-rebuild.5`，不代表上游官方发布。本分支主要增强 Android 播放体验：默认使用 Nitro 播放内核，同时提供可选的 mpv 播放内核，用来覆盖更多音频格式和更复杂的本地播放场景。
 
-### 快速结论
+默认情况下不需要额外设置，直接使用 Nitro 即可；如果遇到 Nitro/系统解码不支持的格式，可以在 `设置 -> 基础设置 -> 播放内核` 中切换到 mpv。播放内核切换后需要重启 App 生效。
 
-- 默认播放后端是 `Nitro`，依旧优先保证普通用户的稳定播放、通知栏、锁屏控制和蓝牙/耳机键体验。
-- `mpv` 后端可在 `设置 -> 基础设置 -> 播放内核` 中选择，切换后需要重启 App 才会完全生效。
-- 两套后端共用 MusicFree 上层队列、歌词、播放模式和插件体系；差异集中在 Android 原生播放服务、解码能力和通知实现。
-- Live Update 歌词走 Android 标准通知接口，不是 Honor 私有接口；已在 Honor 灵动胶囊场景验证，其他 Android 16+ 且支持 promoted ongoing/胶囊展示的系统理论上也能受益，但最终样式由系统决定。
-- 本分支的新增能力主要覆盖 Android。HarmonyOS/其他 Android 兼容系统的表现取决于系统的 Android API 兼容层和通知策略。
+### 分支特性
 
-### 与上游主要区别
+- 支持 Nitro / mpv 双播放内核，Nitro 为默认后端，mpv 为实验后端。
+- mpv 后端已接入通知栏、锁屏、蓝牙/耳机键、音频焦点、自动下一曲、列表循环和歌词展示，目标是与 Nitro 的日常体验保持一致。
+- Nitro 后端保留 MusicFree 专用补丁，补强 ALAC/M4A、WMA/ASF、DSF 等格式支持。
+- mpv 后端集成 libmpv，适合尝试播放 Nitro 或 Android 系统播放器不容易覆盖的格式。
+- 支持媒体通知歌词，以及 Android 16 Live Update 歌词。Live Update 使用 Android 标准通知接口，不是 Honor 私有接口；已在 Honor 灵动胶囊上验证，其他支持类似 promoted ongoing 通知的 Android 16+ 设备也有机会使用。
+- Live Update 通知支持歌曲封面、播放按钮、进度和时间显示；播放中进度会按秒刷新，不只跟随歌词换句刷新。
 
-| 方向 | 上游普通版本 | 本分支 |
-| --- | --- | --- |
-| 播放架构 | 以既有播放实现为主，业务层和播放器实现耦合更深 | 引入 `PlayerAdapter` 抽象，业务层通过统一 facade 调用播放器，底层可切换 `nitro-player` 或 `mpv` |
-| 默认后端 | 不包含本分支的 Nitro/mpv 双后端切换 | Nitro 为默认后端，基于 `react-native-nitro-player@1.4.3` 并通过 `patch-package` 保留 MusicFree 补丁 |
-| mpv 后端 | 无内置 libmpv 后端 | 集成 `android/app/libs/libmpv-release.aar`，提供 Android 原生 mpv 模块、播放服务、MediaSession、通知栏控制和 JS 队列适配 |
-| 队列职责 | 主要依赖单一播放器后端的队列语义 | Nitro 走其原生队列；mpv 只负责播放单个 URL 和 prepared-next，队列、循环、随机、稍后播放由 JS 统一维护，避免双队列不同步 |
-| 格式能力 | 主要覆盖 Android/Media3 常见格式 | Nitro 补丁加入 ALAC/M4A、WMA/ASF、DSF 等额外路径；mpv 后端利用 libmpv 覆盖更广格式 |
-| 通知和系统控制 | 常规媒体通知 | Nitro/mpv 都对齐 MediaSession、锁屏元数据、专辑图、进度、上一首/播放暂停/下一首/关闭、音频焦点和耳机拔出暂停 |
-| 歌词通知 | 普通应用内/悬浮歌词为主 | 增加媒体通知歌词和 Android 16 Live Update 歌词；Live Update 模式下尽量由同一个播放通知承载歌词，减少双通知争抢 |
-| 构建发布 | 上游发布流程以官方仓库为准 | 保留当前分支的 Android release workflow，并维护 `0.6.5-rebuild.*` 版本元数据 |
+### 与上游的区别
 
-### 本分支自己的独特点
+上游 MusicFree 仍是插件化、无广告、无内置音源的播放器，本分支不改变这些基本设计。本分支的差异主要集中在 Android 播放层：
 
-- **双后端切换**：`src/core/playerAdapter` 统一 Nitro 和 mpv 的播放接口，两个后端延迟加载，避免未选中的原生模块抢占 MediaSession。
-- **mpv 与 Nitro 体验拉齐**：mpv 后端补齐自动下一曲、列表循环、远程上一首/下一首、通知栏按钮、锁屏封面、播放进度、音频焦点、耳机拔出暂停和 Live Update 歌词。
-- **Live Update 歌词**：使用 Android 官方的 `Notification.ProgressStyle`、`setShortCriticalText()`、promoted ongoing 请求和 `hasPromotableCharacteristics()` 检查来触发系统胶囊/小窗展示。小胶囊文字会受系统宽度限制，展开通知卡片可显示更完整的歌词、歌曲信息、封面、按钮和进度时间。
-- **Live Update 进度刷新**：Nitro 和 mpv 都额外维护 1 秒通知刷新 ticker，避免进度条只在歌词换句时才更新。
-- **专辑图胶囊化尝试**：Live Update 通知会把当前歌曲封面同时写入大图标和相关图标字段，系统如果支持，会在小胶囊或展开卡片中展示封面。
-- **格式补强**：Nitro 补丁集中放在 `patches/react-native-nitro-player+1.4.3.patch`，自定义扩展集中在 `com.margelo.nitro.nitroplayer.musicfree` 命名空间，便于后续升级 Nitro 时复核差异。
+- 增加播放器适配层，让业务逻辑可以在 Nitro 和 mpv 之间切换。
+- 增加 mpv 原生模块和 mpv 播放服务。
+- 对齐两套后端的通知栏、锁屏控制、歌词通知和播放队列行为。
+- 保留 Nitro 的 MusicFree 格式补丁，方便在默认后端下继续支持更多格式。
+- 调整 Android release 构建与版本信息，当前使用 `0.6.5-rebuild.*` 版本线。
 
-### Android 版本支持
+### Android 支持
 
-| 能力 | 最低版本 | 说明 |
-| --- | --- | --- |
-| App 安装与基础功能 | Android 7.0 / API 24 | `android/build.gradle` 当前 `minSdkVersion = 24` |
-| Nitro 默认后端 | Android 7.0 / API 24 | 跟随 App 最低版本；具体可播格式仍受 Media3、FFmpeg 扩展和设备解码能力影响 |
-| mpv 实验后端 | Android 8.0 / API 26 | libmpv AAR 要求 API 26+；低于 Android 8.0 时不建议启用 mpv |
-| 普通媒体通知/锁屏/耳机键 | Android 7.0+，Android 8.0+ 体验更完整 | Android 8.0 起有通知渠道，系统媒体通知行为也更稳定 |
-| 媒体通知歌词 | Android 7.0+ | 通过 MediaSession/通知元数据刷新实现，不依赖 Live Update |
-| Live Update 歌词/灵动胶囊 | Android 16 / API 36+ | 依赖 Android 16 的 progress-centric notification / promoted ongoing 能力；本分支通过反射请求 `setRequestPromotedOngoing()`，同时写入兼容 extra |
+- App 基础安装要求：Android 7.0 / API 24 及以上。
+- Nitro 默认后端：Android 7.0 / API 24 及以上。
+- mpv 实验后端：Android 8.0 / API 26 及以上。
+- 普通媒体通知歌词：Android 7.0 及以上可用，具体显示效果由系统通知样式决定。
+- Live Update 歌词：Android 16 / API 36 及以上可用，最优体验也是 Android 16 及以上。
 
-### 最优体验建议
-
-- 日常稳定使用：Android 8.0+，默认选择 Nitro。
-- 需要播放 Nitro/Media3 不容易覆盖的格式：Android 8.0+，可试 mpv。
-- 想要灵动胶囊/小窗歌词：Android 16/API 36+，并且系统愿意把 promoted ongoing 通知提升为胶囊展示。Honor 机型已实测可用；其他厂商如果按 Android 标准实现类似入口，也有机会工作。
-- 长歌词在小胶囊里可能被截断，这是 Android `setShortCriticalText()` 和系统胶囊宽度共同决定的限制；完整内容以展开通知卡片和应用内歌词为准。
-
-参考资料：Android 官方 [Progress-centric notifications](https://developer.android.com/about/versions/16/features/progress-centric-notifications)、[`Notification.Builder#setShortCriticalText`](<https://developer.android.com/reference/android/app/Notification.Builder#setShortCriticalText(java.lang.String)>)、[`Notification#hasPromotableCharacteristics`](<https://developer.android.com/reference/android/app/Notification#hasPromotableCharacteristics()>)。
-
-### 当前已验证的范围
-
-- Nitro 后端普通播放、通知栏、Live Update 歌词、专辑图、进度刷新和额外格式补丁可正常工作。
-- mpv 后端基础播放、自动下一曲、列表循环、通知栏/锁屏控制、Live Update 歌词和进度刷新已在真机验证。
-- ASF/WMA、M4A/ALAC、DSF 等样本已做过本地或真机播放验证；mpv 格式覆盖范围更宽，但最终仍以具体 libmpv 构建和样本为准。
-- `npx tsc --noEmit`、Android release 构建和 release APK 签名验证已通过。
-
-### 已知边界
-
-- mpv 仍标记为实验性后端，目标是与 Nitro 功能拉齐，但默认推荐 Nitro。
-- 播放内核切换当前需要重启 App，这是为了避免两个原生播放器服务和 MediaSession 同时抢占系统播放入口。
-- Live Update 是否显示成灵动岛/胶囊由系统决定；本分支只负责按 Android 标准构造可 promoted 的通知。
-- 小胶囊适合短歌词，长歌词只能显示前半段或被系统省略；这是系统 UI 限制，不是歌词数据缺失。
-- WMA Pro、WMA Lossless、WMA Voice 等细分格式样本覆盖仍不足；当前更有把握的是 WMA v1/v2/ASF 基础链路。
-
-### 构建与发布
-
-本分支保留 GitHub Actions Android release workflow：`.github/workflows/android-build.yml`。它可以通过手动 `workflow_dispatch` 或推送 `v*` tag 构建 release APK，并把产物上传到 GitHub Release。若要生成签名包，推荐在仓库 Secrets 中配置 `ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS` 和 `ANDROID_RELEASE_KEY_PASSWORD`；workflow 也兼容旧的 `RELEASE_KEYSTORE_BASE64`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS` 和 `RELEASE_KEY_PASSWORD` 命名。缺少这些 Secrets 时 workflow 仍可构建，但会按 Gradle 当前签名配置生成未签名或本地配置签名的 release 产物。
+如果只是日常听歌，推荐 Android 8.0 及以上使用 Nitro；如果想要灵动胶囊/小窗歌词，推荐 Android 16 及以上。长歌词在小胶囊中可能显示不全，这是系统展示空间限制，展开通知卡片和应用内歌词会显示更完整内容。
 
 > **桌面版来啦：<https://github.com/maotoumao/MusicFreeDesktop>**
 
