@@ -80,6 +80,12 @@ keystore.properties
 
 .vscode/
 tmp/
+docs/
+window.xml
+/1.jpg
+/2.jpg
+/FINAL_SUMMARY.md
+/UPGRADE_REPORT.md
 scripts/
 .env.production.local
 .env.local
