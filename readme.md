@@ -17,39 +17,74 @@
 
 一个插件化、定制化、无广告的免费音乐播放器，目前只支持 Android 和 Harmony OS。
 
-## 本分支说明：Nitro 重构版
+## 本分支说明：`feat/mpv-player` 播放内核实验分支
 
-本仓库是基于上游初始项目 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，不代表上游官方发布。当前封存版本为 `0.6.4-nitro.1`，主要目标是把 Android 播放底座从 RNTP 收敛到 [react-native-nitro-player](https://github.com/riteshshukla04/react-native-nitro-player)，并补齐 MusicFree 对 ALAC、WMA/ASF、DSF 等格式的播放能力。
+本仓库是基于上游项目 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，不代表上游官方发布。当前分支版本为 `0.6.5-rebuild.5`，核心目标是把 Android 播放层从单一播放器路线整理为 `PlayerAdapter + Nitro/mpv 双后端`：Nitro 是默认后端，mpv 是面向格式兼容性和 libmpv 能力的实验后端。
 
-### 与上游初始项目的主要区别
+### 快速结论
 
-| 方向 | 上游初始项目 | 本分支 Nitro 重构版 |
+- 默认播放后端是 `Nitro`，依旧优先保证普通用户的稳定播放、通知栏、锁屏控制和蓝牙/耳机键体验。
+- `mpv` 后端可在 `设置 -> 基础设置 -> 播放内核` 中选择，切换后需要重启 App 才会完全生效。
+- 两套后端共用 MusicFree 上层队列、歌词、播放模式和插件体系；差异集中在 Android 原生播放服务、解码能力和通知实现。
+- Live Update 歌词走 Android 标准通知接口，不是 Honor 私有接口；已在 Honor 灵动胶囊场景验证，其他 Android 16+ 且支持 promoted ongoing/胶囊展示的系统理论上也能受益，但最终样式由系统决定。
+- 本分支的新增能力主要覆盖 Android。HarmonyOS/其他 Android 兼容系统的表现取决于系统的 Android API 兼容层和通知策略。
+
+### 与上游主要区别
+
+| 方向 | 上游普通版本 | 本分支 |
 | --- | --- | --- |
-| 播放器底座 | 以 `react-native-track-player` 路线为基础 | 已移除 RNTP 依赖和 RNTP v4 adapter，MusicFree 业务层保留 `TrackPlayer` facade，但底层固定桥接 Nitro Player |
-| 原生播放内核 | 依赖原有 RNTP/ExoPlayer 集成 | 使用 Nitro Player + Android Media3 + MediaSession，通知栏、蓝牙和系统媒体键走原生 MediaSession |
-| 格式扩展 | 主要覆盖常见 Android/Media3 可播格式 | 引入自定义 Media3 FFmpeg decoder AAR，并注册 MusicFree 专用 extractor/source factory |
-| M4A/ALAC | 普通 M4A/AAC 依赖平台/Media3 路径，ALAC 不是专项目标 | ALAC 通过 FFmpeg 扩展支持，已用 FFmpeg `snoop_try.m4a` 本地与 HTTP 样本验证 |
-| WMA/ASF | 非默认目标格式 | 自写 ASF/WMA header parser、packet parser、payload assembler 和 extractor，WMA v2/ASF 默认启用，保留 `-PmusicfreeEnableWmaExtractor=false` 回滚开关 |
-| DSF | 非默认目标格式 | 自写 DSF extractor，并通过 legacy FFmpeg4 native base + Media3 JNI wrapper 接入 DSD 解码，真机可听、seek 和强停恢复已验证 |
-| Nitro API 对齐 | 不适用 | Nitro `TrackPlayer` 与 `PlayerQueue` 核心操作已映射到 MusicFree `PlayerAdapter`；DownloadManager、Equalizer、AudioDevices、AndroidAutoMediaLibrary 等非核心模块暂登记为后续优化项 |
-| 升级边界 | 无本分支扩展边界 | MusicFree 自定义 native 扩展集中在 `com.margelo.nitro.nitroplayer.musicfree` 命名空间，并由 Round20 审计脚本守护，便于未来升级 Nitro Player 时复核 |
-| 诊断和验收 | 常规项目文档 | 增加 Round20 文档和审计脚本，覆盖 RNTP 移除、Nitro operation 映射、Media3/FFmpeg 扩展、格式样本矩阵和升级边界 |
-| 退出应用 | 原退出偏向返回桌面/软退出语义 | 菜单“退出应用”和定时关闭统一为硬退出：先 best-effort reset 播放器，再结束 Activity/task，最后 kill 当前进程 |
+| 播放架构 | 以既有播放实现为主，业务层和播放器实现耦合更深 | 引入 `PlayerAdapter` 抽象，业务层通过统一 facade 调用播放器，底层可切换 `nitro-player` 或 `mpv` |
+| 默认后端 | 不包含本分支的 Nitro/mpv 双后端切换 | Nitro 为默认后端，基于 `react-native-nitro-player@1.4.3` 并通过 `patch-package` 保留 MusicFree 补丁 |
+| mpv 后端 | 无内置 libmpv 后端 | 集成 `android/app/libs/libmpv-release.aar`，提供 Android 原生 mpv 模块、播放服务、MediaSession、通知栏控制和 JS 队列适配 |
+| 队列职责 | 主要依赖单一播放器后端的队列语义 | Nitro 走其原生队列；mpv 只负责播放单个 URL 和 prepared-next，队列、循环、随机、稍后播放由 JS 统一维护，避免双队列不同步 |
+| 格式能力 | 主要覆盖 Android/Media3 常见格式 | Nitro 补丁加入 ALAC/M4A、WMA/ASF、DSF 等额外路径；mpv 后端利用 libmpv 覆盖更广格式 |
+| 通知和系统控制 | 常规媒体通知 | Nitro/mpv 都对齐 MediaSession、锁屏元数据、专辑图、进度、上一首/播放暂停/下一首/关闭、音频焦点和耳机拔出暂停 |
+| 歌词通知 | 普通应用内/悬浮歌词为主 | 增加媒体通知歌词和 Android 16 Live Update 歌词；Live Update 模式下尽量由同一个播放通知承载歌词，减少双通知争抢 |
+| 构建发布 | 上游发布流程以官方仓库为准 | 保留当前分支的 Android release workflow，并维护 `0.6.5-rebuild.*` 版本元数据 |
+
+### 本分支自己的独特点
+
+- **双后端切换**：`src/core/playerAdapter` 统一 Nitro 和 mpv 的播放接口，两个后端延迟加载，避免未选中的原生模块抢占 MediaSession。
+- **mpv 与 Nitro 体验拉齐**：mpv 后端补齐自动下一曲、列表循环、远程上一首/下一首、通知栏按钮、锁屏封面、播放进度、音频焦点、耳机拔出暂停和 Live Update 歌词。
+- **Live Update 歌词**：使用 Android 官方的 `Notification.ProgressStyle`、`setShortCriticalText()`、promoted ongoing 请求和 `hasPromotableCharacteristics()` 检查来触发系统胶囊/小窗展示。小胶囊文字会受系统宽度限制，展开通知卡片可显示更完整的歌词、歌曲信息、封面、按钮和进度时间。
+- **Live Update 进度刷新**：Nitro 和 mpv 都额外维护 1 秒通知刷新 ticker，避免进度条只在歌词换句时才更新。
+- **专辑图胶囊化尝试**：Live Update 通知会把当前歌曲封面同时写入大图标和相关图标字段，系统如果支持，会在小胶囊或展开卡片中展示封面。
+- **格式补强**：Nitro 补丁集中放在 `patches/react-native-nitro-player+1.4.3.patch`，自定义扩展集中在 `com.margelo.nitro.nitroplayer.musicfree` 命名空间，便于后续升级 Nitro 时复核差异。
+
+### Android 版本支持
+
+| 能力 | 最低版本 | 说明 |
+| --- | --- | --- |
+| App 安装与基础功能 | Android 7.0 / API 24 | `android/build.gradle` 当前 `minSdkVersion = 24` |
+| Nitro 默认后端 | Android 7.0 / API 24 | 跟随 App 最低版本；具体可播格式仍受 Media3、FFmpeg 扩展和设备解码能力影响 |
+| mpv 实验后端 | Android 8.0 / API 26 | libmpv AAR 要求 API 26+；低于 Android 8.0 时不建议启用 mpv |
+| 普通媒体通知/锁屏/耳机键 | Android 7.0+，Android 8.0+ 体验更完整 | Android 8.0 起有通知渠道，系统媒体通知行为也更稳定 |
+| 媒体通知歌词 | Android 7.0+ | 通过 MediaSession/通知元数据刷新实现，不依赖 Live Update |
+| Live Update 歌词/灵动胶囊 | Android 16 / API 36+ | 依赖 Android 16 的 progress-centric notification / promoted ongoing 能力；本分支通过反射请求 `setRequestPromotedOngoing()`，同时写入兼容 extra |
+
+### 最优体验建议
+
+- 日常稳定使用：Android 8.0+，默认选择 Nitro。
+- 需要播放 Nitro/Media3 不容易覆盖的格式：Android 8.0+，可试 mpv。
+- 想要灵动胶囊/小窗歌词：Android 16/API 36+，并且系统愿意把 promoted ongoing 通知提升为胶囊展示。Honor 机型已实测可用；其他厂商如果按 Android 标准实现类似入口，也有机会工作。
+- 长歌词在小胶囊里可能被截断，这是 Android `setShortCriticalText()` 和系统胶囊宽度共同决定的限制；完整内容以展开通知卡片和应用内歌词为准。
+
+参考资料：Android 官方 [Progress-centric notifications](https://developer.android.com/about/versions/16/features/progress-centric-notifications)、[`Notification.Builder#setShortCriticalText`](<https://developer.android.com/reference/android/app/Notification.Builder#setShortCriticalText(java.lang.String)>)、[`Notification#hasPromotableCharacteristics`](<https://developer.android.com/reference/android/app/Notification#hasPromotableCharacteristics()>)。
 
 ### 当前已验证的范围
 
-- RNTP 已从依赖、patch、adapter 和 service 分流中移除，当前 Android 播放后端为 Nitro-only。
-- WMA HTTP、ASF HTTP、ALAC HTTP 均达到 `PLAYING` 且 `error=null`。
-- DSF 真机样本已验证可听，pause/play、fast-forward/seek 类动作和强停重开路径通过。
-- 通知栏、蓝牙、详情页、歌词页、长时间播放和系统媒体键基础路径已通过 Round20 Gate 记录。
-- `npm run audit:round20-static`、`npm run audit:round20-native` 和 release APK 真机构建/安装 smoke 已通过。
+- Nitro 后端普通播放、通知栏、Live Update 歌词、专辑图、进度刷新和额外格式补丁可正常工作。
+- mpv 后端基础播放、自动下一曲、列表循环、通知栏/锁屏控制、Live Update 歌词和进度刷新已在真机验证。
+- ASF/WMA、M4A/ALAC、DSF 等样本已做过本地或真机播放验证；mpv 格式覆盖范围更宽，但最终仍以具体 libmpv 构建和样本为准。
+- `npx tsc --noEmit`、Android release 构建和 release APK 签名验证已通过。
 
 ### 已知边界
 
-- WMA Pro、WMA Lossless、WMA Voice 仍缺样本覆盖；当前可宣称的是 WMA v2/ASF 基础链路。
-- Nitro 原始 Media3 error payload 暂未 fork spec/codegen 暴露到 JS；native logcat 已记录 Media3 error code/name/message/cause。
-- Nitro DownloadManager、Equalizer、AudioDevices、AndroidAutoMediaLibrary 尚未产品化接入 MusicFree，后续可作为独立优化项推进。
-- 普通 M4A/AAC、MP3、FLAC、OGG/Opus 属于发布前 smoke 补强项，不是 ALAC/WMA/DSF 本轮目标的阻塞项。
+- mpv 仍标记为实验性后端，目标是与 Nitro 功能拉齐，但默认推荐 Nitro。
+- 播放内核切换当前需要重启 App，这是为了避免两个原生播放器服务和 MediaSession 同时抢占系统播放入口。
+- Live Update 是否显示成灵动岛/胶囊由系统决定；本分支只负责按 Android 标准构造可 promoted 的通知。
+- 小胶囊适合短歌词，长歌词只能显示前半段或被系统省略；这是系统 UI 限制，不是歌词数据缺失。
+- WMA Pro、WMA Lossless、WMA Voice 等细分格式样本覆盖仍不足；当前更有把握的是 WMA v1/v2/ASF 基础链路。
 
 ### 构建与发布
 
