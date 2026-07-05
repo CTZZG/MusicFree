@@ -19,6 +19,7 @@ export default function TopListDetail() {
             state={state}
             onLoadMore={loadMore}
             onRetry={loadMore}
+            showArtwork
         />
     );
 }

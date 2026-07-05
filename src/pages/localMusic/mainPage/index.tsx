@@ -31,6 +31,8 @@ export default function MainPage() {
         <>
             <AppBar
                 withStatusBar
+                menuIcon="bars-3"
+                menuPosition="left"
                 actions={[
                     {
                         icon: "magnifying-glass",
@@ -106,7 +108,7 @@ export default function MainPage() {
                         },
                     },
                 ]}>
-                {t("home.localMusic")}
+                {t("localMusic.title")}
             </AppBar>
             <LocalMusicList />
             <MusicBar />

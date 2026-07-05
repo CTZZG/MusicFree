@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { exists } from "react-native-fs";
 
@@ -13,12 +13,14 @@ import { localMusicSheetId, localPluginPlatform, RequestStateCode } from "@/cons
 import globalStyle from "@/constants/globalStyle";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { useI18N } from "@/core/i18n";
+import TrackPlayer, { useCurrentMusic } from "@/core/trackPlayer";
 import useColors from "@/hooks/useColors";
 import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
 import { removeFileScheme } from "@/utils/fileUtils";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import Color from "color";
+import shuffle from "@/utils/shuffle";
 
 type LocalMusicFileStatus = "exists" | "missing" | "unknown" | "unavailable";
 type LocalMusicSortMode = "default" | "title" | "artist" | "album" | "folder";
@@ -73,7 +75,10 @@ function getLocalMusicFileStatus(
 }
 
 function compareLocalMusicText(left?: string | null, right?: string | null) {
-    return `${left ?? ""}`.localeCompare(`${right ?? ""}`);
+    return `${left ?? ""}`.localeCompare(`${right ?? ""}`, "zh-Hans-CN", {
+        numeric: true,
+        sensitivity: "base",
+    });
 }
 
 function sortLocalMusicItems(
@@ -156,13 +161,14 @@ function buildGroupItems(
 export default function LocalMusicList() {
     const musicList = LocalMusicSheet.useMusicList();
     const hiddenState = LocalMusicSheet.useHiddenState();
+    const currentMusic = useCurrentMusic();
     const { t } = useI18N();
     const colors = useColors();
     const [viewMode, setViewMode] = useState<LocalMusicViewMode>("songs");
     const [artistFilter, setArtistFilter] = useState<string>("all");
     const [albumFilter, setAlbumFilter] = useState<string>("all");
     const [folderFilter, setFolderFilter] = useState<string>("all");
-    const [sortMode, setSortMode] = useState<LocalMusicSortMode>("default");
+    const [sortMode, setSortMode] = useState<LocalMusicSortMode>("title");
     const [fileStatusMap, setFileStatusMap] = useState<
         Record<string, LocalMusicFileStatus>
     >({});
@@ -239,6 +245,75 @@ export default function LocalMusicList() {
         () => visibleMusicList.filter(isDownloadedLocalMusic).length,
         [visibleMusicList],
     );
+    const viewModeItems = useMemo(
+        () => {
+            const items: Array<{
+                key: LocalMusicViewMode;
+                title: string;
+                count: number;
+                icon: IIconName;
+            }> = [
+                {
+                    key: "songs",
+                    title: t("localMusic.view.songs"),
+                    count: visibleMusicList.length,
+                    icon: "musical-note",
+                },
+                {
+                    key: "artists",
+                    title: t("localMusic.view.artists"),
+                    count: artistGroups.length,
+                    icon: "user",
+                },
+                {
+                    key: "albums",
+                    title: t("localMusic.view.albums"),
+                    count: albumGroups.length,
+                    icon: "album-outline",
+                },
+                {
+                    key: "folders",
+                    title: t("localMusic.view.folders"),
+                    count: folderGroups.length,
+                    icon: "folder-outline",
+                },
+                {
+                    key: "downloaded",
+                    title: t("localMusic.view.downloaded"),
+                    count: downloadedCount,
+                    icon: "arrow-down-tray",
+                },
+                {
+                    key: "missing",
+                    title: t("localMusic.view.missing"),
+                    count: fileStatusStats.missing,
+                    icon: "exclamation-circle",
+                },
+            ];
+
+            if (hiddenMusicList.length || hiddenState.hiddenFolders.length) {
+                items.push({
+                    key: "hidden",
+                    title: t("localMusic.view.hidden"),
+                    count: hiddenMusicList.length + hiddenState.hiddenFolders.length,
+                    icon: "archive-box-x-mark",
+                });
+            }
+
+            return items;
+        },
+        [
+            albumGroups.length,
+            artistGroups.length,
+            downloadedCount,
+            fileStatusStats.missing,
+            folderGroups.length,
+            hiddenMusicList.length,
+            hiddenState.hiddenFolders.length,
+            t,
+            visibleMusicList.length,
+        ],
+    );
     const listBaseMusicList = useMemo(() => {
         if (viewMode === "downloaded") {
             return visibleMusicList.filter(isDownloadedLocalMusic);
@@ -285,6 +360,26 @@ export default function LocalMusicList() {
         () => sortLocalMusicItems(filteredMusicList, sortMode),
         [filteredMusicList, sortMode],
     );
+    const isGroupMode =
+        viewMode === "artists" ||
+        viewMode === "albums" ||
+        viewMode === "folders";
+    const activeViewItem = useMemo(
+        () => viewModeItems.find(item => item.key === viewMode),
+        [viewMode, viewModeItems],
+    );
+    const currentDisplayCount = isGroupMode
+        ? activeViewItem?.count ?? 0
+        : sortedMusicList.length;
+    const playableSortedMusicList = useMemo(
+        () =>
+            sortedMusicList.filter(
+                musicItem =>
+                    getLocalMusicFileStatus(musicItem, fileStatusMap) !==
+                    "missing",
+            ),
+        [fileStatusMap, sortedMusicList],
+    );
 
     const sortItems: Array<{
         key: LocalMusicSortMode;
@@ -320,7 +415,11 @@ export default function LocalMusicList() {
         artistFilter !== "all" ||
         albumFilter !== "all" ||
         folderFilter !== "all" ||
-        sortMode !== "default";
+        sortMode !== "title";
+    const shouldShowListSummary =
+        hasActiveListControls ||
+        viewMode !== "songs" ||
+        fileStatusStats.missing > 0;
 
     useEffect(() => {
         let cancelled = false;
@@ -376,8 +475,36 @@ export default function LocalMusicList() {
         setArtistFilter("all");
         setAlbumFilter("all");
         setFolderFilter("all");
-        setSortMode("default");
+        setSortMode("title");
     }
+
+    function playShuffledList() {
+        if (isGroupMode || !playableSortedMusicList.length) {
+            return;
+        }
+
+        const shuffledMusicList = shuffle(playableSortedMusicList);
+        void TrackPlayer.playWithReplacePlayList(
+            shuffledMusicList[0],
+            shuffledMusicList,
+        );
+    }
+
+    const getAlphabetIndexText = useCallback(
+        (musicItem: IMusic.IMusicItem) => {
+            if (sortMode === "artist") {
+                return musicItem.artist;
+            }
+            if (sortMode === "album") {
+                return musicItem.album;
+            }
+            if (sortMode === "folder") {
+                return LocalMusicSheet.getLocalMusicFolder(musicItem);
+            }
+            return musicItem.title;
+        },
+        [sortMode],
+    );
 
     function renderFilterChip(props: {
         key: string;
@@ -427,76 +554,71 @@ export default function LocalMusicList() {
         );
     }
 
-    function renderModeChips() {
-        const viewModeItems: Array<{
-            key: LocalMusicViewMode;
-            title: string;
-            count: number;
-            icon: IIconName;
-        }> = [
-            {
-                key: "songs",
-                title: t("localMusic.view.songs"),
-                count: visibleMusicList.length,
-                icon: "musical-note",
+    function showViewSelect() {
+        showPanel("SimpleSelect", {
+            header: t("common.view"),
+            candidates: viewModeItems.map(item => ({
+                title: `${item.title} ${item.count}`,
+                value: item.key,
+                icon: viewMode === item.key ? "check" : item.icon,
+            })),
+            onPress(item) {
+                selectViewMode(item.value as LocalMusicViewMode);
             },
-            {
-                key: "artists",
-                title: t("localMusic.view.artists"),
-                count: artistGroups.length,
-                icon: "user",
-            },
-            {
-                key: "albums",
-                title: t("localMusic.view.albums"),
-                count: albumGroups.length,
-                icon: "album-outline",
-            },
-            {
-                key: "folders",
-                title: t("localMusic.view.folders"),
-                count: folderGroups.length,
-                icon: "folder-outline",
-            },
-            {
-                key: "downloaded",
-                title: t("localMusic.view.downloaded"),
-                count: downloadedCount,
-                icon: "arrow-down-tray",
-            },
-            {
-                key: "missing",
-                title: t("localMusic.view.missing"),
-                count: fileStatusStats.missing,
-                icon: "exclamation-circle",
-            },
-        ];
+        });
+    }
 
-        if (hiddenMusicList.length || hiddenState.hiddenFolders.length) {
-            viewModeItems.push({
-                key: "hidden",
-                title: t("localMusic.view.hidden"),
-                count: hiddenMusicList.length + hiddenState.hiddenFolders.length,
-                icon: "archive-box-x-mark",
-            });
-        }
+    function renderLibraryToolbar() {
+        const canShuffle = !isGroupMode && playableSortedMusicList.length > 0;
+        const sortActive = sortMode !== "title";
 
         return (
-            <ScrollView
-                style={style.filterScroll}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={style.filterBar}>
-                {viewModeItems.map(item =>
-                    renderFilterChip({
-                        key: `view-${item.key}`,
-                        title: `${item.title} ${item.count}`,
-                        selected: viewMode === item.key,
-                        onPress: () => selectViewMode(item.key),
-                        icon: item.icon,
-                    }),
-                )}
-            </ScrollView>
+            <View style={style.libraryToolbar}>
+                <View style={style.libraryToolbarLeft}>
+                    <Pressable
+                        disabled={!canShuffle}
+                        accessibilityLabel={t("repeatMode.SHUFFLE")}
+                        style={style.toolbarIconButton}
+                        onPress={playShuffledList}>
+                        <Icon
+                            name="shuffle"
+                            size={rpx(34)}
+                            color={canShuffle ? colors.text : colors.textSecondary}
+                            opacity={canShuffle ? 1 : 0.35}
+                        />
+                    </Pressable>
+                    <ThemeText
+                        fontWeight="bold"
+                        style={style.libraryToolbarCount}
+                        numberOfLines={1}>
+                        {currentDisplayCount}
+                    </ThemeText>
+                </View>
+                <View style={style.libraryToolbarActions}>
+                    {!isGroupMode ? (
+                        <Pressable
+                            accessibilityLabel={sortTitle}
+                            style={style.toolbarIconButton}
+                            onPress={showSortSelect}>
+                            <Icon
+                                name="sort-outline"
+                                size={rpx(34)}
+                                color={sortActive ? colors.primary : colors.text}
+                            />
+                        </Pressable>
+                    ) : null}
+                    <Pressable
+                        accessibilityLabel={t("common.view")}
+                        style={style.toolbarIconButton}
+                        onPress={showViewSelect}>
+                        <Icon
+                            name="playlist"
+                            size={rpx(36)}
+                            color={colors.text}
+                        />
+                    </Pressable>
+                </View>
+            </View>
         );
     }
 
@@ -530,13 +652,6 @@ export default function LocalMusicList() {
                 icon: "folder-outline",
             }));
         }
-        chips.push(renderFilterChip({
-            key: "sort",
-            title: sortTitle,
-            selected: sortMode !== "default",
-            onPress: showSortSelect,
-            icon: "sort-outline",
-        }));
         if (hasActiveListControls) {
             chips.push(renderFilterChip({
                 key: "clear-filters",
@@ -545,6 +660,10 @@ export default function LocalMusicList() {
                 onPress: clearListControls,
                 icon: "x-mark",
             }));
+        }
+
+        if (!chips.length) {
+            return null;
         }
 
         return (
@@ -653,17 +772,12 @@ export default function LocalMusicList() {
         );
     }
 
-    const isGroupMode =
-        viewMode === "artists" ||
-        viewMode === "albums" ||
-        viewMode === "folders";
-
     return (
         <HorizontalSafeAreaView style={globalStyle.flex1}>
             <View style={globalStyle.flex1}>
-                {renderModeChips()}
+                {renderLibraryToolbar()}
                 {!isGroupMode ? renderListControls() : null}
-                {musicList.length ? (
+                {musicList.length && shouldShowListSummary ? (
                     <View style={style.summary}>
                         <ThemeText
                             fontSize="description"
@@ -673,8 +787,8 @@ export default function LocalMusicList() {
                                     ? viewMode === "artists"
                                         ? artistGroups.length
                                         : viewMode === "albums"
-                                          ? albumGroups.length
-                                          : folderGroups.length
+                                            ? albumGroups.length
+                                            : folderGroups.length
                                     : sortedMusicList.length,
                                 total: musicList.length,
                             })}
@@ -696,7 +810,12 @@ export default function LocalMusicList() {
                     <MusicList
                         Header={viewMode === "hidden" ? renderHiddenHeader : undefined}
                         musicList={sortedMusicList}
-                        showIndex
+                        showArtwork
+                        showQuality
+                        showAddNextIcon
+                        enableAlphabetIndex={viewMode === "songs"}
+                        alphabetIndexText={getAlphabetIndexText}
+                        highlightMusicItem={currentMusic}
                         state={RequestStateCode.IDLE}
                         musicSheet={{
                             id: localMusicSheetId,
@@ -712,6 +831,33 @@ export default function LocalMusicList() {
 }
 
 const style = StyleSheet.create({
+    libraryToolbar: {
+        flexGrow: 0,
+        height: rpx(88),
+        paddingHorizontal: rpx(24),
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+    libraryToolbarLeft: {
+        minWidth: 0,
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    libraryToolbarActions: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    toolbarIconButton: {
+        width: rpx(64),
+        height: rpx(64),
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    libraryToolbarCount: {
+        marginLeft: rpx(14),
+        minWidth: rpx(72),
+    },
     filterScroll: {
         flexGrow: 0,
         height: rpx(80),

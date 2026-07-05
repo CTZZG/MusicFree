@@ -6,7 +6,6 @@ import { RequestStateCode } from "@/constants/commonConst";
 import Config from "@/core/appConfig";
 import TrackPlayer from "@/core/trackPlayer";
 import useOrientation from "@/hooks/useOrientation";
-import rpx from "@/utils/rpx";
 import { FlashList } from "@shopify/flash-list";
 import { useAtomValue } from "jotai";
 import React, {
@@ -136,6 +135,7 @@ function ResultWrapper(props: IResultWrapperProps) {
                         loadMore();
                 }}
                 onItemPress={onMusicItemPress}
+                showArtwork
             />
         );
     }

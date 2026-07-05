@@ -19,7 +19,14 @@ import React, {
     useEffect,
     useMemo,
 } from "react";
-import { FlatListProps, Pressable, StyleSheet, View } from "react-native";
+import {
+    FlatListProps,
+    type GestureResponderEvent,
+    type LayoutChangeEvent,
+    Pressable,
+    StyleSheet,
+    View,
+} from "react-native";
 import CheckBox from "../base/checkbox";
 import ThemeText from "../base/themeText";
 import ListEmpty from "../base/listEmpty";
@@ -31,6 +38,11 @@ import { iconSizeConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
 import { IIconName } from "../base/icon.tsx";
 import { showPanel } from "../panels/usePanel";
+import {
+    buildMusicAlphabetIndex,
+    getMusicAlphabetEntryAtOffset,
+    type IMusicAlphabetIndexEntry,
+} from "@/utils/musicAlphabetIndex";
 
 interface IMusicListProps {
     /** 顶部 */
@@ -52,6 +64,12 @@ interface IMusicListProps {
     highlightMusicItem?: IMusic.IMusicItem | null;
     onRetry?: () => void;
     onLoadMore?: () => void;
+    showArtwork?: boolean;
+    showQuality?: boolean;
+    showDuration?: boolean;
+    showAddNextIcon?: boolean;
+    enableAlphabetIndex?: boolean;
+    alphabetIndexText?: (musicItem: IMusic.IMusicItem) => unknown;
 }
 /** 音乐列表 */
 export default function MusicList(props: IMusicListProps) {
@@ -65,71 +83,153 @@ export default function MusicList(props: IMusicListProps) {
         onRetry,
         onLoadMore,
         highlightMusicItem,
+        showArtwork,
+        showQuality,
+        showDuration,
+        showAddNextIcon,
+        enableAlphabetIndex,
+        alphabetIndexText,
     } = props;    
     const colors = useColors();
     const { t } = useI18N();
     const flashListRef = useRef<FlashListRef<IMusic.IMusicItem>>(null);
-    const [showBadge, setShowBadge] = useState(false);
+    const visibleIndicesRef = useRef<Set<number>>(new Set());
+    const hasViewableSnapshotRef = useRef(false);
+    const highlightIndexRef = useRef(-1);
+    const lastTouchedAlphabetSectionRef = useRef<string | null>(null);
+    const [highlightIsViewable, setHighlightIsViewable] = useState(true);
+    const [alphabetIndexHeight, setAlphabetIndexHeight] = useState(0);
     const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
         () => new Set(),
     );
     const [selectionAnchorIndex, setSelectionAnchorIndex] =
         useState<number | null>(null);
-    const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const selectionMode = selectedKeys.size > 0;
     const canRemoveSelected = !!musicSheet?.id;
+    const alphabetIndexEntries = useMemo(
+        () =>
+            enableAlphabetIndex
+                ? buildMusicAlphabetIndex(
+                    musicList ?? [],
+                    alphabetIndexText ?? (musicItem => musicItem.title),
+                )
+                : [],
+        [alphabetIndexText, enableAlphabetIndex, musicList],
+    );
+    const shouldShowAlphabetIndex =
+        !!enableAlphabetIndex &&
+        !selectionMode &&
+        (musicList?.length ?? 0) >= 20 &&
+        alphabetIndexEntries.some(item => item.available);
 
     // 查找高亮项的索引
     const highlightIndex = React.useMemo(() => {
         if (!highlightMusicItem || !musicList) return -1;
         return musicList.findIndex(item => isSameMediaItem(item, highlightMusicItem));
     }, [highlightMusicItem, musicList]);    
-    
-    // 处理滚动开始
-    const handleScrollBegin = useCallback(() => {
-        if (highlightIndex !== -1) {
-            if (hideTimeoutRef.current) {
-                clearTimeout(hideTimeoutRef.current);
-            }
-            setShowBadge(true);
-        }
-    }, [highlightIndex]);
-    
-    // 处理滚动结束
-    const handleScrollEnd = useCallback(() => {
-        if (hideTimeoutRef.current) {
-            clearTimeout(hideTimeoutRef.current);
-        }
-        // 5秒后直接隐藏
-        hideTimeoutRef.current = setTimeout(() => {
-            setShowBadge(false);
-        }, 5000);
-    }, []);    
+
+    highlightIndexRef.current = highlightIndex;
+
+    const syncHighlightVisibility = useCallback((indices?: Set<number>) => {
+        const currentHighlightIndex = highlightIndexRef.current;
+        const currentVisibleIndices = indices ?? visibleIndicesRef.current;
+        const nextIsViewable =
+            currentHighlightIndex === -1 ||
+            !hasViewableSnapshotRef.current ||
+            currentVisibleIndices.has(currentHighlightIndex);
+
+        setHighlightIsViewable(prev =>
+            prev === nextIsViewable ? prev : nextIsViewable,
+        );
+    }, []);
+
+    const handleViewableItemsChanged = useCallback(
+        (info: { viewableItems: Array<{ index: number | null }> }) => {
+            const nextVisibleIndices = new Set<number>();
+            info.viewableItems.forEach(item => {
+                if (typeof item.index === "number") {
+                    nextVisibleIndices.add(item.index);
+                }
+            });
+            visibleIndicesRef.current = nextVisibleIndices;
+            hasViewableSnapshotRef.current = true;
+            syncHighlightVisibility(nextVisibleIndices);
+        },
+        [syncHighlightVisibility],
+    );
+
+    const viewabilityConfig = useMemo(
+        () => ({
+            itemVisiblePercentThreshold: 1,
+        }),
+        [],
+    );
     
     // 滚动到高亮项
     const scrollToHighlight = useCallback(() => {
         if (highlightIndex !== -1 && flashListRef.current) {
             flashListRef.current.scrollToIndex({
                 index: highlightIndex,
-                animated: false,
-                viewPosition: 0,
+                animated: true,
+                viewPosition: 0.35,
             });
-            // 立即隐藏角标
-            setShowBadge(false);
-            if (hideTimeoutRef.current) {
-                clearTimeout(hideTimeoutRef.current);
-            }
         }
     }, [highlightIndex]);    
-    
-    // 清理定时器
-    useEffect(() => {
-        return () => {
-            if (hideTimeoutRef.current) {
-                clearTimeout(hideTimeoutRef.current);
+
+    const scrollToAlphabetSection = useCallback(
+        (entry: IMusicAlphabetIndexEntry) => {
+            if (entry.index === null || !flashListRef.current) {
+                return;
             }
-        };
-    }, []);    
+
+            void flashListRef.current.scrollToIndex({
+                index: entry.index,
+                animated: true,
+                viewPosition: 0,
+            });
+        },
+        [],
+    );
+
+    const scrollToAlphabetOffset = useCallback(
+        (offsetY: number) => {
+            const entry = getMusicAlphabetEntryAtOffset(
+                alphabetIndexEntries,
+                offsetY,
+                alphabetIndexHeight,
+            );
+
+            if (!entry?.available || entry.index === null) {
+                return;
+            }
+            if (lastTouchedAlphabetSectionRef.current === entry.section) {
+                return;
+            }
+
+            lastTouchedAlphabetSectionRef.current = entry.section;
+            scrollToAlphabetSection(entry);
+        },
+        [alphabetIndexEntries, alphabetIndexHeight, scrollToAlphabetSection],
+    );
+
+    const handleAlphabetIndexLayout = useCallback((event: LayoutChangeEvent) => {
+        setAlphabetIndexHeight(event.nativeEvent.layout.height);
+    }, []);
+
+    const handleAlphabetIndexTouch = useCallback(
+        (event: GestureResponderEvent) => {
+            scrollToAlphabetOffset(event.nativeEvent.locationY);
+        },
+        [scrollToAlphabetOffset],
+    );
+
+    const resetAlphabetTouch = useCallback(() => {
+        lastTouchedAlphabetSectionRef.current = null;
+    }, []);
+    
+    useEffect(() => {
+        syncHighlightVisibility();
+    }, [highlightIndex, musicList?.length, syncHighlightVisibility]);
 
     useEffect(() => {
         if (!musicList?.length) {
@@ -169,6 +269,8 @@ export default function MusicList(props: IMusicListProps) {
     );
 
     const selectedCount = selectedItems.length;
+    const shouldShowLocateBadge =
+        !selectionMode && highlightIndex !== -1 && !highlightIsViewable;
 
     const clearSelection = useCallback(() => {
         setSelectedKeys(new Set());
@@ -283,6 +385,13 @@ export default function MusicList(props: IMusicListProps) {
                     selected={selectedKeys.has(getMediaUniqueKey(musicItem))}
                     highlight={isSameMediaItem(musicItem, highlightMusicItem)}
                     musicSheet={musicSheet}
+                    itemPaddingRight={
+                        shouldShowAlphabetIndex ? rpx(58) : undefined
+                    }
+                    showArtwork={showArtwork}
+                    showQuality={showQuality}
+                    showDuration={showDuration}
+                    showAddNextIcon={showAddNextIcon}
                     onPress={handleItemPress}
                     onLongPress={handleItemLongPress}
                 />
@@ -294,6 +403,11 @@ export default function MusicList(props: IMusicListProps) {
             selectedKeys,
             highlightMusicItem,
             musicSheet,
+            shouldShowAlphabetIndex,
+            showArtwork,
+            showQuality,
+            showDuration,
+            showAddNextIcon,
             handleItemPress,
             handleItemLongPress,
         ],
@@ -394,9 +508,8 @@ export default function MusicList(props: IMusicListProps) {
                 }}
                 data={musicList ?? []}
                 keyExtractor={keyExtractor}
-                onScrollBeginDrag={handleScrollBegin}
-                onScrollEndDrag={handleScrollEnd}
-                onMomentumScrollEnd={handleScrollEnd}
+                viewabilityConfig={viewabilityConfig}
+                onViewableItemsChanged={handleViewableItemsChanged}
                 renderItem={renderItem}
                 onEndReached={() => {
                     if (state === RequestStateCode.IDLE || state === RequestStateCode.PARTLY_DONE) {
@@ -405,7 +518,7 @@ export default function MusicList(props: IMusicListProps) {
                 }}
                 onEndReachedThreshold={0.1}
             />              
-            {showBadge && (
+            {shouldShowLocateBadge && (
                 <View style={styles.badge} pointerEvents="box-none">
                     <Pressable
                         style={[styles.badgeButton, { backgroundColor: colors.notification }]}
@@ -419,6 +532,38 @@ export default function MusicList(props: IMusicListProps) {
                     </Pressable>
                 </View>
             )}
+            {shouldShowAlphabetIndex ? (
+                <View
+                    style={styles.alphabetIndex}
+                    onLayout={handleAlphabetIndexLayout}
+                    onStartShouldSetResponder={() => true}
+                    onMoveShouldSetResponder={() => true}
+                    onResponderGrant={handleAlphabetIndexTouch}
+                    onResponderMove={handleAlphabetIndexTouch}
+                    onResponderRelease={resetAlphabetTouch}
+                    onResponderTerminate={resetAlphabetTouch}>
+                    {alphabetIndexEntries.map(entry => (
+                        <View
+                            key={entry.section}
+                            style={styles.alphabetIndexItem}>
+                            <ThemeText
+                                fontSize="tag"
+                                fontWeight="semibold"
+                                style={[
+                                    styles.alphabetIndexText,
+                                    {
+                                        color: entry.available
+                                            ? colors.text
+                                            : colors.textSecondary,
+                                        opacity: entry.available ? 0.9 : 0.35,
+                                    },
+                                ]}>
+                                {entry.section}
+                            </ThemeText>
+                        </View>
+                    ))}
+                </View>
+            ) : null}
             {selectionMode ? (
                 <View
                     style={[
@@ -502,6 +647,11 @@ interface IMusicListItemProps {
     selected: boolean;
     highlight: boolean;
     musicSheet?: IMusic.IMusicSheetItem;
+    itemPaddingRight?: number;
+    showArtwork?: boolean;
+    showQuality?: boolean;
+    showDuration?: boolean;
+    showAddNextIcon?: boolean;
     onPress: (index: number, musicItem: IMusic.IMusicItem) => void;
     onLongPress: (index: number, musicItem: IMusic.IMusicItem) => void;
 }
@@ -519,6 +669,11 @@ function MusicListItemImpl(props: IMusicListItemProps) {
         selected,
         highlight,
         musicSheet,
+        itemPaddingRight,
+        showArtwork,
+        showQuality,
+        showDuration,
+        showAddNextIcon,
         onPress,
         onLongPress,
     } = props;
@@ -545,13 +700,18 @@ function MusicListItemImpl(props: IMusicListItemProps) {
     return (
         <MusicItem
             musicItem={musicItem}
-            index={displayIndex}
+            index={showArtwork ? undefined : displayIndex}
             onItemPress={handlePress}
             onItemLongPress={handleLongPress}
             left={left}
+            itemPaddingRight={itemPaddingRight}
             showMoreIcon={!selectionMode}
             musicSheet={musicSheet}
             highlight={highlight}
+            showArtwork={showArtwork}
+            showQuality={showQuality}
+            showDuration={showDuration}
+            showAddNextIcon={showAddNextIcon && !selectionMode}
         />
     );
 }
@@ -615,6 +775,26 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.25,
         shadowRadius: 3.84,
         elevation: 5,
+    },
+    alphabetIndex: {
+        position: "absolute",
+        top: rpx(18),
+        right: rpx(6),
+        bottom: rpx(108),
+        width: rpx(42),
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: 999,
+    },
+    alphabetIndexItem: {
+        width: rpx(42),
+        minHeight: rpx(24),
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    alphabetIndexText: {
+        includeFontPadding: false,
+        textAlign: "center",
     },
     checkBoxWrapper: {
         height: "100%",

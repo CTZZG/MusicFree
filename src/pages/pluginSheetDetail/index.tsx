@@ -21,6 +21,7 @@ export default function PluginSheetDetail() {
             state={requestState}
             onRetry={getSheetDetail}
             onLoadMore={getSheetDetail}
+            showArtwork
         />
     );
 }

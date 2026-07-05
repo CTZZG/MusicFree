@@ -19,6 +19,7 @@ export default function AlbumDetail() {
             onRetry={getAlbumDetail}
             onLoadMore={getAlbumDetail}
             musicList={musicList}
+            showArtwork
         />
     );
 }

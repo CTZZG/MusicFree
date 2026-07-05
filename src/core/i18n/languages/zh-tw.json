@@ -108,6 +108,7 @@
     "toast.addToNextPlay": "已添加到下一首播放",
     "toast.beginDownload": "開始下載，全部下載完成之前請不要關閉應用",
     "toast.rememberToSave": "記得儲存哦~",
+    "localMusic.title": "歌曲",
     "localMusic.scanLocalMusic": "掃描本地音樂",
     "localMusic.beginScan": "開始掃描",
     "localMusic.downloadList": "下載列表",

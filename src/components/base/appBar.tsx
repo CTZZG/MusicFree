@@ -41,6 +41,8 @@ interface IAppBarProps {
         show?: boolean;
         onPress?: () => void;
     }>;
+    menuIcon?: IIconName;
+    menuPosition?: "left" | "right";
     menuWithStatusBar?: boolean;
     children?: string | ReactNode;
     containerStyle?: StyleProp<ViewStyle>;
@@ -64,6 +66,8 @@ export default function AppBar(props: IAppBarProps) {
         color: _color,
         actions = [],
         menu = [],
+        menuIcon = "ellipsis-vertical",
+        menuPosition = "right",
         menuWithStatusBar = true,
         containerStyle,
         contentStyle,
@@ -82,6 +86,9 @@ export default function AppBar(props: IAppBarProps) {
     const [menuIconLayout, setMenuIconLayout] =
         useState<LayoutRectangle | null>(null);
     const scaleRate = useSharedValue(0);
+
+    const hasMenu = menu?.length > 0;
+    const menuOnLeft = hasMenu && menuPosition === "left";
 
     useEffect(() => {
         if (showMenu) {
@@ -106,18 +113,33 @@ export default function AppBar(props: IAppBarProps) {
                     containerStyle,
                     { backgroundColor: bgColor },
                 ]}>
-                <IconButton
-                    name="arrow-left"
-                    sizeType="normal"
-                    color={contentColor}
-                    style={globalStyle.noShrinkNoGrow}
-                    onPress={
-                        onBackPress ||
-                        (() => {
-                            navigation.goBack();
-                        })
-                    }
-                />
+                {menuOnLeft ? (
+                    <IconButton
+                        name={menuIcon}
+                        sizeType="normal"
+                        onLayout={evt => {
+                            setMenuIconLayout(evt.nativeEvent.layout);
+                        }}
+                        color={contentColor}
+                        style={globalStyle.noShrinkNoGrow}
+                        onPress={() => {
+                            setShowMenu(true);
+                        }}
+                    />
+                ) : (
+                    <IconButton
+                        name="arrow-left"
+                        sizeType="normal"
+                        color={contentColor}
+                        style={globalStyle.noShrinkNoGrow}
+                        onPress={
+                            onBackPress ||
+                            (() => {
+                                navigation.goBack();
+                            })
+                        }
+                    />
+                )}
                 <View style={[globalStyle.grow, styles.content, contentStyle]}>
                     {typeof children === "string" ? (
                         <ThemeText
@@ -148,9 +170,9 @@ export default function AppBar(props: IAppBarProps) {
                     />
                 ))}
                 {actionComponent ?? null}
-                {menu?.length ? (
+                {hasMenu && !menuOnLeft ? (
                     <IconButton
-                        name="ellipsis-vertical"
+                        name={menuIcon}
                         sizeType="normal"
                         onLayout={evt => {
                             setMenuIconLayout(evt.nativeEvent.layout);
@@ -198,7 +220,8 @@ export default function AppBar(props: IAppBarProps) {
                         style={[
                             {
                                 backgroundColor: colors.background,
-                                right: rpx(24),
+                                left: menuOnLeft ? rpx(24) : undefined,
+                                right: menuOnLeft ? undefined : rpx(24),
                                 top:
                                     (menuIconLayout?.y ?? 0) +
                                     (menuIconLayout?.height ?? 0) +

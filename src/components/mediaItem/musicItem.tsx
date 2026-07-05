@@ -20,6 +20,7 @@ import DownloadStatusIndicator from "@/components/downloadStatusIndicator";
 import { useI18N } from "@/core/i18n";
 import Toast from "@/utils/toast";
 import { useMediaExtraProperty } from "@/utils/mediaExtra";
+import useColors from "@/hooks/useColors";
 
 type DownloadWriteStatus = "success" | "failed" | "skipped";
 
@@ -37,6 +38,7 @@ interface IMusicItemProps {
     showArtwork?: boolean;
     showQuality?: boolean;
     showDuration?: boolean;
+    showAddNextIcon?: boolean;
 }
 
 function getMusicItemQualityBadge(musicItem: IMusic.IMusicItem) {
@@ -85,7 +87,9 @@ function MusicItem(props: IMusicItemProps) {
         showArtwork = false,
         showQuality = false,
         showDuration = false,
+        showAddNextIcon = false,
     } = props;
+    const colors = useColors();
     const qualityBadge = useMemo(
         () => showQuality ? getMusicItemQualityBadge(musicItem) : "",
         [musicItem, showQuality],
@@ -115,8 +119,8 @@ function MusicItem(props: IMusicItemProps) {
                     downloadMetadataStatus === "success"
                         ? t("localMusic.metadataStatus.success")
                         : downloadMetadataStatus === "failed"
-                          ? t("localMusic.metadataStatus.failed")
-                          : t("localMusic.metadataStatus.skipped"),
+                            ? t("localMusic.metadataStatus.failed")
+                            : t("localMusic.metadataStatus.skipped"),
                 status: downloadMetadataStatus,
             });
         }
@@ -212,8 +216,8 @@ function MusicItem(props: IMusicItemProps) {
                                         badge.status === "success"
                                             ? styles.writeBadgeSuccess
                                             : badge.status === "failed"
-                                              ? styles.writeBadgeFailed
-                                              : styles.writeBadgeSkipped,
+                                                ? styles.writeBadgeFailed
+                                                : styles.writeBadgeSkipped,
                                     ]}>
                                     <ThemeText
                                         fontSize="tag"
@@ -222,8 +226,8 @@ function MusicItem(props: IMusicItemProps) {
                                             badge.status === "success"
                                                 ? styles.writeBadgeTextSuccess
                                                 : badge.status === "failed"
-                                                  ? styles.writeBadgeTextFailed
-                                                  : styles.writeBadgeTextSkipped,
+                                                    ? styles.writeBadgeTextFailed
+                                                    : styles.writeBadgeTextSkipped,
                                         ]}>
                                         {badge.text}
                                     </ThemeText>
@@ -259,6 +263,31 @@ function MusicItem(props: IMusicItemProps) {
                 </ListItem.ListItemText>
             ) : null}
             <DownloadStatusIndicator musicItem={musicItem} />
+            {showAddNextIcon ? (
+                <ListItem.ListItemIcon
+                    width={rpx(48)}
+                    hitSlop={{
+                        left: rpx(18),
+                        right: rpx(18),
+                    }}
+                    position="none"
+                    icon="plus"
+                    iconSize={rpx(24)}
+                    color={colors.text}
+                    containerStyle={[
+                        styles.addNextIconContainer,
+                        { backgroundColor: colors.placeholder },
+                    ]}
+                    onPress={() => {
+                        if (localMusicItem && localFileExists === false) {
+                            Toast.warn(t("localMusic.fileMissingTapHint"));
+                            return;
+                        }
+                        TrackPlayer.addNext(musicItem);
+                        Toast.success(t("toast.addToNextPlay"));
+                    }}
+                />
+            ) : null}
             {showMoreIcon ? (
                 <ListItem.ListItemIcon
                     width={rpx(48)}
@@ -354,6 +383,12 @@ const styles = StyleSheet.create({
     },
     durationText: {
         textAlign: "right",
+    },
+    addNextIconContainer: {
+        width: rpx(34),
+        height: rpx(34),
+        borderRadius: rpx(17),
+        marginRight: rpx(16),
     },
 
     indexText: {

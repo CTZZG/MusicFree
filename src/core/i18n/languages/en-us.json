@@ -108,6 +108,7 @@
     "toast.addToNextPlay": "Added to play next",
     "toast.beginDownload": "Download started, please don't close the app until all downloads complete",
     "toast.rememberToSave": "Remember to save~",
+    "localMusic.title": "Songs",
     "localMusic.scanLocalMusic": "Scan Local Music",
     "localMusic.beginScan": "Start Scan",
     "localMusic.downloadList": "Download List",

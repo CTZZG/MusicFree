@@ -18,6 +18,7 @@ interface IMusicSheetPageProps {
     state: RequestStateCode;
     onRetry?: () => void;
     onLoadMore?: () => void;
+    showArtwork?: boolean;
     navMenu?: Array<{
         icon: IIconName;
         title: string;
@@ -27,8 +28,17 @@ interface IMusicSheetPageProps {
 }
 
 export default function MusicSheetPage(props: IMusicSheetPageProps) {
-    const { navTitle, sheetInfo, musicList, canStar, onLoadMore, onRetry, state, navMenu } =
-        props;
+    const {
+        navTitle,
+        sheetInfo,
+        musicList,
+        canStar,
+        onLoadMore,
+        onRetry,
+        state,
+        showArtwork,
+        navMenu,
+    } = props;
 
     return (
         <VerticalSafeAreaView style={globalStyle.fwflex1}>
@@ -45,6 +55,7 @@ export default function MusicSheetPage(props: IMusicSheetPageProps) {
                 state={state}
                 onRetry={onRetry}
                 onLoadMore={onLoadMore}
+                showArtwork={showArtwork}
             />
             <MusicBar />
         </VerticalSafeAreaView>

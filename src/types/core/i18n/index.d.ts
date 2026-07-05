@@ -132,6 +132,7 @@ export interface ILanguageData {
     "toast.rememberToSave": string; // 请记得保存
 
     // 本地音乐相关
+    "localMusic.title": string; // 本地歌曲页标题
     "localMusic.scanLocalMusic": string; // 扫描本地音乐
     "localMusic.beginScan": string; // 开始扫描
     "localMusic.downloadList": string; // 下载列表
