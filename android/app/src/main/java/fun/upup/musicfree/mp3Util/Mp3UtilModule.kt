@@ -5,19 +5,33 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.facebook.react.bridge.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
     override fun getName() = "Mp3Util"
+
+    private val maxCoverBytes = 20 * 1024 * 1024
+    private val metadataExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "MusicFree-Metadata").apply { isDaemon = true }
+    }
+    private val coverHttpClient = OkHttpClient.Builder()
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(12, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
+        .build()
 
     private fun isContentUri(uri: Uri?): Boolean {
         return uri?.scheme?.equals("content", ignoreCase = true) == true
@@ -64,28 +78,35 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     private fun downloadImageBytes(imageUrl: String): ByteArray? {
         return try {
-            val url = URL(imageUrl)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 10000
-            connection.readTimeout = 15000
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
-
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                connection.inputStream.use { inputStream ->
-                    val buffer = ByteArrayOutputStream()
-                    val data = ByteArray(4096)
-                    var bytesRead: Int
-                    while (inputStream.read(data).also { bytesRead = it } != -1) {
-                        buffer.write(data, 0, bytesRead)
-                    }
-                    buffer.toByteArray()
+            val request = Request.Builder()
+                .url(imageUrl)
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36",
+                )
+                .header("Accept", "image/jpeg,image/png,image/webp,image/*;q=0.8,*/*;q=0.1")
+                .build()
+            coverHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    android.util.Log.w("Mp3UtilModule", "Cover request failed: HTTP ${response.code}")
+                    return@use null
                 }
-            } else {
-                null
+                val body = response.body ?: return@use null
+                val contentLength = body.contentLength()
+                if (contentLength > maxCoverBytes) {
+                    android.util.Log.w("Mp3UtilModule", "Cover is too large: $contentLength bytes")
+                    return@use null
+                }
+                val bytes = body.bytes()
+                if (bytes.isEmpty() || bytes.size > maxCoverBytes) {
+                    android.util.Log.w("Mp3UtilModule", "Invalid cover size: ${bytes.size} bytes")
+                    null
+                } else {
+                    bytes
+                }
             }
         } catch (e: Exception) {
-            android.util.Log.w("Mp3UtilModule", "Failed to download image: ${e.message}")
+            android.util.Log.w("Mp3UtilModule", "Failed to download image: ${e.message}", e)
             null
         }
     }
@@ -164,7 +185,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
     }
 
     private fun readCoverBytes(coverPath: String): ByteArray? {
-        return when {
+        val bytes = when {
             coverPath.startsWith("/") || coverPath.startsWith("file://") -> {
                 val coverFile = File(
                     if (coverPath.startsWith("file://")) {
@@ -180,6 +201,11 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             }
             else -> null
         }
+        if (bytes != null && bytes.size > maxCoverBytes) {
+            android.util.Log.w("Mp3UtilModule", "Cover image exceeds size limit: ${bytes.size} bytes")
+            return null
+        }
+        return bytes
     }
 
     private data class ImageInfo(
@@ -219,6 +245,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             when (fileExtension) {
                 "mp3" -> setCoverForMp3(tag, coverBytes, mimeType)
                 "flac" -> setCoverForFlac(tag, coverBytes, mimeType)
+                "m4a", "mp4" -> setCoverForMp4(tag, coverBytes, mimeType)
                 else -> false
             }
         } catch (e: Exception) {
@@ -322,6 +349,39 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
         }
     }
 
+    private fun setCoverForMp4(tag: org.jaudiotagger.tag.Tag, coverBytes: ByteArray, mimeType: String): Boolean {
+        return try {
+            if (tag !is org.jaudiotagger.tag.mp4.Mp4Tag) {
+                android.util.Log.w("Mp3UtilModule", "Unsupported MP4 tag type: ${tag.javaClass.simpleName}")
+                return false
+            }
+
+            val mp4CoverBytes = if (mimeType !in setOf("image/jpeg", "image/png", "image/gif")) {
+                val bitmap = BitmapFactory.decodeByteArray(coverBytes, 0, coverBytes.size)
+                    ?: throw IllegalArgumentException("Unable to decode cover image ($mimeType)")
+                try {
+                    ByteArrayOutputStream().use { output ->
+                        if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                            throw IllegalStateException("Unable to convert cover to PNG")
+                        }
+                        output.toByteArray()
+                    }
+                } finally {
+                    bitmap.recycle()
+                }
+            } else {
+                coverBytes
+            }
+
+            tag.deleteField(org.jaudiotagger.tag.mp4.Mp4FieldKey.ARTWORK)
+            tag.setField(tag.createArtworkField(mp4CoverBytes))
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("Mp3UtilModule", "Failed to set MP4/M4A cover: ${e.message}", e)
+            false
+        }
+    }
+
     private fun detectImageMimeTypeByBytes(imageBytes: ByteArray): String {
         return when {
             imageBytes.size >= 3 &&
@@ -347,7 +407,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                 imageBytes[9] == 0x45.toByte() &&
                 imageBytes[10] == 0x42.toByte() &&
                 imageBytes[11] == 0x50.toByte() -> "image/webp"
-            else -> "image/jpeg"
+            else -> "application/octet-stream"
         }
     }
 
@@ -411,42 +471,77 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     @ReactMethod
     fun getMediaCoverImg(filePath: String, promise: Promise) {
+        if (!shouldUseMediaMetadataRetriever(filePath)) {
+            promise.resolve(null)
+            return
+        }
+
+        var mmr: MediaMetadataRetriever? = null
         try {
-            val file = File(filePath)
-            if (!file.exists()) {
+            val uri = Uri.parse(filePath)
+            val isContentUri = isContentUri(uri)
+            val localPath = if (uri.scheme?.equals("file", ignoreCase = true) == true) {
+                uri.path ?: filePath
+            } else {
+                filePath
+            }
+            if (!isContentUri && !File(localPath).exists()) {
                 promise.reject("File not exist", "File not exist")
                 return
             }
 
-            val pathHashCode = file.hashCode()
+            val pathHashCode = filePath.hashCode()
             if (pathHashCode == 0) {
                 promise.resolve(null)
                 return
             }
 
             val cacheDir = reactContext.cacheDir
-            val coverFile = File(cacheDir, "image_manager_disk_cache/$pathHashCode.jpg")
+            val coverCacheDir = File(cacheDir, "image_manager_disk_cache")
+            if (!coverCacheDir.exists() && !coverCacheDir.mkdirs()) {
+                promise.reject("Error", "Failed to create cover cache directory")
+                return
+            }
+            val coverFile = File(coverCacheDir, "$pathHashCode.jpg")
             if (coverFile.exists()) {
                 promise.resolve(coverFile.toURI().toString())
                 return
             }
 
-            val mmr = MediaMetadataRetriever()
-            mmr.setDataSource(filePath)
+            mmr = MediaMetadataRetriever()
+            if (isContentUri) {
+                mmr.setDataSource(reactApplicationContext, uri)
+            } else {
+                mmr.setDataSource(localPath)
+            }
             val coverImg = mmr.embeddedPicture
             if (coverImg != null) {
                 val bitmap = BitmapFactory.decodeByteArray(coverImg, 0, coverImg.size)
+                if (bitmap == null) {
+                    promise.resolve(null)
+                    return
+                }
                 FileOutputStream(coverFile).use { outputStream ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
-                    outputStream.flush()
+                    try {
+                        check(bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)) {
+                            "Failed to compress cover bitmap"
+                        }
+                        outputStream.flush()
+                    } finally {
+                        bitmap.recycle()
+                    }
                 }
                 promise.resolve(coverFile.toURI().toString())
             } else {
                 promise.resolve(null)
             }
-            mmr.release()
         } catch (ignored: Exception) {
             promise.reject("Error", "Got error")
+        } finally {
+            try {
+                mmr?.release()
+            } catch (ignored: Exception) {
+            }
         }
     }
 
@@ -469,6 +564,13 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     @ReactMethod
     fun setMediaTag(filePath: String, meta: ReadableMap, promise: Promise) {
+        val metaCopy = Arguments.makeNativeMap(meta.toHashMap())
+        metadataExecutor.execute {
+            setMediaTagInternal(filePath, metaCopy, promise)
+        }
+    }
+
+    private fun setMediaTagInternal(filePath: String, meta: ReadableMap, promise: Promise) {
         try {
             val file = File(filePath)
             if (file.exists()) {
@@ -536,6 +638,12 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     @ReactMethod
     fun setMediaCover(filePath: String, coverPath: String, promise: Promise) {
+        metadataExecutor.execute {
+            setMediaCoverInternal(filePath, coverPath, promise)
+        }
+    }
+
+    private fun setMediaCoverInternal(filePath: String, coverPath: String, promise: Promise) {
         try {
             val file = File(filePath)
             if (!file.exists()) {
@@ -580,6 +688,18 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     @ReactMethod
     fun setMediaTagWithCover(filePath: String, meta: ReadableMap, coverPath: String?, promise: Promise) {
+        val metaCopy = Arguments.makeNativeMap(meta.toHashMap())
+        metadataExecutor.execute {
+            setMediaTagWithCoverInternal(filePath, metaCopy, coverPath, promise)
+        }
+    }
+
+    private fun setMediaTagWithCoverInternal(
+        filePath: String,
+        meta: ReadableMap,
+        coverPath: String?,
+        promise: Promise,
+    ) {
         try {
             val file = File(filePath)
             if (!file.exists()) {
@@ -596,6 +716,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
             applyMediaTagFields(tag, meta)
 
+            var shouldVerifyMp4Cover = false
             if (!coverPath.isNullOrEmpty()) {
                 val coverBytes = readCoverBytes(coverPath)
                 if (coverBytes != null && coverBytes.isNotEmpty()) {
@@ -609,14 +730,31 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                     }
 
                     tag.deleteArtworkField()
-                    setCoverArtImageIOFree(tag, coverBytes, file.extension.lowercase())
+                    val extension = file.extension.lowercase()
+                    if (!setCoverArtImageIOFree(tag, coverBytes, extension)) {
+                        throw IllegalStateException("Failed to set cover art for this file format")
+                    }
+                    shouldVerifyMp4Cover = extension == "m4a" || extension == "mp4"
                 }
             }
 
             audioFile.commit()
+            if (shouldVerifyMp4Cover) {
+                val writtenTag = AudioFileIO.read(file).tag
+                    ?: throw IllegalStateException("M4A/MP4 tag verification failed")
+                check(writtenTag.artworkList.isNotEmpty()) {
+                    "M4A/MP4 cover verification failed"
+                }
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("Error", e.message)
         }
+    }
+
+    override fun invalidate() {
+        metadataExecutor.shutdownNow()
+        coverHttpClient.dispatcher.cancelAll()
+        super.invalidate()
     }
 }

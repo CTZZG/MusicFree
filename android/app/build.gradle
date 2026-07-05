@@ -137,6 +137,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersionCode
         versionName appVersion
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17"
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -161,6 +166,19 @@ android {
                 universalApk true
                 include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
             }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file("src/main/cpp/CMakeLists.txt")
+            version "3.22.1"
+        }
     }
 
 
@@ -198,6 +216,7 @@ dependencies {
     implementation 'net.jthink:jaudiotagger:2.2.5'
     implementation 'androidx.core:core-splashscreen:1.0.0'
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
     if (enableMusicFreeNitroFfmpeg) {
         implementation files("libs/musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar")
     }

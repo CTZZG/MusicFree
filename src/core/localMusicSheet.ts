@@ -17,7 +17,12 @@ import {
     isSameMediaItem,
 } from "@/utils/mediaUtils";
 import { patchMediaExtra } from "@/utils/mediaExtra";
+import {
+    findLocalMusicItem,
+    resolveLocalFileCheckItem,
+} from "@/utils/localMusicStatus";
 import { trace } from "@/utils/log";
+import { getLowerFileExtension } from "@/utils/mediaPath";
 import StateMapper from "@/utils/stateMapper";
 import { getStorage, setStorage } from "@/utils/storage";
 import CryptoJs from "crypto-js";
@@ -453,18 +458,6 @@ const metadataUnsafeExtensions = new Set([
     ".wma",
 ]);
 
-function getLowerFileExtension(filePath: string) {
-    const pathWithoutQuery = filePath.split("?")[0];
-    const slashIndex = Math.max(
-        pathWithoutQuery.lastIndexOf("/"),
-        pathWithoutQuery.lastIndexOf("\\"),
-    );
-    const dotIndex = pathWithoutQuery.lastIndexOf(".");
-    return dotIndex > slashIndex
-        ? pathWithoutQuery.slice(dotIndex).toLowerCase()
-        : "";
-}
-
 function shouldReadSystemMetadata(filePath: string) {
     return !metadataUnsafeExtensions.has(getLowerFileExtension(filePath));
 }
@@ -849,23 +842,20 @@ async function importLocal(_folderPaths: string[]) {
 function isLocalMusic(
     musicItem: ICommon.IMediaBase | null,
 ): IMusic.IMusicItem | undefined {
-    return musicItem
-        ? localSheet.find(_ => isSameMediaItem(_, musicItem))
-        : undefined;
+    return findLocalMusicItem(localSheet, musicItem);
+}
+
+function useLocalMusic(musicItem: IMusic.IMusicItem | null) {
+    const localMusicState = localSheetStateMapper.useMappedState();
+    return useMemo(
+        () => findLocalMusicItem(localMusicState, musicItem),
+        [localMusicState, musicItem],
+    );
 }
 
 /** 状态-是否为本地音乐 */
 function useIsLocal(musicItem: IMusic.IMusicItem | null) {
-    const localMusicState = localSheetStateMapper.useMappedState();
-    const [isLocal, setIsLocal] = useState<boolean>(!!isLocalMusic(musicItem));
-    useEffect(() => {
-        if (!musicItem) {
-            setIsLocal(false);
-        } else {
-            setIsLocal(!!isLocalMusic(musicItem));
-        }
-    }, [localMusicState, musicItem]);
-    return isLocal;
+    return !!useLocalMusic(musicItem);
 }
 
 function useLocalFileExists(musicItem: IMusic.IMusicItem | null) {
@@ -879,7 +869,11 @@ function useLocalFileExists(musicItem: IMusic.IMusicItem | null) {
                 setFileExists(null);
                 return;
             }
-            const localPath = getLocalPath(musicItem);
+            const fileCheckItem = resolveLocalFileCheckItem(
+                localMusicState,
+                musicItem,
+            );
+            const localPath = fileCheckItem ? getLocalPath(fileCheckItem) : null;
             if (!localPath) {
                 setFileExists(null);
                 return;
@@ -1071,6 +1065,7 @@ const LocalMusicSheet = {
     isSupportedLocalMediaFile,
     isHiddenMusic,
     getLocalMusicFolder,
+    useLocalMusic,
     useIsLocal,
     useIsHidden,
     useHiddenState,

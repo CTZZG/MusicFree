@@ -3,6 +3,11 @@ import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse } from "@/utils/jsonUtil";
 import { getMediaUniqueKey } from "@/utils/mediaUtils";
 import { exists, unlink } from "react-native-fs";
+import {
+    buildMediaCacheEntries,
+    getUniqueMediaCacheKeys,
+    normalizeMediaCacheItem,
+} from "./mediaCacheListPolicy";
 
 // Internal Method
 const mediaCacheStore = getOrCreateMMKV("cache.MediaCache", true);
@@ -17,7 +22,7 @@ const getMediaCache = (mediaItem: ICommon.IMediaBase) => {
             getMediaUniqueKey(mediaItem),
         );
         return cacheMediaItem
-            ? safeParse<ICommon.IMediaBase>(cacheMediaItem)
+            ? normalizeMediaCacheItem(safeParse(cacheMediaItem))
             : null;
     }
 
@@ -64,7 +69,7 @@ async function checkPathAndRemove(filePath?: string) {
     }
     filePath = addFileScheme(filePath);
     if (await exists(filePath)) {
-        unlink(filePath);
+        await unlink(filePath);
     }
 }
 
@@ -72,10 +77,34 @@ async function checkPathAndRemove(filePath?: string) {
 const removeMediaCache = (mediaItem: ICommon.IMediaBase) => {
     if (mediaItem.platform && mediaItem.id) {
         mediaCacheStore.delete(getMediaUniqueKey(mediaItem));
+        return true;
     }
 
     return false;
 };
+
+const removeMediaCacheEntry = async (key: string) => {
+    const rawCacheMedia = mediaCacheStore.getString(key);
+    const cacheData = rawCacheMedia
+        ? safeParse<IMusic.IMusicItemCache>(rawCacheMedia)
+        : null;
+    await clearLocalCaches(cacheData);
+    mediaCacheStore.delete(key);
+};
+
+const removeMediaCacheEntries = async (keys: readonly string[]) => {
+    const uniqueKeys = getUniqueMediaCacheKeys(keys);
+    await Promise.all(uniqueKeys.map(removeMediaCacheEntry));
+    return uniqueKeys.length;
+};
+
+const getMediaCacheEntries = () =>
+    buildMediaCacheEntries(
+        mediaCacheStore.getAllKeys().map(key => ({
+            key,
+            raw: mediaCacheStore.getString(key),
+        })),
+    );
 
 const getMediaCacheStats = () => {
     const keys = mediaCacheStore.getAllKeys();
@@ -108,6 +137,9 @@ const MediaCache = {
     getMediaCache,
     setMediaCache,
     removeMediaCache,
+    removeMediaCacheEntry,
+    removeMediaCacheEntries,
+    getMediaCacheEntries,
     getMediaCacheStats,
     clearAllMediaCache,
 };

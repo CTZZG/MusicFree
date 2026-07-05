@@ -33,16 +33,20 @@ export default function DownloadStatusIndicator(
         if (task.status === DownloadStatus.Error) {
             const reason = task.errorReason;
             const text =
-                reason === DownloadFailReason.NoWritePermission
-                    ? t("downloading.downloadFailReason.noWritePermission")
-                    : reason === DownloadFailReason.FailToFetchSource
-                      ? t("downloading.downloadFailReason.failToFetchSource")
-                      : reason ===
+                reason === DownloadFailReason.NetworkOffline
+                    ? t("downloading.downloadFailReason.networkOffline")
+                    : reason === DownloadFailReason.NoWritePermission
+                        ? t("downloading.downloadFailReason.noWritePermission")
+                        : reason === DownloadFailReason.FailToFetchSource
+                            ? t("downloading.downloadFailReason.failToFetchSource")
+                            : reason ===
                           DownloadFailReason.EncryptedMediaUnsupported
-                        ? t(
-                            "downloading.downloadFailReason.encryptedMediaUnsupported",
-                        )
-                        : t("downloading.downloadFailReason.unknown");
+                                ? t(
+                                    "downloading.downloadFailReason.encryptedMediaUnsupported",
+                                )
+                                : reason === DownloadFailReason.Interrupted
+                                    ? t("downloading.downloadFailReason.interrupted")
+                                    : t("downloading.downloadFailReason.unknown");
             return {
                 text,
                 tone: "error" as const,
@@ -114,29 +118,29 @@ export default function DownloadStatusIndicator(
                     tone === "active"
                         ? styles.activeText
                         : tone === "success"
-                          ? styles.successText
-                          : tone === "error"
-                            ? styles.errorText
-                            : styles.mutedText,
+                            ? styles.successText
+                            : tone === "error"
+                                ? styles.errorText
+                                : styles.mutedText,
                 ]}>
                 {text}
             </ThemeText>
             {task.status === DownloadStatus.Downloading ||
             task.status === DownloadStatus.Paused ? (
-                <View style={styles.progressTrack}>
-                    <View
-                        style={[
-                            styles.progressFill,
-                            {
-                                width: `${Math.max(
-                                    4,
-                                    Math.min(100, progress * 100),
-                                )}%`,
-                            },
-                        ]}
-                    />
-                </View>
-            ) : null}
+                    <View style={styles.progressTrack}>
+                        <View
+                            style={[
+                                styles.progressFill,
+                                {
+                                    width: `${Math.max(
+                                        4,
+                                        Math.min(100, progress * 100),
+                                    )}%`,
+                                },
+                            ]}
+                        />
+                    </View>
+                ) : null}
         </View>
     );
 }

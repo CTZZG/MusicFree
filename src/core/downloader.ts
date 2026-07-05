@@ -20,18 +20,31 @@ import {
     DEFAULT_FILE_NAMING_CONFIG,
     generateFileNameFromConfig,
 } from "@/utils/fileNamingFormatter";
+import { createDownloadHeaders } from "@/utils/downloadHeaders";
 import { getQualityOrder } from "@/utils/qualities";
 import EventEmitter from "eventemitter3";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { nanoid } from "nanoid";
 import path from "path-browserify";
 import { useEffect, useMemo, useState } from "react";
-import { copyFile, downloadFile, exists, unlink, writeFile } from "react-native-fs";
+import {
+    copyFile,
+    downloadFile,
+    exists,
+    stopDownload,
+    unlink,
+    writeFile,
+} from "react-native-fs";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import Mp3Util, {
     INativeDownloadTaskStatus,
     NativeDownloadEmitter,
 } from "@/native/mp3Util";
+import Cenc from "@/native/cenc";
+import {
+    canProxyCencSource,
+    getPlayableCencKey,
+} from "@/service/encryptedMediaProxy";
 import LocalMusicSheet from "./localMusicSheet";
 import { IPluginManager } from "@/types/core/pluginManager";
 import musicMetadataManager from "./musicMetadataManager";
@@ -41,8 +54,13 @@ import type {
     IDownloadTaskMetadata,
 } from "@/types/metadata";
 import { safeParse, safeStringify } from "@/utils/jsonUtil";
+import { filterQueueableDownloadItems } from "./downloadQueuePolicy";
+import {
+    waitForDownloadWriteTasks,
+    type DownloadWriteResult,
+} from "./downloadFinalizationPolicy";
 
-type IWriteResult = "success" | "failed" | "skipped";
+type IWriteResult = DownloadWriteResult;
 
 export enum DownloadStatus {
     // 等待下载
@@ -111,8 +129,36 @@ interface IDownloadTaskInfo {
     musicItem: IMusic.IMusicItem;
     // 如果下载失败，下载失败的原因
     errorReason?: DownloadFailReason;
+    // 如果下载失败，保留底层错误摘要用于诊断
+    errorMessage?: string;
+    // 任务开始时间
+    startedAt?: number;
     // 下载完成时间
     completedAt?: number;
+}
+
+export interface IDownloadDiagnosticSnapshot {
+    nativeDownloadAvailable: boolean;
+    downloadingCount: number;
+    queueLength: number;
+    counts: Record<string, number>;
+    tasks: Array<{
+        key: string;
+        status: string;
+        title?: string;
+        artist?: string;
+        platform?: string;
+        id?: string;
+        filename?: string;
+        quality?: IMusic.IQualityKey;
+        downloadedSize?: number;
+        fileSize?: number;
+        progressText?: string;
+        errorReason?: DownloadFailReason;
+        errorMessage?: string;
+        startedAt?: number;
+        completedAt?: number;
+    }>;
 }
 
 const downloadQueueAtom = atom<IMusic.IMusicItem[]>([]);
@@ -146,7 +192,19 @@ function normalizeRestoredDownloadTask(
         errorReason: shouldMarkInterrupted
             ? DownloadFailReason.Interrupted
             : task.errorReason,
+        errorMessage: shouldMarkInterrupted
+            ? DownloadFailReason.Interrupted
+            : task.errorMessage,
     } as IDownloadTaskInfo;
+}
+
+function getDownloadStatusName(status: DownloadStatus) {
+    return DownloadStatus[status] ?? `${status}`;
+}
+
+function getDownloadErrorMessage(error?: Error | null) {
+    const message = `${error?.message ?? error ?? ""}`.trim();
+    return message ? message.slice(0, 500) : undefined;
 }
 
 function persistDownloadState() {
@@ -325,6 +383,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         if (
             (patch.status !== undefined && patch.status !== previous?.status) ||
             patch.errorReason !== undefined ||
+            patch.errorMessage !== undefined ||
+            patch.startedAt !== undefined ||
             patch.completedAt !== undefined ||
             patch.filename !== undefined ||
             patch.quality !== undefined
@@ -339,6 +399,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         this.downloadingCount++;
         this.updateDownloadTask(musicItem, {
             status: DownloadStatus.Preparing,
+            errorReason: undefined,
+            errorMessage: undefined,
+            startedAt: Date.now(),
         });
     }
 
@@ -346,6 +409,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         this.downloadingCount--;
         this.updateDownloadTask(musicItem, {
             status: DownloadStatus.Completed,
+            errorReason: undefined,
+            errorMessage: undefined,
             completedAt: Date.now(),
         });
     }
@@ -359,8 +424,27 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         this.updateDownloadTask(musicItem, {
             status: DownloadStatus.Error,
             errorReason: reason,
+            errorMessage: getDownloadErrorMessage(error),
         });
         this.emit(DownloaderEvent.DownloadTaskError, reason, musicItem, error);
+    }
+
+    private classifyDownloadError(error: any): DownloadFailReason {
+        if (network.isOffline) {
+            return DownloadFailReason.NetworkOffline;
+        }
+
+        const message = `${error?.message ?? error ?? ""}`.toLowerCase();
+        if (
+            message.includes("eacces") ||
+            message.includes("permission") ||
+            message.includes("no space") ||
+            message.includes("enospc")
+        ) {
+            return DownloadFailReason.NoWritePermission;
+        }
+
+        return DownloadFailReason.Unknown;
     }
 
     /** 匹配文件后缀 */
@@ -514,8 +598,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
     private canUseNativeDownload() {
         return (
-            !!NativeDownloadEmitter &&
-            !!Mp3Util?.isNativeDownloadAvailable?.()
+            !!NativeDownloadEmitter && !!Mp3Util?.isNativeDownloadAvailable?.()
         );
     }
 
@@ -582,8 +665,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         return new Promise<void>((resolve, reject) => {
             let settled = false;
-            let progressSubscription: { remove: () => void } | undefined;
-            let statusSubscription: { remove: () => void } | undefined;
+            let progressSubscription: {remove: () => void} | undefined;
+            let statusSubscription: {remove: () => void} | undefined;
             const cleanup = () => {
                 progressSubscription?.remove();
                 statusSubscription?.remove();
@@ -707,6 +790,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         });
     }
 
+    private stopJsDownloadIfNeeded(task: IDownloadTaskInfo) {
+        if (this.canUseNativeDownload() || typeof task.jobId !== "number") {
+            return;
+        }
+
+        try {
+            stopDownload(task.jobId);
+        } catch {}
+    }
+
     private async downloadNextPendingTask() {
         const maxDownloadCount = Math.max(
             1,
@@ -750,9 +843,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         this.markTaskAsStarted(musicItem);
 
         let url = musicItem.url;
-        let headers = musicItem.headers;
+        let headers = createDownloadHeaders(
+            (musicItem as any).headers,
+            (musicItem as any).userAgent,
+        );
         let ekey: string | undefined = musicItem.ekey;
+        let cek: string | undefined = musicItem.cek;
         let foundEncryptedSource = false;
+        let resolvedQuality = nextTask.quality;
 
         const plugin = this.pluginManagerService.getByName(musicItem.platform);
 
@@ -780,17 +878,27 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                         if (!data?.url) {
                             continue;
                         }
-                        if (hasEncryptedMediaSource(data.url, data.ekey)) {
+                        if (
+                            hasEncryptedMediaSource(data.url, data.ekey) &&
+                            !canProxyCencSource(data)
+                        ) {
                             foundEncryptedSource = true;
                             data = null;
                             continue;
                         }
+                        resolvedQuality = data.quality ?? quality;
                         break;
                     } catch {}
                 }
                 url = data?.url ?? url;
-                headers = data?.headers;
+                if (data?.url) {
+                    headers = createDownloadHeaders(
+                        data.headers,
+                        data.userAgent ?? (musicItem as any).userAgent,
+                    );
+                }
                 ekey = data?.ekey;
+                cek = data?.cek;
             }
             if (!url) {
                 throw new Error(
@@ -799,8 +907,21 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                         : DownloadFailReason.FailToFetchSource,
                 );
             }
-            if (hasEncryptedMediaSource(url, ekey)) {
-                throw new Error(DownloadFailReason.EncryptedMediaUnsupported);
+            const cencDownloadKey = canProxyCencSource({ url, cek })
+                ? getPlayableCencKey({ url, cek })
+                : undefined;
+            if (hasEncryptedMediaSource(url, ekey) && !cencDownloadKey) {
+                const error = new Error(
+                    cek
+                        ? `${DownloadFailReason.EncryptedMediaUnsupported}: CENC key present but native decrypt proxy is not available`
+                        : DownloadFailReason.EncryptedMediaUnsupported,
+                );
+                throw error;
+            }
+            if (resolvedQuality && resolvedQuality !== nextTask.quality) {
+                nextTask = this.updateDownloadTask(musicItem, {
+                    quality: resolvedQuality,
+                });
             }
         } catch (e: any) {
             /** 无法下载，跳过 */
@@ -821,7 +942,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     e,
                 );
             } else if (
-                e.message === DownloadFailReason.EncryptedMediaUnsupported
+                `${e.message ?? e}`.startsWith(
+                    DownloadFailReason.EncryptedMediaUnsupported,
+                )
             ) {
                 this.markTaskAsError(
                     musicItem,
@@ -829,8 +952,13 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     e,
                 );
             } else {
-                this.markTaskAsError(musicItem, DownloadFailReason.Unknown, e);
+                this.markTaskAsError(
+                    musicItem,
+                    this.classifyDownloadError(e),
+                    e,
+                );
             }
+            this.downloadNextPendingTask();
             return;
         }
 
@@ -843,14 +971,23 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         // 下载逻辑
         // 识别文件后缀
-        let extension = this.getExtensionName(url);
-        if (supportLocalMediaType.every(item => item !== "." + extension)) {
+        const cencDownloadKey = canProxyCencSource({ url, cek })
+            ? getPlayableCencKey({ url, cek })
+            : undefined;
+        let extension = cencDownloadKey
+            ? "m4a"
+            : this.getExtensionName(url).toLowerCase();
+        if (
+            !cencDownloadKey &&
+            supportLocalMediaType.every(item => item !== "." + extension)
+        ) {
             extension = "mp3";
         }
+        const cacheExtension = cencDownloadKey ? "cenc" : extension;
 
         // 缓存下载地址
         const cacheDownloadPath = addFileScheme(
-            this.getCacheDownloadPath(`${nanoid()}.${extension}`),
+            this.getCacheDownloadPath(`${nanoid()}.${cacheExtension}`),
         );
 
         // 真实下载地址
@@ -873,6 +1010,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 DownloadFailReason.NoWritePermission,
                 e,
             );
+            this.downloadNextPendingTask();
             return;
         }
 
@@ -914,29 +1052,45 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 throw new Error("Download task removed");
             }
 
-            // 下载完成，移动文件
-            await copyFile(cacheDownloadPath, targetDownloadPath);
+            // 下载完成，移动或解密文件
+            if (cencDownloadKey) {
+                const decrypted = await Cenc.decryptFile(
+                    removeFileScheme(cacheDownloadPath),
+                    removeFileScheme(targetDownloadPath),
+                    cencDownloadKey,
+                );
+                if (!decrypted) {
+                    throw new Error("CENC file decryption failed");
+                }
+            } else {
+                await copyFile(cacheDownloadPath, targetDownloadPath);
+            }
 
-            const metadataWriteTask = this.writeMetadataToFile(
-                musicItem,
-                targetDownloadPath,
-            ).catch(e => {
-                errorLog("元数据写入失败，但不影响下载完成", {
-                    musicItem: musicItem.title,
-                    error: e instanceof Error ? e.message : String(e),
-                });
-                return "failed" as IWriteResult;
+            const writeStatuses = await waitForDownloadWriteTasks({
+                metadata: this.writeMetadataToFile(
+                    musicItem,
+                    targetDownloadPath,
+                ),
+                lyric: this.writeLyricFileForDownload(
+                    musicItem,
+                    targetDownloadPath,
+                ),
+                onError: (kind, e) => {
+                    errorLog(
+                        kind === "metadata"
+                            ? "元数据写入失败，但不影响下载完成"
+                            : "独立歌词文件写入失败，但不影响下载完成",
+                        {
+                            musicItem: musicItem.title,
+                            error: e instanceof Error ? e.message : String(e),
+                        },
+                    );
+                },
             });
-            const lyricWriteTask = this.writeLyricFileForDownload(
-                musicItem,
-                targetDownloadPath,
-            ).catch(e => {
-                errorLog("独立歌词文件写入失败，但不影响下载完成", {
-                    musicItem: musicItem.title,
-                    error: e instanceof Error ? e.message : String(e),
-                });
-                return "failed" as IWriteResult;
-            });
+
+            if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
+                throw new Error("Download task removed");
+            }
 
             LocalMusicSheet.addMusic({
                 ...musicItem,
@@ -948,23 +1102,18 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             patchMediaExtra(musicItem, {
                 downloaded: true,
                 localPath: targetDownloadPath,
-                downloadMetadataStatus: undefined,
-                downloadLyricStatus: undefined,
+                downloadMetadataStatus: writeStatuses.metadata,
+                downloadLyricStatus: writeStatuses.lyric,
             });
-
-            void Promise.all([metadataWriteTask, lyricWriteTask]).then(
-                ([metadataWriteStatus, lyricWriteStatus]) => {
-                    patchMediaExtra(musicItem, {
-                        downloadMetadataStatus: metadataWriteStatus,
-                        downloadLyricStatus: lyricWriteStatus,
-                    });
-                },
-            );
 
             this.markTaskAsCompleted(musicItem);
         } catch (e: any) {
             if (downloadTasks.has(getMediaUniqueKey(musicItem))) {
-                this.markTaskAsError(musicItem, DownloadFailReason.Unknown, e);
+                this.markTaskAsError(
+                    musicItem,
+                    this.classifyDownloadError(e),
+                    e,
+                );
             }
         }
 
@@ -975,11 +1124,44 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             }
         } catch {}
         this.downloadNextPendingTask();
-
     }
 
     isNativeDownloadControlAvailable() {
         return this.canUseNativeDownload();
+    }
+
+    getDownloadDiagnosticSnapshot(): IDownloadDiagnosticSnapshot {
+        const queue = getDefaultStore().get(downloadQueueAtom);
+        const counts: Record<string, number> = {};
+        const tasks = Array.from(downloadTasks.entries()).map(([key, task]) => {
+            const status = getDownloadStatusName(task.status);
+            counts[status] = (counts[status] ?? 0) + 1;
+            return {
+                key,
+                status,
+                title: task.musicItem.title,
+                artist: task.musicItem.artist,
+                platform: task.musicItem.platform,
+                id: task.musicItem.id,
+                filename: task.filename,
+                quality: task.quality,
+                downloadedSize: task.downloadedSize,
+                fileSize: task.fileSize,
+                progressText: task.progressText,
+                errorReason: task.errorReason,
+                errorMessage: task.errorMessage,
+                startedAt: task.startedAt,
+                completedAt: task.completedAt,
+            };
+        });
+
+        return {
+            nativeDownloadAvailable: this.canUseNativeDownload(),
+            downloadingCount: this.downloadingCount,
+            queueLength: queue.length,
+            counts,
+            tasks,
+        };
     }
 
     async pause(musicItem: IMusic.IMusicItem) {
@@ -1106,26 +1288,21 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
 
         // 防止重复下载
-        musicItems = musicItems.filter(m => {
+        musicItems = filterQueueableDownloadItems(musicItems, {
+            activeTaskKeys: new Set(downloadTasks.keys()),
+            localMusicItems: LocalMusicSheet.getMusicList(),
+            getKey: getMediaUniqueKey,
+        });
+        musicItems.forEach(m => {
             const key = getMediaUniqueKey(m);
-            // 如果存在下载任务
-            if (downloadTasks.has(key)) {
-                return false;
-            }
-            // TODO: 如果已经下载了，也应该返回false
-            if (LocalMusicSheet.isLocalMusic(m)) {
-                return false;
-            }
 
             // 设置下载任务
-            downloadTasks.set(getMediaUniqueKey(m), {
+            downloadTasks.set(key, {
                 status: DownloadStatus.Pending,
                 filename: this.generateFilename(m, quality),
                 quality: quality,
                 musicItem: m,
             });
-
-            return true;
         });
 
         if (!musicItems.length) {
@@ -1166,6 +1343,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             task.status === DownloadStatus.Downloading ||
             task.status === DownloadStatus.Paused
         ) {
+            this.stopJsDownloadIfNeeded(task);
             void Mp3Util.cancelDownloadTask(key).catch(() => {});
             void Mp3Util.removeDownloadTask(key).catch(() => {});
             void downloadNotificationManager.cancelNotification(key);

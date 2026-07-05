@@ -31,6 +31,23 @@ interface IMediaExtraProperties {
 const observerCallbacks = new Map<string, Set<(extra: IMediaExtraProperties | null) => void>>();
 const globalObserverCallbacks = new Set<() => void>();
 
+function normalizeMediaExtraProperties(
+    meta: unknown,
+): IMediaExtraProperties | null {
+    if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+        return null;
+    }
+    return meta as IMediaExtraProperties;
+}
+
+function getMediaExtraObserverKey(
+    mediaItem: ICommon.IMediaBase | null | undefined,
+) {
+    return mediaItem?.platform && mediaItem.id
+        ? getMediaUniqueKey(mediaItem)
+        : null;
+}
+
 function emitMediaExtraChanged() {
     for (const callback of globalObserverCallbacks) {
         callback();
@@ -42,7 +59,7 @@ function emitMediaExtraChanged() {
  * @param mediaItem 媒体资源
  * @returns 
  */
-function getMediaExtra(mediaItem: ICommon.IMediaBase | null): IMediaExtraProperties | null {
+function getMediaExtra(mediaItem: ICommon.IMediaBase | null | undefined): IMediaExtraProperties | null {
     if (!mediaItem?.platform || !mediaItem.id) {
         return null;
     }
@@ -54,7 +71,7 @@ function getMediaExtra(mediaItem: ICommon.IMediaBase | null): IMediaExtraPropert
         return null;
     }
     const parsedMeta = safeParse<IMediaExtraProperties>(meta);
-    return parsedMeta;
+    return normalizeMediaExtraProperties(parsedMeta);
 }
 
 
@@ -64,7 +81,7 @@ function getMediaExtra(mediaItem: ICommon.IMediaBase | null): IMediaExtraPropert
  * @param key 
  * @returns 
  */
-function getMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem: ICommon.IMediaBase | null, key: K): IMediaExtraProperties[K] | null {
+function getMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem: ICommon.IMediaBase | null | undefined, key: K): IMediaExtraProperties[K] | null {
     const meta = getMediaExtra(mediaItem);
     return meta ? meta[key] : null;
 }
@@ -188,21 +205,21 @@ function useMediaExtraVersion() {
 }
 
 
-function useMediaExtra(mediaItem: ICommon.IMediaBase) {
+function useMediaExtra(mediaItem: ICommon.IMediaBase | null | undefined) {
     const [mediaExtraState, setMediaExtraState] = useState<IMediaExtraProperties | null>(getMediaExtra(mediaItem));
 
     useEffect(() => {
         const callback = (mediaExtra: IMediaExtraProperties | null) => {
             setMediaExtraState(mediaExtra);
         };
+        const mediaKey = getMediaExtraObserverKey(mediaItem);
 
 
-        if (!mediaItem) {
+        if (!mediaKey) {
             setMediaExtraState(null);
         } else {
             setMediaExtraState(getMediaExtra(mediaItem));
 
-            const mediaKey = getMediaUniqueKey(mediaItem);
             if (!observerCallbacks.has(mediaKey)) {
                 observerCallbacks.set(mediaKey, new Set());
             }
@@ -214,8 +231,7 @@ function useMediaExtra(mediaItem: ICommon.IMediaBase) {
 
 
         return () => {
-            const mediaKey = getMediaUniqueKey(mediaItem);
-            if (observerCallbacks.has(mediaKey)) {
+            if (mediaKey && observerCallbacks.has(mediaKey)) {
                 const callbacks = observerCallbacks.get(mediaKey);
                 if (callbacks) {
                     callbacks.delete(callback);
@@ -232,20 +248,20 @@ function useMediaExtra(mediaItem: ICommon.IMediaBase) {
 }
 
 
-function useMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem: ICommon.IMediaBase, key: K) {
+function useMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem: ICommon.IMediaBase | null | undefined, key: K) {
     const [mediaExtraPropertyState, setMediaExtraPropertyState] = useState<IMediaExtraProperties[K] | null>(getMediaExtraProperty(mediaItem, key));
 
     useEffect(() => {
         const callback = (mediaExtra: IMediaExtraProperties | null) => {
             setMediaExtraPropertyState(mediaExtra ? mediaExtra[key] : null);
         };
+        const mediaKey = getMediaExtraObserverKey(mediaItem);
 
-        if (!mediaItem) {
+        if (!mediaKey) {
             setMediaExtraPropertyState(null);
         } else {
             setMediaExtraPropertyState(getMediaExtraProperty(mediaItem, key));
 
-            const mediaKey = getMediaUniqueKey(mediaItem);
             if (!observerCallbacks.has(mediaKey)) {
                 observerCallbacks.set(mediaKey, new Set());
             }
@@ -257,8 +273,7 @@ function useMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem:
 
 
         return () => {
-            const mediaKey = getMediaUniqueKey(mediaItem);
-            if (observerCallbacks.has(mediaKey)) {
+            if (mediaKey && observerCallbacks.has(mediaKey)) {
                 const callbacks = observerCallbacks.get(mediaKey);
                 if (callbacks) {
                     callbacks.delete(callback);
@@ -268,7 +283,7 @@ function useMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem:
                 }
             }
         };
-    }, [mediaItem]);
+    }, [mediaItem, key]);
 
     return mediaExtraPropertyState;
 }
@@ -281,6 +296,8 @@ export {
     setMediaExtra,
     removeMediaExtra,
     removeAllMediaExtra,
+    normalizeMediaExtraProperties,
+    getMediaExtraObserverKey,
     useMediaExtra,
     useMediaExtraProperty,
     useMediaExtraVersion,

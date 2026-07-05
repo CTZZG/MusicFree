@@ -430,9 +430,12 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 (legacyQuality ? mediaCache.source?.[legacyQuality] : undefined);
             return {
                 url: qualityInfo!.url,
-                headers: mediaCache.headers,
+                headers: qualityInfo?.headers ?? mediaCache.headers,
                 userAgent:
+                    qualityInfo?.userAgent ??
                     mediaCache.userAgent ?? mediaCache.headers?.["user-agent"],
+                ekey: qualityInfo?.ekey ?? mediaCache.ekey,
+                cek: qualityInfo?.cek ?? mediaCache.cek,
             };
         }
         // 3. 音源重定向
@@ -456,6 +459,8 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 const cacheSource = {
                     headers: result.headers,
                     userAgent: result.userAgent,
+                    ekey: result.ekey,
+                    cek: result.cek,
                     url: result.url!,
                 };
                 let realMusicItem = {
@@ -490,6 +495,10 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             }
             return this.normalizeMediaSourceResult({
                 url: directUrl,
+                headers: qualityInfo?.headers,
+                userAgent: qualityInfo?.userAgent,
+                ekey: qualityInfo?.ekey,
+                cek: qualityInfo?.cek,
             });
         }
         try {
@@ -501,7 +510,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 musicItem,
                 normalizedQuality,
             )) ?? { url: qualityInfo?.url };
-            const { url, headers, ekey } = mediaSourceResult;
+            const { url, headers, ekey, cek } = mediaSourceResult;
             if (!url) {
                 throw new Error("NOT RETRY");
             }
@@ -510,6 +519,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 url,
                 headers,
                 ekey,
+                cek,
             } as IPlugin.IMediaSourceResult);
 
             if (
@@ -520,6 +530,8 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 const cacheSource = {
                     headers: result.headers,
                     userAgent: result.userAgent,
+                    ekey: result.ekey,
+                    cek: result.cek,
                     url,
                 };
                 let realMusicItem = {
@@ -1525,7 +1537,7 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
                 ).toString(
                     CryptoJs.enc.Hex,
                 ) || nanoid();
-        } catch (e) {
+        } catch {
             id = CryptoJs.MD5(localPath).toString(
                 CryptoJs.enc.Hex,
             ) || nanoid();

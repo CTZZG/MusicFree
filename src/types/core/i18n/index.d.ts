@@ -379,6 +379,7 @@ export interface ILanguageData {
     "downloading.detail.fileStatusExists": string; // 文件存在
     "downloading.detail.fileStatusMissing": string; // 文件不存在
     "downloading.detail.fileStatusUnknown": string; // 状态未知
+    "downloading.downloadFailReason.networkOffline": string; // 下载失败：无网络连接
     "downloading.downloadFailReason.noWritePermission": string; // 下载失败：没有写入权限
     "downloading.downloadFailReason.failToFetchSource": string; // 下载失败：无法获取源
     "downloading.downloadFailReason.encryptedMediaUnsupported": string; // 下载失败：暂不支持加密音源
@@ -745,6 +746,21 @@ export interface ILanguageData {
     "cacheManagement.allSafeCachesCleared": string; // 全部安全缓存已清理
     "cacheManagement.refresh": string; // 刷新缓存统计
     "cacheManagement.cacheCleared": string; // 缓存已清理
+    "cacheManagement.cachedEntries": string; // 缓存条目列表
+    "cacheManagement.searchPlaceholder": string; // 缓存搜索占位
+    "cacheManagement.allPlatforms": string; // 全部缓存来源
+    "cacheManagement.allQualities": string; // 全部缓存音质
+    "cacheManagement.quality.default": string; // 默认缓存音质
+    "cacheManagement.listSummary": string; // 缓存列表显示数量
+    "cacheManagement.clearFilters": string; // 清除缓存筛选
+    "cacheManagement.noCachedEntries": string; // 无缓存条目
+    "cacheManagement.noMatchedEntries": string; // 无匹配缓存条目
+    "cacheManagement.clearEntry": string; // 清理单条缓存
+    "cacheManagement.clearEntryConfirm": string; // 清理单条缓存确认
+    "cacheManagement.entryCleared": string; // 单条缓存已清理
+    "cacheManagement.clearFilteredEntries": string; // 清理当前缓存列表
+    "cacheManagement.clearFilteredEntriesConfirm": string; // 清理当前缓存列表确认
+    "cacheManagement.filteredEntriesCleared": string; // 当前缓存列表已清理
 
     "basicSettings.developer": string; // 开发选项
     "basicSettings.developer.errorLog": string; // 记录错误日志

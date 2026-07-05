@@ -4,6 +4,10 @@ import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import { DownloadStatus } from "@/core/downloader";
 import { useI18N } from "@/core/i18n";
+import {
+    normalizeDownloadWriteResult,
+    type DownloadWriteResult,
+} from "@/core/downloadFinalizationPolicy";
 
 type TFunction = ReturnType<typeof useI18N>["t"];
 
@@ -24,7 +28,7 @@ export type DownloadSortMode =
     | "artist"
     | "album"
     | "source";
-export type DownloadWriteStatus = "success" | "failed" | "skipped";
+export type DownloadWriteStatus = DownloadWriteResult;
 export type CompletedDownloadFileStatus =
     | "exists"
     | "missing"
@@ -166,7 +170,7 @@ export function getDownloadWriteStatus(
     musicItem: IMusic.IMusicItem,
     key: "downloadMetadataStatus" | "downloadLyricStatus",
 ) {
-    return getMediaExtraProperty(musicItem, key) as DownloadWriteStatus | null;
+    return normalizeDownloadWriteResult(getMediaExtraProperty(musicItem, key));
 }
 
 export function matchDownloadWriteFilter(

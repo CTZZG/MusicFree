@@ -29,6 +29,7 @@ import {
     useMediaExtraProperty,
     useMediaExtraVersion,
 } from "@/utils/mediaExtra";
+import { normalizeDownloadWriteResult } from "@/core/downloadFinalizationPolicy";
 import {
     areCompletedFileStatusMapsEqual,
     buildTextFilters,
@@ -37,7 +38,6 @@ import {
     DownloadFilter,
     DownloadSortMode,
     DownloadWriteFilter,
-    DownloadWriteStatus,
     formatDownloadCompletedAt,
     getCompletedDownloadDetailText,
     getCompletedDownloadFileExistsFromStatus,
@@ -91,14 +91,20 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
     const taskInfo = useDownloadTask(musicItem);
     const { t } = useI18N();
     const colors = useColors();
-    const downloadMetadataStatus = useMediaExtraProperty(
+    const rawDownloadMetadataStatus = useMediaExtraProperty(
         musicItem,
         "downloadMetadataStatus",
-    ) as DownloadWriteStatus | null;
-    const downloadLyricStatus = useMediaExtraProperty(
+    );
+    const rawDownloadLyricStatus = useMediaExtraProperty(
         musicItem,
         "downloadLyricStatus",
-    ) as DownloadWriteStatus | null;
+    );
+    const downloadMetadataStatus = normalizeDownloadWriteResult(
+        rawDownloadMetadataStatus,
+    );
+    const downloadLyricStatus = normalizeDownloadWriteResult(
+        rawDownloadLyricStatus,
+    );
 
     const status = taskInfo?.status ?? DownloadStatus.Error;
     const completedLocalPath =
@@ -112,7 +118,9 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
     if (status === DownloadStatus.Error) {
         const reason = taskInfo?.errorReason;
 
-        if (reason === DownloadFailReason.NoWritePermission) {
+        if (reason === DownloadFailReason.NetworkOffline) {
+            description = t("downloading.downloadFailReason.networkOffline");
+        } else if (reason === DownloadFailReason.NoWritePermission) {
             description = t("downloading.downloadFailReason.noWritePermission");
         } else if (reason === DownloadFailReason.FailToFetchSource) {
             description = t("downloading.downloadFailReason.failToFetchSource");
@@ -289,8 +297,8 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
             selectionMode
                 ? handleSelectPress
                 : status === DownloadStatus.Completed
-                ? showCompletedDownloadDetail
-                : undefined
+                    ? showCompletedDownloadDetail
+                    : undefined
         }>
         {selectionMode ? (
             <View style={style.checkBoxWrapper}>
