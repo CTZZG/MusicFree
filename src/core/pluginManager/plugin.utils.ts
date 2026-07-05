@@ -1,5 +1,6 @@
 import Base64 from "@/utils/base64";
 import { getFileName, removeFileScheme } from "@/utils/fileUtils";
+import { getLowerFileExtension } from "@/utils/mediaPath";
 
 export function getAnonymousStackLocation(stack?: string) {
     if (!stack) {
@@ -79,18 +80,6 @@ const localMetadataUnsafeExtensions = new Set([
     ".dsf",
     ".wma",
 ]);
-
-export function getLowerFileExtension(filePath: string) {
-    const pathWithoutQuery = filePath.split("?")[0];
-    const slashIndex = Math.max(
-        pathWithoutQuery.lastIndexOf("/"),
-        pathWithoutQuery.lastIndexOf("\\"),
-    );
-    const dotIndex = pathWithoutQuery.lastIndexOf(".");
-    return dotIndex > slashIndex
-        ? pathWithoutQuery.slice(dotIndex).toLowerCase()
-        : "";
-}
 
 export function shouldReadLocalSystemMetadata(filePath: string) {
     return !localMetadataUnsafeExtensions.has(getLowerFileExtension(filePath));

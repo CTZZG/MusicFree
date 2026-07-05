@@ -2,16 +2,22 @@ import { devLog, errorLog, trace } from "@/utils/log";
 import { RequestStateCode } from "@/constants/commonConst";
 import { produce } from "immer";
 import { getDefaultStore, useAtom, useSetAtom } from "jotai";
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { PageStatus, pageStatusAtom, searchResultsAtom } from "../store/atoms";
 import PluginManager, { Plugin } from "@/core/pluginManager";
+import { withTimeout } from "@/utils/promiseTimeout";
+import { resolveSearchPage } from "@/utils/searchPaging";
+import {
+    getSearchRequestKey,
+    getSearchRequestSignature,
+    searchRequestGuard,
+} from "./searchRequestGuard";
+
+const PLUGIN_SEARCH_TIMEOUT_MS = 15_000;
 
 export default function useSearch() {
     const setPageStatus = useSetAtom(pageStatusAtom);
     const [searchResults, setSearchResults] = useAtom(searchResultsAtom);
-
-    // 当前正在搜索
-    const currentQueryRef = useRef<string>("");
 
     /**
      * query: 搜索词
@@ -66,26 +72,41 @@ export default function useSearch() {
 
                 // 是否是一次新的搜索
                 const newSearch =
-                    query ||
+                    query !== undefined ||
                     prevPluginResult?.page === undefined ||
                     queryPage === 1;
 
                 // 本次搜索关键词
-                currentQueryRef.current = query =
-                    query ?? prevPluginResult?.query ?? "";
+                const requestQuery = query ?? prevPluginResult?.query ?? "";
 
                 /** 搜索的页码 */
-                const page =
-                    queryPage ?? newSearch
-                        ? 1
-                        : (prevPluginResult?.page ?? 0) + 1;
+                const page = resolveSearchPage(
+                    queryPage,
+                    newSearch,
+                    prevPluginResult?.page,
+                );
 
                 trace("开始搜索", {
                     _platform,
-                    query,
+                    query: requestQuery,
                     page,
                     searchType,
                 });
+
+                const requestKey = getSearchRequestKey(searchType, _hash);
+                const requestSignature = getSearchRequestSignature(
+                    searchType,
+                    _hash,
+                    requestQuery,
+                    page,
+                );
+                if (searchRequestGuard.isInFlight(requestSignature)) {
+                    return;
+                }
+                const requestToken = searchRequestGuard.begin(
+                    requestKey,
+                    requestSignature,
+                );
 
                 try {
                     setSearchResults(
@@ -99,20 +120,20 @@ export default function useSearch() {
                                 data: newSearch
                                     ? []
                                     : prevMediaResult[_hash]?.data ?? [],
-                                query: query,
+                                query: requestQuery,
                                 page,
                                 errorMessage: undefined,
                             };
                         }),
                     );
                     // !! jscore的promise有问题，改成hermes就好了，可能和JIT有关，不知道。
-                    const result = await plugin?.methods?.search?.(
-                        query,
-                        page,
-                        searchType,
+                    const result = await withTimeout(
+                        plugin?.methods?.search?.(requestQuery, page, searchType),
+                        PLUGIN_SEARCH_TIMEOUT_MS,
+                        "搜索超时",
                     );
                     /** 如果搜索结果不是本次结果 */
-                    if (currentQueryRef.current !== query) {
+                    if (!searchRequestGuard.isCurrent(requestToken)) {
                         return;
                     }
                     /** 切换到结果页 */
@@ -140,7 +161,7 @@ export default function useSearch() {
                                         result?.data?.length
                                         ? RequestStateCode.PARTLY_DONE
                                         : RequestStateCode.FINISHED,
-                                query,
+                                query: requestQuery,
                                 page,
                                 errorMessage: undefined,
                                 data: newSearch
@@ -153,11 +174,14 @@ export default function useSearch() {
                         }),
                     );
                 } catch (e: any) {
+                    if (!searchRequestGuard.isCurrent(requestToken)) {
+                        return;
+                    }
                     errorLog("搜索失败", e?.message);
                     devLog(
                         "error",
                         "搜索失败",
-                        `Plugin: ${plugin.name} Query: ${query} Page: ${page}`,
+                        `Plugin: ${plugin.name} Query: ${requestQuery} Page: ${page}`,
                         e,
                         e?.message,
                     );
@@ -180,6 +204,8 @@ export default function useSearch() {
                             return draft;
                         }),
                     );
+                } finally {
+                    searchRequestGuard.finish(requestToken);
                 }
             });
         },

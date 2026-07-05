@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { readFile } from "react-native-fs";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse } from "@/utils/jsonUtil";
+import { createReachableMediaSourceHeaders } from "./headers";
 import { devLog, errorLog, trace } from "@/utils/log";
 import { parseLxSourceMetadata } from "./metadata";
 import {
@@ -104,11 +105,7 @@ async function isReachableMediaSource(result: IPlugin.IMediaSourceResult) {
 
     try {
         const response = await axios.get(result.url, {
-            headers: {
-                ...(result.userAgent ? { "User-Agent": result.userAgent } : {}),
-                ...(result.headers ?? {}),
-                Range: "bytes=0-0",
-            },
+            headers: createReachableMediaSourceHeaders(result),
             maxRedirects: 5,
             responseType: "arraybuffer",
             timeout: 8000,

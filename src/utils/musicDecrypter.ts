@@ -10,17 +10,19 @@
  *
  * Migration Note:
  * - Old JS implementation moved to @deprecated customDES.ts (kept for reference)
- * - All decryption now delegated to Native module for better performance
+ * - QRC decryption is delegated to Native module for better performance
+ * - Kuwo plugins can decode GB18030/GBK in the plugin sandbox; native Kuwo
+ *   decryption remains as a compatibility fallback for older plugins
  */
 
-import LyricUtil from '@/native/lyricUtil';
-import {devLog} from '@/utils/log';
+import LyricUtil from "@/native/lyricUtil";
+import { devLog } from "@/utils/log";
 import {
     convertQrcXmlToLrc,
     convertQrcXmlToWordByWord,
     isQrcXml,
-} from '@/utils/qrcXmlToLrc';
-import {Buffer} from 'buffer';
+} from "@/utils/qrcXmlToLrc";
+import { Buffer } from "buffer";
 
 type NativeLyricDecryptor = typeof LyricUtil & {
     decryptQRCLyric?: (encryptedHex: string) => Promise<string>;
@@ -76,21 +78,21 @@ export async function decryptQRCLyric(
     try {
         const startTime = Date.now();
 
-        devLog('info', '[QRC Native] 开始解密', {
+        devLog("info", "[QRC Native] 开始解密", {
             inputLength: encryptedHex.length,
             isValidLength: encryptedHex.length % 16 === 0,
             enableWordByWord,
         });
 
         if (!nativeLyricUtil.decryptQRCLyric) {
-            throw new Error('Native QRC lyric decryption is not available');
+            throw new Error("Native QRC lyric decryption is not available");
         }
 
         // Call Native decryption (Triple-DES + Zlib)
         const decrypted = await nativeLyricUtil.decryptQRCLyric(encryptedHex);
 
         const duration = Date.now() - startTime;
-        devLog('info', `[QRC Native] 解密完成 (${duration}ms)`, {
+        devLog("info", `[QRC Native] 解密完成 (${duration}ms)`, {
             outputLength: decrypted.length,
             preview: decrypted.substring(0, 100),
         });
@@ -102,8 +104,8 @@ export async function decryptQRCLyric(
                 ? convertQrcXmlToWordByWord(decrypted)
                 : convertQrcXmlToLrc(decrypted);
             devLog(
-                'info',
-                `[QRC Native] XML转${enableWordByWord ? '逐字' : 'LRC'}完成`,
+                "info",
+                `[QRC Native] XML转${enableWordByWord ? "逐字" : "LRC"}完成`,
                 {
                     lrcLength: lrc.length,
                     preview: lrc.substring(0, 100),
@@ -115,22 +117,22 @@ export async function decryptQRCLyric(
         // Non-XML decrypted lyrics may have non-standard [mm:ss:cc] timestamps
         return normalizeColonTimeTag(decrypted);
     } catch (error: any) {
-        devLog('error', '[QRC Native] 解密失败', {
+        devLog("error", "[QRC Native] 解密失败", {
             error: error?.message,
             code: error?.code,
             hexLength: encryptedHex?.length,
         });
 
         // Provide user-friendly error messages
-        if (error?.code === 'QRC_INVALID_HEX') {
-            throw new Error('QRC解密失败：无效的十六进制格式');
-        } else if (error?.code === 'QRC_INFLATE_ERROR') {
-            throw new Error('QRC解密失败：数据解压错误');
-        } else if (error?.code === 'QRC_DECODE_ERROR') {
-            throw new Error('QRC解密失败：DES解密错误');
+        if (error?.code === "QRC_INVALID_HEX") {
+            throw new Error("QRC解密失败：无效的十六进制格式");
+        } else if (error?.code === "QRC_INFLATE_ERROR") {
+            throw new Error("QRC解密失败：数据解压错误");
+        } else if (error?.code === "QRC_DECODE_ERROR") {
+            throw new Error("QRC解密失败：DES解密错误");
         } else {
             throw new Error(
-                `QRC解密失败: ${error?.message || 'Unknown error'}`,
+                `QRC解密失败: ${error?.message || "Unknown error"}`,
             );
         }
     }
@@ -162,13 +164,13 @@ export async function decryptKuwoLyric(
     try {
         const startTime = Date.now();
 
-        devLog('info', '[Kuwo Native] 开始解密', {
+        devLog("info", "[Kuwo Native] 开始解密", {
             inputLength: lrcBase64.length,
             isGetLyricx,
         });
 
         if (!nativeLyricUtil.decryptKuwoLyric) {
-            throw new Error('Native Kuwo lyric decryption is not available');
+            throw new Error("Native Kuwo lyric decryption is not available");
         }
 
         // Call Native decryption (Zlib + GB18030 + optional XOR)
@@ -178,27 +180,27 @@ export async function decryptKuwoLyric(
         );
 
         const duration = Date.now() - startTime;
-        devLog('info', `[Kuwo Native] 解密完成 (${duration}ms)`, {
+        devLog("info", `[Kuwo Native] 解密完成 (${duration}ms)`, {
             outputLength: decrypted.length,
             preview: decrypted.substring(0, 100),
         });
 
         return decrypted;
     } catch (error: any) {
-        devLog('error', '[Kuwo Native] 解密失败', {
+        devLog("error", "[Kuwo Native] 解密失败", {
             error: error?.message,
             code: error?.code,
             base64Length: lrcBase64?.length,
         });
 
         // Provide user-friendly error messages
-        if (error?.code === 'KW_INVALID_FORMAT') {
-            throw new Error('酷我歌词解密失败：无效的数据格式');
-        } else if (error?.code === 'KW_DECRYPT_ERROR') {
-            throw new Error('酷我歌词解密失败：解密错误');
+        if (error?.code === "KW_INVALID_FORMAT") {
+            throw new Error("酷我歌词解密失败：无效的数据格式");
+        } else if (error?.code === "KW_DECRYPT_ERROR") {
+            throw new Error("酷我歌词解密失败：解密错误");
         } else {
             throw new Error(
-                `酷我歌词解密失败: ${error?.message || 'Unknown error'}`,
+                `酷我歌词解密失败: ${error?.message || "Unknown error"}`,
             );
         }
     }
@@ -233,9 +235,9 @@ export function isQRCEncrypted(lyrics: string): boolean {
 
     // Should NOT contain Base64 padding or common text chars
     if (
-        trimmed.includes('=') ||
-        trimmed.includes(' ') ||
-        trimmed.includes('\n')
+        trimmed.includes("=") ||
+        trimmed.includes(" ") ||
+        trimmed.includes("\n")
     ) {
         return false;
     }
@@ -274,18 +276,18 @@ export function isKuwoEncrypted(lyrics: string): boolean {
     try {
         // Use atob if available (browser/React Native), otherwise Buffer
         let decoded: string;
-        if (typeof atob !== 'undefined') {
+        if (typeof atob !== "undefined") {
             // Browser/React Native environment
             decoded = atob(trimmed.substring(0, 20)); // Only decode first 20 base64 chars
-        } else if (typeof Buffer !== 'undefined') {
+        } else if (typeof Buffer !== "undefined") {
             // Node.js environment
-            decoded = Buffer.from(trimmed, 'base64').toString('utf8', 0, 20);
+            decoded = Buffer.from(trimmed, "base64").toString("utf8", 0, 20);
         } else {
             // Fallback: manual base64 decode (simplified, just check first few chars)
             return true; // Assume it's Kuwo format if we can't decode
         }
 
-        return decoded.startsWith('tp=');
+        return decoded.startsWith("tp=");
     } catch {
         // If decode fails, assume not Kuwo format
         return false;
@@ -295,7 +297,7 @@ export function isKuwoEncrypted(lyrics: string): boolean {
 /**
  * Auto-decrypt lyrics if encrypted (async)
  *
- * Automatically detects QRC or Kuwo encryption and decrypts if needed.
+ * Automatically detects QRC or legacy Kuwo encryption and decrypts if needed.
  * Also handles decrypted QRC XML format to convert to word-by-word LRC.
  * Falls back to original text on decryption failure.
  *
@@ -308,7 +310,7 @@ export async function autoDecryptLyric(
     enableWordByWord: boolean = false,
 ): Promise<string> {
     if (!lyrics) {
-        return '';
+        return "";
     }
 
     // Try QRC decryption first (QQ Music encrypted hex)
@@ -316,7 +318,7 @@ export async function autoDecryptLyric(
         try {
             return await decryptQRCLyric(lyrics, enableWordByWord);
         } catch (error) {
-            devLog('warn', '[QRC Native] 自动解密失败，返回原始内容', error);
+            devLog("warn", "[QRC Native] 自动解密失败，返回原始内容", error);
             return lyrics;
         }
     }
@@ -327,14 +329,14 @@ export async function autoDecryptLyric(
             // 插件使用 lrcx=0 (普通歌词)，所以不需要 XOR 解密
             return await decryptKuwoLyric(lyrics, false);
         } catch (error) {
-            devLog('warn', '[Kuwo Native] 自动解密失败，返回原始内容', error);
+            devLog("warn", "[Kuwo Native] 自动解密失败，返回原始内容", error);
             return lyrics;
         }
     }
 
     // Handle already decrypted QRC XML format (not encrypted, but needs format conversion)
     if (isQrcXml(lyrics)) {
-        devLog('info', '[QRC] 检测到已解密的QRC XML格式，进行格式转换', {
+        devLog("info", "[QRC] 检测到已解密的QRC XML格式，进行格式转换", {
             enableWordByWord,
         });
         const lrc = enableWordByWord

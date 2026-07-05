@@ -1,5 +1,4 @@
 import {
-    CacheControl,
     internalSerializeKey,
     localPluginPlatform,
 } from "@/constants/commonConst";
@@ -36,6 +35,7 @@ import { URL, URLSearchParams } from "react-native-url-polyfill";
 import * as webdav from "webdav";
 import * as pako from "pako";
 import { Buffer } from "buffer";
+import iconvLite from "iconv-lite";
 import { devLog, errorLog, trace } from "../../utils/log";
 import Network from "../../utils/network";
 import MediaCache from "../mediaCache";
@@ -44,6 +44,7 @@ import {
     neteaseLyricPluginDefine,
 } from "./builtinLyricPlugins";
 import { recordPluginDiagnosticError } from "./diagnostics";
+import { resolvePluginLocalMediaSource } from "./localMediaSourcePolicy";
 import _internalPluginMeta from "./meta";
 import { IPluginManager } from "@/types/core/pluginManager";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
@@ -53,6 +54,11 @@ import {
     normalizePluginMusicItem,
 } from "@/utils/qualities";
 import LxSource from "@/core/lxSource";
+import {
+    canReadResolvedSourceCache,
+    canWriteResolvedSourceCache,
+} from "@/utils/cacheControlPolicy";
+import { PluginTextDecoder, PluginTextEncoder } from "./pluginTextCodec";
 
 
 axios.defaults.timeout = 15000;
@@ -105,6 +111,7 @@ const packages: Record<string, any> = {
     "musicfree/storage": pluginStorage,
     pako,
     buffer: { Buffer },
+    "iconv-lite": iconvLite,
 };
 
 const _require = (packageName: string) => {
@@ -364,65 +371,64 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         // 1. 本地搜索 其实直接读mediameta就好了
         const localPathInMediaExtra = getMediaExtraProperty(musicItem, "localPath");
         const localPath = getLocalPath(musicItem);
-        const remoteMediaUrl =
-            isRemoteMediaUrl(localPath)
-                ? localPath
-                : musicItem.platform === localPluginPlatform &&
-                    isRemoteMediaUrl(musicItem.url)
-                    ? musicItem.url
-                    : null;
-        if (remoteMediaUrl) {
-            trace("网络音频播放", remoteMediaUrl);
-            return {
-                url: remoteMediaUrl,
-            };
-        }
         const normalizedLocalPath =
             localPath && !localPath.startsWith("content://")
                 ? normalizeLocalFilePath(localPath)
                 : localPath;
-        if (
-            normalizedLocalPath &&
-            (
-                normalizedLocalPath.startsWith("content://") ||
-                await exists(normalizedLocalPath)
-            )
-        ) {
-            trace("本地播放", normalizedLocalPath);
-            if (localPathInMediaExtra !== normalizedLocalPath) {
+        const normalizedLocalPathExists =
+            normalizedLocalPath && !normalizedLocalPath.startsWith("content://")
+                ? await exists(normalizedLocalPath)
+                : false;
+        const localSourceResolution = resolvePluginLocalMediaSource({
+            platform: musicItem.platform,
+            localPluginPlatform,
+            url: musicItem.url,
+            localPath,
+            localPathInMediaExtra,
+            normalizedLocalPath,
+            normalizedLocalPathExists,
+        });
+
+        if (localSourceResolution.type === "remote") {
+            trace("网络音频播放", localSourceResolution.url);
+            return {
+                url: localSourceResolution.url,
+            };
+        }
+        if (localSourceResolution.type === "local") {
+            trace("本地播放", localSourceResolution.localPath);
+            if (localSourceResolution.patchLocalPath !== undefined) {
                 // 修正一下本地数据
                 patchMediaExtra(musicItem, {
-                    localPath: normalizedLocalPath,
+                    localPath: localSourceResolution.patchLocalPath,
                 });
 
             }
             return {
-                url: addFileScheme(normalizedLocalPath),
+                url: localSourceResolution.url,
             };
-        } else if (localPathInMediaExtra) {
+        }
+        if (localSourceResolution.type === "clear-stale-local-path") {
             patchMediaExtra(musicItem, {
                 localPath: undefined,
             });
         }
 
-        if (musicItem.platform === localPluginPlatform) {
+        if (localSourceResolution.type === "missing-local") {
             throw new Error("本地音乐不存在");
         }
         // 2. 缓存播放
         const mediaCache = MediaCache.getMediaCache(
             musicItem,
         ) as IMusic.IMusicItem | null;
-        const pluginCacheControl =
-            this.plugin.instance.cacheControl ?? "no-cache";
+        const pluginCacheControl = this.plugin.instance.cacheControl;
         if (
             mediaCache &&
             (
                 mediaCache?.source?.[normalizedQuality]?.url ||
                 (legacyQuality ? mediaCache?.source?.[legacyQuality]?.url : undefined)
             ) &&
-            (pluginCacheControl === CacheControl.Cache ||
-                (pluginCacheControl === CacheControl.NoCache &&
-                    Network.isOffline))
+            canReadResolvedSourceCache(pluginCacheControl, Network.isOffline)
         ) {
             trace("播放", "缓存播放");
             const qualityInfo =
@@ -453,7 +459,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
             const result = this.normalizeMediaSourceResult(lxMediaSourceResult);
             if (
-                pluginCacheControl !== CacheControl.NoStore &&
+                canWriteResolvedSourceCache(pluginCacheControl) &&
                 !notUpdateCache
             ) {
                 const cacheSource = {
@@ -497,8 +503,8 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 url: directUrl,
                 headers: qualityInfo?.headers,
                 userAgent: qualityInfo?.userAgent,
-                ekey: qualityInfo?.ekey,
-                cek: qualityInfo?.cek,
+                ekey: qualityInfo?.ekey ?? musicItem.ekey,
+                cek: qualityInfo?.cek ?? musicItem.cek,
             });
         }
         try {
@@ -509,8 +515,14 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 parserPlugin.instance.getMediaSource,
                 musicItem,
                 normalizedQuality,
-            )) ?? { url: qualityInfo?.url };
-            const { url, headers, ekey, cek } = mediaSourceResult;
+            )) ?? {
+                url: qualityInfo?.url,
+                headers: qualityInfo?.headers,
+                userAgent: qualityInfo?.userAgent,
+                ekey: qualityInfo?.ekey,
+                cek: qualityInfo?.cek,
+            };
+            const { url, headers, userAgent, ekey, cek } = mediaSourceResult;
             if (!url) {
                 throw new Error("NOT RETRY");
             }
@@ -518,12 +530,13 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             const result = this.normalizeMediaSourceResult({
                 url,
                 headers,
+                userAgent,
                 ekey,
                 cek,
             } as IPlugin.IMediaSourceResult);
 
             if (
-                pluginCacheControl !== CacheControl.NoStore &&
+                canWriteResolvedSourceCache(pluginCacheControl) &&
                 !notUpdateCache
             ) {
                 // 更新缓存
@@ -1239,6 +1252,7 @@ export class Plugin {
     public supportedMethods: Set<keyof IPlugin.IPluginInstanceMethods> = new Set();
 
     private lazyProps: ILazyProps | null = null;
+    private mountingPromise?: Promise<void>;
 
     static pluginManager: IPluginManager;
 
@@ -1274,27 +1288,44 @@ export class Plugin {
 
     async ensureMounted() {
         if ((this.state === PluginState.Initializing) && this.lazyProps) {
-            this.state = PluginState.Loading;
-            // 懒加载
-            const loadFuncCode = this.lazyProps.loadFuncCode ?? (() => "");
+            this.mountingPromise ??= this.mountLazyPlugin();
+        }
+
+        if (this.mountingPromise) {
             try {
-                const funcCode = await loadFuncCode();
-                this.mountPlugin(funcCode, this.lazyProps.path);
-            } catch (e: any) {
-                this.state = PluginState.Error;
-                this.errorMessage = formatPluginErrorMessage(e);
-                this.errorReason = this.errorReason ?? PluginErrorReason.CannotParse;
-                recordPluginDiagnosticError({
-                    pluginName: this.name || this.instance.platform || "unknown",
-                    pluginHash: this.hash,
-                    method: "mount",
-                    error: e,
-                    estimatedLocation: getAnonymousStackLocation(e?.stack),
-                });
+                await this.mountingPromise;
+            } finally {
+                this.mountingPromise = undefined;
             }
         }
+
         if (this.state === PluginState.Error) {
             throw new Error(this.errorMessage || "插件加载失败");
+        }
+    }
+
+    private async mountLazyPlugin() {
+        if (!this.lazyProps) {
+            return;
+        }
+
+        this.state = PluginState.Loading;
+        // 懒加载
+        const loadFuncCode = this.lazyProps.loadFuncCode ?? (() => "");
+        try {
+            const funcCode = await loadFuncCode();
+            this.mountPlugin(funcCode, this.lazyProps.path);
+        } catch (e: any) {
+            this.state = PluginState.Error;
+            this.errorMessage = formatPluginErrorMessage(e);
+            this.errorReason = this.errorReason ?? PluginErrorReason.CannotParse;
+            recordPluginDiagnosticError({
+                pluginName: this.name || this.instance.platform || "unknown",
+                pluginHash: this.hash,
+                method: "mount",
+                error: e,
+                estimatedLocation: getAnonymousStackLocation(e?.stack),
+            });
         }
     }
 
@@ -1330,7 +1361,7 @@ export class Plugin {
                 // eslint-disable-next-line no-new-func
                 _instance = Function(`
                     'use strict';
-                    return function(require, __musicfree_require, module, exports, console, env, URL, URLSearchParams, process) {
+                    return function(require, __musicfree_require, module, exports, console, env, URL, URLSearchParams, process, TextDecoder, TextEncoder, Buffer) {
                         ${funcCode}
                     }
                 `)()(
@@ -1342,7 +1373,10 @@ export class Plugin {
                     env,
                     URL,
                     URLSearchParams,
-                    _process
+                    _process,
+                    PluginTextDecoder,
+                    PluginTextEncoder,
+                    Buffer,
                 );
                 if (_module.exports.default) {
                     _instance = _module.exports

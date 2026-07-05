@@ -61,6 +61,7 @@
     "expo-keep-awake": "~56.0.3",
     "expo-splash-screen": "~56.0.10",
     "he": "^1.2.0",
+    "iconv-lite": "^0.7.3",
     "immer": "^10.2.0",
     "jotai": "^2.15.1",
     "marked": "^17.0.0",
