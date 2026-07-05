@@ -9,7 +9,6 @@ import globalStyle from "@/constants/globalStyle";
 import { showPanel } from "@/components/panels/usePanel";
 import TrackPlayer, { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
 import { musicIsPaused } from "@/utils/trackUtils";
-import delay from "@/utils/delay";
 import DraggingTime from "./draggingTime";
 import LyricItemComponent from "./lyricItem";
 import PersistStatus from "@/utils/persistStatus";
@@ -17,12 +16,126 @@ import LyricOperations from "./lyricOperations";
 import { IParsedLrcItem } from "@/utils/lrcParser";
 import { IconButtonWithGesture } from "@/components/base/iconButton.tsx";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
-import lyricManager, { useCurrentLyricItem, useLyricState } from "@/core/lyricManager";
+import lyricManager, {
+    useCurrentLyricItem,
+    useCurrentPositionMs,
+    useLyricState,
+} from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
 import { useAppConfig } from "@/core/appConfig";
 import { getLyricWordData } from "@/utils/lyricWordByWord";
+import {
+    createLyricPayloadIdentity,
+    getLyricScrollTargetIndex,
+    resolveLyricRestoreIndex,
+} from "./lyricScrollState";
 
 const ITEM_HEIGHT = rpx(92);
+const SCROLL_FOLLOW_LEAD_MS = 120;
+
+enum ScrollPhase {
+    WaitingForContent,
+    InitialPositioning,
+    Tracking,
+    UserDragging,
+}
+
+class LayoutCache {
+    private heights: number[];
+    private prefixSums: number[];
+    private headerHeight = 0;
+    private dirty = false;
+
+    constructor(count: number) {
+        this.heights = new Array(count).fill(ITEM_HEIGHT);
+        this.prefixSums = new Array(count + 1).fill(0);
+        this.rebuild();
+    }
+
+    reset(count: number) {
+        this.heights = new Array(count).fill(ITEM_HEIGHT);
+        this.prefixSums = new Array(count + 1).fill(0);
+        this.headerHeight = 0;
+        this.rebuild();
+    }
+
+    setHeaderHeight(height: number) {
+        if (this.headerHeight !== height) {
+            this.headerHeight = height;
+            return true;
+        }
+        return false;
+    }
+
+    setItemHeight(index: number, height: number) {
+        if (
+            index >= 0 &&
+            index < this.heights.length &&
+            this.heights[index] !== height
+        ) {
+            this.heights[index] = height;
+            this.dirty = true;
+            return true;
+        }
+        return false;
+    }
+
+    getItemLayout(index: number) {
+        this.ensureClean();
+        const safeIndex = this.clampIndex(index);
+        return {
+            length: this.heights[safeIndex] ?? ITEM_HEIGHT,
+            offset: this.headerHeight + (this.prefixSums[safeIndex] ?? 0),
+            index: safeIndex,
+        };
+    }
+
+    findIndexAtOffset(contentOffset: number) {
+        this.ensureClean();
+        if (!this.heights.length) {
+            return -1;
+        }
+
+        const target = contentOffset - this.headerHeight;
+        if (target <= 0) {
+            return 0;
+        }
+
+        let low = 0;
+        let high = this.heights.length - 1;
+        while (low < high) {
+            const middle = (low + high + 1) >>> 1;
+            if (this.prefixSums[middle] <= target) {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        return low;
+    }
+
+    private rebuild() {
+        this.prefixSums[0] = 0;
+        for (let index = 0; index < this.heights.length; index += 1) {
+            this.prefixSums[index + 1] =
+                this.prefixSums[index] + this.heights[index];
+        }
+        this.dirty = false;
+    }
+
+    private ensureClean() {
+        if (this.dirty) {
+            this.rebuild();
+        }
+    }
+
+    private clampIndex(index: number) {
+        if (!this.heights.length) {
+            return 0;
+        }
+        return Math.max(0, Math.min(index, this.heights.length - 1));
+    }
+}
 
 type LyricLineType = "original" | "translation" | "romanization";
 
@@ -34,11 +147,6 @@ interface IDetailLyricLine {
     words?: ILyric.IWordData[];
     lineStartTimeMs?: number;
     isPseudoWordByWord?: boolean;
-}
-
-interface IItemHeights {
-    blankHeight?: number;
-    [k: number]: number;
 }
 
 interface IProps {
@@ -156,6 +264,7 @@ export default function Lyric(props: IProps) {
         emptyReason,
     } = useLyricState();
     const currentLrcItem = useCurrentLyricItem();
+    const currentPositionMs = useCurrentPositionMs();
     const showTranslation = PersistStatus.useValue(
         "lyric.showTranslation",
         false,
@@ -175,6 +284,10 @@ export default function Lyric(props: IProps) {
     const detailAlign = normalizeDetailAlign(
         PersistStatus.useValue("lyric.detailAlign", "center"),
     );
+    const lyricOffsetSecondsRaw = Number(meta?.offset ?? 0);
+    const lyricOffsetSeconds = Number.isFinite(lyricOffsetSecondsRaw)
+        ? lyricOffsetSecondsRaw
+        : 0;
     const fontSizeStyle = useMemo(
         () => ({
             fontSize: fontSizeMap[fontSizeKey!],
@@ -192,6 +305,23 @@ export default function Lyric(props: IProps) {
     const listRef = useRef<FlatList<IParsedLrcItem> | null>(null);
 
     const currentMusicItem = useCurrentMusic();
+    const activeLyricIndexRef = useRef(currentLrcItem?.index ?? -1);
+    activeLyricIndexRef.current =
+        currentLrcItem?.index ?? lyricManager.currentLyricItem?.index ?? -1;
+    const lyricsIdentity = useMemo(
+        () => createLyricPayloadIdentity(currentMusicItem, lyrics),
+        [currentMusicItem, lyrics],
+    );
+    const scrollTargetIndex = useMemo(
+        () =>
+            getLyricScrollTargetIndex(
+                lyrics,
+                currentPositionMs,
+                lyricOffsetSeconds,
+                SCROLL_FOLLOW_LEAD_MS,
+            ),
+        [currentPositionMs, lyricOffsetSeconds, lyrics],
+    );
     const associateMusicItem = getMediaExtraProperty(currentMusicItem, "associatedLrc");
     const lyricSourceText = useMemo(() => {
         if (!source || source.type === "none" || associateMusicItem) {
@@ -200,57 +330,209 @@ export default function Lyric(props: IProps) {
         const pluginName = source.pluginName || currentMusicItem?.platform || "";
         const title = source.title || currentMusicItem?.title || "";
         switch (source.type) {
-            case "plugin":
-                return t("lyric.source.plugin", { plugin: pluginName });
-            case "local":
-                return t("lyric.source.local");
-            case "cache":
-                return t("lyric.source.cache", { plugin: pluginName });
-            case "auto-search":
-                return t("lyric.source.autoSearch", {
-                    plugin: pluginName,
-                    title,
-                });
-            case "associated":
-                return t("lyric.lyricLinkedFrom", {
-                    platform: pluginName,
-                    title,
-                });
-            default:
-                return null;
+        case "plugin":
+            return t("lyric.source.plugin", { plugin: pluginName });
+        case "local":
+            return t("lyric.source.local");
+        case "cache":
+            return t("lyric.source.cache", { plugin: pluginName });
+        case "auto-search":
+            return t("lyric.source.autoSearch", {
+                plugin: pluginName,
+                title,
+            });
+        case "associated":
+            return t("lyric.lyricLinkedFrom", {
+                platform: pluginName,
+                title,
+            });
+        default:
+            return null;
         }
     }, [associateMusicItem, currentMusicItem, source, t]);
     const noLyricReasonText = useMemo(() => {
         switch (emptyReason) {
-            case "no-current-music":
-                return t("lyric.noLyricReason.noCurrentMusic");
-            case "plugin-not-found":
-                return t("lyric.noLyricReason.pluginNotFound");
-            case "plugin-not-supported":
-                return t("lyric.noLyricReason.pluginNotSupported");
-            case "plugin-empty":
-                return t("lyric.noLyricReason.pluginEmpty");
-            case "auto-search-empty":
-                return t("lyric.noLyricReason.autoSearchEmpty");
-            case "parse-failed":
-                return t("lyric.noLyricReason.parseFailed");
-            case "timeout":
-                return t("lyric.noLyricReason.timeout");
-            case "unknown":
-                return t("lyric.noLyricReason.unknown");
-            default:
-                return null;
+        case "no-current-music":
+            return t("lyric.noLyricReason.noCurrentMusic");
+        case "plugin-not-found":
+            return t("lyric.noLyricReason.pluginNotFound");
+        case "plugin-not-supported":
+            return t("lyric.noLyricReason.pluginNotSupported");
+        case "plugin-empty":
+            return t("lyric.noLyricReason.pluginEmpty");
+        case "auto-search-empty":
+            return t("lyric.noLyricReason.autoSearchEmpty");
+        case "parse-failed":
+            return t("lyric.noLyricReason.parseFailed");
+        case "timeout":
+            return t("lyric.noLyricReason.timeout");
+        case "unknown":
+            return t("lyric.noLyricReason.unknown");
+        default:
+            return null;
         }
     }, [emptyReason, t]);
 
-    // 是否展示拖拽
-    const dragShownRef = useRef(false);
+    const scrollPhaseRef = useRef<ScrollPhase>(
+        ScrollPhase.WaitingForContent,
+    );
+    const lastScrollIndexRef = useRef(-1);
+    const restoreScrollIndexRef = useRef(-1);
+    const initialPositionFrameRef = useRef<number | null>(null);
+    const lastLyricsIdentityRef = useRef(lyricsIdentity);
+    const layoutCacheRef = useRef(new LayoutCache(lyrics.length));
+    const [isListReady, setIsListReady] = useState(false);
+    const [shouldApplyInitialContentOffset, setShouldApplyInitialContentOffset] =
+        useState(true);
+    const lyricOrderKey = useMemo(() => lyricOrder.join("|"), [lyricOrder]);
+    const layoutAffectingKey = useMemo(
+        () =>
+            [
+                fontSizeKey,
+                secondaryFontScale,
+                showTranslation && hasTranslation ? "translation" : "no-translation",
+                showRomanization && hasRomanization ? "romanization" : "no-romanization",
+                lyricOrderKey,
+                detailAlign,
+            ].join("|"),
+        [
+            detailAlign,
+            fontSizeKey,
+            hasRomanization,
+            hasTranslation,
+            lyricOrderKey,
+            secondaryFontScale,
+            showRomanization,
+            showTranslation,
+        ],
+    );
 
-    // 组件是否挂载
-    const isMountedRef = useRef(true);
+    const getActiveLyricIndex = useCallback(
+        () =>
+            resolveLyricRestoreIndex({
+                lyricsLength: lyrics.length,
+                activeIndex: activeLyricIndexRef.current,
+            }),
+        [lyrics.length],
+    );
 
-    // 用来缓存高度
-    const itemHeightsRef = useRef<IItemHeights>({});
+    const getRestoreScrollIndex = useCallback(
+        () =>
+            resolveLyricRestoreIndex({
+                lyricsLength: lyrics.length,
+                activeIndex: activeLyricIndexRef.current,
+                restoreIndex: restoreScrollIndexRef.current,
+            }),
+        [lyrics.length],
+    );
+
+    const scrollToIndex = useCallback(
+        (index: number, animated: boolean) => {
+            if (!listRef.current || !lyrics.length) {
+                return;
+            }
+            const safeIndex = Math.max(0, Math.min(index, lyrics.length - 1));
+            if (safeIndex === lastScrollIndexRef.current && animated) {
+                return;
+            }
+            listRef.current.scrollToIndex({
+                index: safeIndex,
+                viewPosition: 0.5,
+                animated,
+            });
+            lastScrollIndexRef.current = safeIndex;
+        },
+        [lyrics.length],
+    );
+
+    const cancelInitialPositioning = useCallback(() => {
+        if (initialPositionFrameRef.current !== null) {
+            cancelAnimationFrame(initialPositionFrameRef.current);
+            initialPositionFrameRef.current = null;
+        }
+    }, []);
+
+    const finishInitialPositioning = useCallback(() => {
+        initialPositionFrameRef.current = null;
+
+        if (!lyrics.length) {
+            setIsListReady(true);
+            setShouldApplyInitialContentOffset(false);
+            scrollPhaseRef.current = ScrollPhase.Tracking;
+            return;
+        }
+
+        if (!listRef.current) {
+            return;
+        }
+
+        const targetIndex = getRestoreScrollIndex();
+        if (targetIndex !== -1) {
+            scrollToIndex(targetIndex, false);
+            restoreScrollIndexRef.current = targetIndex;
+        }
+
+        setIsListReady(true);
+        setShouldApplyInitialContentOffset(false);
+        scrollPhaseRef.current = ScrollPhase.Tracking;
+    }, [getRestoreScrollIndex, lyrics.length, scrollToIndex]);
+
+    const scheduleInitialPositioning = useCallback(() => {
+        cancelInitialPositioning();
+        initialPositionFrameRef.current = requestAnimationFrame(
+            finishInitialPositioning,
+        );
+    }, [cancelInitialPositioning, finishInitialPositioning]);
+
+    useEffect(() => {
+        const isNewLyricPayload =
+            lastLyricsIdentityRef.current !== lyricsIdentity;
+        lastLyricsIdentityRef.current = lyricsIdentity;
+        restoreScrollIndexRef.current = isNewLyricPayload
+            ? -1
+            : getRestoreScrollIndex();
+        layoutCacheRef.current.reset(lyrics.length);
+        scrollPhaseRef.current = ScrollPhase.InitialPositioning;
+        lastScrollIndexRef.current = -1;
+        if (isNewLyricPayload) {
+            setShouldApplyInitialContentOffset(true);
+        }
+        setIsListReady(false);
+        scheduleInitialPositioning();
+    }, [
+        getRestoreScrollIndex,
+        layoutAffectingKey,
+        lyrics,
+        lyricsIdentity,
+        scheduleInitialPositioning,
+    ]);
+
+    useEffect(() => {
+        scrollPhaseRef.current = ScrollPhase.WaitingForContent;
+        lastScrollIndexRef.current = -1;
+        restoreScrollIndexRef.current = -1;
+        setShouldApplyInitialContentOffset(true);
+        setIsListReady(false);
+    }, [currentMusicItem?.id]);
+
+    useEffect(() => {
+        restoreScrollIndexRef.current = getActiveLyricIndex();
+    }, [currentLrcItem?.index, getActiveLyricIndex]);
+
+    useEffect(() => {
+        return cancelInitialPositioning;
+    }, [cancelInitialPositioning]);
+
+    const initialContentOffset = useMemo(() => {
+        const targetIndex = getActiveLyricIndex();
+        if (targetIndex <= 0 || !lyrics.length) {
+            return undefined;
+        }
+        return {
+            x: 0,
+            y: Math.max(0, targetIndex * ITEM_HEIGHT),
+        };
+    }, [getActiveLyricIndex, lyrics.length, lyricsIdentity]);
 
     // 设置空白组件，获取组件高度
     const blankComponent = useMemo(() => {
@@ -258,119 +540,154 @@ export default function Lyric(props: IProps) {
             <View
                 style={styles.empty}
                 onLayout={evt => {
-                    itemHeightsRef.current.blankHeight =
-                        evt.nativeEvent.layout.height;
+                    const didChange = layoutCacheRef.current.setHeaderHeight(
+                        evt.nativeEvent.layout.height,
+                    );
+                    if (
+                        didChange &&
+                        scrollPhaseRef.current === ScrollPhase.InitialPositioning
+                    ) {
+                        scheduleInitialPositioning();
+                    }
                 }}
             />
         );
-    }, []);
+    }, [scheduleInitialPositioning]);
 
     const handleLyricItemLayout = useCallback(
         (index: number, height: number) => {
-            itemHeightsRef.current[index] = height;
+            const didChange = layoutCacheRef.current.setItemHeight(index, height);
+            if (
+                didChange &&
+                scrollPhaseRef.current === ScrollPhase.InitialPositioning
+            ) {
+                scheduleInitialPositioning();
+            }
         },
-        [],
+        [scheduleInitialPositioning],
     );
+
+    const getItemLayout = useCallback((_data: any, index: number) => {
+        return layoutCacheRef.current.getItemLayout(index);
+    }, []);
 
     // 滚到当前item
     const scrollToCurrentLrcItem = useCallback(() => {
-        if (!listRef.current) {
+        if (!listRef.current || !lyrics.length || !layout?.height) {
             return;
         }
-        const currentLyricItem = lyricManager.currentLyricItem;
-        const currentLyrics = lyricManager.lyricState?.lyrics;
-        if (currentLyricItem?.index === -1 || !currentLyricItem) {
-            listRef.current?.scrollToIndex({
-                index: 0,
-                viewPosition: 0.5,
-            });
-        } else {
-            listRef.current?.scrollToIndex({
-                index: Math.min(currentLyricItem.index ?? 0, currentLyrics.length - 1),
-                viewPosition: 0.5,
-            });
-        }
-    }, []);
+        const currentIndex = getActiveLyricIndex();
+        lastScrollIndexRef.current = -1;
+        scrollToIndex(currentIndex === -1 ? 0 : currentIndex, true);
+        restoreScrollIndexRef.current = currentIndex;
+        scrollPhaseRef.current = ScrollPhase.Tracking;
+    }, [getActiveLyricIndex, layout?.height, lyrics.length, scrollToIndex]);
 
     const delayedScrollToCurrentLrcItem = useMemo(() => {
-        let sto: number;
+        let sto: ReturnType<typeof setTimeout> | undefined;
 
         return () => {
             if (sto) {
                 clearTimeout(sto);
             }
             sto = setTimeout(() => {
-                if (isMountedRef.current) {
-                    scrollToCurrentLrcItem();
-                }
-            }, 200) as any;
+                scrollToCurrentLrcItem();
+            }, 200);
         };
-    }, []);
+    }, [scrollToCurrentLrcItem]);
+
+    const onContentSizeChange = useCallback(() => {
+        if (!listRef.current || !lyrics.length) {
+            return;
+        }
+        if (scrollPhaseRef.current === ScrollPhase.WaitingForContent) {
+            scrollPhaseRef.current = ScrollPhase.InitialPositioning;
+            lastScrollIndexRef.current = -1;
+        }
+        if (scrollPhaseRef.current === ScrollPhase.InitialPositioning) {
+            scheduleInitialPositioning();
+        }
+    }, [lyrics.length, scheduleInitialPositioning]);
 
     useEffect(() => {
-        // 暂停且拖拽才返回
+        if (scrollPhaseRef.current !== ScrollPhase.Tracking) {
+            return;
+        }
         if (
             lyrics.length === 0 ||
             draggingIndex !== undefined ||
-            (draggingIndex === undefined && musicIsPaused(musicState)) ||
+            musicIsPaused(musicState) ||
             lyrics[lyrics.length - 1].time < 1
         ) {
             return;
         }
-        if (currentLrcItem?.index === -1 || !currentLrcItem) {
-            listRef.current?.scrollToIndex({
-                index: 0,
-                viewPosition: 0.5,
-            });
-        } else {
-            listRef.current?.scrollToIndex({
-                index: Math.min(currentLrcItem.index ?? 0, lyrics.length - 1),
-                viewPosition: 0.5,
-            });
+        const targetIndex =
+            scrollTargetIndex === -1 ? getActiveLyricIndex() : scrollTargetIndex;
+        if (targetIndex === lastScrollIndexRef.current) {
+            return;
         }
-        // 音乐暂停状态不应该影响到滑动，所以不放在依赖里，但是这样写不好。。
-    }, [currentLrcItem, lyrics, draggingIndex]);
-
-    useEffect(() => {
-        scrollToCurrentLrcItem();
-        return () => {
-            isMountedRef.current = false;
-        };
-    }, []);
+        scrollToIndex(targetIndex === -1 ? 0 : targetIndex, true);
+    }, [
+        draggingIndex,
+        getActiveLyricIndex,
+        lyrics,
+        musicState,
+        scrollTargetIndex,
+        scrollToIndex,
+    ]);
 
     // 开始滚动时拖拽生效
-    const onScrollBeginDrag = () => {
-        dragShownRef.current = true;
-    };
+    const onScrollBeginDrag = useCallback(() => {
+        scrollPhaseRef.current = ScrollPhase.UserDragging;
+    }, []);
 
-    const onScrollEndDrag = async () => {
+    const onScrollEndDrag = useCallback(() => {
         if (draggingIndex !== undefined) {
             setDraggingIndex(undefined);
         }
-        dragShownRef.current = false;
-    };
+        lastScrollIndexRef.current = -1;
+        scrollPhaseRef.current = ScrollPhase.Tracking;
+    }, [draggingIndex, setDraggingIndex]);
 
-    const onScroll = (e: any) => {
-        if (dragShownRef.current) {
-            const offset =
-                e.nativeEvent.contentOffset.y +
-                e.nativeEvent.layoutMeasurement.height / 2;
-
-            const itemHeights = itemHeightsRef.current;
-            let height = itemHeights.blankHeight!;
-            if (offset <= height) {
-                setDraggingIndex(0);
+    const onScroll = useCallback(
+        (e: any) => {
+            if (scrollPhaseRef.current !== ScrollPhase.UserDragging) {
                 return;
             }
-            for (let i = 0; i < lyrics.length; ++i) {
-                height += itemHeights[i] ?? 0;
-                if (height > offset) {
-                    setDraggingIndex(i);
-                    return;
-                }
+            const centerOffset =
+                e.nativeEvent.contentOffset.y +
+                e.nativeEvent.layoutMeasurement.height / 2;
+            const index = layoutCacheRef.current.findIndexAtOffset(centerOffset);
+            if (index >= 0) {
+                setDraggingIndex(Math.min(index, lyrics.length - 1));
             }
+        },
+        [lyrics.length, setDraggingIndex],
+    );
+
+    const listExtraData = useMemo(
+        () =>
+            [
+                currentLrcItem?.index ?? -1,
+                draggingIndex ?? -1,
+                layoutAffectingKey,
+            ].join("|"),
+        [currentLrcItem?.index, draggingIndex, layoutAffectingKey],
+    );
+
+    useEffect(() => {
+        if (isListReady) {
+            return;
         }
-    };
+        const timeout = setTimeout(() => {
+            if (lyrics.length) {
+                setIsListReady(true);
+                setShouldApplyInitialContentOffset(false);
+                scrollPhaseRef.current = ScrollPhase.Tracking;
+            }
+        }, 500);
+        return () => clearTimeout(timeout);
+    }, [isListReady, lyrics.length]);
 
     const onLyricSeekPress = async () => {
         if (draggingIndex !== undefined) {
@@ -411,21 +728,24 @@ export default function Lyric(props: IProps) {
                             onLayout={e => {
                                 setLayout(e.nativeEvent.layout);
                             }}
+                            contentOffset={
+                                shouldApplyInitialContentOffset
+                                    ? initialContentOffset
+                                    : undefined
+                            }
                             viewabilityConfig={{
                                 itemVisiblePercentThreshold: 100,
                             }}
                             onScrollToIndexFailed={({ index }) => {
-                                delay(120).then(() => {
-                                    listRef.current?.scrollToIndex({
-                                        index: Math.min(
-                                            index ?? 0,
-                                            lyrics.length - 1,
-                                        ),
-                                        viewPosition: 0.5,
-                                    });
+                                requestAnimationFrame(() => {
+                                    scrollToIndex(index ?? 0, false);
+                                    restoreScrollIndexRef.current = index ?? 0;
+                                    setShouldApplyInitialContentOffset(false);
+                                    setIsListReady(true);
                                 });
                             }}
                             fadingEdgeLength={120}
+                            onContentSizeChange={onContentSizeChange}
                             ListHeaderComponent={
                                 <>
                                     {blankComponent}
@@ -475,19 +795,23 @@ export default function Lyric(props: IProps) {
                             onScrollBeginDrag={onScrollBeginDrag}
                             onMomentumScrollEnd={onScrollEndDrag}
                             onScroll={onScroll}
-                            scrollEventThrottle={32}
-                            style={styles.wrapper}
+                            scrollEventThrottle={16}
+                            style={[
+                                styles.wrapper,
+                                { opacity: isListReady ? 1 : 0 },
+                            ]}
                             data={lyrics}
                             initialNumToRender={30}
-                            overScrollMode="never"
-                            extraData={{
-                                currentLrcItem,
-                                showTranslation,
-                                showRomanization,
-                                secondaryFontScale,
-                                lyricOrder,
-                                detailAlign,
+                            windowSize={7}
+                            maxToRenderPerBatch={10}
+                            updateCellsBatchingPeriod={50}
+                            removeClippedSubviews={false}
+                            getItemLayout={getItemLayout}
+                            maintainVisibleContentPosition={{
+                                minIndexForVisible: 0,
                             }}
+                            overScrollMode="never"
+                            extraData={listExtraData}
                             renderItem={({ item, index }) => {
                                 return (
                                     <LyricItemComponent

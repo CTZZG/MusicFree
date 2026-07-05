@@ -919,6 +919,7 @@ function LyricSetting() {
                             statusBarLyricConfig ?? {}
                         );
                         Config.setConfig("lyric.showStatusBarLyric", true);
+                        lyricManager.refreshNativeNotificationLyric();
                     } else {
                         LyricUtil.requestSystemAlertPermission().finally(() => {
                             Toast.warn(t("toast.noFloatWindowPermission"));
@@ -927,6 +928,7 @@ function LyricSetting() {
                 } else {
                     LyricUtil.hideStatusBarLyric();
                     Config.setConfig("lyric.showStatusBarLyric", false);
+                    lyricManager.refreshNativeNotificationLyric();
                 }
             } catch { }
         },
@@ -936,12 +938,20 @@ function LyricSetting() {
         t("basicSettings.lyric.statusBarShowTranslation"),
         "lyric.statusBarShowTranslation",
         statusBarShowTranslation ?? false,
+        newValue => {
+            Config.setConfig("lyric.statusBarShowTranslation", newValue);
+            lyricManager.refreshNativeNotificationLyric();
+        },
     );
 
     const statusBarRomanization = createSwitch(
         t("basicSettings.lyric.statusBarShowRomanization"),
         "lyric.statusBarShowRomanization",
         statusBarShowRomanization ?? false,
+        newValue => {
+            Config.setConfig("lyric.statusBarShowRomanization", newValue);
+            lyricManager.refreshNativeNotificationLyric();
+        },
     );
 
     const mediaNotificationLyric = createSwitch(
@@ -958,6 +968,7 @@ function LyricSetting() {
             }
             if (!newValue) {
                 await LyricUtil.clearMediaNotificationLyricText?.();
+                lyricManager.refreshNativeNotificationLyric();
             }
         },
     );
@@ -975,6 +986,7 @@ function LyricSetting() {
                 lyricManager.refreshNativeNotificationLyric();
             } else {
                 await LyricUtil.clearLiveUpdateLyricText?.();
+                lyricManager.refreshNativeNotificationLyric();
             }
         },
     );

@@ -60,6 +60,15 @@ describe("LyricParser.getPosition", () => {
     it("returns the last line for a position past the end", () => {
         expect(parser.getPosition(99)?.lrc).toBe("c");
     });
+
+    it("handles seeks back to an earlier line after reading a later line", () => {
+        const seekParser = new LyricParser(
+            "[00:01.00]a\n[00:03.00]b\n[00:05.00]c",
+        );
+
+        expect(seekParser.getPosition(6)?.lrc).toBe("c");
+        expect(seekParser.getPosition(2)?.lrc).toBe("a");
+    });
 });
 
 describe("LyricParser - translation alignment", () => {

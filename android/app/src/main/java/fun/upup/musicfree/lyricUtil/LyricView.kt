@@ -20,6 +20,10 @@ import com.facebook.react.bridge.ReactContext
 
 
 class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTouchListener {
+    private companion object {
+        const val MIN_FONT_SP = 2f
+        const val MAX_FONT_SP = 56f
+    }
 
     private var windowManager: WindowManager? = null
     private var orientationEventListener: OrientationEventListener? = null
@@ -90,9 +94,11 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
 
                 layoutParams?.format = PixelFormat.TRANSPARENT
 
+                val initialFontSp = (fontSize?.toString()?.toFloat() ?: 14f)
+                    .coerceIn(MIN_FONT_SP, MAX_FONT_SP)
                 tv = TextView(reactContext).apply {
                     text = initText ?: ""
-                    textSize = fontSize?.toString()?.toFloat() ?: 14f
+                    textSize = initialFontSp
                     setBackgroundColor(Color.parseColor(rgba2argb(backgroundColor?.toString() ?: "#84888153")))
                     setTextColor(Color.parseColor(rgba2argb(color?.toString() ?: "#FFE9D2")))
                     setPadding(12, 6, 12, 6)
@@ -217,6 +223,6 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
     }
 
     fun setFontSize(fontSize: Float) {
-        tv?.textSize = fontSize
+        tv?.textSize = fontSize.coerceIn(MIN_FONT_SP, MAX_FONT_SP)
     }
 }
