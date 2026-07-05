@@ -76,6 +76,11 @@ jobs:
                   BUILD_REF_NAME="${GITHUB_REF_NAME:-unknown}"
                   BUILD_REF_TYPE="${GITHUB_REF_TYPE:-unknown}"
                   BUILD_RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+                  if [ "$BUILD_REF_TYPE" = "tag" ] && [ -n "$GITHUB_REF_NAME" ]; then
+                    RELEASE_TAG="$GITHUB_REF_NAME"
+                  else
+                    RELEASE_TAG="v$APP_VERSION"
+                  fi
 
                   {
                     echo "APP_VERSION=$APP_VERSION"
@@ -85,6 +90,7 @@ jobs:
                     echo "BUILD_REF_NAME=$BUILD_REF_NAME"
                     echo "BUILD_REF_TYPE=$BUILD_REF_TYPE"
                     echo "BUILD_RUN_URL=$BUILD_RUN_URL"
+                    echo "RELEASE_TAG=$RELEASE_TAG"
                   } >> "$GITHUB_ENV"
 
                   {
@@ -95,6 +101,7 @@ jobs:
                     echo "Build branch: $BUILD_REF_NAME"
                     echo "Ref type: $BUILD_REF_TYPE"
                     echo "Ref: $GITHUB_REF"
+                    echo "Release tag: $RELEASE_TAG"
                     echo "Build date: $BUILD_DATE"
                     echo "Workflow: $GITHUB_WORKFLOW"
                     echo "Run: $BUILD_RUN_URL"
@@ -142,8 +149,20 @@ jobs:
                       exit 1
                     fi
                     echo "Release signing key was validated."
+                    echo "SIGNING_STATUS=configured" >> "$GITHUB_ENV"
+                    echo "SIGNING_VALIDATION=passed" >> "$GITHUB_ENV"
+                    {
+                      echo "Signing: configured"
+                      echo "Signing validation: passed"
+                    } >> android-build-info.txt
                   else
                     echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
+                    echo "SIGNING_STATUS=unsigned" >> "$GITHUB_ENV"
+                    echo "SIGNING_VALIDATION=skipped" >> "$GITHUB_ENV"
+                    {
+                      echo "Signing: unsigned"
+                      echo "Signing validation: skipped"
+                    } >> android-build-info.txt
                   fi
 
             - name: Generate app build info
@@ -190,7 +209,13 @@ jobs:
                     cp "$apk" "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-${base}.apk"
                   done
 
+                  mapping_dir="android/app/build/outputs/mapping/release"
+                  if [ -d "$mapping_dir" ]; then
+                    tar -czf "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-mapping.tar.gz" -C "$mapping_dir" .
+                  fi
+
                   cp android-build-info.txt dist/android-build-info.txt
+                  (cd dist && sha256sum * > SHA256SUMS.txt)
                   ls -lh dist
 
             - name: Upload APK artifacts
@@ -207,7 +232,7 @@ jobs:
               run: |
                   node <<'NODE'
                   const repo = process.env.GITHUB_REPOSITORY;
-                  const tag = `v${process.env.APP_VERSION}`;
+                  const tag = process.env.RELEASE_TAG || `v${process.env.APP_VERSION}`;
                   const retryableStatuses = new Set([429, 500, 502, 503, 504]);
                   const headers = {
                     authorization: `Bearer ${process.env.GH_TOKEN}`,
@@ -280,7 +305,11 @@ jobs:
                   for (const asset of release.assets ?? []) {
                     const shouldDelete =
                       asset.name === 'android-build-info.txt' ||
-                      (asset.name.startsWith(apkPrefix) && asset.name.endsWith('.apk'));
+                      asset.name === 'SHA256SUMS.txt' ||
+                      (
+                        asset.name.startsWith(apkPrefix) &&
+                        (asset.name.endsWith('.apk') || asset.name.endsWith('-mapping.tar.gz'))
+                      );
                     if (shouldDelete) {
                       try {
                         await github(`/releases/assets/${asset.id}`, {method: 'DELETE', maxAttempts: 5});
@@ -300,7 +329,7 @@ jobs:
               if: github.event_name != 'pull_request'
               uses: softprops/action-gh-release@v3
               with:
-                  tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', env.APP_VERSION) }}
+                  tag_name: ${{ env.RELEASE_TAG }}
                   target_commitish: ${{ github.sha }}
                   name: MusicFree ${{ env.APP_VERSION }}
                   body: |
@@ -309,7 +338,7 @@ jobs:
                       - Commit: `${{ github.sha }}`
                       - Ref: `${{ env.BUILD_REF_NAME }}`
                       - Build date: `${{ env.BUILD_DATE }}`
-                      - Signing: release workflow signing check is recorded in `android-build-info.txt`.
+                      - Signing: `${{ env.SIGNING_STATUS }}`; details are recorded in `android-build-info.txt`.
                   files: dist/*
                   generate_release_notes: true
                   prerelease: ${{ contains(env.APP_VERSION, '-') }}
@@ -328,7 +357,7 @@ jobs:
                     echo "- Ref: ${BUILD_REF_NAME} (${BUILD_REF_TYPE})"
                     echo "- Build date: ${BUILD_DATE}"
                     echo "- Run: ${BUILD_RUN_URL}"
-                    echo "- Signing: $([ -f android/keystore.properties ] && echo configured || echo unsigned)"
+                    echo "- Signing: ${SIGNING_STATUS:-unknown}"
                     echo
                     echo "### Artifacts"
                     ls -1 dist | sed 's/^/- /'

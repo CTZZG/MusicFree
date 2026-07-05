@@ -28,10 +28,28 @@ function run(command, fallback = '') {
 }
 
 function getSigningState() {
-    const hasCiSigning = Boolean(process.env.ANDROID_RELEASE_KEYSTORE_BASE64);
-    const hasLocalSigning = existsSync(
-        path.join(rootDir, 'android', 'keystore.properties'),
+    const explicitStatus = process.env.SIGNING_STATUS?.trim();
+    if (explicitStatus) {
+        return explicitStatus;
+    }
+
+    const hasCiSigning = Boolean(
+        process.env.RELEASE_KEYSTORE_BASE64 ||
+            process.env.ANDROID_RELEASE_KEYSTORE_BASE64,
     );
+    const keystorePath = path.join(rootDir, 'android', 'keystore.properties');
+    const hasLocalSigning =
+        existsSync(keystorePath) &&
+        [
+            'RELEASE_STORE_FILE',
+            'RELEASE_STORE_PASSWORD',
+            'RELEASE_KEY_ALIAS',
+            'RELEASE_KEY_PASSWORD',
+        ].every(key =>
+            new RegExp(`^\\s*${key}\\s*=\\s*\\S+`, 'm').test(
+                readFileSync(keystorePath, 'utf8'),
+            ),
+        );
     return hasCiSigning || hasLocalSigning ? 'configured' : 'unsigned';
 }
 

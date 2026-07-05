@@ -1,124 +1,235 @@
 name: Beta 构建
 
 on:
-  # push:
-  #   branches: [dev]
-  #   paths: ['package.json']
-  workflow_dispatch:
-    inputs:
-      force_build:
-        description: '强制构建 Beta 版本'
-        required: false
-        default: 'false'
-        type: boolean
+    # push:
+    #   branches: [dev]
+    #   paths: ['package.json']
+    workflow_dispatch:
+        inputs:
+            force_build:
+                description: '强制构建 Beta 版本'
+                required: false
+                default: 'false'
+                type: boolean
 
 jobs:
-  check-version:
-    if: github.actor == 'maotoumao' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.version_check.outputs.should_build }}
-      version: ${{ steps.version_check.outputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    check-version:
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+        runs-on: ubuntu-latest
+        outputs:
+            should_build: ${{ steps.version_check.outputs.should_build }}
+            version: ${{ steps.version_check.outputs.version }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
 
-      - name: Check version format
-        id: version_check
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "Current version: $VERSION"
-          
-          # 检查版本是否符合 -beta.xx 格式
-          if [[ $VERSION =~ -beta\.[0-9]{1,2}$ ]]; then
-            echo "✅ Version matches beta format: $VERSION"
-            echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_build }}" == "true" ]]; then
-            echo "🔧 Force build triggered by workflow_dispatch"
-            echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Version does not match beta format or not forced: $VERSION"
-            echo "should_build=false" >> $GITHUB_OUTPUT
-          fi
+            - name: Check version format
+              id: version_check
+              run: |
+                  VERSION=$(node -p "require('./package.json').version")
+                  echo "Current version: $VERSION"
 
-  build-beta:
-    needs: check-version
-    if: needs.check-version.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
-    env:
-      RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 || secrets.RELEASE_KEYSTORE_BASE64 }}
-      RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
-      RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.RELEASE_KEY_ALIAS }}
-      RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+                  # 检查版本是否符合 -beta.xx 格式
+                  if [[ $VERSION =~ -beta\.[0-9]{1,2}$ ]]; then
+                    echo "✅ Version matches beta format: $VERSION"
+                    echo "should_build=true" >> $GITHUB_OUTPUT
+                    echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_build }}" == "true" ]]; then
+                    echo "🔧 Force build triggered by workflow_dispatch"
+                    echo "should_build=true" >> $GITHUB_OUTPUT
+                    echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  else
+                    echo "❌ Version does not match beta format or not forced: $VERSION"
+                    echo "should_build=false" >> $GITHUB_OUTPUT
+                  fi
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
+    build-beta:
+        needs: check-version
+        if: needs.check-version.outputs.should_build == 'true'
+        runs-on: ubuntu-latest
+        env:
+            NODE_VERSION: '22'
+            JAVA_VERSION: '17'
+            NODE_ENV: production
+            RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 || secrets.RELEASE_KEYSTORE_BASE64 }}
+            RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
+            RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.RELEASE_KEY_ALIAS }}
+            RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with: 
-          node-version: 20
-          cache: 'npm'
+            - name: Setup Java
+              uses: actions/setup-java@v5
+              with:
+                  java-version: ${{ env.JAVA_VERSION }}
+                  distribution: 'temurin'
+                  cache: 'gradle'
 
-      - name: Cache React Native dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            android/.gradle
-          key: ${{ runner.os }}-rn-${{ hashFiles('package-lock.json', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-rn-
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: ${{ env.NODE_VERSION }}
+                  cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm ci --prefer-offline --no-audit      
-        
-      - name: Setup Keystore (if secrets available)
-        if: env.RELEASE_KEYSTORE_BASE64 != ''
-        run: |
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-          cat > android/keystore.properties << EOF
-          RELEASE_STORE_FILE=release.keystore
-          RELEASE_STORE_PASSWORD=${RELEASE_STORE_PASSWORD}
-          RELEASE_KEY_ALIAS=${RELEASE_KEY_ALIAS}
-          RELEASE_KEY_PASSWORD=${RELEASE_KEY_PASSWORD}
-          EOF
-          chmod 600 android/keystore.properties android/app/release.keystore
+            - name: Cache React Native dependencies
+              uses: actions/cache@v5
+              with:
+                  path: |
+                      node_modules
+                      ~/.gradle/caches
+                      ~/.gradle/wrapper
+                      android/.gradle
+                  key: ${{ runner.os }}-rn-${{ hashFiles('package-lock.json', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+                  restore-keys: |
+                      ${{ runner.os }}-rn-
 
-      - name: Make gradlew executable
-        run: chmod +x android/gradlew
+            - name: Install Dependencies
+              env:
+                  NODE_ENV: development
+                  HUSKY: 0
+              run: npm ci --prefer-offline --no-audit
 
-      - name: Build Beta APK
-        run: | 
-          cd android
-          ./gradlew assembleRelease --parallel --build-cache --configure-on-demand
+            - name: Setup Keystore (if secrets available)
+              if: env.RELEASE_KEYSTORE_BASE64 != ''
+              run: |
+                  missing=0
+                  for name in RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+                    if [ -z "${!name}" ]; then
+                      echo "::error::$name is required when a release keystore is provided."
+                      missing=1
+                    fi
+                  done
+                  if [ "$missing" -ne 0 ]; then
+                    echo "::error title=Signing configuration failed::Release keystore was provided, but one or more required signing secrets are missing."
+                    exit 1
+                  fi
 
-      - name: List generated APKs
-        run: |
-          echo "📱 Generated APK files:"
-          find android/app/build/outputs/apk/release -name "*.apk" -exec ls -lh {} \;
+                  echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+                  cat > android/keystore.properties << EOF
+                  RELEASE_STORE_FILE=release.keystore
+                  RELEASE_STORE_PASSWORD=${RELEASE_STORE_PASSWORD}
+                  RELEASE_KEY_ALIAS=${RELEASE_KEY_ALIAS}
+                  RELEASE_KEY_PASSWORD=${RELEASE_KEY_PASSWORD}
+                  EOF
+                  chmod 600 android/keystore.properties android/app/release.keystore
 
-      - name: Upload Beta APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: beta-apks-${{ needs.check-version.outputs.version }}
-          path: android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
+            - name: Validate signing setup
+              run: |
+                  if [ -f android/keystore.properties ] && [ -f android/app/release.keystore ]; then
+                    keytool -list \
+                      -keystore android/app/release.keystore \
+                      -storepass "$RELEASE_STORE_PASSWORD" \
+                      -alias "$RELEASE_KEY_ALIAS" \
+                      >/dev/null
+                    echo "Release signing key was validated."
+                    echo "SIGNING_STATUS=configured" >> "$GITHUB_ENV"
+                    echo "SIGNING_VALIDATION=passed" >> "$GITHUB_ENV"
+                  else
+                    echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
+                    echo "SIGNING_STATUS=unsigned" >> "$GITHUB_ENV"
+                    echo "SIGNING_VALIDATION=skipped" >> "$GITHUB_ENV"
+                  fi
 
-      - name: Build Summary
-        run: |
-          echo "🎉 Beta build completed successfully!"
-          echo "📦 Version: ${{ needs.check-version.outputs.version }}"
-          echo "🚀 Triggered by: ${{ github.event_name }}"
-          echo "👤 Actor: ${{ github.actor }}"
+            - name: Generate build metadata
+              run: |
+                  APP_VERSION="${{ needs.check-version.outputs.version }}"
+                  PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+                  SHORT_SHA="${GITHUB_SHA::7}"
+                  BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+                  BUILD_REF_NAME="${GITHUB_REF_NAME:-unknown}"
+                  BUILD_REF_TYPE="${GITHUB_REF_TYPE:-unknown}"
+                  BUILD_RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+                  {
+                    echo "APP_VERSION=$APP_VERSION"
+                    echo "PACKAGE_VERSION=$PACKAGE_VERSION"
+                    echo "SHORT_SHA=$SHORT_SHA"
+                    echo "BUILD_DATE=$BUILD_DATE"
+                    echo "BUILD_REF_NAME=$BUILD_REF_NAME"
+                    echo "BUILD_REF_TYPE=$BUILD_REF_TYPE"
+                    echo "BUILD_RUN_URL=$BUILD_RUN_URL"
+                  } >> "$GITHUB_ENV"
+
+                  {
+                    echo "App version: $APP_VERSION"
+                    echo "Package version: $PACKAGE_VERSION"
+                    echo "Commit: $GITHUB_SHA"
+                    echo "Short SHA: $SHORT_SHA"
+                    echo "Build branch: $BUILD_REF_NAME"
+                    echo "Ref type: $BUILD_REF_TYPE"
+                    echo "Ref: $GITHUB_REF"
+                    echo "Build date: $BUILD_DATE"
+                    echo "Workflow: $GITHUB_WORKFLOW"
+                    echo "Run: $BUILD_RUN_URL"
+                    echo "Node: ${{ env.NODE_VERSION }}"
+                    echo "Java: ${{ env.JAVA_VERSION }}"
+                    echo "Signing: ${SIGNING_STATUS:-unknown}"
+                    echo "Signing validation: ${SIGNING_VALIDATION:-unknown}"
+                  } > android-build-info.txt
+
+            - name: Generate app build info
+              run: npm run generate-build-info
+
+            - name: Make gradlew executable
+              run: chmod +x android/gradlew
+
+            - name: Build Beta APK
+              run: |
+                  cd android
+                  ./gradlew assembleRelease \
+                    --no-daemon \
+                    --stacktrace \
+                    --max-workers=2 \
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+
+            - name: Collect Beta APKs
+              run: |
+                  mkdir -p dist
+                  shopt -s nullglob
+                  apks=(android/app/build/outputs/apk/release/*.apk)
+                  if [ ${#apks[@]} -eq 0 ]; then
+                    echo "::error title=Build output collection failed::No release APKs were found after assembleRelease."
+                    find android/app/build/outputs/apk -type f -name '*.apk' -print || true
+                    exit 1
+                  fi
+
+                  for apk in "${apks[@]}"; do
+                    base="$(basename "$apk" .apk)"
+                    cp "$apk" "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-${base}.apk"
+                  done
+
+                  mapping_dir="android/app/build/outputs/mapping/release"
+                  if [ -d "$mapping_dir" ]; then
+                    tar -czf "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-mapping.tar.gz" -C "$mapping_dir" .
+                  fi
+
+                  cp android-build-info.txt dist/android-build-info.txt
+                  (cd dist && sha256sum * > SHA256SUMS.txt)
+                  ls -lh dist
+
+            - name: Upload Beta APKs
+              uses: actions/upload-artifact@v7
+              with:
+                  name: beta-apks-${{ needs.check-version.outputs.version }}
+                  path: dist/*
+                  if-no-files-found: error
+                  retention-days: 30
+
+            - name: Build Summary
+              run: |
+                  {
+                    echo "## Beta build"
+                    echo
+                    echo "- App version: ${APP_VERSION}"
+                    echo "- Package version: ${PACKAGE_VERSION}"
+                    echo "- Commit: ${GITHUB_SHA}"
+                    echo "- Ref: ${BUILD_REF_NAME} (${BUILD_REF_TYPE})"
+                    echo "- Build date: ${BUILD_DATE}"
+                    echo "- Signing: ${SIGNING_STATUS:-unknown}"
+                    echo "- Triggered by: ${{ github.event_name }}"
+                    echo "- Actor: ${{ github.actor }}"
+                    echo
+                    echo "### Artifacts"
+                    ls -1 dist | sed 's/^/- /'
+                  } >> "$GITHUB_STEP_SUMMARY"
