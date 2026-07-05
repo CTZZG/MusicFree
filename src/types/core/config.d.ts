@@ -81,6 +81,8 @@ export interface IAppConfigProperties {
     "theme.followSystem": boolean;
     "theme.selectedTheme": string;
     "theme.coverStyle": "square" | "circle";
+    "theme.hideHomeHeroCard": boolean;
+    "theme.hideHomeOperations": boolean;
 
     // Backup
     "backup.resumeMode": ResumeMode;

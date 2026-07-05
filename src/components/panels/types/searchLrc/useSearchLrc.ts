@@ -4,6 +4,10 @@ import { devLog, errorLog } from "@/utils/log";
 import { produce } from "immer";
 import { useCallback, useRef } from "react";
 import searchResultStore from "./searchResultStore";
+import { withTimeout } from "@/utils/promiseTimeout";
+import { resolveSearchPage } from "@/utils/searchPaging";
+
+const PLUGIN_SEARCH_TIMEOUT_MS = 15_000;
 
 export default function useSearchLrc() {
     // 当前正在搜索
@@ -66,17 +70,21 @@ export default function useSearchLrc() {
 
             // 是否是一次新的搜索
             const newSearch =
-                query ||
+                query !== undefined ||
                 prevPluginResult?.page === undefined ||
                 queryPage === 1;
 
             // 本次搜索关键词
-            currentQueryRef.current = query =
+            const requestQuery =
                 query ?? searchResultStore.getValue().query ?? "";
+            currentQueryRef.current = requestQuery;
 
             /** 搜索的页码 */
-            const page =
-                queryPage ?? newSearch ? 1 : (prevPluginResult?.page ?? 0) + 1;
+            const page = resolveSearchPage(
+                queryPage,
+                newSearch,
+                prevPluginResult?.page,
+            );
             try {
                 searchResultStore.setValue(
                     produce(draft => {
@@ -93,13 +101,13 @@ export default function useSearchLrc() {
                         };
                     }),
                 );
-                const result = await plugin?.methods?.search?.(
-                    query,
-                    page,
-                    "lyric",
+                const result = await withTimeout(
+                    plugin?.methods?.search?.(requestQuery, page, "lyric"),
+                    PLUGIN_SEARCH_TIMEOUT_MS,
+                    "搜索超时",
                 );
                 /** 如果搜索结果不是本次结果 */
-                if (currentQueryRef.current !== query) {
+                if (currentQueryRef.current !== requestQuery) {
                     return;
                 }
                 /** 切换到结果页 */
@@ -134,18 +142,18 @@ export default function useSearchLrc() {
                     }),
                 );
             } catch (e: any) {
+                /** 如果搜索结果不是本次结果 */
+                if (currentQueryRef.current !== requestQuery) {
+                    return;
+                }
                 errorLog("搜索失败", e?.message);
                 devLog(
                     "error",
                     "搜索失败",
-                    `Plugin: ${plugin.name} Query: ${query} Page: ${page}`,
+                    `Plugin: ${plugin.name} Query: ${requestQuery} Page: ${page}`,
                     e,
                     e?.message,
                 );
-                /** 如果搜索结果不是本次结果 */
-                if (currentQueryRef.current !== query) {
-                    return;
-                }
                 searchResultStore.setValue(
                     produce(draft => {
                         const prevMediaResult = draft.data;

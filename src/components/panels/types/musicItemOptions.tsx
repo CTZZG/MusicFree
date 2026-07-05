@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { Share, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
 import ThemeText from "@/components/base/themeText";
@@ -52,6 +52,43 @@ interface IOption {
     show?: boolean;
 }
 
+const getAlbumIds = (musicItem: IMusic.IMusicItem) => {
+    const item = musicItem as any;
+    const albumId = item.albumid ?? item.albumId ?? item.album_id;
+    const albumMid = item.albummid ?? item.albumMid ?? item.album_mid;
+
+    if (musicItem.album && !albumId && !albumMid) {
+        const matched = musicItem.album
+            .toString()
+            .match(/(?:id|mid)[:：]\s*([\w-]+)/i);
+        if (matched?.[1]) {
+            return { albumId: matched[1], albumMid: undefined };
+        }
+    }
+
+    return { albumId, albumMid };
+};
+
+const formatMusicShareMessage = async (musicItem: IMusic.IMusicItem) => {
+    const title = musicItem.title?.toString().trim();
+    const artist = musicItem.artist?.toString().trim();
+    const musicTitle =
+        title && artist
+            ? `${title} - ${artist}`
+            : title || artist || getMediaUniqueKey(musicItem);
+    let detailUrl = "";
+    try {
+        const result = await pluginManager
+            .getByMedia(musicItem)
+            ?.methods.getMusicDetailPageUrl(musicItem);
+        detailUrl = typeof result === "string" ? result : "";
+    } catch {
+        detailUrl = "";
+    }
+
+    return detailUrl ? `${musicTitle}\n${detailUrl}` : musicTitle;
+};
+
 export default function MusicItemOptions(props: IMusicItemOptionsProps) {
     const { musicItem, musicSheet, from } = props ?? {};
     const { t } = useI18N();
@@ -60,7 +97,7 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
 
     const safeAreaInsets = useSafeAreaInsets();
 
-    const downloaded = LocalMusicSheet.isLocalMusic(musicItem);
+    const downloaded = LocalMusicSheet.useLocalMusic(musicItem);
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
     const hiddenLocalMusic = LocalMusicSheet.useIsHidden(musicItem);
     const associatedLrc = getMediaExtraProperty(musicItem, "associatedLrc");
@@ -97,7 +134,9 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
         },
         {
             icon: "user",
-            title: t("panel.musicItemOptions.author", { artist: musicItem.artist }),
+            title: t("panel.musicItemOptions.author", {
+                artist: musicItem.artist,
+            }),
             onPress: () => {
                 try {
                     Clipboard.setString(musicItem.artist.toString());
@@ -110,13 +149,62 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
         {
             icon: "album-outline",
             show: !!musicItem.album,
-            title: t("panel.musicItemOptions.album", { album: musicItem.album }),
+            title: (() => {
+                const { albumId, albumMid } = getAlbumIds(musicItem);
+                const albumText = musicItem.album;
+                const ids: string[] = [];
+                if (albumId) ids.push(`id: ${albumId}`);
+                if (albumMid) ids.push(`mid: ${albumMid}`);
+                return ids.length
+                    ? t("panel.musicItemOptions.album", {
+                        album: `${albumText} (${ids.join(", ")})`,
+                    })
+                    : t("panel.musicItemOptions.album", { album: albumText });
+            })(),
             onPress: () => {
                 try {
-                    Clipboard.setString(musicItem.album.toString());
+                    const { albumId, albumMid } = getAlbumIds(musicItem);
+                    if (albumId || albumMid) {
+                        const copyData: Record<string, any> = {
+                            album: musicItem.album,
+                        };
+                        if (albumId) copyData.albumId = albumId;
+                        if (albumMid) copyData.albumMid = albumMid;
+                        Clipboard.setString(JSON.stringify(copyData, null, 2));
+                    } else {
+                        Clipboard.setString(musicItem.album.toString());
+                    }
                     Toast.success(t("toast.copiedToClipboard"));
                 } catch {
                     Toast.warn(t("toast.copiedToClipboardFailed"));
+                }
+            },
+        },
+        {
+            icon: "share",
+            title: t("panel.musicItemOptions.share"),
+            onPress: async () => {
+                try {
+                    await Share.share(
+                        {
+                            title: t("panel.musicItemOptions.shareTitle"),
+                            message: await formatMusicShareMessage(musicItem),
+                        },
+                        {
+                            dialogTitle: t(
+                                "panel.musicItemOptions.shareDialogTitle",
+                                {
+                                    title:
+                                        musicItem.title ||
+                                        t("panel.musicItemOptions.shareTitle"),
+                                },
+                            ),
+                            subject: t("panel.musicItemOptions.shareTitle"),
+                        },
+                    );
+                    hidePanel();
+                } catch {
+                    Toast.warn(t("toast.failToShareMusic"));
                 }
             },
         },
@@ -228,7 +316,9 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
                                 );
                             if (preview.needsConfirmation) {
                                 showDialog("SimpleDialog", {
-                                    title: t("localMusic.relocateMismatchTitle"),
+                                    title: t(
+                                        "localMusic.relocateMismatchTitle",
+                                    ),
                                     content: t(
                                         "localMusic.relocateMismatchContent",
                                         {
@@ -313,13 +403,19 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             onPress: () => {
                 showDialog("SimpleDialog", {
                     title: t("panel.musicItemOptions.deleteLocalDownload"),
-                    content: t("panel.musicItemOptions.deleteLocalDownloadConfirm"),
+                    content: t(
+                        "panel.musicItemOptions.deleteLocalDownloadConfirm",
+                    ),
                     async onOk() {
                         try {
                             await LocalMusicSheet.removeMusic(musicItem, true);
                             Toast.success(t("toast.deleteSuccess"));
                         } catch (e: any) {
-                            Toast.warn(`${t("panel.musicItemOptions.deleteFailed")} ${e?.message ?? e}`);
+                            Toast.warn(
+                                `${t("panel.musicItemOptions.deleteFailed")} ${
+                                    e?.message ?? e
+                                }`,
+                            );
                         }
                     },
                 });
@@ -329,7 +425,9 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
         {
             icon: "chat-bubble-oval-left-ellipsis",
             title: t("panel.musicItemOptions.readComment"),
-            show: !!pluginManager.getByMedia(musicItem)?.supportedMethods.has("getMusicComments"),
+            show: !!pluginManager
+                .getByMedia(musicItem)
+                ?.supportedMethods.has("getMusicComments"),
             onPress: () => {
                 if (!musicItem) {
                     return;
@@ -342,12 +440,13 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
         {
             icon: "link",
             title: associatedLrc
-                ? t("panel.musicItemOptions.associatedLyric", { platform: associatedLrc.platform, id: associatedLrc.id })
+                ? t("panel.musicItemOptions.associatedLyric", {
+                    platform: associatedLrc.platform,
+                    id: associatedLrc.id,
+                })
                 : t("panel.musicItemOptions.associateLyric"),
             onPress: async () => {
-                if (
-                    Config.getConfig("basic.associateLyricType") === "input"
-                ) {
+                if (Config.getConfig("basic.associateLyricType") === "input") {
                     showPanel("AssociateLrc", {
                         musicItem,
                     });
@@ -364,7 +463,9 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             show: !!associatedLrc,
             onPress: async () => {
                 lyricManager.unassociateLyric(musicItem);
-                Toast.success(t("panel.musicItemOptions.unassociateLyricSuccess"));
+                Toast.success(
+                    t("panel.musicItemOptions.unassociateLyricSuccess"),
+                );
                 hidePanel();
             },
         },

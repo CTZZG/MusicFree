@@ -14,27 +14,51 @@ import PanelBase from "../base/panelBase";
 import { hidePanel } from "../usePanel";
 
 interface ISingerInfo {
-    id: number | string;
+    id?: number | string;
     mid?: string;
     name: string;
     avatar?: string;
+    searchOnly?: boolean;
 }
 
 interface IArtistSelectPanelProps {
     singerList: ISingerInfo[];
     platform: string;
+    pluginHash?: string;
 }
 
 const ITEM_HEIGHT = rpx(96);
 
 export default function ArtistSelectPanel(props: IArtistSelectPanelProps) {
-    const { singerList = [], platform } = props ?? {};
+    const { singerList = [], platform, pluginHash } = props ?? {};
     const { t } = useI18N();
     const safeAreaInsets = useSafeAreaInsets();
     const navigate = useNavigate();
 
     const handleArtistPress = (singer: ISingerInfo) => {
-        const plugin = pluginManager.getByName(platform);
+        const plugin =
+            (pluginHash ? pluginManager.getByHash(pluginHash) : undefined) ??
+            pluginManager.getByName(platform);
+        const shouldSearch =
+            singer.searchOnly ||
+            singer.id === undefined ||
+            singer.id === null ||
+            !plugin?.supportedMethods.has("getArtistWorks");
+
+        if (shouldSearch) {
+            hidePanel();
+            setTimeout(() => {
+                navigate(ROUTE_PATH.SEARCH_PAGE, {
+                    initialQuery: singer.name,
+                    initialSearchType: "artist",
+                    pluginHash: plugin?.supportedMethods.has("search")
+                        ? plugin.hash
+                        : undefined,
+                });
+            }, 100);
+            return;
+        }
+
         const artistItem: IArtist.IArtistItemBase = {
             id: String(singer.id),
             singerMID: singer.mid,

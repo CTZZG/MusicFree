@@ -144,7 +144,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                 const options = _.navigationState.routes.reduce(
                     (acc: Record<string, any>, route: { key: string; title?: string }) => {
                         acc[route.key] = {
-                            label: ({ focused, color }: any) => {
+                            label: ({ focused }: any) => {
                                 const pluginSearchResult =
                                     searchResults[props.tab][route.key];
                                 const meta = getPluginTabMeta(
@@ -158,8 +158,11 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                                 const metaColor = isError
                                     ? colors.notification
                                     : focused
-                                        ? color
+                                        ? colors.primary
                                         : colors.textSecondary;
+                                const titleColor = focused
+                                    ? colors.primary
+                                    : colors.textSecondary ?? colors.text;
 
                                 return (
                                     <View style={styles.pluginTabLabel}>
@@ -171,7 +174,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                                                     fontWeight: focused
                                                         ? fontWeightConst.bolder
                                                         : fontWeightConst.medium,
-                                                    color,
+                                                    color: titleColor,
                                                 },
                                             ]}>
                                             {route.title ??

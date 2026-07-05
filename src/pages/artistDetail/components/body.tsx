@@ -45,7 +45,7 @@ export default function Body() {
                 const options = props.navigationState.routes.reduce(
                     (acc, route) => {
                         acc[route.key] = {
-                            label: ({ focused, color }: any) => (
+                            label: ({ focused }: any) => (
                                 <Text
                                     numberOfLines={1}
                                     style={{
@@ -53,7 +53,10 @@ export default function Body() {
                                         fontWeight: focused
                                             ? fontWeightConst.bolder
                                             : fontWeightConst.medium,
-                                        color,
+                                        color: focused
+                                            ? colors.primary
+                                            : colors.textSecondary ??
+                                              colors.text,
                                         textAlign: "center",
                                     }}>
                                     {t(route.i18nKey as any) ?? route.title}

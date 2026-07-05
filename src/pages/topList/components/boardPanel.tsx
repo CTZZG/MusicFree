@@ -1,10 +1,10 @@
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import {
     RefreshControl,
-    SectionList,
-    SectionListProps,
+    ScrollView,
     StyleSheet,
     View,
+    useWindowDimensions,
 } from "react-native";
 import rpx from "@/utils/rpx";
 import { IPluginTopListResult } from "../store/atoms";
@@ -14,6 +14,12 @@ import TopListItem from "@/components/mediaItem/topListItem";
 import ThemeText from "@/components/base/themeText";
 import ListEmpty from "@/components/base/listEmpty";
 import useColors from "@/hooks/useColors";
+import useOrientation from "@/hooks/useOrientation";
+import { resolveTopListGridLayout } from "./topListGridLayout";
+
+const HORIZONTAL_PADDING = rpx(24);
+const COLUMN_GAP = rpx(16);
+const MIN_CARD_WIDTH = 140;
 
 interface IBoardPanelProps {
     hash: string;
@@ -23,6 +29,8 @@ interface IBoardPanelProps {
 function BoardPanel(props: IBoardPanelProps) {
     const { hash, topListData, onRefresh } = props ?? {};
     const colors = useColors();
+    const orientation = useOrientation();
+    const { width: windowWidth } = useWindowDimensions();
     const requestState =
         topListData?.state ?? RequestStateCode.PENDING_FIRST_PAGE;
     const isLoading =
@@ -30,32 +38,25 @@ function BoardPanel(props: IBoardPanelProps) {
         requestState === RequestStateCode.PENDING_REST_PAGE;
     const hasExistingData = !!topListData?.data?.length;
     const isRefreshing = isLoading && hasExistingData;
-
-    const renderItem: SectionListProps<IMusic.IMusicSheetItemBase>["renderItem"] =
-        ({ item }) => {
-            return <TopListItem topListItem={item} pluginHash={hash} />;
-        };
-
-    const renderSectionHeader: SectionListProps<IMusic.IMusicSheetItemBase>["renderSectionHeader"] =
-        ({ section: { title } }) => {
-            return (
-                <View style={style.sectionHeader}>
-                    <ThemeText fontWeight="bold" fontSize="title">
-                        {title}
-                    </ThemeText>
-                </View>
-            );
-        };
+    const sections = topListData?.data || [];
+    const gridLayout = useMemo(
+        () =>
+            resolveTopListGridLayout({
+                containerWidth: windowWidth,
+                orientation,
+                horizontalPadding: HORIZONTAL_PADDING,
+                columnGap: COLUMN_GAP,
+                minCardWidth: MIN_CARD_WIDTH,
+            }),
+        [orientation, windowWidth],
+    );
 
     return isLoading && !hasExistingData ? (
         <Loading />
     ) : (
-        <SectionList
-            renderItem={renderItem}
-            renderSectionHeader={renderSectionHeader}
-            ListEmptyComponent={
-                <ListEmpty state={requestState} onRetry={onRefresh} />
-            }
+        <ScrollView
+            contentContainerStyle={style.contentContainer}
+            showsVerticalScrollIndicator={false}
             refreshControl={
                 onRefresh ? (
                     <RefreshControl
@@ -65,9 +66,45 @@ function BoardPanel(props: IBoardPanelProps) {
                         colors={[colors.primary]}
                     />
                 ) : undefined
-            }
-            sections={topListData?.data || []}
-        />
+            }>
+            {!sections.length ? (
+                <ListEmpty state={requestState} onRetry={onRefresh} />
+            ) : (
+                sections.map(section => (
+                    <View key={section.title} style={style.section}>
+                        <View style={style.sectionHeader}>
+                            <ThemeText fontWeight="bold" fontSize="title">
+                                {section.title}
+                            </ThemeText>
+                        </View>
+                        <View style={style.grid}>
+                            {(section.data ?? []).map((item, index) => (
+                                <View
+                                    key={`${item.platform}-${item.id}-${item.title}`}
+                                    style={[
+                                        style.gridItem,
+                                        {
+                                            width: gridLayout.itemWidth,
+                                            marginRight:
+                                                (index + 1) %
+                                                    gridLayout.columnCount ===
+                                                0
+                                                    ? 0
+                                                    : COLUMN_GAP,
+                                        },
+                                    ]}>
+                                    <TopListItem
+                                        topListItem={item}
+                                        pluginHash={hash}
+                                        rank={index + 1}
+                                    />
+                                </View>
+                            ))}
+                        </View>
+                    </View>
+                ))
+            )}
+        </ScrollView>
     );
 }
 
@@ -80,12 +117,25 @@ export default memo(
 );
 
 const style = StyleSheet.create({
-    wrapper: {
-        width: rpx(750),
+    contentContainer: {
+        paddingHorizontal: HORIZONTAL_PADDING,
+        paddingTop: rpx(8),
+        paddingBottom: rpx(36),
+    },
+    section: {
+        width: "100%",
     },
     sectionHeader: {
         marginTop: rpx(28),
-        marginBottom: rpx(24),
-        marginLeft: rpx(24),
+        marginBottom: rpx(16),
+    },
+    grid: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "flex-start",
+    },
+    gridItem: {
+        marginBottom: COLUMN_GAP,
+        flexShrink: 0,
     },
 });

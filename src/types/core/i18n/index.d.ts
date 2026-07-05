@@ -523,6 +523,7 @@ export interface ILanguageData {
     "toast.copiedToClipboard": string; // 已复制到剪贴板
     "toast.copiedToClipboardFailed": string; // 复制失败
     "toast.failToSharePlugin": string; // 插件分享失败
+    "toast.failToShareMusic": string; // 歌曲分享失败
     "toast.pluginUninstalled": string; // 插件已卸载
     "toast.toast.pluginUninstalled": string; // 插件已卸载
     "toast.failToImportMusic": string; // 音乐导入失败
@@ -552,7 +553,9 @@ export interface ILanguageData {
     "themeSettings.coverStyle": string; // 封面样式
     "themeSettings.coverStyleSquare": string; // 方形
     "themeSettings.coverStyleCircle": string; // 圆形
-
+    "themeSettings.homeDisplay": string; // 首页显示
+    "themeSettings.hideHomeHeroCard": string; // 隐藏首页继续听卡片
+    "themeSettings.hideHomeOperations": string; // 隐藏首页快捷入口
 
     // 自定义主题相关
     "setCustomTheme.customizeBackground": string; // 自定义背景
@@ -767,6 +770,7 @@ export interface ILanguageData {
     "basicSettings.developer.traceLog": string; // 记录详细日志
     "basicSettings.developer.devLog": string; // 调试面板
     "basicSettings.developer.viewErrorLog": string; // 查看错误日志
+    "basicSettings.developer.copyPlaybackDiagnostic": string; // 复制播放诊断
     "basicSettings.developer.clearLog": string; // 清空日志
     "basicSettings.developer.disableTelemetry": string; // 禁止自动上报性能和异常信息
 
@@ -794,6 +798,9 @@ export interface ILanguageData {
     "dialog.errorLogNoRecord": string; // 暂无记录
     "dialog.errorLogKnow": string; // 我知道了
     "dialog.errorLogCopy": string; // 复制日志
+    "dialog.playbackDiagnosticTitle": string; // 播放诊断
+    "dialog.playbackDiagnosticCopy": string; // 复制诊断
+    "dialog.playbackDiagnosticFailed": string; // 生成播放诊断失败
     "dialog.setScheduleCloseTime.title": string; // 设置定时关闭时间
     "dialog.setScheduleCloseTime.placeholder": string; // 请输入时间
     "dialog.setScheduleCloseTime.unit": string; // 分钟
@@ -910,16 +917,19 @@ export interface ILanguageData {
     "panel.musicItemLyricOptions.settingFail": string; // 设置失败
     "panel.musicItemLyricOptions.deleteFail": string; // 删除失败
 
-    // 面板相关 - 音乐项选项    
+    // 面板相关 - 音乐项选项
     "panel.musicItemOptions.author": string; // 作者
     "panel.musicItemOptions.album": string; // 专辑
+    "panel.musicItemOptions.share": string; // 分享歌曲
+    "panel.musicItemOptions.shareTitle": string; // 歌曲分享标题
+    "panel.musicItemOptions.shareDialogTitle": string; // 歌曲分享面板标题
     "panel.musicItemOptions.downloaded": string; // 已下载
     "panel.musicItemOptions.readComment": string; // 查看评论
     "panel.musicItemOptions.deleteLocalDownload": string; // 删除本地下载
     "panel.musicItemOptions.deleteLocalDownloadConfirm": string; // 删除本地下载确认
     "panel.musicItemOptions.associatedLyric": string; // 已关联歌词
     "panel.musicItemOptions.associateLyric": string; // 关联歌词
-    "panel.musicItemOptions.unassociateLyric": string; // 解除关联歌词    
+    "panel.musicItemOptions.unassociateLyric": string; // 解除关联歌词
     "panel.musicItemOptions.unassociateLyricSuccess": string; // 已解除关联歌词
     "panel.musicItemOptions.timingClose": string; // 定时关闭
     "panel.musicItemOptions.clearPluginCache": string; // 清除插件缓存

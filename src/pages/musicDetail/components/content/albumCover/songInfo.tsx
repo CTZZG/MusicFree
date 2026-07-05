@@ -18,6 +18,7 @@ import MusicSheet, { useFavorite } from "@/core/musicSheet";
 import pluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useCurrentMusic } from "@/core/trackPlayer";
+import { parseArtists } from "@/utils/artistParser";
 import rpx from "@/utils/rpx";
 
 interface ISongInfoProps {
@@ -25,10 +26,11 @@ interface ISongInfoProps {
 }
 
 interface ISingerInfo {
-    id: number | string;
+    id?: number | string;
     mid?: string;
     name: string;
     avatar?: string;
+    searchOnly?: boolean;
 }
 
 const INFO_MAX_WIDTH = rpx(500);
@@ -43,20 +45,31 @@ export function getSongInfoWidth(windowWidth: number) {
 
 function getSingerList(musicItem: IMusic.IMusicItem | null): ISingerInfo[] {
     const item = musicItem as any;
-    if (!Array.isArray(item?.singerList)) {
-        return [];
+    if (Array.isArray(item?.singerList)) {
+        const structuredSingers = item.singerList
+            .filter(
+                (singer: Partial<ISingerInfo>) =>
+                    singer?.id !== undefined &&
+                    singer?.id !== null &&
+                    singer?.name,
+            )
+            .map((singer: Partial<ISingerInfo>) => ({
+                id: singer.id!,
+                mid: singer.mid,
+                name: singer.name!,
+                avatar: singer.avatar,
+            }));
+
+        if (structuredSingers.length > 0) {
+            return structuredSingers;
+        }
     }
-    return item.singerList
-        .filter(
-            (singer: Partial<ISingerInfo>) =>
-                singer?.id !== undefined && singer?.id !== null && singer?.name,
-        )
-        .map((singer: Partial<ISingerInfo>) => ({
-            id: singer.id!,
-            mid: singer.mid,
-            name: singer.name!,
-            avatar: singer.avatar,
-        }));
+
+    return parseArtists(musicItem?.artist).map(name => ({
+        id: name,
+        name,
+        searchOnly: true,
+    }));
 }
 
 function getAlbumIdentity(musicItem: IMusic.IMusicItem) {
@@ -92,6 +105,18 @@ function shouldUseAlbumSearchFallback(
     return platformNames.some(name => name.includes("GD聚合音乐"));
 }
 
+function canOpenArtistDetail(
+    singer: ISingerInfo,
+    plugin?: ReturnType<typeof pluginManager.getByMedia>,
+) {
+    return (
+        !singer.searchOnly &&
+        singer.id !== undefined &&
+        singer.id !== null &&
+        !!plugin?.supportedMethods.has("getArtistWorks")
+    );
+}
+
 export default function SongInfo(props: ISongInfoProps) {
     const { showHeart = false } = props;
     const musicItem = useCurrentMusic();
@@ -111,12 +136,23 @@ export default function SongInfo(props: ISongInfoProps) {
         }
 
         const plugin = pluginManager.getByMedia(musicItem);
-        if (!plugin) {
-            return;
-        }
 
         if (singerList.length === 1) {
             const singer = singerList[0];
+            if (!canOpenArtistDetail(singer, plugin)) {
+                navigate(ROUTE_PATH.SEARCH_PAGE, {
+                    initialQuery: singer.name,
+                    initialSearchType: "artist",
+                    pluginHash: plugin?.supportedMethods.has("search")
+                        ? plugin.hash
+                        : undefined,
+                });
+                return;
+            }
+            if (!plugin) {
+                return;
+            }
+
             const artistItem: IArtist.IArtistItemBase = {
                 id: String(singer.id),
                 singerMID: singer.mid,
@@ -134,6 +170,7 @@ export default function SongInfo(props: ISongInfoProps) {
             showPanel("ArtistSelectPanel", {
                 singerList,
                 platform: musicItem.platform,
+                pluginHash: plugin?.hash,
             });
         }
     }, [musicItem, navigate, singerList]);
@@ -172,7 +209,9 @@ export default function SongInfo(props: ISongInfoProps) {
         navigate(ROUTE_PATH.SEARCH_PAGE, {
             initialQuery: musicItem.album,
             initialSearchType: "album",
-            pluginHash: plugin?.methods?.search ? plugin.hash : undefined,
+            pluginHash: plugin?.supportedMethods.has("search")
+                ? plugin.hash
+                : undefined,
         });
     }, [musicItem, navigate]);
 

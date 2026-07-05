@@ -51,7 +51,7 @@ function ResultPanel() {
                 const options = props.navigationState.routes.reduce(
                     (acc, route) => {
                         acc[route.key] = {
-                            label: ({ focused, color }: any) => (
+                            label: ({ focused }: any) => (
                                 <Text
                                     numberOfLines={1}
                                     style={{
@@ -59,7 +59,10 @@ function ResultPanel() {
                                         fontWeight: focused
                                             ? fontWeightConst.bolder
                                             : fontWeightConst.medium,
-                                        color,
+                                        color: focused
+                                            ? colors.primary
+                                            : colors.textSecondary ??
+                                              colors.text,
                                         textAlign: "center",
                                     }}>
                                     {route.i18nKey

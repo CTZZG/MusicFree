@@ -1,5 +1,5 @@
-import React from "react";
-import { StyleSheet } from "react-native";
+import React, { useMemo } from "react";
+import { StyleSheet, useWindowDimensions } from "react-native";
 
 import NavBar from "./components/navBar";
 import MusicBar from "@/components/musicBar";
@@ -13,6 +13,10 @@ import Theme from "@/core/theme";
 import HomeBody from "./components/homeBody";
 import HomeBodyHorizontal from "./components/homeBodyHorizontal";
 import useOrientation from "@/hooks/useOrientation";
+
+const PORTRAIT_DRAWER_MAX_WIDTH = 420;
+const LANDSCAPE_DRAWER_MAX_WIDTH = 440;
+const DRAWER_MIN_WIDTH = 320;
 
 function Home() {
     const orientation = useOrientation();
@@ -61,12 +65,31 @@ function HomeStatusBar() {
 
 const LeftDrawer = createDrawerNavigator();
 export default function App() {
+    const orientation = useOrientation();
+    const { width } = useWindowDimensions();
+    const drawerWidth = useMemo(() => {
+        const safeWindowWidth = Math.max(0, width);
+        if (orientation === "horizontal") {
+            const targetWidth = Math.max(
+                DRAWER_MIN_WIDTH,
+                Math.min(safeWindowWidth * 0.56, LANDSCAPE_DRAWER_MAX_WIDTH),
+            );
+            return Math.min(safeWindowWidth, targetWidth);
+        }
+
+        const targetWidth = Math.max(
+            DRAWER_MIN_WIDTH,
+            Math.min(safeWindowWidth * 0.82, PORTRAIT_DRAWER_MAX_WIDTH),
+        );
+        return Math.min(safeWindowWidth, targetWidth);
+    }, [orientation, width]);
+
     return (
         <LeftDrawer.Navigator
             screenOptions={{
                 headerShown: false,
                 drawerStyle: {
-                    width: "80%",
+                    width: drawerWidth,
                 },
             }}
             initialRouteName="HOME-MAIN"

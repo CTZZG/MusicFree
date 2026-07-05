@@ -9,9 +9,11 @@ import MusicBar from "@/components/musicBar";
 import AppBar from "@/components/base/appBar";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useI18N } from "@/core/i18n";
+import { useCurrentMusic } from "@/core/trackPlayer";
 
 export default function History() {
     const musicHistoryList = useMusicHistory();
+    const currentMusic = useCurrentMusic();
 
     const navigate = useNavigate();
     const { t } = useI18N();
@@ -50,6 +52,7 @@ export default function History() {
                 musicList={musicHistoryList}
                 showIndex
                 state={RequestStateCode.IDLE}
+                highlightMusicItem={currentMusic}
                 musicSheet={{
                     id: musicHistorySheetId,
                     title: t("history.title"),

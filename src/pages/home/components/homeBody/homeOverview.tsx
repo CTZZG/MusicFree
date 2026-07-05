@@ -4,6 +4,7 @@ import ThemeText from "@/components/base/themeText";
 import { showPanel } from "@/components/panels/usePanel";
 import { ImgAsset } from "@/constants/assetsConst";
 import i18n, { useI18N } from "@/core/i18n";
+import { useAppConfig } from "@/core/appConfig";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import TrackPlayer, { useMusicState, useProgress } from "@/core/trackPlayer";
 import useColors from "@/hooks/useColors";
@@ -49,6 +50,8 @@ function getMusicDescription(musicItem?: IMusic.IMusicItem | null) {
 export default function HomeOverview() {
     const data = useHomeOverview();
     const discoveryPreview = useHomeDiscovery(data.topListPlugins);
+    const hideHomeHeroCard = useAppConfig("theme.hideHomeHeroCard") ?? false;
+    const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
 
     return (
         <ScrollView
@@ -59,12 +62,14 @@ export default function HomeOverview() {
                 topListPlugins={data.topListPlugins}
                 preview={discoveryPreview}
             />
-            <ContinueListening
-                currentMusic={data.currentMusic}
-                featuredMusic={data.featuredMusic}
-            />
+            {!hideHomeHeroCard ? (
+                <ContinueListening
+                    currentMusic={data.currentMusic}
+                    featuredMusic={data.featuredMusic}
+                />
+            ) : null}
             <RecentListening musics={data.recentMusics} />
-            <QuickAccess />
+            {!hideHomeOperations ? <QuickAccess /> : null}
             <MyMusic
                 favoriteSheet={data.favoriteSheet}
                 userSheets={data.userSheets}

@@ -24,7 +24,7 @@ export default function Body() {
         const options = _.navigationState.routes.reduce(
             (acc: Record<string, any>, route: { key: string; title?: string }) => {
                 acc[route.key] = {
-                    label: ({ focused, color }: any) => (
+                    label: ({ focused }: any) => (
                         <Text
                             numberOfLines={1}
                             style={{
@@ -32,7 +32,9 @@ export default function Body() {
                                 fontWeight: focused
                                     ? fontWeightConst.bolder
                                     : fontWeightConst.medium,
-                                color,
+                                color: focused
+                                    ? colors.primary
+                                    : colors.textSecondary ?? colors.text,
                                 textAlign: "center",
                             }}>
                             {route.title ?? `(${t("common.unknownName")})`}

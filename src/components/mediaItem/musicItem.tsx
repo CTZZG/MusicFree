@@ -20,9 +20,13 @@ import DownloadStatusIndicator from "@/components/downloadStatusIndicator";
 import { useI18N } from "@/core/i18n";
 import Toast from "@/utils/toast";
 import { useMediaExtraProperty } from "@/utils/mediaExtra";
+import {
+    normalizeDownloadWriteResult,
+    type DownloadWriteResult,
+} from "@/core/downloadFinalizationPolicy";
 import useColors from "@/hooks/useColors";
 
-type DownloadWriteStatus = "success" | "failed" | "skipped";
+type DownloadWriteStatus = DownloadWriteResult;
 
 interface IMusicItemProps {
     index?: string | number;
@@ -96,15 +100,21 @@ function MusicItem(props: IMusicItemProps) {
     );
     const { t } = useI18N();
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
-    const localMusicItem = LocalMusicSheet.isLocalMusic(musicItem);
-    const downloadMetadataStatus = useMediaExtraProperty(
+    const localMusicItem = LocalMusicSheet.useLocalMusic(musicItem);
+    const rawDownloadMetadataStatus = useMediaExtraProperty(
         musicItem,
         "downloadMetadataStatus",
-    ) as DownloadWriteStatus | null;
-    const downloadLyricStatus = useMediaExtraProperty(
+    );
+    const rawDownloadLyricStatus = useMediaExtraProperty(
         musicItem,
         "downloadLyricStatus",
-    ) as DownloadWriteStatus | null;
+    );
+    const downloadMetadataStatus = normalizeDownloadWriteResult(
+        rawDownloadMetadataStatus,
+    );
+    const downloadLyricStatus = normalizeDownloadWriteResult(
+        rawDownloadLyricStatus,
+    );
     const downloadWriteBadges = useMemo(() => {
         const badges: Array<{
             key: string;
