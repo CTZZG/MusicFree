@@ -35,11 +35,8 @@ export function formatAuthUrl(url: string) {
                     urlObj.password,
                 )}`,
             )}`;
-            urlObj.username = "";
-            urlObj.password = "";
-
             return {
-                url: urlObj.toString(),
+                url: `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}${urlObj.search}${urlObj.hash}`,
                 auth,
             };
         }

@@ -12,5 +12,18 @@
     },
     "types": ["node", "react", "jest"],
     "ignoreDeprecations": "6.0"
-  }
+  },
+  "include": [
+    "index.js",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js",
+    "src/**/*",
+    "generator/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "tmp",
+    "android"
+  ]
 }

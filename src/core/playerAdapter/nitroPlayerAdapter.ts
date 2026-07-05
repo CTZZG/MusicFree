@@ -13,6 +13,7 @@ import type {
 } from "react-native-nitro-player";
 import { getMediaUniqueKey } from "@/utils/mediaUtils";
 import { errorLog, trace } from "@/utils/log";
+import { createDownloadHeaders } from "@/utils/downloadHeaders";
 import type {
     PlayerAdapter,
     PlayerAdapterConfig,
@@ -31,6 +32,10 @@ import type {
     PlayerBackendState,
     PlayerAdapterTrack,
 } from "./types";
+import {
+    parsePlaybackSourceMeta,
+    stringifyPlaybackSourceMeta,
+} from "./sourceMeta";
 
 const MUSICFREE_QUEUE_NAME = "MusicFree Playback Queue";
 const isForcedNitroBackend =
@@ -38,19 +43,20 @@ const isForcedNitroBackend =
 const PLAY_END_DEDUPE_MS = 1500;
 const EXTRA_HEADERS_JSON = "musicfreeHeadersJson";
 const EXTRA_USER_AGENT = "musicfreeUserAgent";
+const EXTRA_SOURCE_META_JSON = "musicfreeSourceMetaJson";
 
 function mapState(state?: TrackPlayerState): PlayerBackendState {
     switch (state) {
-        case "playing":
-            return "playing";
-        case "paused":
-            return "paused";
-        case "buffering":
-            return "buffering";
-        case "stopped":
-            return "stopped";
-        default:
-            return "idle";
+    case "playing":
+        return "playing";
+    case "paused":
+        return "paused";
+    case "buffering":
+        return "buffering";
+    case "stopped":
+        return "stopped";
+    default:
+        return "idle";
     }
 }
 
@@ -94,7 +100,7 @@ function normalizeText(value: unknown): string {
                     return item;
                 }
                 if (item && typeof item === "object" && "name" in item) {
-                    return String((item as { name?: unknown }).name ?? "");
+                    return String((item as {name?: unknown}).name ?? "");
                 }
                 return String(item ?? "");
             })
@@ -113,9 +119,9 @@ function normalizeArtwork(value: unknown): string | null {
         value &&
         typeof value === "object" &&
         "uri" in value &&
-        typeof (value as { uri?: unknown }).uri === "string"
+        typeof (value as {uri?: unknown}).uri === "string"
     ) {
-        const uri = (value as { uri: string }).uri;
+        const uri = (value as {uri: string}).uri;
         return uri.trim().length ? uri : null;
     }
     return null;
@@ -126,29 +132,8 @@ function normalizeDuration(value: unknown): number {
     return Number.isFinite(duration) && duration > 0 ? duration : 0;
 }
 
-function normalizeRequestHeaders(headers?: Record<string, unknown>) {
-    if (!headers || typeof headers !== "object") {
-        return undefined;
-    }
-
-    const normalized: Record<string, string> = {};
-    Object.entries(headers).forEach(([key, value]) => {
-        const headerName = key.trim();
-        if (!headerName || value === null || value === undefined) {
-            return;
-        }
-
-        const headerValue = String(value);
-        if (headerValue.length > 0) {
-            normalized[headerName] = headerValue;
-        }
-    });
-
-    return Object.keys(normalized).length ? normalized : undefined;
-}
-
 function stringifyRequestHeaders(headers?: Record<string, unknown>) {
-    const normalized = normalizeRequestHeaders(headers);
+    const normalized = createDownloadHeaders(headers);
     if (!normalized) {
         return undefined;
     }
@@ -165,7 +150,9 @@ function normalizeTrackId(value: string): string {
     return encodeURIComponent(value);
 }
 
-function isNativeTrackItem(track: TrackItem | PlayerAdapterTrack): track is TrackItem {
+function isNativeTrackItem(
+    track: TrackItem | PlayerAdapterTrack,
+): track is TrackItem {
     return (
         "extraPayload" in track &&
         !("musicItem" in track) &&
@@ -180,20 +167,21 @@ function toTrackItem(track: PlayerAdapterTrack | TrackItem): TrackItem {
         return track as TrackItem;
     }
 
-    const adapterTrack = track as PlayerAdapterTrack & Partial<IMusic.IMusicItem>;
-    const musicItem = adapterTrack.musicItem ?? (
-        adapterTrack.platform && adapterTrack.id
-            ? adapterTrack as IMusic.IMusicItem
-            : undefined
-    );
-    const stableId = musicItem
-        ? getMediaUniqueKey(musicItem)
-        : adapterTrack.id;
+    const adapterTrack = track as PlayerAdapterTrack &
+        Partial<IMusic.IMusicItem>;
+    const musicItem =
+        adapterTrack.musicItem ??
+        (adapterTrack.platform && adapterTrack.id
+            ? (adapterTrack as IMusic.IMusicItem)
+            : undefined);
+    const stableId = musicItem ? getMediaUniqueKey(musicItem) : adapterTrack.id;
     const headersJson = stringifyRequestHeaders(adapterTrack.headers);
+    const sourceMetaJson = stringifyPlaybackSourceMeta(
+        adapterTrack.playbackSource,
+    );
     const userAgent =
-        typeof adapterTrack.userAgent === "string" &&
-        adapterTrack.userAgent.trim().length
-            ? adapterTrack.userAgent
+        typeof adapterTrack.userAgent === "string"
+            ? adapterTrack.userAgent.trim() || undefined
             : undefined;
 
     return {
@@ -210,6 +198,9 @@ function toTrackItem(track: PlayerAdapterTrack | TrackItem): TrackItem {
             stableId,
             ...(headersJson ? { [EXTRA_HEADERS_JSON]: headersJson } : {}),
             ...(userAgent ? { [EXTRA_USER_AGENT]: userAgent } : {}),
+            ...(sourceMetaJson
+                ? { [EXTRA_SOURCE_META_JSON]: sourceMetaJson }
+                : {}),
         },
     };
 }
@@ -223,12 +214,13 @@ function toPlayerAdapterTrack(
 
     const payload = track.extraPayload as
         | {
-            platform?: unknown;
-            mediaId?: unknown;
-            stableId?: unknown;
-            [EXTRA_HEADERS_JSON]?: unknown;
-            [EXTRA_USER_AGENT]?: unknown;
-        }
+              platform?: unknown;
+              mediaId?: unknown;
+              stableId?: unknown;
+              [EXTRA_HEADERS_JSON]?: unknown;
+              [EXTRA_USER_AGENT]?: unknown;
+              [EXTRA_SOURCE_META_JSON]?: unknown;
+          }
         | undefined;
     const platform =
         typeof payload?.platform === "string" ? payload.platform : undefined;
@@ -247,6 +239,9 @@ function toPlayerAdapterTrack(
         typeof payload?.[EXTRA_USER_AGENT] === "string"
             ? payload[EXTRA_USER_AGENT]
             : undefined;
+    const playbackSource = parsePlaybackSourceMeta(
+        payload?.[EXTRA_SOURCE_META_JSON],
+    );
     const headers = headersJson
         ? (() => {
             try {
@@ -264,6 +259,7 @@ function toPlayerAdapterTrack(
         $: payload?.stableId,
         ...(headers ? { headers } : {}),
         ...(userAgent ? { userAgent } : {}),
+        ...(playbackSource ? { playbackSource } : {}),
     } as TrackItem & Partial<IMusic.IMusicItem>;
 }
 
@@ -319,7 +315,7 @@ export function toPlayerAdapterProgress(
 }
 
 export class NitroPlayerAdapter
-    implements PlayerAdapter<TrackItem | PlayerAdapterTrack> {
+implements PlayerAdapter<TrackItem | PlayerAdapterTrack> {
     readonly name = "nitro-player" as const;
 
     private playlistId: string | null = null;
@@ -330,8 +326,12 @@ export class NitroPlayerAdapter
     private playbackErrorListeners = new Set<(...args: any[]) => void>();
     private playEndListeners = new Set<(...args: any[]) => void>();
     private tracksNeedUpdateListeners = new Set<(...args: any[]) => void>();
-    private temporaryQueueChangedListeners = new Set<(...args: any[]) => void>();
-    private androidAutoConnectionChangedListeners = new Set<(...args: any[]) => void>();
+    private temporaryQueueChangedListeners = new Set<
+        (...args: any[]) => void
+    >();
+    private androidAutoConnectionChangedListeners = new Set<
+        (...args: any[]) => void
+    >();
     private progressListeners = new Set<(...args: any[]) => void>();
     private playbackSeekedListeners = new Set<(...args: any[]) => void>();
     private queuesChangedListeners = new Set<(...args: any[]) => void>();
@@ -347,9 +347,7 @@ export class NitroPlayerAdapter
     private nativeQueueChangedRegistered = false;
     readonly remoteControlMode = "native-session" as const;
 
-    private emitPlayEndOnce(
-        payload: Record<string, unknown>,
-    ) {
+    private emitPlayEndOnce(payload: Record<string, unknown>) {
         const now = Date.now();
         const key = String(payload.trackId ?? payload.index ?? "unknown");
         if (
@@ -370,9 +368,7 @@ export class NitroPlayerAdapter
         }
         this.nativeTrackChangeRegistered = true;
         NitroTrackPlayer.onChangeTrack(async (track, reason) => {
-            const state = await NitroTrackPlayer.getState().catch(
-                () => null,
-            );
+            const state = await NitroTrackPlayer.getState().catch(() => null);
             const adapterTrack = toPlayerAdapterTrack(track);
             const payload = {
                 track: adapterTrack ?? track,
@@ -396,8 +392,7 @@ export class NitroPlayerAdapter
         }
         this.nativePlaybackStateRegistered = true;
         NitroTrackPlayer.onPlaybackStateChange((state, reason) => {
-            const mappedState =
-                reason === "error" ? "error" : mapState(state);
+            const mappedState = reason === "error" ? "error" : mapState(state);
             this.playbackStateChangedListeners.forEach(listener =>
                 listener(mappedState, reason),
             );
@@ -425,8 +420,8 @@ export class NitroPlayerAdapter
         NitroTrackPlayer.onTracksNeedUpdate((tracks, lookahead) => {
             this.tracksNeedUpdateListeners.forEach(listener =>
                 listener({
-                    tracks: tracks.map(track =>
-                        toPlayerAdapterTrack(track) ?? track,
+                    tracks: tracks.map(
+                        track => toPlayerAdapterTrack(track) ?? track,
                     ),
                     lookahead,
                 }),
@@ -491,9 +486,7 @@ export class NitroPlayerAdapter
                 position,
                 duration: totalDuration,
             };
-            this.playbackSeekedListeners.forEach(listener =>
-                listener(payload),
-            );
+            this.playbackSeekedListeners.forEach(listener => listener(payload));
         });
     }
 
@@ -503,15 +496,11 @@ export class NitroPlayerAdapter
         }
         this.nativeQueuesChangedRegistered = true;
         PlayerQueue.onPlaylistsChanged((playlists, operation) => {
-            const payload: PlayerAdapterQueuesChangedEvent<
-                TrackItem
-            > = {
+            const payload: PlayerAdapterQueuesChangedEvent<TrackItem> = {
                 queues: toPlayerAdapterQueues(playlists),
                 operation: toPlayerAdapterQueueOperation(operation),
             };
-            this.queuesChangedListeners.forEach(listener =>
-                listener(payload),
-            );
+            this.queuesChangedListeners.forEach(listener => listener(payload));
         });
     }
 
@@ -525,16 +514,12 @@ export class NitroPlayerAdapter
             if (!adapterQueue) {
                 return;
             }
-            const payload: PlayerAdapterQueueChangedEvent<
-                TrackItem
-            > = {
+            const payload: PlayerAdapterQueueChangedEvent<TrackItem> = {
                 queueId,
                 queue: adapterQueue,
                 operation: toPlayerAdapterQueueOperation(operation),
             };
-            this.queueChangedListeners.forEach(listener =>
-                listener(payload),
-            );
+            this.queueChangedListeners.forEach(listener => listener(payload));
         });
     }
 
@@ -577,10 +562,7 @@ export class NitroPlayerAdapter
         this.playlistId = await PlayerQueue.createPlaylist(
             MUSICFREE_QUEUE_NAME,
         );
-        await PlayerQueue.addTracksToPlaylist(
-            this.playlistId,
-            nitroTracks,
-        );
+        await PlayerQueue.addTracksToPlaylist(this.playlistId, nitroTracks);
 
         if (targetTrack) {
             await NitroTrackPlayer.playSong(targetTrack.id, this.playlistId);
@@ -824,7 +806,9 @@ export class NitroPlayerAdapter
         );
     }
 
-    async playNext(track: PlayerAdapterTrackRef<TrackItem | PlayerAdapterTrack>) {
+    async playNext(
+        track: PlayerAdapterTrackRef<TrackItem | PlayerAdapterTrack>,
+    ) {
         await NitroTrackPlayer.playNext(toNativeTrackId(track));
     }
 

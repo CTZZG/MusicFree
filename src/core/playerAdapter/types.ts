@@ -99,6 +99,21 @@ export type PlayerAdapterRemoteCapability =
     | "stop"
     | "seek";
 
+export type PlayerAdapterTrackSourceOrigin =
+    | "plugin"
+    | "direct"
+    | "embedded-cache"
+    | "similar-plugin"
+    | "recovery";
+
+export interface PlayerAdapterTrackSourceMeta {
+    quality?: IMusic.IQualityKey;
+    origin?: PlayerAdapterTrackSourceOrigin;
+    cacheKey?: string;
+    recovered?: boolean;
+    resolvedAt?: number;
+}
+
 export interface PlayerAdapterTrack {
     id: string;
     title: string;
@@ -109,6 +124,9 @@ export interface PlayerAdapterTrack {
     artwork?: string | null;
     headers?: Record<string, string>;
     userAgent?: string;
+    ekey?: string;
+    cek?: string;
+    playbackSource?: PlayerAdapterTrackSourceMeta;
     musicItem?: IMusic.IMusicItem;
 }
 
@@ -209,7 +227,7 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
      * 用于像 mpv 这种由 JS 维护队列的后端，在洗牌/增删/重排后重新对齐内部队列与当前下标；
      * nitro 等以原生队列为准的后端无需实现。
      */
-    syncQueueOrder?(tracks: TTrack[], activeKey?: string): Promise<void>;
+    syncQueueOrder?(tracks: TTrack[], activeKey?: string | null): Promise<void>;
 
     getCurrentQueueId?(): Promise<string | null | undefined>;
 

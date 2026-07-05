@@ -1,5 +1,13 @@
 package `fun`.upup.musicfree.mpvplayer
 
+data class MpvQueueTrack(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val artwork: String?,
+)
+
 /**
  * 单例桥接：MpvPlayerModule ↔ MpvPlaybackService 通信。
  */
@@ -16,13 +24,48 @@ object MpvServiceBridge {
     /** 通知栏是否显示停止/关闭按钮。 */
     var showStopAction: Boolean = false
 
+    /** Android Auto / Android Automotive 当前是否连接。 */
+    @Volatile
+    var isAndroidAutoConnected: Boolean = false
+
     /** Live Update 歌词模式下，播放服务通知切换为胶囊友好的 ProgressStyle。 */
     @Volatile
     var useLiveUpdateLyricNotification: Boolean = false
+
+    @Volatile
+    var currentQueueIndex: Int = -1
+
+    private val queueLock = Any()
+    private var queueSnapshot: List<MpvQueueTrack> = emptyList()
+
+    fun updateQueueSnapshot(
+        tracks: List<MpvQueueTrack>,
+        currentIndex: Int,
+    ) {
+        synchronized(queueLock) {
+            queueSnapshot = tracks
+            currentQueueIndex = currentIndex
+        }
+        service?.onQueueSnapshotChanged()
+        MpvMediaBrowserService.getInstance()?.onQueueUpdated()
+    }
+
+    fun clearPlaybackSession() {
+        synchronized(queueLock) {
+            queueSnapshot = emptyList()
+            currentQueueIndex = -1
+        }
+        useLiveUpdateLyricNotification = false
+        service?.onQueueSnapshotChanged()
+        MpvMediaBrowserService.getInstance()?.onQueueUpdated()
+    }
+
+    fun getQueueSnapshot(): List<MpvQueueTrack> =
+        synchronized(queueLock) { queueSnapshot.toList() }
 
     /**
      * JS 侧回调：收到通知栏/锁屏/耳机键命令时调用。
      * 由 [MpvPlayerModule] 在 initialize 时设置。
      */
-    var onCommand: ((command: String, position: Double?) -> Unit)? = null
+    var onCommand: ((command: String, position: Double?, mediaId: String?) -> Unit)? = null
 }

@@ -3,6 +3,7 @@ import type {
     PlayerAdapterRepeatMode,
     PlayerAdapterProgress,
     PlayerBackendState,
+    PlayerAdapterTrackSourceOrigin,
 } from "@/core/playerAdapter";
 import type { MusicRepeatMode } from "@/constants/trackPlayerConst";
 import { IInjectable } from "@/types/infra";
@@ -10,14 +11,50 @@ import type EventEmitter from "eventemitter3";
 import type { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import type { IPlaybackNativeDiagnostics } from "@/native/utils";
 
+interface IPlaybackDiagnosticMusicIdentity {
+    id?: string;
+    title?: string;
+    artist?: string;
+    platform?: string;
+}
+
+interface IPlaybackDiagnosticTrackSummary
+    extends IPlaybackDiagnosticMusicIdentity {
+    album?: string;
+    duration?: number;
+    urlType: string;
+    hasHeaders: boolean;
+}
+
 export interface IPlaybackDiagnosticSnapshot {
     backendName: string;
     backendState: PlayerBackendState;
     backendRepeatMode?: PlayerAdapterRepeatMode;
+    backendCapabilities: {
+        getNextTracks: boolean;
+        prepareNextTrack: boolean;
+        syncQueueOrder: boolean;
+        queueInfo: boolean;
+        temporaryQueue: boolean;
+        androidAuto: boolean;
+    };
     rate: number;
     currentMusic: IMusic.IMusicItem | null;
     queueIndex: number;
     queueLength: number;
+    queuePreview: {
+        previous: IPlaybackDiagnosticMusicIdentity | null;
+        next: IPlaybackDiagnosticMusicIdentity | null;
+        playLaterLength: number;
+        backendNextTracks: IPlaybackDiagnosticTrackSummary[];
+    };
+    preparedNext: {
+        music: IPlaybackDiagnosticMusicIdentity | null;
+        hasUrl: boolean;
+        canUseNativePrepare: boolean;
+        blockedByPlayLater: boolean;
+        repeatSingle: boolean;
+    };
     quality: IMusic.IQualityKey;
     repeatMode: MusicRepeatMode;
     progress: PlayerAdapterProgress;
@@ -30,6 +67,11 @@ export interface IPlaybackDiagnosticSnapshot {
         duration?: number;
         urlType: string;
         hasHeaders: boolean;
+        sourceQuality?: IMusic.IQualityKey;
+        sourceOrigin?: PlayerAdapterTrackSourceOrigin;
+        sourceRecovered?: boolean;
+        sourceCacheKey?: string;
+        sourceResolvedAt?: number;
     } | null;
     recentErrors: Array<{
         message: string;
@@ -37,20 +79,12 @@ export interface IPlaybackDiagnosticSnapshot {
         createdAt: number;
     }>;
     recovery: {
-        persistedMusic: {
-            title?: string;
-            artist?: string;
-            platform?: string;
-        } | null;
+        persistedMusic: IPlaybackDiagnosticMusicIdentity | null;
         persistedProgress: number | null;
         progressSavedAt: number | null;
         lastPersistedProgress: number | null;
         lastPersistedAt: number | null;
-        lastRestoredMusic: {
-            title?: string;
-            artist?: string;
-            platform?: string;
-        } | null;
+        lastRestoredMusic: IPlaybackDiagnosticMusicIdentity | null;
         lastRestoredProgress: number | null;
         lastRestoredAt: number | null;
         lastRestoredQueueLength: number | null;
@@ -58,17 +92,21 @@ export interface IPlaybackDiagnosticSnapshot {
     native?: IPlaybackNativeDiagnostics;
 }
 
-export interface ITrackPlayer extends IInjectable, EventEmitter<{
-    [TrackPlayerEvents.PlayEnd]: () => void;
-    [TrackPlayerEvents.CurrentMusicChanged]: (musicItem: IMusic.IMusicItem | null) => void;
-    [TrackPlayerEvents.ProgressChanged]: (progress: {
-        position: number;
-        duration: number;
-    }) => void;
-    [TrackPlayerEvents.CellularPlayForbidden]: () => void;
-    [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
-    [TrackPlayerEvents.NoPlayableMusic]: () => void;
-}> {
+export interface ITrackPlayer
+    extends IInjectable,
+        EventEmitter<{
+            [TrackPlayerEvents.PlayEnd]: () => void;
+            [TrackPlayerEvents.CurrentMusicChanged]: (
+                musicItem: IMusic.IMusicItem | null,
+            ) => void;
+            [TrackPlayerEvents.ProgressChanged]: (progress: {
+                position: number;
+                duration: number;
+            }) => void;
+            [TrackPlayerEvents.CellularPlayForbidden]: () => void;
+            [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
+            [TrackPlayerEvents.NoPlayableMusic]: () => void;
+        }> {
     /**
      * 上一首歌曲
      */
@@ -150,7 +188,7 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
     addAll(
         musicItems: Array<IMusic.IMusicItem>,
         beforeIndex?: number,
-        shouldShuffle?: boolean
+        shouldShuffle?: boolean,
     ): void;
 
     /**
@@ -160,7 +198,7 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
      */
     add(
         musicItem: IMusic.IMusicItem | IMusic.IMusicItem[],
-        beforeIndex?: number
+        beforeIndex?: number,
     ): void;
 
     /**
@@ -215,7 +253,7 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
      */
     play(
         musicItem?: IMusic.IMusicItem | null,
-        forcePlay?: boolean
+        forcePlay?: boolean,
     ): Promise<void>;
 
     /**
@@ -225,7 +263,7 @@ export interface ITrackPlayer extends IInjectable, EventEmitter<{
      */
     playWithReplacePlayList(
         musicItem: IMusic.IMusicItem,
-        newPlayList: IMusic.IMusicItem[]
+        newPlayList: IMusic.IMusicItem[],
     ): Promise<void>;
 
     /**

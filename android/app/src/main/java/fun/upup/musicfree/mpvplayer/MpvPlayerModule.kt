@@ -10,6 +10,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter
@@ -143,6 +144,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var hasPlaylistPreparedTrack = false
     private var preparedPlaylistIndex = -1
     private var pendingPlaylistCompaction = false
+    private var androidAutoConnectionDetector: MpvAndroidAutoConnectionDetector? = null
+    private var isAndroidAutoConnected = false
 
     companion object {
         private const val TAG = "MpvPlayerModule"
@@ -151,6 +154,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private const val ON_MPV_ENDED = "onMpvEnded"
         private const val ON_MPV_ERROR = "onMpvError"
         private const val ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand"
+        private const val ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
+            "onMpvAndroidAutoConnectionChanged"
         private const val END_FILE_SUPPRESS_MS = 1200L
         private val PLAYLIST_COMPACT_DELAYS_MS = longArrayOf(0L, 120L, 500L)
         private val UNPAUSE_RETRY_DELAYS_MS = longArrayOf(0L, 80L, 250L, 700L)
@@ -221,6 +226,34 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             cachedArtwork,
             durationSecs,
         )
+    }
+
+    private fun setAndroidAutoConnected(connected: Boolean, force: Boolean = false) {
+        if (!force && isAndroidAutoConnected == connected) return
+        isAndroidAutoConnected = connected
+        MpvServiceBridge.isAndroidAutoConnected = connected
+        sendEvent(
+            ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED,
+            Arguments.createMap().apply { putBoolean("connected", connected) },
+        )
+    }
+
+    private fun registerAndroidAutoConnectionDetector() {
+        if (androidAutoConnectionDetector != null) return
+
+        androidAutoConnectionDetector =
+            MpvAndroidAutoConnectionDetector(reactContext.applicationContext).apply {
+                onConnectionChanged = { connected, _ ->
+                    mainHandler.post { setAndroidAutoConnected(connected) }
+                }
+                register()
+            }
+    }
+
+    private fun unregisterAndroidAutoConnectionDetector() {
+        androidAutoConnectionDetector?.unregister()
+        androidAutoConnectionDetector = null
+        setAndroidAutoConnected(false)
     }
 
     private fun readString(map: ReadableMap, key: String): String? =
@@ -404,6 +437,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
         mainHandler.post {
             try {
+                MpvServiceBridge.clearPlaybackSession()
                 MPVLib.create(reactContext.applicationContext)
                 MPVLib.setOptionString("ao", "audiotrack,opensles")
                 MPVLib.setOptionString("vo", "null")
@@ -434,6 +468,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MpvServiceBridge.showStopAction =
                     readBoolean(options, "showStopAction") ?: false
                 progressIntervalMs = readProgressIntervalMs(options)
+                registerAndroidAutoConnectionDetector()
 
                 if (options.hasKey("mpvOptions") && !options.isNull("mpvOptions")) {
                     options.getMap("mpvOptions")?.let { opts ->
@@ -470,11 +505,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     Log.w(TAG, "startService failed", e)
                 }
 
-                MpvServiceBridge.onCommand = { command, position ->
+                MpvServiceBridge.onCommand = { command, position, mediaId ->
                     sendEvent(
                         ON_MPV_REMOTE_COMMAND,
                         Arguments.createMap().apply {
                             putString("command", command)
+                            if (mediaId != null) {
+                                putString("mediaId", mediaId)
+                            }
                             if (position != null) {
                                 if (command == "duck") {
                                     putDouble("volume", position)
@@ -490,10 +528,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "init failed", e)
+                unregisterAndroidAutoConnectionDetector()
                 try {
                     MPVLib.destroy()
                 } catch (_: Exception) {
                 }
+                MpvServiceBridge.onCommand = null
+                MpvServiceBridge.clearPlaybackSession()
                 isInitialized.set(false)
                 promise.reject("E_MPV_INIT", e.message, e)
             }
@@ -503,6 +544,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun destroy(promise: Promise) {
         if (!isInitialized.getAndSet(false)) {
+            MpvServiceBridge.onCommand = null
+            MpvServiceBridge.clearPlaybackSession()
             promise.resolve(null)
             return
         }
@@ -513,6 +556,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 pendingPlaylistCompaction = false
                 clearPreparedTrack(removeFromPlaylist = false)
                 MpvServiceBridge.onCommand = null
+                unregisterAndroidAutoConnectionDetector()
                 try {
                     reactContext.stopService(
                         Intent(reactContext, MpvPlaybackService::class.java),
@@ -526,9 +570,58 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 Log.e(TAG, "destroy failed", e)
             } finally {
                 currentState = "idle"
+                MpvServiceBridge.clearPlaybackSession()
                 promise.resolve(null)
             }
         }
+    }
+
+    @ReactMethod
+    fun isAndroidAutoConnected(promise: Promise) {
+        promise.resolve(isAndroidAutoConnected)
+    }
+
+    @ReactMethod
+    fun updateQueueSnapshot(payload: ReadableMap, promise: Promise) {
+        try {
+            val currentIndex =
+                if (payload.hasKey("currentIndex") && !payload.isNull("currentIndex")) {
+                    payload.getInt("currentIndex")
+                } else {
+                    -1
+                }
+            val tracks =
+                if (payload.hasKey("tracks") && !payload.isNull("tracks")) {
+                    readQueueSnapshot(payload.getArray("tracks"))
+                } else {
+                    emptyList()
+                }
+
+            MpvServiceBridge.updateQueueSnapshot(tracks, currentIndex)
+            promise.resolve(null)
+        } catch (error: Exception) {
+            promise.reject("E_MPV_QUEUE_SNAPSHOT", error.message, error)
+        }
+    }
+
+    private fun readQueueSnapshot(array: ReadableArray?): List<MpvQueueTrack> {
+        if (array == null) return emptyList()
+
+        val tracks = mutableListOf<MpvQueueTrack>()
+        for (index in 0 until array.size()) {
+            val item = array.getMap(index) ?: continue
+            val id = readString(item, "id")?.takeIf { it.isNotBlank() } ?: continue
+            tracks.add(
+                MpvQueueTrack(
+                    id = id,
+                    title = readString(item, "title")?.takeIf { it.isNotBlank() } ?: "未知歌曲",
+                    artist = readString(item, "artist").orEmpty(),
+                    album = readString(item, "album").orEmpty(),
+                    artwork = readString(item, "artwork")?.takeIf { it.isNotBlank() },
+                ),
+            )
+        }
+        return tracks
     }
 
     @ReactMethod

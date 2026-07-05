@@ -23,6 +23,10 @@ declare namespace IMusic {
         userAgent?: string;
         /** 音质 */
         quality?: IMusic.IQualityKey;
+        /** 加密资源解密用的 key */
+        ekey?: string;
+        /** CENC AES-CTR content key */
+        cek?: string;
         /** 大小 */
         size?: number;
     }
@@ -46,6 +50,14 @@ declare namespace IMusic {
         artwork: string;
         /** 默认音源 */
         url?: string;
+        /** 默认音源请求头 */
+        headers?: Record<string, string>;
+        /** 默认音源 UA */
+        userAgent?: string;
+        /** 加密资源解密用的 key */
+        ekey?: string;
+        /** CENC AES-CTR content key */
+        cek?: string;
         /** 音源 */
         source?: Partial<Record<IQualityKey, IMediaSource>>;
         /** 歌词 */

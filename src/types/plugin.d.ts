@@ -22,6 +22,8 @@ declare namespace IPlugin {
         quality?: IMusic.IQualityKey;
         /** 加密资源解密用的 key */
         ekey?: string;
+        /** CENC AES-CTR content key */
+        cek?: string;
     }
 
     export interface ISearchResult<T extends ICommon.SupportMediaType> {

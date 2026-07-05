@@ -25,6 +25,7 @@ export type MpvRemoteCommand =
     | "previous"
     | "stop"
     | "seek"
+    | "playFromId"
     | "duck"
     | "unduck";
 
@@ -62,6 +63,19 @@ export interface MpvLoadPayload {
     autoPlay?: boolean;
 }
 
+export interface MpvQueueSnapshotTrack {
+    id: string;
+    title?: string;
+    artist?: string;
+    album?: string;
+    artwork?: string | null;
+}
+
+export interface MpvQueueSnapshotPayload {
+    currentIndex: number;
+    tracks: MpvQueueSnapshotTrack[];
+}
+
 interface MpvPlayerNativeModule {
     initialize(options: MpvInitializeOptions): Promise<void>;
     destroy(): Promise<void>;
@@ -77,8 +91,12 @@ interface MpvPlayerNativeModule {
     getIsPlaying(): Promise<boolean>;
     getPosition(): Promise<number>;
     getDuration(): Promise<number>;
+    isAndroidAutoConnected(): Promise<boolean>;
+    updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
-    updateMetadata(payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">): Promise<void>;
+    updateMetadata(
+        payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">,
+    ): Promise<void>;
 }
 
 export const ON_MPV_STATE_CHANGED = "onMpvStateChanged";
@@ -86,6 +104,8 @@ export const ON_MPV_PROGRESS = "onMpvProgress";
 export const ON_MPV_ENDED = "onMpvEnded";
 export const ON_MPV_ERROR = "onMpvError";
 export const ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand";
+export const ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
+    "onMpvAndroidAutoConnectionChanged";
 
 export interface MpvStateChangedEvent {
     state: MpvPlayerState;
@@ -111,9 +131,16 @@ export interface MpvRemoteCommandEvent {
     position?: number;
     /** duck 命令携带目标音量比例 */
     volume?: number;
+    /** playFromId 命令携带媒体 ID */
+    mediaId?: string;
+}
+export interface MpvAndroidAutoConnectionChangedEvent {
+    connected: boolean;
 }
 
-const nativeModule = NativeModules.MpvPlayer as MpvPlayerNativeModule | undefined;
+const nativeModule = NativeModules.MpvPlayer as
+    | MpvPlayerNativeModule
+    | undefined;
 
 /** mpv 原生模块是否可用（仅在已构建原生模块的 Android 上为 true） */
 export function isMpvAvailable(): boolean {
@@ -137,7 +164,7 @@ const emitter = nativeModule
 function addListener<T>(
     event: string,
     callback: (payload: T) => void,
-): { remove(): void } {
+): {remove(): void} {
     if (!emitter) {
         return { remove: () => undefined };
     }
@@ -164,8 +191,12 @@ const NativeMpvPlayer = {
     getIsPlaying: () => assertAvailable().getIsPlaying(),
     getPosition: () => assertAvailable().getPosition(),
     getDuration: () => assertAvailable().getDuration(),
-    updateMetadata: (payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">) =>
-        assertAvailable().updateMetadata(payload),
+    isAndroidAutoConnected: () => assertAvailable().isAndroidAutoConnected(),
+    updateQueueSnapshot: (payload: MpvQueueSnapshotPayload) =>
+        assertAvailable().updateQueueSnapshot(payload),
+    updateMetadata: (
+        payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">,
+    ) => assertAvailable().updateMetadata(payload),
 
     // 事件订阅
     addStateChangedListener: (cb: (e: MpvStateChangedEvent) => void) =>
@@ -178,6 +209,13 @@ const NativeMpvPlayer = {
         addListener<MpvErrorEvent>(ON_MPV_ERROR, cb),
     addRemoteCommandListener: (cb: (e: MpvRemoteCommandEvent) => void) =>
         addListener<MpvRemoteCommandEvent>(ON_MPV_REMOTE_COMMAND, cb),
+    addAndroidAutoConnectionChangedListener: (
+        cb: (e: MpvAndroidAutoConnectionChangedEvent) => void,
+    ) =>
+        addListener<MpvAndroidAutoConnectionChangedEvent>(
+            ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED,
+            cb,
+        ),
 };
 
 export default NativeMpvPlayer;

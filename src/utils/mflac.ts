@@ -1,8 +1,15 @@
-const encryptedMediaExtensions = ['.mflac', '.mflac0', '.mgg', '.mmp4'];
+import { getLowerFileExtension } from "./mediaPath";
+
+const encryptedMediaExtensions = new Set([".mflac", ".mflac0", ".mgg", ".mmp4"]);
+const cencMediaExtensions = new Set([".mmp4"]);
 
 export function normalizeEkey(ekey?: string | null) {
-    const value = String(ekey ?? '').trim();
+    const value = String(ekey ?? "").trim();
     return value.length > 704 ? value.slice(-704) : value;
+}
+
+export function normalizeCek(cek?: string | null) {
+    return String(cek ?? "").trim();
 }
 
 export function isEncryptedMediaUrl(url?: string | null) {
@@ -10,10 +17,18 @@ export function isEncryptedMediaUrl(url?: string | null) {
         return false;
     }
     try {
-        const cleanUrl = url.split('?')[0].split('#')[0].toLowerCase();
-        return encryptedMediaExtensions.some(extension =>
-            cleanUrl.endsWith(extension),
-        );
+        return encryptedMediaExtensions.has(getLowerFileExtension(url));
+    } catch {
+        return false;
+    }
+}
+
+export function isCencMediaUrl(url?: string | null) {
+    if (!url) {
+        return false;
+    }
+    try {
+        return cencMediaExtensions.has(getLowerFileExtension(url));
     } catch {
         return false;
     }

@@ -1,7 +1,4 @@
-import {
-    sortIndexSymbol,
-    timeStampSymbol,
-} from "@/constants/commonConst";
+import { sortIndexSymbol, timeStampSymbol } from "@/constants/commonConst";
 import delay from "@/utils/delay";
 import getUrlExt from "@/utils/getUrlExt";
 import { errorLog, trace } from "@/utils/log";
@@ -11,7 +8,6 @@ import {
     getLocalPath,
     isSameMediaItem,
 } from "@/utils/mediaUtils";
-import { hasEncryptedMediaSource } from "@/utils/mflac";
 import Network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
@@ -22,6 +18,7 @@ import shuffle from "@/utils/shuffle";
 import { useEffect } from "react";
 import LocalMusicSheet from "../localMusicSheet";
 import DislikeMusic from "../dislikeMusic";
+import MediaCache from "../mediaCache";
 
 import { MusicRepeatMode, TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import type { IAppConfig } from "@/types/core/config";
@@ -38,27 +35,73 @@ import type {
     PlayerAdapterRepeatMode,
     PlayerBackendState,
     PlayerAdapterTrack,
+    PlayerAdapterTrackSourceMeta,
+    PlayerAdapterTrackSourceOrigin,
 } from "@/core/playerAdapter";
 import { resolvePlayerAdapter } from "@/core/playerAdapter";
 import { normalizeMusicState } from "@/utils/trackUtils";
-import NativeUtils, {
-    IPlaybackNativeDiagnostics,
-} from "@/native/utils";
+import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
+import {
+    findNextPlayableQueueItem,
+    getWrappedQueueItem,
+    replaceQueueItemByIdentity,
+    resolvePreviousQueueItem,
+    resolvePreparedNextItem,
+} from "./queuePolicy";
+import {
+    isUnsupportedEncryptedMediaSource,
+    resolveEncryptedMediaStreamIfNeeded,
+} from "@/service/encryptedMediaProxy";
+import { shouldEvictRecoveredRemoteSourceCacheAfterFailure } from "./sourceRecoveryPolicy";
 
-
-type MusicFreePlayerTrack =
-    PlayerAdapterTrack &
+type MusicFreePlayerTrack = PlayerAdapterTrack &
     Partial<IMusic.IMusicItem> &
     Record<string, any>;
+
+interface IPlaybackDiagnosticMusicIdentity {
+    id?: string;
+    title?: string;
+    artist?: string;
+    platform?: string;
+}
+
+interface IPlaybackDiagnosticTrackSummary
+    extends IPlaybackDiagnosticMusicIdentity {
+    album?: string;
+    duration?: number;
+    urlType: string;
+    hasHeaders: boolean;
+}
 
 export interface IPlaybackDiagnosticSnapshot {
     backendName: string;
     backendState: PlayerBackendState;
     backendRepeatMode?: PlayerAdapterRepeatMode;
+    backendCapabilities: {
+        getNextTracks: boolean;
+        prepareNextTrack: boolean;
+        syncQueueOrder: boolean;
+        queueInfo: boolean;
+        temporaryQueue: boolean;
+        androidAuto: boolean;
+    };
     rate: number;
     currentMusic: IMusic.IMusicItem | null;
     queueIndex: number;
     queueLength: number;
+    queuePreview: {
+        previous: IPlaybackDiagnosticMusicIdentity | null;
+        next: IPlaybackDiagnosticMusicIdentity | null;
+        playLaterLength: number;
+        backendNextTracks: IPlaybackDiagnosticTrackSummary[];
+    };
+    preparedNext: {
+        music: IPlaybackDiagnosticMusicIdentity | null;
+        hasUrl: boolean;
+        canUseNativePrepare: boolean;
+        blockedByPlayLater: boolean;
+        repeatSingle: boolean;
+    };
     quality: IMusic.IQualityKey;
     repeatMode: MusicRepeatMode;
     progress: PlayerAdapterProgress;
@@ -71,6 +114,11 @@ export interface IPlaybackDiagnosticSnapshot {
         duration?: number;
         urlType: string;
         hasHeaders: boolean;
+        sourceQuality?: IMusic.IQualityKey;
+        sourceOrigin?: PlayerAdapterTrackSourceOrigin;
+        sourceRecovered?: boolean;
+        sourceCacheKey?: string;
+        sourceResolvedAt?: number;
     } | null;
     recentErrors: Array<{
         message: string;
@@ -78,20 +126,12 @@ export interface IPlaybackDiagnosticSnapshot {
         createdAt: number;
     }>;
     recovery: {
-        persistedMusic: {
-            title?: string;
-            artist?: string;
-            platform?: string;
-        } | null;
+        persistedMusic: IPlaybackDiagnosticMusicIdentity | null;
         persistedProgress: number | null;
         progressSavedAt: number | null;
         lastPersistedProgress: number | null;
         lastPersistedAt: number | null;
-        lastRestoredMusic: {
-            title?: string;
-            artist?: string;
-            platform?: string;
-        } | null;
+        lastRestoredMusic: IPlaybackDiagnosticMusicIdentity | null;
         lastRestoredProgress: number | null;
         lastRestoredAt: number | null;
         lastRestoredQueueLength: number | null;
@@ -141,18 +181,21 @@ function setPlayerProgress(
     return normalizedProgress;
 }
 
-
-class TrackPlayer extends EventEmitter<{
-    [TrackPlayerEvents.PlayEnd]: () => void;
-    [TrackPlayerEvents.CurrentMusicChanged]: (musicItem: IMusic.IMusicItem | null) => void;
-    [TrackPlayerEvents.ProgressChanged]: (progress: {
-        position: number;
-        duration: number;
-    }) => void;
-    [TrackPlayerEvents.CellularPlayForbidden]: () => void;
-    [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
-    [TrackPlayerEvents.NoPlayableMusic]: () => void;
-}> implements ITrackPlayer {
+class TrackPlayer
+    extends EventEmitter<{
+        [TrackPlayerEvents.PlayEnd]: () => void;
+        [TrackPlayerEvents.CurrentMusicChanged]: (
+            musicItem: IMusic.IMusicItem | null,
+        ) => void;
+        [TrackPlayerEvents.ProgressChanged]: (progress: {
+            position: number;
+            duration: number;
+        }) => void;
+        [TrackPlayerEvents.CellularPlayForbidden]: () => void;
+        [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
+        [TrackPlayerEvents.NoPlayableMusic]: () => void;
+    }>
+    implements ITrackPlayer {
     // 依赖
     private configService!: IAppConfig;
     private musicHistoryService!: IMusicHistory;
@@ -165,7 +208,9 @@ class TrackPlayer extends EventEmitter<{
     // 底层播放器桥接由配置选择，默认 Nitro Player，可选 MPV。
     private backend!: PlayerAdapter<any>;
     private nitroPendingSourceRequests = new Set<string>();
-    private nitroTrackChangeGuard: { key: string; until: number } | null = null;
+    private sourceRecoveryInFlight = new Set<string>();
+    private sourceRecoveryAttemptedAt = new Map<string, number>();
+    private nitroTrackChangeGuard: {key: string; until: number} | null = null;
     private isForceExiting = false;
     private lastProgressPersistedAt = 0;
     private lastProgressPersistedPosition = 0;
@@ -173,15 +218,18 @@ class TrackPlayer extends EventEmitter<{
     private lastPlaybackRestoredProgress: number | null = null;
     private lastPlaybackRestoredMusic: IMusic.IMusicItem | null = null;
     private lastPlaybackRestoredQueueLength: number | null = null;
-    private recentPlaybackErrors: IPlaybackDiagnosticSnapshot["recentErrors"] = [];
+    private recentPlaybackErrors: IPlaybackDiagnosticSnapshot["recentErrors"] =
+        [];
+    private unsubscribeDislikeMusicUpdated?: () => void;
     private preparedNextSyncSerial = 0;
+    private lastMpvActiveTrackSyncAt = 0;
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
-
 
     private static maxMusicQueueLength = 10000;
     private static halfMaxMusicQueueLength = 5000;
     private static progressPersistIntervalMs = 1000;
+    private static sourceRecoveryCooldownMs = 30000;
     private static toggleRepeatMapping = {
         [MusicRepeatMode.SHUFFLE]: MusicRepeatMode.SINGLE,
         [MusicRepeatMode.SINGLE]: MusicRepeatMode.QUEUE,
@@ -236,8 +284,11 @@ class TrackPlayer extends EventEmitter<{
         return this.backend;
     }
 
-
-    injectDependencies(configService: IAppConfig, musicHistoryService: IMusicHistory, pluginManager: IPluginManager): void {
+    injectDependencies(
+        configService: IAppConfig,
+        musicHistoryService: IMusicHistory,
+        pluginManager: IPluginManager,
+    ): void {
         this.configService = configService;
         this.musicHistoryService = musicHistoryService;
         this.pluginManagerService = pluginManager;
@@ -276,7 +327,10 @@ class TrackPlayer extends EventEmitter<{
                 this.normalizeProgress(progress) ?? 0;
         }
         if (repeatMode) {
-            getDefaultStore().set(repeatModeAtom, repeatMode as MusicRepeatMode);
+            getDefaultStore().set(
+                repeatModeAtom,
+                repeatMode as MusicRepeatMode,
+            );
         }
         await this.syncBackendRepeatMode();
 
@@ -307,14 +361,23 @@ class TrackPlayer extends EventEmitter<{
             track.userAgent = track.userAgent || getAppUserAgent();
 
             // 异步
-            this.pluginManagerService.getByMedia(track)
+            this.pluginManagerService
+                .getByMedia(track)
                 ?.methods.getMediaSource(track, quality)
                 .then(async newSource => {
-                    if (this.isUnsupportedEncryptedSource(newSource)) {
+                    newSource = await this.createPlayableSource(
+                        newSource ?? null,
+                        track,
+                        quality,
+                        "plugin",
+                    );
+                    if (!newSource?.url) {
                         return;
                     }
                     track.url = newSource?.url || track.url;
                     track.headers = newSource?.headers || track.headers;
+                    track.playbackSource =
+                        newSource?.playbackSource || track.playbackSource;
                     track.userAgent = track.userAgent || getAppUserAgent();
 
                     if (isSameMediaItem(this.currentMusic, track)) {
@@ -332,99 +395,94 @@ class TrackPlayer extends EventEmitter<{
         }
 
         if (!this.serviceInited) {
-
             /**
              * 此事件可能会被触发多次（比如直接替换queue） 参考代码：https://github.com/doublesymmetry/KotlinAudio
              */
-            this.backend.addEventListener(
-                "trackChanged",
-                async evt => {
-                    if (this.isForceExiting) {
-                        return;
-                    }
-                    if (this.shouldIgnoreNitroTrackChange(evt)) {
-                        return;
-                    }
-                    const syncedMusic = this.syncNitroCurrentMusic(
-                        evt.track,
-                        evt.reason,
-                    );
-                    trace("播放队列切歌", {
-                        index: evt.index,
-                        reason: evt.reason,
-                        musicId: syncedMusic?.id,
-                        platform: syncedMusic?.platform,
-                    });
-                    if (evt.reason === "end") {
-                        const playedLater = await this.playNextLaterQueue();
-                        if (playedLater) {
-                            this.emit(TrackPlayerEvents.PlayEnd);
-                            return;
-                        }
-                        if (DislikeMusic.isDisliked(syncedMusic)) {
-                            await this.skipAutoDislikedMusic();
-                        }
-                    }
-                    if (evt.reason === "end" || evt.reason === "repeat") {
+            this.backend.addEventListener("trackChanged", async evt => {
+                if (this.isForceExiting) {
+                    return;
+                }
+                if (this.shouldIgnoreNitroTrackChange(evt)) {
+                    return;
+                }
+                const syncedMusic = this.syncNitroCurrentMusic(
+                    evt.track,
+                    evt.reason,
+                    evt.index,
+                );
+                trace("播放队列切歌", {
+                    index: evt.index,
+                    reason: evt.reason,
+                    musicId: syncedMusic?.id,
+                    platform: syncedMusic?.platform,
+                });
+                if (evt.reason === "end") {
+                    const playedLater = await this.playNextLaterQueue();
+                    if (playedLater) {
                         this.emit(TrackPlayerEvents.PlayEnd);
-                    }
-                },
-            );
-
-            this.backend.addEventListener(
-                "tracksNeedUpdate",
-                async evt => {
-                    if (this.isForceExiting) {
                         return;
                     }
-                    await this.resolveNitroQueuedTracks(evt?.tracks ?? []);
-                },
-            );
+                    if (DislikeMusic.isDisliked(syncedMusic)) {
+                        await this.skipAutoDislikedMusic();
+                    }
+                }
+                if (evt.reason === "end" || evt.reason === "repeat") {
+                    this.emit(TrackPlayerEvents.PlayEnd);
+                }
+            });
 
-            this.backend.addEventListener(
-                "playbackError",
-                async e => {
-                    this.recordPlaybackError(e);
-                    errorLog("播放出错", e.message);
-                    // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
-                    const currentTrack =
-                        await this.backend.getActiveTrack?.();
-                    if (currentTrack?.isInit) {
-                        // HACK: 避免初始失败的情况
-                        await this.backend.updateTrack({
+            this.backend.addEventListener("tracksNeedUpdate", async evt => {
+                if (this.isForceExiting) {
+                    return;
+                }
+                await this.resolveNitroQueuedTracks(evt?.tracks ?? []);
+            });
+
+            this.backend.addEventListener("playbackError", async e => {
+                this.recordPlaybackError(e);
+                errorLog("播放出错", e.message);
+                // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
+                const currentTrack = await this.backend.getActiveTrack?.();
+                if (currentTrack?.isInit) {
+                    // HACK: 避免初始失败的情况
+                    await this.backend.updateTrack(
+                        {
                             ...currentTrack,
                             // @ts-ignore
                             isInit: undefined,
                             userAgent: getAppUserAgent(), // <--- 添加UA
-                        } as MusicFreePlayerTrack, 0);
-                        return;
-                    }
+                        } as MusicFreePlayerTrack,
+                        0,
+                    );
+                    return;
+                }
 
-                    if (
-                        e.message &&
-                        e.message !== "android-io-file-not-found"
-                    ) {
-                        trace("播放出错", {
-                            message: e.message,
-                            code: e.code,
-                        });
+                if (e.message && e.message !== "android-io-file-not-found") {
+                    trace("播放出错", {
+                        message: e.message,
+                        code: e.code,
+                    });
 
+                    const recovered =
+                        await this.recoverCurrentSourceAfterPlaybackError(
+                            e,
+                            currentTrack as MusicFreePlayerTrack | null,
+                        );
+                    if (!recovered) {
                         this.handlePlayFail();
                     }
-                },
-            );
+                }
+            });
 
             this.backend.addEventListener("playbackStateChanged", state => {
                 if (this.isForceExiting) {
                     return;
                 }
                 const normalizedState = normalizeMusicState(state);
-                getDefaultStore().set(
-                    musicStateAtom,
-                    normalizedState,
-                );
+                getDefaultStore().set(musicStateAtom, normalizedState);
                 if (normalizedState === "paused") {
-                    this.backend.getProgress()
+                    this.backend
+                        .getProgress()
                         .then(progress => {
                             const currentProgress = setPlayerProgress(
                                 progress,
@@ -443,6 +501,7 @@ class TrackPlayer extends EventEmitter<{
                 if (this.isForceExiting) {
                     return;
                 }
+                this.syncMpvActiveTrackFromProgress("progress");
                 const currentProgress = setPlayerProgress(
                     progress,
                     this.currentMusic?.duration ?? 0,
@@ -458,10 +517,13 @@ class TrackPlayer extends EventEmitter<{
                     progress,
                     this.currentMusic?.duration ?? 0,
                 );
-                this.persistPlaybackProgress(
-                    currentProgress.position,
-                    true,
-                );
+                this.persistPlaybackProgress(currentProgress.position, true);
+            });
+
+            this.unsubscribeDislikeMusicUpdated?.();
+            this.unsubscribeDislikeMusicUpdated = DislikeMusic.onUpdated(() => {
+                trace("不喜欢歌曲规则更新，重新同步预备下一首");
+                this.syncPreparedNextTrack("dislike-rules");
             });
 
             this.serviceInited = true;
@@ -484,13 +546,30 @@ class TrackPlayer extends EventEmitter<{
         return this.playListIndexMap.has(musicItem);
     }
 
-    getPlayListMusicAt(index: number): IMusic.IMusicItem | null {
-        const playList = this.playList;
-        const len = playList.length;
-        if (len === 0) {
-            return null;
+    private replacePlayListMusicIfPresent(musicItem: IMusic.IMusicItem) {
+        const result = replaceQueueItemByIdentity(
+            this.playList,
+            musicItem,
+            isSameMediaItem,
+        );
+        if (!result.replaced) {
+            return false;
         }
-        return playList[(index % len + len) % len]; // <--- 修正取模确保正数
+
+        trace("播放列表歌曲字段已更新", {
+            musicId: musicItem.id,
+            platform: musicItem.platform,
+            index: result.index,
+            hasUrl: !!musicItem.url,
+            hasLocalPath: !!getLocalPath(musicItem),
+            hasCencKey: !!musicItem.cek,
+        });
+        this.setPlayList(result.queue);
+        return true;
+    }
+
+    getPlayListMusicAt(index: number): IMusic.IMusicItem | null {
+        return getWrappedQueueItem(this.playList, index);
     }
 
     private getWrappedPlayListIndex(index: number) {
@@ -498,7 +577,7 @@ class TrackPlayer extends EventEmitter<{
         if (len === 0) {
             return -1;
         }
-        return (index % len + len) % len;
+        return ((index % len) + len) % len;
     }
 
     isPlayListEmpty() {
@@ -589,7 +668,9 @@ class TrackPlayer extends EventEmitter<{
 
         musicItems.forEach(item => {
             if (
-                !nextQueue.some(queueItem => isSameMediaItem(queueItem, item)) &&
+                !nextQueue.some(queueItem =>
+                    isSameMediaItem(queueItem, item),
+                ) &&
                 !this.isCurrentMusic(item)
             ) {
                 nextQueue.push(item);
@@ -606,7 +687,9 @@ class TrackPlayer extends EventEmitter<{
 
     removePlayLater(musicItem: IMusic.IMusicItem): void {
         this.setPlayLaterQueue(
-            this.playLaterQueue.filter(item => !isSameMediaItem(item, musicItem)),
+            this.playLaterQueue.filter(
+                item => !isSameMediaItem(item, musicItem),
+            ),
         );
     }
 
@@ -636,7 +719,8 @@ class TrackPlayer extends EventEmitter<{
                 currentMusic = null;
                 shouldPlayCurrent = false;
             } else {
-                currentMusic = newPlayList[this.currentIndex % newPlayList.length];
+                currentMusic =
+                    newPlayList[this.currentIndex % newPlayList.length];
                 try {
                     const state = await this.backend.getState();
                     shouldPlayCurrent = state === "playing";
@@ -750,19 +834,20 @@ class TrackPlayer extends EventEmitter<{
                         // 2.1.1 强制重新开始
                         await this.seekTo(0);
                     } else if (seekToTime) {
-                        const currentProgress =
-                            await this.backend.getProgress()
-                                .catch(() => null);
-                        if (
-                            !currentProgress ||
-                            currentProgress.position < 1
-                        ) {
+                        const currentProgress = await this.backend
+                            .getProgress()
+                            .catch(() => null);
+                        if (!currentProgress || currentProgress.position < 1) {
                             await this.seekTo(seekToTime);
                         }
                     }
                     const currentState = await this.backend.getState();
                     if (currentState === "stopped" || currentState === "idle") {
-                        await this.setTrackSource(currentTrack, true, seekToTime);
+                        await this.setTrackSource(
+                            currentTrack,
+                            true,
+                            seekToTime,
+                        );
                     }
                     if (currentState !== "playing") {
                         // 2.1.2 恢复播放
@@ -778,6 +863,8 @@ class TrackPlayer extends EventEmitter<{
             const inPlayList = this.isInPlayList(musicItem);
             if (!inPlayList) {
                 this.add(musicItem);
+            } else {
+                this.replacePlayListMusicIfPresent(musicItem);
             }
 
             // 4. 更新列表状态和当前音乐
@@ -796,10 +883,13 @@ class TrackPlayer extends EventEmitter<{
             let track: IMusic.IMusicItem;
 
             // 5.1 通过插件获取音源
-            const plugin = this.pluginManagerService.getByName(musicItem.platform);
+            const plugin = this.pluginManagerService.getByName(
+                musicItem.platform,
+            );
             // 5.2 获取音质排序
             const qualityOrder = getQualityOrder(
-                this.configService.getConfig("basic.defaultPlayQuality") ?? "standard",
+                this.configService.getConfig("basic.defaultPlayQuality") ??
+                    "standard",
                 this.configService.getConfig("basic.playQualityOrder") ?? "asc",
             );
             // 5.3 插件返回音源
@@ -823,14 +913,18 @@ class TrackPlayer extends EventEmitter<{
                         hasSource: !!candidate?.url,
                         sourceUrl: candidate?.url,
                     });
-                    if (this.isUnsupportedEncryptedSource(candidate)) {
-                        continue;
-                    }
                     // 5.3.1 获取到真实源
                     if (candidate?.url) {
-                        source = candidate;
-                        this.setQuality(quality);
-                        break;
+                        source = await this.createPlayableSource(
+                            candidate,
+                            musicItem,
+                            quality,
+                            "plugin",
+                        );
+                        if (source?.url) {
+                            this.setQuality(quality);
+                            break;
+                        }
                     }
                 } else {
                     // 5.3.2 已经切换到其他歌曲了，
@@ -848,22 +942,31 @@ class TrackPlayer extends EventEmitter<{
                         const legacyQuality = convertToLegacyQuality(quality);
                         const directSource =
                             musicItem.source[quality] ??
-                            (legacyQuality ? musicItem.source[legacyQuality] : undefined);
-                        if (
-                            directSource?.url &&
-                            !this.isUnsupportedEncryptedSource(directSource)
-                        ) {
-                            source = directSource;
-                            this.setQuality(quality);
-
-                            break;
+                            (legacyQuality
+                                ? musicItem.source[legacyQuality]
+                                : undefined);
+                        if (directSource?.url) {
+                            source = await this.createPlayableSource(
+                                directSource,
+                                musicItem,
+                                quality,
+                                "embedded-cache",
+                            );
+                            if (source?.url) {
+                                this.setQuality(quality);
+                                break;
+                            }
                         }
                     }
                 }
                 // 5.4 没有返回源
                 if (!source && !musicItem.url) {
                     // 插件失效的情况
-                    if (this.configService.getConfig("basic.tryChangeSourceWhenPlayFail")) {
+                    if (
+                        this.configService.getConfig(
+                            "basic.tryChangeSourceWhenPlayFail",
+                        )
+                    ) {
                         // 重试
                         const similarMusic = await this.getSimilarMusic(
                             musicItem,
@@ -873,7 +976,9 @@ class TrackPlayer extends EventEmitter<{
 
                         if (similarMusic) {
                             const similarMusicPlugin =
-                                this.pluginManagerService.getByMedia(similarMusic);
+                                this.pluginManagerService.getByMedia(
+                                    similarMusic,
+                                );
 
                             for (let quality of qualityOrder) {
                                 if (this.isCurrentMusic(musicItem)) {
@@ -882,18 +987,18 @@ class TrackPlayer extends EventEmitter<{
                                             similarMusic,
                                             quality,
                                         )) ?? null;
-                                    if (
-                                        this.isUnsupportedEncryptedSource(
-                                            candidate,
-                                        )
-                                    ) {
-                                        continue;
-                                    }
                                     // 5.4.1 获取到真实源
                                     if (candidate?.url) {
-                                        source = candidate;
-                                        this.setQuality(quality);
-                                        break;
+                                        source = await this.createPlayableSource(
+                                            candidate,
+                                            similarMusic,
+                                            quality,
+                                            "similar-plugin",
+                                        );
+                                        if (source?.url) {
+                                            this.setQuality(quality);
+                                            break;
+                                        }
                                     }
                                 } else {
                                     // 5.4.2 已经切换到其他歌曲了，
@@ -908,15 +1013,23 @@ class TrackPlayer extends EventEmitter<{
                     } else {
                         throw new Error(PlayFailReason.INVALID_SOURCE);
                     }
-                } else {
-                    source = {
-                        url: musicItem.url,
-                        ekey: musicItem.ekey,
-                    };
-                    this.setQuality("192k");
+                } else if (!source && musicItem.url) {
+                    source = await this.createPlayableSource(
+                        {
+                            url: musicItem.url,
+                            ekey: musicItem.ekey,
+                            cek: musicItem.cek,
+                        },
+                        musicItem,
+                        undefined,
+                        "direct",
+                    );
                 }
             }
 
+            if (!source?.url) {
+                throw new Error(PlayFailReason.INVALID_SOURCE);
+            }
             if (this.isUnsupportedEncryptedSource(source)) {
                 throw new Error(PlayFailReason.INVALID_SOURCE);
             }
@@ -927,7 +1040,10 @@ class TrackPlayer extends EventEmitter<{
                 source.type = "hls";
             }
             // 7. 合并结果
-            track = this.mergeTrackSource(musicItem, source) as IMusic.IMusicItem;
+            track = this.mergeTrackSource(
+                musicItem,
+                source,
+            ) as IMusic.IMusicItem;
 
             track.userAgent = track.userAgent || getAppUserAgent();
 
@@ -936,7 +1052,11 @@ class TrackPlayer extends EventEmitter<{
 
             trace("获取音源成功", track);
             // 9. 设置音源
-            await this.setTrackSource(track as MusicFreePlayerTrack, true, seekToTime);
+            await this.setTrackSource(
+                track as MusicFreePlayerTrack,
+                true,
+                seekToTime,
+            );
 
             // 10. 获取补充信息
             let info: Partial<IMusic.IMusicItem> | null = null;
@@ -949,23 +1069,34 @@ class TrackPlayer extends EventEmitter<{
                 ) {
                     delete info.url;
                 }
-            } catch { }
+            } catch {}
 
             // 11. 设置补充信息
             if (info && this.isCurrentMusic(musicItem)) {
                 const mergedTrack = this.mergeTrackSource(track, info);
-                mergedTrack.userAgent = mergedTrack.userAgent || getAppUserAgent();
-                getDefaultStore().set(currentMusicAtom, mergedTrack as IMusic.IMusicItem);
-                await this.backend.updateTrack(mergedTrack as unknown as MusicFreePlayerTrack, 0);
+                mergedTrack.userAgent =
+                    mergedTrack.userAgent || getAppUserAgent();
+                getDefaultStore().set(
+                    currentMusicAtom,
+                    mergedTrack as IMusic.IMusicItem,
+                );
+                await this.backend.updateTrack(
+                    mergedTrack as unknown as MusicFreePlayerTrack,
+                    0,
+                );
             }
         } catch (e: any) {
             this.recordPlaybackError(e);
             const message = e?.message;
-            trace("TrackPlayer.play error", {
-                backend: this.backend.name,
-                message,
-                stack: e?.stack,
-            }, "error");
+            trace(
+                "TrackPlayer.play error",
+                {
+                    backend: this.backend.name,
+                    message,
+                    stack: e?.stack,
+                },
+                "error",
+            );
             if (
                 message ===
                 "The player is not initialized. Call setupPlayer first."
@@ -1039,24 +1170,63 @@ class TrackPlayer extends EventEmitter<{
             return;
         }
 
+        const previousMusic = this.currentMusic;
+        let optimisticMpvNext: IMusic.IMusicItem | null = null;
+        if (this.backend.name === "mpv" && previousMusic) {
+            const currentIndex = this.getMusicIndexInPlayList(previousMusic);
+            const nextIndex = this.getWrappedPlayListIndex(currentIndex + 1);
+            optimisticMpvNext =
+                nextIndex >= 0 ? this.playList[nextIndex] ?? null : null;
+            if (
+                optimisticMpvNext &&
+                !isSameMediaItem(previousMusic, optimisticMpvNext)
+            ) {
+                this.setCurrentMusic(optimisticMpvNext);
+                setPlayerProgress({
+                    position: 0,
+                    duration: Number(optimisticMpvNext.duration) || 0,
+                    buffered: 0,
+                });
+            }
+        }
+
         if (this.backend.getNextTracks) {
-            const nextTracks = await this.backend.getNextTracks(1).catch(error => {
-                errorLog(
-                    "Nitro 下一首队列读取失败",
-                    error?.message ?? error,
-                );
-                return [];
-            });
+            const nextTracks = await this.backend
+                .getNextTracks(1)
+                .catch(error => {
+                    errorLog("后端下一首队列读取失败", error?.message ?? error);
+                    return [];
+                });
             if (nextTracks.length > 0) {
                 await this.resolveNitroQueuedTracks(nextTracks).catch(error => {
                     errorLog(
-                        "Nitro 下一首音源预解析失败",
+                        "后端下一首音源预解析失败",
                         error?.message ?? error,
                     );
                 });
             }
         }
-        await this.backend.skipToNext();
+        try {
+            await this.backend.skipToNext();
+        } catch (error) {
+            if (
+                optimisticMpvNext &&
+                previousMusic &&
+                isSameMediaItem(this.currentMusic, optimisticMpvNext)
+            ) {
+                this.setCurrentMusic(previousMusic);
+            }
+            throw error;
+        }
+        const syncedMusic =
+            await this.syncCurrentMusicFromBackendActiveTrack("manual");
+        if (
+            !syncedMusic &&
+            optimisticMpvNext &&
+            !isSameMediaItem(this.currentMusic, optimisticMpvNext)
+        ) {
+            this.setCurrentMusic(optimisticMpvNext);
+        }
     }
 
     async skipToPrevious(): Promise<void> {
@@ -1065,7 +1235,20 @@ class TrackPlayer extends EventEmitter<{
             return;
         }
 
-        await this.backend.skipToPrevious();
+        const currentIndex = this.getMusicIndexInPlayList(this.currentMusic);
+        const previous = resolvePreviousQueueItem(this.playList, currentIndex);
+        if (!previous) {
+            return;
+        }
+
+        trace("统一上一首切歌", {
+            backend: this.backend.name,
+            fromIndex: currentIndex,
+            toIndex: previous.index,
+            musicId: previous.item.id,
+            platform: previous.item.platform,
+        });
+        await this.play(previous.item, true);
     }
 
     async changeQuality(newQuality: IMusic.IQualityKey): Promise<boolean> {
@@ -1086,16 +1269,22 @@ class TrackPlayer extends EventEmitter<{
                 musicItem,
                 newQuality,
             );
-            if (!newSource?.url) {
-                throw new Error(PlayFailReason.INVALID_SOURCE);
-            }
-            if (this.isUnsupportedEncryptedSource(newSource)) {
+            const playableSource = await this.createPlayableSource(
+                newSource ?? null,
+                musicItem,
+                newQuality,
+                "plugin",
+            );
+            if (!playableSource?.url) {
                 throw new Error(PlayFailReason.INVALID_SOURCE);
             }
             if (this.isCurrentMusic(musicItem)) {
                 const playingState = await this.backend.getState();
                 await this.setTrackSource(
-                    this.mergeTrackSource(musicItem, newSource) as unknown as MusicFreePlayerTrack,
+                    this.mergeTrackSource(
+                        musicItem,
+                        playableSource,
+                    ) as unknown as MusicFreePlayerTrack,
                     playingState === "playing",
                 );
 
@@ -1140,13 +1329,13 @@ class TrackPlayer extends EventEmitter<{
                 [timeStampSymbol]: now,
                 [sortIndexSymbol]: index,
             }));
-            const targetMusic =
-                writablePlayList.find(it => isSameMediaItem(it, musicItem)) ??
-                {
-                    ...musicItem,
-                    [timeStampSymbol]: now,
-                    [sortIndexSymbol]: 0,
-                };
+            const targetMusic = writablePlayList.find(it =>
+                isSameMediaItem(it, musicItem),
+            ) ?? {
+                ...musicItem,
+                [timeStampSymbol]: now,
+                [sortIndexSymbol]: 0,
+            };
 
             this.setPlayList(
                 this.repeatMode === MusicRepeatMode.SHUFFLE
@@ -1165,12 +1354,16 @@ class TrackPlayer extends EventEmitter<{
                 platform: targetMusic.platform,
             });
         } catch (e: any) {
-            trace("TrackPlayer.playWithReplacePlayList error", {
-                musicId: musicItem?.id,
-                platform: musicItem?.platform,
-                message: e?.message ?? String(e ?? ""),
-                stack: e?.stack,
-            }, "error");
+            trace(
+                "TrackPlayer.playWithReplacePlayList error",
+                {
+                    musicId: musicItem?.id,
+                    platform: musicItem?.platform,
+                    message: e?.message ?? String(e ?? ""),
+                    stack: e?.stack,
+                },
+                "error",
+            );
         }
     }
 
@@ -1194,13 +1387,14 @@ class TrackPlayer extends EventEmitter<{
             rate,
             backendRepeatMode,
             nativeDiagnostics,
+            backendNextTracks,
         ] = await Promise.all([
             this.backend.getState().catch(() => "error" as PlayerBackendState),
-            this.backend.getProgress()
-                .then(it => normalizeAdapterProgress(
-                    it,
-                    currentMusic?.duration ?? 0,
-                ))
+            this.backend
+                .getProgress()
+                .then(it =>
+                    normalizeAdapterProgress(it, currentMusic?.duration ?? 0),
+                )
                 .catch(() => getDefaultStore().get(progressAtom)),
             this.backend.getActiveTrack
                 ? this.backend.getActiveTrack().catch(() => null)
@@ -1219,39 +1413,93 @@ class TrackPlayer extends EventEmitter<{
                     ),
                 }))
                 : Promise.resolve(undefined),
+            this.backend.getNextTracks
+                ? this.backend.getNextTracks(3).catch(() => [])
+                : Promise.resolve([]),
         ]);
+
+        const queueIndex = this.getMusicIndexInPlayList(currentMusic);
+        const backendCapabilities = this.getBackendCapabilities();
+        const preparedNextMusic = this.resolvePreparedNextMusic();
+        const preparedNextTrack = preparedNextMusic
+            ? this.createNitroQueuedTrack(preparedNextMusic)
+            : null;
+        const activeTrackSummary = this.getDiagnosticTrackSummary(
+            activeTrack as Partial<
+                PlayerAdapterTrack & IMusic.IMusicItem
+            > | null,
+        );
+        const backendNextTrackSummaries = backendNextTracks
+            .map(track =>
+                this.getDiagnosticTrackSummary(
+                    track as Partial<
+                        PlayerAdapterTrack & IMusic.IMusicItem
+                    > | null,
+                ),
+            )
+            .filter(
+                (track): track is IPlaybackDiagnosticTrackSummary => !!track,
+            );
 
         return {
             backendName: this.backend.name,
             backendState,
             backendRepeatMode,
+            backendCapabilities,
             rate,
             currentMusic,
-            queueIndex: this.getMusicIndexInPlayList(currentMusic),
+            queueIndex,
             queueLength: this.playList.length,
+            queuePreview: {
+                previous: this.getDiagnosticMusicIdentity(
+                    queueIndex >= 0
+                        ? this.getPlayListMusicAt(queueIndex - 1)
+                        : null,
+                ),
+                next: this.getDiagnosticMusicIdentity(
+                    queueIndex >= 0
+                        ? this.getPlayListMusicAt(queueIndex + 1)
+                        : null,
+                ),
+                playLaterLength: this.playLaterQueue.length,
+                backendNextTracks: backendNextTrackSummaries,
+            },
+            preparedNext: {
+                music: this.getDiagnosticMusicIdentity(preparedNextMusic),
+                hasUrl: !!preparedNextTrack?.url,
+                canUseNativePrepare: !!(
+                    backendCapabilities.prepareNextTrack &&
+                    preparedNextTrack?.url
+                ),
+                blockedByPlayLater: this.playLaterQueue.length > 0,
+                repeatSingle: this.repeatMode === MusicRepeatMode.SINGLE,
+            },
             quality: this.quality,
             repeatMode: this.repeatMode,
             progress,
             activeTrackIndex,
-            activeTrack: activeTrack
-                ? {
-                    id: activeTrack.id,
-                    title: activeTrack.title,
-                    artist: activeTrack.artist,
-                    album: activeTrack.album,
-                    duration: activeTrack.duration,
-                    urlType: this.getDiagnosticUrlType(activeTrack.url),
-                    hasHeaders: !!Object.keys(activeTrack.headers ?? {}).length,
-                }
-                : null,
+            activeTrack:
+                activeTrack && activeTrackSummary
+                    ? {
+                        ...activeTrackSummary,
+                        sourceQuality: activeTrack.playbackSource?.quality,
+                        sourceOrigin: activeTrack.playbackSource?.origin,
+                        sourceRecovered:
+                              activeTrack.playbackSource?.recovered,
+                        sourceCacheKey: activeTrack.playbackSource?.cacheKey,
+                        sourceResolvedAt:
+                              activeTrack.playbackSource?.resolvedAt,
+                    }
+                    : null,
             recentErrors: [...this.recentPlaybackErrors],
             recovery: {
                 persistedMusic: this.getDiagnosticMusicIdentity(
                     PersistStatus.get("music.musicItem"),
                 ),
-                persistedProgress: this.normalizeProgress(
-                    PersistStatus.get("music.progress"),
-                ) ?? null,
+                persistedProgress:
+                    this.normalizeProgress(
+                        PersistStatus.get("music.progress"),
+                    ) ?? null,
                 progressSavedAt:
                     PersistStatus.get("music.progressSavedAt") ?? null,
                 lastPersistedProgress: this.lastProgressPersistedAt
@@ -1268,7 +1516,6 @@ class TrackPlayer extends EventEmitter<{
             native: nativeDiagnostics,
         };
     }
-
 
     /**************** 辅助函数 -- 设置内部状态 ****************/
 
@@ -1330,7 +1577,9 @@ class TrackPlayer extends EventEmitter<{
     }
 
     private normalizeProgress(progress?: number | null) {
-        return typeof progress === "number" && Number.isFinite(progress) && progress > 0
+        return typeof progress === "number" &&
+            Number.isFinite(progress) &&
+            progress > 0
             ? progress
             : undefined;
     }
@@ -1340,7 +1589,9 @@ class TrackPlayer extends EventEmitter<{
             return;
         }
         const normalizedProgress =
-            typeof progress === "number" && Number.isFinite(progress) && progress >= 0
+            typeof progress === "number" &&
+            Number.isFinite(progress) &&
+            progress >= 0
                 ? progress
                 : undefined;
         if (normalizedProgress === undefined) {
@@ -1353,8 +1604,10 @@ class TrackPlayer extends EventEmitter<{
         const now = Date.now();
         if (
             !force &&
-            now - this.lastProgressPersistedAt < TrackPlayer.progressPersistIntervalMs &&
-            Math.abs(normalizedProgress - this.lastProgressPersistedPosition) < 1
+            now - this.lastProgressPersistedAt <
+                TrackPlayer.progressPersistIntervalMs &&
+            Math.abs(normalizedProgress - this.lastProgressPersistedPosition) <
+                1
         ) {
             return;
         }
@@ -1364,21 +1617,63 @@ class TrackPlayer extends EventEmitter<{
         this.setPersistedPlaybackProgress(normalizedProgress, now);
     }
 
-    private setPersistedPlaybackProgress(progress: number, savedAt = Date.now()) {
+    private setPersistedPlaybackProgress(
+        progress: number,
+        savedAt = Date.now(),
+    ) {
         PersistStatus.set("music.progress", progress);
         PersistStatus.set("music.progressSavedAt", savedAt);
     }
 
     private getDiagnosticMusicIdentity(
-        musicItem?: IMusic.IMusicItem | null,
-    ) {
+        musicItem?: Partial<IMusic.IMusicItem> | null,
+    ): IPlaybackDiagnosticMusicIdentity | null {
         if (!musicItem) {
             return null;
         }
         return {
+            id: musicItem.id == null ? undefined : String(musicItem.id),
             title: musicItem.title,
             artist: musicItem.artist,
             platform: musicItem.platform,
+        };
+    }
+
+    private getDiagnosticTrackSummary(
+        track?: Partial<PlayerAdapterTrack & IMusic.IMusicItem> | null,
+    ): IPlaybackDiagnosticTrackSummary | null {
+        if (!track) {
+            return null;
+        }
+        return {
+            id: track.id == null ? undefined : String(track.id),
+            title: track.title,
+            artist: track.artist,
+            album: track.album,
+            platform: track.platform,
+            duration: track.duration,
+            urlType: this.getDiagnosticUrlType(track.url),
+            hasHeaders: !!Object.keys(track.headers ?? {}).length,
+        };
+    }
+
+    private getBackendCapabilities() {
+        return {
+            getNextTracks: !!this.backend.getNextTracks,
+            prepareNextTrack: !!this.backend.prepareNextTrack,
+            syncQueueOrder: !!this.backend.syncQueueOrder,
+            queueInfo: !!(
+                this.backend.getCurrentQueueId ||
+                this.backend.getQueueInfo ||
+                this.backend.getAllQueueInfos
+            ),
+            temporaryQueue: !!(
+                this.backend.playNext ||
+                this.backend.addToUpNext ||
+                this.backend.getPlayNextQueue ||
+                this.backend.getUpNextQueue
+            ),
+            androidAuto: !!this.backend.isAndroidAutoConnected,
         };
     }
 
@@ -1388,7 +1683,10 @@ class TrackPlayer extends EventEmitter<{
             await delay(retryDelay);
 
             const currentMusic = this.currentMusic;
-            if (!currentMusic || getMediaUniqueKey(currentMusic) !== targetKey) {
+            if (
+                !currentMusic ||
+                getMediaUniqueKey(currentMusic) !== targetKey
+            ) {
                 trace("自动播放补偿取消", {
                     targetKey,
                     currentKey: currentMusic
@@ -1398,7 +1696,8 @@ class TrackPlayer extends EventEmitter<{
                 return;
             }
 
-            const activeTrack = await this.backend.getActiveTrack?.()
+            const activeTrack = await this.backend
+                .getActiveTrack?.()
                 .catch(() => null);
             const activeMusic = this.resolveMusicFromAdapterTrack(
                 activeTrack as Partial<IMusic.IMusicItem> | null,
@@ -1429,12 +1728,16 @@ class TrackPlayer extends EventEmitter<{
     }
 
     private resolveResumeSeekTime(musicItem: IMusic.IMusicItem) {
-        const itemCurrentTime = this.normalizeProgress((musicItem as any)?._currentTime);
+        const itemCurrentTime = this.normalizeProgress(
+            (musicItem as any)?._currentTime,
+        );
         if (itemCurrentTime) {
             return itemCurrentTime;
         }
 
-        const progress = this.normalizeProgress(PersistStatus.get("music.progress"));
+        const progress = this.normalizeProgress(
+            PersistStatus.get("music.progress"),
+        );
         if (!progress) {
             return undefined;
         }
@@ -1448,35 +1751,42 @@ class TrackPlayer extends EventEmitter<{
     }
 
     // 设置音源
-    private async setTrackSource(track: MusicFreePlayerTrack, autoPlay = true, seekTo?: number) {
+    private async setTrackSource(
+        track: MusicFreePlayerTrack,
+        autoPlay = true,
+        seekTo?: number,
+    ) {
         const clonedTrack = this.patchMediaArtwork(track);
         if (!clonedTrack) {
             return;
         }
         const initialProgress = this.normalizeProgress(seekTo) ?? 0;
         clonedTrack.userAgent = clonedTrack.userAgent || getAppUserAgent();
-        const nitroTargetKey = getMediaUniqueKey(clonedTrack as unknown as IMusic.IMusicItem);
-        const nitroQueue = this.getNitroQueue(clonedTrack as unknown as IMusic.IMusicItem);
-        this.nitroTrackChangeGuard = {
-            key: nitroTargetKey,
-            until: Date.now() + 5000,
-        };
-        await this.backend.loadQueue(
-            nitroQueue.tracks,
-            nitroQueue.startIndex,
-            { autoPlay },
+        const nitroTargetKey = getMediaUniqueKey(
+            clonedTrack as unknown as IMusic.IMusicItem,
         );
+        const nitroQueue = this.getNitroQueue(
+            clonedTrack as unknown as IMusic.IMusicItem,
+        );
+        this.nitroTrackChangeGuard =
+            this.backend.name === "nitro-player"
+                ? {
+                    key: nitroTargetKey,
+                    until: Date.now() + 5000,
+                }
+                : null;
+        await this.backend.loadQueue(nitroQueue.tracks, nitroQueue.startIndex, {
+            autoPlay,
+        });
         await this.syncBackendRepeatMode();
         const startIndex = nitroQueue.startIndex;
-        const lookaheadTracks =
-            nitroQueue.tracks.slice(startIndex + 1, startIndex + 6);
-        this.resolveNitroQueuedTracks(lookaheadTracks)
-            .catch(error => {
-                errorLog(
-                    "预解析下一首失败",
-                    error?.message ?? error,
-                );
-            });
+        const lookaheadTracks = nitroQueue.tracks.slice(
+            startIndex + 1,
+            startIndex + 6,
+        );
+        this.resolveNitroQueuedTracks(lookaheadTracks).catch(error => {
+            errorLog("预解析下一首失败", error?.message ?? error);
+        });
         this.syncPreparedNextTrack("track-source");
         PersistStatus.set("music.musicItem", track as IMusic.IMusicItem);
         this.setPersistedPlaybackProgress(initialProgress);
@@ -1502,33 +1812,15 @@ class TrackPlayer extends EventEmitter<{
     }
 
     private resolvePreparedNextMusic() {
-        const currentMusic = this.currentMusic;
-        if (!currentMusic || this.playList.length === 0) {
-            return null;
-        }
-
-        if (this.repeatMode === MusicRepeatMode.SINGLE) {
-            return currentMusic;
-        }
-
-        // play-later is resolved by TrackPlayer at the end event; do not let
-        // native pre-advance to the regular queue and briefly play the wrong song.
-        if (this.playLaterQueue.length > 0) {
-            return null;
-        }
-
-        for (let offset = 1; offset <= this.playList.length; offset += 1) {
-            const candidate = this.getPlayListMusicAt(this.currentIndex + offset);
-            if (
-                candidate &&
-                !isSameMediaItem(candidate, currentMusic) &&
-                !DislikeMusic.isDisliked(candidate)
-            ) {
-                return candidate;
-            }
-        }
-
-        return null;
+        return resolvePreparedNextItem({
+            currentItem: this.currentMusic,
+            queue: this.playList,
+            currentIndex: this.currentIndex,
+            repeatMode: this.repeatMode,
+            playLaterQueueLength: this.playLaterQueue.length,
+            isSameItem: isSameMediaItem,
+            isSkipped: item => DislikeMusic.isDisliked(item),
+        });
     }
 
     private syncPreparedNextTrack(reason: string) {
@@ -1542,7 +1834,8 @@ class TrackPlayer extends EventEmitter<{
             ? this.createNitroQueuedTrack(nextMusic)
             : null;
 
-        this.backend.prepareNextTrack(nextTrack as any)
+        this.backend
+            .prepareNextTrack(nextTrack as any)
             .then(() => {
                 trace("同步预备下一首完成", {
                     reason,
@@ -1578,13 +1871,12 @@ class TrackPlayer extends EventEmitter<{
         // 重新对齐内部队列与当前下标，避免下一首跳错；nitro 未实现该方法，无副作用。
         const activeKey = this.currentMusic
             ? getMediaUniqueKey(this.currentMusic)
-            : undefined;
-        this.backend.syncQueueOrder?.(
-            newPlayList as any,
-            activeKey,
-        )?.catch(error => {
-            errorLog("同步后端队列顺序失败", error?.message ?? error);
-        });
+            : null;
+        this.backend
+            .syncQueueOrder?.(newPlayList as any, activeKey)
+            ?.catch(error => {
+                errorLog("同步后端队列顺序失败", error?.message ?? error);
+            });
         this.syncPreparedNextTrack("playlist");
     }
 
@@ -1617,24 +1909,25 @@ class TrackPlayer extends EventEmitter<{
             return false;
         }
 
-        for (let offset = 1; offset <= this.playList.length; offset += 1) {
-            const candidate = this.getPlayListMusicAt(this.currentIndex + offset);
-            if (
-                candidate &&
-                !isSameMediaItem(candidate, currentMusic) &&
-                !DislikeMusic.isDisliked(candidate)
-            ) {
-                this.emit(TrackPlayerEvents.AutoSkipDislikedMusic);
-                await this.play(candidate, true);
-                return true;
-            }
+        const candidate = findNextPlayableQueueItem(
+            this.playList,
+            this.currentIndex,
+            currentMusic,
+            {
+                isSameItem: isSameMediaItem,
+                isSkipped: item => DislikeMusic.isDisliked(item),
+            },
+        );
+        if (candidate) {
+            this.emit(TrackPlayerEvents.AutoSkipDislikedMusic);
+            await this.play(candidate, true);
+            return true;
         }
 
         await this.pause().catch(() => undefined);
         this.emit(TrackPlayerEvents.NoPlayableMusic);
         return false;
     }
-
 
     /**************** 辅助函数 -- 工具方法 ****************/
     private shrinkPlayListToSize = (
@@ -1650,7 +1943,10 @@ class TrackPlayer extends EventEmitter<{
                     queue.length,
                     targetIndex + TrackPlayer.halfMaxMusicQueueLength,
                 );
-                const left = Math.max(0, right - TrackPlayer.maxMusicQueueLength);
+                const left = Math.max(
+                    0,
+                    right - TrackPlayer.maxMusicQueueLength,
+                );
                 queue = queue.slice(left, right);
             }
         }
@@ -1671,10 +1967,88 @@ class TrackPlayer extends EventEmitter<{
         return merged;
     }
 
+    private createPlaybackSourceMeta(
+        mediaItem: ICommon.IMediaBase,
+        quality: IMusic.IQualityKey | undefined,
+        origin: PlayerAdapterTrackSourceOrigin,
+        recovered = false,
+    ): PlayerAdapterTrackSourceMeta {
+        return {
+            ...(quality ? { quality } : {}),
+            origin,
+            cacheKey:
+                mediaItem.platform && mediaItem.id
+                    ? getMediaUniqueKey(mediaItem)
+                    : undefined,
+            recovered,
+            resolvedAt: Date.now(),
+        };
+    }
+
+    private withPlaybackSourceMeta<T extends IPlugin.IMediaSourceResult | null>(
+        source: T,
+        mediaItem: ICommon.IMediaBase,
+        quality: IMusic.IQualityKey | undefined,
+        origin: PlayerAdapterTrackSourceOrigin,
+        recovered = false,
+    ): T {
+        if (!source) {
+            return source;
+        }
+        return {
+            ...source,
+            playbackSource: this.createPlaybackSourceMeta(
+                mediaItem,
+                source.quality ?? quality,
+                origin,
+                recovered,
+            ),
+        } as T;
+    }
+
+    private async createPlayableSource(
+        source: IPlugin.IMediaSourceResult | null | undefined,
+        mediaItem: ICommon.IMediaBase,
+        quality: IMusic.IQualityKey | undefined,
+        origin: PlayerAdapterTrackSourceOrigin,
+        recovered = false,
+    ): Promise<IPlugin.IMediaSourceResult | null> {
+        const sourceWithMeta = this.withPlaybackSourceMeta(
+            source ?? null,
+            mediaItem,
+            quality,
+            origin,
+            recovered,
+        );
+        if (!sourceWithMeta?.url) {
+            return null;
+        }
+        if (this.isUnsupportedEncryptedSource(sourceWithMeta)) {
+            return null;
+        }
+
+        try {
+            const playableSource =
+                await resolveEncryptedMediaStreamIfNeeded(sourceWithMeta);
+            return playableSource?.url ? playableSource : null;
+        } catch (error: any) {
+            errorLog("加密音源代理失败", {
+                musicId: mediaItem.id,
+                platform: mediaItem.platform,
+                reason: error?.message ?? error,
+            });
+            return null;
+        }
+    }
+
     private isUnsupportedEncryptedSource(
-        source?: {url?: string | null; ekey?: string | null} | null,
+        source?: {
+            url?: string | null;
+            ekey?: string | null;
+            cek?: string | null;
+        } | null,
     ) {
-        return hasEncryptedMediaSource(source?.url, source?.ekey);
+        return isUnsupportedEncryptedMediaSource(source);
     }
 
     private sortByTimestampAndIndex(array: any[], newArray = false) {
@@ -1692,7 +2066,8 @@ class TrackPlayer extends EventEmitter<{
 
     private getPlayQualityOrder() {
         return getQualityOrder(
-            this.configService.getConfig("basic.defaultPlayQuality") ?? "standard",
+            this.configService.getConfig("basic.defaultPlayQuality") ??
+                "standard",
             this.configService.getConfig("basic.playQualityOrder") ?? "asc",
         );
     }
@@ -1759,7 +2134,37 @@ class TrackPlayer extends EventEmitter<{
 
     private resolveMusicFromAdapterTrack(
         track?: Partial<IMusic.IMusicItem> | null,
+        preferredIndex?: number | null,
     ) {
+        if (
+            typeof preferredIndex === "number" &&
+            preferredIndex >= 0 &&
+            preferredIndex < this.playList.length
+        ) {
+            const indexedMusic = this.playList[preferredIndex];
+            if (
+                indexedMusic &&
+                (!track?.platform ||
+                    !track.id ||
+                    isSameMediaItem(
+                        indexedMusic,
+                        track as Partial<IMusic.IMusicItem> as IMusic.IMusicItem,
+                    ))
+            ) {
+                return indexedMusic;
+            }
+        }
+        const nestedMusicItem = (track as {musicItem?: IMusic.IMusicItem})
+            ?.musicItem;
+        if (nestedMusicItem?.platform && nestedMusicItem.id) {
+            const nestedIndex = this.playListIndexMap.getIndex(
+                nestedMusicItem as ICommon.IMediaBase,
+            );
+            if (nestedIndex >= 0) {
+                return this.playList[nestedIndex];
+            }
+            return nestedMusicItem;
+        }
         if (!track?.platform || !track.id) {
             return null;
         }
@@ -1767,6 +2172,97 @@ class TrackPlayer extends EventEmitter<{
             track as ICommon.IMediaBase,
         );
         return index >= 0 ? this.playList[index] : null;
+    }
+
+    private async syncCurrentMusicFromBackendActiveTrack(reason?: unknown) {
+        if (this.backend.name !== "mpv") {
+            return null;
+        }
+        const activeTrack = await this.backend
+            .getActiveTrack?.()
+            .catch(error => {
+                errorLog(
+                    "同步 mpv 当前曲目失败：读取 active track 失败",
+                    error?.message ?? error,
+                );
+                return null;
+            });
+        if (!activeTrack) {
+            return null;
+        }
+        const activeIndex = await this.backend
+            .getActiveTrackIndex?.()
+            .catch(() => null);
+        const preferredIndex =
+            typeof activeIndex === "number" ? activeIndex : undefined;
+        const activeMusic = this.resolveMusicFromAdapterTrack(
+            activeTrack as Partial<IMusic.IMusicItem>,
+            preferredIndex,
+        );
+        if (activeMusic && isSameMediaItem(this.currentMusic, activeMusic)) {
+            return this.currentMusic;
+        }
+        const syncedMusic = this.syncNitroCurrentMusic(
+            activeTrack as Partial<IMusic.IMusicItem>,
+            reason,
+            preferredIndex,
+        );
+        if (syncedMusic) {
+            return syncedMusic;
+        }
+        const indexedMusic =
+            typeof preferredIndex === "number"
+                ? this.playList[preferredIndex]
+                : null;
+        if (indexedMusic) {
+            const fallbackMusic = activeTrack?.url
+                ? (this.mergeTrackSource(indexedMusic, {
+                    url: activeTrack.url,
+                    headers: activeTrack.headers,
+                    userAgent: activeTrack.userAgent,
+                    ekey: activeTrack.ekey,
+                    cek: activeTrack.cek,
+                    playbackSource: activeTrack.playbackSource,
+                }) as IMusic.IMusicItem)
+                : indexedMusic;
+            this.setCurrentMusic(fallbackMusic);
+            setPlayerProgress({
+                position: 0,
+                duration: Number(fallbackMusic.duration) || 0,
+                buffered: 0,
+            });
+            this.syncPreparedNextTrack("mpv-active-index");
+            return fallbackMusic;
+        }
+        if (activeTrack?.platform && activeTrack.id) {
+            const fallbackMusic = activeTrack as IMusic.IMusicItem;
+            this.setCurrentMusic(fallbackMusic);
+            setPlayerProgress({
+                position: 0,
+                duration: Number(fallbackMusic.duration) || 0,
+                buffered: 0,
+            });
+            this.syncPreparedNextTrack("mpv-active-track");
+            return fallbackMusic;
+        }
+        return null;
+    }
+
+    private syncMpvActiveTrackFromProgress(reason?: unknown) {
+        if (this.backend.name !== "mpv") {
+            return;
+        }
+        const now = Date.now();
+        if (now - this.lastMpvActiveTrackSyncAt < 1000) {
+            return;
+        }
+        this.lastMpvActiveTrackSyncAt = now;
+        this.syncCurrentMusicFromBackendActiveTrack(reason).catch(error => {
+            errorLog(
+                "同步 mpv 当前曲目失败",
+                error?.message ?? error,
+            );
+        });
     }
 
     private shouldIgnoreNitroTrackChange(evt: {
@@ -1807,12 +2303,18 @@ class TrackPlayer extends EventEmitter<{
 
         for (let quality of qualityOrder) {
             const candidate =
-                (await plugin?.methods?.getMediaSource(
+                (await plugin?.methods?.getMediaSource(musicItem, quality)) ??
+                null;
+            if (candidate?.url) {
+                const source = await this.createPlayableSource(
+                    candidate,
                     musicItem,
                     quality,
-                )) ?? null;
-            if (candidate?.url && !this.isUnsupportedEncryptedSource(candidate)) {
-                return candidate;
+                    "plugin",
+                );
+                if (source?.url) {
+                    return source;
+                }
             }
         }
 
@@ -1821,24 +2323,177 @@ class TrackPlayer extends EventEmitter<{
                 const legacyQuality = convertToLegacyQuality(quality);
                 const directSource =
                     musicItem.source[quality] ??
-                    (legacyQuality ? musicItem.source[legacyQuality] : undefined);
-                if (
-                    directSource?.url &&
-                    !this.isUnsupportedEncryptedSource(directSource)
-                ) {
-                    return directSource;
+                    (legacyQuality
+                        ? musicItem.source[legacyQuality]
+                        : undefined);
+                if (directSource?.url) {
+                    const source = await this.createPlayableSource(
+                        directSource,
+                        musicItem,
+                        quality,
+                        "embedded-cache",
+                    );
+                    if (source?.url) {
+                        return source;
+                    }
                 }
             }
         }
 
         if (musicItem.url) {
-            return {
-                url: musicItem.url,
-                ekey: musicItem.ekey,
-            };
+            return this.createPlayableSource(
+                {
+                    url: musicItem.url,
+                    ekey: musicItem.ekey,
+                    cek: musicItem.cek,
+                },
+                musicItem,
+                undefined,
+                "direct",
+            );
         }
 
         return null;
+    }
+
+    private async resolveFreshMediaSource(
+        musicItem: IMusic.IMusicItem,
+    ): Promise<IPlugin.IMediaSourceResult | null> {
+        MediaCache.removeMediaCache(musicItem);
+        const plugin = this.pluginManagerService.getByName(musicItem.platform);
+        const qualityOrder = this.getPlayQualityOrder();
+
+        for (let quality of qualityOrder) {
+            const candidate =
+                (await plugin?.methods?.getMediaSource(musicItem, quality)) ??
+                null;
+            if (candidate?.url) {
+                const source = await this.createPlayableSource(
+                    candidate,
+                    musicItem,
+                    quality,
+                    "recovery",
+                    true,
+                );
+                if (source?.url) {
+                    return source;
+                }
+            }
+        }
+
+        if (musicItem.url) {
+            const directSource = {
+                url: musicItem.url,
+                ekey: musicItem.ekey,
+                cek: musicItem.cek,
+            };
+            return this.createPlayableSource(
+                directSource,
+                musicItem,
+                undefined,
+                "recovery",
+                true,
+            );
+        }
+
+        return null;
+    }
+
+    private async recoverCurrentSourceAfterPlaybackError(
+        error: any,
+        activeTrack?: MusicFreePlayerTrack | null,
+    ) {
+        const musicItem =
+            this.resolveMusicFromAdapterTrack(activeTrack) ?? this.currentMusic;
+        if (!musicItem?.platform || !musicItem.id) {
+            return false;
+        }
+
+        const key = getMediaUniqueKey(musicItem);
+        if (this.sourceRecoveryInFlight.has(key)) {
+            return true;
+        }
+
+        const now = Date.now();
+        const lastAttemptAt = this.sourceRecoveryAttemptedAt.get(key) ?? 0;
+        if (now - lastAttemptAt < TrackPlayer.sourceRecoveryCooldownMs) {
+            if (
+                this.shouldEvictRecoveredSourceCacheAfterFailure(
+                    error,
+                    musicItem,
+                    activeTrack,
+                )
+            ) {
+                MediaCache.removeMediaCache(musicItem);
+                trace("播放源恢复跳过：冷却中，已清理疑似坏缓存", {
+                    musicId: musicItem.id,
+                    platform: musicItem.platform,
+                    errorMessage: error?.message,
+                    errorCode: error?.code,
+                    nativeCode: error?.nativeCode,
+                    nativeMessage: error?.nativeMessage,
+                });
+            }
+            trace("播放源恢复跳过：冷却中", {
+                musicId: musicItem.id,
+                platform: musicItem.platform,
+            });
+            return false;
+        }
+
+        this.sourceRecoveryAttemptedAt.set(key, now);
+        this.sourceRecoveryInFlight.add(key);
+        try {
+            const progress = await this.backend
+                .getProgress()
+                .catch(() => getDefaultStore().get(progressAtom));
+            const seekTo = this.normalizeProgress(progress?.position) ?? 0;
+            const source = await this.resolveFreshMediaSource(musicItem);
+            if (
+                !source?.url ||
+                !isSameMediaItem(this.currentMusic, musicItem)
+            ) {
+                return false;
+            }
+
+            const recoveredTrack = this.mergeTrackSource(
+                musicItem,
+                source,
+            ) as MusicFreePlayerTrack;
+            recoveredTrack.userAgent =
+                recoveredTrack.userAgent || getAppUserAgent();
+            trace("播放源恢复：重新解析成功", {
+                backend: this.backend.name,
+                musicId: musicItem.id,
+                platform: musicItem.platform,
+                errorMessage: error?.message,
+                sourceUrl: source.url,
+            });
+            this.setCurrentMusic(recoveredTrack as IMusic.IMusicItem);
+            await this.setTrackSource(recoveredTrack, true, seekTo);
+            return true;
+        } catch (recoveryError: any) {
+            errorLog("播放源恢复失败", recoveryError?.message ?? recoveryError);
+            return false;
+        } finally {
+            this.sourceRecoveryInFlight.delete(key);
+        }
+    }
+
+    private shouldEvictRecoveredSourceCacheAfterFailure(
+        error: any,
+        musicItem: IMusic.IMusicItem,
+        activeTrack?: MusicFreePlayerTrack | null,
+    ) {
+        return shouldEvictRecoveredRemoteSourceCacheAfterFailure({
+            error,
+            isLocalSource:
+                !!getLocalPath(musicItem) ||
+                !!LocalMusicSheet.isLocalMusic(musicItem),
+            wasRecoveredSource:
+                !!activeTrack?.playbackSource?.recovered ||
+                !!musicItem.playbackSource?.recovered,
+        });
     }
 
     private async resolveNitroQueuedTracks(
@@ -1904,15 +2559,24 @@ class TrackPlayer extends EventEmitter<{
     private syncNitroCurrentMusic(
         track?: Partial<IMusic.IMusicItem> | null,
         reason?: unknown,
+        preferredIndex?: number | null,
     ) {
-        const musicItem = this.resolveMusicFromAdapterTrack(track);
+        const musicItem = this.resolveMusicFromAdapterTrack(
+            track,
+            preferredIndex,
+        );
         if (!musicItem) {
             return null;
         }
         const syncedMusic = track?.url
-            ? this.mergeTrackSource(musicItem, {
+            ? (this.mergeTrackSource(musicItem, {
                 url: track.url,
-            }) as IMusic.IMusicItem
+                headers: track.headers,
+                userAgent: track.userAgent,
+                ekey: track.ekey,
+                cek: track.cek,
+                playbackSource: track.playbackSource,
+            }) as IMusic.IMusicItem)
             : musicItem;
         const shouldResetProgress =
             !isSameMediaItem(this.currentMusic, syncedMusic) ||
@@ -1941,9 +2605,7 @@ class TrackPlayer extends EventEmitter<{
     }
 
     private async syncBackendRepeatMode() {
-        await this.backend.setRepeatMode?.(
-            this.getBackendRepeatMode(),
-        );
+        await this.backend.setRepeatMode?.(this.getBackendRepeatMode());
     }
 
     private handlePlayFail() {
@@ -1969,8 +2631,14 @@ class TrackPlayer extends EventEmitter<{
 
     private sanitizeDiagnosticText(value: string) {
         return value
-            .replace(/(authorization|cookie|token|password)=([^&\s]+)/gi, "$1=***")
-            .replace(/(authorization|cookie|token|password):\s*([^\n]+)/gi, "$1: ***");
+            .replace(
+                /(authorization|cookie|token|password)=([^&\s]+)/gi,
+                "$1=***",
+            )
+            .replace(
+                /(authorization|cookie|token|password):\s*([^\n]+)/gi,
+                "$1: ***",
+            );
     }
 
     private getDiagnosticUrlType(url?: string | null) {
@@ -1994,12 +2662,12 @@ class TrackPlayer extends EventEmitter<{
     }
 
     /**
- *
- * @param musicItem 音乐类型
- * @param type 媒体类型
- * @param abortFunction 如果函数为true，则中断
- * @returns
- */
+     *
+     * @param musicItem 音乐类型
+     * @param type 媒体类型
+     * @param abortFunction 如果函数为true，则中断
+     * @returns
+     */
     private async getSimilarMusic<T extends ICommon.SupportMediaType>(
         musicItem: IMusic.IMusicItem,
         type: T = "music" as T,
@@ -2030,7 +2698,10 @@ class TrackPlayer extends EventEmitter<{
             const firstTwo = results?.data?.slice(0, 2) || [];
 
             for (let item of firstTwo) {
-                if (item.title === keyword && item.artist === musicItem.artist) {
+                if (
+                    item.title === keyword &&
+                    item.artist === musicItem.artist
+                ) {
                     distance = 0;
                     minDistanceMusicItem = item;
                     targetPlugin = plugin;
@@ -2058,7 +2729,6 @@ class TrackPlayer extends EventEmitter<{
         return null;
     }
 
-
     private patchMediaArtwork(track: MusicFreePlayerTrack) {
         // Bug: React native track player 在设置音频时，artwork不能为null，并且部分情况下artwork不能为ImageSource类型
         if (!track) {
@@ -2067,11 +2737,12 @@ class TrackPlayer extends EventEmitter<{
         return {
             ...track,
             artwork: resolveImportedAssetOrPath(
-                track.artwork?.trim?.()?.length ? track.artwork : ImgAsset.albumDefault,
+                track.artwork?.trim?.()?.length
+                    ? track.artwork
+                    : ImgAsset.albumDefault,
             ) as unknown as any,
         };
     }
-
 }
 
 export const usePlayList = () => useAtomValue(playListAtom);
@@ -2084,11 +2755,14 @@ export function useMusicState() {
 
     useEffect(() => {
         let cancelled = false;
-        trackPlayer.playerAdapter.getState().then(state => {
-            if (!cancelled) {
-                getDefaultStore().set(musicStateAtom, state);
-            }
-        }).catch(() => undefined);
+        trackPlayer.playerAdapter
+            .getState()
+            .then(state => {
+                if (!cancelled) {
+                    getDefaultStore().set(musicStateAtom, state);
+                }
+            })
+            .catch(() => undefined);
 
         return () => {
             cancelled = true;
@@ -2103,14 +2777,17 @@ export function useProgress(_updateInterval?: number) {
 
     useEffect(() => {
         let cancelled = false;
-        trackPlayer.getProgress().then(currentProgress => {
-            if (!cancelled) {
-                setPlayerProgress(
-                    currentProgress,
-                    trackPlayer.currentMusic?.duration ?? 0,
-                );
-            }
-        }).catch(() => undefined);
+        trackPlayer
+            .getProgress()
+            .then(currentProgress => {
+                if (!cancelled) {
+                    setPlayerProgress(
+                        currentProgress,
+                        trackPlayer.currentMusic?.duration ?? 0,
+                    );
+                }
+            })
+            .catch(() => undefined);
 
         return () => {
             cancelled = true;

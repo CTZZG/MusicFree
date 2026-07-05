@@ -30,11 +30,23 @@
       android:extractNativeLibs="true"
     >
 
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <!-- mpv 播放内核前台服务（MediaSession + 通知栏 + 锁屏控制） -->
         <service
             android:name="fun.upup.musicfree.mpvplayer.MpvPlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <service
+            android:name="fun.upup.musicfree.mpvplayer.MpvMediaBrowserService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
 
       <activity
         android:name=".MainActivity"

@@ -3,8 +3,19 @@ import { errorLog, trace } from "@/utils/log";
 import NativeMpvPlayer, {
     MpvLoadPayload,
     MpvPlayerState,
+    MpvQueueSnapshotTrack,
     MpvRemoteCommand,
 } from "./nativeMpvPlayer";
+import { encodeMpvMediaId, matchesMpvMediaId } from "./mpvMediaId";
+import {
+    collectMpvNextIndices,
+    computeMpvNextIndex,
+    computeMpvPreviousIndex,
+    isValidMpvQueueIndex,
+    resolveMpvPlayAction,
+    resolveMpvLoadQueueStartIndex,
+    resolveMpvCurrentIndexAfterQueueSync,
+} from "./mpvQueue";
 import type {
     PlayerAdapter,
     PlayerAdapterConfig,
@@ -59,7 +70,7 @@ function normalizeArtist(value: unknown): string {
         return value
             .map(item =>
                 item && typeof item === "object" && "name" in item
-                    ? String((item as { name?: unknown }).name ?? "")
+                    ? String((item as {name?: unknown}).name ?? "")
                     : String(item ?? ""),
             )
             .filter(Boolean)
@@ -93,10 +104,19 @@ function toLoadPayload(track: MpvTrack, autoPlay = true): MpvLoadPayload {
         title: typeof track.title === "string" ? track.title : "",
         artist: normalizeArtist(track.artist),
         album: typeof track.album === "string" ? track.album : "",
-        artwork:
-            typeof track.artwork === "string" ? track.artwork : null,
+        artwork: typeof track.artwork === "string" ? track.artwork : null,
         duration: Number(track.duration) || 0,
         autoPlay,
+    };
+}
+
+function toQueueSnapshotTrack(track: MpvTrack): MpvQueueSnapshotTrack {
+    return {
+        id: encodeMpvMediaId(keyOf(track)),
+        title: typeof track.title === "string" ? track.title : "",
+        artist: normalizeArtist(track.artist),
+        album: typeof track.album === "string" ? track.album : "",
+        artwork: typeof track.artwork === "string" ? track.artwork : null,
     };
 }
 
@@ -129,6 +149,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     private pendingLoadAutoPlay = true;
     private nativeListenersBound = false;
     private setupPromise: Promise<void> | null = null;
+    private androidAutoConnected = false;
 
     private trackChangedListeners = new Set<(...a: any[]) => void>();
     private playbackStateChangedListeners = new Set<(...a: any[]) => void>();
@@ -138,7 +159,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     private tracksNeedUpdateListeners = new Set<(...a: any[]) => void>();
     private playEndListeners = new Set<(...a: any[]) => void>();
     private temporaryQueueChangedListeners = new Set<(...a: any[]) => void>();
-    private androidAutoConnectionChangedListeners = new Set<(...a: any[]) => void>();
+    private androidAutoConnectionChangedListeners = new Set<
+        (...a: any[]) => void
+    >();
     private queuesChangedListeners = new Set<(...a: any[]) => void>();
     private queueChangedListeners = new Set<(...a: any[]) => void>();
     private remoteListeners: Partial<
@@ -170,6 +193,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     config?.capabilities?.includes("stop") ??
                     false,
             });
+            this.androidAutoConnected =
+                await NativeMpvPlayer.isAndroidAutoConnected().catch(
+                    () => false,
+                );
             trace("MpvPlayer.setup done");
         })();
         return this.setupPromise;
@@ -199,14 +226,16 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.emitPlaybackStateChanged(mappedState);
         });
 
-        NativeMpvPlayer.addProgressListener(({ position, duration, buffered }) => {
-            this.currentProgress = {
-                position,
-                duration: duration || this.currentProgress.duration,
-                buffered: Math.max(position, buffered ?? position),
-            };
-            this.progressListeners.forEach(l => l(this.currentProgress));
-        });
+        NativeMpvPlayer.addProgressListener(
+            ({ position, duration, buffered }) => {
+                this.currentProgress = {
+                    position,
+                    duration: duration || this.currentProgress.duration,
+                    buffered: Math.max(position, buffered ?? position),
+                };
+                this.progressListeners.forEach(l => l(this.currentProgress));
+            },
+        );
 
         NativeMpvPlayer.addEndedListener(({ autoAdvanced }) => {
             this.handleNativeEnded(Boolean(autoAdvanced)).catch(error =>
@@ -227,9 +256,20 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.playbackErrorListeners.forEach(l => l(error));
         });
 
-        NativeMpvPlayer.addRemoteCommandListener(({ command, position, volume }) => {
-            this.handleRemoteCommand(command, position, volume);
-        });
+        NativeMpvPlayer.addRemoteCommandListener(
+            ({ command, position, volume, mediaId }) => {
+                this.handleRemoteCommand(command, position, volume, mediaId);
+            },
+        );
+
+        NativeMpvPlayer.addAndroidAutoConnectionChangedListener(
+            ({ connected }) => {
+                this.androidAutoConnected = Boolean(connected);
+                this.androidAutoConnectionChangedListeners.forEach(listener =>
+                    listener({ connected: this.androidAutoConnected }),
+                );
+            },
+        );
     }
 
     /**************** 队列加载与切歌 ****************/
@@ -243,15 +283,27 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         this.playNextQueue = [];
         this.upNextQueue = [];
         this.preparedNextTrack = null;
+        const target = resolveMpvLoadQueueStartIndex(
+            this.queue.length,
+            startIndex,
+        );
+        this.currentIndex = target ?? -1;
+        this.pendingLoadIndex = -1;
         this.emitQueueChanged("update");
         this.emitTemporaryQueueChanged();
-        const target =
-            startIndex >= 0 && startIndex < this.queue.length ? startIndex : 0;
         trace("MpvPlayer.loadQueue", {
             count: this.queue.length,
             startIndex: target,
             autoPlay: options?.autoPlay ?? true,
         });
+        if (target == null) {
+            await NativeMpvPlayer.prepareNext(null).catch(() => undefined);
+            await NativeMpvPlayer.stop().catch(() => undefined);
+            this.hasLoaded = false;
+            this.currentState = "stopped";
+            this.currentProgress = { position: 0, duration: 0, buffered: 0 };
+            return;
+        }
         await this.playIndex(target, "playStart", options?.autoPlay ?? true);
     }
 
@@ -341,7 +393,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         };
     }
 
-    private emitQueueChanged(operation?: "add" | "remove" | "clear" | "update") {
+    private emitQueueChanged(
+        operation?: "add" | "remove" | "clear" | "update",
+    ) {
         const queue = this.getQueueInfoSnapshot();
         const queuesPayload = {
             queues: [queue],
@@ -354,6 +408,18 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         };
         this.queuesChangedListeners.forEach(l => l(queuesPayload));
         this.queueChangedListeners.forEach(l => l(queuePayload));
+        this.syncNativeQueueSnapshot();
+    }
+
+    private syncNativeQueueSnapshot() {
+        try {
+            NativeMpvPlayer.updateQueueSnapshot({
+                currentIndex: this.currentIndex,
+                tracks: this.queue.map(toQueueSnapshotTrack),
+            }).catch(() => undefined);
+        } catch {
+            // Native module may be temporarily unavailable while backend setup is recovering.
+        }
     }
 
     private emitTemporaryQueueChanged() {
@@ -382,6 +448,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             platform: track.platform,
         });
         this.trackChangedListeners.forEach(l => l(payload));
+        this.syncNativeQueueSnapshot();
     }
 
     private emitPlaybackStateChanged(state: PlayerBackendState) {
@@ -489,31 +556,42 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     /** 计算下一首下标；wrapForManual=true 时手动切歌在末尾回绕 */
     private computeNextIndex(wrapForManual: boolean): number | null {
-        if (this.queue.length === 0) {
-            return null;
-        }
-        const next = this.currentIndex + 1;
-        if (next < this.queue.length) {
-            return next;
-        }
-        if (this.repeatMode === "queue" || wrapForManual) {
-            return 0;
-        }
-        return null;
+        return computeMpvNextIndex(
+            {
+                currentIndex: this.currentIndex,
+                queueLength: this.queue.length,
+                repeatMode: this.repeatMode,
+            },
+            wrapForManual,
+        );
     }
 
     /**************** 基础控制 ****************/
 
     async play() {
-        if (this.hasLoaded) {
-            const progress = await this.getProgress();
-            if (this.currentState !== "ended" && this.isAtTrackEnd(progress)) {
-                await this.finishCurrentTrackFromEndSeek();
-                return;
-            }
-            await NativeMpvPlayer.resume();
-        } else if (this.currentIndex >= 0) {
+        const progress = this.hasLoaded
+            ? await this.getProgress()
+            : this.currentProgress;
+        const action = resolveMpvPlayAction({
+            hasLoaded: this.hasLoaded,
+            currentState: this.currentState,
+            currentIndex: this.currentIndex,
+            queueLength: this.queue.length,
+            isAtTrackEnd: this.isAtTrackEnd(progress),
+        });
+
+        switch (action) {
+        case "finish-ended":
+            await this.finishCurrentTrackFromEndSeek();
+            break;
+        case "reload-current":
             await this.playIndex(this.currentIndex, "playStart");
+            break;
+        case "resume":
+            await NativeMpvPlayer.resume();
+            break;
+        case "none":
+            break;
         }
     }
 
@@ -562,14 +640,15 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     }
 
     async skipToPrevious() {
-        if (this.queue.length === 0) {
+        const previousIndex = computeMpvPreviousIndex({
+            currentIndex: this.currentIndex,
+            queueLength: this.queue.length,
+            repeatMode: this.repeatMode,
+        });
+        if (previousIndex == null) {
             return;
         }
-        const prev =
-            this.currentIndex - 1 < 0
-                ? this.queue.length - 1
-                : this.currentIndex - 1;
-        await this.playIndex(prev, "manual");
+        await this.playIndex(previousIndex, "manual");
     }
 
     async skipToIndex(index: number) {
@@ -625,7 +704,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     }
 
     async getActiveTrackIndex() {
-        return this.currentIndex >= 0 ? this.currentIndex : null;
+        return isValidMpvQueueIndex(this.currentIndex, this.queue.length)
+            ? this.currentIndex
+            : null;
     }
 
     async getTrack(index: number) {
@@ -665,27 +746,14 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     }
 
     async getNextTracks(count: number) {
-        if (this.currentIndex < 0) {
-            return [];
-        }
-        const result: MpvTrack[] = [];
-        const targetCount = Math.max(0, count);
-        for (let offset = 1; result.length < targetCount; offset += 1) {
-            const index = this.currentIndex + offset;
-            if (index < this.queue.length) {
-                result.push(this.queue[index]);
-                continue;
-            }
-            if (this.repeatMode !== "queue" || this.queue.length === 0) {
-                break;
-            }
-            const wrapped = index % this.queue.length;
-            if (wrapped === this.currentIndex) {
-                break;
-            }
-            result.push(this.queue[wrapped]);
-        }
-        return result;
+        return collectMpvNextIndices(
+            {
+                currentIndex: this.currentIndex,
+                queueLength: this.queue.length,
+                repeatMode: this.repeatMode,
+            },
+            count,
+        ).map(index => this.queue[index]);
     }
 
     async getTracksNeedingUrls() {
@@ -693,9 +761,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     }
 
     async getTracksById(trackIds: string[]) {
-        return trackIds.map(trackId =>
-            this.queue.find(track => this.matchesTrackId(track, trackId)) ??
-            null,
+        return trackIds.map(
+            trackId =>
+                this.queue.find(track => this.matchesTrackId(track, trackId)) ??
+                null,
         );
     }
 
@@ -708,15 +777,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     private matchesTrackId(track: MpvTrack, candidate: string) {
         const key = keyOf(track);
-        return (
-            key === candidate ||
-            track.id === candidate ||
-            encodeURIComponent(key) === candidate ||
-            encodeURIComponent(track.id) === candidate
-        );
+        return matchesMpvMediaId(key, track.id, candidate);
     }
 
-    async updateTrack(track: MpvTrack, index?: number) {
+    async updateTrack(track: MpvTrack, index?: number, syncSnapshot = true) {
         let target = index;
         if (target == null || target < 0 || target >= this.queue.length) {
             target = this.indexOfRef(track);
@@ -726,12 +790,12 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         }
         const merged = { ...this.queue[target], ...track } as MpvTrack;
         this.queue[target] = merged;
+        if (syncSnapshot) {
+            this.syncNativeQueueSnapshot();
+        }
 
         // 若正在等待该曲目的音源，且现在已就绪 → 立即加载播放
-        if (
-            this.pendingLoadIndex === target &&
-            isPlayableUrl(merged.url)
-        ) {
+        if (this.pendingLoadIndex === target && isPlayableUrl(merged.url)) {
             await this.playIndex(
                 target,
                 this.pendingLoadReason,
@@ -746,8 +810,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 track: merged,
                 nativePrepared: true,
             };
-            await NativeMpvPlayer.prepareNext(toLoadPayload(merged))
-                .catch(() => undefined);
+            await NativeMpvPlayer.prepareNext(toLoadPayload(merged)).catch(
+                () => undefined,
+            );
         } else if (target === this.currentIndex) {
             // 当前曲目元数据变化，刷新锁屏/通知展示
             await NativeMpvPlayer.updateMetadata({
@@ -755,9 +820,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 artist: normalizeArtist(merged.artist),
                 album: typeof merged.album === "string" ? merged.album : "",
                 artwork:
-                    typeof merged.artwork === "string"
-                        ? merged.artwork
-                        : null,
+                    typeof merged.artwork === "string" ? merged.artwork : null,
                 duration: Number(merged.duration) || 0,
             }).catch(() => undefined);
         }
@@ -765,7 +828,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     async updateTracks(tracks: MpvTrack[]) {
         for (const track of tracks) {
-            await this.updateTrack(track);
+            await this.updateTrack(track, undefined, false);
         }
         this.emitQueueChanged("update");
     }
@@ -781,11 +844,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         await this.playResolvedTemporaryTrack(track, "manual");
     }
 
-    async addQueueTrack(
-        _queueId: string,
-        track: MpvTrack,
-        index?: number,
-    ) {
+    async addQueueTrack(_queueId: string, track: MpvTrack, index?: number) {
         await this.addQueueTracks([track], index);
     }
 
@@ -825,7 +884,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         if (index < this.currentIndex) {
             this.currentIndex -= 1;
         } else if (index === this.currentIndex) {
-            this.currentIndex = Math.min(this.currentIndex, this.queue.length - 1);
+            this.currentIndex = Math.min(
+                this.currentIndex,
+                this.queue.length - 1,
+            );
             this.hasLoaded = false;
             if (this.currentIndex >= 0) {
                 await this.playIndex(this.currentIndex, "manual");
@@ -845,13 +907,15 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             return;
         }
         const activeKey =
-            this.currentIndex >= 0
+            isValidMpvQueueIndex(this.currentIndex, this.queue.length)
                 ? keyOf(this.queue[this.currentIndex])
                 : null;
         const [track] = this.queue.splice(oldIndex, 1);
         this.queue.splice(newIndex, 0, track);
         if (activeKey) {
-            const activeIndex = this.queue.findIndex(item => keyOf(item) === activeKey);
+            const activeIndex = this.queue.findIndex(
+                item => keyOf(item) === activeKey,
+            );
             if (activeIndex >= 0) {
                 this.currentIndex = activeIndex;
             }
@@ -896,7 +960,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         }
         this.playNextQueue = [
             resolved,
-            ...this.playNextQueue.filter(item => keyOf(item) !== keyOf(resolved)),
+            ...this.playNextQueue.filter(
+                item => keyOf(item) !== keyOf(resolved),
+            ),
         ];
         await this.clearPreparedNextTrack();
         this.emitTemporaryQueueChanged();
@@ -904,7 +970,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     async addToUpNext(track: PlayerAdapterTrackRef<MpvTrack>) {
         const resolved = this.resolveTrackRef(track);
-        if (!resolved || this.upNextQueue.some(item => keyOf(item) === keyOf(resolved))) {
+        if (
+            !resolved ||
+            this.upNextQueue.some(item => keyOf(item) === keyOf(resolved))
+        ) {
             return;
         }
         this.upNextQueue.push(resolved);
@@ -987,14 +1056,20 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     }
 
     async isAndroidAutoConnected() {
-        return false;
+        this.androidAutoConnected =
+            await NativeMpvPlayer.isAndroidAutoConnected().catch(
+                () => this.androidAutoConnected,
+            );
+        return this.androidAutoConnected;
     }
 
     private resolveTrackRef(ref: PlayerAdapterTrackRef<MpvTrack>) {
         if (typeof ref !== "string") {
             return ref;
         }
-        return this.queue.find(track => this.matchesTrackId(track, ref)) ?? null;
+        return (
+            this.queue.find(track => this.matchesTrackId(track, ref)) ?? null
+        );
     }
 
     private indexOfRefForTrack(
@@ -1010,11 +1085,14 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
      * 只调整队列与当前下标，不打断正在播放的曲目；据此保证「下一首/上一首」与 UI 列表一致。
      * 增量 add/remove 也有实现，但这里仍是最权威的对齐入口。
      */
-    async syncQueueOrder(tracks: MpvTrack[], activeKey?: string) {
+    async syncQueueOrder(tracks: MpvTrack[], activeKey?: string | null) {
         // 保留已解析的播放源信息，避免重排后重新解析音源或丢 headers。
         const sourceByKey = new Map<
             string,
-            Pick<MpvTrack, "url" | "headers" | "userAgent" | "duration">
+            Pick<
+                MpvTrack,
+                "url" | "headers" | "userAgent" | "duration" | "playbackSource"
+            >
         >();
         for (const t of this.queue) {
             if (isPlayableUrl(t.url)) {
@@ -1023,6 +1101,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     headers: t.headers,
                     userAgent: t.userAgent,
                     duration: t.duration,
+                    playbackSource: t.playbackSource,
                 });
             }
         }
@@ -1036,12 +1115,17 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             return t;
         });
         // 把当前下标重新定位到正在播放的曲目（重排后其位置会变）
-        if (activeKey) {
-            const idx = this.queue.findIndex(t => keyOf(t) === activeKey);
-            if (idx >= 0) {
-                this.currentIndex = idx;
-            }
-        }
+        const activeIndex: number | null | undefined =
+            activeKey === undefined
+                ? undefined
+                : activeKey
+                    ? this.queue.findIndex(t => keyOf(t) === activeKey)
+                    : null;
+        this.currentIndex = resolveMpvCurrentIndexAfterQueueSync({
+            currentIndex: this.currentIndex,
+            queueLength: this.queue.length,
+            activeIndex,
+        });
         if (this.preparedNextTrack) {
             const prepared = this.queue.find(
                 t => keyOf(t) === this.preparedNextTrack?.key,
@@ -1065,8 +1149,31 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         command: MpvRemoteCommand,
         position?: number,
         volume?: number,
+        mediaId?: string,
     ) {
-        const eventMap: Record<MpvRemoteCommand, PlayerAdapterEvent> = {
+        const runRemoteTask = (
+            task: Promise<unknown> | void,
+            action: string,
+        ) => {
+            Promise.resolve(task).catch(error => {
+                errorLog(
+                    `MpvPlayer 远程${action}失败`,
+                    error?.message ?? error,
+                );
+            });
+        };
+
+        if (command === "playFromId") {
+            if (typeof mediaId === "string" && mediaId.length > 0) {
+                runRemoteTask(this.playTrack(mediaId), "点播");
+            }
+            return;
+        }
+
+        const eventMap: Record<
+            Exclude<MpvRemoteCommand, "playFromId">,
+            PlayerAdapterEvent
+        > = {
             play: "remotePlay",
             pause: "remotePause",
             next: "remoteNext",
@@ -1080,29 +1187,49 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         const listeners = this.remoteListeners[event];
         if (listeners && listeners.size > 0) {
             // 有上层订阅则交给上层（保留扩展点）
-            listeners.forEach(l => l({ position, volume, ducking: command === "duck" }));
+            listeners.forEach(l => {
+                try {
+                    const result = l({
+                        position,
+                        volume,
+                        ducking: command === "duck",
+                    });
+                    Promise.resolve(result).catch(error => {
+                        errorLog(
+                            "MpvPlayer 远程控制监听处理失败",
+                            error?.message ?? error,
+                        );
+                    });
+                } catch (error: any) {
+                    errorLog(
+                        "MpvPlayer 远程控制监听处理失败",
+                        error?.message ?? error,
+                    );
+                }
+            });
             return;
         }
+
         // 默认在适配器内部直接处理远程控制
         switch (command) {
         case "play":
-            this.play();
+            runRemoteTask(this.play(), "播放");
             break;
         case "pause":
-            this.pause();
+            runRemoteTask(this.pause(), "暂停");
             break;
         case "next":
-            this.skipToNext();
+            runRemoteTask(this.skipToNext(), "下一首");
             break;
         case "previous":
-            this.skipToPrevious();
+            runRemoteTask(this.skipToPrevious(), "上一首");
             break;
         case "stop":
-            this.stop();
+            runRemoteTask(this.stop(), "停止");
             break;
         case "seek":
             if (typeof position === "number") {
-                this.seekTo(position);
+                runRemoteTask(this.seekTo(position), "跳转");
             }
             break;
         case "duck":
@@ -1123,7 +1250,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 ? Math.max(0, Math.min(1, volume))
                 : 0.5;
         this.duckRatio = ratio;
-        NativeMpvPlayer.setVolume(this.volume * this.duckRatio).catch(() => undefined);
+        NativeMpvPlayer.setVolume(this.volume * this.duckRatio).catch(
+            () => undefined,
+        );
     }
 
     private unduckVolume() {
@@ -1142,7 +1271,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         event: PlayerAdapterEvent,
         listener: (...args: any[]) => void,
     ): PlayerAdapterSubscription {
-        const setFor: Partial<Record<PlayerAdapterEvent, Set<(...a: any[]) => void>>> = {
+        const setFor: Partial<
+            Record<PlayerAdapterEvent, Set<(...a: any[]) => void>>
+        > = {
             trackChanged: this.trackChangedListeners,
             playbackStateChanged: this.playbackStateChangedListeners,
             progress: this.progressListeners,

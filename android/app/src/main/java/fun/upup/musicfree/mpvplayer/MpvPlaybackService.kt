@@ -23,6 +23,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -101,7 +102,8 @@ class MpvPlaybackService : Service() {
             PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
             PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
             PlaybackStateCompat.ACTION_STOP or
-            PlaybackStateCompat.ACTION_SEEK_TO
+            PlaybackStateCompat.ACTION_SEEK_TO or
+            PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID
 
     private val liveUpdateProgressTicker = object : Runnable {
         override fun run() {
@@ -119,7 +121,7 @@ class MpvPlaybackService : Service() {
                 intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY &&
                 cachedState == PlaybackStateCompat.STATE_PLAYING
             ) {
-                MpvServiceBridge.onCommand?.invoke("pause", null)
+                MpvServiceBridge.onCommand?.invoke("pause", null, null)
             }
         }
     }
@@ -141,19 +143,32 @@ class MpvPlaybackService : Service() {
                     cachedState == PlaybackStateCompat.STATE_PLAYING ||
                     cachedState == PlaybackStateCompat.STATE_BUFFERING
                 ) {
-                    MpvServiceBridge.onCommand?.invoke("pause", null)
+                    MpvServiceBridge.onCommand?.invoke("pause", null, null)
                 } else {
-                    MpvServiceBridge.onCommand?.invoke("play", null)
+                    MpvServiceBridge.onCommand?.invoke("play", null, null)
                 }
             }
-            ACTION_NEXT -> MpvServiceBridge.onCommand?.invoke("next", null)
-            ACTION_PREV -> MpvServiceBridge.onCommand?.invoke("previous", null)
-            ACTION_STOP -> MpvServiceBridge.onCommand?.invoke("stop", null)
+            ACTION_NEXT -> MpvServiceBridge.onCommand?.invoke("next", null, null)
+            ACTION_PREV -> MpvServiceBridge.onCommand?.invoke("previous", null, null)
+            ACTION_STOP -> MpvServiceBridge.onCommand?.invoke("stop", null, null)
         }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    fun mediaSessionTokenOrNull(): MediaSessionCompat.Token? =
+        if (::mediaSession.isInitialized) mediaSession.sessionToken else null
+
+    fun onQueueSnapshotChanged() {
+        val tracks = MpvServiceBridge.getQueueSnapshot()
+        val currentIndex = MpvServiceBridge.currentQueueIndex
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            updateMediaSessionQueue(tracks, currentIndex)
+        } else {
+            mainHandler.post { updateMediaSessionQueue(tracks, currentIndex) }
+        }
+    }
 
     override fun onDestroy() {
         MpvServiceBridge.service = null
@@ -285,10 +300,19 @@ class MpvPlaybackService : Service() {
 
     fun onLiveUpdateLyricChanged(lyric: String?): Boolean {
         val nextLyric = lyric?.trim().orEmpty()
+        val previousLiveUpdateEnabled = MpvServiceBridge.useLiveUpdateLyricNotification
         if (nextLyric.isNotEmpty()) {
             MpvServiceBridge.useLiveUpdateLyricNotification = true
+        } else {
+            MpvServiceBridge.useLiveUpdateLyricNotification = false
         }
-        if (cachedLiveUpdateLyric == nextLyric && cachedMediaNotificationLyric.isBlank()) {
+        val liveUpdateEnabledChanged =
+            previousLiveUpdateEnabled != MpvServiceBridge.useLiveUpdateLyricNotification
+        if (
+            !liveUpdateEnabledChanged &&
+            cachedLiveUpdateLyric == nextLyric &&
+            cachedMediaNotificationLyric.isBlank()
+        ) {
             return canOwnLiveUpdateNotification()
         }
         cachedLiveUpdateLyric = nextLyric
@@ -402,13 +426,46 @@ class MpvPlaybackService : Service() {
         val speed =
             if (cachedState == PlaybackStateCompat.STATE_PLAYING) 1.0f else 0.0f
         val position = currentNotificationPosition()
+        val activeQueueItemId: Long =
+            if (MpvServiceBridge.currentQueueIndex >= 0) {
+                MpvServiceBridge.currentQueueIndex.toLong()
+            } else {
+                -1L
+            }
         mediaSession.setPlaybackState(
             PlaybackStateCompat.Builder()
                 .setState(cachedState, position, speed)
                 .setActions(allActions)
                 .setBufferedPosition(cachedBufferedPosition)
+                .setActiveQueueItemId(activeQueueItemId)
                 .build(),
         )
+    }
+
+    private fun updateMediaSessionQueue(
+        tracks: List<MpvQueueTrack>,
+        currentIndex: Int,
+    ) {
+        if (!::mediaSession.isInitialized) return
+        val queueItems =
+            tracks.mapIndexed { index, track ->
+                MediaSessionCompat.QueueItem(
+                    MediaDescriptionCompat.Builder()
+                        .setMediaId(track.id)
+                        .setTitle(track.title.ifBlank { "未知歌曲" })
+                        .setSubtitle(track.artist)
+                        .setDescription(track.album)
+                        .setIconUri(parseUriOrNull(track.artwork))
+                        .build(),
+                    index.toLong(),
+                )
+            }
+        mediaSession.setQueue(queueItems)
+        mediaSession.setQueueTitle("MusicFree Playback Queue")
+        if (currentIndex != MpvServiceBridge.currentQueueIndex) {
+            MpvServiceBridge.currentQueueIndex = currentIndex
+        }
+        updatePlaybackState()
     }
 
     private fun createNotificationChannel() {
@@ -431,27 +488,33 @@ class MpvPlaybackService : Service() {
             setCallback(
                 object : MediaSessionCompat.Callback() {
                     override fun onPlay() {
-                        MpvServiceBridge.onCommand?.invoke("play", null)
+                        MpvServiceBridge.onCommand?.invoke("play", null, null)
                     }
 
                     override fun onPause() {
-                        MpvServiceBridge.onCommand?.invoke("pause", null)
+                        MpvServiceBridge.onCommand?.invoke("pause", null, null)
                     }
 
                     override fun onSkipToNext() {
-                        MpvServiceBridge.onCommand?.invoke("next", null)
+                        MpvServiceBridge.onCommand?.invoke("next", null, null)
                     }
 
                     override fun onSkipToPrevious() {
-                        MpvServiceBridge.onCommand?.invoke("previous", null)
+                        MpvServiceBridge.onCommand?.invoke("previous", null, null)
                     }
 
                     override fun onStop() {
-                        MpvServiceBridge.onCommand?.invoke("stop", null)
+                        MpvServiceBridge.onCommand?.invoke("stop", null, null)
                     }
 
                     override fun onSeekTo(pos: Long) {
-                        MpvServiceBridge.onCommand?.invoke("seek", pos / 1000.0)
+                        MpvServiceBridge.onCommand?.invoke("seek", pos / 1000.0, null)
+                    }
+
+                    override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+                        if (!mediaId.isNullOrBlank()) {
+                            MpvServiceBridge.onCommand?.invoke("playFromId", null, mediaId)
+                        }
                     }
                 },
             )
@@ -463,6 +526,8 @@ class MpvPlaybackService : Service() {
             )
             isActive = true
         }
+        onQueueSnapshotChanged()
+        MpvMediaBrowserService.getInstance()?.onPlaybackSessionReady()
     }
 
     private fun buildNotification(): Notification {
@@ -762,15 +827,15 @@ class MpvPlaybackService : Service() {
                         pausedForTransientFocusLoss = false
                         if (duckedForFocusLoss) {
                             duckedForFocusLoss = false
-                            MpvServiceBridge.onCommand?.invoke("unduck", null)
+                            MpvServiceBridge.onCommand?.invoke("unduck", null, null)
                         }
-                        MpvServiceBridge.onCommand?.invoke("pause", null)
+                        MpvServiceBridge.onCommand?.invoke("pause", null, null)
                         abandonAudioFocus()
                     }
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                         if (cachedState == PlaybackStateCompat.STATE_PLAYING) {
                             pausedForTransientFocusLoss = true
-                            MpvServiceBridge.onCommand?.invoke("pause", null)
+                            MpvServiceBridge.onCommand?.invoke("pause", null, null)
                         }
                     }
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -780,21 +845,22 @@ class MpvPlaybackService : Service() {
                                 MpvServiceBridge.onCommand?.invoke(
                                     "duck",
                                     MpvServiceBridge.remoteDuckVolume,
+                                    null,
                                 )
                             } else {
                                 pausedForTransientFocusLoss = true
-                                MpvServiceBridge.onCommand?.invoke("pause", null)
+                                MpvServiceBridge.onCommand?.invoke("pause", null, null)
                             }
                         }
                     }
                     AudioManager.AUDIOFOCUS_GAIN -> {
                         if (duckedForFocusLoss) {
                             duckedForFocusLoss = false
-                            MpvServiceBridge.onCommand?.invoke("unduck", null)
+                            MpvServiceBridge.onCommand?.invoke("unduck", null, null)
                         }
                         if (pausedForTransientFocusLoss) {
                             pausedForTransientFocusLoss = false
-                            MpvServiceBridge.onCommand?.invoke("play", null)
+                            MpvServiceBridge.onCommand?.invoke("play", null, null)
                         }
                     }
                 }
@@ -813,7 +879,7 @@ class MpvPlaybackService : Service() {
         pausedForTransientFocusLoss = false
         if (duckedForFocusLoss) {
             duckedForFocusLoss = false
-            MpvServiceBridge.onCommand?.invoke("unduck", null)
+            MpvServiceBridge.onCommand?.invoke("unduck", null, null)
         }
     }
 
@@ -879,6 +945,13 @@ class MpvPlaybackService : Service() {
                 }
                 else -> BitmapFactory.decodeFile(url)
             }
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun parseUriOrNull(value: String?): Uri? =
+        try {
+            value?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
         } catch (_: Exception) {
             null
         }
