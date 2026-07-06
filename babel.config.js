@@ -23,7 +23,7 @@ module.exports = {
                 root: ['./'],
                 alias: {
                     '^@/(.+)': './src/\\1',
-                    'webdav': "webdav/dist/react-native"
+                    'webdav': 'webdav/react-native'
                 },
             },
         ],

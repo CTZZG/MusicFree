@@ -6,15 +6,24 @@ import { ImgAsset } from "@/constants/assetsConst";
 import i18n, { useI18N } from "@/core/i18n";
 import { useAppConfig } from "@/core/appConfig";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import TrackPlayer, { useMusicState, useProgress } from "@/core/trackPlayer";
+import TrackPlayer, {
+    useMusicQuality,
+    useMusicState,
+    useProgress,
+} from "@/core/trackPlayer";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import { musicIsPaused } from "@/utils/trackUtils";
+import {
+    getAvailableQualities,
+    getQualityAbbr,
+    TRY_QUALITYS_LIST,
+} from "@/utils/qualities";
 import Color from "color";
 import React, { ReactNode, useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { DimensionValue } from "react-native";
-import type { Plugin } from "@/core/pluginManager";
+import pluginManager, { type Plugin } from "@/core/pluginManager";
 import useHomeDiscovery, {
     IHomeDiscoveryPreview,
 } from "./useHomeDiscovery";
@@ -47,10 +56,38 @@ function getMusicDescription(musicItem?: IMusic.IMusicItem | null) {
     return [musicItem.artist, musicItem.platform].filter(Boolean).join(" · ");
 }
 
+function getMusicSubtitle(musicItem?: IMusic.IMusicItem | null) {
+    if (!musicItem) {
+        return "";
+    }
+    return [musicItem.artist, musicItem.album]
+        .map(item =>
+            item === undefined || item === null ? "" : String(item).trim(),
+        )
+        .filter(Boolean)
+        .join(" · ");
+}
+
+function getBestQualityBadge(musicItem: IMusic.IMusicItem) {
+    const plugin = pluginManager.getByMedia(musicItem);
+    const availableQualities = getAvailableQualities(musicItem, {
+        supportedQualities: plugin?.instance?.supportedQualities,
+    });
+    const bestQuality =
+        TRY_QUALITYS_LIST.find(quality =>
+            availableQualities.includes(quality),
+        ) ?? availableQualities[0];
+
+    return bestQuality ? getQualityAbbr(bestQuality) : "";
+}
+
 export default function HomeOverview() {
     const data = useHomeOverview();
     const discoveryPreview = useHomeDiscovery(data.topListPlugins);
+    const hideHomeDiscovery = useAppConfig("theme.hideHomeDiscovery") ?? false;
     const hideHomeHeroCard = useAppConfig("theme.hideHomeHeroCard") ?? false;
+    const hideHomeRecentListening =
+        useAppConfig("theme.hideHomeRecentListening") ?? false;
     const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
 
     return (
@@ -58,17 +95,21 @@ export default function HomeOverview() {
             style={styles.wrapper}
             contentContainerStyle={styles.contentContainer}
             showsVerticalScrollIndicator={false}>
-            <Discovery
-                topListPlugins={data.topListPlugins}
-                preview={discoveryPreview}
-            />
+            {!hideHomeDiscovery ? (
+                <Discovery
+                    topListPlugins={data.topListPlugins}
+                    preview={discoveryPreview}
+                />
+            ) : null}
             {!hideHomeHeroCard ? (
                 <ContinueListening
                     currentMusic={data.currentMusic}
                     featuredMusic={data.featuredMusic}
                 />
             ) : null}
-            <RecentListening musics={data.recentMusics} />
+            {!hideHomeRecentListening ? (
+                <RecentListening musics={data.recentMusics} />
+            ) : null}
             {!hideHomeOperations ? <QuickAccess /> : null}
             <MyMusic
                 favoriteSheet={data.favoriteSheet}
@@ -86,6 +127,7 @@ function ContinueListening(props: {
     const { currentMusic, featuredMusic } = props;
     // 进度/播放态是高频更新源，仅在本子组件内订阅，避免整个首页随进度每秒重渲染。
     const musicState = useMusicState();
+    const currentQuality = useMusicQuality();
     const { position, duration } = useProgress();
     const colors = useColors();
     const { t } = useI18N();
@@ -100,6 +142,18 @@ function ContinueListening(props: {
         ? duration || featuredMusic?.duration
         : featuredMusic?.duration;
     const progressPosition = isCurrent ? position : 0;
+    const qualityBadge = useMemo(() => {
+        if (!featuredMusic) {
+            return "";
+        }
+        return isCurrent
+            ? getQualityAbbr(currentQuality)
+            : getBestQualityBadge(featuredMusic);
+    }, [currentQuality, featuredMusic, isCurrent]);
+    const subtitle = useMemo(
+        () => getMusicSubtitle(featuredMusic),
+        [featuredMusic],
+    );
 
     if (!featuredMusic) {
         return (
@@ -152,30 +206,57 @@ function ContinueListening(props: {
                             style={styles.continueTitle}>
                             {featuredMusic.title}
                         </ThemeText>
-                        <View
-                            style={[
-                                styles.platformBadge,
-                                {
-                                    backgroundColor: Color(colors.primary)
-                                        .alpha(0.14)
-                                        .toString(),
-                                },
-                            ]}>
+                    </View>
+                    <View style={styles.continueMetaRow}>
+                        {featuredMusic.platform ? (
+                            <View
+                                style={[
+                                    styles.continueSourceBadge,
+                                    {
+                                        backgroundColor: Color(colors.primary)
+                                            .alpha(0.14)
+                                            .toString(),
+                                    },
+                                ]}>
+                                <ThemeText
+                                    numberOfLines={1}
+                                    fontSize="tag"
+                                    color={colors.primary}>
+                                    {featuredMusic.platform}
+                                </ThemeText>
+                            </View>
+                        ) : null}
+                        {qualityBadge ? (
+                            <View
+                                style={[
+                                    styles.continueQualityBadge,
+                                    {
+                                        backgroundColor: Color(colors.primary)
+                                            .alpha(0.08)
+                                            .toString(),
+                                        borderColor: Color(colors.primary)
+                                            .alpha(0.32)
+                                            .toString(),
+                                    },
+                                ]}>
+                                <ThemeText
+                                    numberOfLines={1}
+                                    fontSize="tag"
+                                    color={colors.primary}>
+                                    {qualityBadge}
+                                </ThemeText>
+                            </View>
+                        ) : null}
+                        {subtitle ? (
                             <ThemeText
                                 numberOfLines={1}
-                                fontSize="tag"
-                                color={colors.primary}>
-                                {featuredMusic.platform}
+                                fontSize="description"
+                                fontColor="textSecondary"
+                                style={styles.continueMetaText}>
+                                {subtitle}
                             </ThemeText>
-                        </View>
+                        ) : null}
                     </View>
-                    <ThemeText
-                        numberOfLines={1}
-                        fontSize="description"
-                        fontColor="textSecondary"
-                        style={styles.continueDesc}>
-                        {featuredMusic.artist || featuredMusic.album}
-                    </ThemeText>
                     <View style={styles.progressRow}>
                         <ThemeText fontSize="tag" fontColor="textSecondary">
                             {formatTime(progressPosition)}
@@ -898,6 +979,7 @@ const styles = StyleSheet.create({
     continueTopLine: {
         flexDirection: "row",
         alignItems: "center",
+        minWidth: 0,
     },
     continueTitle: {
         flex: 1,
@@ -912,8 +994,37 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         marginLeft: rpx(10),
     },
-    continueDesc: {
+    continueMetaRow: {
+        flexDirection: "row",
+        alignItems: "center",
         marginTop: rpx(12),
+        minWidth: 0,
+        overflow: "hidden",
+    },
+    continueSourceBadge: {
+        maxWidth: rpx(124),
+        minHeight: rpx(32),
+        paddingHorizontal: rpx(10),
+        borderRadius: rpx(16),
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: rpx(8),
+        flexShrink: 0,
+    },
+    continueQualityBadge: {
+        maxWidth: rpx(74),
+        minHeight: rpx(32),
+        paddingHorizontal: rpx(9),
+        borderRadius: rpx(16),
+        borderWidth: StyleSheet.hairlineWidth,
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: rpx(8),
+        flexShrink: 0,
+    },
+    continueMetaText: {
+        flex: 1,
+        minWidth: 0,
     },
     progressRow: {
         flexDirection: "row",

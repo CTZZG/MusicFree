@@ -20,6 +20,8 @@ export default function TopListDetail() {
             onLoadMore={loadMore}
             onRetry={loadMore}
             showArtwork
+            showQuality
+            showDuration
         />
     );
 }

@@ -20,6 +20,8 @@ interface IMusicListProps {
     onRetry?: () => void;
     onLoadMore?: () => void;
     showArtwork?: boolean;
+    showQuality?: boolean;
+    showDuration?: boolean;
 }
 export default function SheetMusicList(props: IMusicListProps) {
     const {
@@ -30,6 +32,8 @@ export default function SheetMusicList(props: IMusicListProps) {
         onRetry,
         onLoadMore,
         showArtwork,
+        showQuality,
+        showDuration,
     } = props;
     const currentMusic = useCurrentMusic();
 
@@ -54,6 +58,8 @@ export default function SheetMusicList(props: IMusicListProps) {
                         musicList={musicList}
                         highlightMusicItem={currentMusic}
                         showArtwork={showArtwork}
+                        showQuality={showQuality}
+                        showDuration={showDuration}
                         onItemPress={(musicItem, currentMusicList) => {
                             if (
                                 Config.getConfig(

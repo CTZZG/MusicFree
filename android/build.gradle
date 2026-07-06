@@ -11,13 +11,13 @@ buildscript {
         google()
         mavenCentral()
         gradlePluginPortal()
-        maven { url 'https://jitpack.io' }
+        maven { url = uri('https://jitpack.io') }
         // Mirrors are intentionally last. GitHub Actions should prefer official
         // sources so a transient mirror 5xx does not fail dependency resolution.
-        maven { url 'https://maven.aliyun.com/repository/google' }
-        maven { url 'https://maven.aliyun.com/repository/central' }
-        maven { url 'https://maven.aliyun.com/repository/public' }
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url = uri('https://maven.aliyun.com/repository/google') }
+        maven { url = uri('https://maven.aliyun.com/repository/central') }
+        maven { url = uri('https://maven.aliyun.com/repository/public') }
+        maven { url = uri('https://maven.aliyun.com/repository/gradle-plugin') }
     }
     dependencies {
         classpath("com.android.tools.build:gradle")

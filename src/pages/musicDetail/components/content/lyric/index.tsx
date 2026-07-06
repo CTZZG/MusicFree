@@ -17,9 +17,9 @@ import { IParsedLrcItem } from "@/utils/lrcParser";
 import { IconButtonWithGesture } from "@/components/base/iconButton.tsx";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import lyricManager, {
-    useCurrentLyricItem,
     useCurrentPositionMs,
     useLyricState,
+    useNormalizedCurrentLyricState,
 } from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
 import { useAppConfig } from "@/core/appConfig";
@@ -29,6 +29,7 @@ import {
     getLyricScrollTargetIndex,
     resolveLyricRestoreIndex,
 } from "./lyricScrollState";
+import { getLyricSeekTimeSeconds } from "./lyricSeekPolicy";
 
 const ITEM_HEIGHT = rpx(92);
 const SCROLL_FOLLOW_LEAD_MS = 120;
@@ -263,7 +264,8 @@ export default function Lyric(props: IProps) {
         source,
         emptyReason,
     } = useLyricState();
-    const currentLrcItem = useCurrentLyricItem();
+    const normalizedCurrentLyricState = useNormalizedCurrentLyricState();
+    const currentLyricIndex = normalizedCurrentLyricState.line?.index ?? -1;
     const currentPositionMs = useCurrentPositionMs();
     const showTranslation = PersistStatus.useValue(
         "lyric.showTranslation",
@@ -284,6 +286,8 @@ export default function Lyric(props: IProps) {
     const detailAlign = normalizeDetailAlign(
         PersistStatus.useValue("lyric.detailAlign", "center"),
     );
+    const isAmlLiteMode =
+        PersistStatus.useValue("lyric.detailAmlLiteMode", false) === true;
     const lyricOffsetSecondsRaw = Number(meta?.offset ?? 0);
     const lyricOffsetSeconds = Number.isFinite(lyricOffsetSecondsRaw)
         ? lyricOffsetSecondsRaw
@@ -303,11 +307,13 @@ export default function Lyric(props: IProps) {
     const [layout, setLayout] = useState<LayoutRectangle>();
 
     const listRef = useRef<FlatList<IParsedLrcItem> | null>(null);
+    const suppressTurnPageTapRef = useRef(false);
+    const suppressTurnPageTapTimerRef =
+        useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     const currentMusicItem = useCurrentMusic();
-    const activeLyricIndexRef = useRef(currentLrcItem?.index ?? -1);
-    activeLyricIndexRef.current =
-        currentLrcItem?.index ?? lyricManager.currentLyricItem?.index ?? -1;
+    const activeLyricIndexRef = useRef(currentLyricIndex);
+    activeLyricIndexRef.current = currentLyricIndex;
     const lyricsIdentity = useMemo(
         () => createLyricPayloadIdentity(currentMusicItem, lyrics),
         [currentMusicItem, lyrics],
@@ -394,12 +400,14 @@ export default function Lyric(props: IProps) {
                 showRomanization && hasRomanization ? "romanization" : "no-romanization",
                 lyricOrderKey,
                 detailAlign,
+                isAmlLiteMode ? "amll-lite" : "classic",
             ].join("|"),
         [
             detailAlign,
             fontSizeKey,
             hasRomanization,
             hasTranslation,
+            isAmlLiteMode,
             lyricOrderKey,
             secondaryFontScale,
             showRomanization,
@@ -517,11 +525,19 @@ export default function Lyric(props: IProps) {
 
     useEffect(() => {
         restoreScrollIndexRef.current = getActiveLyricIndex();
-    }, [currentLrcItem?.index, getActiveLyricIndex]);
+    }, [currentLyricIndex, getActiveLyricIndex]);
 
     useEffect(() => {
         return cancelInitialPositioning;
     }, [cancelInitialPositioning]);
+
+    useEffect(() => {
+        return () => {
+            if (suppressTurnPageTapTimerRef.current) {
+                clearTimeout(suppressTurnPageTapTimerRef.current);
+            }
+        };
+    }, []);
 
     const initialContentOffset = useMemo(() => {
         const targetIndex = getActiveLyricIndex();
@@ -668,11 +684,11 @@ export default function Lyric(props: IProps) {
     const listExtraData = useMemo(
         () =>
             [
-                currentLrcItem?.index ?? -1,
+                currentLyricIndex,
                 draggingIndex ?? -1,
                 layoutAffectingKey,
             ].join("|"),
-        [currentLrcItem?.index, draggingIndex, layoutAffectingKey],
+        [currentLyricIndex, draggingIndex, layoutAffectingKey],
     );
 
     useEffect(() => {
@@ -700,9 +716,49 @@ export default function Lyric(props: IProps) {
         }
     };
 
+    const markLyricLineTapHandled = useCallback(() => {
+        suppressTurnPageTapRef.current = true;
+        if (suppressTurnPageTapTimerRef.current) {
+            clearTimeout(suppressTurnPageTapTimerRef.current);
+        }
+        suppressTurnPageTapTimerRef.current = setTimeout(() => {
+            suppressTurnPageTapRef.current = false;
+        }, 350);
+    }, []);
+
+    const handleTurnPageTap = useCallback(() => {
+        if (suppressTurnPageTapRef.current) {
+            suppressTurnPageTapRef.current = false;
+            return;
+        }
+        onTurnPageClick?.();
+    }, [onTurnPageClick]);
+
+    const handleLyricLinePress = useCallback(
+        async (index: number) => {
+            const item = lyrics[index];
+            const seekTime = getLyricSeekTimeSeconds(
+                item,
+                lyrics,
+                lyricOffsetSeconds,
+            );
+            if (seekTime === undefined) {
+                return;
+            }
+            restoreScrollIndexRef.current = index;
+            lastScrollIndexRef.current = -1;
+            scrollPhaseRef.current = ScrollPhase.Tracking;
+            scrollToIndex(index, true);
+            await TrackPlayer.seekTo(seekTime);
+        },
+        [lyricOffsetSeconds, lyrics, scrollToIndex],
+    );
+
     const tapGesture = Gesture.Tap()
-        .onStart(() => {
-            onTurnPageClick?.();
+        .onEnd((_event, success) => {
+            if (success) {
+                handleTurnPageTap();
+            }
         })
         .runOnJS(true);
 
@@ -717,7 +773,17 @@ export default function Lyric(props: IProps) {
     return (
         <>
             <GestureDetector gesture={tapGesture}>
-                <View style={globalStyle.fwflex1}>
+                <View
+                    style={[
+                        globalStyle.fwflex1,
+                        isAmlLiteMode ? styles.amllLiteShell : null,
+                    ]}>
+                    {isAmlLiteMode ? (
+                        <View
+                            pointerEvents="none"
+                            style={styles.amllLiteBackdrop}
+                        />
+                    ) : null}
                     {loading ? (
                         <Loading color="white" />
                     ) : lyrics?.length ? (
@@ -813,6 +879,12 @@ export default function Lyric(props: IProps) {
                             overScrollMode="never"
                             extraData={listExtraData}
                             renderItem={({ item, index }) => {
+                                const seekTime = getLyricSeekTimeSeconds(
+                                    item,
+                                    lyrics,
+                                    lyricOffsetSeconds,
+                                );
+                                const canTapSeek = seekTime !== undefined;
                                 return (
                                     <LyricItemComponent
                                         index={index}
@@ -830,8 +902,17 @@ export default function Lyric(props: IProps) {
                                         textAlign={detailAlign}
                                         onLayout={handleLyricItemLayout}
                                         light={draggingIndex === index}
-                                        highlight={
-                                            currentLrcItem?.index === index
+                                        highlight={currentLyricIndex === index}
+                                        amllLiteMode={isAmlLiteMode}
+                                        onPressIn={
+                                            canTapSeek
+                                                ? markLyricLineTapHandled
+                                                : undefined
+                                        }
+                                        onPress={
+                                            canTapSeek
+                                                ? () => handleLyricLinePress(index)
+                                                : undefined
                                         }
                                     />
                                 );
@@ -904,6 +985,20 @@ const styles = StyleSheet.create({
         width: "100%",
         marginVertical: rpx(48),
         flex: 1,
+    },
+    amllLiteShell: {
+        paddingHorizontal: rpx(8),
+        paddingTop: rpx(8),
+        paddingBottom: rpx(4),
+    },
+    amllLiteBackdrop: {
+        position: "absolute",
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        backgroundColor: "rgba(255, 255, 255, 0.07)",
+        borderRadius: rpx(28),
     },
     empty: {
         paddingTop: "70%",

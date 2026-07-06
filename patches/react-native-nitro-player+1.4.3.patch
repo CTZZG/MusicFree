@@ -182,7 +182,7 @@ index dbb5018..97f0cde 100644
 
  /**
   * Foreground service that **owns** the ExoPlayer and MediaSession.
-@@ -30,6 +54,17 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -30,6 +54,18 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
      companion object {
          const val ACTION_LOCAL_BIND = "com.margelo.nitro.nitroplayer.LOCAL_BIND"
@@ -190,6 +190,7 @@ index dbb5018..97f0cde 100644
 +        private const val SESSION_ACTIVITY_REQUEST_CODE = 2001
 +        private const val API_LIVE_UPDATE = 36
 +        private const val CHIP_TEXT_MAX_CODE_POINTS = 12
++        private const val TRUNCATION_MARK = "…"
 +        private const val LIVE_UPDATE_PROGRESS_UPDATE_MS = 1000L
 +        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 +
@@ -200,7 +201,7 @@ index dbb5018..97f0cde 100644
 
          @Volatile
          var notificationSmallIconResName: String? = null
-@@ -42,13 +77,94 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -42,13 +78,94 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
          @Volatile
          private var instance: NitroPlayerPlaybackService? = null
@@ -296,7 +297,7 @@ index dbb5018..97f0cde 100644
 
      @Volatile
      var trackPlayerCore: TrackPlayerCore? = null
-@@ -72,15 +188,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -72,15 +189,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
          // Build ExoPlayer on main looper (default)
          player = ExoPlayerBuilder.build(this)
@@ -319,7 +320,7 @@ index dbb5018..97f0cde 100644
          notificationProvider = provider
          applyNotificationSmallIcon()
          setMediaNotificationProvider(provider)
-@@ -90,7 +210,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -90,7 +211,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
 
      private fun applyNotificationSmallIcon() {
          val name = notificationSmallIconResName ?: return
@@ -328,7 +329,7 @@ index dbb5018..97f0cde 100644
          val resId = resources.getIdentifier(name, "drawable", packageName)
          if (resId == 0) {
              NitroPlayerLogger.log("PlaybackService") {
-@@ -111,6 +231,418 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -111,6 +232,422 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          }
      }
 
@@ -698,17 +699,21 @@ index dbb5018..97f0cde 100644
 +    private fun toChipText(text: String): String {
 +        val normalized = text.replace(Regex("\\s+"), " ").trim()
 +        if (normalized.isEmpty()) return ""
++        if (normalized.codePointCount(0, normalized.length) <= CHIP_TEXT_MAX_CODE_POINTS) {
++            return normalized
++        }
 +
 +        val builder = StringBuilder()
 +        var count = 0
 +        var index = 0
-+        while (index < normalized.length && count < CHIP_TEXT_MAX_CODE_POINTS) {
++        val textLimit = (CHIP_TEXT_MAX_CODE_POINTS - 1).coerceAtLeast(0)
++        while (index < normalized.length && count < textLimit) {
 +            val codePoint = normalized.codePointAt(index)
 +            builder.appendCodePoint(codePoint)
 +            index += Character.charCount(codePoint)
 +            count += 1
 +        }
-+        return builder.toString()
++        return builder.append(TRUNCATION_MARK).toString()
 +    }
 +
 +    private fun refreshNotification() {
@@ -747,7 +752,7 @@ index dbb5018..97f0cde 100644
      override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
          mediaSession
 
-@@ -121,6 +653,72 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -121,6 +658,72 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          return super.onBind(intent)
      }
 
@@ -820,7 +825,7 @@ index dbb5018..97f0cde 100644
      override fun onTaskRemoved(rootIntent: Intent?) {
          val session = mediaSession
          if (session == null || !session.player.playWhenReady) {
-@@ -132,7 +730,9 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -132,7 +735,9 @@ class NitroPlayerPlaybackService : MediaSessionService() {
      override fun onDestroy() {
          NitroPlayerLogger.log("PlaybackService") { "onDestroy" }
          if (instance === this) instance = null

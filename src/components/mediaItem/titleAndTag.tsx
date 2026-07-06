@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 import ThemeText from "../base/themeText";
 import Tag from "../base/tag";
 import { CustomizedColors } from "@/hooks/useColors";
+import rpx from "@/utils/rpx";
 
 interface ITitleAndTagProps {
     title: string;
@@ -16,7 +17,7 @@ export default function TitleAndTag(props: ITitleAndTagProps) {
             <ThemeText fontColor={titleFontColor} numberOfLines={1} style={styles.title}>
                 {title}
             </ThemeText>
-            {tag ? <Tag tagName={tag} /> : null}
+            {tag ? <Tag tagName={tag} containerStyle={styles.tag} /> : null}
         </View>
     );
 }
@@ -25,9 +26,15 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "space-between",
+        minWidth: 0,
     },
     title: {
-        flex: 1,
+        flexGrow: 1,
+        flexShrink: 1,
+        minWidth: 0,
+    },
+    tag: {
+        maxWidth: rpx(176),
+        flexShrink: 1,
     },
 });

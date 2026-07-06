@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { TextStyle } from "react-native";
 import Animated, {
     Easing,
@@ -14,7 +14,10 @@ import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { getCurrentPositionMsShared } from "@/core/lyricManager";
-import { normalizeLyricWords } from "@/utils/lyricWordByWord";
+import {
+    canAnimateLyricWords,
+    normalizeLyricWords,
+} from "@/utils/lyricWordByWord";
 import { useAppConfig } from "@/core/appConfig";
 
 interface ILyricLine {
@@ -44,8 +47,12 @@ interface ILyricItemComponentProps {
     secondaryFontScale?: number;
     // 对齐方式
     textAlign?: NonNullable<TextStyle["textAlign"]>;
+    // AMLL-lite 聚焦歌词布局
+    amllLiteMode?: boolean;
 
     onLayout?: (index: number, height: number) => void;
+    onPress?: () => void;
+    onPressIn?: () => void;
 }
 
 const MIN_WORD_DURATION = 50;
@@ -119,8 +126,8 @@ export const BreathingDots = memo(function BreathingDots(props: {
                         align === "left"
                             ? "flex-start"
                             : align === "right"
-                              ? "flex-end"
-                              : "center",
+                                ? "flex-end"
+                                : "center",
                 },
             ]}>
             <View style={lyricStyles.dotsRow}>
@@ -276,8 +283,8 @@ function AnimatedWord(props: {
             currentTime <= startTime
                 ? 0
                 : currentTime >= endTime
-                  ? 1
-                  : (currentTime - startTime) / duration;
+                    ? 1
+                    : (currentTime - startTime) / duration;
         const wave = Math.sin(progress * Math.PI);
 
         return {
@@ -479,7 +486,7 @@ function WordByWordLine(props: {
     );
 }
 
-function _LyricItemComponent(props: ILyricItemComponentProps) {
+function LyricItemComponentInner(props: ILyricItemComponentProps) {
     const {
         light,
         highlight,
@@ -490,6 +497,9 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
         fontSize,
         secondaryFontScale = 0.75,
         textAlign = "center",
+        amllLiteMode = false,
+        onPress,
+        onPressIn,
     } = props;
 
     const colors = useColors();
@@ -510,36 +520,65 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
             },
         ];
     const primaryFontSize = fontSize || fontSizeConst.content;
+    const isAmlLiteFocused = amllLiteMode && highlight;
+    const amllLiteItemScale = amllLiteMode
+        ? isAmlLiteFocused
+            ? 1.22
+            : 0.88
+        : 1;
 
-    return (
-        <View
-            onLayout={({ nativeEvent }) => {
-                if (index !== undefined) {
-                    onLayout?.(index, nativeEvent.layout.height);
-                }
-            }}
-            style={[
-                lyricStyles.item,
-                highlight
-                    ? [
-                        lyricStyles.highlightItem,
-                    ]
-                    : null,
-                light ? lyricStyles.draggingItem : null,
-            ]}>
+    const itemStyle = [
+        lyricStyles.item,
+        amllLiteMode ? lyricStyles.amllLiteItem : null,
+        highlight
+            ? [
+                lyricStyles.highlightItem,
+            ]
+            : null,
+        amllLiteMode && !highlight
+            ? lyricStyles.amllLiteInactiveItem
+            : null,
+        isAmlLiteFocused ? lyricStyles.amllLiteFocusedItem : null,
+        light ? lyricStyles.draggingItem : null,
+    ];
+    const handleLayout = ({ nativeEvent }: any) => {
+        if (index !== undefined) {
+            onLayout?.(index, nativeEvent.layout.height);
+        }
+    };
+    const content = (
+        <>
             {displayLines.map(line => {
-                const currentFontSize = line.primary
+                const baseFontSize = line.primary
                     ? primaryFontSize
                     : primaryFontSize * secondaryFontScale;
+                const currentFontSize = amllLiteMode
+                    ? Math.round(
+                        baseFontSize *
+                            (line.primary
+                                ? amllLiteItemScale
+                                : amllLiteItemScale *
+                                  (isAmlLiteFocused ? 1 : 0.96)),
+                    )
+                    : baseFontSize;
                 const lineHeight = Math.round(
-                    currentFontSize * (line.primary ? 1.34 : 1.28),
+                    currentFontSize *
+                        (amllLiteMode
+                            ? line.primary
+                                ? 1.42
+                                : 1.34
+                            : line.primary
+                                ? 1.34
+                                : 1.28),
                 );
                 const canUseWordByWord =
                     enableWordByWord &&
-                    !!line.hasWordByWord &&
-                    !!line.words?.length &&
-                    !!line.text.trim() &&
-                    (highlight || !line.isPseudoWordByWord);
+                    canAnimateLyricWords({
+                        hasWordByWord: line.hasWordByWord,
+                        words: line.words,
+                        text: line.text,
+                        isPseudoWordByWord: line.isPseudoWordByWord,
+                    });
                 const isEmptyLine = !line.text.trim();
 
                 return (
@@ -572,6 +611,9 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
                                 style={[
                                     lyricStyles.line,
                                     line.primary ? lyricStyles.primaryLine : null,
+                                    isAmlLiteFocused && line.primary
+                                        ? lyricStyles.amllLiteFocusedLine
+                                        : null,
                                     {
                                         color: highlight
                                             ? activeColor
@@ -587,13 +629,33 @@ function _LyricItemComponent(props: ILyricItemComponentProps) {
                     </View>
                 );
             })}
+        </>
+    );
+
+    if (onPress) {
+        return (
+            <Pressable
+                onLayout={handleLayout}
+                onPress={onPress}
+                onPressIn={onPressIn}
+                style={itemStyle}>
+                {content}
+            </Pressable>
+        );
+    }
+
+    return (
+        <View
+            onLayout={handleLayout}
+            style={itemStyle}>
+            {content}
         </View>
     );
 }
 
 // 歌词
 const LyricItemComponent = memo(
-    _LyricItemComponent,
+    LyricItemComponentInner,
     (prev, curr) =>
         prev.light === curr.light &&
         prev.highlight === curr.highlight &&
@@ -602,7 +664,10 @@ const LyricItemComponent = memo(
         prev.index === curr.index &&
         prev.fontSize === curr.fontSize &&
         prev.secondaryFontScale === curr.secondaryFontScale &&
-        prev.textAlign === curr.textAlign,
+        prev.textAlign === curr.textAlign &&
+        prev.amllLiteMode === curr.amllLiteMode &&
+        prev.onPress === curr.onPress &&
+        prev.onPressIn === curr.onPressIn,
 );
 
 export default LyricItemComponent;
@@ -619,6 +684,19 @@ const lyricStyles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
     },
+    amllLiteItem: {
+        paddingHorizontal: rpx(38),
+        paddingVertical: rpx(18),
+        alignSelf: "stretch",
+        borderRadius: rpx(24),
+    },
+    amllLiteInactiveItem: {
+        opacity: 0.34,
+    },
+    amllLiteFocusedItem: {
+        opacity: 1,
+        backgroundColor: "rgba(255, 255, 255, 0.1)",
+    },
     lineWrapper: {
         width: "100%",
     },
@@ -628,6 +706,14 @@ const lyricStyles = StyleSheet.create({
     },
     primaryLine: {
         fontWeight: fontWeightConst.bold,
+    },
+    amllLiteFocusedLine: {
+        textShadowColor: "rgba(255, 255, 255, 0.22)",
+        textShadowOffset: {
+            width: 0,
+            height: 0,
+        },
+        textShadowRadius: rpx(6),
     },
     secondaryLine: {
         marginTop: rpx(6),

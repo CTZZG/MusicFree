@@ -20,6 +20,9 @@ export default function SheetMusicList() {
                 musicList={musicSheet?.musicList}
                 musicSheet={musicSheet}
                 showIndex
+                showArtwork
+                showQuality
+                showDuration
                 state={RequestStateCode.IDLE}
                 highlightMusicItem={currentMusic}
 

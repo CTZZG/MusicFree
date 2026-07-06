@@ -58,6 +58,8 @@ interface IPersistStatus {
     "lyric.detailFontSize": number;
     /** 歌词-详情页对齐方式 */
     "lyric.detailAlign": "left" | "center" | "right";
+    /** 歌词-详情页 AMLL-lite 模式 */
+    "lyric.detailAmlLiteMode": boolean;
 }
 
 function set<K extends keyof IPersistStatus>(

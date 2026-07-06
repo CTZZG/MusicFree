@@ -81,7 +81,10 @@ export interface IAppConfigProperties {
     "theme.followSystem": boolean;
     "theme.selectedTheme": string;
     "theme.coverStyle": "square" | "circle";
+    "theme.useEnhancedHome": boolean;
+    "theme.hideHomeDiscovery": boolean;
     "theme.hideHomeHeroCard": boolean;
+    "theme.hideHomeRecentListening": boolean;
     "theme.hideHomeOperations": boolean;
 
     // Backup

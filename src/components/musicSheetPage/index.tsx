@@ -19,6 +19,8 @@ interface IMusicSheetPageProps {
     onRetry?: () => void;
     onLoadMore?: () => void;
     showArtwork?: boolean;
+    showQuality?: boolean;
+    showDuration?: boolean;
     navMenu?: Array<{
         icon: IIconName;
         title: string;
@@ -37,6 +39,8 @@ export default function MusicSheetPage(props: IMusicSheetPageProps) {
         onRetry,
         state,
         showArtwork,
+        showQuality,
+        showDuration,
         navMenu,
     } = props;
 
@@ -56,6 +60,8 @@ export default function MusicSheetPage(props: IMusicSheetPageProps) {
                 onRetry={onRetry}
                 onLoadMore={onLoadMore}
                 showArtwork={showArtwork}
+                showQuality={showQuality}
+                showDuration={showDuration}
             />
             <MusicBar />
         </VerticalSafeAreaView>

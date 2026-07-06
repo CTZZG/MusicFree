@@ -15,6 +15,8 @@ export default function SearchResult(props: ISearchResultProps) {
             musicSheet={musicSheet}
             state={RequestStateCode.IDLE}
             showArtwork
+            showQuality
+            showDuration
         />
     );
 }

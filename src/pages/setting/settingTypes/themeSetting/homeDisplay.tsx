@@ -9,7 +9,11 @@ import rpx from "@/utils/rpx";
 
 export default function HomeDisplay() {
     const { t } = useI18N();
+    const useEnhancedHome = useAppConfig("theme.useEnhancedHome") ?? true;
+    const hideHomeDiscovery = useAppConfig("theme.hideHomeDiscovery") ?? false;
     const hideHomeHeroCard = useAppConfig("theme.hideHomeHeroCard") ?? false;
+    const hideHomeRecentListening =
+        useAppConfig("theme.hideHomeRecentListening") ?? false;
     const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
 
     return (
@@ -21,23 +25,72 @@ export default function HomeDisplay() {
                 {t("themeSettings.homeDisplay")}
             </ThemeText>
             <ListItem withHorizontalPadding>
-                <ListItem.Content title={t("themeSettings.hideHomeHeroCard")} />
+                <ListItem.Content
+                    title={t("themeSettings.useEnhancedHome")}
+                    description={t("themeSettings.useEnhancedHome.desc")}
+                />
                 <ThemeSwitch
-                    value={hideHomeHeroCard}
+                    value={useEnhancedHome}
                     onValueChange={value => {
-                        Config.setConfig("theme.hideHomeHeroCard", value);
+                        Config.setConfig("theme.useEnhancedHome", value);
                     }}
                 />
             </ListItem>
-            <ListItem withHorizontalPadding>
-                <ListItem.Content title={t("themeSettings.hideHomeOperations")} />
-                <ThemeSwitch
-                    value={hideHomeOperations}
-                    onValueChange={value => {
-                        Config.setConfig("theme.hideHomeOperations", value);
-                    }}
-                />
-            </ListItem>
+            {useEnhancedHome ? (
+                <ListItem withHorizontalPadding>
+                    <ListItem.Content
+                        title={t("themeSettings.hideHomeDiscovery")}
+                    />
+                    <ThemeSwitch
+                        value={hideHomeDiscovery}
+                        onValueChange={value => {
+                            Config.setConfig("theme.hideHomeDiscovery", value);
+                        }}
+                    />
+                </ListItem>
+            ) : null}
+            {useEnhancedHome ? (
+                <ListItem withHorizontalPadding>
+                    <ListItem.Content
+                        title={t("themeSettings.hideHomeHeroCard")}
+                    />
+                    <ThemeSwitch
+                        value={hideHomeHeroCard}
+                        onValueChange={value => {
+                            Config.setConfig("theme.hideHomeHeroCard", value);
+                        }}
+                    />
+                </ListItem>
+            ) : null}
+            {useEnhancedHome ? (
+                <ListItem withHorizontalPadding>
+                    <ListItem.Content
+                        title={t("themeSettings.hideHomeRecentListening")}
+                    />
+                    <ThemeSwitch
+                        value={hideHomeRecentListening}
+                        onValueChange={value => {
+                            Config.setConfig(
+                                "theme.hideHomeRecentListening",
+                                value,
+                            );
+                        }}
+                    />
+                </ListItem>
+            ) : null}
+            {useEnhancedHome ? (
+                <ListItem withHorizontalPadding>
+                    <ListItem.Content
+                        title={t("themeSettings.hideHomeOperations")}
+                    />
+                    <ThemeSwitch
+                        value={hideHomeOperations}
+                        onValueChange={value => {
+                            Config.setConfig("theme.hideHomeOperations", value);
+                        }}
+                    />
+                </ListItem>
+            ) : null}
         </View>
     );
 }

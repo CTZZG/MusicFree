@@ -14,10 +14,13 @@ import { renderMap } from "./results";
 import DefaultResults from "./results/defaultResults";
 import ResultWrapper from "./resultWrapper";
 import { useParams } from "@/core/router";
+import Color from "color";
 
 interface IResultSubPanelProps {
     tab: ICommon.SupportMediaType;
 }
+
+const ERROR_COLOR = "#FC5F5F";
 
 function getPluginTabMeta(
     searchResult:
@@ -156,7 +159,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                                     pluginSearchResult?.state ===
                                     RequestStateCode.ERROR;
                                 const metaColor = isError
-                                    ? colors.notification
+                                    ? ERROR_COLOR
                                     : focused
                                         ? colors.primary
                                         : colors.textSecondary;
@@ -165,7 +168,30 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                                     : colors.textSecondary ?? colors.text;
 
                                 return (
-                                    <View style={styles.pluginTabLabel}>
+                                    <View
+                                        style={[
+                                            styles.pluginTabLabel,
+                                            {
+                                                backgroundColor: focused
+                                                    ? Color(colors.primary)
+                                                        .alpha(0.1)
+                                                        .toString()
+                                                    : isError
+                                                        ? Color(ERROR_COLOR)
+                                                            .alpha(0.08)
+                                                            .toString()
+                                                        : "transparent",
+                                                borderColor: focused
+                                                    ? Color(colors.primary)
+                                                        .alpha(0.28)
+                                                        .toString()
+                                                    : isError
+                                                        ? Color(ERROR_COLOR)
+                                                            .alpha(0.32)
+                                                            .toString()
+                                                        : "transparent",
+                                            },
+                                        ]}>
                                         <Text
                                             numberOfLines={1}
                                             style={[
@@ -235,10 +261,15 @@ const styles = StyleSheet.create({
         width: "auto",
     },
     pluginTabLabel: {
-        width: rpx(140),
+        width: rpx(180),
+        minHeight: rpx(72),
+        paddingHorizontal: rpx(14),
+        paddingVertical: rpx(8),
+        borderRadius: rpx(8),
+        borderWidth: StyleSheet.hairlineWidth,
         alignItems: "center",
         justifyContent: "center",
-        rowGap: rpx(4),
+        rowGap: rpx(2),
     },
     pluginTabTitle: {
         width: "100%",

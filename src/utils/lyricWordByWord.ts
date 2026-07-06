@@ -9,6 +9,13 @@ interface ILyricWordDataResult {
     isPseudoWordByWord?: boolean;
 }
 
+interface ILyricWordAnimationInput {
+    hasWordByWord?: boolean;
+    words?: ILyric.IWordData[];
+    text?: string;
+    isPseudoWordByWord?: boolean;
+}
+
 const DEFAULT_LINE_DURATION_MS = 3600;
 const MIN_LINE_DURATION_MS = 900;
 const MAX_LINE_DURATION_MS = 8000;
@@ -41,8 +48,8 @@ function getLineDurationMs(
         type === "translation"
             ? item.translationDuration
             : type === "romanization"
-              ? item.romanizationDuration
-              : item.duration;
+                ? item.romanizationDuration
+                : item.duration;
 
     if (explicitDuration && explicitDuration > 0) {
         return clamp(
@@ -123,6 +130,15 @@ export function createPseudoWordData(
         duration: wordDuration,
         space: false,
     }));
+}
+
+export function canAnimateLyricWords(input: ILyricWordAnimationInput) {
+    return (
+        !!input.hasWordByWord &&
+        !!input.words?.length &&
+        !!input.text?.trim() &&
+        input.isPseudoWordByWord !== true
+    );
 }
 
 export function getLyricWordData(

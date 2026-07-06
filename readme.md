@@ -52,6 +52,22 @@
 
 如果只是日常听歌，推荐 Android 8.0 及以上使用 Nitro；如果想要灵动胶囊/小窗歌词，推荐 Android 16 及以上。长歌词在小胶囊中可能显示不全，这是系统展示空间限制，展开通知卡片和应用内歌词会显示更完整内容。
 
+### 参考与致谢
+
+本分支的播放、通知、歌词和体验优化调研参考过以下开源项目。除明确说明的依赖或 fork 外，这些项目主要作为工程实现、交互设计和兼容性分析参考。
+
+- [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree)：本项目上游，提供插件化播放器主体设计。
+- [Toskysun/MusicFree](https://github.com/Toskysun/MusicFree)：参考其新版首页、搜索结果、歌单页、主题设置和播放页交互。
+- [hanklzl/MusicFreeAndroid](https://github.com/hanklzl/MusicFreeAndroid)：参考其原生 Android 工程化、播放恢复、歌词解析、下载和缓存治理思路。
+- [riteshshukla04/react-native-nitro-player](https://github.com/riteshshukla04/react-native-nitro-player)：Nitro 播放后端来源，本分支保留 MusicFree 所需的 Android 格式补丁。
+- [CTZZG/libmpv-android](https://github.com/CTZZG/libmpv-android)：当前 mpv Android AAR 构建来源。
+- [jarnedemeulemeester/libmpv-android](https://github.com/jarnedemeulemeester/libmpv-android)：libmpv Android 集成差异分析参考。
+- [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)：参考 Apple Music 风格歌词展示、逐词/逐音节歌词解析和动态背景体验。
+- [FrancoGiudans/Capsulyric](https://github.com/FrancoGiudans/Capsulyric)：参考 Android Live Update / 胶囊歌词通知实现思路。
+- [Block-Network/StatusBarLyric](https://github.com/Block-Network/StatusBarLyric)：参考系统状态栏歌词展示方向。
+- [limczhh/HyperLyric](https://github.com/limczhh/HyperLyric)：参考 HyperOS 灵动岛/焦点通知歌词方案。
+- [Steve-xmh/applemusic-like-lyrics](https://github.com/Steve-xmh/applemusic-like-lyrics)：AMLL 项目历史与生态参考。
+
 > **桌面版来啦：<https://github.com/maotoumao/MusicFreeDesktop>**
 
 如果需要了解后续进展可以关注公众号↓；如果有问题可以在 issue 区或者公众号直接留言反馈。

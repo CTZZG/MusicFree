@@ -76,6 +76,15 @@ function formatDuration(duration?: number | string) {
         : `${minutes}:${paddedSeconds}`;
 }
 
+function formatMusicMetadata(musicItem: IMusic.IMusicItem) {
+    return [musicItem.artist, musicItem.album]
+        .map(item =>
+            item === undefined || item === null ? "" : String(item).trim(),
+        )
+        .filter(Boolean)
+        .join(" - ");
+}
+
 function MusicItem(props: IMusicItemProps) {
     const {
         musicItem,
@@ -152,6 +161,10 @@ function MusicItem(props: IMusicItemProps) {
         () => showDuration ? formatDuration(musicItem.duration) : "",
         [musicItem.duration, showDuration],
     );
+    const metadataText = useMemo(
+        () => formatMusicMetadata(musicItem),
+        [musicItem.artist, musicItem.album],
+    );
 
     return (
         <ListItem
@@ -191,6 +204,7 @@ function MusicItem(props: IMusicItemProps) {
                 </ListItem.ListItemText>
             ) : null}
             <ListItem.Content
+                containerStyle={styles.content}
                 title={
                     <TitleAndTag
                         title={musicItem.title}
@@ -212,6 +226,7 @@ function MusicItem(props: IMusicItemProps) {
                             <View style={styles.qualityBadge}>
                                 <ThemeText
                                     fontSize="tag"
+                                    numberOfLines={1}
                                     style={styles.qualityBadgeText}>
                                     {qualityBadge}
                                 </ThemeText>
@@ -231,6 +246,7 @@ function MusicItem(props: IMusicItemProps) {
                                     ]}>
                                     <ThemeText
                                         fontSize="tag"
+                                        numberOfLines={1}
                                         style={[
                                             styles.writeBadgeText,
                                             badge.status === "success"
@@ -256,7 +272,7 @@ function MusicItem(props: IMusicItemProps) {
                             style={styles.descText}>
                             {localFileExists === false
                                 ? t("localMusic.fileMissing")
-                                : `${musicItem.artist}${musicItem.album ? ` - ${musicItem.album}` : ""}`}
+                                : metadataText}
                         </ThemeText>
                     </View>
                 }
@@ -322,6 +338,9 @@ function MusicItem(props: IMusicItemProps) {
 export default React.memo(MusicItem);
 
 const styles = StyleSheet.create({
+    content: {
+        minWidth: 0,
+    },
     artwork: {
         width: rpx(68),
         height: rpx(68),
@@ -335,12 +354,16 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginTop: rpx(16),
         minWidth: 0,
+        overflow: "hidden",
     },
     descText: {
+        flexGrow: 1,
         flexShrink: 1,
+        minWidth: 0,
     },
     qualityBadge: {
         height: rpx(28),
+        maxWidth: rpx(72),
         paddingHorizontal: rpx(6),
         marginRight: rpx(8),
         borderRadius: rpx(4),
@@ -358,6 +381,7 @@ const styles = StyleSheet.create({
     },
     writeBadge: {
         height: rpx(28),
+        maxWidth: rpx(96),
         paddingHorizontal: rpx(6),
         marginRight: rpx(8),
         borderRadius: rpx(4),

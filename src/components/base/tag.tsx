@@ -18,7 +18,10 @@ export default function Tag(props: ITagProps) {
                 { backgroundColor: colors.card, borderColor: colors.divider },
                 props.containerStyle,
             ]}>
-            <ThemeText style={[styles.tagText, props.style]} fontSize="tag">
+            <ThemeText
+                style={[styles.tagText, props.style]}
+                fontSize="tag"
+                numberOfLines={1}>
                 {props.tagName}
             </ThemeText>
         </View>
@@ -39,5 +42,6 @@ const styles = StyleSheet.create({
     },
     tagText: {
         textAlignVertical: "center",
+        maxWidth: "100%",
     },
 });

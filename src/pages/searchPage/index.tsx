@@ -28,13 +28,13 @@ export default function () {
     const params = useParams<"search-page">();
     const search = useSearch();
     const searchRef = useRef(search);
+    const initialQuery = params?.initialQuery?.trim();
 
     useEffect(() => {
         searchRef.current = search;
     }, [search]);
 
     useEffect(() => {
-        const initialQuery = params?.initialQuery?.trim();
         if (initialQuery) {
             setSearchResultsState(initSearchResults);
             setQuery(initialQuery);
@@ -47,7 +47,7 @@ export default function () {
             );
         }
     }, [
-        params?.initialQuery,
+        initialQuery,
         params?.initialSearchType,
         params?.initialSearchToken,
         params?.pluginHash,
@@ -66,7 +66,7 @@ export default function () {
     return (
         <SafeAreaView edges={["bottom", "top"]} style={style.wrapper}>
             <StatusBar />
-            <NavBar />
+            <NavBar autoFocus={!initialQuery} />
             <SafeAreaView edges={["left", "right"]} style={style.wrapper}>
                 <View style={style.flex1}>
                     {pageStatus === PageStatus.EDITING && <HistoryPanel />}

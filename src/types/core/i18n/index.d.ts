@@ -554,7 +554,11 @@ export interface ILanguageData {
     "themeSettings.coverStyleSquare": string; // 方形
     "themeSettings.coverStyleCircle": string; // 圆形
     "themeSettings.homeDisplay": string; // 首页显示
+    "themeSettings.useEnhancedHome": string; // 使用新版首页
+    "themeSettings.useEnhancedHome.desc": string; // 关闭后恢复旧版首页布局
+    "themeSettings.hideHomeDiscovery": string; // 隐藏首页发现区
     "themeSettings.hideHomeHeroCard": string; // 隐藏首页继续听卡片
+    "themeSettings.hideHomeRecentListening": string; // 隐藏首页最近播放
     "themeSettings.hideHomeOperations": string; // 隐藏首页快捷入口
 
     // 自定义主题相关
@@ -825,6 +829,10 @@ export interface ILanguageData {
 
     // 播放全部栏相关
     "playAllBar.title": string; // 播放全部
+    "playAllBar.favorite": string; // 收藏
+    "playAllBar.favorited": string; // 已收藏
+    "playAllBar.addToSheet": string; // 加入歌单
+    "playAllBar.batchEdit": string; // 批量编辑
 
     // 无插件相关
     "noPlugin.title": string; // 还没有安装插件

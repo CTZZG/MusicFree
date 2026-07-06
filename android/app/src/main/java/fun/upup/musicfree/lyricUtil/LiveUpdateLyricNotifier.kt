@@ -136,17 +136,21 @@ class LiveUpdateLyricNotifier(private val appContext: Context) {
     private fun toChipText(lyric: String): String {
         val normalized = lyric.replace(Regex("\\s+"), " ").trim()
         if (normalized.isEmpty()) return ""
+        if (normalized.codePointCount(0, normalized.length) <= CHIP_TEXT_MAX_CODE_POINTS) {
+            return normalized
+        }
 
         val builder = StringBuilder()
         var count = 0
         var index = 0
-        while (index < normalized.length && count < CHIP_TEXT_MAX_CODE_POINTS) {
+        val textLimit = (CHIP_TEXT_MAX_CODE_POINTS - 1).coerceAtLeast(0)
+        while (index < normalized.length && count < textLimit) {
             val codePoint = normalized.codePointAt(index)
             builder.appendCodePoint(codePoint)
             index += Character.charCount(codePoint)
             count += 1
         }
-        return builder.toString()
+        return builder.append(TRUNCATION_MARK).toString()
     }
 
     companion object {
@@ -155,6 +159,7 @@ class LiveUpdateLyricNotifier(private val appContext: Context) {
         private const val CHANNEL_ID = "musicfree_live_update_lyric"
         private const val NOTIFICATION_ID = 20260701
         private const val CHIP_TEXT_MAX_CODE_POINTS = 12
+        private const val TRUNCATION_MARK = "…"
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
     }
 }

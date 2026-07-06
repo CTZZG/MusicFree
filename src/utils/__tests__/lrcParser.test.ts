@@ -71,6 +71,76 @@ describe("LyricParser.getPosition", () => {
     });
 });
 
+describe("LyricParser - current-line edge cases", () => {
+    it("applies metadata offset when resolving the active line", () => {
+        const parser = new LyricParser("[offset:500]\n[00:01.00]delayed");
+
+        expect(parser.getPosition(1.49)).toBeNull();
+        expect(parser.getPosition(1.5)?.lrc).toBe("delayed");
+    });
+
+    it("keeps repeated timestamps in order and resolves to the last active duplicate", () => {
+        const parser = new LyricParser(
+            "[00:02.00]first\n[00:02.00]second\n[00:04.00]third",
+        );
+        const items = parser.getLyricItems();
+
+        expect(items.map(item => item.lrc)).toEqual([
+            "first",
+            "second",
+            "third",
+        ]);
+        expect(parser.getPosition(2)?.lrc).toBe("second");
+    });
+
+    it("aligns romanization lines by timestamp", () => {
+        const parser = new LyricParser("[00:01.00]你好\n[00:03.00]世界", {
+            romanization: "[00:01.00]ni hao\n[00:03.00]shi jie",
+        });
+
+        expect(parser.hasRomanization).toBe(true);
+        expect(parser.getLyricItems()[0].romanization).toBe("ni hao");
+        expect(parser.getLyricItems()[1].romanization).toBe("shi jie");
+    });
+
+    it("falls back to plain text lines when no timestamps exist", () => {
+        const parser = new LyricParser("plain line one\nplain line two");
+        const items = parser.getLyricItems();
+
+        expect(items).toHaveLength(2);
+        expect(items[0]).toMatchObject({
+            time: 0,
+            lrc: "plain line one",
+            index: 0,
+        });
+        expect(items[1]).toMatchObject({
+            time: 0,
+            lrc: "plain line two",
+            index: 1,
+        });
+    });
+
+    it("ignores malformed timestamp-like content without throwing", () => {
+        const parser = new LyricParser(
+            "[bad timestamp]\n[00:bad]broken\n[00:01.00]valid",
+        );
+        const items = parser.getLyricItems();
+
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({ time: 1, lrc: "valid" });
+    });
+
+    it("preserves long lyric lines for downstream display policies", () => {
+        const longLine =
+            "每在夜静我便想这刻飞返家乡".repeat(4);
+        const parser = new LyricParser(`[00:12.00]${longLine}`);
+        const item = parser.getPosition(12);
+
+        expect(item?.lrc).toBe(longLine);
+        expect(item?.lrc.length).toBeGreaterThan(40);
+    });
+});
+
 describe("LyricParser - translation alignment", () => {
     it("aligns translation lines by timestamp", () => {
         const parser = new LyricParser("[00:01.00]hello\n[00:03.00]world", {

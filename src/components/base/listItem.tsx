@@ -340,6 +340,7 @@ const styles = StyleSheet.create({
     },
     itemContentContainer: {
         flex: 1,
+        minWidth: 0,
         height: "100%",
         justifyContent: "center",
     },

@@ -64,6 +64,8 @@ interface IMusicListProps {
     highlightMusicItem?: IMusic.IMusicItem | null;
     onRetry?: () => void;
     onLoadMore?: () => void;
+    emptyTitle?: string;
+    emptyDescription?: string;
     showArtwork?: boolean;
     showQuality?: boolean;
     showDuration?: boolean;
@@ -87,6 +89,8 @@ export default function MusicList(props: IMusicListProps) {
         showQuality,
         showDuration,
         showAddNextIcon,
+        emptyTitle,
+        emptyDescription,
         enableAlphabetIndex,
         alphabetIndexText,
     } = props;    
@@ -492,7 +496,14 @@ export default function MusicList(props: IMusicListProps) {
             <FlashList
                 ref={flashListRef}
                 ListHeaderComponent={renderHeader}
-                ListEmptyComponent={<ListEmpty state={state} onRetry={onRetry} />}
+                ListEmptyComponent={
+                    <ListEmpty
+                        state={state}
+                        title={emptyTitle}
+                        description={emptyDescription}
+                        onRetry={onRetry}
+                    />
+                }
                 ListFooterComponent={
                     <>
                         {musicList?.length ? (

@@ -210,6 +210,9 @@ export default function SmartSheetDetail() {
             canStar={false}
             navMenu={navMenu}
             state={RequestStateCode.IDLE}
+            showArtwork
+            showQuality
+            showDuration
         />
     );
 }

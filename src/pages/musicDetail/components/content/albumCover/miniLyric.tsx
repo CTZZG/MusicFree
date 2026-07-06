@@ -21,8 +21,8 @@ import { useAppConfig } from "@/core/appConfig";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import {
     getCurrentPositionMsShared,
-    useCurrentLyricItem,
     useLyricState,
+    useNormalizedCurrentLyricState,
 } from "@/core/lyricManager";
 import PersistStatus from "@/utils/persistStatus";
 import rpx from "@/utils/rpx";
@@ -258,7 +258,7 @@ function MiniWordByWordLine(props: {
 export default function MiniLyric(props: IMiniLyricProps) {
     const { compact = false, onPress } = props;
     const lyricState = useLyricState();
-    const currentLyricItem = useCurrentLyricItem();
+    const normalizedCurrentLyricState = useNormalizedCurrentLyricState();
     const { width: windowWidth } = useWindowDimensions();
     const infoWidth = useMemo(
         () => getSongInfoWidth(windowWidth),
@@ -287,7 +287,10 @@ export default function MiniLyric(props: IMiniLyricProps) {
     const lyrics = lyricState.lyrics;
     const currentIndex = Math.max(
         0,
-        Math.min(currentLyricItem?.index ?? 0, Math.max(0, lyrics.length - 1)),
+        Math.min(
+            normalizedCurrentLyricState.line?.index ?? 0,
+            Math.max(0, lyrics.length - 1),
+        ),
     );
     const containerHeight = compact ? COMPACT_CONTAINER_HEIGHT : CONTAINER_HEIGHT;
     const fadeHeight = compact ? COMPACT_FADE_HEIGHT : FADE_HEIGHT;

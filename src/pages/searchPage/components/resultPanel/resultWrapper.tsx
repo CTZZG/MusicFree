@@ -129,6 +129,8 @@ function ResultWrapper(props: IResultWrapperProps) {
                 musicList={data as IMusic.IMusicItem[]}
                 state={searchState}
                 onRetry={retry}
+                emptyTitle={emptyStateText.title}
+                emptyDescription={emptyStateText.description}
                 onLoadMore={() => {
                     (searchState === RequestStateCode.PARTLY_DONE ||
                         searchState === RequestStateCode.IDLE) &&

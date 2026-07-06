@@ -6,7 +6,6 @@ import { ROUTE_PATH, useNavigate } from "@/core/router";
 import ThemeText from "./themeText";
 import useColors from "@/hooks/useColors";
 import { showPanel } from "../panels/usePanel";
-import IconButton from "./iconButton";
 import TrackPlayer from "@/core/trackPlayer";
 import Toast from "@/utils/toast";
 import Icon from "@/components/base/icon.tsx";
@@ -24,6 +23,7 @@ export default function (props: IProps) {
 
     const sheetName = musicSheet?.title;
     const sheetId = musicSheet?.id;
+    const hasMusic = !!musicList?.length;
 
     const colors = useColors();
     const navigate = useNavigate();
@@ -34,9 +34,12 @@ export default function (props: IProps) {
     return (
         <View style={style.topWrapper}>
             <Pressable
-                style={style.playAll}
+                disabled={!hasMusic}
+                accessibilityRole="button"
+                accessibilityLabel={t("playAllBar.title")}
+                style={[style.playAll, !hasMusic ? style.disabledAction : null]}
                 onPress={() => {
-                    if (musicList) {
+                    if (musicList?.length) {
                         let defaultPlayMusic = musicList[0];
                         if (
                             TrackPlayer.repeatMode ===
@@ -53,77 +56,180 @@ export default function (props: IProps) {
                         );
                     }
                 }}>
-                <Icon
-                    name="play-circle"
-                    style={style.playAllIcon}
-                    size={iconSizeConst.normal}
-                    color={colors.text}
-                />
-                <ThemeText fontWeight="bold">{t("playAllBar.title")}</ThemeText>
+                <View
+                    style={[
+                        style.playAllIconWrapper,
+                        { backgroundColor: colors.placeholder },
+                    ]}>
+                    <Icon
+                        name="play-circle"
+                        size={iconSizeConst.normal}
+                        color={colors.text}
+                    />
+                </View>
+                <View style={style.playAllTextWrapper}>
+                    <ThemeText fontWeight="bold" numberOfLines={1}>
+                        {t("playAllBar.title")}
+                    </ThemeText>
+                    {hasMusic ? (
+                        <ThemeText
+                            fontSize="tag"
+                            fontColor="textSecondary"
+                            numberOfLines={1}
+                            style={style.playAllCount}>
+                            {musicList.length}
+                        </ThemeText>
+                    ) : null}
+                </View>
             </Pressable>
-            {canStar && musicSheet ? (
-                <IconButton
-                    name={starred ? "heart" : "heart-outline"}
-                    sizeType={"normal"}
-                    color={starred ? "#e31639" : undefined}
-                    style={style.optionButton}
-                    onPress={async () => {
-                        if (!starred) {
-                            MusicSheet.starMusicSheet(musicSheet);
-                            Toast.success(t("toast.hasStarred"));
-                        } else {
-                            MusicSheet.unstarMusicSheet(musicSheet);
-                            Toast.success(t("toast.hasUnstarred"));
+            <View style={style.actions}>
+                {canStar && musicSheet ? (
+                    <ActionButton
+                        icon={starred ? "heart" : "heart-outline"}
+                        title={
+                            starred
+                                ? t("playAllBar.favorited")
+                                : t("playAllBar.favorite")
                         }
+                        color={starred ? "#e31639" : undefined}
+                        onPress={async () => {
+                            if (!starred) {
+                                MusicSheet.starMusicSheet(musicSheet);
+                                Toast.success(t("toast.hasStarred"));
+                            } else {
+                                MusicSheet.unstarMusicSheet(musicSheet);
+                                Toast.success(t("toast.hasUnstarred"));
+                            }
+                        }}
+                    />
+                ) : null}
+                <ActionButton
+                    icon="folder-plus"
+                    title={t("playAllBar.addToSheet")}
+                    disabled={!hasMusic}
+                    onPress={async () => {
+                        showPanel("AddToMusicSheet", {
+                            musicItem: musicList ?? [],
+                            newSheetDefaultName: sheetName,
+                        });
                     }}
                 />
-            ) : null}
-            <IconButton
-                name="folder-plus"
-                sizeType={"normal"}
-                style={style.optionButton}
-                onPress={async () => {
-                    showPanel("AddToMusicSheet", {
-                        musicItem: musicList ?? [],
-                        newSheetDefaultName: sheetName,
-                    });
-                }}
-            />
-            <IconButton
-                name="pencil-square"
-                sizeType={"normal"}
-                style={style.optionButton}
-                onPress={async () => {
-                    navigate(ROUTE_PATH.MUSIC_LIST_EDITOR, {
-                        musicList: musicList,
-                        musicSheet: {
-                            title: sheetName,
-                            id: sheetId,
-                        },
-                    });
-                }}
-            />
+                <ActionButton
+                    icon="pencil-square"
+                    title={t("playAllBar.batchEdit")}
+                    disabled={!hasMusic}
+                    onPress={async () => {
+                        navigate(ROUTE_PATH.MUSIC_LIST_EDITOR, {
+                            musicList: musicList,
+                            musicSheet: {
+                                title: sheetName,
+                                id: sheetId,
+                            },
+                        });
+                    }}
+                />
+            </View>
         </View>
+    );
+}
+
+interface IActionButtonProps {
+    icon: "folder-plus" | "heart" | "heart-outline" | "pencil-square";
+    title: string;
+    color?: string;
+    disabled?: boolean;
+    onPress: () => void;
+}
+
+function ActionButton(props: IActionButtonProps) {
+    const { icon, title, color, disabled, onPress } = props;
+    const colors = useColors();
+
+    return (
+        <Pressable
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={title}
+            style={[style.actionButton, disabled ? style.disabledAction : null]}
+            onPress={onPress}>
+            <View
+                style={[
+                    style.actionIconWrapper,
+                    { backgroundColor: colors.placeholder },
+                ]}>
+                <Icon
+                    name={icon}
+                    size={rpx(30)}
+                    color={color ?? colors.text}
+                />
+            </View>
+            <ThemeText
+                fontSize="tag"
+                numberOfLines={1}
+                style={style.actionText}>
+                {title}
+            </ThemeText>
+        </Pressable>
     );
 }
 
 const style = StyleSheet.create({
     /** playall */
     topWrapper: {
-        height: rpx(84),
+        minHeight: rpx(108),
         paddingHorizontal: rpx(24),
+        paddingVertical: rpx(10),
         flexDirection: "row",
         alignItems: "center",
     },
     playAll: {
         flex: 1,
+        minWidth: 0,
+        height: rpx(72),
         flexDirection: "row",
         alignItems: "center",
     },
-    playAllIcon: {
-        marginRight: rpx(12),
+    playAllIconWrapper: {
+        width: rpx(56),
+        height: rpx(56),
+        borderRadius: rpx(28),
+        marginRight: rpx(14),
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
     },
-    optionButton: {
-        marginLeft: rpx(36),
+    playAllTextWrapper: {
+        minWidth: 0,
+        flex: 1,
+    },
+    playAllCount: {
+        marginTop: rpx(4),
+    },
+    actions: {
+        flexDirection: "row",
+        alignItems: "center",
+        flexShrink: 0,
+    },
+    actionButton: {
+        width: rpx(76),
+        minHeight: rpx(84),
+        marginLeft: rpx(8),
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    actionIconWrapper: {
+        width: rpx(48),
+        height: rpx(48),
+        borderRadius: rpx(24),
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    actionText: {
+        maxWidth: rpx(74),
+        marginTop: rpx(6),
+        textAlign: "center",
+    },
+    disabledAction: {
+        opacity: 0.45,
     },
 });

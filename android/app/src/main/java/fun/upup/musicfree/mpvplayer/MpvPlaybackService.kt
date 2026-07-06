@@ -50,6 +50,7 @@ class MpvPlaybackService : Service() {
         private const val LIVE_UPDATE_PROGRESS_UPDATE_MS = 1000L
         private const val API_LIVE_UPDATE = 36
         private const val CHIP_TEXT_MAX_CODE_POINTS = 12
+        private const val TRUNCATION_MARK = "…"
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
 
         private const val ACTION_PLAY_PAUSE = "mpv_play_pause"
@@ -764,17 +765,21 @@ class MpvPlaybackService : Service() {
     private fun toChipText(text: String): String {
         val normalized = text.replace(Regex("\\s+"), " ").trim()
         if (normalized.isEmpty()) return ""
+        if (normalized.codePointCount(0, normalized.length) <= CHIP_TEXT_MAX_CODE_POINTS) {
+            return normalized
+        }
 
         val builder = StringBuilder()
         var count = 0
         var index = 0
-        while (index < normalized.length && count < CHIP_TEXT_MAX_CODE_POINTS) {
+        val textLimit = (CHIP_TEXT_MAX_CODE_POINTS - 1).coerceAtLeast(0)
+        while (index < normalized.length && count < textLimit) {
             val codePoint = normalized.codePointAt(index)
             builder.appendCodePoint(codePoint)
             index += Character.charCount(codePoint)
             count += 1
         }
-        return builder.toString()
+        return builder.append(TRUNCATION_MARK).toString()
     }
 
     private fun progressPercent(position: Long, duration: Long): Int {

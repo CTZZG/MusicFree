@@ -23,6 +23,10 @@ export default function LyricOperations(props: ILyricOperationsProps) {
 
     const detailFontSize = PersistStatus.useValue("lyric.detailFontSize", 1);
     const detailAlign = PersistStatus.useValue("lyric.detailAlign", "center");
+    const isAmlLiteMode = PersistStatus.useValue(
+        "lyric.detailAmlLiteMode",
+        false,
+    );
 
     const { hasTranslation, hasRomanization } = useLyricState();
     const showTranslation = PersistStatus.useValue(
@@ -40,6 +44,19 @@ export default function LyricOperations(props: ILyricOperationsProps) {
     return (
         <View style={styles.container}>
             {orientation === "vertical" ? <HeartIcon /> : null}
+            <Icon
+                name="lyric"
+                size={iconSizeConst.normal}
+                opacity={isAmlLiteMode ? 1 : 0.55}
+                color={isAmlLiteMode ? colors.primary : "white"}
+                onPress={() => {
+                    PersistStatus.set(
+                        "lyric.detailAmlLiteMode",
+                        !isAmlLiteMode,
+                    );
+                    scrollToCurrentLrcItem();
+                }}
+            />
             <Icon
                 name="font-size"
                 size={iconSizeConst.normal}

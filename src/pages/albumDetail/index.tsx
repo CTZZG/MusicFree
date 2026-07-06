@@ -20,6 +20,8 @@ export default function AlbumDetail() {
             onLoadMore={getAlbumDetail}
             musicList={musicList}
             showArtwork
+            showQuality
+            showDuration
         />
     );
 }

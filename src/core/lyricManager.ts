@@ -11,7 +11,15 @@ import { Plugin } from "./pluginManager";
 import pathConst from "@/constants/pathConst";
 import LyricUtil from "@/native/lyricUtil";
 import { checkAndCreateDir } from "@/utils/fileUtils";
+import {
+    LYRIC_INSTRUMENTAL_GAP_TEXT,
+    formatLyricSurfaceText,
+} from "@/utils/lyricDisplayPolicy";
 import { autoDecryptLyric } from "@/utils/musicDecrypter";
+import {
+    getLyricWordData,
+    type LyricWordLineType,
+} from "@/utils/lyricWordByWord";
 import CryptoJs from "crypto-js";
 import { unlink, writeFile } from "react-native-fs";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
@@ -24,6 +32,8 @@ import {
     withTiming,
     type SharedValue,
 } from "react-native-reanimated";
+
+export type LyricLineType = "original" | "translation" | "romanization";
 
 export interface ILyricState {
     loading: boolean;
@@ -69,6 +79,42 @@ export interface INativeLyricOutputState {
     updatedAt: number;
 }
 
+export interface INormalizedLyricLinePart {
+    type: LyricLineType;
+    text: string;
+    primary: boolean;
+    hasWordByWord: boolean;
+    words: ILyric.IWordData[];
+    lineStartTimeMs: number;
+    isPseudoWordByWord?: boolean;
+}
+
+export interface INormalizedCurrentLyricLine {
+    index: number;
+    time: number;
+    timeMs: number;
+    originalText: string;
+    translationText: string;
+    romanizationText: string;
+    displayText: string;
+    isEmptyLine: boolean;
+    hasTranslation: boolean;
+    hasRomanization: boolean;
+    hasWordByWord: boolean;
+    parts: INormalizedLyricLinePart[];
+    source?: ILyricSourceStatus;
+}
+
+export interface INormalizedCurrentLyricState {
+    loading: boolean;
+    lyricCount: number;
+    hasTranslation: boolean;
+    hasRomanization: boolean;
+    source?: ILyricSourceStatus;
+    emptyReason?: LyricEmptyReason;
+    line: INormalizedCurrentLyricLine | null;
+}
+
 export interface ILyricDiagnosticSnapshot {
     loading: boolean;
     lyricCount: number;
@@ -93,7 +139,6 @@ export interface ILyricDiagnosticSnapshot {
     nativeOutput: INativeLyricOutputState;
 }
 
-type LyricLineType = "original" | "translation" | "romanization";
 type LocalLyricType = "raw" | "translation" | "romanization";
 
 const defaultLyricDisplayOrder: LyricLineType[] = [
@@ -118,6 +163,13 @@ const nativeLyricOutputAtom = atom<INativeLyricOutputState>({
     notificationMode: "none",
     updatedAt: 0,
 });
+const normalizedCurrentLyricStateAtom = atom<INormalizedCurrentLyricState>(
+    get => {
+        const lyricState = get(lyricStateAtom);
+        const currentLyricItem = get(currentLyricItemAtom);
+        return normalizeCurrentLyricState(lyricState, currentLyricItem);
+    },
+);
 
 let currentPositionMsShared: SharedValue<number> | null = null;
 const LYRIC_REQUEST_TIMEOUT_MS = 25000;
@@ -161,6 +213,115 @@ function isTimeoutError(err: any) {
     return message.includes("超时") || message.includes("timeout");
 }
 
+function getLyricTextByType(item: IParsedLrcItem, type: LyricLineType) {
+    if (type === "translation") {
+        return item.translation ?? "";
+    }
+    if (type === "romanization") {
+        return item.romanization ?? "";
+    }
+    return item.lrc ?? "";
+}
+
+function buildNormalizedLyricPart(
+    item: IParsedLrcItem,
+    type: LyricLineType,
+    primary: boolean,
+    nextItem?: IParsedLrcItem,
+): INormalizedLyricLinePart {
+    const wordData = getLyricWordData(
+        item,
+        type as LyricWordLineType,
+        nextItem,
+        true,
+    );
+    return {
+        type,
+        text: getLyricTextByType(item, type),
+        primary,
+        hasWordByWord: wordData.hasWordByWord,
+        words: wordData.words,
+        lineStartTimeMs: wordData.lineStartTimeMs,
+        isPseudoWordByWord: wordData.isPseudoWordByWord,
+    };
+}
+
+function normalizeCurrentLyricState(
+    lyricState: ILyricState,
+    currentLyricItem: IParsedLrcItem | null,
+): INormalizedCurrentLyricState {
+    if (!currentLyricItem) {
+        return {
+            loading: lyricState.loading,
+            lyricCount: lyricState.lyrics.length,
+            hasTranslation: lyricState.hasTranslation,
+            hasRomanization: lyricState.hasRomanization,
+            source: lyricState.source,
+            emptyReason: lyricState.emptyReason,
+            line: null,
+        };
+    }
+
+    const nextItem = lyricState.lyrics[currentLyricItem.index + 1];
+    const originalText = currentLyricItem.lrc ?? "";
+    const translationText = currentLyricItem.translation ?? "";
+    const romanizationText = currentLyricItem.romanization ?? "";
+    const parts: INormalizedLyricLinePart[] = [
+        buildNormalizedLyricPart(currentLyricItem, "original", true, nextItem),
+    ];
+
+    if (lyricState.hasTranslation && translationText.trim()) {
+        parts.push(
+            buildNormalizedLyricPart(
+                currentLyricItem,
+                "translation",
+                false,
+                nextItem,
+            ),
+        );
+    }
+
+    if (lyricState.hasRomanization && romanizationText.trim()) {
+        parts.push(
+            buildNormalizedLyricPart(
+                currentLyricItem,
+                "romanization",
+                false,
+                nextItem,
+            ),
+        );
+    }
+
+    const displayText =
+        originalText.trim() ||
+        translationText.trim() ||
+        romanizationText.trim();
+
+    return {
+        loading: lyricState.loading,
+        lyricCount: lyricState.lyrics.length,
+        hasTranslation: lyricState.hasTranslation,
+        hasRomanization: lyricState.hasRomanization,
+        source: lyricState.source,
+        emptyReason: lyricState.emptyReason,
+        line: {
+            index: currentLyricItem.index,
+            time: currentLyricItem.time,
+            timeMs: Math.max(0, Math.round(currentLyricItem.time * 1000)),
+            originalText,
+            translationText,
+            romanizationText,
+            displayText,
+            isEmptyLine: !displayText,
+            hasTranslation: !!translationText.trim(),
+            hasRomanization: !!romanizationText.trim(),
+            hasWordByWord: parts.some(part => part.hasWordByWord),
+            parts,
+            source: lyricState.source,
+        },
+    };
+}
+
 class LyricManager implements IInjectable {
     private trackPlayer!: ITrackPlayer;
     private appConfig!: IAppConfig;
@@ -181,6 +342,10 @@ class LyricManager implements IInjectable {
 
     get lyricState() {
         return getDefaultStore().get(lyricStateAtom);
+    }
+
+    get normalizedCurrentLyricState() {
+        return getDefaultStore().get(normalizedCurrentLyricStateAtom);
     }
 
     injectDependencies(
@@ -303,7 +468,7 @@ class LyricManager implements IInjectable {
         // 更新歌词
         this.trackPlayer.on(TrackPlayerEvents.CurrentMusicChanged, () => {
             this.refreshLyric(true, true);
-            this.publishNativeLyricOutput(null, { force: true });
+            this.publishNativeLyricOutput({ force: true });
         });
 
         this.trackPlayer.playerAdapter
@@ -366,7 +531,7 @@ class LyricManager implements IInjectable {
                     newLyricItem ?? null,
                 );
 
-                this.publishNativeLyricOutput(newLyricItem);
+                this.publishNativeLyricOutput();
             }
         });
 
@@ -405,10 +570,17 @@ class LyricManager implements IInjectable {
         return displayOrder;
     }
 
-    private getStatusBarLyricText(
-        lyricItem: IParsedLrcItem | null | undefined,
+    private getNativeLyricFallbackText() {
+        const musicItem = this.trackPlayer.currentMusic;
+        return musicItem
+            ? `${musicItem.title} - ${musicItem.artist}`
+            : "MusicFree";
+    }
+
+    private getNativeLyricText(
+        lyricLine: INormalizedCurrentLyricLine | null | undefined,
     ) {
-        if (!lyricItem) {
+        if (!lyricLine) {
             return "";
         }
 
@@ -417,42 +589,12 @@ class LyricManager implements IInjectable {
         const showRomanization =
             this.appConfig.getConfig("lyric.statusBarShowRomanization") ??
             false;
-        const order = this.getLyricDisplayOrder();
-        const lines: string[] = [];
-
-        order.forEach(type => {
-            if (type === "original" && lyricItem.lrc?.trim()) {
-                lines.push(lyricItem.lrc);
-            } else if (
-                type === "translation" &&
-                showTranslation &&
-                lyricItem.translation?.trim()
-            ) {
-                lines.push(lyricItem.translation);
-            } else if (
-                type === "romanization" &&
-                showRomanization &&
-                lyricItem.romanization?.trim()
-            ) {
-                lines.push(lyricItem.romanization);
-            }
+        return formatLyricSurfaceText(lyricLine, {
+            order: this.getLyricDisplayOrder(),
+            showTranslation,
+            showRomanization,
+            emptyLineText: LYRIC_INSTRUMENTAL_GAP_TEXT,
         });
-
-        return lines.join("\n");
-    }
-
-    private getNativeLyricFallbackText() {
-        const musicItem = this.trackPlayer.currentMusic;
-        return musicItem
-            ? `${musicItem.title} - ${musicItem.artist}`
-            : "MusicFree";
-    }
-
-    private getNativeLyricText(lyricItem: IParsedLrcItem | null | undefined) {
-        return (
-            this.getStatusBarLyricText(lyricItem) ||
-            (lyricItem?.lrc ?? "")
-        ).trim();
     }
 
     private getNativeNotificationMode(
@@ -470,11 +612,12 @@ class LyricManager implements IInjectable {
         return "none";
     }
 
-    private publishNativeLyricOutput(
-        lyricItem: IParsedLrcItem | null | undefined,
-        options: {force?: boolean} = {},
-    ) {
-        const text = this.getNativeLyricText(lyricItem);
+    private publishNativeLyricOutput(options: {force?: boolean} = {}) {
+        const normalizedState = getDefaultStore().get(
+            normalizedCurrentLyricStateAtom,
+        );
+        const lyricLine = normalizedState.line;
+        const text = this.getNativeLyricText(lyricLine);
         const statusBarText = text || this.getNativeLyricFallbackText();
         const musicItem = this.trackPlayer.currentMusic;
         const output: INativeLyricOutputState = {
@@ -484,8 +627,8 @@ class LyricManager implements IInjectable {
             musicKey: musicItem
                 ? `${musicItem.platform}@${musicItem.id}`
                 : undefined,
-            lyricIndex: lyricItem?.index,
-            source: this.lyricState.source,
+            lyricIndex: lyricLine?.index,
+            source: normalizedState.source,
             updatedAt: Date.now(),
         };
         const previousOutput = getDefaultStore().get(nativeLyricOutputAtom);
@@ -545,8 +688,7 @@ class LyricManager implements IInjectable {
     }
 
     refreshNativeNotificationLyric() {
-        const currentLyric = getDefaultStore().get(currentLyricItemAtom);
-        this.publishNativeLyricOutput(currentLyric, { force: true });
+        this.publishNativeLyricOutput({ force: true });
     }
 
     getLyricDiagnosticSnapshot(): ILyricDiagnosticSnapshot {
@@ -565,7 +707,9 @@ class LyricManager implements IInjectable {
                 ? {
                     index: currentLyric.index,
                     time: currentLyric.time,
-                    text: this.getNativeLyricText(currentLyric),
+                    text: this.getNativeLyricText(
+                        this.normalizedCurrentLyricState.line,
+                    ),
                     hasTranslation: !!currentLyric.translation?.trim(),
                     hasRomanization: !!currentLyric.romanization?.trim(),
                 }
@@ -752,7 +896,7 @@ class LyricManager implements IInjectable {
             emptyReason,
         });
         getDefaultStore().set(currentLyricItemAtom, null);
-        this.publishNativeLyricOutput(null, { force: true });
+        this.publishNativeLyricOutput({ force: true });
     }
 
     private async refreshLyric(
@@ -914,7 +1058,7 @@ class LyricManager implements IInjectable {
             this.updatePositionClockFromProgress(positionMs);
             getDefaultStore().set(currentLyricItemAtom, currentLyric || null);
 
-            this.publishNativeLyricOutput(currentLyric, { force: true });
+            this.publishNativeLyricOutput({ force: true });
         } catch (err) {
             if (this.trackPlayer.isCurrentMusic(currentMusicItem)) {
                 this.lyricParser = null;
@@ -1013,3 +1157,5 @@ export const useLyricState = () => useAtomValue(lyricStateAtom);
 export const useCurrentLyricItem = () => useAtomValue(currentLyricItemAtom);
 export const useCurrentPositionMs = () => useAtomValue(currentPositionMsAtom);
 export const useNativeLyricOutput = () => useAtomValue(nativeLyricOutputAtom);
+export const useNormalizedCurrentLyricState = () =>
+    useAtomValue(normalizedCurrentLyricStateAtom);
