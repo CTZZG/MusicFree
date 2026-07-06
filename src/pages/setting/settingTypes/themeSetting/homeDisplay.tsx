@@ -49,48 +49,42 @@ export default function HomeDisplay() {
                     />
                 </ListItem>
             ) : null}
-            {useEnhancedHome ? (
-                <ListItem withHorizontalPadding>
-                    <ListItem.Content
-                        title={t("themeSettings.hideHomeHeroCard")}
-                    />
-                    <ThemeSwitch
-                        value={hideHomeHeroCard}
-                        onValueChange={value => {
-                            Config.setConfig("theme.hideHomeHeroCard", value);
-                        }}
-                    />
-                </ListItem>
-            ) : null}
-            {useEnhancedHome ? (
-                <ListItem withHorizontalPadding>
-                    <ListItem.Content
-                        title={t("themeSettings.hideHomeRecentListening")}
-                    />
-                    <ThemeSwitch
-                        value={hideHomeRecentListening}
-                        onValueChange={value => {
-                            Config.setConfig(
-                                "theme.hideHomeRecentListening",
-                                value,
-                            );
-                        }}
-                    />
-                </ListItem>
-            ) : null}
-            {useEnhancedHome ? (
-                <ListItem withHorizontalPadding>
-                    <ListItem.Content
-                        title={t("themeSettings.hideHomeOperations")}
-                    />
-                    <ThemeSwitch
-                        value={hideHomeOperations}
-                        onValueChange={value => {
-                            Config.setConfig("theme.hideHomeOperations", value);
-                        }}
-                    />
-                </ListItem>
-            ) : null}
+            <ListItem withHorizontalPadding>
+                <ListItem.Content
+                    title={t("themeSettings.hideHomeHeroCard")}
+                />
+                <ThemeSwitch
+                    value={hideHomeHeroCard}
+                    onValueChange={value => {
+                        Config.setConfig("theme.hideHomeHeroCard", value);
+                    }}
+                />
+            </ListItem>
+            <ListItem withHorizontalPadding>
+                <ListItem.Content
+                    title={t("themeSettings.hideHomeRecentListening")}
+                />
+                <ThemeSwitch
+                    value={hideHomeRecentListening}
+                    onValueChange={value => {
+                        Config.setConfig(
+                            "theme.hideHomeRecentListening",
+                            value,
+                        );
+                    }}
+                />
+            </ListItem>
+            <ListItem withHorizontalPadding>
+                <ListItem.Content
+                    title={t("themeSettings.hideHomeOperations")}
+                />
+                <ThemeSwitch
+                    value={hideHomeOperations}
+                    onValueChange={value => {
+                        Config.setConfig("theme.hideHomeOperations", value);
+                    }}
+                />
+            </ListItem>
         </View>
     );
 }

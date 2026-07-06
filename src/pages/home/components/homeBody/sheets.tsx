@@ -13,16 +13,18 @@ import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import { FlashList } from "@shopify/flash-list";
+import Color from "color";
 import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Pressable } from "react-native-gesture-handler";
 
 interface ISheetsProps {
     initialSheetType?: "local" | "starred";
+    variant?: "classic";
 }
 
 export default function Sheets(props: ISheetsProps) {
-    const { initialSheetType } = props;
+    const { initialSheetType, variant } = props;
     const initialIndex = initialSheetType === "starred" ? 1 : 0;
     const [index, setIndex] = useState(initialIndex);
     const colors = useColors();
@@ -48,7 +50,11 @@ export default function Sheets(props: ISheetsProps) {
 
     return (
         <>
-            <View style={styles.subTitleContainer}>
+            <View
+                style={[
+                    styles.subTitleContainer,
+                    variant === "classic" ? styles.classicSubTitleContainer : null,
+                ]}>
                 <Pressable
                     style={styles.tabContainer}
                     accessible
@@ -80,7 +86,7 @@ export default function Sheets(props: ISheetsProps) {
                     style={styles.tabContainer}
                     accessible
                     accessibilityLabel={t("home.starredPlaylistsCount.a11y", {
-                        count: allSheets.length,
+                        count: staredSheets.length,
                     })}
                     onPress={() => {
                         setIndex(1);
@@ -153,11 +159,24 @@ export default function Sheets(props: ISheetsProps) {
                     const isLocalSheet = !(
                         sheet.platform && sheet.platform !== localPluginPlatform
                     );
-                    return (
+                    const sheetItem = (
                         <ListItem
                             key={`${sheet.id}`}
                             heightType="big"
                             withHorizontalPadding
+                            style={[
+                                variant === "classic"
+                                    ? styles.classicSheetItem
+                                    : null,
+                                variant === "classic"
+                                    ? {
+                                        backgroundColor: colors.card,
+                                        borderColor: Color(colors.text)
+                                            .alpha(0.06)
+                                            .toString(),
+                                    }
+                                    : null,
+                            ]}
                             onPress={() => {
                                 if (isLocalSheet) {
                                     navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, {
@@ -215,6 +234,13 @@ export default function Sheets(props: ISheetsProps) {
                             />
                         </ListItem>
                     );
+                    return variant === "classic" ? (
+                        <View style={styles.classicSheetItemOuter}>
+                            {sheetItem}
+                        </View>
+                    ) : (
+                        sheetItem
+                    );
                 }}
                 nestedScrollEnabled
             />
@@ -228,6 +254,18 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "flex-start",
         marginBottom: rpx(12),
+    },
+    classicSubTitleContainer: {
+        marginTop: rpx(24),
+    },
+    classicSheetItemOuter: {
+        paddingHorizontal: rpx(24),
+        marginBottom: rpx(12),
+    },
+    classicSheetItem: {
+        borderRadius: rpx(18),
+        borderWidth: StyleSheet.hairlineWidth,
+        overflow: "hidden",
     },
     subTitleLeft: {
         flexDirection: "row",

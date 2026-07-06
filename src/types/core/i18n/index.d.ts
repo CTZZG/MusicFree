@@ -554,9 +554,9 @@ export interface ILanguageData {
     "themeSettings.coverStyleSquare": string; // 方形
     "themeSettings.coverStyleCircle": string; // 圆形
     "themeSettings.homeDisplay": string; // 首页显示
-    "themeSettings.useEnhancedHome": string; // 使用新版首页
-    "themeSettings.useEnhancedHome.desc": string; // 关闭后恢复旧版首页布局
-    "themeSettings.hideHomeDiscovery": string; // 隐藏首页发现区
+    "themeSettings.useEnhancedHome": string; // 使用信息流首页
+    "themeSettings.useEnhancedHome.desc": string; // 开启后使用信息流首页，关闭后使用经典增强首页
+    "themeSettings.hideHomeDiscovery": string; // 隐藏信息流发现区
     "themeSettings.hideHomeHeroCard": string; // 隐藏首页继续听卡片
     "themeSettings.hideHomeRecentListening": string; // 隐藏首页最近播放
     "themeSettings.hideHomeOperations": string; // 隐藏首页快捷入口
