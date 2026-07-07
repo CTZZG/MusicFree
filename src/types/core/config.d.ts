@@ -80,6 +80,8 @@ export interface IAppConfigProperties {
     "theme.customColors"?: CustomizedColors;
     "theme.followSystem": boolean;
     "theme.selectedTheme": string;
+    "theme.frostedCustomBgFrost": boolean;
+    "theme.musicBarLiquidGlass": boolean;
     "theme.coverStyle": "square" | "circle";
     "theme.useEnhancedHome": boolean;
     "theme.hideHomeDiscovery": boolean;

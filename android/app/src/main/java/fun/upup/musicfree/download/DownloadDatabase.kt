@@ -36,10 +36,10 @@ class DownloadDatabase(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion != newVersion) {
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_TASKS")
-            onCreate(db)
-        }
+        // 禁止 DROP TABLE：会清空用户进行中的下载任务。
+        // 未来加字段时按版本逐级迁移，例如：
+        // if (oldVersion < 2) db.execSQL("ALTER TABLE $TABLE_TASKS ADD COLUMN new_col TEXT")
+        onCreate(db)
     }
 
     fun upsertTask(task: DownloadTask) {

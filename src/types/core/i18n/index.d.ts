@@ -549,7 +549,11 @@ export interface ILanguageData {
     "themeSettings.setTheme": string; // 设置主题
     "themeSettings.lightMode": string; // 明亮模式
     "themeSettings.darkMode": string; // 黑暗模式
-    "themeSettings.frostedGlassMode": string; // 毛玻璃模式
+    "themeSettings.frostedGlassMode": string; // 液态硅胶模式
+    "themeSettings.frostedCustomBgFrost": string; // 自定义背景附加磨砂
+    "themeSettings.frostedCustomBgFrost.desc": string; // 磨砂开关说明
+    "themeSettings.musicBarLiquidGlass": string; // 播放条液态玻璃
+    "themeSettings.musicBarLiquidGlass.desc": string; // 液态玻璃开关说明
     "themeSettings.customMode": string; // 自定义模式
     "themeSettings.coverStyle": string; // 封面样式
     "themeSettings.coverStyleSquare": string; // 方形

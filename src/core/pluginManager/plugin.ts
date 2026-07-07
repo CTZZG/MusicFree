@@ -1383,7 +1383,12 @@ export class Plugin {
                 _instance = Function(`
                     'use strict';
                     return function(require, __musicfree_require, module, exports, console, env, URL, URLSearchParams, process, TextDecoder, TextEncoder, Buffer) {
-                        ${funcCode}
+                        // 插件代码必须包在内层函数里：很多插件顶层会写
+                        // const { Buffer } = require("buffer") 之类的声明，
+                        // 若与注入的参数同层会直接 SyntaxError（重复声明）
+                        return (function() {
+                            ${funcCode}
+                        })();
                     }
                 `)()(
                     _require,

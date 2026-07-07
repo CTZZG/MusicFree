@@ -5,25 +5,14 @@ import LinearGradient from "react-native-linear-gradient";
 import Image from "./image";
 import useColors from "@/hooks/useColors";
 import Theme from "@/core/theme";
+import { useAppConfig } from "@/core/appConfig";
 
-// 毛玻璃主题背景：底层是有明显方向感的渐变，上面铺色彩浓、边界清晰的
-// 光斑和小色点。背景必须有足够的高频细节，玻璃面的实时模糊才肉眼可见——
-// 之前失败的原因就是背景过于平滑，模糊前后没有区别。
+// 液态硅胶主题的默认背景：干净的浅色渐变，只叠少量大而柔和的低饱和光斑，
+// 不加高频细节（此前的小色点观感诡异，已移除）。
 const GLOW_BLOBS = [
-    { id: "glowBlue", color: "#3d8bff", opacity: 0.75, cx: 0.14, cy: 0.12, r: 0.5 },
-    { id: "glowViolet", color: "#8f6bff", opacity: 0.62, cx: 0.92, cy: 0.26, r: 0.46 },
-    { id: "glowMint", color: "#27c99a", opacity: 0.55, cx: 0.1, cy: 0.62, r: 0.42 },
-    { id: "glowAmber", color: "#ffb03a", opacity: 0.5, cx: 0.82, cy: 0.58, r: 0.36 },
-    { id: "glowPink", color: "#ff6fa5", opacity: 0.58, cx: 0.5, cy: 0.92, r: 0.46 },
-];
-
-// 小而实的色点：被玻璃盖住时会被明显晕开，是"这块是毛玻璃"最直接的视觉证据。
-const ACCENT_DOTS = [
-    { color: "#2f7fff", opacity: 0.5, cx: 0.32, cy: 0.3, r: 0.05 },
-    { color: "#ff86b3", opacity: 0.48, cx: 0.7, cy: 0.14, r: 0.04 },
-    { color: "#28d1a5", opacity: 0.45, cx: 0.58, cy: 0.46, r: 0.045 },
-    { color: "#9a79ff", opacity: 0.42, cx: 0.24, cy: 0.82, r: 0.05 },
-    { color: "#ffb03a", opacity: 0.4, cx: 0.86, cy: 0.8, r: 0.04 },
+    { id: "glowBlue", color: "#7fb3f7", opacity: 0.22, cx: 0.16, cy: 0.1, r: 0.7 },
+    { id: "glowViolet", color: "#b7a8f5", opacity: 0.16, cx: 0.9, cy: 0.4, r: 0.62 },
+    { id: "glowTeal", color: "#9fd8c6", opacity: 0.13, cx: 0.2, cy: 0.88, r: 0.6 },
 ];
 
 function FrostedBackground({ width, height }: { width: number; height: number }) {
@@ -31,8 +20,8 @@ function FrostedBackground({ width, height }: { width: number; height: number })
         <>
             <LinearGradient
                 start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                colors={["#dbe9ff", "#ece4ff", "#ffe9f2"]}
+                end={{ x: 0.4, y: 1 }}
+                colors={["#eef4fb", "#f3f1fa", "#faf3f6"]}
                 style={[style.wrapper, { height }]}
             />
             <Svg
@@ -54,9 +43,9 @@ function FrostedBackground({ width, height }: { width: number; height: number })
                                 stopOpacity={blob.opacity}
                             />
                             <Stop
-                                offset="70%"
+                                offset="60%"
                                 stopColor={blob.color}
-                                stopOpacity={blob.opacity * 0.55}
+                                stopOpacity={blob.opacity * 0.5}
                             />
                             <Stop
                                 offset="100%"
@@ -75,16 +64,6 @@ function FrostedBackground({ width, height }: { width: number; height: number })
                         fill={`url(#${blob.id})`}
                     />
                 ))}
-                {ACCENT_DOTS.map((dot, index) => (
-                    <Circle
-                        key={index}
-                        cx={width * dot.cx}
-                        cy={height * dot.cy}
-                        r={width * dot.r}
-                        fill={dot.color}
-                        fillOpacity={dot.opacity}
-                    />
-                ))}
             </Svg>
         </>
     );
@@ -95,10 +74,24 @@ function PageBackground() {
     const background = Theme.useBackground();
     const { width: windowWidth, height: windowHeight } = useWindowDimensions();
     const colors = useColors();
+    const frostedCustomBgFrost =
+        useAppConfig("theme.frostedCustomBgFrost") ?? true;
 
     // https://github.com/facebook/react-native/issues/41918
     const height = windowHeight + (StatusBar.currentHeight ?? 0);
     const isFrostedGlass = theme.id === "p-frosted-glass";
+
+    // 液态硅胶主题下自定义背景默认附加磨砂（模糊+降透明度），可用开关关闭
+    const backgroundBlur = isFrostedGlass
+        ? frostedCustomBgFrost
+            ? 28
+            : 0
+        : background?.blur ?? 20;
+    const backgroundOpacity = isFrostedGlass
+        ? frostedCustomBgFrost
+            ? 0.42
+            : background?.opacity ?? 0.6
+        : background?.opacity ?? 0.6;
 
     return (
         <>
@@ -123,10 +116,10 @@ function PageBackground() {
                             style.wrapper,
                             {
                                 height,
-                                opacity: background?.opacity ?? 0.6,
+                                opacity: backgroundOpacity,
                             },
                         ]}
-                        blurRadius={background?.blur ?? 20}
+                        blurRadius={backgroundBlur}
                     />
                 ) : null}
         </>

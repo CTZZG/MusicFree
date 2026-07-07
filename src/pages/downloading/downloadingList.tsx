@@ -166,6 +166,8 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
         canUseNativeControls && status === DownloadStatus.Downloading;
     const canResume = canUseNativeControls && status === DownloadStatus.Paused;
     const canRetry = status === DownloadStatus.Error;
+    const canRedownload =
+        status === DownloadStatus.Completed && localFileExists === false;
     const canRemove = status !== DownloadStatus.Completed;
 
     async function showCompletedDownloadDetail() {
@@ -314,6 +316,15 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
                 icon="arrow-path"
                 position="right"
                 onPress={() => downloader.retry(musicItem)}
+            />
+        ) : null}
+        {!selectionMode && canRedownload ? (
+            <ListItem.ListItemIcon
+                icon="arrow-path"
+                position="right"
+                onPress={() => {
+                    void downloader.redownload(musicItem);
+                }}
             />
         ) : null}
         {!selectionMode && canPause ? (

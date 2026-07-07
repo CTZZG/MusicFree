@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useState } from "react";
-import { ActivityIndicator, AppState, Keyboard, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, Keyboard, Platform, Pressable, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import Svg, { Circle } from "react-native-svg";
 
@@ -8,11 +8,22 @@ import { showPanel } from "../panels/usePanel";
 import useColors from "@/hooks/useColors";
 import TrackPlayer, { useCurrentMusic, useMusicState, useProgress } from "@/core/trackPlayer";
 import Theme from "@/core/theme";
+import { useAppConfig } from "@/core/appConfig";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 import GlassBackdrop from "@/components/base/glassBackdrop";
 import MusicInfo from "./musicInfo";
 import Icon from "@/components/base/icon.tsx";
 import PlayingIndicator from "@/components/base/playingIndicator";
+
+// 液态玻璃是 Android-only 的原生 Compose 组件，模块缺失（iOS/旧安装包）时
+// require 会抛错，静默回退到 expo-blur 磨砂
+let LiquidGlassView: React.ComponentType<any> | null = null;
+if (Platform.OS === "android") {
+    try {
+        LiquidGlassView =
+            require("expo-liquid-glass-native").ExpoLiquidGlassNativeView;
+    } catch {}
+}
 
 function CircularPlayBtn() {
     const progress = useProgress();
@@ -111,6 +122,10 @@ function MusicBar() {
 
     const colors = useColors();
     const isFrostedGlass = Theme.useTheme().id === "p-frosted-glass";
+    const musicBarLiquidGlass =
+        useAppConfig("theme.musicBarLiquidGlass") ?? false;
+    const useLiquidGlass =
+        isFrostedGlass && musicBarLiquidGlass && !!LiquidGlassView;
     const safeAreaInsets = useSafeAreaInsets();
 
     useEffect(() => {
@@ -146,6 +161,48 @@ function MusicBar() {
         };
     }, []);
 
+    const barContent = musicItem ? (
+        <>
+            <MusicInfo musicItem={musicItem} />
+            <View style={styles.actionGroup}>
+                <CircularPlayBtn />
+                <Icon
+                    accessible
+                    accessibilityLabel="播放列表"
+                    name="playlist"
+                    size={rpx(56)}
+                    onPress={() => {
+                        showPanel("PlayList");
+                    }}
+                    color={colors.musicBarText}
+                    style={[styles.actionIcon]}
+                />
+            </View>
+        </>
+    ) : null;
+
+    if (musicItem && !showKeyboard && useLiquidGlass && LiquidGlassView) {
+        return (
+            <LiquidGlassView
+                tint="#FFFFFF"
+                blurRadius={6}
+                cornerRadius={rpx(66)}
+                style={styles.liquidBar}>
+                <View
+                    accessible
+                    accessibilityLabel={`歌曲: ${musicItem.title} 歌手: ${musicItem.artist}`}
+                    style={[
+                        styles.liquidBarContent,
+                        {
+                            paddingRight: safeAreaInsets.right + rpx(24),
+                        },
+                    ]}>
+                    {barContent}
+                </View>
+            </LiquidGlassView>
+        );
+    }
+
     return (
         <>
             {musicItem && !showKeyboard && (
@@ -170,21 +227,7 @@ function MusicBar() {
                     {isFrostedGlass ? (
                         <GlassBackdrop radius={rpx(66)} intensity={60} />
                     ) : null}
-                    <MusicInfo musicItem={musicItem} />
-                    <View style={styles.actionGroup}>
-                        <CircularPlayBtn />
-                        <Icon
-                            accessible
-                            accessibilityLabel="播放列表"
-                            name="playlist"
-                            size={rpx(56)}
-                            onPress={() => {
-                                showPanel("PlayList");
-                            }}
-                            color={colors.musicBarText}
-                            style={[styles.actionIcon]}
-                        />
-                    </View>
+                    {barContent}
                 </View>
             )}
         </>
@@ -210,6 +253,19 @@ const styles = StyleSheet.create({
         width: "auto",
         borderRadius: rpx(66),
         overflow: "hidden",
+    },
+    liquidBar: {
+        position: "absolute",
+        left: rpx(24),
+        right: rpx(24),
+        bottom: rpx(20),
+        height: rpx(132),
+        borderRadius: rpx(66),
+    },
+    liquidBarContent: {
+        height: rpx(132),
+        flexDirection: "row",
+        alignItems: "center",
     },
     bufferingContainer: {
         width: rpx(72),

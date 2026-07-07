@@ -819,6 +819,17 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             const rejectAsPaused = () => {
                 settle(() => reject(new Error(NATIVE_DOWNLOAD_PAUSED_ERROR)));
             };
+            // 任务已被用户删除时，必须同时终止原生下载，否则原生会继续
+            // 下载到缓存文件直到完成（幽灵下载：浪费流量 + 通知残留）
+            const abortNativeTask = () => {
+                void Mp3Util.cancelDownloadTask(taskId).catch(() => {});
+                void Mp3Util.removeDownloadTask(taskId).catch(() => {});
+                void downloadNotificationManager.cancelNotification(taskId);
+            };
+            const rejectAsRemoved = () => {
+                abortNativeTask();
+                settle(() => reject(new Error("Download task removed")));
+            };
             const isCurrentTaskPaused = () =>
                 downloadTasks.get(taskId)?.status === DownloadStatus.Paused;
             const handleNativeStatus = (task: INativeDownloadTaskStatus) => {
@@ -870,7 +881,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     return;
                 }
                 if (!downloadTasks.has(taskId)) {
-                    settle(() => reject(new Error("Download task removed")));
+                    rejectAsRemoved();
                     return;
                 }
                 Mp3Util.getDownloadTaskStatus(taskId)
@@ -879,9 +890,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                             return;
                         }
                         if (!downloadTasks.has(taskId)) {
-                            settle(() =>
-                                reject(new Error("Download task removed")),
-                            );
+                            rejectAsRemoved();
                             return;
                         }
                         if (!task) {
@@ -1008,6 +1017,12 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                         settle(() =>
                             reject(new Error("Native download task rejected")),
                         );
+                        return;
+                    }
+                    // remove() 可能发生在 removeDownloadTask 与 addDownloadTask
+                    // 之间（此时 cancel 是 no-op），添加成功后需复查一次
+                    if (!downloadTasks.has(taskId)) {
+                        rejectAsRemoved();
                     }
                 })
                 .catch(error => {
@@ -1247,6 +1262,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return;
         }
 
+        let downloadSucceeded = false;
         try {
             if (this.canUseNativeDownload()) {
                 await this.downloadFileWithNative(
@@ -1338,6 +1354,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             });
 
             this.markTaskAsCompleted(musicItem);
+            downloadSucceeded = true;
         } catch (e: any) {
             const currentTask = downloadTasks.get(getMediaUniqueKey(musicItem));
             if (
@@ -1359,6 +1376,15 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 await unlink(rawCacheDownloadPath);
             }
         } catch {}
+        if (!downloadSucceeded) {
+            // 解密/拷贝中途失败可能已写出不完整的目标文件；
+            // 该路径由 getAvailableDownloadPath 保证此前不存在，删除是安全的
+            try {
+                if (await exists(rawTargetDownloadPath)) {
+                    await unlink(rawTargetDownloadPath);
+                }
+            } catch {}
+        }
         this.releaseReservedDownloadPath(rawTargetDownloadPath);
         this.downloadNextPendingTask();
     }
@@ -1478,6 +1504,42 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
 
         return resumedCount;
+    }
+
+    /**
+     * 重新下载：用于已完成但本地文件丢失（或需要覆盖）的任务。
+     * 已完成的歌会被 filterQueueableDownloadItems 的本地去重跳过，
+     * 因此先移除本地记录再重新入队。
+     */
+    async redownload(musicItem: IMusic.IMusicItem, quality?: IMusic.IQualityKey) {
+        if (!this.canStartDownload()) {
+            return false;
+        }
+        const key = getMediaUniqueKey(musicItem);
+        const task = downloadTasks.get(key);
+        if (
+            task &&
+            task.status !== DownloadStatus.Completed &&
+            task.status !== DownloadStatus.Error
+        ) {
+            // 进行中/等待中的任务不允许重下
+            return false;
+        }
+
+        const resolvedQuality = quality ?? task?.quality;
+        downloadTasks.delete(key);
+        setDownloadQueue(
+            getDefaultStore()
+                .get(downloadQueueAtom)
+                .filter(item => !isSameMediaItem(item, musicItem)),
+        );
+        await LocalMusicSheet.removeMusic(musicItem);
+        patchMediaExtra(musicItem, {
+            downloaded: false,
+            localPath: undefined,
+        });
+        this.download(musicItem, resolvedQuality);
+        return true;
     }
 
     retry(musicItem: IMusic.IMusicItem) {
@@ -1675,6 +1737,10 @@ export function useDownloadTask(musicItem: IMusic.IMusicItem) {
     );
 
     useEffect(() => {
+        // 列表复用单元格时 musicItem 会变化，必须同步重置，否则短暂显示上一首的状态
+        setDownloadStatus(
+            downloadTasks.get(getMediaUniqueKey(musicItem)) ?? null,
+        );
         const callback = (task: IDownloadTaskInfo) => {
             if (isSameMediaItem(task?.musicItem, musicItem)) {
                 setDownloadStatus(task);

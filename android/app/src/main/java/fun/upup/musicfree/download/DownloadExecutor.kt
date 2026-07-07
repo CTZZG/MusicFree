@@ -71,6 +71,24 @@ class DownloadExecutor(private val client: OkHttpClient) {
             val call = client.newCall(request)
             control.callRef.set(call)
             val response = call.execute()
+            if (response.code == 416 && existingSize > 0) {
+                // Range 起点不小于文件总长：要么本地文件其实已完整，要么残片与
+                // 远端不匹配（例如同名残留），删除后全量重下
+                val totalFromRange = parseContentRangeTotal(response.header("Content-Range"))
+                control.callRef.set(null)
+                response.close()
+                if (totalFromRange != null && totalFromRange > 0 && existingSize == totalFromRange) {
+                    return ExecutionResult(
+                        finalStatus = DownloadTaskStatus.COMPLETED,
+                        downloadedBytes = existingSize,
+                        totalBytes = totalFromRange,
+                    )
+                }
+                if (destinationFile.exists() && !destinationFile.delete()) {
+                    throw IOException("HTTP 416 and failed to delete stale file")
+                }
+                return execute(task, control, onProgress)
+            }
             if (!response.isSuccessful) {
                 control.callRef.set(null)
                 response.close()
@@ -197,6 +215,14 @@ class DownloadExecutor(private val client: OkHttpClient) {
         if (contentRange.isNullOrBlank()) return null
         val match = CONTENT_RANGE_PATTERN.matchEntire(contentRange.trim()) ?: return null
         return match.groupValues[1].toLongOrNull()
+    }
+
+    /** 解析 "bytes 0-99/1234" 或 416 场景的 "bytes 星/1234" 中的总长度 */
+    private fun parseContentRangeTotal(contentRange: String?): Long? {
+        if (contentRange.isNullOrBlank()) return null
+        val slashIndex = contentRange.lastIndexOf('/')
+        if (slashIndex <= 0 || slashIndex + 1 >= contentRange.length) return null
+        return contentRange.substring(slashIndex + 1).trim().toLongOrNull()
     }
 
     companion object {

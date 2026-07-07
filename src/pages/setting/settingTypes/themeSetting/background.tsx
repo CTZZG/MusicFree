@@ -2,6 +2,8 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ThemeText from "@/components/base/themeText";
+import ListItem from "@/components/base/listItem";
+import ThemeSwitch from "@/components/base/switch";
 // import pathConst from '@/constants/pathConst';
 import Config, { useAppConfig } from "@/core/appConfig";
 import ThemeCard from "./themeCard";
@@ -14,6 +16,10 @@ export default function Background() {
 
     const themeBackground = useAppConfig("theme.background");
     const themeSelectedTheme = useAppConfig("theme.selectedTheme");
+    const frostedCustomBgFrost =
+        useAppConfig("theme.frostedCustomBgFrost") ?? true;
+    const musicBarLiquidGlass =
+        useAppConfig("theme.musicBarLiquidGlass") ?? false;
 
     const navigate = useNavigate();
 
@@ -114,21 +120,16 @@ export default function Background() {
 
                 <ThemeCard
                     previewColors={[
-                        "#dbe9fb",
-                        "#e7e2fb",
-                        "#d9f3e8",
-                        "#fbe4ef",
+                        "#eef4fb",
+                        "#f3f1fa",
+                        "#faf3f6",
+                        "#dcebff",
                     ]}
                     title={t("themeSettings.frostedGlassMode")}
                     selected={themeSelectedTheme === "p-frosted-glass"}
                     onPress={() => {
                         if (themeSelectedTheme !== "p-frosted-glass") {
-                            Theme.setTheme("p-frosted-glass", {
-                                background: {
-                                    blur: 28,
-                                    opacity: 0.42,
-                                },
-                            });
+                            Theme.setTheme("p-frosted-glass");
                             Config.setConfig("theme.followSystem", false);
                         }
                     }}
@@ -165,6 +166,44 @@ export default function Background() {
                     onPress={onCustomBgPress}
                 /> */}
             </View>
+            {themeSelectedTheme === "p-frosted-glass" ? (
+                <>
+                    <ListItem withHorizontalPadding>
+                        <ListItem.Content
+                            title={t("themeSettings.frostedCustomBgFrost")}
+                            description={t(
+                                "themeSettings.frostedCustomBgFrost.desc",
+                            )}
+                        />
+                        <ThemeSwitch
+                            value={frostedCustomBgFrost}
+                            onValueChange={value => {
+                                Config.setConfig(
+                                    "theme.frostedCustomBgFrost",
+                                    value,
+                                );
+                            }}
+                        />
+                    </ListItem>
+                    <ListItem withHorizontalPadding>
+                        <ListItem.Content
+                            title={t("themeSettings.musicBarLiquidGlass")}
+                            description={t(
+                                "themeSettings.musicBarLiquidGlass.desc",
+                            )}
+                        />
+                        <ThemeSwitch
+                            value={musicBarLiquidGlass}
+                            onValueChange={value => {
+                                Config.setConfig(
+                                    "theme.musicBarLiquidGlass",
+                                    value,
+                                );
+                            }}
+                        />
+                    </ListItem>
+                </>
+            ) : null}
         </View>
     );
 }

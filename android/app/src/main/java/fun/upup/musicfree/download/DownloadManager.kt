@@ -3,10 +3,12 @@ package `fun`.upup.musicfree.download
 import android.content.Context
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
+import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 
 class DownloadManager(
@@ -303,10 +305,11 @@ class DownloadManager(
         }
 
         val control = DownloadExecutor.ExecutionControl()
-        val future = workerExecutor.submit {
-            runTask(task.taskId, control)
-        }
-        runningTasks[task.taskId] = RunningTask(control = control, future = future)
+        // 必须先登记再提交：若任务瞬间失败，runTask 末尾的 remove 可能先于
+        // put 执行，留下的死条目会永久占用并发槽位
+        val futureTask = FutureTask(Callable { runTask(task.taskId, control) })
+        runningTasks[task.taskId] = RunningTask(control = control, future = futureTask)
+        workerExecutor.execute(futureTask)
     }
 
     private fun runTask(taskId: String, control: DownloadExecutor.ExecutionControl) {
@@ -316,10 +319,13 @@ class DownloadManager(
             task = task,
             control = control,
         ) { downloaded, total ->
-            val currentTask = synchronized(lock) { tasks[taskId] } ?: return@execute
-            currentTask.downloadedBytes = downloaded
-            currentTask.totalBytes = total
-            currentTask.updatedAt = System.currentTimeMillis()
+            // 共享的 DownloadTask 字段写入必须持锁，与 flushProgressBatch 的读写互斥
+            synchronized(lock) {
+                val currentTask = tasks[taskId] ?: return@execute
+                currentTask.downloadedBytes = downloaded
+                currentTask.totalBytes = total
+                currentTask.updatedAt = System.currentTimeMillis()
+            }
             progressCache[taskId] = ProgressSnapshot(
                 taskId = taskId,
                 downloaded = downloaded,
@@ -381,7 +387,9 @@ class DownloadManager(
                 task.downloadedBytes = snapshot.downloaded
                 task.totalBytes = snapshot.total
                 task.updatedAt = System.currentTimeMillis()
-                database.upsertTask(task)
+                // 进度不落盘：批量下载时每 500ms 逐任务写 SQLite 开销过大，
+                // 且重启恢复时进行中任务一律标记为中断，持久化进度没有意义。
+                // 状态变化由 updateTaskStatus 负责落盘。
                 taskSnapshotById[snapshot.taskId] = task.copy()
             }
         }
