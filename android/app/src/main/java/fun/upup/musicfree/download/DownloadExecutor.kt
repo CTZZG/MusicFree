@@ -77,17 +77,27 @@ class DownloadExecutor(private val client: OkHttpClient) {
                 throw IOException("HTTP ${response.code}")
             }
 
+            val contentRange = response.header("Content-Range")
+            if (response.code == 206) {
+                val rangeStart = parseContentRangeStart(contentRange)
+                if (rangeStart == null || rangeStart != existingSize) {
+                    control.callRef.set(null)
+                    response.close()
+                    throw IOException("Invalid Content-Range for resume")
+                }
+            }
+
             val body = response.body ?: throw IOException("Empty body")
             val responseBodyLength = body.contentLength()
+            val shouldAppend = existingSize > 0 && response.code == 206
             val totalBytes = calculateTotalBytes(
                 existingSize = existingSize,
                 responseCode = response.code,
                 contentLength = responseBodyLength,
-                contentRange = response.header("Content-Range"),
+                contentRange = contentRange,
             )
 
-            var downloaded = existingSize
-            val shouldAppend = existingSize > 0 && response.code == 206
+            var downloaded = if (shouldAppend) existingSize else 0L
             val outFileStream = FileOutputStream(destinationFile, shouldAppend)
             body.byteStream().use { input ->
                 BufferedInputStream(input).use { bis ->
@@ -126,6 +136,14 @@ class DownloadExecutor(private val client: OkHttpClient) {
 
             control.callRef.set(null)
             response.close()
+            if (totalBytes > 0L && downloaded < totalBytes) {
+                return ExecutionResult(
+                    finalStatus = DownloadTaskStatus.ERROR,
+                    downloadedBytes = downloaded,
+                    totalBytes = totalBytes,
+                    errorMessage = "Incomplete download: $downloaded / $totalBytes",
+                )
+            }
             ExecutionResult(
                 finalStatus = DownloadTaskStatus.COMPLETED,
                 downloadedBytes = downloaded,
@@ -173,5 +191,18 @@ class DownloadExecutor(private val client: OkHttpClient) {
         } else {
             contentLength
         }
+    }
+
+    private fun parseContentRangeStart(contentRange: String?): Long? {
+        if (contentRange.isNullOrBlank()) return null
+        val match = CONTENT_RANGE_PATTERN.matchEntire(contentRange.trim()) ?: return null
+        return match.groupValues[1].toLongOrNull()
+    }
+
+    companion object {
+        private val CONTENT_RANGE_PATTERN = Regex(
+            pattern = """bytes\s+(\d+)-(\d+)/(\d+|\*)""",
+            option = RegexOption.IGNORE_CASE,
+        )
     }
 }

@@ -130,6 +130,14 @@ describe("LyricParser - current-line edge cases", () => {
         expect(items[0]).toMatchObject({ time: 1, lrc: "valid" });
     });
 
+    it("does not allow malformed multi-dot timestamps to create NaN positions", () => {
+        const parser = new LyricParser("[01:02.33.44]broken\n[00:01.00]valid");
+        const items = parser.getLyricItems();
+
+        expect(items.every(item => Number.isFinite(item.time))).toBe(true);
+        expect(parser.getPosition(1)?.lrc).toBe("valid");
+    });
+
     it("preserves long lyric lines for downstream display policies", () => {
         const longLine =
             "每在夜静我便想这刻飞返家乡".repeat(4);

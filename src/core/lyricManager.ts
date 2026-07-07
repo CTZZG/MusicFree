@@ -4,9 +4,9 @@ import { IInjectable } from "@/types/infra";
 import LyricParser, { IParsedLrcItem } from "@/utils/lrcParser";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
 import { isSameMediaItem } from "@/utils/mediaUtils";
-import minDistance from "@/utils/minDistance";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { Plugin } from "./pluginManager";
+import { getLyricCandidateDistance } from "./lyricSearchPolicy";
 
 import pathConst from "@/constants/pathConst";
 import LyricUtil from "@/native/lyricUtil";
@@ -1019,6 +1019,10 @@ class LyricManager implements IInjectable {
                 )
                 : lrcSource.romanization;
 
+            if (!this.trackPlayer.isCurrentMusic(currentMusicItem)) {
+                return;
+            }
+
             this.lyricParser = new LyricParser(rawLrc ?? "", {
                 extra: {
                     offset:
@@ -1051,6 +1055,9 @@ class LyricManager implements IInjectable {
             });
 
             const progress = await this.trackPlayer.getProgress();
+            if (!this.trackPlayer.isCurrentMusic(currentMusicItem)) {
+                return;
+            }
             const currentLyric = ignoreProgress
                 ? lyricItems[0] ?? null
                 : this.lyricParser.getPosition(progress.position);
@@ -1114,9 +1121,11 @@ class LyricManager implements IInjectable {
                     targetPlugin = plugin;
                     break;
                 } else {
-                    const dist =
-                        minDistance(keyword, musicItem.title) +
-                        minDistance(item.artist, musicItem.artist);
+                    const dist = getLyricCandidateDistance(
+                        keyword,
+                        musicItem,
+                        item,
+                    );
                     if (dist < distance) {
                         distance = dist;
                         minDistanceMusicItem = item;

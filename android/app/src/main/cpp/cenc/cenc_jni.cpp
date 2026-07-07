@@ -1,6 +1,8 @@
 #include <jni.h>
 
 #include <cstdint>
+#include <exception>
+#include <new>
 
 #include "cenc/cenc_decoder.h"
 
@@ -39,14 +41,23 @@ Java_fun_upup_musicfree_cenc_CencNative_nativeCreate(
         return 0;
     }
 
-    auto* decoder = new ence::CencDecoder(
-        reinterpret_cast<uint8_t*>(ftyp),
-        static_cast<size_t>(env->GetArrayLength(ftypArray)),
-        reinterpret_cast<uint8_t*>(moov),
-        static_cast<size_t>(env->GetArrayLength(moovArray)),
-        reinterpret_cast<uint8_t*>(cek),
-        static_cast<uint64_t>(mdatFileOffset),
-        static_cast<uint64_t>(mdatPayloadSize));
+    ence::CencDecoder* decoder = nullptr;
+    try {
+        decoder = new ence::CencDecoder(
+            reinterpret_cast<uint8_t*>(ftyp),
+            static_cast<size_t>(env->GetArrayLength(ftypArray)),
+            reinterpret_cast<uint8_t*>(moov),
+            static_cast<size_t>(env->GetArrayLength(moovArray)),
+            reinterpret_cast<uint8_t*>(cek),
+            static_cast<uint64_t>(mdatFileOffset),
+            static_cast<uint64_t>(mdatPayloadSize));
+    } catch (const std::bad_alloc&) {
+        decoder = nullptr;
+    } catch (const std::exception&) {
+        decoder = nullptr;
+    } catch (...) {
+        decoder = nullptr;
+    }
 
     env->ReleaseByteArrayElements(ftypArray, ftyp, JNI_ABORT);
     env->ReleaseByteArrayElements(moovArray, moov, JNI_ABORT);
@@ -111,8 +122,9 @@ Java_fun_upup_musicfree_cenc_CencNative_nativeDecrypt(
     jint dataOffset,
     jint length) {
     auto* decoder = decoderFrom(handle);
+    jsize dataLength = dataArray ? env->GetArrayLength(dataArray) : 0;
     if (!decoder || !decoder->ok() || !dataArray || dataOffset < 0 || length < 0 ||
-        dataOffset + length > env->GetArrayLength(dataArray)) {
+        static_cast<int64_t>(dataOffset) + static_cast<int64_t>(length) > static_cast<int64_t>(dataLength)) {
         return;
     }
     jbyte* data = env->GetByteArrayElements(dataArray, nullptr);

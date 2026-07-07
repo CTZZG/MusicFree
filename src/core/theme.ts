@@ -63,6 +63,37 @@ export const darkTheme = {
     },
 };
 
+export const frostedGlassTheme = {
+    id: "p-frosted-glass",
+    ..._DefaultTheme,
+    dark: false,
+    colors: {
+        ..._DefaultTheme.colors,
+        background: "transparent",
+        text: "#172235",
+        textSecondary: Color("#172235").alpha(0.66).toString(),
+        primary: "#0A84FF",
+        pageBackground: "#eef4fc",
+        shadow: "#26405e",
+        appBar: "rgba(255, 255, 255, 0.62)",
+        appBarText: "#172235",
+        musicBar: "rgba(255, 255, 255, 0.4)",
+        musicBarText: "#172235",
+        divider: "rgba(23, 34, 53, 0.08)",
+        listActive: "rgba(10, 132, 255, 0.12)",
+        mask: "rgba(20, 34, 48, 0.32)",
+        backdrop: "rgba(246, 250, 255, 0.92)",
+        tabBar: "rgba(255, 255, 255, 0.52)",
+        placeholder: "rgba(255, 255, 255, 0.6)",
+        success: "#0A9F58",
+        danger: "#E84D5B",
+        info: "#0A84FF",
+        // 没有模糊底层的普通表面仍用半透明白，玻璃卡片自身背景保持透明
+        card: "rgba(255, 255, 255, 0.55)",
+        notification: "rgba(255, 255, 255, 0.92)",
+    },
+};
+
 interface IBackgroundInfo {
     url?: string;
     blur?: number;
@@ -73,12 +104,20 @@ const themeStore = new GlobalState(darkTheme);
 const backgroundStore = new GlobalState<IBackgroundInfo | null>(null);
 
 function setup() {
-    const currentTheme = Config.getConfig("theme.selectedTheme") ?? "p-dark";
+    let currentTheme = Config.getConfig("theme.selectedTheme") ?? "p-dark";
+
+    // 旧版本的"液体玻璃"主题已改为毛玻璃
+    if (currentTheme === "p-liquid-glass") {
+        currentTheme = "p-frosted-glass";
+        Config.setConfig("theme.selectedTheme", currentTheme);
+    }
 
     if (currentTheme === "p-dark") {
         themeStore.setValue(darkTheme);
     } else if (currentTheme === "p-light") {
         themeStore.setValue(lightTheme);
+    } else if (currentTheme === "p-frosted-glass") {
+        themeStore.setValue(frostedGlassTheme);
     } else {
         themeStore.setValue({
             ...darkTheme,
@@ -109,10 +148,17 @@ function setTheme(
         background?: IBackgroundInfo;
     },
 ) {
+    if (themeName === "p-liquid-glass") {
+        // 旧版本的"液体玻璃"主题已改为毛玻璃
+        themeName = "p-frosted-glass";
+    }
+
     if (themeName === "p-light") {
         themeStore.setValue(lightTheme);
     } else if (themeName === "p-dark") {
         themeStore.setValue(darkTheme);
+    } else if (themeName === "p-frosted-glass") {
+        themeStore.setValue(frostedGlassTheme);
     } else {
         themeStore.setValue({
             ...darkTheme,
@@ -134,7 +180,6 @@ function setTheme(
             blur: 20,
             opacity: 0.6,
             ...(currentBg ?? {}),
-            url: undefined,
         };
         if (typeof extra.background.blur === "number") {
             newBg.blur = extra.background.blur;
@@ -142,7 +187,7 @@ function setTheme(
         if (typeof extra.background.opacity === "number") {
             newBg.opacity = extra.background.opacity;
         }
-        if (extra.background.url) {
+        if (extra.background.url !== undefined) {
             newBg.url = extra.background.url;
         }
 

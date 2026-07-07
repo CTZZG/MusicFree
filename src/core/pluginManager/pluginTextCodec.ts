@@ -4,9 +4,20 @@ import iconvLite from "iconv-lite";
 const nativeTextDecoder = globalThis.TextDecoder;
 const nativeTextEncoder = globalThis.TextEncoder;
 const gbEncodingLabels = new Set(["gb18030", "gbk", "gb2312", "cp936"]);
+const warnedUtf8FallbackLabels = new Set<string>();
 
 function normalizeEncodingLabel(label: string) {
     return label.toLowerCase().replace(/[-_\s]/g, "");
+}
+
+function warnUtf8Fallback(encoding: string) {
+    if (typeof console === "undefined" || !console.warn) {
+        return;
+    }
+    console.warn(
+        "[PluginTextDecoder] TextDecoder unavailable; falling back to UTF-8",
+        { encoding },
+    );
 }
 
 function bufferFromTextDecoderInput(
@@ -57,6 +68,13 @@ export class PluginTextDecoder {
             }
         }
 
+        if (
+            this.encoding !== "utf8" &&
+            !warnedUtf8FallbackLabels.has(this.encoding)
+        ) {
+            warnedUtf8FallbackLabels.add(this.encoding);
+            warnUtf8Fallback(this.encoding);
+        }
         return buffer.toString("utf8");
     }
 }

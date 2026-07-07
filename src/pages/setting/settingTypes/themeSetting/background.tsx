@@ -113,6 +113,28 @@ export default function Background() {
                 />
 
                 <ThemeCard
+                    previewColors={[
+                        "#dbe9fb",
+                        "#e7e2fb",
+                        "#d9f3e8",
+                        "#fbe4ef",
+                    ]}
+                    title={t("themeSettings.frostedGlassMode")}
+                    selected={themeSelectedTheme === "p-frosted-glass"}
+                    onPress={() => {
+                        if (themeSelectedTheme !== "p-frosted-glass") {
+                            Theme.setTheme("p-frosted-glass", {
+                                background: {
+                                    blur: 28,
+                                    opacity: 0.42,
+                                },
+                            });
+                            Config.setConfig("theme.followSystem", false);
+                        }
+                    }}
+                />
+
+                <ThemeCard
                     title={t("themeSettings.customMode")}
                     selected={themeSelectedTheme === "custom"}
                     preview={themeBackground}

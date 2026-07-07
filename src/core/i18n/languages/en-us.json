@@ -494,6 +494,7 @@
     "themeSettings.setTheme": "Theme Settings",
     "themeSettings.lightMode": "Light Mode",
     "themeSettings.darkMode": "Dark Mode",
+    "themeSettings.frostedGlassMode": "Frosted Glass",
     "themeSettings.customMode": "Custom Background",
     "themeSettings.coverStyle": "Cover Style",
     "themeSettings.coverStyleSquare": "Square",

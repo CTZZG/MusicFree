@@ -747,7 +747,11 @@ export default class LyricParser {
         let result = 0;
         const nums = timeStr.slice(1, timeStr.length - 1).split(":");
         for (let i = 0; i < nums.length; ++i) {
-            result = result * 60 + +nums[i];
+            const value = +nums[i];
+            if (Number.isNaN(value)) {
+                return 0;
+            }
+            result = result * 60 + value;
         }
         return result;
     }

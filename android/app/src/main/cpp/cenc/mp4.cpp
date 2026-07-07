@@ -1,8 +1,29 @@
 #include "mp4.h"
 
+#include <algorithm>
 #include <cstring>
+#include <limits>
 
 namespace ence {
+
+namespace {
+
+constexpr uint64_t kMaxReasonableSampleCount = 8'000'000;
+constexpr uint64_t kMaxReasonableChunkCount = 1'000'000;
+
+static bool checkedTableSize(uint64_t base, uint64_t count, uint64_t itemSize, uint64_t& out) {
+    if (itemSize != 0 && count > (std::numeric_limits<uint64_t>::max() - base) / itemSize) {
+        return false;
+    }
+    out = base + count * itemSize;
+    return true;
+}
+
+static bool countFitsVector(uint64_t count) {
+    return count <= static_cast<uint64_t>(std::numeric_limits<size_t>::max());
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Byte readers / writers (big-endian)
@@ -338,11 +359,25 @@ Mp4CencResult parseAndRewrite(
     if (stsz.payloadSize < 12) { res.error = "bad stsz"; return res; }
     uint32_t uniformSize = rd32(stsz.payload + 4);
     uint32_t sampleCount = rd32(stsz.payload + 8);
+    if (!countFitsVector(sampleCount) || sampleCount > kMaxReasonableSampleCount) {
+        res.error = "stsz sample count is too large";
+        return res;
+    }
+    if (uniformSize != 0 && sampleCount > mdatPayloadSize) {
+        res.error = "stsz sample count exceeds media payload";
+        return res;
+    }
+    uint64_t stszNeed = 0;
+    if (uniformSize == 0) {
+        if (!checkedTableSize(12, sampleCount, 4, stszNeed) || stsz.payloadSize < stszNeed) {
+            res.error = "truncated stsz";
+            return res;
+        }
+    }
     std::vector<uint32_t> sizes(sampleCount, 0);
     if (uniformSize != 0) {
         for (uint32_t i = 0; i < sampleCount; ++i) sizes[i] = uniformSize;
     } else {
-        if (stsz.payloadSize < 12ull + 4ull * sampleCount) { res.error = "truncated stsz"; return res; }
         for (uint32_t i = 0; i < sampleCount; ++i) sizes[i] = rd32(stsz.payload + 12 + 4 * i);
     }
 
@@ -351,10 +386,17 @@ Mp4CencResult parseAndRewrite(
     bool is64 = !hasStco;
     if (chunkBox.payloadSize < 8) { res.error = "bad stco"; return res; }
     uint32_t chunkCount = rd32(chunkBox.payload + 4);
+    if (!countFitsVector(chunkCount) || chunkCount > kMaxReasonableChunkCount) {
+        res.error = "chunk offset count is too large";
+        return res;
+    }
+    uint64_t chunkNeed = 0;
+    if (!checkedTableSize(8, chunkCount, is64 ? 8 : 4, chunkNeed) || chunkBox.payloadSize < chunkNeed) {
+        res.error = "truncated stco";
+        return res;
+    }
     std::vector<uint64_t> chunkOffsets(chunkCount, 0);
     {
-        size_t need = 8 + static_cast<size_t>(chunkCount) * (is64 ? 8 : 4);
-        if (chunkBox.payloadSize < need) { res.error = "truncated stco"; return res; }
         for (uint32_t i = 0; i < chunkCount; ++i) {
             chunkOffsets[i] = is64 ? rd64(chunkBox.payload + 8 + 8 * i)
                                    : rd32(chunkBox.payload + 8 + 4 * i);
@@ -364,7 +406,11 @@ Mp4CencResult parseAndRewrite(
     // --- sample-to-chunk (stsc) -> samples per chunk ---
     if (stsc.payloadSize < 8) { res.error = "bad stsc"; return res; }
     uint32_t stscCount = rd32(stsc.payload + 4);
-    if (stsc.payloadSize < 8ull + 12ull * stscCount) { res.error = "truncated stsc"; return res; }
+    uint64_t stscNeed = 0;
+    if (!checkedTableSize(8, stscCount, 12, stscNeed) || stsc.payloadSize < stscNeed) {
+        res.error = "truncated stsc";
+        return res;
+    }
     std::vector<uint32_t> samplesPerChunk(chunkCount, 0);
     for (uint32_t e = 0; e < stscCount; ++e) {
         uint32_t firstChunk = rd32(stsc.payload + 8 + 12 * e);

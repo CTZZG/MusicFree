@@ -494,6 +494,7 @@
     "themeSettings.setTheme": "主题设置",
     "themeSettings.lightMode": "浅色模式",
     "themeSettings.darkMode": "深色模式",
+    "themeSettings.frostedGlassMode": "毛玻璃",
     "themeSettings.customMode": "自定义背景",
     "themeSettings.coverStyle": "封面样式",
     "themeSettings.coverStyleSquare": "方形",

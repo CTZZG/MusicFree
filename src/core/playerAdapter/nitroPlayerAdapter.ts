@@ -668,7 +668,8 @@ implements PlayerAdapter<TrackItem | PlayerAdapterTrack> {
     }
 
     async getRepeatMode() {
-        return fromNitroRepeatMode(NitroTrackPlayer.getRepeatMode());
+        const mode = await NitroTrackPlayer.getRepeatMode();
+        return fromNitroRepeatMode(mode);
     }
 
     async getQueue() {

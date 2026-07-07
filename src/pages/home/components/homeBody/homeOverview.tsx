@@ -11,6 +11,8 @@ import TrackPlayer, {
     useMusicState,
     useProgress,
 } from "@/core/trackPlayer";
+import Theme from "@/core/theme";
+import GlassBackdrop from "@/components/base/glassBackdrop";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import { musicIsPaused } from "@/utils/trackUtils";
@@ -81,6 +83,22 @@ function getBestQualityBadge(musicItem: IMusic.IMusicItem) {
     return bestQuality ? getQualityAbbr(bestQuality) : "";
 }
 
+function useIsFrostedGlass() {
+    return Theme.useTheme().id === "p-frosted-glass";
+}
+
+function getSurfaceBorderColor(colors: ReturnType<typeof useColors>, isGlass: boolean, alpha = 0.06) {
+    // 毛玻璃卡片的描边由 GlassBackdrop 负责
+    return isGlass
+        ? "transparent"
+        : Color(colors.text).alpha(alpha).toString();
+}
+
+function getSurfaceBackground(colors: ReturnType<typeof useColors>, isGlass: boolean) {
+    // 毛玻璃卡片必须保持透明，底色由 GlassBackdrop 的模糊层 + 磨砂白提供
+    return isGlass ? "transparent" : colors.card;
+}
+
 export default function HomeOverview() {
     const data = useHomeOverview();
     const discoveryPreview = useHomeDiscovery(data.topListPlugins);
@@ -130,6 +148,7 @@ function ContinueListening(props: {
     const currentQuality = useMusicQuality();
     const { position, duration } = useProgress();
     const colors = useColors();
+    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
     const navigate = useNavigate();
 
@@ -159,7 +178,21 @@ function ContinueListening(props: {
         return (
             <Section title={t("home.continueListening")}>
                 <View
-                    style={[styles.emptyStart, { backgroundColor: colors.card }]}>
+                    style={[
+                        styles.emptyStart,
+                        isFrostedGlass ? styles.glassSurface : null,
+                        {
+                            backgroundColor: getSurfaceBackground(
+                                colors,
+                                isFrostedGlass,
+                            ),
+                            borderColor: getSurfaceBorderColor(
+                                colors,
+                                isFrostedGlass,
+                            ),
+                        },
+                    ]}>
+                    {isFrostedGlass ? <GlassBackdrop /> : null}
                     <QuickPill
                         icon="inbox-arrow-down"
                         title={t("home.importPlaylist.a11y")}
@@ -180,9 +213,16 @@ function ContinueListening(props: {
             <Pressable
                 style={[
                     styles.continueCard,
+                    isFrostedGlass ? styles.glassSurfaceStrong : null,
                     {
-                        backgroundColor: colors.card,
-                        borderColor: Color(colors.text).alpha(0.06).toString(),
+                        backgroundColor: getSurfaceBackground(
+                            colors,
+                            isFrostedGlass,
+                        ),
+                        borderColor: getSurfaceBorderColor(
+                            colors,
+                            isFrostedGlass,
+                        ),
                     },
                 ]}
                 onPress={() => {
@@ -192,6 +232,7 @@ function ContinueListening(props: {
                         TrackPlayer.play(featuredMusic);
                     }
                 }}>
+                {isFrostedGlass ? <GlassBackdrop intensity={60} /> : null}
                 <FastImage
                     source={featuredMusic.artwork}
                     placeholderSource={ImgAsset.albumDefault}
@@ -322,6 +363,7 @@ function ContinueListening(props: {
 function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
     const { musics } = props;
     const colors = useColors();
+    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
 
     if (!musics.length) {
@@ -339,9 +381,22 @@ function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
                         key={`${musicItem.platform}-${musicItem.id}`}
                         style={[
                             styles.recentItem,
-                            { backgroundColor: colors.card },
+                            isFrostedGlass ? styles.glassSurface : null,
+                            {
+                                backgroundColor: getSurfaceBackground(
+                                    colors,
+                                    isFrostedGlass,
+                                ),
+                                borderColor: getSurfaceBorderColor(
+                                    colors,
+                                    isFrostedGlass,
+                                ),
+                            },
                         ]}
                         onPress={() => TrackPlayer.play(musicItem)}>
+                        {isFrostedGlass ? (
+                            <GlassBackdrop radius={rpx(16)} />
+                        ) : null}
                         <FastImage
                             source={musicItem.artwork}
                             placeholderSource={ImgAsset.albumDefault}
@@ -371,6 +426,7 @@ function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
 
 function QuickAccess() {
     const colors = useColors();
+    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
     const navigate = useNavigate();
 
@@ -456,14 +512,20 @@ function QuickAccess() {
                         key={item.key}
                         style={[
                             styles.quickItem,
+                            isFrostedGlass ? styles.glassSurface : null,
                             {
-                                backgroundColor: colors.card,
-                                borderColor: Color(colors.text)
-                                    .alpha(0.06)
-                                    .toString(),
+                                backgroundColor: getSurfaceBackground(
+                                    colors,
+                                    isFrostedGlass,
+                                ),
+                                borderColor: getSurfaceBorderColor(
+                                    colors,
+                                    isFrostedGlass,
+                                ),
                             },
                         ]}
                         onPress={item.action}>
+                        {isFrostedGlass ? <GlassBackdrop /> : null}
                         <View
                             style={[
                                 styles.quickIconBox,
@@ -499,6 +561,7 @@ function Discovery(props: {
 }) {
     const { topListPlugins, preview } = props;
     const colors = useColors();
+    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
     const navigate = useNavigate();
 
@@ -567,9 +630,20 @@ function Discovery(props: {
                             key={item.key}
                             style={[
                                 styles.discoveryPreviewCard,
-                                { backgroundColor: colors.card },
+                                isFrostedGlass ? styles.glassSurface : null,
+                                {
+                                    backgroundColor: getSurfaceBackground(
+                                        colors,
+                                        isFrostedGlass,
+                                    ),
+                                    borderColor: getSurfaceBorderColor(
+                                        colors,
+                                        isFrostedGlass,
+                                    ),
+                                },
                             ]}
                             onPress={item.action}>
+                            {isFrostedGlass ? <GlassBackdrop /> : null}
                             <FastImage
                                 source={item.cover}
                                 placeholderSource={ImgAsset.albumDefault}
@@ -622,8 +696,19 @@ function Discovery(props: {
                             style={[
                                 styles.discoveryPreviewCard,
                                 styles.discoveryLoadingCard,
-                                { backgroundColor: colors.card },
+                                isFrostedGlass ? styles.glassSurface : null,
+                                {
+                                    backgroundColor: getSurfaceBackground(
+                                        colors,
+                                        isFrostedGlass,
+                                    ),
+                                    borderColor: getSurfaceBorderColor(
+                                        colors,
+                                        isFrostedGlass,
+                                    ),
+                                },
                             ]}>
+                            {isFrostedGlass ? <GlassBackdrop /> : null}
                             <ThemeText fontSize="description">
                                 {t("common.loading")}
                             </ThemeText>
@@ -635,11 +720,16 @@ function Discovery(props: {
                 <Pressable
                     style={[
                         styles.discoveryFallback,
+                        isFrostedGlass ? styles.glassSurface : null,
                         {
-                            backgroundColor: colors.card,
-                            borderColor: Color(colors.text)
-                                .alpha(0.06)
-                                .toString(),
+                            backgroundColor: getSurfaceBackground(
+                                colors,
+                                isFrostedGlass,
+                            ),
+                            borderColor: getSurfaceBorderColor(
+                                colors,
+                                isFrostedGlass,
+                            ),
                         },
                     ]}
                     onPress={() =>
@@ -647,6 +737,7 @@ function Discovery(props: {
                             initialPluginHash: topListPlugins[0]?.hash,
                         })
                     }>
+                    {isFrostedGlass ? <GlassBackdrop /> : null}
                     <View
                         style={[
                             styles.discoveryIcon,
@@ -695,6 +786,7 @@ function MyMusic(props: {
 }) {
     const { favoriteSheet, userSheets, starredSheets } = props;
     const colors = useColors();
+    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
     const navigate = useNavigate();
 
@@ -802,10 +894,19 @@ function MyMusic(props: {
             <View
                 style={[
                     styles.myMusicList,
+                    isFrostedGlass ? styles.glassSurface : null,
                     {
-                        backgroundColor: colors.card,
+                        backgroundColor: getSurfaceBackground(
+                            colors,
+                            isFrostedGlass,
+                        ),
+                        borderColor: getSurfaceBorderColor(
+                            colors,
+                            isFrostedGlass,
+                        ),
                     },
                 ]}>
+                {isFrostedGlass ? <GlassBackdrop /> : null}
                 {rows.map((row, index) => (
                     <Pressable
                         key={row.key}
@@ -813,9 +914,11 @@ function MyMusic(props: {
                             styles.myMusicRow,
                             index < rows.length - 1
                                 ? {
-                                    borderBottomColor: Color(colors.text)
-                                        .alpha(0.06)
-                                        .toString(),
+                                    borderBottomColor: isFrostedGlass
+                                        ? "rgba(23, 34, 53, 0.08)"
+                                        : Color(colors.text)
+                                            .alpha(0.06)
+                                            .toString(),
                                     borderBottomWidth: StyleSheet.hairlineWidth,
                                 }
                                 : null,
@@ -1221,5 +1324,25 @@ const styles = StyleSheet.create({
         minWidth: 0,
         marginLeft: rpx(14),
         marginRight: rpx(10),
+    },
+    glassSurface: {
+        shadowColor: "#26405e",
+        shadowOpacity: 0.12,
+        shadowRadius: rpx(16),
+        shadowOffset: {
+            width: 0,
+            height: rpx(7),
+        },
+        elevation: 2,
+    },
+    glassSurfaceStrong: {
+        shadowColor: "#26405e",
+        shadowOpacity: 0.16,
+        shadowRadius: rpx(24),
+        shadowOffset: {
+            width: 0,
+            height: rpx(10),
+        },
+        elevation: 4,
     },
 });

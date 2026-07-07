@@ -60,6 +60,7 @@ internal class CencDecoder(
     val mdatFileOffset: Long = CencNative.nativeGetMdatFileOffset(handle)
     val outputTotalSize: Long = CencNative.nativeGetOutputTotalSize(handle)
 
+    @Synchronized
     fun decrypt(relativeOffset: Long, data: ByteArray, offset: Int, length: Int) {
         check(handle != 0L) { "decoder is closed" }
         CencNative.nativeDecrypt(handle, relativeOffset, data, offset, length)

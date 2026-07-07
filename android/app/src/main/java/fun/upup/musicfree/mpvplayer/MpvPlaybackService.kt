@@ -29,9 +29,11 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import `fun`.upup.musicfree.R
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import kotlin.concurrent.thread
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.math.max
 
 /**
@@ -52,11 +54,14 @@ class MpvPlaybackService : Service() {
         private const val CHIP_TEXT_MAX_CODE_POINTS = 12
         private const val TRUNCATION_MARK = "…"
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
+        private const val MAX_ARTWORK_DECODE_SIZE = 512
+        private const val MAX_ARTWORK_DOWNLOAD_BYTES = 8 * 1024 * 1024
 
         private const val ACTION_PLAY_PAUSE = "mpv_play_pause"
         private const val ACTION_NEXT = "mpv_next"
         private const val ACTION_PREV = "mpv_prev"
         private const val ACTION_STOP = "mpv_stop"
+        const val ACTION_START_FOREGROUND = "mpv_start_foreground"
 
         private fun formatTime(ms: Long): String {
             val totalSec = max(0L, ms / 1000)
@@ -73,6 +78,7 @@ class MpvPlaybackService : Service() {
 
     private lateinit var mediaSession: MediaSessionCompat
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val artworkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var notificationManager: NotificationManager? = null
     private var audioManager: AudioManager? = null
     private var audioFocusListener: AudioManager.OnAudioFocusChangeListener? = null
@@ -139,6 +145,7 @@ class MpvPlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_START_FOREGROUND -> startForegroundSafely()
             ACTION_PLAY_PAUSE -> {
                 if (
                     cachedState == PlaybackStateCompat.STATE_PLAYING ||
@@ -177,6 +184,7 @@ class MpvPlaybackService : Service() {
         unregisterNoisyReceiver()
         stopForegroundSafely()
         mediaSession.release()
+        artworkExecutor.shutdownNow()
         abandonAudioFocus()
         super.onDestroy()
     }
@@ -913,8 +921,8 @@ class MpvPlaybackService : Service() {
     }
 
     private fun loadArtworkAsync(url: String) {
-        thread {
-            val bitmap = fetchBitmap(url) ?: return@thread
+        artworkExecutor.execute artwork@{
+            val bitmap = fetchBitmap(url) ?: return@artwork
             mainHandler.post {
                 if (url != cachedArtwork) {
                     return@post
@@ -936,7 +944,10 @@ class MpvPlaybackService : Service() {
                     connection.doInput = true
                     connection.connect()
                     try {
-                        connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                        val bytes = connection.inputStream.use { input ->
+                            readBoundedBytes(input, MAX_ARTWORK_DOWNLOAD_BYTES)
+                        }
+                        decodeSampledBitmap(bytes)
                     } finally {
                         connection.disconnect()
                     }
@@ -944,15 +955,110 @@ class MpvPlaybackService : Service() {
                 url.startsWith("content://") ||
                     url.startsWith("file://") ||
                     url.startsWith("android.resource://") -> {
-                    contentResolver.openInputStream(Uri.parse(url))?.use {
-                        BitmapFactory.decodeStream(it)
-                    }
+                    decodeSampledBitmap(Uri.parse(url))
                 }
-                else -> BitmapFactory.decodeFile(url)
+                else -> decodeSampledFile(url)
             }
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             null
         }
+
+    private fun readBoundedBytes(
+        input: java.io.InputStream,
+        maxBytes: Int,
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) {
+                break
+            }
+            total += read
+            if (total > maxBytes) {
+                throw IllegalArgumentException("artwork is too large")
+            }
+            output.write(buffer, 0, read)
+        }
+        return output.toByteArray()
+    }
+
+    private fun decodeSampledBitmap(bytes: ByteArray): Bitmap? {
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            return null
+        }
+        options.inJustDecodeBounds = false
+        options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight)
+        return scaleArtworkBitmap(
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options),
+        )
+    }
+
+    private fun decodeSampledBitmap(uri: Uri): Bitmap? {
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        }
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            return null
+        }
+        options.inJustDecodeBounds = false
+        options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight)
+        return contentResolver.openInputStream(uri)?.use {
+            scaleArtworkBitmap(BitmapFactory.decodeStream(it, null, options))
+        }
+    }
+
+    private fun decodeSampledFile(path: String): Bitmap? {
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(path, options)
+        if (options.outWidth <= 0 || options.outHeight <= 0) {
+            return null
+        }
+        options.inJustDecodeBounds = false
+        options.inSampleSize = calculateInSampleSize(options.outWidth, options.outHeight)
+        return scaleArtworkBitmap(BitmapFactory.decodeFile(path, options))
+    }
+
+    private fun calculateInSampleSize(width: Int, height: Int): Int {
+        var sampleSize = 1
+        var sampledWidth = width
+        var sampledHeight = height
+        while (
+            sampledWidth / 2 >= MAX_ARTWORK_DECODE_SIZE &&
+            sampledHeight / 2 >= MAX_ARTWORK_DECODE_SIZE
+        ) {
+            sampleSize *= 2
+            sampledWidth /= 2
+            sampledHeight /= 2
+        }
+        return sampleSize
+    }
+
+    private fun scaleArtworkBitmap(bitmap: Bitmap?): Bitmap? {
+        bitmap ?: return null
+        val maxSide = max(bitmap.width, bitmap.height)
+        if (maxSide <= MAX_ARTWORK_DECODE_SIZE) {
+            return bitmap
+        }
+        val scale = MAX_ARTWORK_DECODE_SIZE.toFloat() / maxSide.toFloat()
+        val targetWidth = max(1, (bitmap.width * scale).toInt())
+        val targetHeight = max(1, (bitmap.height * scale).toInt())
+        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        if (scaled != bitmap) {
+            bitmap.recycle()
+        }
+        return scaled
+    }
 
     private fun parseUriOrNull(value: String?): Uri? =
         try {

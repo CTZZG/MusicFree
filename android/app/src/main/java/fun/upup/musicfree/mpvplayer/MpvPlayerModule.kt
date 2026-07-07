@@ -2,6 +2,7 @@ package `fun`.upup.musicfree.mpvplayer
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -176,6 +177,36 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private fun sendEvent(name: String, params: WritableMap?) {
         reactContext.getJSModule(RCTDeviceEventEmitter::class.java)
             .emit(name, params ?: Arguments.createMap())
+    }
+
+    private fun runMpvCallbackOnMain(action: () -> Unit) {
+        val task = Runnable {
+            if (isInitialized.get()) {
+                action()
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            task.run()
+        } else {
+            mainHandler.post(task)
+        }
+    }
+
+    private fun startPlaybackService(foreground: Boolean) {
+        val intent = Intent(reactContext, MpvPlaybackService::class.java).apply {
+            if (foreground) {
+                action = MpvPlaybackService.ACTION_START_FOREGROUND
+            }
+        }
+        try {
+            if (foreground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                reactContext.startForegroundService(intent)
+            } else {
+                reactContext.startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "start playback service failed", e)
+        }
     }
 
     private fun emitState(state: String, force: Boolean = false) {
@@ -497,13 +528,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     MPVLib.MPV_FORMAT_DOUBLE,
                 )
 
-                try {
-                    reactContext.startService(
-                        Intent(reactContext, MpvPlaybackService::class.java),
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "startService failed", e)
-                }
+                startPlaybackService(foreground = false)
 
                 MpvServiceBridge.onCommand = { command, position, mediaId ->
                     sendEvent(
@@ -526,12 +551,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
                 isInitialized.set(true)
                 promise.resolve(null)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "init failed", e)
                 unregisterAndroidAutoConnectionDetector()
                 try {
                     MPVLib.destroy()
-                } catch (_: Exception) {
+                } catch (_: Throwable) {
                 }
                 MpvServiceBridge.onCommand = null
                 MpvServiceBridge.clearPlaybackSession()
@@ -664,6 +689,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 clearPreparedTrack(removeFromPlaylist = false)
 
                 val generation = markLoading(autoPlay)
+                if (autoPlay) {
+                    startPlaybackService(foreground = true)
+                }
                 if (!autoPlay) {
                     MPVLib.setPropertyBoolean("pause", true)
                 }
@@ -740,19 +768,25 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun updateMetadata(payload: ReadableMap, promise: Promise) {
-        cachedTitle = readString(payload, "title") ?: cachedTitle
-        cachedArtist = readString(payload, "artist") ?: cachedArtist
-        cachedAlbum = readString(payload, "album") ?: cachedAlbum
-        if (payload.hasKey("artwork")) {
-            cachedArtwork = readString(payload, "artwork")
+        mainHandler.post {
+            try {
+                cachedTitle = readString(payload, "title") ?: cachedTitle
+                cachedArtist = readString(payload, "artist") ?: cachedArtist
+                cachedAlbum = readString(payload, "album") ?: cachedAlbum
+                if (payload.hasKey("artwork")) {
+                    cachedArtwork = readString(payload, "artwork")
+                }
+                val duration = validDuration(readDouble(payload, "duration"))
+                if (duration > 0) {
+                    durationSecs = duration
+                }
+                syncMetadata()
+                emitProgress(force = true)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("E_MPV_METADATA", e.message, e)
+            }
         }
-        val duration = validDuration(readDouble(payload, "duration"))
-        if (duration > 0) {
-            durationSecs = duration
-        }
-        syncMetadata()
-        emitProgress(force = true)
-        promise.resolve(null)
     }
 
     @ReactMethod
@@ -776,6 +810,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
         mainHandler.post {
             try {
+                startPlaybackService(foreground = true)
                 val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
                 if (idle || currentState == "ended") {
                     MPVLib.command(arrayOf("seek", "0", "absolute"))
@@ -907,58 +942,62 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     override fun eventProperty(property: String, value: Long) {
-        when (property) {
-            "time-pos" -> {
-                positionSecs = value.toDouble()
-                emitProgress()
-            }
-            "duration" -> {
-                if (value > 0) {
-                    durationSecs = value.toDouble()
-                    syncMetadata()
-                    emitProgress(force = true)
+        runMpvCallbackOnMain {
+            when (property) {
+                "time-pos" -> {
+                    positionSecs = value.toDouble()
+                    emitProgress()
                 }
-            }
-            "demuxer-cache-duration" -> {
-                cacheAheadSecs = value.toDouble().coerceAtLeast(0.0)
-                emitProgress()
+                "duration" -> {
+                    if (value > 0) {
+                        durationSecs = value.toDouble()
+                        syncMetadata()
+                        emitProgress(force = true)
+                    }
+                }
+                "demuxer-cache-duration" -> {
+                    cacheAheadSecs = value.toDouble().coerceAtLeast(0.0)
+                    emitProgress()
+                }
             }
         }
     }
 
     override fun eventProperty(property: String, value: Boolean) {
-        when (property) {
-            "pause" -> {
-                val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
-                if (value) {
-                    if (!idle && currentState != "ended") emitState("paused")
-                } else if (!idle || loadingGeneration == currentLoadGeneration) {
-                    emitState("playing")
-                }
-            }
-            "idle-active" -> {
-                if (value) {
-                    val now = System.currentTimeMillis()
-                    if (
-                        now < suppressIdleUntilMs ||
-                        loadingGeneration == currentLoadGeneration ||
-                        currentState == "ended"
-                    ) {
-                        return
-                    }
-                    emitState("idle")
-                } else if (currentState != "paused" && currentState != "ended") {
-                    emitState("playing")
-                }
-            }
-            "paused-for-cache" -> {
-                if (value) {
-                    emitState("buffering")
-                } else {
-                    val paused = MPVLib.getPropertyBoolean("pause") ?: false
+        runMpvCallbackOnMain {
+            when (property) {
+                "pause" -> {
                     val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
-                    if (!paused && !idle) {
+                    if (value) {
+                        if (!idle && currentState != "ended") emitState("paused")
+                    } else if (!idle || loadingGeneration == currentLoadGeneration) {
                         emitState("playing")
+                    }
+                }
+                "idle-active" -> {
+                    if (value) {
+                        val now = System.currentTimeMillis()
+                        if (
+                            now < suppressIdleUntilMs ||
+                            loadingGeneration == currentLoadGeneration ||
+                            currentState == "ended"
+                        ) {
+                            return@runMpvCallbackOnMain
+                        }
+                        emitState("idle")
+                    } else if (currentState != "paused" && currentState != "ended") {
+                        emitState("playing")
+                    }
+                }
+                "paused-for-cache" -> {
+                    if (value) {
+                        emitState("buffering")
+                    } else {
+                        val paused = MPVLib.getPropertyBoolean("pause") ?: false
+                        val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
+                        if (!paused && !idle) {
+                            emitState("playing")
+                        }
                     }
                 }
             }
@@ -966,122 +1005,128 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     override fun eventProperty(property: String, value: Double) {
-        when (property) {
-            "time-pos" -> {
-                if (!value.isNaN() && value >= 0) {
-                    positionSecs = value
-                    emitProgress()
+        runMpvCallbackOnMain {
+            when (property) {
+                "time-pos" -> {
+                    if (!value.isNaN() && value >= 0) {
+                        positionSecs = value
+                        emitProgress()
+                    }
                 }
-            }
-            "duration" -> {
-                if (!value.isNaN() && value > 0) {
-                    durationSecs = value
-                    syncMetadata()
-                    emitProgress(force = true)
+                "duration" -> {
+                    if (!value.isNaN() && value > 0) {
+                        durationSecs = value
+                        syncMetadata()
+                        emitProgress(force = true)
+                    }
                 }
-            }
-            "demuxer-cache-duration" -> {
-                if (!value.isNaN() && value >= 0) {
-                    cacheAheadSecs = value
-                    emitProgress()
+                "demuxer-cache-duration" -> {
+                    if (!value.isNaN() && value >= 0) {
+                        cacheAheadSecs = value
+                        emitProgress()
+                    }
                 }
             }
         }
     }
 
     override fun eventProperty(property: String, value: String) {
-        if (property == "playback-error") {
-            Log.e(TAG, "playback error: $value")
-            sendEvent(
-                ON_MPV_ERROR,
-                Arguments.createMap().apply {
-                    putString("message", value)
-                    putString("code", "mpv-playback-error")
-                },
-            )
-            emitState("error")
+        runMpvCallbackOnMain {
+            if (property == "playback-error") {
+                Log.e(TAG, "playback error: $value")
+                sendEvent(
+                    ON_MPV_ERROR,
+                    Arguments.createMap().apply {
+                        putString("message", value)
+                        putString("code", "mpv-playback-error")
+                    },
+                )
+                emitState("error")
+            }
         }
     }
 
     override fun event(eventId: Int) {
-        when (eventId) {
-            MPVLib.MPV_EVENT_START_FILE -> {
-                val generation = currentLoadGeneration
-                loadingGeneration = generation
-                if (pendingUnpauseGeneration == generation) {
-                    emitState("buffering")
-                    scheduleUnpauseRetries(generation)
-                } else {
-                    MPVLib.setPropertyBoolean("pause", true)
-                    emitState("paused")
+        runMpvCallbackOnMain {
+            when (eventId) {
+                MPVLib.MPV_EVENT_START_FILE -> {
+                    val generation = currentLoadGeneration
+                    loadingGeneration = generation
+                    if (pendingUnpauseGeneration == generation) {
+                        emitState("buffering")
+                        scheduleUnpauseRetries(generation)
+                    } else {
+                        MPVLib.setPropertyBoolean("pause", true)
+                        emitState("paused")
+                    }
                 }
-            }
-            MPVLib.MPV_EVENT_FILE_LOADED -> {
-                val generation = currentLoadGeneration
-                if (loadingGeneration == generation) {
+                MPVLib.MPV_EVENT_FILE_LOADED -> {
+                    val generation = currentLoadGeneration
+                    if (loadingGeneration == generation) {
+                        loadingGeneration = -1L
+                    }
+                    updateDurationFromMpv()
+                    if (pendingUnpauseGeneration == generation) {
+                        forceUnpause(generation)
+                    } else {
+                        MPVLib.setPropertyBoolean("pause", true)
+                        emitState("paused")
+                    }
+                }
+                MPVLib.MPV_EVENT_PLAYBACK_RESTART -> {
+                    updateDurationFromMpv()
+                    val generation = currentLoadGeneration
+                    if (pendingUnpauseGeneration == generation) {
+                        forceUnpause(generation)
+                    }
+                }
+                MPVLib.MPV_EVENT_END_FILE -> {
+                    val now = System.currentTimeMillis()
+                    if (
+                        stopRequested ||
+                        now < ignoreEndFileUntilMs ||
+                        loadingGeneration == currentLoadGeneration
+                    ) {
+                        Log.d(TAG, "END_FILE suppressed")
+                        return@runMpvCallbackOnMain
+                    }
+                    pendingUnpauseGeneration = -1L
                     loadingGeneration = -1L
+                    val autoAdvanced = promotePreparedTrack()
+                    if (!autoAdvanced && durationSecs > 0) {
+                        positionSecs = durationSecs
+                        emitProgress(force = true)
+                    }
+                    sendEvent(
+                        ON_MPV_ENDED,
+                        Arguments.createMap().apply {
+                            putString("reason", "end")
+                            putBoolean("autoAdvanced", autoAdvanced)
+                        },
+                    )
+                    if (autoAdvanced) {
+                        pendingUnpauseGeneration = currentLoadGeneration
+                        suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
+                        scheduleUnpauseRetries(currentLoadGeneration)
+                        emitState("buffering")
+                    } else {
+                        emitState("ended")
+                    }
                 }
-                updateDurationFromMpv()
-                if (pendingUnpauseGeneration == generation) {
-                    forceUnpause(generation)
-                } else {
-                    MPVLib.setPropertyBoolean("pause", true)
-                    emitState("paused")
+                MPVLib.MPV_EVENT_SHUTDOWN -> {
+                    Log.e(TAG, "MPV_EVENT_SHUTDOWN")
+                    val error = MPVLib.getPropertyString("error")
+                        ?: MPVLib.getPropertyString("playback-error")
+                        ?: "mpv shutdown"
+                    sendEvent(
+                        ON_MPV_ERROR,
+                        Arguments.createMap().apply {
+                            putString("message", error)
+                            putString("code", "mpv-shutdown")
+                        },
+                    )
+                    emitState("error")
                 }
-            }
-            MPVLib.MPV_EVENT_PLAYBACK_RESTART -> {
-                updateDurationFromMpv()
-                val generation = currentLoadGeneration
-                if (pendingUnpauseGeneration == generation) {
-                    forceUnpause(generation)
-                }
-            }
-            MPVLib.MPV_EVENT_END_FILE -> {
-                val now = System.currentTimeMillis()
-                if (
-                    stopRequested ||
-                    now < ignoreEndFileUntilMs ||
-                    loadingGeneration == currentLoadGeneration
-                ) {
-                    Log.d(TAG, "END_FILE suppressed")
-                    return
-                }
-                pendingUnpauseGeneration = -1L
-                loadingGeneration = -1L
-                val autoAdvanced = promotePreparedTrack()
-                if (!autoAdvanced && durationSecs > 0) {
-                    positionSecs = durationSecs
-                    emitProgress(force = true)
-                }
-                sendEvent(
-                    ON_MPV_ENDED,
-                    Arguments.createMap().apply {
-                        putString("reason", "end")
-                        putBoolean("autoAdvanced", autoAdvanced)
-                    },
-                )
-                if (autoAdvanced) {
-                    pendingUnpauseGeneration = currentLoadGeneration
-                    suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
-                    scheduleUnpauseRetries(currentLoadGeneration)
-                    emitState("buffering")
-                } else {
-                    emitState("ended")
-                }
-            }
-            MPVLib.MPV_EVENT_SHUTDOWN -> {
-                Log.e(TAG, "MPV_EVENT_SHUTDOWN")
-                val error = MPVLib.getPropertyString("error")
-                    ?: MPVLib.getPropertyString("playback-error")
-                    ?: "mpv shutdown"
-                sendEvent(
-                    ON_MPV_ERROR,
-                    Arguments.createMap().apply {
-                        putString("message", error)
-                        putString("code", "mpv-shutdown")
-                    },
-                )
-                emitState("error")
             }
         }
     }

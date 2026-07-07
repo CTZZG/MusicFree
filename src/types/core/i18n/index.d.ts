@@ -549,6 +549,7 @@ export interface ILanguageData {
     "themeSettings.setTheme": string; // 设置主题
     "themeSettings.lightMode": string; // 明亮模式
     "themeSettings.darkMode": string; // 黑暗模式
+    "themeSettings.frostedGlassMode": string; // 毛玻璃模式
     "themeSettings.customMode": string; // 自定义模式
     "themeSettings.coverStyle": string; // 封面样式
     "themeSettings.coverStyleSquare": string; // 方形

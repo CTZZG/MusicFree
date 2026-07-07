@@ -242,14 +242,17 @@ class DownloadManager(
                     DownloadTaskStatus.PREPARING,
                     DownloadTaskStatus.PENDING,
                     -> task.copy(
-                        status = DownloadTaskStatus.PENDING,
-                        errorMessage = null,
+                        status = DownloadTaskStatus.PAUSED,
+                        errorMessage = "interrupted",
                         updatedAt = System.currentTimeMillis(),
                     )
                     else -> task
                 }
 
                 tasks[restored.taskId] = restored
+                if (restored !== task) {
+                    database.upsertTask(restored)
+                }
                 if (restored.status == DownloadTaskStatus.PENDING) {
                     pendingQueue.offer(restored.taskId)
                 }
@@ -364,10 +367,13 @@ class DownloadManager(
     }
 
     private fun flushProgressBatch() {
-        val snapshots = progressCache.values.toList()
+        val snapshots = mutableListOf<ProgressSnapshot>()
+        progressCache.forEach { (taskId, snapshot) ->
+            if (progressCache.remove(taskId, snapshot)) {
+                snapshots.add(snapshot)
+            }
+        }
         if (snapshots.isEmpty()) return
-
-        progressCache.clear()
         val taskSnapshotById = mutableMapOf<String, DownloadTask>()
         synchronized(lock) {
             snapshots.forEach { snapshot ->

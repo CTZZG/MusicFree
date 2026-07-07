@@ -24,11 +24,9 @@ import { MusicRepeatMode, TrackPlayerEvents } from "@/constants/trackPlayerConst
 import type { IAppConfig } from "@/types/core/config";
 import type { IMusicHistory } from "@/types/core/musicHistory";
 import { ITrackPlayer } from "@/types/core/trackPlayer/index";
-import minDistance from "@/utils/minDistance";
 import { IPluginManager } from "@/types/core/pluginManager";
 import { getAppUserAgent } from "@/utils/userAgentHelper"; // <--- 新增UA统一导入
 import { ImgAsset } from "@/constants/assetsConst";
-import { resolveImportedAssetOrPath } from "@/utils/fileUtils";
 import type {
     PlayerAdapter,
     PlayerAdapterProgress,
@@ -52,6 +50,7 @@ import {
     isUnsupportedEncryptedMediaSource,
     resolveEncryptedMediaStreamIfNeeded,
 } from "@/service/encryptedMediaProxy";
+import { getLyricCandidateDistance } from "../lyricSearchPolicy";
 import { shouldEvictRecoveredRemoteSourceCacheAfterFailure } from "./sourceRecoveryPolicy";
 
 type MusicFreePlayerTrack = PlayerAdapterTrack &
@@ -230,6 +229,8 @@ class TrackPlayer
     private static halfMaxMusicQueueLength = 5000;
     private static progressPersistIntervalMs = 1000;
     private static sourceRecoveryCooldownMs = 30000;
+    private static sourceRecoveryAttemptRetentionMs = 10 * 60 * 1000;
+    private static sourceRecoveryAttemptMaxEntries = 256;
     private static toggleRepeatMapping = {
         [MusicRepeatMode.SHUFFLE]: MusicRepeatMode.SINGLE,
         [MusicRepeatMode.SINGLE]: MusicRepeatMode.QUEUE,
@@ -2399,6 +2400,36 @@ class TrackPlayer
         return null;
     }
 
+    private pruneSourceRecoveryAttempts(now = Date.now()) {
+        const minAttemptAt =
+            now - TrackPlayer.sourceRecoveryAttemptRetentionMs;
+        for (const [key, attemptedAt] of this.sourceRecoveryAttemptedAt) {
+            if (
+                attemptedAt < minAttemptAt &&
+                !this.sourceRecoveryInFlight.has(key)
+            ) {
+                this.sourceRecoveryAttemptedAt.delete(key);
+            }
+        }
+
+        const overflow =
+            this.sourceRecoveryAttemptedAt.size -
+            TrackPlayer.sourceRecoveryAttemptMaxEntries;
+        if (overflow <= 0) {
+            return;
+        }
+
+        const evictableKeys = [...this.sourceRecoveryAttemptedAt.entries()]
+            .filter(([key]) => !this.sourceRecoveryInFlight.has(key))
+            .sort(([, leftAt], [, rightAt]) => leftAt - rightAt)
+            .slice(0, overflow)
+            .map(([key]) => key);
+
+        evictableKeys.forEach(key => {
+            this.sourceRecoveryAttemptedAt.delete(key);
+        });
+    }
+
     private async recoverCurrentSourceAfterPlaybackError(
         error: any,
         activeTrack?: MusicFreePlayerTrack | null,
@@ -2415,6 +2446,7 @@ class TrackPlayer
         }
 
         const now = Date.now();
+        this.pruneSourceRecoveryAttempts(now);
         const lastAttemptAt = this.sourceRecoveryAttemptedAt.get(key) ?? 0;
         if (now - lastAttemptAt < TrackPlayer.sourceRecoveryCooldownMs) {
             if (
@@ -2707,9 +2739,11 @@ class TrackPlayer
                     targetPlugin = plugin;
                     break;
                 } else {
-                    const dist =
-                        minDistance(keyword, musicItem.title) +
-                        minDistance(item.artist, musicItem.artist);
+                    const dist = getLyricCandidateDistance(
+                        keyword,
+                        musicItem,
+                        item,
+                    );
                     if (dist < distance) {
                         distance = dist;
                         minDistanceMusicItem = item;
@@ -2730,17 +2764,25 @@ class TrackPlayer
     }
 
     private patchMediaArtwork(track: MusicFreePlayerTrack) {
-        // Bug: React native track player 在设置音频时，artwork不能为null，并且部分情况下artwork不能为ImageSource类型
         if (!track) {
             return null;
         }
+        const rawArtwork = track.artwork as unknown;
+        const artwork =
+            typeof rawArtwork === "string"
+                ? rawArtwork.trim()
+                : rawArtwork &&
+                    typeof rawArtwork === "object" &&
+                    "uri" in rawArtwork &&
+                    typeof rawArtwork.uri === "string"
+                    ? rawArtwork.uri.trim()
+                    : undefined;
+
         return {
             ...track,
-            artwork: resolveImportedAssetOrPath(
-                track.artwork?.trim?.()?.length
-                    ? track.artwork
-                    : ImgAsset.albumDefault,
-            ) as unknown as any,
+            // System media notifications can only resolve real URIs. The RN
+            // bundled default artwork is still applied by UI image components.
+            artwork: artwork || undefined,
         };
     }
 }

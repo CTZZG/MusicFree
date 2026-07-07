@@ -224,6 +224,7 @@ dependencies {
 }
 
 def libmpvAarFile = file("libs/libmpv-release.aar")
+def expectedLibmpvNdkMajor = "27"
 
 afterEvaluate {
     ["Debug", "Release"].each { variantName ->
@@ -242,6 +243,14 @@ afterEvaluate {
             doFirst {
                 if (!libmpvAarFile.exists()) {
                     throw new GradleException("Missing libmpv AAR: ${libmpvAarFile}")
+                }
+                def configuredNdkVersion = rootProject.ext.ndkVersion.toString()
+                if (!configuredNdkVersion.startsWith("${expectedLibmpvNdkMajor}.")) {
+                    throw new GradleException(
+                        "libmpv libc++_shared.so was validated with NDK ${expectedLibmpvNdkMajor}.x, " +
+                        "but android/build.gradle configures NDK ${configuredNdkVersion}. " +
+                        "Rebuild libmpv-release.aar or revalidate the C++ runtime before packaging."
+                    )
                 }
                 logger.lifecycle("[MusicFree] Using libmpv libc++_shared.so for ${variantName}.")
             }

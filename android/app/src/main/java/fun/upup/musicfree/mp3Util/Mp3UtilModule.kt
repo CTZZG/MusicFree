@@ -13,15 +13,18 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
 
 class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
 
     override fun getName() = "Mp3Util"
 
     private val maxCoverBytes = 20 * 1024 * 1024
+    private val maxCoverBitmapSide = 1024
     private val metadataExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "MusicFree-Metadata").apply { isDaemon = true }
     }
@@ -226,6 +229,70 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
         )
     }
 
+    private fun calculateBitmapSampleSize(width: Int, height: Int, maxSide: Int): Int {
+        var sampleSize = 1
+        while (width / sampleSize > maxSide || height / sampleSize > maxSide) {
+            sampleSize *= 2
+        }
+        return sampleSize.coerceAtLeast(1)
+    }
+
+    private fun decodeCoverBitmapBounded(
+        coverBytes: ByteArray,
+        maxSide: Int = maxCoverBitmapSide,
+    ): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeByteArray(coverBytes, 0, coverBytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                return null
+            }
+
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = calculateBitmapSampleSize(
+                    bounds.outWidth,
+                    bounds.outHeight,
+                    maxSide,
+                )
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val decoded = BitmapFactory.decodeByteArray(
+                coverBytes,
+                0,
+                coverBytes.size,
+                options,
+            ) ?: return null
+            val longestSide = max(decoded.width, decoded.height)
+            if (longestSide <= maxSide) {
+                decoded
+            } else {
+                val scale = maxSide.toFloat() / longestSide.toFloat()
+                val scaled = Bitmap.createScaledBitmap(
+                    decoded,
+                    (decoded.width * scale).toInt().coerceAtLeast(1),
+                    (decoded.height * scale).toInt().coerceAtLeast(1),
+                    true,
+                )
+                decoded.recycle()
+                scaled
+            }
+        } catch (error: OutOfMemoryError) {
+            android.util.Log.e("Mp3UtilModule", "Cover bitmap decode OOM", error)
+            null
+        } catch (e: Exception) {
+            android.util.Log.w("Mp3UtilModule", "Cover bitmap decode failed: ${e.message}", e)
+            null
+        }
+    }
+
+    private fun stableCacheKey(input: String): String {
+        val digest = MessageDigest.getInstance("SHA-1")
+            .digest(input.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
     private fun setCoverForOgg(filePath: String, coverBytes: ByteArray): Boolean {
         val mimeType = detectImageMimeTypeByBytes(coverBytes)
         val imageInfo = readImageInfo(coverBytes, mimeType)
@@ -357,7 +424,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             }
 
             val mp4CoverBytes = if (mimeType !in setOf("image/jpeg", "image/png", "image/gif")) {
-                val bitmap = BitmapFactory.decodeByteArray(coverBytes, 0, coverBytes.size)
+                val bitmap = decodeCoverBitmapBounded(coverBytes)
                     ?: throw IllegalArgumentException("Unable to decode cover image ($mimeType)")
                 try {
                     ByteArrayOutputStream().use { output ->
@@ -440,8 +507,8 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
     @ReactMethod
     fun getMediaMeta(filePaths: ReadableArray, promise: Promise) {
         val metas = Arguments.createArray()
-        val mmr = MediaMetadataRetriever()
         for (i in 0 until filePaths.size()) {
+            var mmr: MediaMetadataRetriever? = null
             try {
                 val filePath = filePaths.getString(i) ?: ""
                 if (!shouldUseMediaMetadataRetriever(filePath)) {
@@ -450,20 +517,23 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                 }
                 val uri = Uri.parse(filePath)
 
+                val retriever = MediaMetadataRetriever()
+                mmr = retriever
                 if (isContentUri(uri)) {
-                    mmr.setDataSource(reactApplicationContext, uri)
+                    retriever.setDataSource(reactApplicationContext, uri)
                 } else {
-                    mmr.setDataSource(filePath)
+                    retriever.setDataSource(filePath)
                 }
 
-                metas.pushMap(extractBasicMeta(mmr))
+                metas.pushMap(extractBasicMeta(retriever))
             } catch (e: Exception) {
                 metas.pushNull()
+            } finally {
+                try {
+                    mmr?.release()
+                } catch (ignored: Exception) {
+                }
             }
-        }
-        try {
-            mmr.release()
-        } catch (ignored: Exception) {
         }
         promise.resolve(metas)
     }
@@ -490,19 +560,13 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                 return
             }
 
-            val pathHashCode = filePath.hashCode()
-            if (pathHashCode == 0) {
-                promise.resolve(null)
-                return
-            }
-
             val cacheDir = reactContext.cacheDir
             val coverCacheDir = File(cacheDir, "image_manager_disk_cache")
             if (!coverCacheDir.exists() && !coverCacheDir.mkdirs()) {
                 promise.reject("Error", "Failed to create cover cache directory")
                 return
             }
-            val coverFile = File(coverCacheDir, "$pathHashCode.jpg")
+            val coverFile = File(coverCacheDir, "${stableCacheKey(filePath)}.jpg")
             if (coverFile.exists()) {
                 promise.resolve(coverFile.toURI().toString())
                 return
@@ -516,7 +580,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             }
             val coverImg = mmr.embeddedPicture
             if (coverImg != null) {
-                val bitmap = BitmapFactory.decodeByteArray(coverImg, 0, coverImg.size)
+                val bitmap = decodeCoverBitmapBounded(coverImg)
                 if (bitmap == null) {
                     promise.resolve(null)
                     return

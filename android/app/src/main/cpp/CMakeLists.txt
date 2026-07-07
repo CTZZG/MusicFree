@@ -15,7 +15,7 @@ add_library(
 
 target_include_directories(musicfree-cenc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(musicfree-cenc PRIVATE cxx_std_17)
-target_compile_options(musicfree-cenc PRIVATE -fno-exceptions)
+target_compile_options(musicfree-cenc PRIVATE -fexceptions)
 
 find_library(log-lib log)
 target_link_libraries(musicfree-cenc ${log-lib})

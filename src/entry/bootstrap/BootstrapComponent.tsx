@@ -19,18 +19,26 @@ export function BootstrapComponent() {
     useCheckUpdate();
 
     const followSystem = useAppConfig("theme.followSystem");
+    const selectedTheme = useAppConfig("theme.selectedTheme");
 
     const colorScheme = useColorScheme();
 
     useEffect(() => {
-        if (followSystem) {
-            if (colorScheme === "dark") {
-                Theme.setTheme("p-dark");
-            } else if (colorScheme === "light") {
-                Theme.setTheme("p-light");
-            }
+        if (
+            !followSystem ||
+            (selectedTheme &&
+                selectedTheme !== "p-dark" &&
+                selectedTheme !== "p-light")
+        ) {
+            return;
         }
-    }, [colorScheme, followSystem]);
+
+        if (colorScheme === "dark") {
+            Theme.setTheme("p-dark");
+        } else if (colorScheme === "light") {
+            Theme.setTheme("p-light");
+        }
+    }, [colorScheme, followSystem, selectedTheme]);
 
     useEffect(() => {
         let appStateEventSubscription: NativeEventSubscription | null = null;

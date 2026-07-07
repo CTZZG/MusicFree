@@ -9,11 +9,12 @@ import { ImgAsset } from "@/constants/assetsConst";
 interface IThemeCardProps {
     selected?: boolean;
     preview?: string;
+    previewColors?: string[];
     onPress?: () => void;
     title?: string;
 }
 export default function ThemeCard(props: IThemeCardProps) {
-    const { selected, preview, onPress, title } = props;
+    const { selected, preview, previewColors, onPress, title } = props;
 
     const isPreviewColor = preview?.startsWith("#") ? true : false;
 
@@ -36,13 +37,29 @@ export default function ThemeCard(props: IThemeCardProps) {
                 <View
                     style={[
                         styles.container,
-                        isPreviewColor
+                        isPreviewColor && !previewColors?.length
                             ? {
                                 backgroundColor: preview,
                             }
                             : null,
                     ]}>
-                    {isPreviewColor ? null : (
+                    {previewColors?.length ? (
+                        <View style={styles.previewPalette}>
+                            {previewColors.map((color, index) => (
+                                <View
+                                    key={`${color}-${index}`}
+                                    style={[
+                                        styles.previewColor,
+                                        {
+                                            backgroundColor: color,
+                                            opacity: 1 - index * 0.08,
+                                        },
+                                    ]}
+                                />
+                            ))}
+                            <View style={styles.glassHighlight} />
+                        </View>
+                    ) : isPreviewColor ? null : (
                         <Image
                             style={styles.image}
                             uri={preview}
@@ -85,5 +102,26 @@ const styles = StyleSheet.create({
         width: "100%",
         height: "100%",
         borderRadius: rpx(12),
+    },
+    previewPalette: {
+        width: "100%",
+        height: "100%",
+        borderRadius: rpx(12),
+        overflow: "hidden",
+        flexDirection: "row",
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: "rgba(255, 255, 255, 0.7)",
+    },
+    previewColor: {
+        flex: 1,
+    },
+    glassHighlight: {
+        position: "absolute",
+        top: rpx(10),
+        left: rpx(10),
+        right: rpx(10),
+        height: rpx(32),
+        borderRadius: rpx(16),
+        backgroundColor: "rgba(255, 255, 255, 0.48)",
     },
 });

@@ -7,7 +7,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { showPanel } from "../panels/usePanel";
 import useColors from "@/hooks/useColors";
 import TrackPlayer, { useCurrentMusic, useMusicState, useProgress } from "@/core/trackPlayer";
+import Theme from "@/core/theme";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
+import GlassBackdrop from "@/components/base/glassBackdrop";
 import MusicInfo from "./musicInfo";
 import Icon from "@/components/base/icon.tsx";
 import PlayingIndicator from "@/components/base/playingIndicator";
@@ -108,6 +110,7 @@ function MusicBar() {
     const [showKeyboard, setKeyboardStatus] = useState(false);
 
     const colors = useColors();
+    const isFrostedGlass = Theme.useTheme().id === "p-frosted-glass";
     const safeAreaInsets = useSafeAreaInsets();
 
     useEffect(() => {
@@ -149,8 +152,12 @@ function MusicBar() {
                 <View
                     style={[
                         styles.wrapper,
+                        isFrostedGlass ? styles.glassWrapper : null,
                         {
-                            backgroundColor: colors.musicBar,
+                            backgroundColor: isFrostedGlass
+                                ? "transparent"
+                                : colors.musicBar,
+                            borderTopColor: "transparent",
                             paddingRight: safeAreaInsets.right + rpx(24),
                         },
                     ]}
@@ -160,6 +167,9 @@ function MusicBar() {
                     //     navigate(ROUTE_PATH.MUSIC_DETAIL);
                     // }}
                 >
+                    {isFrostedGlass ? (
+                        <GlassBackdrop radius={rpx(66)} intensity={60} />
+                    ) : null}
                     <MusicInfo musicItem={musicItem} />
                     <View style={styles.actionGroup}>
                         <CircularPlayBtn />
@@ -190,6 +200,16 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         paddingRight: rpx(24),
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    glassWrapper: {
+        position: "absolute",
+        left: rpx(24),
+        right: rpx(24),
+        bottom: rpx(20),
+        width: "auto",
+        borderRadius: rpx(66),
+        overflow: "hidden",
     },
     bufferingContainer: {
         width: rpx(72),

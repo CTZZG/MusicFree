@@ -462,7 +462,9 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext): ReactC
     // NOTE: This is NOT standard DES! It's QQ Music's custom variant.
     // Must match the JavaScript implementation in customDES.ts exactly.
 
-    // Custom S-Box tables (from QQ Music client)
+    // Custom S-Box tables (from QQ Music client). Keep the two QQ Music DES
+    // deviations from the standard DES tables: S_BOX2[23] = 15 and
+    // S_BOX4[53] = 10.
     private val S_BOX1 = byteArrayOf(
         14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7,
         0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8,
