@@ -22,6 +22,7 @@ import ThemeText from "@/components/base/themeText";
 import Button from "@/components/base/textButton.tsx";
 import Empty from "@/components/base/empty";
 import { useI18N } from "@/core/i18n";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 export default function () {
     const [history, setHistory] = useState<string[] | null>(null);
@@ -31,6 +32,7 @@ export default function () {
     const setPageStatus = useSetAtom(pageStatusAtom);
     const setSearchResultsState = useSetAtom(searchResultsAtom);
     const { t } = useI18N();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
 
     useEffect(() => {
         getHistory().then(setHistory);
@@ -57,7 +59,13 @@ export default function () {
                     </View>
                     <ScrollView
                         style={style.historyContent}
-                        contentContainerStyle={style.historyContentConainer}>
+                        contentContainerStyle={[
+                            style.historyContentConainer,
+                            {
+                                paddingBottom:
+                                    musicBarBottomInset || rpx(24),
+                            },
+                        ]}>
                         {history.length ? (
                             history.map(_ => (
                                 <Chip

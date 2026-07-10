@@ -5,6 +5,7 @@ import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import { DownloadStatus } from "@/core/downloader";
 import { useI18N } from "@/core/i18n";
 import {
+    isSkippedDownloadWriteResult,
     normalizeDownloadWriteResult,
     type DownloadWriteResult,
 } from "@/core/downloadFinalizationPolicy";
@@ -140,7 +141,8 @@ export function isActiveStatus(status: DownloadStatus) {
     return (
         status === DownloadStatus.Pending ||
         status === DownloadStatus.Preparing ||
-        status === DownloadStatus.Downloading
+        status === DownloadStatus.Downloading ||
+        status === DownloadStatus.Finalizing
     );
 }
 
@@ -194,8 +196,9 @@ export function matchDownloadWriteFilter(
             "failed";
     }
     if (filter === "metadata-skipped") {
-        return getDownloadWriteStatus(musicItem, "downloadMetadataStatus") ===
-            "skipped";
+        return isSkippedDownloadWriteResult(
+            getDownloadWriteStatus(musicItem, "downloadMetadataStatus"),
+        );
     }
     if (filter === "lyric-success") {
         return getDownloadWriteStatus(musicItem, "downloadLyricStatus") ===
@@ -384,7 +387,7 @@ export function getDownloadLyricStatusText(
     status: DownloadWriteStatus | null,
     t: TFunction,
 ) {
-    if (!status || status === "skipped") {
+    if (!status || isSkippedDownloadWriteResult(status)) {
         return "";
     }
     return status === "success"
@@ -396,9 +399,19 @@ export function getDownloadDetailMetadataStatusText(
     status: DownloadWriteStatus | null,
     t: TFunction,
 ) {
-    return status
-        ? getDownloadMetadataStatusText(status, t)
-        : t("downloading.detail.pendingWriteStatus");
+    if (!status) {
+        return t("downloading.detail.unrecordedWriteStatus");
+    }
+    if (status === "skipped-disabled") {
+        return t("downloading.detail.metadataSkippedDisabled");
+    }
+    if (status === "skipped-unavailable") {
+        return t("downloading.detail.metadataSkippedUnavailable");
+    }
+    if (status === "skipped-no-content" || status === "skipped") {
+        return t("localMusic.metadataStatus.skipped");
+    }
+    return getDownloadMetadataStatusText(status, t);
 }
 
 export function getDownloadDetailLyricStatusText(
@@ -406,7 +419,16 @@ export function getDownloadDetailLyricStatusText(
     t: TFunction,
 ) {
     if (!status) {
-        return t("downloading.detail.pendingWriteStatus");
+        return t("downloading.detail.unrecordedWriteStatus");
+    }
+    if (status === "skipped-disabled") {
+        return t("downloading.detail.lyricSkippedDisabled");
+    }
+    if (status === "skipped-no-content") {
+        return t("downloading.detail.lyricSkippedNoContent");
+    }
+    if (status === "skipped-unavailable") {
+        return t("downloading.detail.lyricSkippedUnavailable");
     }
     if (status === "skipped") {
         return t("downloading.detail.lyricSkipped");

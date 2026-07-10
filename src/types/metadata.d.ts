@@ -59,7 +59,7 @@ export interface IMusicMetadata {
 /**
  * 歌词顺序类型
  */
-export type LyricOrderItem = 'original' | 'translation' | 'romanization';
+export type LyricOrderItem = "original" | "translation" | "romanization";
 
 /**
  * 下载音乐元数据写入配置
@@ -80,7 +80,13 @@ export interface IDownloadMetadataConfig {
     /** 是否下载独立歌词文件 */
     downloadLyricFile?: boolean;
     /** 独立歌词文件格式 */
-    lyricFileFormat?: 'lrc' | 'txt';
+    lyricFileFormat?: "lrc" | "txt";
+}
+
+/** 下载收尾阶段共享的歌词与封面结果 */
+export interface IDownloadEnrichment {
+    lyricContent?: string;
+    coverUrl?: string;
 }
 
 /**

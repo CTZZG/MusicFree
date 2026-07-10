@@ -1,6 +1,9 @@
-import { getLyricCandidateDistance } from "../lyricSearchPolicy";
+import {
+    getLyricCandidateDistance,
+    isLyricCandidateMatchAcceptable,
+} from "../lyricSearchPolicy";
 
-describe("getLyricCandidateDistance", () => {
+describe("lyric search policy", () => {
     const target = {
         title: "Back In My Life",
         artist: "Alice Deejay",
@@ -29,5 +32,32 @@ describe("getLyricCandidateDistance", () => {
                 wrongTitleCloseArtist,
             ),
         );
+    });
+
+    it("accepts small formatting and spelling differences", () => {
+        expect(
+            isLyricCandidateMatchAcceptable("Back In My Life", target, {
+                title: "back in my life",
+                artist: "Alice Deejay",
+            }),
+        ).toBe(true);
+    });
+
+    it("rejects an exact title from the wrong artist", () => {
+        expect(
+            isLyricCandidateMatchAcceptable("Back In My Life", target, {
+                title: "Back In My Life",
+                artist: "Completely Different Artist",
+            }),
+        ).toBe(false);
+    });
+
+    it("rejects an unrelated title even when the artist matches", () => {
+        expect(
+            isLyricCandidateMatchAcceptable("Back In My Life", target, {
+                title: "Better Off Alone",
+                artist: "Alice Deejay",
+            }),
+        ).toBe(false);
     });
 });

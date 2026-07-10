@@ -20,6 +20,9 @@ import useSearch from "../../hooks/useSearch";
 import { ISearchResult, queryAtom } from "../../store/atoms";
 import { renderMap } from "./results";
 import { useI18N } from "@/core/i18n";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import { View } from "react-native";
+import rpx from "@/utils/rpx";
 
 interface IResultWrapperProps<
     T extends ICommon.SupportMediaType = ICommon.SupportMediaType,
@@ -45,6 +48,7 @@ function ResultWrapper(props: IResultWrapperProps) {
     const orientation = useOrientation();
     const query = useAtomValue(queryAtom);
     const { t } = useI18N();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
     const didRequestFirstSearchRef = useRef(false);
 
     const ResultComponent = renderMap[tab]!;
@@ -155,9 +159,21 @@ function ResultWrapper(props: IResultWrapperProps) {
                     onRetry={retry}
                 />
             }
-            ListFooterComponent={data?.length ? <ListFooter state={searchState} onRetry={() => {
-                search(query, undefined, tab, pluginHash);
-            }} /> : null}
+            ListFooterComponent={
+                <>
+                    {data?.length ? (
+                        <ListFooter
+                            state={searchState}
+                            onRetry={() => {
+                                search(query, undefined, tab, pluginHash);
+                            }}
+                        />
+                    ) : null}
+                    {musicBarBottomInset ? (
+                        <View style={{ height: musicBarBottomInset }} />
+                    ) : null}
+                </>
+            }
             data={data}
             refreshing={false}
             onRefresh={() => {

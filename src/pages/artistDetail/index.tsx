@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
-import MusicBar from "@/components/musicBar";
 import Header from "./components/header";
 import Body from "./components/body";
 import { useAtom, useSetAtom } from "jotai";
@@ -58,8 +57,6 @@ export default function ArtistDetail() {
                 <Header neverFold={orientation === "horizontal"} />
                 <Body />
             </View>
-
-            <MusicBar />
         </VerticalSafeAreaView>
     );
 }

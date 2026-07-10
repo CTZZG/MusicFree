@@ -51,8 +51,8 @@ class DownloadNotificationManager(
             DownloadTaskStatus.COMPLETED -> {
                 activeDownloadingIds.remove(task.taskId)
                 progressSnapshots.remove(task.taskId)
-                postCompleted(task)
                 taskTitles.remove(task.taskId)
+                cancelTaskNotification(task.taskId)
             }
             DownloadTaskStatus.ERROR -> {
                 activeDownloadingIds.remove(task.taskId)
@@ -151,6 +151,16 @@ class DownloadNotificationManager(
         updateSummaryNotification()
     }
 
+    @Suppress("UNUSED_PARAMETER")
+    fun publishCompleted(taskId: String, title: String, filePath: String?) {
+        activeDownloadingIds.remove(taskId)
+        progressSnapshots.remove(taskId)
+        taskTitles.remove(taskId)
+        cancelTaskNotification(taskId)
+        postCompleted(taskId, title.ifBlank { "MusicFree" })
+        updateSummaryNotification()
+    }
+
     fun areNotificationsEnabled(): Boolean {
         if (!canPostNotifications()) return false
         if (!notificationManagerCompat.areNotificationsEnabled()) return false
@@ -204,9 +214,8 @@ class DownloadNotificationManager(
         notify(taskNotificationId(task.taskId), builder)
     }
 
-    private fun postCompleted(task: DownloadTask) {
+    private fun postCompleted(taskId: String, title: String) {
         if (!areNotificationsEnabled()) return
-        val title = taskTitles[task.taskId] ?: task.title.ifBlank { "MusicFree" }
         val builder = baseBuilder(
             icon = R.drawable.ic_download_done,
             title = "下载完成",
@@ -218,7 +227,7 @@ class DownloadNotificationManager(
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setProgress(0, 0, false)
-        notify(taskNotificationId(task.taskId), builder)
+        notify(taskNotificationId(taskId), builder)
     }
 
     private fun postError(task: DownloadTask) {

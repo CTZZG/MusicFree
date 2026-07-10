@@ -2,7 +2,6 @@ import React from "react";
 import AppBar from "@/components/base/appBar";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView";
 import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
-import MusicBar from "@/components/musicBar";
 import globalStyle from "@/constants/globalStyle";
 import { useI18N } from "@/core/i18n";
 import { useParams } from "@/core/router";
@@ -18,7 +17,6 @@ export default function SheetBrowser() {
             <HorizontalSafeAreaView style={globalStyle.flex1}>
                 <Sheets initialSheetType={params?.sheetType} />
             </HorizontalSafeAreaView>
-            <MusicBar />
         </VerticalSafeAreaView>
     );
 }

@@ -3,6 +3,7 @@
  */
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { getMediaUniqueKey } from "@/utils/mediaUtils";
+import type { DownloadWriteResult } from "@/core/downloadFinalizationPolicy";
 import { useEffect, useState } from "react";
 import { safeParse } from "./jsonUtil";
 
@@ -18,9 +19,9 @@ interface IMediaExtraProperties {
     /** 本地路径 */
     localPath?: string;
     /** 下载元数据写入状态 */
-    downloadMetadataStatus?: "success" | "failed" | "skipped";
+    downloadMetadataStatus?: DownloadWriteResult;
     /** 独立歌词文件写入状态 */
-    downloadLyricStatus?: "success" | "failed" | "skipped";
+    downloadLyricStatus?: DownloadWriteResult;
     /** 歌词偏移 */
     lyricOffset?: number;
     /** 关联歌词 */

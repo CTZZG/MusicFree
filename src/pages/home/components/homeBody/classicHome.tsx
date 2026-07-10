@@ -8,6 +8,7 @@ import ClassicRecentListening from "./classicRecentListening";
 import Operations from "./operations";
 import Sheets from "./sheets";
 import useHomeOverview from "./useHomeOverview";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 export default function ClassicHomeBody() {
     const data = useHomeOverview();
@@ -15,11 +16,15 @@ export default function ClassicHomeBody() {
     const hideHomeRecentListening =
         useAppConfig("theme.hideHomeRecentListening") ?? false;
     const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(36));
 
     return (
         <ScrollView
             style={styles.wrapper}
-            contentContainerStyle={styles.contentContainer}
+            contentContainerStyle={[
+                styles.contentContainer,
+                { paddingBottom: musicBarBottomInset || rpx(36) },
+            ]}
             showsVerticalScrollIndicator={false}>
             {!hideHomeHeroCard ? (
                 <ClassicContinueHero

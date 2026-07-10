@@ -7,8 +7,13 @@ export interface IEditorMusicItem {
 
 /** 编辑页中的音乐条目 */
 const editingMusicListAtom = atom<IEditorMusicItem[]>([]);
+const editingMusicListBaselineAtom = atom<IMusic.IMusicItem[]>([]);
 
 /** 是否变动过 */
 const musicListChangedAtom = atom(false);
 
-export { editingMusicListAtom, musicListChangedAtom };
+export {
+    editingMusicListAtom,
+    editingMusicListBaselineAtom,
+    musicListChangedAtom,
+};

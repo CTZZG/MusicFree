@@ -21,10 +21,20 @@ export default function NavBar() {
             sizeType="normal"
             color={isDirty ? colors.primary : colors.appBarText}
             opacity={isDirty ? 1 : 0.6}
-            onPress={() => {
+            onPress={async () => {
                 if (isDirty && musicSheet?.id) {
-                    saveEditingMusicList(musicSheet.id);
-                    Toast.success(t("toast.saveSuccess"));
+                    try {
+                        await saveEditingMusicList(musicSheet.id);
+                        Toast.success(t("toast.saveSuccess"));
+                    } catch (error) {
+                        Toast.warn(
+                            `${t("common.error")}: ${
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                            }`,
+                        );
+                    }
                 }
             }}
         />}>{musicSheet?.title ?? i18n.t("common.sheet")}</AppBar>

@@ -15,7 +15,6 @@ import {
     getRemoteMediaTitle,
     isRemoteMediaUrl,
     normalizeLocalFilePath,
-    shouldReadLocalSystemMetadata,
 } from "./plugin.utils";
 import notImplementedFunction from "@/utils/notImplementedFunction.ts";
 import axios from "axios";
@@ -1508,16 +1507,12 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
         const localPath = getLocalPath(musicBase);
         if (localPath && !isRemoteMediaUrl(localPath)) {
             const normalizedLocalPath = normalizeLocalFilePath(localPath);
-            if (!shouldReadLocalSystemMetadata(normalizedLocalPath)) {
-                return {
-                    artwork: "",
-                };
-            }
+            // 原生侧会按格式选择安全的封面读取器
             const coverImg = await Mp3Util.getMediaCoverImg(
                 normalizedLocalPath,
             );
             return {
-                artwork: coverImg,
+                artwork: coverImg ?? "",
             };
         }
         return null;
@@ -1576,17 +1571,13 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
         let meta: any = {};
         let id: string;
 
-        if (shouldReadLocalSystemMetadata(localPath)) {
-            try {
-                meta = await Mp3Util.getBasicMeta(localPath);
-            } catch (e: any) {
-                trace("本地音乐元信息读取失败", {
-                    localPath,
-                    message: e?.message ?? String(e),
-                });
-            }
-        } else {
-            trace("本地音乐跳过系统元信息读取", localPath);
+        try {
+            meta = await Mp3Util.getBasicMeta(localPath);
+        } catch (e: any) {
+            trace("本地音乐元信息读取失败", {
+                localPath,
+                message: e?.message ?? String(e),
+            });
         }
 
         try {

@@ -367,7 +367,13 @@ export interface ILanguageData {
     "downloading.detail.metadataStatus": string; // 元数据
     "downloading.detail.lyricStatus": string; // 歌词文件
     "downloading.detail.pendingWriteStatus": string; // 等待写入结果
+    "downloading.detail.unrecordedWriteStatus": string; // 未记录写入结果
+    "downloading.detail.metadataSkippedDisabled": string; // 音乐标签开关已关闭
+    "downloading.detail.metadataSkippedUnavailable": string; // 元数据写入组件不可用
     "downloading.detail.lyricSkipped": string; // 未写入
+    "downloading.detail.lyricSkippedDisabled": string; // 独立歌词文件开关已关闭
+    "downloading.detail.lyricSkippedNoContent": string; // 未找到歌词内容
+    "downloading.detail.lyricSkippedUnavailable": string; // 歌词写入组件不可用
     "downloading.detail.copy": string; // 复制详情
     "downloading.detail.close": string; // 关闭
     "downloading.detail.copyFolderPath": string; // 复制文件夹路径
@@ -392,6 +398,7 @@ export interface ILanguageData {
     "downloading.downloadStatus.pending": string; // 等待中
     "downloading.downloadStatus.paused": string; // 已暂停
     "downloading.downloadStatus.preparing": string; // 准备中
+    "downloading.downloadStatus.finalizing": string; // 正在完成下载
     "downloading.clearCompleted": string; // 清理已完成
     "downloading.clearCompletedConfirm": string; // 清理已完成确认
     "downloading.clearCompletedSuccess": string; // 清理已完成成功

@@ -120,10 +120,10 @@ export default function Background() {
 
                 <ThemeCard
                     previewColors={[
-                        "#eef4fb",
-                        "#f3f1fa",
-                        "#faf3f6",
-                        "#dcebff",
+                        "#cfdff2",
+                        "#d8d5ee",
+                        "#e8d9e6",
+                        "#ffffff",
                     ]}
                     title={t("themeSettings.frostedGlassMode")}
                     selected={themeSelectedTheme === "p-frosted-glass"}

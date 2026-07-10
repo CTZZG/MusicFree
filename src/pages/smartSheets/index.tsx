@@ -1,5 +1,4 @@
 import ListItem, { ListItemHeader } from "@/components/base/listItem";
-import MusicBar from "@/components/musicBar";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useI18N } from "@/core/i18n";
 import {
@@ -14,6 +13,8 @@ import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
 import globalStyle from "@/constants/globalStyle";
 import StatusBar from "@/components/base/statusBar";
 import AppBar from "@/components/base/appBar";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import rpx from "@/utils/rpx";
 
 interface ISmartSheetTemplate {
     key: string;
@@ -36,6 +37,7 @@ export default function SmartSheets() {
     const favoriteCount = useSmartSheetMusicList("favorite").length;
     const localCount = useSmartSheetMusicList("local").length;
     const downloadedCount = useSmartSheetMusicList("downloaded").length;
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
 
     const templates: Array<ISmartSheetTemplate & { count: number }> = [
         {
@@ -94,7 +96,11 @@ export default function SmartSheets() {
         <VerticalSafeAreaView style={globalStyle.fwflex1}>
             <StatusBar />
             <AppBar>{t("smartSheet.title")}</AppBar>
-            <ScrollView style={style.wrapper}>
+            <ScrollView
+                style={style.wrapper}
+                contentContainerStyle={{
+                    paddingBottom: musicBarBottomInset || rpx(24),
+                }}>
                 <ListItemHeader>{t("smartSheet.builtInTemplates")}</ListItemHeader>
                 {templates.map(item => (
                     <ListItem
@@ -194,7 +200,6 @@ export default function SmartSheets() {
                     </>
                 ) : null}
             </ScrollView>
-            <MusicBar />
         </VerticalSafeAreaView>
     );
 }

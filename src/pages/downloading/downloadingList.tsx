@@ -25,6 +25,7 @@ import Icon, { IIconName } from "@/components/base/icon";
 import Toast from "@/utils/toast";
 import TrackPlayer from "@/core/trackPlayer";
 import { showDialog } from "@/components/dialogs/useDialog";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import {
     useMediaExtraProperty,
     useMediaExtraVersion,
@@ -157,6 +158,8 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
         description = t("downloading.downloadStatus.pending");
     } else if (status === DownloadStatus.Preparing) {
         description = t("downloading.downloadStatus.preparing");
+    } else if (status === DownloadStatus.Finalizing) {
+        description = t("downloading.downloadStatus.finalizing");
     } else if (status === DownloadStatus.Paused) {
         description = t("downloading.downloadStatus.paused");
     }
@@ -323,7 +326,15 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
                 icon="arrow-path"
                 position="right"
                 onPress={() => {
-                    void downloader.redownload(musicItem);
+                    void downloader.redownload(musicItem).catch(error => {
+                        Toast.warn(
+                            `${t("downloading.retryFailed")}: ${
+                                error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                            }`,
+                        );
+                    });
                 }}
             />
         ) : null}
@@ -427,6 +438,24 @@ export default function DownloadingList() {
     const mediaExtraVersion = useMediaExtraVersion();
     const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
     const selectionMode = selectedKeys.size > 0;
+    const musicBarFloatingOffset = useMusicBarFloatingOffset(rpx(12));
+    const selectionSpacerStyle = useMemo(
+        () => ({
+            height: rpx(132) + musicBarFloatingOffset,
+        }),
+        [musicBarFloatingOffset],
+    );
+    const selectionBottomBarStyle = useMemo(
+        () => ({
+            backgroundColor: colors.appBar,
+            bottom: musicBarFloatingOffset,
+        }),
+        [colors.appBar, musicBarFloatingOffset],
+    );
+    const listFooterStyle = useMemo(
+        () => ({ height: rpx(24) + musicBarFloatingOffset }),
+        [musicBarFloatingOffset],
+    );
 
     const filterItems: Array<{
         key: DownloadFilter;
@@ -1271,6 +1300,7 @@ export default function DownloadingList() {
             <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                style={style.filterBarScroll}
                 contentContainerStyle={style.filterBar}>
                 {filterItems.map(item => (
                     <FilterChip
@@ -1367,6 +1397,7 @@ export default function DownloadingList() {
             </ScrollView>
             <FlashList
                 style={style.downloading}
+                maintainVisibleContentPosition={{ disabled: true }}
                 ListEmptyComponent={
                     <ListEmpty state={RequestStateCode.IDLE} />
                 }
@@ -1404,7 +1435,15 @@ export default function DownloadingList() {
                     ) : null
                 }
                 ListFooterComponent={
-                    selectionMode ? <View style={style.selectionSpacer} /> : null
+                    <View
+                        style={[
+                            selectionMode
+                                ? style.selectionSpacer
+                                : style.listFooter,
+                            selectionMode ? selectionSpacerStyle : null,
+                            selectionMode ? null : listFooterStyle,
+                        ]}
+                    />
                 }
                 extraData={{
                     completedFileStatusMap,
@@ -1436,7 +1475,7 @@ export default function DownloadingList() {
                 <View
                     style={[
                         style.selectionBottomBar,
-                        { backgroundColor: colors.appBar },
+                        selectionBottomBarStyle,
                     ]}>
                     <SelectionAction
                         icon="motion-play"
@@ -1520,6 +1559,10 @@ const style = StyleSheet.create({
         paddingHorizontal: rpx(24),
         paddingVertical: rpx(16),
     },
+    filterBarScroll: {
+        flexGrow: 0,
+        flexShrink: 0,
+    },
     writeSummary: {
         paddingHorizontal: rpx(24),
         paddingTop: rpx(16),
@@ -1548,6 +1591,9 @@ const style = StyleSheet.create({
     },
     selectionSpacer: {
         height: rpx(132),
+    },
+    listFooter: {
+        height: rpx(24),
     },
     selectionBottomBar: {
         position: "absolute",
@@ -1607,6 +1653,6 @@ const style = StyleSheet.create({
         marginRight: rpx(8),
     },
     downloading: {
-        flexGrow: 0,
+        flex: 1,
     },
 });

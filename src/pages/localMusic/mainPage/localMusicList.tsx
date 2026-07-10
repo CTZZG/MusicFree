@@ -9,6 +9,7 @@ import ThemeText from "@/components/base/themeText";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import MusicList from "@/components/musicList";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import { localMusicSheetId, localPluginPlatform, RequestStateCode } from "@/constants/commonConst";
 import globalStyle from "@/constants/globalStyle";
 import LocalMusicSheet from "@/core/localMusicSheet";
@@ -164,6 +165,7 @@ export default function LocalMusicList() {
     const currentMusic = useCurrentMusic();
     const { t } = useI18N();
     const colors = useColors();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
     const [viewMode, setViewMode] = useState<LocalMusicViewMode>("songs");
     const [artistFilter, setArtistFilter] = useState<string>("all");
     const [albumFilter, setAlbumFilter] = useState<string>("all");
@@ -736,7 +738,13 @@ export default function LocalMusicList() {
                 data={data}
                 keyExtractor={item => item.key}
                 renderItem={({ item }) => renderGroupItem(item, filterType)}
-                ListFooterComponent={<View style={style.listFooter} />}
+                ListFooterComponent={
+                    <View
+                        style={{
+                            height: musicBarBottomInset || rpx(24),
+                        }}
+                    />
+                }
             />
         );
     }
@@ -900,8 +908,5 @@ const style = StyleSheet.create({
         paddingHorizontal: rpx(28),
         paddingTop: rpx(4),
         paddingBottom: rpx(8),
-    },
-    listFooter: {
-        height: rpx(160),
     },
 });

@@ -21,6 +21,7 @@ import { useI18N } from "@/core/i18n";
 import Toast from "@/utils/toast";
 import { useMediaExtraProperty } from "@/utils/mediaExtra";
 import {
+    isSkippedDownloadWriteResult,
     normalizeDownloadWriteResult,
     type DownloadWriteResult,
 } from "@/core/downloadFinalizationPolicy";
@@ -144,7 +145,10 @@ function MusicItem(props: IMusicItemProps) {
             });
         }
 
-        if (downloadLyricStatus && downloadLyricStatus !== "skipped") {
+        if (
+            downloadLyricStatus &&
+            !isSkippedDownloadWriteResult(downloadLyricStatus)
+        ) {
             badges.push({
                 key: "lyric",
                 text:

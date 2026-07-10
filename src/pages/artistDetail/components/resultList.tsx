@@ -6,8 +6,10 @@ import rpx from "@/utils/rpx";
 import { FlashList } from "@shopify/flash-list";
 import { useAtom } from "jotai";
 import React, { useEffect, useRef, useState } from "react";
+import { View } from "react-native";
 import useQueryArtist from "../hooks/useQuery";
 import { IQueryResult, scrollToTopAtom } from "../store/atoms";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 const ITEM_HEIGHT = rpx(120);
 
@@ -21,6 +23,7 @@ export default function ResultList(props: IResultListProps) {
     const [scrollToTopState, setScrollToTopState] = useAtom(scrollToTopAtom);
     const lastScrollY = useRef<number>(0);
     const { pluginHash, artistItem } = useParams<"artist-detail">();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
     const [queryState, setQueryState] = useState<RequestStateCode>(
         data?.state ?? RequestStateCode.IDLE,
     );
@@ -56,9 +59,19 @@ export default function ResultList(props: IResultListProps) {
                 queryArtist(artistItem, 1, tab);
             }}/>}
             ListFooterComponent={
-                data.data?.length ? <ListFooter state={queryState} onRetry={() => {
-                    queryArtist(artistItem, undefined, tab);
-                }}/> : null
+                <>
+                    {data.data?.length ? (
+                        <ListFooter
+                            state={queryState}
+                            onRetry={() => {
+                                queryArtist(artistItem, undefined, tab);
+                            }}
+                        />
+                    ) : null}
+                    {musicBarBottomInset ? (
+                        <View style={{ height: musicBarBottomInset }} />
+                    ) : null}
+                </>
             }
             onEndReached={() => {
                 (queryState === RequestStateCode.IDLE ||

@@ -66,6 +66,53 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
         return !metadataUnsafeExtensions.contains(lowerFileExtension(filePath))
     }
 
+    private fun toLocalFile(filePath: String): File? {
+        val uri = Uri.parse(filePath)
+        val path = if (uri.scheme?.equals("file", ignoreCase = true) == true) {
+            uri.path ?: filePath
+        } else {
+            filePath
+        }
+        val file = File(path)
+        return if (file.exists()) file else null
+    }
+
+    /**
+     * MediaMetadataRetriever 对部分格式（ape/asf/dff/dsf/wma）会崩溃或挂起，
+     * 这些格式改用 jaudiotagger 读取标签。jaudiotagger 2.2.5 支持 asf/wma/dsf；
+     * ape/dff 不支持，返回 null 由上层按无标签处理。
+     */
+    private fun extractMetaWithTagLib(filePath: String): WritableMap? {
+        return try {
+            val file = toLocalFile(filePath) ?: return null
+            val audioFile = AudioFileIO.read(file)
+            val tag = audioFile.tag
+            val header = audioFile.audioHeader
+            Arguments.createMap().apply {
+                header?.trackLength?.let { seconds ->
+                    // 与 MediaMetadataRetriever 保持一致，duration 为毫秒字符串
+                    putString("duration", (seconds.toLong() * 1000L).toString())
+                }
+                header?.bitRate?.let { putString("bitrate", it) }
+                tag?.getFirst(FieldKey.ARTIST)?.takeIf { it.isNotEmpty() }?.let { putString("artist", it) }
+                tag?.getFirst(FieldKey.ALBUM)?.takeIf { it.isNotEmpty() }?.let { putString("album", it) }
+                tag?.getFirst(FieldKey.TITLE)?.takeIf { it.isNotEmpty() }?.let { putString("title", it) }
+                tag?.getFirst(FieldKey.YEAR)?.takeIf { it.isNotEmpty() }?.let { putString("year", it) }
+            }
+        } catch (ignored: Exception) {
+            null
+        }
+    }
+
+    private fun extractArtworkWithTagLib(filePath: String): ByteArray? {
+        return try {
+            val file = toLocalFile(filePath) ?: return null
+            AudioFileIO.read(file).tag?.firstArtwork?.binaryData
+        } catch (ignored: Exception) {
+            null
+        }
+    }
+
     private fun extractBasicMeta(mmr: MediaMetadataRetriever): WritableMap {
         return Arguments.createMap().apply {
             putString("duration", mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION))
@@ -481,7 +528,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
     @ReactMethod
     fun getBasicMeta(filePath: String, promise: Promise) {
         if (!shouldUseMediaMetadataRetriever(filePath)) {
-            promise.resolve(Arguments.createMap())
+            promise.resolve(extractMetaWithTagLib(filePath) ?: Arguments.createMap())
             return
         }
         val mmr = MediaMetadataRetriever()
@@ -512,7 +559,12 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             try {
                 val filePath = filePaths.getString(i) ?: ""
                 if (!shouldUseMediaMetadataRetriever(filePath)) {
-                    metas.pushNull()
+                    val fallbackMeta = extractMetaWithTagLib(filePath)
+                    if (fallbackMeta != null) {
+                        metas.pushMap(fallbackMeta)
+                    } else {
+                        metas.pushNull()
+                    }
                     continue
                 }
                 val uri = Uri.parse(filePath)
@@ -541,11 +593,6 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
 
     @ReactMethod
     fun getMediaCoverImg(filePath: String, promise: Promise) {
-        if (!shouldUseMediaMetadataRetriever(filePath)) {
-            promise.resolve(null)
-            return
-        }
-
         var mmr: MediaMetadataRetriever? = null
         try {
             val uri = Uri.parse(filePath)
@@ -572,13 +619,18 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                 return
             }
 
-            mmr = MediaMetadataRetriever()
-            if (isContentUri) {
-                mmr.setDataSource(reactApplicationContext, uri)
+            val coverImg: ByteArray? = if (!shouldUseMediaMetadataRetriever(filePath)) {
+                // MediaMetadataRetriever 对这些格式不安全，用 jaudiotagger 取内嵌封面
+                if (isContentUri) null else extractArtworkWithTagLib(localPath)
             } else {
-                mmr.setDataSource(localPath)
+                mmr = MediaMetadataRetriever()
+                if (isContentUri) {
+                    mmr.setDataSource(reactApplicationContext, uri)
+                } else {
+                    mmr.setDataSource(localPath)
+                }
+                mmr.embeddedPicture
             }
-            val coverImg = mmr.embeddedPicture
             if (coverImg != null) {
                 val bitmap = decodeCoverBitmapBounded(coverImg)
                 if (bitmap == null) {
@@ -612,11 +664,10 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
     @ReactMethod
     fun getLyric(filePath: String, promise: Promise) {
         try {
-            val file = File(filePath)
-            if (file.exists()) {
+            val file = toLocalFile(filePath)
+            if (file != null) {
                 val audioFile = AudioFileIO.read(file)
-                val tag = audioFile.tag
-                val lrc = tag.getFirst(FieldKey.LYRICS)
+                val lrc = audioFile.tag?.getFirst(FieldKey.LYRICS)
                 promise.resolve(lrc)
             } else {
                 throw IOException("File not found")
@@ -648,10 +699,12 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
                 audioFile.commit()
                 promise.resolve(true)
             } else {
+                android.util.Log.w("Mp3UtilModule", "Failed to set media tag: file does not exist: $filePath")
                 promise.reject("Error", "File Not Exist")
             }
         } catch (e: Exception) {
-            promise.reject("Error", e.message)
+            android.util.Log.e("Mp3UtilModule", "Failed to set media tag: $filePath", e)
+            promise.reject("Error", "Failed to set media tag: ${e.message}", e)
         }
     }
 
@@ -767,6 +820,7 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
         try {
             val file = File(filePath)
             if (!file.exists()) {
+                android.util.Log.w("Mp3UtilModule", "Failed to set media tag with cover: file does not exist: $filePath")
                 promise.reject("Error", "File Not Exist")
                 return
             }
@@ -812,7 +866,8 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
             }
             promise.resolve(true)
         } catch (e: Exception) {
-            promise.reject("Error", e.message)
+            android.util.Log.e("Mp3UtilModule", "Failed to set media tag with cover: $filePath", e)
+            promise.reject("Error", "Failed to set media tag with cover: ${e.message}", e)
         }
     }
 

@@ -2,7 +2,6 @@ import React from "react";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import LocalMusicList from "./localMusicList";
-import MusicBar from "@/components/musicBar";
 import { localMusicSheetId } from "@/constants/commonConst";
 import Toast from "@/utils/toast";
 import { showDialog } from "@/components/dialogs/useDialog";
@@ -111,7 +110,6 @@ export default function MainPage() {
                 {t("localMusic.title")}
             </AppBar>
             <LocalMusicList />
-            <MusicBar />
         </>
     );
 }

@@ -2,7 +2,6 @@ import AppBar from "@/components/base/appBar";
 import Input from "@/components/base/input";
 import StatusBar from "@/components/base/statusBar";
 import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
-import MusicBar from "@/components/musicBar";
 import globalStyle from "@/constants/globalStyle";
 import { fontSizeConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
@@ -55,7 +54,6 @@ export default function SearchMusicList() {
                 />
             </AppBar>
             <SearchResult result={result} musicSheet={musicSheet} />
-            <MusicBar />
         </VerticalSafeAreaView>
     );
 }

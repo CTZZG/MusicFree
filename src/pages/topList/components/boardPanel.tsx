@@ -16,6 +16,7 @@ import ListEmpty from "@/components/base/listEmpty";
 import useColors from "@/hooks/useColors";
 import useOrientation from "@/hooks/useOrientation";
 import { resolveTopListGridLayout } from "./topListGridLayout";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 const HORIZONTAL_PADDING = rpx(24);
 const COLUMN_GAP = rpx(16);
@@ -31,6 +32,7 @@ function BoardPanel(props: IBoardPanelProps) {
     const colors = useColors();
     const orientation = useOrientation();
     const { width: windowWidth } = useWindowDimensions();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(36));
     const requestState =
         topListData?.state ?? RequestStateCode.PENDING_FIRST_PAGE;
     const isLoading =
@@ -55,7 +57,10 @@ function BoardPanel(props: IBoardPanelProps) {
         <Loading />
     ) : (
         <ScrollView
-            contentContainerStyle={style.contentContainer}
+            contentContainerStyle={[
+                style.contentContainer,
+                { paddingBottom: musicBarBottomInset || rpx(36) },
+            ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
                 onRefresh ? (

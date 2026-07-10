@@ -5,7 +5,6 @@ import StatusBar from "@/components/base/statusBar";
 import musicHistory, { useMusicHistory } from "@/core/musicHistory";
 import MusicList from "@/components/musicList";
 import { musicHistorySheetId, RequestStateCode } from "@/constants/commonConst";
-import MusicBar from "@/components/musicBar";
 import AppBar from "@/components/base/appBar";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useI18N } from "@/core/i18n";
@@ -59,7 +58,6 @@ export default function History() {
                     musicList: musicHistoryList,
                 } as IMusic.IMusicSheetItem}
             />
-            <MusicBar />
         </VerticalSafeAreaView>
     );
 }

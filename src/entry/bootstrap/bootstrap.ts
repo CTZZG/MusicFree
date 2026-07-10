@@ -116,9 +116,6 @@ async function bootstrapImpl() {
     bootstrapMetrics.BatchConfigSetup = bootstrapTimestamp.BatchConfigSetup - bootstrapTimestamp.FolderSetup;
     trace("配置初始化完成");
 
-    downloader.setup();
-    trace("下载历史初始化完成");
-
     // 加载插件
     await PluginManager.setup();
     bootstrapTimestamp.PluginSetup = Date.now();
@@ -142,6 +139,9 @@ async function bootstrapImpl() {
     trace("本地音乐初始化完成");
     bootstrapTimestamp.LocalMusicSheetSetup = Date.now();
     bootstrapMetrics.LocalMusicSheetSetup = bootstrapTimestamp.LocalMusicSheetSetup - bootstrapTimestamp.PluginSetup;
+
+    await downloader.setup();
+    trace("下载历史初始化完成");
 
     Theme.setup();
     trace("主题初始化完成");

@@ -1,5 +1,6 @@
 import {
     internalSerializeKey,
+    localPluginPlatform,
     supportLocalMediaType,
 } from "@/constants/commonConst";
 import pathConst from "@/constants/pathConst";
@@ -8,12 +9,23 @@ import { IInjectable } from "@/types/infra";
 import {
     addFileScheme,
     escapeCharacter,
+    getFileName,
     mkdirR,
     removeFileScheme,
 } from "@/utils/fileUtils";
 import { errorLog } from "@/utils/log";
-import { patchMediaExtra } from "@/utils/mediaExtra";
-import { getMediaUniqueKey, isSameMediaItem } from "@/utils/mediaUtils";
+import {
+    getMediaExtra,
+    getMediaExtraProperty,
+    patchMediaExtra,
+    removeMediaExtra,
+    setMediaExtra,
+} from "@/utils/mediaExtra";
+import {
+    getLocalPath,
+    getMediaUniqueKey,
+    isSameMediaItem,
+} from "@/utils/mediaUtils";
 import { hasEncryptedMediaSource } from "@/utils/mflac";
 import network from "@/utils/network";
 import {
@@ -38,6 +50,7 @@ import {
 } from "react-native-fs";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import Mp3Util, {
+    getMp3UtilNativeDiagnostics,
     INativeDownloadTaskStatus,
     NativeDownloadEmitter,
 } from "@/native/mp3Util";
@@ -51,31 +64,45 @@ import { IPluginManager } from "@/types/core/pluginManager";
 import musicMetadataManager from "./musicMetadataManager";
 import downloadNotificationManager from "./downloadNotificationManager";
 import type {
+    IDownloadEnrichment,
     IDownloadMetadataConfig,
     IDownloadTaskMetadata,
 } from "@/types/metadata";
 import { safeParse, safeStringify } from "@/utils/jsonUtil";
 import { filterQueueableDownloadItems } from "./downloadQueuePolicy";
+import { type DownloadWriteResult } from "./downloadFinalizationPolicy";
 import {
-    waitForDownloadWriteTasks,
-    type DownloadWriteResult,
-} from "./downloadFinalizationPolicy";
+    createDownloadAttemptIdentity,
+    IDownloadAttemptIdentity,
+    isSameDownloadAttempt,
+    splitDownloadTaskRetention,
+} from "./downloadTaskPolicy";
+import {
+    getDownloadFinalizationRollbackPaths,
+    IDownloadFinalizationJournal,
+    isDownloadFinalizationJournal,
+    resolveDownloadFinalizationRecovery,
+} from "./downloadFinalizationJournal";
+import { runDownloadFinalizationTransaction } from "./downloadFinalizationRunner";
+import { withTimeout } from "@/utils/promiseTimeout";
 
 type IWriteResult = DownloadWriteResult;
 
 export enum DownloadStatus {
     // 等待下载
-    Pending,
+    Pending = 0,
     // 准备下载链接
-    Preparing,
+    Preparing = 1,
     // 下载中
-    Downloading,
+    Downloading = 2,
     // 已暂停
-    Paused,
+    Paused = 3,
     // 下载完成
-    Completed,
+    Completed = 4,
     // 下载失败
-    Error,
+    Error = 5,
+    // 原始文件已下载，正在复制/解密/写入元数据
+    Finalizing = 6,
 }
 
 export enum DownloaderEvent {
@@ -111,7 +138,7 @@ export enum DownloadFailReason {
     Unknown = "unknown",
 }
 
-interface IDownloadTaskInfo {
+interface IDownloadTaskInfo extends IDownloadAttemptIdentity {
     // 状态
     status: DownloadStatus;
     // 目标文件名
@@ -136,6 +163,8 @@ interface IDownloadTaskInfo {
     startedAt?: number;
     // 下载完成时间
     completedAt?: number;
+    // 下载收尾事务日志，用于取消回滚与进程重启恢复
+    finalization?: IDownloadFinalizationJournal;
 }
 
 export interface IDownloadDiagnosticSnapshot {
@@ -165,13 +194,22 @@ export interface IDownloadDiagnosticSnapshot {
 const downloadQueueAtom = atom<IMusic.IMusicItem[]>([]);
 const downloadTasks = new Map<string, IDownloadTaskInfo>();
 const downloadTasksStore = getOrCreateMMKV("music.DownloadTasks");
-const downloadQueueStorageKey = "queue";
-const downloadTasksStorageKey = "tasks";
-const maxPersistedDownloadTasks = 200;
+const legacyDownloadQueueStorageKey = "queue";
+const legacyDownloadTasksStorageKey = "tasks";
+const downloadStorageSchemaKey = "schemaVersion";
+const activeDownloadQueueStorageKey = "activeQueue";
+const terminalDownloadQueueStorageKey = "terminalQueue";
+const activeDownloadTasksStorageKey = "activeTasks";
+const terminalDownloadTasksStorageKey = "terminalTasks";
+const downloadStorageSchemaVersion = "2";
+const maxPersistedTerminalTasks = 200;
 const NATIVE_DOWNLOAD_STATUS_POLL_MS = 15000;
 const NATIVE_DOWNLOAD_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const DOWNLOAD_SOURCE_RESOLUTION_TIMEOUT_MS = 15_000;
+const DOWNLOAD_SOURCE_PLUGIN_CALL_TIMEOUT_MS = 6_000;
 const NATIVE_DOWNLOAD_PAUSED_ERROR = "Native download paused";
 const DOWNLOAD_TASK_SNAPSHOT_THROTTLE_MS = 500;
+const NATIVE_DOWNLOAD_BRIDGE_TIMEOUT_MS = 5000;
 
 function normalizeRestoredDownloadTask(
     task: Partial<IDownloadTaskInfo> | null,
@@ -180,29 +218,65 @@ function normalizeRestoredDownloadTask(
         return null;
     }
 
+    const logicalKey = task.logicalKey ?? getMediaUniqueKey(task.musicItem);
+    const attemptId = task.attemptId ?? `restored-${nanoid()}`;
     const status = Object.values(DownloadStatus).includes(task.status as any)
         ? task.status
         : DownloadStatus.Error;
-    const shouldMarkInterrupted =
+    const completedWithoutLocalPath =
+        status === DownloadStatus.Completed && !getLocalPath(task.musicItem);
+    const validFinalization = isDownloadFinalizationJournal(task.finalization)
+        ? task.finalization
+        : undefined;
+    const resumableFinalizing =
+        status === DownloadStatus.Finalizing && !!validFinalization;
+    const shouldResumeAsPending =
         status === DownloadStatus.Pending ||
         status === DownloadStatus.Preparing ||
-        status === DownloadStatus.Downloading ||
-        status === DownloadStatus.Paused;
+        status === DownloadStatus.Downloading;
+    const shouldMarkInterrupted =
+        (status === DownloadStatus.Finalizing && !validFinalization) ||
+        completedWithoutLocalPath;
+    const restoredStatus = shouldResumeAsPending
+        ? DownloadStatus.Pending
+        : resumableFinalizing
+            ? DownloadStatus.Finalizing
+            : shouldMarkInterrupted
+                ? DownloadStatus.Error
+                : status;
 
     return {
         ...task,
-        status: shouldMarkInterrupted ? DownloadStatus.Error : status,
+        logicalKey,
+        attemptId,
+        status: restoredStatus,
+        finalization: resumableFinalizing ? validFinalization : undefined,
         jobId: undefined,
-        progressText: shouldMarkInterrupted ? undefined : task.progressText,
+        downloadedSize: shouldResumeAsPending ? undefined : task.downloadedSize,
+        fileSize: shouldResumeAsPending ? undefined : task.fileSize,
+        progressText: shouldResumeAsPending ? undefined : task.progressText,
+        completedAt: completedWithoutLocalPath ? undefined : task.completedAt,
         errorReason: shouldMarkInterrupted
             ? DownloadFailReason.Interrupted
-            : task.errorReason,
+            : shouldResumeAsPending || status === DownloadStatus.Paused
+                ? undefined
+                : task.errorReason,
         errorMessage: shouldMarkInterrupted
-            ? DownloadFailReason.Interrupted
-            : task.errorMessage,
+            ? completedWithoutLocalPath
+                ? "completed task missing local path"
+                : DownloadFailReason.Interrupted
+            : shouldResumeAsPending || status === DownloadStatus.Paused
+                ? undefined
+                : task.errorMessage,
     } as IDownloadTaskInfo;
 }
 
+function isTerminalDownloadTask(task: IDownloadTaskInfo) {
+    return (
+        task.status === DownloadStatus.Completed ||
+        task.status === DownloadStatus.Error
+    );
+}
 function getDownloadStatusName(status: DownloadStatus) {
     return DownloadStatus[status] ?? `${status}`;
 }
@@ -218,21 +292,78 @@ function isNativeDownloadPausedError(error: any) {
 
 function persistDownloadState() {
     const queue = getDefaultStore().get(downloadQueueAtom);
-    const queueKeys = new Set(queue.map(getMediaUniqueKey));
-    const tasks = Array.from(downloadTasks.values())
-        .filter(task => queueKeys.has(getMediaUniqueKey(task.musicItem)))
-        .slice(-maxPersistedDownloadTasks);
+    const retained = splitDownloadTaskRetention(
+        Array.from(downloadTasks.values()),
+        {
+            maxTerminalHistory: maxPersistedTerminalTasks,
+            isTerminal: isTerminalDownloadTask,
+            getTerminalOrder: task => task.completedAt ?? task.startedAt ?? 0,
+        },
+    );
+    const activeKeys = new Set(retained.active.map(task => task.logicalKey));
+    const terminalKeys = new Set(
+        retained.terminal.map(task => task.logicalKey),
+    );
+    const activeQueue = queue.filter(musicItem =>
+        activeKeys.has(getMediaUniqueKey(musicItem)),
+    );
+    const terminalQueue = queue.filter(musicItem =>
+        terminalKeys.has(getMediaUniqueKey(musicItem)),
+    );
+    const activeQueueKeys = new Set(activeQueue.map(getMediaUniqueKey));
+    const terminalQueueKeys = new Set(terminalQueue.map(getMediaUniqueKey));
+    retained.active.forEach(task => {
+        if (!activeQueueKeys.has(task.logicalKey)) {
+            activeQueue.push(task.musicItem);
+        }
+    });
+    retained.terminal.forEach(task => {
+        if (!terminalQueueKeys.has(task.logicalKey)) {
+            terminalQueue.push(task.musicItem);
+        }
+    });
 
     downloadTasksStore.set(
-        downloadQueueStorageKey,
-        safeStringify(queue.slice(-maxPersistedDownloadTasks)),
+        activeDownloadQueueStorageKey,
+        safeStringify(activeQueue),
     );
-    downloadTasksStore.set(downloadTasksStorageKey, safeStringify(tasks));
+    downloadTasksStore.set(
+        terminalDownloadQueueStorageKey,
+        safeStringify(terminalQueue),
+    );
+    downloadTasksStore.set(
+        activeDownloadTasksStorageKey,
+        safeStringify(retained.active),
+    );
+    downloadTasksStore.set(
+        terminalDownloadTasksStorageKey,
+        safeStringify(retained.terminal),
+    );
+    downloadTasksStore.set(
+        downloadStorageSchemaKey,
+        downloadStorageSchemaVersion,
+    );
 }
-
 function setDownloadQueue(queue: IMusic.IMusicItem[]) {
     getDefaultStore().set(downloadQueueAtom, queue);
     persistDownloadState();
+}
+
+function isDownloadedRemoteMusic(musicItem: IMusic.IMusicItem) {
+    return (
+        musicItem.platform !== localPluginPlatform && !!getLocalPath(musicItem)
+    );
+}
+
+function getCompletedLocalDownloadFilename(musicItem: IMusic.IMusicItem) {
+    const localPath = getLocalPath(musicItem);
+    if (!localPath) {
+        return Downloader.generateLegacyFilename(musicItem);
+    }
+    return (
+        getFileName(removeFileScheme(localPath), true) ||
+        Downloader.generateLegacyFilename(musicItem)
+    );
 }
 
 interface IEvents {
@@ -262,7 +393,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private downloadingCount = 0;
     private reservedDownloadPaths = new Set<string>();
 
-    private static generateLegacyFilename(musicItem: IMusic.IMusicItem) {
+    static generateLegacyFilename(musicItem: IMusic.IMusicItem) {
         return `${escapeCharacter(musicItem.platform)}@${escapeCharacter(
             musicItem.id,
         )}@${escapeCharacter(musicItem.title)}@${escapeCharacter(
@@ -279,14 +410,41 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         musicMetadataManager.injectPluginManager(pluginManager);
     }
 
-    setup() {
-        const restoredQueue =
-            safeParse<IMusic.IMusicItem[]>(
-                downloadTasksStore.getString(downloadQueueStorageKey),
+    async setup() {
+        const hasSeparatedStorage =
+            downloadTasksStore.getString(downloadStorageSchemaKey) ===
+            downloadStorageSchemaVersion;
+        const restoredQueue = hasSeparatedStorage
+            ? [
+                ...(safeParse<IMusic.IMusicItem[]>(
+                    downloadTasksStore.getString(
+                        activeDownloadQueueStorageKey,
+                    ),
+                ) ?? []),
+                ...(safeParse<IMusic.IMusicItem[]>(
+                    downloadTasksStore.getString(
+                        terminalDownloadQueueStorageKey,
+                    ),
+                ) ?? []),
+            ]
+            : safeParse<IMusic.IMusicItem[]>(
+                downloadTasksStore.getString(legacyDownloadQueueStorageKey),
             ) ?? [];
-        const restoredTasks =
-            safeParse<Array<Partial<IDownloadTaskInfo>>>(
-                downloadTasksStore.getString(downloadTasksStorageKey),
+        const restoredTasks = hasSeparatedStorage
+            ? [
+                ...(safeParse<Array<Partial<IDownloadTaskInfo>>>(
+                    downloadTasksStore.getString(
+                        terminalDownloadTasksStorageKey,
+                    ),
+                ) ?? []),
+                ...(safeParse<Array<Partial<IDownloadTaskInfo>>>(
+                    downloadTasksStore.getString(
+                        activeDownloadTasksStorageKey,
+                    ),
+                ) ?? []),
+            ]
+            : safeParse<Array<Partial<IDownloadTaskInfo>>>(
+                downloadTasksStore.getString(legacyDownloadTasksStorageKey),
             ) ?? [];
 
         downloadTasks.clear();
@@ -294,7 +452,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             .map(normalizeRestoredDownloadTask)
             .filter((task): task is IDownloadTaskInfo => !!task)
             .forEach(task => {
-                downloadTasks.set(getMediaUniqueKey(task.musicItem), task);
+                downloadTasks.set(task.logicalKey, task);
             });
 
         const restoredQueueKeys = new Set<string>();
@@ -308,21 +466,73 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         });
 
         Array.from(downloadTasks.values()).forEach(task => {
-            const key = getMediaUniqueKey(task.musicItem);
-            if (!restoredQueueKeys.has(key)) {
-                restoredQueueKeys.add(key);
+            if (!restoredQueueKeys.has(task.logicalKey)) {
+                restoredQueueKeys.add(task.logicalKey);
                 queue.push(task.musicItem);
             }
         });
 
+        if (!hasSeparatedStorage) {
+            LocalMusicSheet.getMusicList().forEach(musicItem => {
+                if (!isDownloadedRemoteMusic(musicItem)) {
+                    return;
+                }
+
+                const key = getMediaUniqueKey(musicItem);
+                if (!downloadTasks.has(key)) {
+                    downloadTasks.set(key, {
+                        ...createDownloadAttemptIdentity(key, nanoid),
+                        status: DownloadStatus.Completed,
+                        filename: getCompletedLocalDownloadFilename(musicItem),
+                        musicItem,
+                    });
+                }
+                if (!restoredQueueKeys.has(key)) {
+                    restoredQueueKeys.add(key);
+                    queue.push(musicItem);
+                }
+            });
+        }
+
+        const retained = splitDownloadTaskRetention(
+            Array.from(downloadTasks.values()),
+            {
+                maxTerminalHistory: maxPersistedTerminalTasks,
+                isTerminal: isTerminalDownloadTask,
+                getTerminalOrder: task =>
+                    task.completedAt ?? task.startedAt ?? 0,
+            },
+        );
+        const retainedKeys = new Set(
+            [...retained.active, ...retained.terminal].map(
+                task => task.logicalKey,
+            ),
+        );
+        downloadTasks.forEach((_task, key) => {
+            if (!retainedKeys.has(key)) {
+                downloadTasks.delete(key);
+            }
+        });
         getDefaultStore().set(
             downloadQueueAtom,
-            queue.slice(-maxPersistedDownloadTasks),
+            queue.filter(item => retainedKeys.has(getMediaUniqueKey(item))),
         );
         persistDownloadState();
-        void this.cleanupRestoredNativeDownloadTasks();
+        // Clean up tasks restored by the native manager before recovery can
+        // schedule any new JS task; otherwise the cleanup may delete a task
+        // that was just created during finalization recovery.
+        await this.cleanupRestoredNativeDownloadTasks();
+        await this.recoverFinalizingTasks();
+        if (
+            !network.isOffline &&
+            (!network.isCellular ||
+                this.configService.getConfig(
+                    "basic.useCelluarNetworkDownload",
+                ))
+        ) {
+            this.downloadNextPendingTask();
+        }
     }
-
     private getMaxDownloadCount() {
         return Math.max(
             1,
@@ -333,14 +543,28 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         );
     }
 
-    private async syncNativeMaxConcurrency(maxDownloadCount = this.getMaxDownloadCount()) {
+    private runNativeDownloadOperation<T>(
+        operation: () => PromiseLike<T>,
+        timeoutMessage: string,
+    ) {
+        return withTimeout(
+            Promise.resolve().then(operation),
+            NATIVE_DOWNLOAD_BRIDGE_TIMEOUT_MS,
+            timeoutMessage,
+        );
+    }
+
+    private async syncNativeMaxConcurrency(
+        maxDownloadCount = this.getMaxDownloadCount(),
+    ) {
         if (!this.canUseNativeDownload()) {
             return;
         }
 
-        await Mp3Util.setDownloadMaxConcurrency(maxDownloadCount).catch(
-            () => false,
-        );
+        await this.runNativeDownloadOperation(
+            () => Mp3Util.setDownloadMaxConcurrency(maxDownloadCount),
+            "设置原生下载并发数超时",
+        ).catch(() => false);
     }
 
     private async cleanupRestoredNativeDownloadTasks() {
@@ -348,10 +572,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return;
         }
 
-        const tasks = await Mp3Util.getAllDownloadTasks().catch(() => []);
+        const tasks = await this.runNativeDownloadOperation(
+            () => Mp3Util.getAllDownloadTasks(),
+            "读取原生下载任务超时",
+        ).catch(() => []);
         await Promise.all(
             tasks.map(task =>
-                Mp3Util.removeDownloadTask(task.taskId).catch(() => false),
+                this.runNativeDownloadOperation(
+                    () => Mp3Util.removeDownloadTask(task.taskId),
+                    "清理原生下载任务超时",
+                ).catch(() => false),
             ),
         );
     }
@@ -438,12 +668,34 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
     }
 
+    private isCurrentDownloadAttempt(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+    ) {
+        const logicalKey = getMediaUniqueKey(musicItem);
+        return isSameDownloadAttempt(downloadTasks.get(logicalKey), {
+            logicalKey,
+            attemptId,
+        });
+    }
+
     private updateDownloadTask(
         musicItem: IMusic.IMusicItem,
         patch: Partial<IDownloadTaskInfo>,
+        attemptId?: string,
     ) {
         const key = getMediaUniqueKey(musicItem);
         const previous = downloadTasks.get(key);
+        if (
+            !previous ||
+            (attemptId &&
+                !isSameDownloadAttempt(previous, {
+                    logicalKey: key,
+                    attemptId,
+                }))
+        ) {
+            return previous;
+        }
         const hasChanged =
             !previous ||
             Object.entries(patch).some(
@@ -466,7 +718,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             patch.startedAt !== undefined ||
             patch.completedAt !== undefined ||
             patch.filename !== undefined ||
-            patch.quality !== undefined
+            patch.quality !== undefined ||
+            patch.attemptId !== undefined ||
+            patch.logicalKey !== undefined ||
+            Object.prototype.hasOwnProperty.call(patch, "finalization")
         ) {
             persistDownloadState();
         }
@@ -479,56 +734,120 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             Partial<IDownloadTaskInfo>,
             "downloadedSize" | "fileSize" | "jobId" | "progressText"
         >,
+        attemptId: string,
     ) {
-        return this.updateDownloadTask(musicItem, {
-            status: DownloadStatus.Downloading,
-            ...patch,
-        });
+        return this.updateDownloadTask(
+            musicItem,
+            {
+                status: DownloadStatus.Downloading,
+                ...patch,
+            },
+            attemptId,
+        );
+    }
+
+    private markTaskAsPaused(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+    ) {
+        const key = getMediaUniqueKey(musicItem);
+        const currentTask = downloadTasks.get(key);
+        if (
+            !currentTask ||
+            !isSameDownloadAttempt(currentTask, { logicalKey: key, attemptId }) ||
+            (currentTask.status !== DownloadStatus.Preparing &&
+                currentTask.status !== DownloadStatus.Downloading)
+        ) {
+            return false;
+        }
+
+        this.updateDownloadTask(
+            musicItem,
+            { status: DownloadStatus.Paused },
+            attemptId,
+        );
+        this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+        this.downloadNextPendingTask();
+        return true;
+    }
+
+    private markTaskAsFinalizing(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+        finalization: IDownloadFinalizationJournal,
+    ) {
+        this.updateDownloadTask(
+            musicItem,
+            {
+                status: DownloadStatus.Finalizing,
+                finalization,
+            },
+            attemptId,
+        );
     }
 
     // 开始下载
-    private markTaskAsStarted(musicItem: IMusic.IMusicItem) {
+    private markTaskAsStarted(musicItem: IMusic.IMusicItem, attemptId: string) {
+        if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
+            return;
+        }
         this.downloadingCount++;
-        this.updateDownloadTask(musicItem, {
-            status: DownloadStatus.Preparing,
-            errorReason: undefined,
-            errorMessage: undefined,
-            startedAt: Date.now(),
-        });
+        this.updateDownloadTask(
+            musicItem,
+            {
+                status: DownloadStatus.Preparing,
+                errorReason: undefined,
+                errorMessage: undefined,
+                startedAt: Date.now(),
+            },
+            attemptId,
+        );
     }
 
-    private markTaskAsCompleted(musicItem: IMusic.IMusicItem) {
-        const key = getMediaUniqueKey(musicItem);
-        if (!downloadTasks.has(key)) {
+    private markTaskAsCompleted(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+    ) {
+        if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             return;
         }
         this.downloadingCount = Math.max(0, this.downloadingCount - 1);
-        this.updateDownloadTask(musicItem, {
-            status: DownloadStatus.Completed,
-            errorReason: undefined,
-            errorMessage: undefined,
-            completedAt: Date.now(),
-        });
+        this.updateDownloadTask(
+            musicItem,
+            {
+                status: DownloadStatus.Completed,
+                errorReason: undefined,
+                errorMessage: undefined,
+                completedAt: Date.now(),
+                finalization: undefined,
+            },
+            attemptId,
+        );
     }
 
     private markTaskAsError(
         musicItem: IMusic.IMusicItem,
         reason: DownloadFailReason,
-        error?: Error,
+        error: Error | undefined,
+        attemptId: string,
     ) {
-        const key = getMediaUniqueKey(musicItem);
-        if (!downloadTasks.has(key)) {
+        if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             return;
         }
         this.downloadingCount = Math.max(0, this.downloadingCount - 1);
-        this.updateDownloadTask(musicItem, {
-            status: DownloadStatus.Error,
-            errorReason: reason,
-            errorMessage: getDownloadErrorMessage(error),
-        });
+        this.updateDownloadTask(
+            musicItem,
+            {
+                status: DownloadStatus.Error,
+                errorReason: reason,
+                errorMessage: getDownloadErrorMessage(error),
+                completedAt: Date.now(),
+                finalization: undefined,
+            },
+            attemptId,
+        );
         this.emit(DownloaderEvent.DownloadTaskError, reason, musicItem, error);
     }
-
     private classifyDownloadError(error: any): DownloadFailReason {
         if (network.isOffline) {
             return DownloadFailReason.NetworkOffline;
@@ -582,7 +901,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private getMetadataConfig(): IDownloadMetadataConfig {
         return {
             enabled:
-                this.configService.getConfig("basic.writeMetadata") ?? false,
+                this.configService.getConfig("basic.writeMetadata") ?? true,
             writeCover:
                 this.configService.getConfig("basic.writeMetadataCover") ??
                 true,
@@ -601,8 +920,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 this.configService.getConfig("basic.enableWordByWordLyric") ??
                 false,
             downloadLyricFile:
-                this.configService.getConfig("basic.downloadLyricFile") ??
-                false,
+                this.configService.getConfig("basic.downloadLyricFile") ?? true,
             lyricFileFormat:
                 this.configService.getConfig("basic.lyricFileFormat") ?? "lrc",
         };
@@ -634,6 +952,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private async writeMetadataToFile(
         musicItem: IMusic.IMusicItem,
         filePath: string,
+        config: IDownloadMetadataConfig,
+        getEnrichment: () => Promise<IDownloadEnrichment>,
     ): Promise<IWriteResult> {
         const taskMetadata: IDownloadTaskMetadata = {
             musicItem,
@@ -644,14 +964,21 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     : undefined,
         };
 
-        const config = this.getMetadataConfig();
-        if (!config.enabled || !musicMetadataManager.isAvailable()) {
-            return "skipped";
+        if (!config.enabled) {
+            return "skipped-disabled";
+        }
+        if (!musicMetadataManager.isAvailable()) {
+            const diagnostics = getMp3UtilNativeDiagnostics();
+            console.warn("Mp3Util metadata writer unavailable", diagnostics);
+            errorLog("元数据写入组件不可用", diagnostics);
+            return "skipped-unavailable";
         }
 
+        const enrichment = await getEnrichment();
         const success = await musicMetadataManager.writeMetadataForDownloadTask(
             taskMetadata,
             config,
+            enrichment,
         );
         return success ? "success" : "failed";
     }
@@ -672,23 +999,24 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private async writeLyricFileForDownload(
         musicItem: IMusic.IMusicItem,
         filePath: string,
+        config: IDownloadMetadataConfig,
+        getEnrichment: () => Promise<IDownloadEnrichment>,
+        lyricPathOverride?: string,
     ): Promise<IWriteResult> {
-        const config = this.getMetadataConfig();
         if (!config.downloadLyricFile) {
-            return "skipped";
+            return "skipped-disabled";
         }
 
-        const lyric = await musicMetadataManager.getLyricContentForDownload(
-            musicItem,
-            config,
-        );
+        const { lyricContent: lyric } = await getEnrichment();
         if (!lyric?.trim()) {
-            return "skipped";
+            return "skipped-no-content";
         }
 
         const format = config.lyricFileFormat ?? "lrc";
         const cleanFilePath = removeFileScheme(filePath);
-        const lyricPath = cleanFilePath.replace(/\.[^/.\\]+$/, `.${format}`);
+        const lyricPath =
+            lyricPathOverride ??
+            cleanFilePath.replace(/\.[^/.\\]+$/, `.${format}`);
         const content =
             format === "txt" ? this.stripLyricTimestamps(lyric) : lyric;
 
@@ -696,6 +1024,432 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         return "success";
     }
 
+    private getFinalizationSidecarPaths(targetPath: string) {
+        const config = this.getMetadataConfig();
+        if (!config.downloadLyricFile) {
+            return [];
+        }
+        const format = config.lyricFileFormat ?? "lrc";
+        const lyricPath = targetPath.replace(/\.[^/.\\]+$/, `.${format}`);
+        return lyricPath === targetPath ? [] : [lyricPath];
+    }
+
+    private assertFinalizationCanContinue(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+    ) {
+        const logicalKey = getMediaUniqueKey(musicItem);
+        const task = downloadTasks.get(logicalKey);
+        if (!task || !isSameDownloadAttempt(task, { logicalKey, attemptId })) {
+            throw new Error("Download task removed");
+        }
+        if (task.finalization?.cancelRequested) {
+            throw new Error("Download finalization cancelled");
+        }
+        return task;
+    }
+
+    private updateFinalizationJournal(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+        journal: IDownloadFinalizationJournal,
+    ) {
+        this.assertFinalizationCanContinue(musicItem, attemptId);
+        this.updateDownloadTask(
+            musicItem,
+            {
+                status: DownloadStatus.Finalizing,
+                finalization: journal,
+            },
+            attemptId,
+        );
+        return journal;
+    }
+
+    private async settleFinalizationWrite(
+        kind: "metadata" | "lyric",
+        operation: () => Promise<IWriteResult>,
+    ): Promise<IWriteResult> {
+        try {
+            return await operation();
+        } catch (error) {
+            errorLog(
+                kind === "metadata"
+                    ? "元数据写入失败，但不影响下载完成"
+                    : "独立歌词文件写入失败，但不影响下载完成",
+                error instanceof Error ? error.message : String(error),
+            );
+            return "failed";
+        }
+    }
+
+    private async unlinkFinalizationPath(filePath: string) {
+        try {
+            if (await exists(removeFileScheme(filePath))) {
+                await unlink(removeFileScheme(filePath));
+            }
+            return true;
+        } catch (error) {
+            errorLog("下载收尾回滚删除文件失败", {
+                filePath,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return false;
+        }
+    }
+
+    private async rollbackFinalization(
+        musicItem: IMusic.IMusicItem,
+        journal: IDownloadFinalizationJournal,
+    ) {
+        const targetPath = addFileScheme(journal.targetPath);
+        try {
+            await LocalMusicSheet.removeMusicIfLocalPath(musicItem, targetPath);
+        } catch (error) {
+            throw new Error(
+                `Failed to persist local music rollback: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            );
+        }
+
+        const mediaExtraPath = getMediaExtraProperty(musicItem, "localPath");
+        if (
+            typeof mediaExtraPath === "string" &&
+            removeFileScheme(mediaExtraPath) ===
+                removeFileScheme(journal.targetPath)
+        ) {
+            patchMediaExtra(musicItem, {
+                downloaded: false,
+                localPath: undefined,
+                downloadMetadataStatus: undefined,
+                downloadLyricStatus: undefined,
+            });
+        }
+
+        const failedPaths: string[] = [];
+        for (const filePath of getDownloadFinalizationRollbackPaths(journal)) {
+            if (!(await this.unlinkFinalizationPath(filePath))) {
+                failedPaths.push(filePath);
+            }
+        }
+        if (failedPaths.length) {
+            throw new Error(
+                `Failed to remove finalization artifacts: ${failedPaths.join(
+                    ", ",
+                )}`,
+            );
+        }
+        this.releaseReservedDownloadPath(journal.targetPath);
+    }
+
+    private finishCancelledFinalization(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+    ) {
+        const logicalKey = getMediaUniqueKey(musicItem);
+        const task = downloadTasks.get(logicalKey);
+        if (!task || !isSameDownloadAttempt(task, { logicalKey, attemptId })) {
+            return;
+        }
+        this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+        downloadTasks.delete(logicalKey);
+        setDownloadQueue(
+            getDefaultStore()
+                .get(downloadQueueAtom)
+                .filter(item => !isSameMediaItem(item, musicItem)),
+        );
+        this.emit(DownloaderEvent.DownloadTaskListChanged);
+        this.downloadNextPendingTask();
+    }
+
+    private async handleFinalizationFailure(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+        journal: IDownloadFinalizationJournal,
+        error: Error,
+    ) {
+        const logicalKey = getMediaUniqueKey(musicItem);
+        const taskBeforeRollback = downloadTasks.get(logicalKey);
+        const latestJournal = isSameDownloadAttempt(taskBeforeRollback, {
+            logicalKey,
+            attemptId,
+        })
+            ? taskBeforeRollback?.finalization ?? journal
+            : journal;
+        try {
+            await this.rollbackFinalization(musicItem, latestJournal);
+        } catch (rollbackError) {
+            errorLog("下载收尾回滚未完成，将在下次启动时重试", {
+                attemptId,
+                error:
+                    rollbackError instanceof Error
+                        ? rollbackError.message
+                        : String(rollbackError),
+            });
+            const pendingRollbackTask = downloadTasks.get(logicalKey);
+            if (
+                isSameDownloadAttempt(pendingRollbackTask, {
+                    logicalKey,
+                    attemptId,
+                }) &&
+                pendingRollbackTask?.finalization
+            ) {
+                this.updateDownloadTask(
+                    musicItem,
+                    {
+                        status: DownloadStatus.Finalizing,
+                        errorMessage: getDownloadErrorMessage(error),
+                        finalization: {
+                            ...pendingRollbackTask.finalization,
+                            rollbackRequested:
+                                !pendingRollbackTask.finalization
+                                    .cancelRequested,
+                        },
+                    },
+                    attemptId,
+                );
+            }
+            return;
+        }
+        const currentTask = downloadTasks.get(logicalKey);
+        if (!isSameDownloadAttempt(currentTask, { logicalKey, attemptId })) {
+            return;
+        }
+        if (
+            currentTask?.finalization?.cancelRequested ||
+            error.message === "Download finalization cancelled"
+        ) {
+            this.finishCancelledFinalization(musicItem, attemptId);
+            return;
+        }
+        this.markTaskAsError(
+            musicItem,
+            this.classifyDownloadError(error),
+            error,
+            attemptId,
+        );
+    }
+
+    private async runDownloadFinalization(params: {
+        musicItem: IMusic.IMusicItem;
+        attemptId: string;
+        journal: IDownloadFinalizationJournal;
+        cencDownloadKey?: string;
+    }) {
+        const { musicItem, attemptId, cencDownloadKey, journal } = params;
+        const targetPath = addFileScheme(journal.targetPath);
+        const metadataConfig = this.getMetadataConfig();
+        let enrichmentPromise: Promise<IDownloadEnrichment> | undefined;
+        const getEnrichment = () => {
+            if (!enrichmentPromise) {
+                enrichmentPromise = musicMetadataManager.getDownloadEnrichment(
+                    musicItem,
+                    metadataConfig,
+                    typeof musicItem.artwork === "string"
+                        ? musicItem.artwork
+                        : undefined,
+                );
+            }
+            return enrichmentPromise;
+        };
+
+        await runDownloadFinalizationTransaction(journal, {
+            assertCanContinue: () =>
+                this.assertFinalizationCanContinue(musicItem, attemptId),
+            prepareArtifact: async () => {
+                if (await exists(journal.targetPath)) {
+                    await unlink(journal.targetPath);
+                }
+                this.assertFinalizationCanContinue(musicItem, attemptId);
+                if (journal.requiresDecryption) {
+                    if (!cencDownloadKey) {
+                        throw new Error(
+                            "Encrypted finalization cannot resume without its decryption key",
+                        );
+                    }
+                    const decrypted = await Cenc.decryptFile(
+                        journal.cachePath,
+                        journal.targetPath,
+                        cencDownloadKey,
+                    );
+                    if (!decrypted) {
+                        throw new Error("CENC file decryption failed");
+                    }
+                } else {
+                    await copyFile(journal.cachePath, journal.targetPath);
+                }
+                this.assertFinalizationCanContinue(musicItem, attemptId);
+                if (!(await this.hasDownloadArtifact(journal.targetPath))) {
+                    throw new Error("Final download artifact is empty");
+                }
+            },
+            writeMetadata: () =>
+                this.settleFinalizationWrite("metadata", () =>
+                    this.writeMetadataToFile(
+                        musicItem,
+                        targetPath,
+                        metadataConfig,
+                        getEnrichment,
+                    ),
+                ),
+            writeLyric: () =>
+                this.settleFinalizationWrite("lyric", () =>
+                    this.writeLyricFileForDownload(
+                        musicItem,
+                        targetPath,
+                        metadataConfig,
+                        getEnrichment,
+                        journal.sidecarPaths[0],
+                    ),
+                ),
+            indexLocalMusic: async () => {
+                const localMusicItem = {
+                    ...musicItem,
+                    [internalSerializeKey]: {
+                        ...(musicItem[internalSerializeKey] ?? {}),
+                        localPath: targetPath,
+                    },
+                };
+                await LocalMusicSheet.upsertMusic(localMusicItem);
+                try {
+                    this.assertFinalizationCanContinue(musicItem, attemptId);
+                } catch (error) {
+                    await LocalMusicSheet.removeMusicIfLocalPath(
+                        musicItem,
+                        targetPath,
+                    ).catch(() => false);
+                    throw error;
+                }
+            },
+            commitMediaExtra: async currentJournal => {
+                patchMediaExtra(musicItem, {
+                    downloaded: true,
+                    localPath: targetPath,
+                    downloadMetadataStatus:
+                        currentJournal.metadataResult ?? "failed",
+                    downloadLyricStatus: currentJournal.lyricResult ?? "failed",
+                });
+            },
+            verifyFinalArtifact: async () => {
+                if (!(await this.hasDownloadArtifact(journal.targetPath))) {
+                    throw new Error(
+                        "Final download artifact is missing or empty",
+                    );
+                }
+            },
+            persistJournal: nextJournal =>
+                this.updateFinalizationJournal(
+                    musicItem,
+                    attemptId,
+                    nextJournal,
+                ),
+            cleanupCache: async () => {
+                await this.unlinkFinalizationPath(journal.cachePath);
+            },
+            releaseReservation: () =>
+                this.releaseReservedDownloadPath(journal.targetPath),
+            publishCompletion: () =>
+                downloadNotificationManager.showCompleted(
+                    attemptId,
+                    musicItem,
+                    targetPath,
+                ),
+            cancelPublishedCompletion: () =>
+                downloadNotificationManager.cancelNotification(attemptId),
+            removeNativeTask: async () => {
+                await this.runNativeDownloadOperation(
+                    () => Mp3Util.removeDownloadTask(attemptId),
+                    "确认原生下载任务完成超时",
+                );
+            },
+            completeTask: () => this.markTaskAsCompleted(musicItem, attemptId),
+        });
+    }
+
+    private async recoverFinalizingTasks() {
+        const tasks = Array.from(downloadTasks.values()).filter(
+            task =>
+                task.status === DownloadStatus.Finalizing &&
+                !!task.finalization,
+        );
+        for (const task of tasks) {
+            const journal = task.finalization!;
+            this.reservedDownloadPaths.add(journal.targetPath);
+            const [cacheExists, targetExists] = await Promise.all([
+                this.hasDownloadArtifact(journal.cachePath),
+                this.hasDownloadArtifact(journal.targetPath),
+            ]);
+            const decision = resolveDownloadFinalizationRecovery({
+                journal,
+                cacheExists,
+                targetExists,
+            });
+            if (decision.action === "rollback") {
+                try {
+                    await this.rollbackFinalization(task.musicItem, journal);
+                } catch (rollbackError) {
+                    errorLog("启动恢复下载收尾回滚失败，将保留日志重试", {
+                        attemptId: task.attemptId,
+                        error:
+                            rollbackError instanceof Error
+                                ? rollbackError.message
+                                : String(rollbackError),
+                    });
+                    continue;
+                }
+                if (decision.reason === "cancelled") {
+                    this.finishCancelledFinalization(
+                        task.musicItem,
+                        task.attemptId,
+                    );
+                } else {
+                    this.markTaskAsError(
+                        task.musicItem,
+                        DownloadFailReason.Interrupted,
+                        new Error(
+                            decision.reason === "failed"
+                                ? "Previous finalization failed and was rolled back"
+                                : "Finalization artifacts are missing",
+                        ),
+                        task.attemptId,
+                    );
+                }
+                continue;
+            }
+
+            let recoveryJournal = journal;
+            if (
+                decision.action === "continue" &&
+                decision.from !== journal.stage
+            ) {
+                recoveryJournal = this.updateFinalizationJournal(
+                    task.musicItem,
+                    task.attemptId,
+                    {
+                        ...journal,
+                        stage: decision.from,
+                        metadataResult: undefined,
+                        lyricResult: undefined,
+                    },
+                );
+            }
+            try {
+                await this.runDownloadFinalization({
+                    musicItem: task.musicItem,
+                    attemptId: task.attemptId,
+                    journal: recoveryJournal,
+                });
+            } catch (error) {
+                await this.handleFinalizationFailure(
+                    task.musicItem,
+                    task.attemptId,
+                    recoveryJournal,
+                    error instanceof Error ? error : new Error(String(error)),
+                );
+            }
+        }
+    }
     private canUseNativeDownload() {
         return (
             !!NativeDownloadEmitter && !!Mp3Util?.isNativeDownloadAvailable?.()
@@ -705,8 +1459,12 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private updateFromNativeTask(
         musicItem: IMusic.IMusicItem,
         task: INativeDownloadTaskStatus,
+        attemptId: string,
     ) {
-        if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
+        if (
+            task.taskId !== attemptId ||
+            !this.isCurrentDownloadAttempt(musicItem, attemptId)
+        ) {
             return;
         }
 
@@ -723,7 +1481,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             status = DownloadStatus.Paused;
             break;
         case "COMPLETED":
-            status = DownloadStatus.Completed;
+            status = DownloadStatus.Finalizing;
             break;
         case "ERROR":
         case "CANCELED":
@@ -731,37 +1489,54 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             break;
         }
 
-        this.updateDownloadTask(musicItem, {
-            status,
-            downloadedSize:
-                typeof task.downloaded === "number"
-                    ? task.downloaded
-                    : undefined,
-            fileSize:
-                typeof task.total === "number" && task.total > 0
-                    ? task.total
-                    : undefined,
-            progressText: task.progressText,
-        });
+        this.updateDownloadTask(
+            musicItem,
+            {
+                status,
+                downloadedSize:
+                    typeof task.downloaded === "number"
+                        ? task.downloaded
+                        : undefined,
+                fileSize:
+                    typeof task.total === "number" && task.total > 0
+                        ? task.total
+                        : undefined,
+                progressText: task.progressText,
+            },
+            attemptId,
+        );
     }
 
     private async downloadFileWithNative(
         musicItem: IMusic.IMusicItem,
         url: string,
         destinationPath: string,
+        attemptId: string,
         headers?: Record<string, string>,
     ) {
         if (!this.canUseNativeDownload()) {
             throw new Error("NativeDownload is not available");
         }
 
-        const taskId = getMediaUniqueKey(musicItem);
+        const logicalKey = getMediaUniqueKey(musicItem);
+        const identity = { logicalKey, attemptId };
+        const taskId = attemptId;
         await downloadNotificationManager.prepareForDownload();
+        if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
+            throw new Error("Download task removed");
+        }
         await downloadNotificationManager.showDownloadNotification(
             taskId,
             musicItem,
         );
-        await Mp3Util.removeDownloadTask(taskId).catch(() => {});
+        await this.runNativeDownloadOperation(
+            () => Mp3Util.removeDownloadTask(taskId),
+            "重置原生下载任务超时",
+        ).catch(() => false);
+        if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
+            await downloadNotificationManager.cancelNotification(taskId);
+            throw new Error("Download task removed");
+        }
 
         return new Promise<void>((resolve, reject) => {
             let settled = false;
@@ -790,11 +1565,21 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 cleanup();
                 callback();
             };
+            const abortNativeTask = () => {
+                void Mp3Util.cancelDownloadTask(taskId).catch(() => {});
+                void Mp3Util.removeDownloadTask(taskId).catch(() => {});
+                void downloadNotificationManager.cancelNotification(taskId);
+            };
+            const rejectAsRemoved = () => {
+                abortNativeTask();
+                settle(() => reject(new Error("Download task removed")));
+            };
             const resetIdleTimeout = () => {
                 if (idleTimeout) {
                     clearTimeout(idleTimeout);
                 }
                 idleTimeout = setTimeout(() => {
+                    abortNativeTask();
                     settle(() =>
                         reject(
                             new Error(
@@ -819,39 +1604,34 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             const rejectAsPaused = () => {
                 settle(() => reject(new Error(NATIVE_DOWNLOAD_PAUSED_ERROR)));
             };
-            // 任务已被用户删除时，必须同时终止原生下载，否则原生会继续
-            // 下载到缓存文件直到完成（幽灵下载：浪费流量 + 通知残留）
-            const abortNativeTask = () => {
-                void Mp3Util.cancelDownloadTask(taskId).catch(() => {});
-                void Mp3Util.removeDownloadTask(taskId).catch(() => {});
-                void downloadNotificationManager.cancelNotification(taskId);
-            };
-            const rejectAsRemoved = () => {
-                abortNativeTask();
-                settle(() => reject(new Error("Download task removed")));
+            const getCurrentTask = () => {
+                const currentTask = downloadTasks.get(logicalKey);
+                return isSameDownloadAttempt(currentTask, identity)
+                    ? currentTask
+                    : undefined;
             };
             const isCurrentTaskPaused = () =>
-                downloadTasks.get(taskId)?.status === DownloadStatus.Paused;
+                getCurrentTask()?.status === DownloadStatus.Paused;
             const handleNativeStatus = (task: INativeDownloadTaskStatus) => {
+                if (task.taskId !== taskId) {
+                    return;
+                }
+                if (!getCurrentTask()) {
+                    rejectAsRemoved();
+                    return;
+                }
                 if (
                     task.status === "PAUSED" ||
                     (task.status === "CANCELED" && isCurrentTaskPaused())
                 ) {
-                    this.updateDownloadTask(musicItem, {
-                        status: DownloadStatus.Paused,
-                    });
+                    this.markTaskAsPaused(musicItem, attemptId);
                     rejectAsPaused();
                     return;
                 }
 
                 noteByteProgress(task.downloaded);
-                this.updateFromNativeTask(musicItem, task);
+                this.updateFromNativeTask(musicItem, task, attemptId);
                 if (task.status === "COMPLETED") {
-                    void downloadNotificationManager.showCompleted(
-                        taskId,
-                        musicItem,
-                        task.destinationPath ?? destinationPath,
-                    );
                     settle(resolve);
                 } else if (
                     task.status === "ERROR" ||
@@ -880,16 +1660,19 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 if (settled) {
                     return;
                 }
-                if (!downloadTasks.has(taskId)) {
+                if (!getCurrentTask()) {
                     rejectAsRemoved();
                     return;
                 }
-                Mp3Util.getDownloadTaskStatus(taskId)
+                this.runNativeDownloadOperation(
+                    () => Mp3Util.getDownloadTaskStatus(taskId),
+                    "轮询原生下载状态超时",
+                )
                     .then(task => {
                         if (settled) {
                             return;
                         }
-                        if (!downloadTasks.has(taskId)) {
+                        if (!getCurrentTask()) {
                             rejectAsRemoved();
                             return;
                         }
@@ -903,12 +1686,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                                     if (settled) {
                                         return;
                                     }
+                                    if (!getCurrentTask()) {
+                                        rejectAsRemoved();
+                                        return;
+                                    }
                                     if (hasArtifact) {
-                                        void downloadNotificationManager.showCompleted(
-                                            taskId,
-                                            musicItem,
-                                            destinationPath,
-                                        );
                                         settle(resolve);
                                     } else {
                                         settle(() =>
@@ -953,7 +1735,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     const progress = items.find(
                         (item: any) => item?.taskId === taskId,
                     );
-                    if (!progress || !downloadTasks.has(taskId)) {
+                    if (!progress || !getCurrentTask()) {
                         return;
                     }
                     const downloaded =
@@ -961,18 +1743,22 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                             ? progress.downloaded
                             : undefined;
                     noteByteProgress(downloaded);
-                    this.updateDownloadTaskProgress(musicItem, {
-                        downloadedSize: downloaded,
-                        fileSize:
-                            typeof progress.total === "number" &&
-                            progress.total > 0
-                                ? progress.total
-                                : undefined,
-                        progressText:
-                            typeof progress.progressText === "string"
-                                ? progress.progressText
-                                : undefined,
-                    });
+                    this.updateDownloadTaskProgress(
+                        musicItem,
+                        {
+                            downloadedSize: downloaded,
+                            fileSize:
+                                typeof progress.total === "number" &&
+                                progress.total > 0
+                                    ? progress.total
+                                    : undefined,
+                            progressText:
+                                typeof progress.progressText === "string"
+                                    ? progress.progressText
+                                    : undefined,
+                        },
+                        attemptId,
+                    );
                     void downloadNotificationManager.updateProgress(taskId, {
                         downloadedSize:
                             typeof progress.downloaded === "number"
@@ -1000,18 +1786,23 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 },
             );
 
-            Mp3Util.addDownloadTask({
-                taskId,
-                url,
-                destinationPath: removeFileScheme(destinationPath),
-                headers: headers ?? {},
-                title: musicItem.title || "MusicFree",
-                description: musicItem.artist || "正在下载音乐文件...",
-                coverUrl:
-                    typeof musicItem.artwork === "string"
-                        ? musicItem.artwork
-                        : null,
-            })
+            this.runNativeDownloadOperation(
+                () =>
+                    Mp3Util.addDownloadTask({
+                        taskId,
+                        url,
+                        destinationPath: removeFileScheme(destinationPath),
+                        headers: headers ?? {},
+                        title: musicItem.title || "MusicFree",
+                        description: musicItem.artist || "正在下载音乐文件...",
+                        coverUrl:
+                            typeof musicItem.artwork === "string"
+                                ? musicItem.artwork
+                                : null,
+                        extraJson: safeStringify(identity),
+                    }),
+                "创建原生下载任务超时",
+            )
                 .then(added => {
                     if (!added) {
                         settle(() =>
@@ -1019,18 +1810,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                         );
                         return;
                     }
-                    // remove() 可能发生在 removeDownloadTask 与 addDownloadTask
-                    // 之间（此时 cancel 是 no-op），添加成功后需复查一次
-                    if (!downloadTasks.has(taskId)) {
+                    if (!getCurrentTask()) {
                         rejectAsRemoved();
                     }
                 })
                 .catch(error => {
+                    abortNativeTask();
                     settle(() => reject(error));
                 });
         });
     }
-
     private stopJsDownloadIfNeeded(task: IDownloadTaskInfo) {
         if (this.canUseNativeDownload() || typeof task.jobId !== "number") {
             return;
@@ -1075,8 +1864,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
 
         const musicItem = nextTask.musicItem;
+        const attemptId = nextTask.attemptId;
+        let taskQuality = nextTask.quality;
+        let taskFilename = nextTask.filename;
         // 更新下载状态
-        this.markTaskAsStarted(musicItem);
+        this.markTaskAsStarted(musicItem, attemptId);
 
         let url = musicItem.url;
         let headers = createDownloadHeaders(
@@ -1086,14 +1878,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         let ekey: string | undefined = musicItem.ekey;
         let cek: string | undefined = musicItem.cek;
         let foundEncryptedSource = false;
-        let resolvedQuality = nextTask.quality;
+        let resolvedQuality = taskQuality;
 
         const plugin = this.pluginManagerService.getByName(musicItem.platform);
 
         try {
             if (plugin) {
                 const qualityOrder = getQualityOrder(
-                    nextTask.quality ??
+                    taskQuality ??
                         this.configService.getConfig(
                             "basic.defaultDownloadQuality",
                         ) ??
@@ -1103,13 +1895,29 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     ) ?? "asc",
                 );
                 let data: IPlugin.IMediaSourceResult | null = null;
+                const sourceResolutionDeadline =
+                    Date.now() + DOWNLOAD_SOURCE_RESOLUTION_TIMEOUT_MS;
                 for (let quality of qualityOrder) {
+                    const remainingSourceResolutionMs =
+                        sourceResolutionDeadline - Date.now();
+                    if (remainingSourceResolutionMs <= 0) {
+                        break;
+                    }
                     try {
-                        data = await plugin.methods.getMediaSource(
-                            musicItem,
-                            quality,
-                            1,
-                            true,
+                        data = await withTimeout(
+                            Promise.resolve().then(() =>
+                                plugin.methods.getMediaSource(
+                                    musicItem,
+                                    quality,
+                                    1,
+                                    true,
+                                ),
+                            ),
+                            Math.min(
+                                remainingSourceResolutionMs,
+                                DOWNLOAD_SOURCE_PLUGIN_CALL_TIMEOUT_MS,
+                            ),
+                            "获取下载媒体源超时",
                         );
                         if (!data?.url) {
                             continue;
@@ -1159,17 +1967,23 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 );
                 throw error;
             }
-            if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
+            if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
                 return;
             }
-            if (resolvedQuality && resolvedQuality !== nextTask.quality) {
-                nextTask = this.updateDownloadTask(musicItem, {
-                    quality: resolvedQuality,
-                    filename: this.generateFilename(
-                        musicItem,
-                        resolvedQuality,
-                    ),
-                });
+            if (resolvedQuality && resolvedQuality !== taskQuality) {
+                taskQuality = resolvedQuality;
+                taskFilename = this.generateFilename(
+                    musicItem,
+                    resolvedQuality,
+                );
+                this.updateDownloadTask(
+                    musicItem,
+                    {
+                        quality: resolvedQuality,
+                        filename: taskFilename,
+                    },
+                    attemptId,
+                );
             }
         } catch (e: any) {
             /** 无法下载，跳过 */
@@ -1178,7 +1992,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     id: musicItem.id,
                     title: musicItem.title,
                     platform: musicItem.platform,
-                    quality: nextTask.quality,
+                    quality: taskQuality,
                 },
                 reason: e?.message ?? e,
             });
@@ -1188,6 +2002,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     musicItem,
                     DownloadFailReason.FailToFetchSource,
                     e,
+                    attemptId,
                 );
             } else if (
                 `${e.message ?? e}`.startsWith(
@@ -1198,19 +2013,21 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     musicItem,
                     DownloadFailReason.EncryptedMediaUnsupported,
                     e,
+                    attemptId,
                 );
             } else {
                 this.markTaskAsError(
                     musicItem,
                     this.classifyDownloadError(e),
                     e,
+                    attemptId,
                 );
             }
             this.downloadNextPendingTask();
             return;
         }
 
-        if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
+        if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             return;
         }
 
@@ -1240,9 +2057,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         // 真实下载地址
         const rawTargetDownloadPath = await this.getAvailableDownloadPath(
-            `${nextTask.filename}.${extension}`,
+            `${taskFilename}.${extension}`,
         );
-        const targetDownloadPath = addFileScheme(rawTargetDownloadPath);
 
         // 检测下载位置是否存在
         try {
@@ -1257,18 +2073,21 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 musicItem,
                 DownloadFailReason.NoWritePermission,
                 e,
+                attemptId,
             );
             this.downloadNextPendingTask();
             return;
         }
 
         let downloadSucceeded = false;
+        let finalizationJournal: IDownloadFinalizationJournal | undefined;
         try {
             if (this.canUseNativeDownload()) {
                 await this.downloadFileWithNative(
                     musicItem,
                     url,
                     rawCacheDownloadPath,
+                    attemptId,
                     headers,
                 );
             } else {
@@ -1278,114 +2097,92 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     headers: headers,
                     background: true,
                     begin: res => {
-                        this.updateDownloadTaskProgress(musicItem, {
-                            downloadedSize: 0,
-                            fileSize: res.contentLength,
-                            jobId: res.jobId,
-                        });
+                        this.updateDownloadTaskProgress(
+                            musicItem,
+                            {
+                                downloadedSize: 0,
+                                fileSize: res.contentLength,
+                                jobId: res.jobId,
+                            },
+                            attemptId,
+                        );
                     },
                     progress: res => {
-                        this.updateDownloadTaskProgress(musicItem, {
-                            downloadedSize: res.bytesWritten,
-                            fileSize: res.contentLength,
-                            jobId: res.jobId,
-                        });
+                        this.updateDownloadTaskProgress(
+                            musicItem,
+                            {
+                                downloadedSize: res.bytesWritten,
+                                fileSize: res.contentLength,
+                                jobId: res.jobId,
+                            },
+                            attemptId,
+                        );
                     },
                 });
                 await promise;
             }
 
-            if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
-                throw new Error("Download task removed");
-            }
-
-            // 下载完成，移动或解密文件
-            if (cencDownloadKey) {
-                const decrypted = await Cenc.decryptFile(
-                    rawCacheDownloadPath,
+            this.assertFinalizationCanContinue(musicItem, attemptId);
+            finalizationJournal = {
+                stage: "prepared",
+                cachePath: rawCacheDownloadPath,
+                targetPath: rawTargetDownloadPath,
+                sidecarPaths: this.getFinalizationSidecarPaths(
                     rawTargetDownloadPath,
-                    cencDownloadKey,
-                );
-                if (!decrypted) {
-                    throw new Error("CENC file decryption failed");
-                }
-            } else {
-                await copyFile(rawCacheDownloadPath, rawTargetDownloadPath);
-            }
-
-            const writeStatuses = await waitForDownloadWriteTasks({
-                metadata: this.writeMetadataToFile(
-                    musicItem,
-                    targetDownloadPath,
                 ),
-                lyric: this.writeLyricFileForDownload(
-                    musicItem,
-                    targetDownloadPath,
-                ),
-                onError: (kind, e) => {
-                    errorLog(
-                        kind === "metadata"
-                            ? "元数据写入失败，但不影响下载完成"
-                            : "独立歌词文件写入失败，但不影响下载完成",
-                        {
-                            musicItem: musicItem.title,
-                            error: e instanceof Error ? e.message : String(e),
-                        },
-                    );
-                },
+                requiresDecryption: !!cencDownloadKey,
+            };
+            this.markTaskAsFinalizing(
+                musicItem,
+                attemptId,
+                finalizationJournal,
+            );
+            await this.runDownloadFinalization({
+                musicItem,
+                attemptId,
+                journal: finalizationJournal,
+                cencDownloadKey,
             });
-
-            if (!downloadTasks.has(getMediaUniqueKey(musicItem))) {
-                throw new Error("Download task removed");
-            }
-
-            LocalMusicSheet.addMusic({
-                ...musicItem,
-                [internalSerializeKey]: {
-                    localPath: targetDownloadPath,
-                },
-            });
-
-            patchMediaExtra(musicItem, {
-                downloaded: true,
-                localPath: targetDownloadPath,
-                downloadMetadataStatus: writeStatuses.metadata,
-                downloadLyricStatus: writeStatuses.lyric,
-            });
-
-            this.markTaskAsCompleted(musicItem);
             downloadSucceeded = true;
-        } catch (e: any) {
-            const currentTask = downloadTasks.get(getMediaUniqueKey(musicItem));
-            if (
-                currentTask &&
-                currentTask.status !== DownloadStatus.Paused &&
-                !isNativeDownloadPausedError(e)
-            ) {
-                this.markTaskAsError(
+        } catch (error) {
+            const normalizedError =
+                error instanceof Error ? error : new Error(String(error));
+            if (finalizationJournal) {
+                await this.handleFinalizationFailure(
                     musicItem,
-                    this.classifyDownloadError(e),
-                    e,
+                    attemptId,
+                    finalizationJournal,
+                    normalizedError,
                 );
+            } else {
+                const currentTask = downloadTasks.get(
+                    getMediaUniqueKey(musicItem),
+                );
+                if (
+                    isSameDownloadAttempt(currentTask, {
+                        logicalKey: getMediaUniqueKey(musicItem),
+                        attemptId,
+                    }) &&
+                    currentTask?.status !== DownloadStatus.Paused &&
+                    !isNativeDownloadPausedError(normalizedError)
+                ) {
+                    this.markTaskAsError(
+                        musicItem,
+                        this.classifyDownloadError(normalizedError),
+                        normalizedError,
+                        attemptId,
+                    );
+                }
             }
         }
 
-        // 清理工作
-        try {
-            if (await exists(rawCacheDownloadPath)) {
-                await unlink(rawCacheDownloadPath);
+        if (!finalizationJournal) {
+            await this.unlinkFinalizationPath(rawCacheDownloadPath);
+            if (!downloadSucceeded) {
+                await this.unlinkFinalizationPath(rawTargetDownloadPath);
             }
-        } catch {}
-        if (!downloadSucceeded) {
-            // 解密/拷贝中途失败可能已写出不完整的目标文件；
-            // 该路径由 getAvailableDownloadPath 保证此前不存在，删除是安全的
-            try {
-                if (await exists(rawTargetDownloadPath)) {
-                    await unlink(rawTargetDownloadPath);
-                }
-            } catch {}
+            this.releaseReservedDownloadPath(rawTargetDownloadPath);
         }
-        this.releaseReservedDownloadPath(rawTargetDownloadPath);
         this.downloadNextPendingTask();
     }
 
@@ -1441,18 +2238,19 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return false;
         }
 
-        const paused = await Mp3Util.pauseDownloadTask(key).catch(() => false);
-        if (paused && downloadTasks.has(key)) {
-            this.updateDownloadTask(musicItem, {
-                status: DownloadStatus.Paused,
-            });
-            this.downloadingCount = Math.max(0, this.downloadingCount - 1);
-            void Mp3Util.removeDownloadTask(key).catch(() => false);
-            this.downloadNextPendingTask();
+        const paused = await this.runNativeDownloadOperation(
+            () => Mp3Util.pauseDownloadTask(task.attemptId),
+            "暂停原生下载任务超时",
+        ).catch(() => false);
+        if (paused && this.isCurrentDownloadAttempt(musicItem, task.attemptId)) {
+            this.markTaskAsPaused(musicItem, task.attemptId);
+            void this.runNativeDownloadOperation(
+                () => Mp3Util.removeDownloadTask(task.attemptId),
+                "清理已暂停原生下载任务超时",
+            ).catch(() => false);
         }
         return paused;
     }
-
     async pauseTasks(musicItems?: IMusic.IMusicItem[]) {
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
         const candidates = musicItems ?? downloadQueue;
@@ -1477,21 +2275,30 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return false;
         }
 
-        await Mp3Util.removeDownloadTask(key).catch(() => false);
-        if (!downloadTasks.has(key)) {
+        await this.runNativeDownloadOperation(
+            () => Mp3Util.removeDownloadTask(task.attemptId),
+            "恢复前清理原生下载任务超时",
+        ).catch(() => false);
+        await downloadNotificationManager.cancelNotification(task.attemptId);
+        if (!this.isCurrentDownloadAttempt(musicItem, task.attemptId)) {
             return false;
         }
-        this.updateDownloadTask(musicItem, {
-            status: DownloadStatus.Pending,
-            downloadedSize: undefined,
-            fileSize: undefined,
-            progressText: undefined,
-            jobId: undefined,
-        });
+        const nextIdentity = createDownloadAttemptIdentity(key, nanoid);
+        this.updateDownloadTask(
+            musicItem,
+            {
+                ...nextIdentity,
+                status: DownloadStatus.Pending,
+                downloadedSize: undefined,
+                fileSize: undefined,
+                progressText: undefined,
+                jobId: undefined,
+            },
+            task.attemptId,
+        );
         this.downloadNextPendingTask();
         return true;
     }
-
     async resumeTasks(musicItems?: IMusic.IMusicItem[]) {
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
         const candidates = musicItems ?? downloadQueue;
@@ -1511,7 +2318,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
      * 已完成的歌会被 filterQueueableDownloadItems 的本地去重跳过，
      * 因此先移除本地记录再重新入队。
      */
-    async redownload(musicItem: IMusic.IMusicItem, quality?: IMusic.IQualityKey) {
+    async redownload(
+        musicItem: IMusic.IMusicItem,
+        quality?: IMusic.IQualityKey,
+    ) {
         if (!this.canStartDownload()) {
             return false;
         }
@@ -1522,26 +2332,89 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             task.status !== DownloadStatus.Completed &&
             task.status !== DownloadStatus.Error
         ) {
-            // 进行中/等待中的任务不允许重下
             return false;
         }
 
         const resolvedQuality = quality ?? task?.quality;
-        downloadTasks.delete(key);
-        setDownloadQueue(
-            getDefaultStore()
-                .get(downloadQueueAtom)
-                .filter(item => !isSameMediaItem(item, musicItem)),
+        const previousQueue = getDefaultStore().get(downloadQueueAtom);
+        const previousLocalMusicItem = LocalMusicSheet.getMusicList().find(item =>
+            isSameMediaItem(item, musicItem),
         );
+        const previousMediaExtra = getMediaExtra(musicItem);
+
         await LocalMusicSheet.removeMusic(musicItem);
-        patchMediaExtra(musicItem, {
-            downloaded: false,
-            localPath: undefined,
-        });
-        this.download(musicItem, resolvedQuality);
+        try {
+            patchMediaExtra(musicItem, {
+                downloaded: false,
+                localPath: undefined,
+            });
+        } catch (error) {
+            if (previousLocalMusicItem) {
+                await LocalMusicSheet.upsertMusic(previousLocalMusicItem).catch(
+                    restoreError => {
+                        errorLog("恢复重下载前的本地音乐记录失败", restoreError);
+                    },
+                );
+            }
+            throw error;
+        }
+
+        let nextTask: IDownloadTaskInfo | undefined;
+        try {
+            nextTask = {
+                ...createDownloadAttemptIdentity(key, nanoid),
+                status: DownloadStatus.Pending,
+                filename: this.generateFilename(musicItem, resolvedQuality),
+                quality: resolvedQuality,
+                musicItem,
+            };
+            downloadTasks.set(key, nextTask);
+            setDownloadQueue([
+                ...previousQueue.filter(
+                    item => !isSameMediaItem(item, musicItem),
+                ),
+                musicItem,
+            ]);
+        } catch (error) {
+            if (task) {
+                downloadTasks.set(key, task);
+            } else {
+                downloadTasks.delete(key);
+            }
+            getDefaultStore().set(downloadQueueAtom, previousQueue);
+            if (previousLocalMusicItem) {
+                await LocalMusicSheet.upsertMusic(previousLocalMusicItem).catch(
+                    restoreError => {
+                        errorLog("恢复重下载前的本地音乐记录失败", restoreError);
+                    },
+                );
+            }
+            try {
+                if (previousMediaExtra) {
+                    setMediaExtra(musicItem, previousMediaExtra);
+                } else {
+                    removeMediaExtra(musicItem);
+                }
+            } catch (restoreError) {
+                errorLog("恢复重下载前的媒体附加信息失败", restoreError);
+            }
+            throw error;
+        }
+
+        if (task) {
+            void this.runNativeDownloadOperation(
+                () => Mp3Util.removeDownloadTask(task.attemptId),
+                "重下载前清理原生下载任务超时",
+            ).catch(() => false);
+            void downloadNotificationManager.cancelNotification(task.attemptId);
+        }
+        if (nextTask) {
+            this.emit(DownloaderEvent.DownloadTaskUpdate, nextTask);
+        }
+        this.emit(DownloaderEvent.DownloadTaskListChanged);
+        this.downloadNextPendingTask();
         return true;
     }
-
     retry(musicItem: IMusic.IMusicItem) {
         const key = getMediaUniqueKey(musicItem);
         const task = downloadTasks.get(key);
@@ -1552,16 +2425,47 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return false;
         }
 
-        const quality = task.quality;
-        downloadTasks.delete(key);
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
-        setDownloadQueue(
-            downloadQueue.filter(item => !isSameMediaItem(item, musicItem)),
-        );
-        this.download(musicItem, quality);
+        const nextTask: IDownloadTaskInfo = {
+            ...task,
+            ...createDownloadAttemptIdentity(key, nanoid),
+            status: DownloadStatus.Pending,
+            downloadedSize: undefined,
+            fileSize: undefined,
+            progressText: undefined,
+            jobId: undefined,
+            errorReason: undefined,
+            errorMessage: undefined,
+            startedAt: undefined,
+            completedAt: undefined,
+            finalization: undefined,
+        };
+
+        try {
+            downloadTasks.set(key, nextTask);
+            setDownloadQueue([
+                ...downloadQueue.filter(
+                    item => !isSameMediaItem(item, musicItem),
+                ),
+                musicItem,
+            ]);
+        } catch (error) {
+            downloadTasks.set(key, task);
+            getDefaultStore().set(downloadQueueAtom, downloadQueue);
+            errorLog("持久化重试下载任务失败", error);
+            return false;
+        }
+
+        void this.runNativeDownloadOperation(
+            () => Mp3Util.removeDownloadTask(task.attemptId),
+            "重试前清理原生下载任务超时",
+        ).catch(() => false);
+        void downloadNotificationManager.cancelNotification(task.attemptId);
+        this.emit(DownloaderEvent.DownloadTaskUpdate, nextTask);
+        this.emit(DownloaderEvent.DownloadTaskListChanged);
+        this.downloadNextPendingTask();
         return true;
     }
-
     retryFailedTasks(musicItems?: IMusic.IMusicItem[]) {
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
         const candidates = musicItems ?? downloadQueue;
@@ -1604,6 +2508,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
             // 设置下载任务
             downloadTasks.set(key, {
+                ...createDownloadAttemptIdentity(key, nanoid),
                 status: DownloadStatus.Pending,
                 filename: this.generateFilename(m, quality),
                 quality: quality,
@@ -1619,12 +2524,18 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
         const newDownloadQueue = [...downloadQueue, ...musicItems];
         setDownloadQueue(newDownloadQueue);
+        musicItems.forEach(musicItem => {
+            const task = downloadTasks.get(getMediaUniqueKey(musicItem));
+            if (task) {
+                this.emit(DownloaderEvent.DownloadTaskUpdate, task);
+            }
+        });
+        this.emit(DownloaderEvent.DownloadTaskListChanged);
 
         this.downloadNextPendingTask();
     }
 
     remove(musicItem: IMusic.IMusicItem) {
-        // 删除下载任务
         const key = getMediaUniqueKey(musicItem);
         const task = downloadTasks.get(key);
         if (!task) {
@@ -1634,38 +2545,57 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             task.status === DownloadStatus.Pending ||
             task.status === DownloadStatus.Error
         ) {
-            void Mp3Util.removeDownloadTask(key).catch(() => {});
-            void downloadNotificationManager.cancelNotification(key);
+            void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
+            void downloadNotificationManager.cancelNotification(task.attemptId);
             downloadTasks.delete(key);
             const downloadQueue = getDefaultStore().get(downloadQueueAtom);
-            const newDownloadQueue = downloadQueue.filter(
-                item => !isSameMediaItem(item, musicItem),
+            setDownloadQueue(
+                downloadQueue.filter(item => !isSameMediaItem(item, musicItem)),
             );
-            setDownloadQueue(newDownloadQueue);
+            return true;
+        }
+        if (task.status === DownloadStatus.Finalizing && task.finalization) {
+            this.updateDownloadTask(
+                musicItem,
+                {
+                    finalization: {
+                        ...task.finalization,
+                        cancelRequested: true,
+                    },
+                },
+                task.attemptId,
+            );
+            void Mp3Util.cancelDownloadTask(task.attemptId).catch(() => {});
+            void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
+            void downloadNotificationManager.cancelNotification(task.attemptId);
             return true;
         }
         if (
             task.status === DownloadStatus.Preparing ||
             task.status === DownloadStatus.Downloading ||
-            task.status === DownloadStatus.Paused
+            task.status === DownloadStatus.Paused ||
+            (task.status === DownloadStatus.Finalizing && !task.finalization)
         ) {
             this.stopJsDownloadIfNeeded(task);
-            void Mp3Util.cancelDownloadTask(key).catch(() => {});
-            void Mp3Util.removeDownloadTask(key).catch(() => {});
-            void downloadNotificationManager.cancelNotification(key);
-            this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+            void Mp3Util.cancelDownloadTask(task.attemptId).catch(() => {});
+            void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
+            void downloadNotificationManager.cancelNotification(task.attemptId);
+            if (task.status !== DownloadStatus.Paused) {
+                this.downloadingCount = Math.max(
+                    0,
+                    this.downloadingCount - 1,
+                );
+            }
             downloadTasks.delete(key);
             const downloadQueue = getDefaultStore().get(downloadQueueAtom);
-            const newDownloadQueue = downloadQueue.filter(
-                item => !isSameMediaItem(item, musicItem),
+            setDownloadQueue(
+                downloadQueue.filter(item => !isSameMediaItem(item, musicItem)),
             );
-            setDownloadQueue(newDownloadQueue);
             this.downloadNextPendingTask();
             return true;
         }
         return false;
     }
-
     clearCompletedTasks(musicItems?: IMusic.IMusicItem[]) {
         const downloadQueue = getDefaultStore().get(downloadQueueAtom);
         const candidateKeys = new Set(
@@ -1714,8 +2644,13 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
 
         failedKeys.forEach(key => {
-            void Mp3Util.removeDownloadTask(key).catch(() => {});
-            void downloadNotificationManager.cancelNotification(key);
+            const task = downloadTasks.get(key);
+            if (task) {
+                void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
+                void downloadNotificationManager.cancelNotification(
+                    task.attemptId,
+                );
+            }
             downloadTasks.delete(key);
         });
         setDownloadQueue(

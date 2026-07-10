@@ -6,6 +6,7 @@ jest.mock("@/core/downloader", () => ({
         Paused: 3,
         Completed: 4,
         Error: 5,
+        Finalizing: 6,
     },
 }));
 
@@ -36,7 +37,10 @@ jest.mock("react-native-fs", () => ({
 import { DownloadStatus } from "@/core/downloader";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import {
+    getDownloadDetailLyricStatusText,
+    getDownloadDetailMetadataStatusText,
     getDownloadWriteStatus,
+    isActiveStatus,
     matchDownloadWriteFilter,
 } from "../downloadingList.utils";
 
@@ -106,5 +110,36 @@ describe("download write status helpers", () => {
                 "lyric-success",
             ),
         ).toBe(true);
+    });
+
+    it("matches reasoned skipped metadata statuses with the skipped filter", () => {
+        mockGetMediaExtraProperty.mockReturnValue("skipped-unavailable");
+
+        expect(
+            matchDownloadWriteFilter(
+                musicItem,
+                DownloadStatus.Completed,
+                "metadata-skipped",
+            ),
+        ).toBe(true);
+    });
+});
+
+describe("download status helpers", () => {
+    it("treats finalizing downloads as active", () => {
+        expect(isActiveStatus(DownloadStatus.Finalizing)).toBe(true);
+    });
+});
+
+describe("download detail helpers", () => {
+    const t = (key: string) => key;
+
+    it("shows missing write results as unrecorded for completed details", () => {
+        expect(getDownloadDetailMetadataStatusText(null, t as never)).toBe(
+            "downloading.detail.unrecordedWriteStatus",
+        );
+        expect(getDownloadDetailLyricStatusText(null, t as never)).toBe(
+            "downloading.detail.unrecordedWriteStatus",
+        );
     });
 });

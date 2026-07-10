@@ -11,7 +11,6 @@ import {
 } from "./store/atoms";
 import HistoryPanel from "./components/historyPanel";
 import ResultPanel from "./components/resultPanel";
-import MusicBar from "@/components/musicBar";
 import Loading from "@/components/base/loading";
 import { SafeAreaView } from "react-native-safe-area-context";
 import StatusBar from "@/components/base/statusBar";
@@ -77,7 +76,6 @@ export default function () {
                     )}
                 </View>
             </SafeAreaView>
-            <MusicBar />
         </SafeAreaView>
     );
 }

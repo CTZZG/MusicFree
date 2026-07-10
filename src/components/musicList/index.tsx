@@ -43,6 +43,7 @@ import {
     getMusicAlphabetEntryAtOffset,
     type IMusicAlphabetIndexEntry,
 } from "@/utils/musicAlphabetIndex";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 interface IMusicListProps {
     /** 顶部 */
@@ -109,6 +110,32 @@ export default function MusicList(props: IMusicListProps) {
     const [selectionAnchorIndex, setSelectionAnchorIndex] =
         useState<number | null>(null);
     const selectionMode = selectedKeys.size > 0;
+    const musicBarFloatingOffset = useMusicBarFloatingOffset(rpx(12));
+    const selectionSpacerStyle = useMemo(
+        () => ({
+            height: rpx(144) + musicBarFloatingOffset,
+        }),
+        [musicBarFloatingOffset],
+    );
+    const selectionBottomBarStyle = useMemo(
+        () => ({
+            backgroundColor: colors.appBar,
+            bottom: musicBarFloatingOffset,
+        }),
+        [colors.appBar, musicBarFloatingOffset],
+    );
+    const normalFooterSpacerStyle = useMemo(
+        () => ({ height: musicBarFloatingOffset }),
+        [musicBarFloatingOffset],
+    );
+    const locateBadgeStyle = useMemo(
+        () => ({ bottom: rpx(80) + musicBarFloatingOffset }),
+        [musicBarFloatingOffset],
+    );
+    const alphabetIndexStyle = useMemo(
+        () => ({ bottom: rpx(108) + musicBarFloatingOffset }),
+        [musicBarFloatingOffset],
+    );
     const canRemoveSelected = !!musicSheet?.id;
     const alphabetIndexEntries = useMemo(
         () =>
@@ -509,7 +536,16 @@ export default function MusicList(props: IMusicListProps) {
                         {musicList?.length ? (
                             <ListFooter state={state} onRetry={onRetry} />
                         ) : null}
-                        {selectionMode ? <View style={styles.selectionSpacer} /> : null}
+                        {selectionMode ? (
+                            <View
+                                style={[
+                                    styles.selectionSpacer,
+                                    selectionSpacerStyle,
+                                ]}
+                            />
+                        ) : musicBarFloatingOffset ? (
+                            <View style={normalFooterSpacerStyle} />
+                        ) : null}
                     </>
                 }
                 extraData={{
@@ -530,7 +566,9 @@ export default function MusicList(props: IMusicListProps) {
                 onEndReachedThreshold={0.1}
             />              
             {shouldShowLocateBadge && (
-                <View style={styles.badge} pointerEvents="box-none">
+                <View
+                    style={[styles.badge, locateBadgeStyle]}
+                    pointerEvents="box-none">
                     <Pressable
                         style={[styles.badgeButton, { backgroundColor: colors.notification }]}
                         onPress={scrollToHighlight}
@@ -545,7 +583,7 @@ export default function MusicList(props: IMusicListProps) {
             )}
             {shouldShowAlphabetIndex ? (
                 <View
-                    style={styles.alphabetIndex}
+                    style={[styles.alphabetIndex, alphabetIndexStyle]}
                     onLayout={handleAlphabetIndexLayout}
                     onStartShouldSetResponder={() => true}
                     onMoveShouldSetResponder={() => true}
@@ -579,7 +617,7 @@ export default function MusicList(props: IMusicListProps) {
                 <View
                     style={[
                         styles.selectionBottomBar,
-                        { backgroundColor: colors.appBar },
+                        selectionBottomBarStyle,
                     ]}>
                     <SelectionAction
                         icon="motion-play"

@@ -1,5 +1,9 @@
 import { getDefaultStore } from "jotai";
-import { editingMusicListAtom, musicListChangedAtom } from "./atom";
+import {
+    editingMusicListAtom,
+    editingMusicListBaselineAtom,
+    musicListChangedAtom,
+} from "./atom";
 import { localMusicSheetId, musicHistorySheetId } from "@/constants/commonConst";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import musicHistory from "@/core/musicHistory";
@@ -17,7 +21,9 @@ export async function saveEditingMusicList(musicSheetId?: string) {
     const musicItems = editingMusicList.map(it => it.musicItem);
 
     if (musicSheetId === localMusicSheetId) {
-        await LocalMusicSheet.updateMusicList(musicItems);
+        const baseline = getDefaultStore().get(editingMusicListBaselineAtom);
+        await LocalMusicSheet.updateMusicList(musicItems, baseline);
+        getDefaultStore().set(editingMusicListBaselineAtom, musicItems);
     } else if (musicSheetId === musicHistorySheetId) {
         await musicHistory.setHistory(musicItems);
     } else {

@@ -1,4 +1,5 @@
 import React, { memo, useCallback } from "react";
+import { View } from "react-native";
 import rpx from "@/utils/rpx";
 import { FlashList } from "@shopify/flash-list";
 import useRecommendSheets from "../../hooks/useRecommendSheets";
@@ -6,6 +7,7 @@ import SheetItem from "@/components/mediaItem/sheetItem";
 import useOrientation from "@/hooks/useOrientation";
 import ListEmpty from "@/components/base/listEmpty";
 import ListFooter from "@/components/base/listFooter";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 interface ISheetListProps {
     tag: ICommon.IUnique;
@@ -21,6 +23,7 @@ function SheetList(props: ISheetListProps) {
         return <SheetItem sheetInfo={item} pluginHash={pluginHash} />;
     }
     const orientation = useOrientation();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
 
     const keyExtractor = useCallback(
         (item: any, i: number) => `${i}-${item.platform}-${item.id}`,
@@ -31,10 +34,14 @@ function SheetList(props: ISheetListProps) {
         <FlashList
             ListEmptyComponent={<ListEmpty state={status} onRetry={query} />}
             ListFooterComponent={
-                sheets.length ? <ListFooter
-                    state={status}
-                    onRetry={query}
-                /> : null
+                <>
+                    {sheets.length ? (
+                        <ListFooter state={status} onRetry={query} />
+                    ) : null}
+                    {musicBarBottomInset ? (
+                        <View style={{ height: musicBarBottomInset }} />
+                    ) : null}
+                </>
             }
             onEndReached={() => {
                 query();

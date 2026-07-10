@@ -1,5 +1,6 @@
 import {
     isDownloadWriteResult,
+    isSkippedDownloadWriteResult,
     normalizeDownloadWriteResult,
     waitForDownloadWriteTasks,
 } from "../downloadFinalizationPolicy";
@@ -9,6 +10,9 @@ describe("isDownloadWriteResult", () => {
         expect(isDownloadWriteResult("success")).toBe(true);
         expect(isDownloadWriteResult("failed")).toBe(true);
         expect(isDownloadWriteResult("skipped")).toBe(true);
+        expect(isDownloadWriteResult("skipped-disabled")).toBe(true);
+        expect(isDownloadWriteResult("skipped-unavailable")).toBe(true);
+        expect(isDownloadWriteResult("skipped-no-content")).toBe(true);
         expect(isDownloadWriteResult("")).toBe(false);
         expect(isDownloadWriteResult("done")).toBe(false);
         expect(isDownloadWriteResult(undefined)).toBe(false);
@@ -20,8 +24,22 @@ describe("normalizeDownloadWriteResult", () => {
         expect(normalizeDownloadWriteResult("success")).toBe("success");
         expect(normalizeDownloadWriteResult("failed")).toBe("failed");
         expect(normalizeDownloadWriteResult("skipped")).toBe("skipped");
+        expect(normalizeDownloadWriteResult("skipped-disabled")).toBe(
+            "skipped-disabled",
+        );
         expect(normalizeDownloadWriteResult("done")).toBeNull();
         expect(normalizeDownloadWriteResult(undefined)).toBeNull();
+    });
+});
+
+describe("isSkippedDownloadWriteResult", () => {
+    it("matches legacy and reasoned skipped statuses", () => {
+        expect(isSkippedDownloadWriteResult("skipped")).toBe(true);
+        expect(isSkippedDownloadWriteResult("skipped-disabled")).toBe(true);
+        expect(isSkippedDownloadWriteResult("skipped-unavailable")).toBe(true);
+        expect(isSkippedDownloadWriteResult("skipped-no-content")).toBe(true);
+        expect(isSkippedDownloadWriteResult("success")).toBe(false);
+        expect(isSkippedDownloadWriteResult(null)).toBe(false);
     });
 });
 
@@ -30,11 +48,11 @@ describe("waitForDownloadWriteTasks", () => {
         await expect(
             waitForDownloadWriteTasks({
                 metadata: Promise.resolve("success"),
-                lyric: Promise.resolve("skipped"),
+                lyric: Promise.resolve("skipped-no-content"),
             }),
         ).resolves.toEqual({
             metadata: "success",
-            lyric: "skipped",
+            lyric: "skipped-no-content",
         });
     });
 

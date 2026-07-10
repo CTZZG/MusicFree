@@ -1,11 +1,14 @@
-import React, { useMemo } from "react";
-import { StyleSheet, useWindowDimensions } from "react-native";
+import React, { useEffect, useMemo } from "react";
+import {
+    StatusBar as NativeStatusBar,
+    StyleSheet,
+    useWindowDimensions,
+} from "react-native";
 
 import NavBar from "./components/navBar";
-import MusicBar from "@/components/musicBar";
-import { createDrawerNavigator } from "@react-navigation/drawer";
+import { createDrawerNavigator, useDrawerStatus } from "@react-navigation/drawer";
 import HomeDrawer from "./components/drawer";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import StatusBar from "@/components/base/statusBar";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import globalStyle from "@/constants/globalStyle";
@@ -13,6 +16,7 @@ import Theme from "@/core/theme";
 import HomeBody from "./components/homeBody";
 import HomeBodyHorizontal from "./components/homeBodyHorizontal";
 import useOrientation from "@/hooks/useOrientation";
+import { useMusicBarLayoutState } from "@/components/musicBar/layoutState";
 
 const PORTRAIT_DRAWER_MAX_WIDTH = 420;
 const LANDSCAPE_DRAWER_MAX_WIDTH = 440;
@@ -20,9 +24,23 @@ const DRAWER_MIN_WIDTH = 320;
 
 function Home() {
     const orientation = useOrientation();
+    const safeAreaInsets = useSafeAreaInsets();
+    const drawerStatus = useDrawerStatus();
+    const { setDrawerOpen } = useMusicBarLayoutState();
+    const topInset = Math.max(
+        safeAreaInsets.top,
+        NativeStatusBar.currentHeight ?? 0,
+    );
+
+    useEffect(() => {
+        setDrawerOpen(drawerStatus === "open");
+        return () => setDrawerOpen(false);
+    }, [drawerStatus, setDrawerOpen]);
 
     return (
-        <SafeAreaView edges={["top", "bottom"]} style={styles.appWrapper}>
+        <SafeAreaView
+            edges={["bottom"]}
+            style={[styles.appWrapper, { paddingTop: topInset }]}>
             <HomeStatusBar />
             <HorizontalSafeAreaView style={globalStyle.flex1}>
                 <>
@@ -34,7 +52,6 @@ function Home() {
                     )}
                 </>
             </HorizontalSafeAreaView>
-            <MusicBar />
         </SafeAreaView>
     );
 }
@@ -66,6 +83,7 @@ function HomeStatusBar() {
 const LeftDrawer = createDrawerNavigator();
 export default function App() {
     const orientation = useOrientation();
+    const theme = Theme.useTheme();
     const { width } = useWindowDimensions();
     const drawerWidth = useMemo(() => {
         const safeWindowWidth = Math.max(0, width);
@@ -88,8 +106,20 @@ export default function App() {
         <LeftDrawer.Navigator
             screenOptions={{
                 headerShown: false,
+                sceneStyle: {
+                    backgroundColor: "transparent",
+                },
+                overlayStyle: {
+                    backgroundColor: theme.colors.mask,
+                },
                 drawerStyle: {
                     width: drawerWidth,
+                    backgroundColor: theme.colors.backdrop,
+                    borderTopRightRadius: 0,
+                    borderBottomRightRadius: 0,
+                    elevation: 0,
+                    shadowOpacity: 0,
+                    shadowRadius: 0,
                 },
             }}
             initialRouteName="HOME-MAIN"

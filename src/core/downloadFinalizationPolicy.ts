@@ -1,16 +1,37 @@
-export type DownloadWriteResult = "success" | "failed" | "skipped";
+export type DownloadWriteResult =
+    | "success"
+    | "failed"
+    | "skipped"
+    | "skipped-disabled"
+    | "skipped-unavailable"
+    | "skipped-no-content";
 export type DownloadWriteTaskKind = "metadata" | "lyric";
+
+const downloadWriteResults = new Set<DownloadWriteResult>([
+    "success",
+    "failed",
+    "skipped",
+    "skipped-disabled",
+    "skipped-unavailable",
+    "skipped-no-content",
+]);
 
 export function isDownloadWriteResult(
     result: unknown,
 ): result is DownloadWriteResult {
-    return result === "success" || result === "failed" || result === "skipped";
+    return downloadWriteResults.has(result as DownloadWriteResult);
 }
 
 export function normalizeDownloadWriteResult(
     result: unknown,
 ): DownloadWriteResult | null {
     return isDownloadWriteResult(result) ? result : null;
+}
+
+export function isSkippedDownloadWriteResult(
+    result: DownloadWriteResult | null | undefined,
+) {
+    return !!result && result.startsWith("skipped");
 }
 
 export async function waitForDownloadWriteTasks(params: {

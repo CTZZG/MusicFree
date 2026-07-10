@@ -1,6 +1,5 @@
 import Base64 from "@/utils/base64";
 import { getFileName, removeFileScheme } from "@/utils/fileUtils";
-import { getLowerFileExtension } from "@/utils/mediaPath";
 
 export function getAnonymousStackLocation(stack?: string) {
     if (!stack) {
@@ -71,16 +70,4 @@ export function getRemoteMediaTitle(urlLike: string) {
     const pathWithoutQuery = urlLike.split(/[?#]/)[0];
     const fileName = getFileName(pathWithoutQuery);
     return fileName || urlLike;
-}
-
-const localMetadataUnsafeExtensions = new Set([
-    ".ape",
-    ".asf",
-    ".dff",
-    ".dsf",
-    ".wma",
-]);
-
-export function shouldReadLocalSystemMetadata(filePath: string) {
-    return !localMetadataUnsafeExtensions.has(getLowerFileExtension(filePath));
 }

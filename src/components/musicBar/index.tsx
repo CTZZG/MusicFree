@@ -1,29 +1,38 @@
-import React, { memo, useEffect, useState } from "react";
-import { ActivityIndicator, AppState, Keyboard, Platform, Pressable, StyleSheet, View } from "react-native";
+import React, { memo, useCallback, useEffect, useState } from "react";
+import {
+    ActivityIndicator,
+    AppState,
+    Pressable,
+    StyleSheet,
+    View,
+} from "react-native";
 import rpx from "@/utils/rpx";
 import Svg, { Circle } from "react-native-svg";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { showPanel } from "../panels/usePanel";
 import useColors from "@/hooks/useColors";
-import TrackPlayer, { useCurrentMusic, useMusicState, useProgress } from "@/core/trackPlayer";
+import TrackPlayer, {
+    useCurrentMusic,
+    useMusicState,
+    useProgress,
+} from "@/core/trackPlayer";
 import Theme from "@/core/theme";
 import { useAppConfig } from "@/core/appConfig";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 import GlassBackdrop from "@/components/base/glassBackdrop";
+import LiquidGlassBackdrop, {
+    isLiquidGlassAvailable,
+} from "@/components/base/liquidGlassBackdrop";
 import MusicInfo from "./musicInfo";
 import Icon from "@/components/base/icon.tsx";
 import PlayingIndicator from "@/components/base/playingIndicator";
-
-// 液态玻璃是 Android-only 的原生 Compose 组件，模块缺失（iOS/旧安装包）时
-// require 会抛错，静默回退到 expo-blur 磨砂
-let LiquidGlassView: React.ComponentType<any> | null = null;
-if (Platform.OS === "android") {
-    try {
-        LiquidGlassView =
-            require("expo-liquid-glass-native").ExpoLiquidGlassNativeView;
-    } catch {}
-}
+import {
+    MUSIC_BAR_FLOATING_BOTTOM,
+    MUSIC_BAR_HEIGHT,
+    MUSIC_BAR_HORIZONTAL_MARGIN,
+} from "./layout";
+import { useMusicBarLayoutState } from "./layoutState";
 
 function CircularPlayBtn() {
     const progress = useProgress();
@@ -36,12 +45,15 @@ function CircularPlayBtn() {
     const indicatorColor = colors.musicBarText ?? colors.text ?? "#ffffff";
 
     if (isBuffering) {
-        return <View style={styles.bufferingContainer}>
-            <ActivityIndicator size={rpx(52)} color={colors.musicBarText} />
-        </View>;
+        return (
+            <View style={styles.bufferingContainer}>
+                <ActivityIndicator size={rpx(52)} color={colors.musicBarText} />
+            </View>
+        );
     }
 
-    const displayDuration = (progress.duration > 0) ? progress.duration : (musicItem?.duration ?? 0);
+    const displayDuration =
+        progress.duration > 0 ? progress.duration : musicItem?.duration ?? 0;
     const playProgress = displayDuration
         ? Math.min(1, Math.max(0, progress.position / displayDuration))
         : 0;
@@ -117,49 +129,79 @@ function CircularPlayBtn() {
 }
 function MusicBar() {
     const musicItem = useCurrentMusic();
-
-    const [showKeyboard, setKeyboardStatus] = useState(false);
+    const [liquidSurfaceRefreshToken, setLiquidSurfaceRefreshToken] =
+        useState(0);
+    const { layout, routeName, transitionInProgress } = useMusicBarLayoutState();
 
     const colors = useColors();
     const isFrostedGlass = Theme.useTheme().id === "p-frosted-glass";
     const musicBarLiquidGlass =
         useAppConfig("theme.musicBarLiquidGlass") ?? false;
     const useLiquidGlass =
-        isFrostedGlass && musicBarLiquidGlass && !!LiquidGlassView;
+        layout.visible &&
+        isFrostedGlass &&
+        musicBarLiquidGlass &&
+        isLiquidGlassAvailable();
     const safeAreaInsets = useSafeAreaInsets();
+    const hasMusicItem = layout.visible && !!musicItem;
+
+    const refreshLiquidSurface = useCallback(() => {
+        setLiquidSurfaceRefreshToken(value => value + 1);
+    }, []);
 
     useEffect(() => {
-        let keyboardResetTimer: ReturnType<typeof setTimeout> | null = null;
-        const showSubscription = Keyboard.addListener("keyboardDidShow", () => {
-            setKeyboardStatus(true);
-        });
-        const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
-            setKeyboardStatus(false);
-        });
-        const appStateSubscription = AppState.addEventListener("change", nextState => {
-            if (nextState !== "active") {
-                setKeyboardStatus(false);
-                return;
-            }
+        if (!useLiquidGlass || !hasMusicItem || transitionInProgress) {
+            return;
+        }
 
-            if (keyboardResetTimer) {
-                clearTimeout(keyboardResetTimer);
-            }
-            Keyboard.dismiss();
-            keyboardResetTimer = setTimeout(() => {
-                setKeyboardStatus(false);
-            }, 120);
-        });
+        // A native-stack transition animates surfaces with transforms, which
+        // does not guarantee another layout/scroll callback after the final
+        // frame. Capture immediately when the committed route changes, then
+        // take two settled samples so a mid-transition bitmap cannot linger.
+        refreshLiquidSurface();
+        const timers = [120, 320].map(delay =>
+            setTimeout(refreshLiquidSurface, delay),
+        );
 
         return () => {
-            if (keyboardResetTimer) {
-                clearTimeout(keyboardResetTimer);
+            timers.forEach(clearTimeout);
+        };
+    }, [
+        hasMusicItem,
+        refreshLiquidSurface,
+        routeName,
+        transitionInProgress,
+        useLiquidGlass,
+    ]);
+
+    useEffect(() => {
+        if (!useLiquidGlass || transitionInProgress) {
+            return;
+        }
+
+        let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+        const appStateSubscription = AppState.addEventListener(
+            "change",
+            nextState => {
+                if (nextState === "active") {
+                    if (refreshTimer) {
+                        clearTimeout(refreshTimer);
+                    }
+                    refreshTimer = setTimeout(() => {
+                        refreshLiquidSurface();
+                        refreshTimer = null;
+                    }, 160);
+                }
+            },
+        );
+
+        return () => {
+            if (refreshTimer) {
+                clearTimeout(refreshTimer);
             }
-            showSubscription.remove();
-            hideSubscription.remove();
             appStateSubscription.remove();
         };
-    }, []);
+    }, [refreshLiquidSurface, transitionInProgress, useLiquidGlass]);
 
     const barContent = musicItem ? (
         <>
@@ -181,39 +223,52 @@ function MusicBar() {
         </>
     ) : null;
 
-    if (musicItem && !showKeyboard && useLiquidGlass && LiquidGlassView) {
+    if (!layout.visible || !musicItem) {
+        return null;
+    }
+
+    if (useLiquidGlass) {
         return (
-            <LiquidGlassView
-                tint="#FFFFFF"
-                blurRadius={6}
-                cornerRadius={rpx(66)}
-                style={styles.liquidBar}>
-                <View
-                    accessible
-                    accessibilityLabel={`歌曲: ${musicItem.title} 歌手: ${musicItem.artist}`}
-                    style={[
-                        styles.liquidBarContent,
-                        {
-                            paddingRight: safeAreaInsets.right + rpx(24),
-                        },
-                    ]}>
-                    {barContent}
-                </View>
-            </LiquidGlassView>
+            <View
+                style={[
+                    styles.wrapper,
+                    styles.glassWrapper,
+                    styles.liquidWrapper,
+                    {
+                        bottom:
+                            safeAreaInsets.bottom + MUSIC_BAR_FLOATING_BOTTOM,
+                        paddingRight: safeAreaInsets.right + rpx(24),
+                    },
+                ]}
+                accessible
+                accessibilityLabel={`歌曲: ${musicItem.title} 歌手: ${musicItem.artist}`}>
+                <LiquidGlassBackdrop
+                    radius={rpx(66)}
+                    refreshToken={liquidSurfaceRefreshToken}
+                />
+                {barContent}
+            </View>
         );
     }
 
     return (
         <>
-            {musicItem && !showKeyboard && (
+            {
                 <View
                     style={[
                         styles.wrapper,
-                        isFrostedGlass ? styles.glassWrapper : null,
+                        isFrostedGlass
+                            ? styles.glassWrapper
+                            : styles.dockedWrapper,
                         {
                             backgroundColor: isFrostedGlass
                                 ? "transparent"
                                 : colors.musicBar,
+                            bottom:
+                                safeAreaInsets.bottom +
+                                (isFrostedGlass
+                                    ? MUSIC_BAR_FLOATING_BOTTOM
+                                    : 0),
                             borderTopColor: "transparent",
                             paddingRight: safeAreaInsets.right + rpx(24),
                         },
@@ -229,17 +284,17 @@ function MusicBar() {
                     ) : null}
                     {barContent}
                 </View>
-            )}
+            }
         </>
     );
 }
 
-export default memo(MusicBar, () => true);
+export default memo(MusicBar);
 
 const styles = StyleSheet.create({
     wrapper: {
         width: "100%",
-        height: rpx(132),
+        height: MUSIC_BAR_HEIGHT,
         flexDirection: "row",
         alignItems: "center",
         paddingRight: rpx(24),
@@ -247,25 +302,21 @@ const styles = StyleSheet.create({
     },
     glassWrapper: {
         position: "absolute",
-        left: rpx(24),
-        right: rpx(24),
-        bottom: rpx(20),
+        left: MUSIC_BAR_HORIZONTAL_MARGIN,
+        right: MUSIC_BAR_HORIZONTAL_MARGIN,
         width: "auto",
         borderRadius: rpx(66),
         overflow: "hidden",
     },
-    liquidBar: {
+    dockedWrapper: {
         position: "absolute",
-        left: rpx(24),
-        right: rpx(24),
-        bottom: rpx(20),
-        height: rpx(132),
-        borderRadius: rpx(66),
+        left: 0,
+        right: 0,
     },
-    liquidBarContent: {
-        height: rpx(132),
-        flexDirection: "row",
-        alignItems: "center",
+    liquidWrapper: {
+        backgroundColor: "transparent",
+        borderTopWidth: 0,
+        borderTopColor: "transparent",
     },
     bufferingContainer: {
         width: rpx(72),

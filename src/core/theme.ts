@@ -73,7 +73,7 @@ export const frostedGlassTheme = {
         text: "#172235",
         textSecondary: Color("#172235").alpha(0.66).toString(),
         primary: "#0A84FF",
-        pageBackground: "#eef4fc",
+        pageBackground: "#dfe6f2",
         shadow: "#26405e",
         appBar: "rgba(255, 255, 255, 0.62)",
         appBarText: "#172235",

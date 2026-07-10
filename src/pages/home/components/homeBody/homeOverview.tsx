@@ -1,6 +1,7 @@
 import FastImage from "@/components/base/fastImage";
 import Icon, { IIconName } from "@/components/base/icon.tsx";
 import ThemeText from "@/components/base/themeText";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import { showPanel } from "@/components/panels/usePanel";
 import { ImgAsset } from "@/constants/assetsConst";
 import i18n, { useI18N } from "@/core/i18n";
@@ -12,7 +13,6 @@ import TrackPlayer, {
     useProgress,
 } from "@/core/trackPlayer";
 import Theme from "@/core/theme";
-import GlassBackdrop from "@/components/base/glassBackdrop";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import { musicIsPaused } from "@/utils/trackUtils";
@@ -88,20 +88,23 @@ function useIsFrostedGlass() {
 }
 
 function getSurfaceBorderColor(colors: ReturnType<typeof useColors>, isGlass: boolean, alpha = 0.06) {
-    // 毛玻璃卡片的描边由 GlassBackdrop 负责
+    // 静态背景上的磨砂卡片用发丝白描边勾勒玻璃边缘
     return isGlass
-        ? "transparent"
+        ? "rgba(255, 255, 255, 0.6)"
         : Color(colors.text).alpha(alpha).toString();
 }
 
-function getSurfaceBackground(colors: ReturnType<typeof useColors>, isGlass: boolean) {
-    // 毛玻璃卡片必须保持透明，底色由 GlassBackdrop 的模糊层 + 磨砂白提供
-    return isGlass ? "transparent" : colors.card;
+function getSurfaceBackground(colors: ReturnType<typeof useColors>, _isGlass: boolean) {
+    // 首页卡片铺在静态渐变背景上，实时模糊平滑背景既看不出效果又会在部分
+    // 设备（HarmonyOS dimezisBlurView）产生错位条带，直接用半透明磨砂白即可。
+    // colors.card 在液态硅胶主题下是 rgba(255,255,255,0.55)。
+    return colors.card;
 }
 
 export default function HomeOverview() {
     const data = useHomeOverview();
     const discoveryPreview = useHomeDiscovery(data.topListPlugins);
+    const musicBarFloatingOffset = useMusicBarFloatingOffset(rpx(12));
     const hideHomeDiscovery = useAppConfig("theme.hideHomeDiscovery") ?? false;
     const hideHomeHeroCard = useAppConfig("theme.hideHomeHeroCard") ?? false;
     const hideHomeRecentListening =
@@ -134,6 +137,9 @@ export default function HomeOverview() {
                 userSheets={data.userSheets}
                 starredSheets={data.starredSheets}
             />
+            {musicBarFloatingOffset ? (
+                <View style={{ height: musicBarFloatingOffset }} />
+            ) : null}
         </ScrollView>
     );
 }
@@ -192,7 +198,6 @@ function ContinueListening(props: {
                             ),
                         },
                     ]}>
-                    {isFrostedGlass ? <GlassBackdrop /> : null}
                     <QuickPill
                         icon="inbox-arrow-down"
                         title={t("home.importPlaylist.a11y")}
@@ -232,7 +237,6 @@ function ContinueListening(props: {
                         TrackPlayer.play(featuredMusic);
                     }
                 }}>
-                {isFrostedGlass ? <GlassBackdrop intensity={60} /> : null}
                 <FastImage
                     source={featuredMusic.artwork}
                     placeholderSource={ImgAsset.albumDefault}
@@ -394,9 +398,6 @@ function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
                             },
                         ]}
                         onPress={() => TrackPlayer.play(musicItem)}>
-                        {isFrostedGlass ? (
-                            <GlassBackdrop radius={rpx(16)} />
-                        ) : null}
                         <FastImage
                             source={musicItem.artwork}
                             placeholderSource={ImgAsset.albumDefault}
@@ -454,7 +455,7 @@ function QuickAccess() {
         {
             key: "download",
             icon: "arrow-down-tray",
-            title: t("common.download"),
+            title: t("localMusic.downloadList"),
             accent: "#70D7D7",
             action: () => navigate(ROUTE_PATH.DOWNLOADING),
         },
@@ -512,6 +513,7 @@ function QuickAccess() {
                         key={item.key}
                         style={[
                             styles.quickItem,
+                            isFrostedGlass ? styles.quickItemGlass : null,
                             isFrostedGlass ? styles.glassSurface : null,
                             {
                                 backgroundColor: getSurfaceBackground(
@@ -525,13 +527,13 @@ function QuickAccess() {
                             },
                         ]}
                         onPress={item.action}>
-                        {isFrostedGlass ? <GlassBackdrop /> : null}
                         <View
                             style={[
                                 styles.quickIconBox,
+                                isFrostedGlass ? styles.quickIconBoxGlass : null,
                                 {
                                     backgroundColor: Color(item.accent)
-                                        .alpha(0.16)
+                                        .alpha(isFrostedGlass ? 0.22 : 0.16)
                                         .toString(),
                                 },
                             ]}>
@@ -545,7 +547,10 @@ function QuickAccess() {
                             numberOfLines={1}
                             fontSize="description"
                             fontWeight="semibold"
-                            style={styles.quickText}>
+                            style={[
+                                styles.quickText,
+                                isFrostedGlass ? styles.quickTextGlass : null,
+                            ]}>
                             {item.title}
                         </ThemeText>
                     </Pressable>
@@ -643,7 +648,6 @@ function Discovery(props: {
                                 },
                             ]}
                             onPress={item.action}>
-                            {isFrostedGlass ? <GlassBackdrop /> : null}
                             <FastImage
                                 source={item.cover}
                                 placeholderSource={ImgAsset.albumDefault}
@@ -708,7 +712,6 @@ function Discovery(props: {
                                     ),
                                 },
                             ]}>
-                            {isFrostedGlass ? <GlassBackdrop /> : null}
                             <ThemeText fontSize="description">
                                 {t("common.loading")}
                             </ThemeText>
@@ -737,7 +740,6 @@ function Discovery(props: {
                             initialPluginHash: topListPlugins[0]?.hash,
                         })
                     }>
-                    {isFrostedGlass ? <GlassBackdrop /> : null}
                     <View
                         style={[
                             styles.discoveryIcon,
@@ -906,12 +908,12 @@ function MyMusic(props: {
                         ),
                     },
                 ]}>
-                {isFrostedGlass ? <GlassBackdrop /> : null}
                 {rows.map((row, index) => (
                     <Pressable
                         key={row.key}
                         style={[
                             styles.myMusicRow,
+                            isFrostedGlass ? styles.myMusicRowGlass : null,
                             index < rows.length - 1
                                 ? {
                                     borderBottomColor: isFrostedGlass
@@ -927,6 +929,9 @@ function MyMusic(props: {
                         <View
                             style={[
                                 styles.myMusicRowIcon,
+                                isFrostedGlass
+                                    ? styles.myMusicRowIconGlass
+                                    : null,
                                 {
                                     backgroundColor: Color(row.accent)
                                         .alpha(0.18)
@@ -950,7 +955,12 @@ function MyMusic(props: {
                                 numberOfLines={1}
                                 fontSize="description"
                                 fontColor="textSecondary"
-                                style={styles.smallTextMargin}>
+                                style={[
+                                    styles.smallTextMargin,
+                                    isFrostedGlass
+                                        ? styles.smallTextMarginGlass
+                                        : null,
+                                ]}>
                                 {row.desc}
                             </ThemeText>
                         </View>
@@ -1201,6 +1211,9 @@ const styles = StyleSheet.create({
     smallTextMargin: {
         marginTop: rpx(8),
     },
+    smallTextMarginGlass: {
+        marginTop: rpx(10),
+    },
     quickContainer: {
         paddingHorizontal: rpx(24),
     },
@@ -1213,6 +1226,14 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         marginRight: rpx(14),
     },
+    quickItemGlass: {
+        width: rpx(190),
+        height: rpx(78),
+        borderRadius: rpx(20),
+        flexDirection: "row",
+        justifyContent: "flex-start",
+        paddingHorizontal: rpx(16),
+    },
     quickIconBox: {
         width: rpx(52),
         height: rpx(52),
@@ -1220,9 +1241,21 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
     },
+    quickIconBoxGlass: {
+        width: rpx(46),
+        height: rpx(46),
+        borderRadius: rpx(23),
+    },
     quickText: {
         marginTop: rpx(12),
         maxWidth: rpx(112),
+    },
+    quickTextGlass: {
+        flex: 1,
+        minWidth: 0,
+        maxWidth: undefined,
+        marginTop: 0,
+        marginLeft: rpx(12),
     },
     discoveryPreviewContainer: {
         paddingHorizontal: rpx(24),
@@ -1312,6 +1345,10 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
     },
+    myMusicRowGlass: {
+        minHeight: rpx(108),
+        paddingVertical: rpx(14),
+    },
     myMusicRowIcon: {
         width: rpx(54),
         height: rpx(54),
@@ -1319,30 +1356,24 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
     },
+    myMusicRowIconGlass: {
+        width: rpx(50),
+        height: rpx(50),
+        borderRadius: rpx(15),
+    },
     myMusicRowText: {
         flex: 1,
         minWidth: 0,
         marginLeft: rpx(14),
         marginRight: rpx(10),
     },
+    // 玻璃卡片背景是 55% 半透明白，Android 的 elevation 阴影会透过卡片本体
+    // 显示出来，形成一个向左上偏移的"重影矩形"。玻璃质感靠发丝白描边 + 半透明
+    // 填充区分层次即可，这里不再叠原生阴影/elevation。
     glassSurface: {
-        shadowColor: "#26405e",
-        shadowOpacity: 0.12,
-        shadowRadius: rpx(16),
-        shadowOffset: {
-            width: 0,
-            height: rpx(7),
-        },
-        elevation: 2,
+        elevation: 0,
     },
     glassSurfaceStrong: {
-        shadowColor: "#26405e",
-        shadowOpacity: 0.16,
-        shadowRadius: rpx(24),
-        shadowOffset: {
-            width: 0,
-            height: rpx(10),
-        },
-        elevation: 4,
+        elevation: 0,
     },
 });

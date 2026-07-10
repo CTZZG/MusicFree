@@ -191,6 +191,21 @@ class NativeDownloadModule(
     }
 
     @ReactMethod
+    fun publishDownloadCompleted(
+        taskId: String,
+        title: String,
+        filePath: String?,
+        promise: Promise,
+    ) {
+        try {
+            manager.publishCompletedNotification(taskId, title, filePath)
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("PublishCompletedNotificationError", error)
+        }
+    }
+
+    @ReactMethod
     fun refreshDownloadNotifications(promise: Promise) {
         try {
             manager.refreshNotifications()

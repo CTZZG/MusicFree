@@ -48,10 +48,10 @@ export default function MusicMetadataSettings() {
     const currentLyricOrder = useAppConfig("basic.lyricOrder");
 
     const [settings, setSettings] = useState({
-        writeMetadata: currentWriteMetadata ?? false,
+        writeMetadata: currentWriteMetadata ?? true,
         writeMetadataCover: currentWriteMetadataCover ?? true,
         writeMetadataLyric: currentWriteMetadataLyric ?? true,
-        downloadLyricFile: currentDownloadLyricFile ?? false,
+        downloadLyricFile: currentDownloadLyricFile ?? true,
         lyricFileFormat: currentLyricFileFormat ?? "lrc",
         enableWordByWord: currentEnableWordByWord ?? false,
         lyricOrder: currentLyricOrder ?? DEFAULT_LYRIC_ORDER,
@@ -87,10 +87,10 @@ export default function MusicMetadataSettings() {
 
     const handleReset = () => {
         setSettings({
-            writeMetadata: false,
+            writeMetadata: true,
             writeMetadataCover: true,
             writeMetadataLyric: true,
-            downloadLyricFile: false,
+            downloadLyricFile: true,
             lyricFileFormat: "lrc" as "lrc" | "txt",
             enableWordByWord: false,
             lyricOrder: DEFAULT_LYRIC_ORDER,
@@ -225,7 +225,7 @@ export default function MusicMetadataSettings() {
 
     return (
         <PanelBase
-            keyboardAvoidBehavior="height"
+            keyboardAvoidBehavior="none"
             height={vmax(76)}
             renderBody={() => (
                 <>
@@ -280,29 +280,29 @@ export default function MusicMetadataSettings() {
                         {(settings.writeMetadata &&
                             settings.writeMetadataLyric) ||
                         settings.downloadLyricFile ? (
-                            <>
-                                <ListItemHeader>
-                                    {t(
-                                        "panel.musicMetadataSettings.section.lyric",
+                                <>
+                                    <ListItemHeader>
+                                        {t(
+                                            "panel.musicMetadataSettings.section.lyric",
+                                        )}
+                                    </ListItemHeader>
+                                    <View style={styles.orderSummary}>
+                                        <ThemeText
+                                            fontSize="description"
+                                            fontColor="textSecondary">
+                                            {currentOrderText}
+                                        </ThemeText>
+                                    </View>
+                                    {LYRIC_ORDER_ITEMS.map(renderLyricOrderItem)}
+                                    {renderSwitchItem(
+                                        t(
+                                            "panel.musicMetadataSettings.enableWordByWord",
+                                        ),
+                                        settings.enableWordByWord,
+                                        createSwitchHandler("enableWordByWord"),
                                     )}
-                                </ListItemHeader>
-                                <View style={styles.orderSummary}>
-                                    <ThemeText
-                                        fontSize="description"
-                                        fontColor="textSecondary">
-                                        {currentOrderText}
-                                    </ThemeText>
-                                </View>
-                                {LYRIC_ORDER_ITEMS.map(renderLyricOrderItem)}
-                                {renderSwitchItem(
-                                    t(
-                                        "panel.musicMetadataSettings.enableWordByWord",
-                                    ),
-                                    settings.enableWordByWord,
-                                    createSwitchHandler("enableWordByWord"),
-                                )}
-                            </>
-                        ) : null}
+                                </>
+                            ) : null}
 
                         <ListItemHeader>
                             {t("panel.musicMetadataSettings.section.actions")}

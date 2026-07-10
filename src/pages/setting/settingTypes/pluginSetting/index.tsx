@@ -6,6 +6,7 @@ import PluginSort from "./views/pluginSort";
 import PluginSubscribe from "./views/pluginSubscribe";
 import { useParams } from "@/core/router";
 import LxSourceList from "./views/lxSourceList";
+import ScreenSurface from "@/components/base/screenSurface";
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -46,16 +47,23 @@ export default function PluginSetting() {
                 animation: "slide_from_right",
                 animationDuration: 100,
             }}>
-            {routes.map(route => (
-                <Stack.Screen
-                    key={route.path}
-                    name={route.path}
-                    component={route.component}
-                    initialParams={{
-                        initialPluginName: params?.initialPluginName,
-                    }}
-                />
-            ))}
+            {routes.map(route => {
+                const RouteComponent = route.component;
+                return (
+                    <Stack.Screen
+                        key={route.path}
+                        name={route.path}
+                        initialParams={{
+                            initialPluginName: params?.initialPluginName,
+                        }}>
+                        {() => (
+                            <ScreenSurface>
+                                <RouteComponent />
+                            </ScreenSurface>
+                        )}
+                    </Stack.Screen>
+                );
+            })}
         </Stack.Navigator>
     );
 }

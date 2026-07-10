@@ -17,6 +17,7 @@ import Color from "color";
 import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Pressable } from "react-native-gesture-handler";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 interface ISheetsProps {
     initialSheetType?: "local" | "starred";
@@ -33,6 +34,8 @@ export default function Sheets(props: ISheetsProps) {
     const allSheets = useSheetsBase();
     const staredSheets = useStarredSheets();
     const { t } = useI18N();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
+    const reserveMusicBarInset = variant !== "classic";
 
     useEffect(() => {
         setIndex(initialIndex);
@@ -153,6 +156,11 @@ export default function Sheets(props: ISheetsProps) {
             </View>
             <FlashList
                 ListEmptyComponent={<Empty />}
+                ListFooterComponent={
+                    reserveMusicBarInset && musicBarBottomInset ? (
+                        <View style={{ height: musicBarBottomInset }} />
+                    ) : null
+                }
                 extraData={{ t }}
                 data={(index === 0 ? allSheets : staredSheets) ?? []}
                 renderItem={({ item: sheet }) => {

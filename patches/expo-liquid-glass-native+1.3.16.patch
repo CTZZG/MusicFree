@@ -1,0 +1,452 @@
+diff --git a/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeModule.kt b/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeModule.kt
+index 3785a8e..1d81886 100644
+--- a/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeModule.kt
++++ b/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeModule.kt
+@@ -169,6 +169,9 @@ class ExpoLiquidGlassNativeModule : Module() {
+       Prop("captureRectHeight") { view: ExpoLiquidGlassNativeView, captureRectHeight: Double? ->
+         view.updateProps(captureRectHeight = captureRectHeight?.toFloat())
+       }
++      Prop("refreshToken") { view: ExpoLiquidGlassNativeView, refreshToken: Int ->
++        view.updateProps(refreshToken = refreshToken)
++      }
+
+     }
+
+diff --git a/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt b/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt
+index e6c424b..fac8118 100644
+--- a/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt
++++ b/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt
+@@ -9,11 +9,13 @@ import android.os.Bundle
+ import android.os.Build
+ import android.os.Handler
+ import android.os.Looper
++import android.os.SystemClock
+ import android.util.Log
+ import android.view.Gravity
+ import android.view.View
+ import android.view.ViewGroup
+ import android.view.ViewOutlineProvider
++import android.view.ViewTreeObserver
+ import android.view.PixelCopy
+ import android.widget.FrameLayout
+ import android.widget.PopupWindow
+@@ -49,6 +51,8 @@ import expo.modules.kotlin.views.ExpoView
+ import kotlin.math.roundToInt
+
+ private const val REALTIME_CAPTURE_SCALE = 0.5f
++private const val REALTIME_CAPTURE_MIN_INTERVAL_MS = 96L
++private const val REALTIME_CAPTURE_SETTLE_DELAY_MS = 240L
+
+ private data class GlassProps(
+   val tint: Color = Color(0xFFFFFFFF),
+@@ -66,7 +70,13 @@ private data class GlassProps(
+   val captureRectX: Float? = null,
+   val captureRectY: Float? = null,
+   val captureRectWidth: Float? = null,
+-  val captureRectHeight: Float? = null
++  val captureRectHeight: Float? = null,
++  val refreshToken: Int = 0
++)
++
++private data class BackdropDrawState(
++  val excludedViews: Set<View>,
++  val partialDrawViews: Set<View>
+ )
+
+ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
+@@ -75,31 +85,54 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+   private var cachedBackdropBitmap by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+   private var isFrameCaptureScheduled = false
+   private var isPixelCopyInFlight = false
++  private var lastBackdropCaptureFinishedAtMs = 0L
+   private val mainHandler = Handler(Looper.getMainLooper())
+   private var reusableCaptureBitmap: Bitmap? = null
++  private var observedCaptureRoot: View? = null
+   private var popupWindow: PopupWindow? = null
+   private var popupContainer: FrameLayout? = null
+   private var overlaySurface: ReactSurface? = null
+   private var overlayRootView: ReactRootView? = null
+
+-  private val realtimeCaptureFrameRunnable = object : Runnable {
+-    override fun run() {
+-      isFrameCaptureScheduled = false
+-      if (!props.useRealtimeCapture || !isAttachedToWindow) {
+-        return
+-      }
++  private val captureScrollListener = ViewTreeObserver.OnScrollChangedListener {
++    requestBackdropCapture()
++  }
+
+-      requestBackdropCapture()
+-      scheduleRealtimeCapture()
++  private val captureLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
++    requestBackdropCapture()
++    scheduleSettledBackdropCapture()
++  }
++
++  private val settledCaptureRunnable = Runnable {
++    requestBackdropCapture()
++  }
++
++  private val realtimeCaptureFrameRunnable = Runnable {
++    isFrameCaptureScheduled = false
++    if (!props.useRealtimeCapture || !isAttachedToWindow) {
++      return@Runnable
+     }
++
++    performBackdropCapture()
++    lastBackdropCaptureFinishedAtMs = SystemClock.uptimeMillis()
+   }
+
++  private var isComposeContentInstalled = false
++
+   private val composeView = ComposeView(context).apply {
+     layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+     isClickable = false
+     isFocusable = false
+-    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+-    setContent {
++    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
++  }
++
++  private fun ensureComposeContent() {
++    if (isComposeContentInstalled) {
++      return
++    }
++
++    isComposeContentInstalled = true
++    composeView.setContent {
+       val backdrop = rememberLayerBackdrop(
+         onDraw = {
+           if (props.useRealtimeCapture) {
+@@ -153,8 +186,6 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+   init {
+     clipChildren = false
+     clipToPadding = false
+-    addView(composeView, 0)
+-    composeView.visibility = View.VISIBLE
+     updateOutline()
+   }
+
+@@ -167,6 +198,15 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+
+   override fun onAttachedToWindow() {
+     super.onAttachedToWindow()
++    // Fabric measures views synchronously before they are attached to a window.
++    // Creating the composition that early crashes with
++    // "Cannot locate windowRecomposer; View is not attached to a window",
++    // so the ComposeView is only added once a window (and its recomposer) exists.
++    if (composeView.parent == null) {
++      addView(composeView, 0)
++      composeView.visibility = View.VISIBLE
++    }
++    ensureComposeContent()
+     updatePresentationHost()
+     updateRealtimeCaptureLoop()
+     requestBackdropCapture()
+@@ -195,8 +235,10 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+     captureRectX: Float? = null,
+     captureRectY: Float? = null,
+     captureRectWidth: Float? = null,
+-    captureRectHeight: Float? = null
++    captureRectHeight: Float? = null,
++    refreshToken: Int? = null
+   ) {
++    val previousProps = props
+     props = props.copy(
+       tint = tint?.toComposeColor() ?: props.tint,
+       surfaceColor = surfaceColor?.toComposeColor() ?: props.surfaceColor,
+@@ -213,17 +255,29 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+       captureRectX = captureRectX ?: props.captureRectX,
+       captureRectY = captureRectY ?: props.captureRectY,
+       captureRectWidth = captureRectWidth ?: props.captureRectWidth,
+-      captureRectHeight = captureRectHeight ?: props.captureRectHeight
++      captureRectHeight = captureRectHeight ?: props.captureRectHeight,
++      refreshToken = refreshToken ?: props.refreshToken
+     )
+     updateOutline()
+     updatePresentationHost()
+     updateRealtimeCaptureLoop()
+     requestBackdropCapture()
++    if (
++      props.refreshToken != previousProps.refreshToken ||
++      props.useRealtimeCapture != previousProps.useRealtimeCapture ||
++      props.renderInSeparateWindow != previousProps.renderInSeparateWindow
++    ) {
++      scheduleSettledBackdropCapture()
++    }
+   }
+
+   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+     super.onLayout(changed, left, top, right, bottom)
+     updatePresentationHost()
++    if (changed) {
++      requestBackdropCapture()
++      scheduleSettledBackdropCapture()
++    }
+   }
+
+   private fun updateOutline() {
+@@ -241,7 +295,7 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+       val reactContext = appContext.reactContext as? ReactContext ?: return null
+       val activity = reactContext.currentActivity ?: return null
+       val rootView = activity.window?.decorView ?: return null
+-      val excludedViews = collectOverlayExclusionSet(rootView)
++      val drawState = collectBackdropDrawState(rootView)
+
+       val width = width.coerceAtLeast(1)
+       val height = height.coerceAtLeast(1)
+@@ -268,7 +322,7 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+         canvas.translate(-offsetX.toFloat(), -offsetY.toFloat())
+         rootView.background?.draw(canvas)
+         if (rootView is ViewGroup) {
+-          drawViewGroupChildren(rootView, canvas, excludedViews, rootLocation)
++          drawViewGroupChildren(rootView, canvas, drawState, rootLocation)
+         } else if (rootView != this) {
+           rootView.draw(canvas)
+         }
+@@ -287,13 +341,17 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+    * Those views are foreground overlays from the glass perspective and should not become
+    * part of the sampled backdrop bitmap.
+    */
+-  private fun collectOverlayExclusionSet(rootView: View): Set<View> {
++  private fun collectBackdropDrawState(rootView: View): BackdropDrawState {
+     val excludedViews = linkedSetOf<View>()
++    val partialDrawViews = linkedSetOf<View>()
+     excludedViews += this
++    partialDrawViews += rootView
+
+     var current: View = this
+     while (current !== rootView) {
+       val parent = current.parent as? ViewGroup ?: break
++      partialDrawViews += current
++      partialDrawViews += parent
+       val currentIndex = parent.indexOfChild(current)
+       if (currentIndex >= 0) {
+         for (index in currentIndex + 1 until parent.childCount) {
+@@ -303,7 +361,7 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+       current = parent
+     }
+
+-    return excludedViews
++    return BackdropDrawState(excludedViews, partialDrawViews)
+   }
+
+   private fun collectViewSubtree(view: View, excludedViews: MutableSet<View>) {
+@@ -318,12 +376,12 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+   private fun drawViewGroupChildren(
+     parent: ViewGroup,
+     canvas: Canvas,
+-    excludeViews: Set<View>,
++    drawState: BackdropDrawState,
+     parentLocation: IntArray
+   ) {
+     for (index in 0 until parent.childCount) {
+       val child = parent.getChildAt(index)
+-      if (child in excludeViews || child.visibility != View.VISIBLE) {
++      if (child in drawState.excludedViews || child.visibility != View.VISIBLE) {
+         continue
+       }
+
+@@ -336,10 +394,12 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+         val saveCount = canvas.save()
+         try {
+           canvas.translate(childOffsetX.toFloat(), childOffsetY.toFloat())
+-          if (child is ViewGroup) {
++          if (child is ViewGroup && child in drawState.partialDrawViews) {
++            drawViewBackground(child, canvas)
+             val childParentLocation = IntArray(2)
+             child.getLocationInWindow(childParentLocation)
+-            drawViewGroupChildren(child, canvas, excludeViews, childParentLocation)
++            drawViewGroupChildren(child, canvas, drawState, childParentLocation)
++            drawViewForeground(child, canvas)
+           } else {
+             child.draw(canvas)
+           }
+@@ -351,41 +411,155 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+     }
+   }
+
++  private fun drawViewBackground(view: View, canvas: Canvas) {
++    val background = view.background ?: return
++    val oldBounds = Rect(background.bounds)
++    background.setBounds(0, 0, view.width, view.height)
++    background.draw(canvas)
++    background.bounds = oldBounds
++  }
++
++  private fun drawViewForeground(view: View, canvas: Canvas) {
++    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
++      return
++    }
++
++    val foreground = view.foreground ?: return
++    val oldBounds = Rect(foreground.bounds)
++    foreground.setBounds(0, 0, view.width, view.height)
++    foreground.draw(canvas)
++    foreground.bounds = oldBounds
++  }
++
+   private fun updateRealtimeCaptureLoop() {
+     if (!props.useRealtimeCapture || !isAttachedToWindow) {
+       teardownRealtimeCaptureLoop()
+       return
+     }
+
++    attachRealtimeCaptureObservers()
+     scheduleRealtimeCapture()
+   }
+
++  private fun attachRealtimeCaptureObservers() {
++    val captureRoot = resolveCaptureRoot() ?: return
++    if (observedCaptureRoot === captureRoot) {
++      return
++    }
++
++    detachRealtimeCaptureObservers()
++    val viewTreeObserver = captureRoot.viewTreeObserver
++    if (!viewTreeObserver.isAlive) {
++      return
++    }
++    viewTreeObserver.addOnScrollChangedListener(captureScrollListener)
++    viewTreeObserver.addOnGlobalLayoutListener(captureLayoutListener)
++    observedCaptureRoot = captureRoot
++  }
++
++  private fun detachRealtimeCaptureObservers() {
++    val captureRoot = observedCaptureRoot ?: return
++    val viewTreeObserver = captureRoot.viewTreeObserver
++    if (viewTreeObserver.isAlive) {
++      viewTreeObserver.removeOnScrollChangedListener(captureScrollListener)
++      viewTreeObserver.removeOnGlobalLayoutListener(captureLayoutListener)
++    }
++    observedCaptureRoot = null
++  }
++
++  private fun resolveCaptureRoot(): View? {
++    val reactContext = appContext.reactContext as? ReactContext ?: return rootView
++    return reactContext.currentActivity?.window?.decorView ?: rootView
++  }
++
+   private fun teardownRealtimeCaptureLoop() {
+     removeCallbacks(realtimeCaptureFrameRunnable)
++    removeCallbacks(settledCaptureRunnable)
+     isFrameCaptureScheduled = false
++    detachRealtimeCaptureObservers()
+   }
+
+   private fun scheduleRealtimeCapture() {
+-    if (isFrameCaptureScheduled) {
++    if (
++      isFrameCaptureScheduled ||
++      !props.useRealtimeCapture ||
++      !isAttachedToWindow ||
++      width <= 0 ||
++      height <= 0
++    ) {
+       return
+     }
++
++    val elapsedSinceLastCapture =
++      SystemClock.uptimeMillis() - lastBackdropCaptureFinishedAtMs
++    val delayMs =
++      (REALTIME_CAPTURE_MIN_INTERVAL_MS - elapsedSinceLastCapture).coerceAtLeast(0L)
+     isFrameCaptureScheduled = true
+-    postOnAnimation(realtimeCaptureFrameRunnable)
++    if (delayMs == 0L) {
++      postOnAnimation(realtimeCaptureFrameRunnable)
++    } else {
++      postDelayed(realtimeCaptureFrameRunnable, delayMs)
++    }
++  }
++
++  private fun scheduleSettledBackdropCapture() {
++    if (!props.useRealtimeCapture || !isAttachedToWindow) {
++      return
++    }
++    removeCallbacks(settledCaptureRunnable)
++    postDelayed(settledCaptureRunnable, REALTIME_CAPTURE_SETTLE_DELAY_MS)
+   }
+
+   private fun requestBackdropCapture() {
++    if (!props.useRealtimeCapture) {
++      cachedBackdropBitmap = null
++      return
++    }
++    scheduleRealtimeCapture()
++  }
++
++  private fun performBackdropCapture() {
+     if (!props.useRealtimeCapture || width <= 0 || height <= 0) {
+-      if (!props.useRealtimeCapture) {
+-        cachedBackdropBitmap = null
+-      }
+       return
+     }
+
+-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && requestPixelCopyBackdrop()) {
++    // PixelCopy grabs the fully composed activity window, which would include this
++    // view's own rendering plus any sibling content drawn above it (feedback loop).
++    // That is only safe when the glass surface lives in a separate popup window.
++    // For the in-window (backdrop) mode, fall back to the manual canvas capture,
++    // which excludes this view and everything rendered above it.
++    if (props.renderInSeparateWindow && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && requestPixelCopyBackdrop()) {
+       return
+     }
+
+-    cachedBackdropBitmap = captureBackdropBitmap()?.asImageBitmap()
++    val backdropBitmap = captureBackdropBitmap()
++    if (backdropBitmap != null && hasVisiblePixels(backdropBitmap)) {
++      cachedBackdropBitmap = backdropBitmap.asImageBitmap()
++    }
++  }
++
++  private fun hasVisiblePixels(bitmap: Bitmap): Boolean {
++    val width = bitmap.width
++    val height = bitmap.height
++    if (width <= 0 || height <= 0) {
++      return false
++    }
++
++    val stepX = (width / 12).coerceAtLeast(1)
++    val stepY = (height / 12).coerceAtLeast(1)
++    var y = 0
++    while (y < height) {
++      var x = 0
++      while (x < width) {
++        if ((bitmap.getPixel(x, y) ushr 24) > 8) {
++          return true
++        }
++        x += stepX
++      }
++      y += stepY
++    }
++
++    return (bitmap.getPixel(width - 1, height - 1) ushr 24) > 8
+   }
+
+   private fun requestPixelCopyBackdrop(): Boolean {
+@@ -535,7 +709,12 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+
+     if (composeView.parent !== this) {
+       (composeView.parent as? ViewGroup)?.removeView(composeView)
+-      addView(composeView, 0)
++      // Only re-attach once this view is in a window: adding the ComposeView to a
++      // detached parent lets Fabric measure it before attach, which crashes with
++      // "Cannot locate windowRecomposer". onAttachedToWindow adds it back later.
++      if (isAttachedToWindow) {
++        addView(composeView, 0)
++      }
+     }
+   }
+
+diff --git a/node_modules/expo-liquid-glass-native/src/ExpoLiquidGlassNative.types.ts b/node_modules/expo-liquid-glass-native/src/ExpoLiquidGlassNative.types.ts
+index b7bdb8d..eda6c5f 100644
+--- a/node_modules/expo-liquid-glass-native/src/ExpoLiquidGlassNative.types.ts
++++ b/node_modules/expo-liquid-glass-native/src/ExpoLiquidGlassNative.types.ts
+@@ -25,4 +25,5 @@ export type ExpoLiquidGlassNativeViewProps = ViewProps & {
+   captureRectY?: number;
+   captureRectWidth?: number;
+   captureRectHeight?: number;
++  refreshToken?: number;
+ };

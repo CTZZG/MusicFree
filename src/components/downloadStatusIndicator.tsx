@@ -84,6 +84,14 @@ export default function DownloadStatusIndicator(
             };
         }
 
+        if (task.status === DownloadStatus.Finalizing) {
+            return {
+                text: t("downloading.downloadStatus.finalizing"),
+                tone: "active" as const,
+                progress: 1,
+            };
+        }
+
         if (task.status === DownloadStatus.Paused) {
             return {
                 text: t("downloading.downloadStatus.paused"),
@@ -126,6 +134,7 @@ export default function DownloadStatusIndicator(
                 {text}
             </ThemeText>
             {task.status === DownloadStatus.Downloading ||
+            task.status === DownloadStatus.Finalizing ||
             task.status === DownloadStatus.Paused ? (
                     <View style={styles.progressTrack}>
                         <View

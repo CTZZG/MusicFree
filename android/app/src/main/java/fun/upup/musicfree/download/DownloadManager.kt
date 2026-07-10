@@ -1,6 +1,7 @@
 package `fun`.upup.musicfree.download
 
 import android.content.Context
+import java.io.File
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import java.util.concurrent.Callable
@@ -155,6 +156,7 @@ class DownloadManager(
                     )
                     tasks.remove(taskId)
                     database.deleteTask(taskId)
+                    deletePartialArtifact(task)
                     return true
                 }
                 DownloadTaskStatus.COMPLETED,
@@ -171,15 +173,21 @@ class DownloadManager(
     fun removeTask(taskId: String): Boolean {
         synchronized(lock) {
             val task = tasks[taskId] ?: return false
+            val wasCompleted = task.status == DownloadTaskStatus.COMPLETED
             removeFromQueue(taskId)
             runningTasks[taskId]?.control?.cancel()
-            updateTaskStatus(
-                task = task,
-                status = DownloadTaskStatus.CANCELED,
-                errorMessage = null,
-            )
+            if (!wasCompleted) {
+                updateTaskStatus(
+                    task = task,
+                    status = DownloadTaskStatus.CANCELED,
+                    errorMessage = null,
+                )
+            }
             tasks.remove(taskId)
             database.deleteTask(taskId)
+            if (!wasCompleted) {
+                deletePartialArtifact(task)
+            }
             return true
         }
     }
@@ -212,6 +220,10 @@ class DownloadManager(
 
     fun cancelNotification(taskId: String) {
         notificationManager.cancelNotification(taskId)
+    }
+
+    fun publishCompletedNotification(taskId: String, title: String, filePath: String?) {
+        notificationManager.publishCompleted(taskId, title, filePath)
     }
 
     fun refreshNotifications() {
@@ -337,7 +349,15 @@ class DownloadManager(
 
         synchronized(lock) {
             runningTasks.remove(taskId)
-            val currentTask = tasks[taskId] ?: return@synchronized
+            progressCache.remove(taskId)
+            val currentTask = tasks[taskId]
+            if (currentTask == null) {
+                // A JS-side remove can race with a worker that has not opened
+                // its destination yet. Clean up again after the worker exits so
+                // it cannot leave a newly-created zero-byte/partial artifact.
+                deletePartialArtifact(task)
+                return@synchronized
+            }
             currentTask.downloadedBytes = result.downloadedBytes
             currentTask.totalBytes = result.totalBytes
             currentTask.updatedAt = System.currentTimeMillis()
@@ -345,13 +365,12 @@ class DownloadManager(
             when (result.finalStatus) {
                 DownloadTaskStatus.COMPLETED -> {
                     updateTaskStatus(currentTask, DownloadTaskStatus.COMPLETED, null)
-                    tasks.remove(taskId)
-                    database.deleteTask(taskId)
                 }
                 DownloadTaskStatus.CANCELED -> {
                     updateTaskStatus(currentTask, DownloadTaskStatus.CANCELED, null)
                     tasks.remove(taskId)
                     database.deleteTask(taskId)
+                    deletePartialArtifact(currentTask)
                 }
                 DownloadTaskStatus.PAUSED -> {
                     updateTaskStatus(currentTask, DownloadTaskStatus.PAUSED, null)
@@ -373,28 +392,38 @@ class DownloadManager(
     }
 
     private fun flushProgressBatch() {
-        val snapshots = mutableListOf<ProgressSnapshot>()
+        val pendingSnapshots = mutableListOf<ProgressSnapshot>()
         progressCache.forEach { (taskId, snapshot) ->
             if (progressCache.remove(taskId, snapshot)) {
-                snapshots.add(snapshot)
+                pendingSnapshots.add(snapshot)
             }
         }
-        if (snapshots.isEmpty()) return
+        if (pendingSnapshots.isEmpty()) return
+
+        val activeSnapshots = mutableListOf<ProgressSnapshot>()
         val taskSnapshotById = mutableMapOf<String, DownloadTask>()
         synchronized(lock) {
-            snapshots.forEach { snapshot ->
+            pendingSnapshots.forEach { snapshot ->
                 val task = tasks[snapshot.taskId] ?: return@forEach
+                if (
+                    task.status != DownloadTaskStatus.PREPARING &&
+                    task.status != DownloadTaskStatus.DOWNLOADING
+                ) {
+                    return@forEach
+                }
                 task.downloadedBytes = snapshot.downloaded
                 task.totalBytes = snapshot.total
                 task.updatedAt = System.currentTimeMillis()
                 // 进度不落盘：批量下载时每 500ms 逐任务写 SQLite 开销过大，
                 // 且重启恢复时进行中任务一律标记为中断，持久化进度没有意义。
                 // 状态变化由 updateTaskStatus 负责落盘。
+                activeSnapshots.add(snapshot)
                 taskSnapshotById[snapshot.taskId] = task.copy()
             }
         }
-        listener.onProgressBatch(snapshots)
-        notificationManager.onProgressBatch(snapshots, taskSnapshotById)
+        if (activeSnapshots.isEmpty()) return
+        listener.onProgressBatch(activeSnapshots)
+        notificationManager.onProgressBatch(activeSnapshots, taskSnapshotById)
     }
 
     private fun maybeEmitQueueDrained() {
@@ -436,6 +465,16 @@ class DownloadManager(
             }
         }
         retained.forEach { pendingQueue.offer(it) }
+    }
+
+    private fun deletePartialArtifact(task: DownloadTask) {
+        try {
+            val file = File(task.destinationPath)
+            if (file.exists()) {
+                file.delete()
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun calculatePercent(downloaded: Long, total: Long): Int {

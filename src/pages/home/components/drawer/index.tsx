@@ -16,6 +16,7 @@ import { DrawerContentScrollView } from "@react-navigation/drawer";
 import React, { memo } from "react";
 import { BackHandler, Platform, StyleSheet, View } from "react-native";
 import { default as DeviceInfo, default as deviceInfoModule } from "react-native-device-info";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 const ITEM_HEIGHT = rpx(108);
 
@@ -27,6 +28,7 @@ interface ISettingOptions {
 
 function HomeDrawer(props: any) {
     const navigate = useNavigate();
+    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
     function navigateToSetting(settingType: string) {
         navigate(ROUTE_PATH.SETTING, {
             type: settingType,
@@ -89,7 +91,14 @@ function HomeDrawer(props: any) {
     return (
         <>
             <PageBackground />
-            <DrawerContentScrollView {...[props]} style={style.scrollWrapper}>
+            <DrawerContentScrollView
+                {...props}
+                style={[props.style, style.scrollWrapper]}
+                contentContainerStyle={[
+                    props.contentContainerStyle,
+                    style.scrollContent,
+                    { paddingBottom: musicBarBottomInset },
+                ]}>
                 <View style={style.header}>
                     <ThemeText fontSize="appbar" fontWeight="bold">
                         {DeviceInfo.getApplicationName()}
@@ -237,6 +246,9 @@ const style = StyleSheet.create({
         backgroundColor: "#999999",
     },
     scrollWrapper: {
+        flex: 1,
+    },
+    scrollContent: {
         paddingTop: rpx(12),
     },
 
@@ -262,7 +274,7 @@ const style = StyleSheet.create({
     },
 });
 
-function _CountDownItem() {
+function CountDownItemInner() {
     const countDown = useScheduleCloseCountDown();
     const { t } = useI18N();
 
@@ -281,4 +293,4 @@ function _CountDownItem() {
     );
 }
 
-const CountDownItem = memo(_CountDownItem, () => true);
+const CountDownItem = memo(CountDownItemInner, () => true);

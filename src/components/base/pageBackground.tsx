@@ -1,78 +1,29 @@
 import React, { memo } from "react";
 import { StatusBar, StyleSheet, useWindowDimensions, View } from "react-native";
-import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
 import LinearGradient from "react-native-linear-gradient";
 import Image from "./image";
 import useColors from "@/hooks/useColors";
 import Theme from "@/core/theme";
 import { useAppConfig } from "@/core/appConfig";
 
-// 液态硅胶主题的默认背景：干净的浅色渐变，只叠少量大而柔和的低饱和光斑，
-// 不加高频细节（此前的小色点观感诡异，已移除）。
-const GLOW_BLOBS = [
-    { id: "glowBlue", color: "#7fb3f7", opacity: 0.22, cx: 0.16, cy: 0.1, r: 0.7 },
-    { id: "glowViolet", color: "#b7a8f5", opacity: 0.16, cx: 0.9, cy: 0.4, r: 0.62 },
-    { id: "glowTeal", color: "#9fd8c6", opacity: 0.13, cx: 0.2, cy: 0.88, r: 0.6 },
-];
-
-function FrostedBackground({ width, height }: { width: number; height: number }) {
+// 液态硅胶主题的默认背景：单一柔和渐变，不叠任何光斑。
+// 光斑（径向渐变圆）在部分设备上会叠出可见的竖向条带（gradient banding），
+// 且背景过浅时半透明白卡片会"隐形"，因此渐变色调要有一定深度。
+function FrostedBackground({ height }: { height: number }) {
     return (
-        <>
-            <LinearGradient
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0.4, y: 1 }}
-                colors={["#eef4fb", "#f3f1fa", "#faf3f6"]}
-                style={[style.wrapper, { height }]}
-            />
-            <Svg
-                pointerEvents="none"
-                width={width}
-                height={height}
-                style={style.wrapper}>
-                <Defs>
-                    {GLOW_BLOBS.map(blob => (
-                        <RadialGradient
-                            key={blob.id}
-                            id={blob.id}
-                            cx="50%"
-                            cy="50%"
-                            r="50%">
-                            <Stop
-                                offset="0%"
-                                stopColor={blob.color}
-                                stopOpacity={blob.opacity}
-                            />
-                            <Stop
-                                offset="60%"
-                                stopColor={blob.color}
-                                stopOpacity={blob.opacity * 0.5}
-                            />
-                            <Stop
-                                offset="100%"
-                                stopColor={blob.color}
-                                stopOpacity={0}
-                            />
-                        </RadialGradient>
-                    ))}
-                </Defs>
-                {GLOW_BLOBS.map(blob => (
-                    <Circle
-                        key={blob.id}
-                        cx={width * blob.cx}
-                        cy={height * blob.cy}
-                        r={width * blob.r}
-                        fill={`url(#${blob.id})`}
-                    />
-                ))}
-            </Svg>
-        </>
+        <LinearGradient
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0.35, y: 1 }}
+            colors={["#cfdff2", "#d8d5ee", "#e8d9e6"]}
+            style={[style.wrapper, { height }]}
+        />
     );
 }
 
 function PageBackground() {
     const theme = Theme.useTheme();
     const background = Theme.useBackground();
-    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+    const { height: windowHeight } = useWindowDimensions();
     const colors = useColors();
     const frostedCustomBgFrost =
         useAppConfig("theme.frostedCustomBgFrost") ?? true;
@@ -106,7 +57,7 @@ function PageBackground() {
                 ]}
             />
             {isFrostedGlass ? (
-                <FrostedBackground width={windowWidth} height={height} />
+                <FrostedBackground height={height} />
             ) : null}
             {(!theme.id.startsWith("p-") || isFrostedGlass) &&
             background?.url ? (
