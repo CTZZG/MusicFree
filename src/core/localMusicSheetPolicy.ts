@@ -39,3 +39,86 @@ export function mergeEditedListWithConcurrentChanges<T>(params: {
 
     return merged;
 }
+
+export interface IParsedLocalMusicFilename {
+    platform?: string;
+    id?: string;
+    title?: string;
+    artist?: string;
+}
+
+interface IEmbeddedLocalMusicMetadata {
+    title?: string | null;
+    artist?: string | null;
+}
+
+function firstNonBlank(
+    ...values: Array<string | null | undefined>
+): string | undefined {
+    return values.find(value => typeof value === "string" && value.trim())?.trim();
+}
+
+export function parseLocalMusicFilename(
+    filename: string,
+): IParsedLocalMusicFilename | null {
+    const dotIndex = filename.lastIndexOf(".");
+    const basename = dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+    const [platform, id, title, artist] = basename.split("@");
+    if (!platform || !id) {
+        const displayNameMatch = basename.trim().match(/^(.+?)\s+-\s+(.+)$/);
+        if (!displayNameMatch) {
+            return null;
+        }
+        return {
+            title: displayNameMatch[1].trim(),
+            artist: displayNameMatch[2].trim(),
+        };
+    }
+    return {
+        platform,
+        id,
+        title: title?.trim(),
+        artist: artist?.trim(),
+    };
+}
+
+export function resolveLocalMusicImportFields(params: {
+    filename: string;
+    embeddedMetadata?: IEmbeddedLocalMusicMetadata | null;
+    fallbackTitle: string;
+    fallbackArtist: string;
+}) {
+    const { filename, embeddedMetadata, fallbackTitle, fallbackArtist } = params;
+    const parsedFilename = parseLocalMusicFilename(filename);
+    const hasStructuredIdentity = !!(
+        firstNonBlank(parsedFilename?.platform) &&
+        firstNonBlank(parsedFilename?.id)
+    );
+
+    return {
+        platform: firstNonBlank(parsedFilename?.platform),
+        id: firstNonBlank(parsedFilename?.id),
+        title: hasStructuredIdentity
+            ? firstNonBlank(
+                parsedFilename?.title,
+                embeddedMetadata?.title,
+                fallbackTitle,
+            )!
+            : firstNonBlank(
+                embeddedMetadata?.title,
+                parsedFilename?.title,
+                fallbackTitle,
+            )!,
+        artist: hasStructuredIdentity
+            ? firstNonBlank(
+                parsedFilename?.artist,
+                embeddedMetadata?.artist,
+                fallbackArtist,
+            )!
+            : firstNonBlank(
+                embeddedMetadata?.artist,
+                parsedFilename?.artist,
+                fallbackArtist,
+            )!,
+    };
+}

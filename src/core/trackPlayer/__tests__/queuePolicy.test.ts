@@ -32,7 +32,7 @@ describe("track player queue policy", () => {
         expect(getWrappedQueueItem([], 0)).toBeNull();
     });
 
-    it("prepares the current item in single repeat mode", () => {
+    it("does not prepare the current item in single repeat mode", () => {
         const current = item("a");
 
         expect(
@@ -45,7 +45,7 @@ describe("track player queue policy", () => {
                 isSameItem: sameItem,
                 isSkipped: () => false,
             }),
-        ).toBe(current);
+        ).toBeNull();
     });
 
     it("blocks native prepared-next while play-later has priority", () => {
@@ -64,7 +64,7 @@ describe("track player queue policy", () => {
         ).toBeNull();
     });
 
-    it("finds the next playable queue item with wrapping", () => {
+    it("does not prepare a wrapped queue item at the end", () => {
         const queue = [item("a"), item("b"), item("c")];
 
         expect(
@@ -77,7 +77,7 @@ describe("track player queue policy", () => {
                 isSameItem: sameItem,
                 isSkipped: () => false,
             }),
-        ).toBe(queue[0]);
+        ).toBeNull();
     });
 
     it("skips disliked items and never returns the current duplicate", () => {

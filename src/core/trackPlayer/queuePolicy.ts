@@ -124,15 +124,20 @@ export function resolvePreparedNextItem<T>(
     }
 
     if (repeatMode === MusicRepeatMode.SINGLE) {
-        return currentItem;
+        return null;
     }
 
     if (playLaterQueueLength > 0) {
         return null;
     }
 
-    return findNextPlayableQueueItem(queue, currentIndex, currentItem, {
-        isSameItem,
-        isSkipped,
-    });
+    if (currentIndex < 0 || currentIndex + 1 >= queue.length) {
+        return null;
+    }
+    const candidate = queue[currentIndex + 1];
+    return candidate &&
+        !isSameItem(candidate, currentItem) &&
+        !isSkipped(candidate)
+        ? candidate
+        : null;
 }

@@ -23,7 +23,10 @@ import {
 } from "@/utils/localMusicStatus";
 import { errorLog, trace } from "@/utils/log";
 import SerializedStateRepository from "@/utils/serializedStateRepository";
-import { mergeEditedListWithConcurrentChanges } from "./localMusicSheetPolicy";
+import {
+    mergeEditedListWithConcurrentChanges,
+    resolveLocalMusicImportFields,
+} from "./localMusicSheetPolicy";
 import StateMapper from "@/utils/stateMapper";
 import { getStorage, setStorage, setStorageStrict } from "@/utils/storage";
 import CryptoJs from "crypto-js";
@@ -263,30 +266,6 @@ async function removeMusicIfLocalPath(
     });
     return removed;
 }
-function parseFilename(fn: string): Partial<IMusic.IMusicItem> | null {
-    const dotIndex = fn.lastIndexOf(".");
-    const basename = dotIndex > 0 ? fn.slice(0, dotIndex) : fn;
-    const data = basename.split("@");
-    const [platform, id, title, artist] = data;
-    if (!platform || !id) {
-        const displayName = basename.trim();
-        const displayNameMatch = displayName.match(/^(.+?)\s+-\s+(.+)$/);
-        if (!displayNameMatch) {
-            return null;
-        }
-        return {
-            title: displayNameMatch[1].trim(),
-            artist: displayNameMatch[2].trim(),
-        };
-    }
-    return {
-        id,
-        platform: platform,
-        title: title ?? "",
-        artist: artist ?? "",
-    };
-}
-
 function localMediaFilter(filename: string) {
     return supportLocalMediaType.some(ext =>
         filename.toLowerCase().endsWith(ext),
@@ -654,17 +633,22 @@ async function createLocalMusicItemFromPath(
     musicPath: string,
 ): Promise<IMusic.IMusicItem> {
     const normalizedPath = normalizeFsPath(musicPath);
-    const parsed = parseFilename(getFileName(normalizedPath, true)) ?? {};
     const meta = await readMusicMeta(normalizedPath);
+    const fields = resolveLocalMusicImportFields({
+        filename: getFileName(normalizedPath, true),
+        embeddedMetadata: meta,
+        fallbackTitle: getFileName(normalizedPath),
+        fallbackArtist: "未知歌手",
+    });
     const duration = parseInt(meta?.duration ?? "0", 10) / 1000;
 
     return {
         id:
-            parsed.id ??
+            fields.id ??
             CryptoJs.MD5(normalizedPath).toString(CryptoJs.enc.Hex),
-        platform: parsed.platform ?? localPluginPlatform,
-        title: parsed.title ?? meta?.title ?? getFileName(normalizedPath),
-        artist: parsed.artist ?? meta?.artist ?? "未知歌手",
+        platform: fields.platform ?? localPluginPlatform,
+        title: fields.title,
+        artist: fields.artist,
         duration: Number.isFinite(duration) ? duration : 0,
         album: meta?.album ?? "未知专辑",
         artwork: "",
@@ -897,17 +881,19 @@ async function importLocal(_folderPaths: string[]) {
         .filter(item => !isLikelyNonMusicAudio(item.musicPath, item.meta));
     const musicItems: IMusic.IMusicItem[] = await Promise.all(
         scannedItems.map(async ({ musicPath, meta }) => {
-            let { platform, id, title, artist } =
-                parseFilename(getFileName(musicPath, true)) ?? {};
-            if (!platform || !id) {
-                platform = "本地";
-                id = CryptoJs.MD5(musicPath).toString(CryptoJs.enc.Hex);
-            }
+            const fields = resolveLocalMusicImportFields({
+                filename: getFileName(musicPath, true),
+                embeddedMetadata: meta,
+                fallbackTitle: getFileName(musicPath),
+                fallbackArtist: "未知歌手",
+            });
             return {
-                id,
-                platform,
-                title: title ?? meta?.title ?? getFileName(musicPath),
-                artist: artist ?? meta?.artist ?? "未知歌手",
+                id:
+                    fields.id ??
+                    CryptoJs.MD5(musicPath).toString(CryptoJs.enc.Hex),
+                platform: fields.platform ?? localPluginPlatform,
+                title: fields.title,
+                artist: fields.artist,
                 duration: parseInt(meta?.duration ?? "0", 10) / 1000,
                 album: meta?.album ?? "未知专辑",
                 artwork: "",

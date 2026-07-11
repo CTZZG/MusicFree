@@ -26,6 +26,7 @@ import {
     type DownloadWriteResult,
 } from "@/core/downloadFinalizationPolicy";
 import useColors from "@/hooks/useColors";
+import useLocalMusicArtwork from "@/hooks/useLocalMusicArtwork";
 
 type DownloadWriteStatus = DownloadWriteResult;
 
@@ -111,6 +112,11 @@ function MusicItem(props: IMusicItemProps) {
     const { t } = useI18N();
     const localFileExists = LocalMusicSheet.useLocalFileExists(musicItem);
     const localMusicItem = LocalMusicSheet.useLocalMusic(musicItem);
+    const displayArtwork = useLocalMusicArtwork({
+        artwork: musicItem.artwork,
+        enabled: showArtwork && localFileExists !== false,
+        localMusicItem,
+    });
     const rawDownloadMetadataStatus = useMediaExtraProperty(
         musicItem,
         "downloadMetadataStatus",
@@ -192,7 +198,7 @@ function MusicItem(props: IMusicItemProps) {
             {Left ? <Left /> : null}
             {!Left && showArtwork ? (
                 <ListItem.ListItemImage
-                    uri={musicItem.artwork}
+                    uri={displayArtwork}
                     fallbackImg={ImgAsset.albumDefault}
                     contentStyle={styles.artwork}
                 />

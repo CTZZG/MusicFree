@@ -50,6 +50,14 @@ export interface MpvInitializeOptions {
 /** 加载并播放一首音乐时传给原生的载荷（含 MediaSession 展示用元数据） */
 export interface MpvLoadPayload {
     url: string;
+    /** JS 队列中的稳定媒体身份，不使用 URL 作为身份。 */
+    mediaId: string;
+    /** 每次显式加载或 prepared promotion 唯一递增。 */
+    loadGeneration: number;
+    /** prepareNext 请求身份；显式加载传 0。 */
+    prepareToken: number;
+    /** JS 队列结构版本。 */
+    queueRevision: number;
     headers?: Record<string, string>;
     userAgent?: string;
     /** 以下为锁屏/通知栏 MediaSession 展示用 */
@@ -76,6 +84,17 @@ export interface MpvQueueSnapshotPayload {
     tracks: MpvQueueSnapshotTrack[];
 }
 
+export type MpvMetadataPayload = Omit<
+    MpvLoadPayload,
+    | "url"
+    | "headers"
+    | "autoPlay"
+    | "mediaId"
+    | "loadGeneration"
+    | "prepareToken"
+    | "queueRevision"
+>;
+
 interface MpvPlayerNativeModule {
     initialize(options: MpvInitializeOptions): Promise<void>;
     destroy(): Promise<void>;
@@ -94,14 +113,13 @@ interface MpvPlayerNativeModule {
     isAndroidAutoConnected(): Promise<boolean>;
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
-    updateMetadata(
-        payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">,
-    ): Promise<void>;
+    updateMetadata(payload: MpvMetadataPayload): Promise<void>;
 }
 
 export const ON_MPV_STATE_CHANGED = "onMpvStateChanged";
 export const ON_MPV_PROGRESS = "onMpvProgress";
 export const ON_MPV_ENDED = "onMpvEnded";
+export const ON_MPV_ACTIVE_TRACK_CHANGED = "onMpvActiveTrackChanged";
 export const ON_MPV_ERROR = "onMpvError";
 export const ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand";
 export const ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
@@ -120,6 +138,18 @@ export interface MpvEndedEvent {
     reason?: "end" | "error";
     /** mpv playlist 已经自动切到 JS 指定的 prepared next */
     autoAdvanced?: boolean;
+    endedMediaId?: string;
+    promotedMediaId?: string;
+    prepareToken?: number;
+    queueRevision?: number;
+    loadGeneration?: number;
+}
+export interface MpvActiveTrackChangedEvent {
+    mediaId: string;
+    loadGeneration: number;
+    prepareToken: number;
+    queueRevision: number;
+    source: "loaded" | "prepared";
 }
 export interface MpvErrorEvent {
     message: string;
@@ -194,9 +224,8 @@ const NativeMpvPlayer = {
     isAndroidAutoConnected: () => assertAvailable().isAndroidAutoConnected(),
     updateQueueSnapshot: (payload: MpvQueueSnapshotPayload) =>
         assertAvailable().updateQueueSnapshot(payload),
-    updateMetadata: (
-        payload: Omit<MpvLoadPayload, "url" | "headers" | "autoPlay">,
-    ) => assertAvailable().updateMetadata(payload),
+    updateMetadata: (payload: MpvMetadataPayload) =>
+        assertAvailable().updateMetadata(payload),
 
     // 事件订阅
     addStateChangedListener: (cb: (e: MpvStateChangedEvent) => void) =>
@@ -205,6 +234,9 @@ const NativeMpvPlayer = {
         addListener<MpvProgressEvent>(ON_MPV_PROGRESS, cb),
     addEndedListener: (cb: (e: MpvEndedEvent) => void) =>
         addListener<MpvEndedEvent>(ON_MPV_ENDED, cb),
+    addActiveTrackChangedListener: (
+        cb: (e: MpvActiveTrackChangedEvent) => void,
+    ) => addListener<MpvActiveTrackChangedEvent>(ON_MPV_ACTIVE_TRACK_CHANGED, cb),
     addErrorListener: (cb: (e: MpvErrorEvent) => void) =>
         addListener<MpvErrorEvent>(ON_MPV_ERROR, cb),
     addRemoteCommandListener: (cb: (e: MpvRemoteCommandEvent) => void) =>

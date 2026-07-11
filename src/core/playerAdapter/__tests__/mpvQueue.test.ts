@@ -54,8 +54,8 @@ describe("mpv queue helpers", () => {
 
     it("resolves load-queue start indices", () => {
         expect(resolveMpvLoadQueueStartIndex(3, 1)).toBe(1);
-        expect(resolveMpvLoadQueueStartIndex(3, -1)).toBe(0);
-        expect(resolveMpvLoadQueueStartIndex(3, 3)).toBe(0);
+        expect(resolveMpvLoadQueueStartIndex(3, -1)).toBeNull();
+        expect(resolveMpvLoadQueueStartIndex(3, 3)).toBeNull();
         expect(resolveMpvLoadQueueStartIndex(0, 0)).toBeNull();
     });
 

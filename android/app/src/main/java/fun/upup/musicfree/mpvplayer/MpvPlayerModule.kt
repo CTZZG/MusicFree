@@ -2,6 +2,7 @@ package `fun`.upup.musicfree.mpvplayer
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -115,11 +116,23 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     private data class PreparedTrack(
         val url: String,
+        val mediaId: String,
+        val loadGeneration: Long,
+        val prepareToken: Long,
+        val queueRevision: Long,
         val title: String,
         val artist: String,
         val album: String,
         val artwork: String?,
         val duration: Double,
+    )
+
+    private data class TrackIdentity(
+        val url: String,
+        val mediaId: String,
+        val loadGeneration: Long,
+        val prepareToken: Long,
+        val queueRevision: Long,
     )
 
     private var positionSecs = 0.0
@@ -128,6 +141,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var currentState = "idle"
 
     private var currentLoadGeneration = 0L
+    private var activeTrackIdentity: TrackIdentity? = null
+    private var loadingTrackIdentity: TrackIdentity? = null
     private var loadingGeneration = -1L
     private var pendingUnpauseGeneration = -1L
     private var ignoreEndFileUntilMs = 0L
@@ -153,6 +168,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private const val ON_MPV_STATE_CHANGED = "onMpvStateChanged"
         private const val ON_MPV_PROGRESS = "onMpvProgress"
         private const val ON_MPV_ENDED = "onMpvEnded"
+        private const val ON_MPV_ACTIVE_TRACK_CHANGED = "onMpvActiveTrackChanged"
         private const val ON_MPV_ERROR = "onMpvError"
         private const val ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand"
         private const val ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
@@ -296,6 +312,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private fun readBoolean(map: ReadableMap, key: String): Boolean? =
         if (map.hasKey(key) && !map.isNull(key)) map.getBoolean(key) else null
 
+    private fun readLong(map: ReadableMap, key: String): Long? =
+        readDouble(map, key)?.takeIf { !it.isNaN() && !it.isInfinite() }?.toLong()
+
     private fun readDuckMode(options: ReadableMap): String =
         readString(options, "remoteDuckMode")
             ?.takeIf { it == "pause" || it == "lowerVolume" }
@@ -342,8 +361,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
-    private fun markLoading(autoPlay: Boolean): Long {
-        val generation = ++currentLoadGeneration
+    private fun markLoading(autoPlay: Boolean, requestedGeneration: Long): Long {
+        val generation = requestedGeneration
+        currentLoadGeneration = generation
         loadingGeneration = generation
         pendingUnpauseGeneration = if (autoPlay) generation else -1L
         val now = System.currentTimeMillis()
@@ -353,11 +373,45 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         return generation
     }
 
+    private fun emitActiveTrackChanged(identity: TrackIdentity, source: String) {
+        sendEvent(
+            ON_MPV_ACTIVE_TRACK_CHANGED,
+            Arguments.createMap().apply {
+                putString("mediaId", identity.mediaId)
+                putDouble("loadGeneration", identity.loadGeneration.toDouble())
+                putDouble("prepareToken", identity.prepareToken.toDouble())
+                putDouble("queueRevision", identity.queueRevision.toDouble())
+                putString("source", source)
+            },
+        )
+    }
+
+    private fun normalizedMediaPath(value: String?): String? =
+        value
+            ?.takeIf { it.isNotBlank() }
+            ?.removePrefix("file://")
+            ?.let(Uri::decode)
+
+    private fun currentPathMatches(url: String): Boolean {
+        val currentPath = try {
+            MPVLib.getPropertyString("path")
+        } catch (_: Exception) {
+            null
+        }
+        return normalizedMediaPath(currentPath) == normalizedMediaPath(url)
+    }
+
     private fun isCurrentGeneration(generation: Long): Boolean =
         generation == currentLoadGeneration
 
     private fun forceUnpause(generation: Long) {
         if (!isCurrentGeneration(generation) || stopRequested) {
+            return
+        }
+        val identity = loadingTrackIdentity
+            ?.takeIf { it.loadGeneration == generation }
+            ?: activeTrackIdentity?.takeIf { it.loadGeneration == generation }
+        if (identity == null || !currentPathMatches(identity.url)) {
             return
         }
         try {
@@ -440,8 +494,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         preparedPlaylistIndex = -1
     }
 
-    private fun promotePreparedTrack(): Boolean {
-        val prepared = preparedTrack ?: return false
+    private fun promotePreparedTrack(): PreparedTrack? {
+        val prepared = preparedTrack ?: return null
+        val playlistPosition = readPlaylistPosition()
+        if (!hasPlaylistPreparedTrack || playlistPosition != preparedPlaylistIndex) {
+            Log.w(
+                TAG,
+                "prepared promotion rejected: pos=$playlistPosition expected=$preparedPlaylistIndex " +
+                    "mediaId=${prepared.mediaId} token=${prepared.prepareToken}",
+            )
+            clearPreparedTrack(removeFromPlaylist = false)
+            return null
+        }
         preparedTrack = null
         hasPlaylistPreparedTrack = false
         preparedPlaylistIndex = -1
@@ -453,10 +517,27 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         durationSecs = validDuration(prepared.duration)
         positionSecs = 0.0
         cacheAheadSecs = 0.0
+        currentLoadGeneration = prepared.loadGeneration
+        val identity = TrackIdentity(
+            url = prepared.url,
+            mediaId = prepared.mediaId,
+            loadGeneration = prepared.loadGeneration,
+            prepareToken = prepared.prepareToken,
+            queueRevision = prepared.queueRevision,
+        )
+        activeTrackIdentity = identity
+        loadingTrackIdentity = null
         syncMetadata()
         emitProgress(force = true)
+        emitActiveTrackChanged(identity, "prepared")
+        Log.d(
+            TAG,
+            "prepared promotion accepted: mediaId=${prepared.mediaId} " +
+                "generation=${prepared.loadGeneration} token=${prepared.prepareToken} " +
+                "queueRevision=${prepared.queueRevision}",
+        )
         schedulePlaylistCompaction()
-        return true
+        return prepared
     }
 
     @ReactMethod
@@ -580,6 +661,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 stopRequested = true
                 pendingPlaylistCompaction = false
                 clearPreparedTrack(removeFromPlaylist = false)
+                activeTrackIdentity = null
+                loadingTrackIdentity = null
                 MpvServiceBridge.onCommand = null
                 unregisterAndroidAutoConnectionDetector()
                 try {
@@ -688,7 +771,19 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 pendingPlaylistCompaction = false
                 clearPreparedTrack(removeFromPlaylist = false)
 
-                val generation = markLoading(autoPlay)
+                val mediaId = readString(payload, "mediaId")?.takeIf { it.isNotBlank() }
+                    ?: throw IllegalArgumentException("missing mediaId")
+                val requestedGeneration = readLong(payload, "loadGeneration")
+                    ?: throw IllegalArgumentException("missing loadGeneration")
+                loadingTrackIdentity = TrackIdentity(
+                    url = url,
+                    mediaId = mediaId,
+                    loadGeneration = requestedGeneration,
+                    prepareToken = readLong(payload, "prepareToken") ?: 0L,
+                    queueRevision = readLong(payload, "queueRevision") ?: 0L,
+                )
+
+                val generation = markLoading(autoPlay, requestedGeneration)
                 if (autoPlay) {
                     startPlaybackService(foreground = true)
                 }
@@ -709,6 +804,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 }
                 promise.resolve(null)
             } catch (e: Exception) {
+                loadingTrackIdentity = null
                 Log.e(TAG, "loadAndPlay failed", e)
                 promise.reject("E_LOAD", e.message, e)
             }
@@ -747,6 +843,15 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
                 preparedTrack = PreparedTrack(
                     url = url,
+                    mediaId = readString(nextPayload, "mediaId")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: throw IllegalArgumentException("missing mediaId"),
+                    loadGeneration = readLong(nextPayload, "loadGeneration")
+                        ?: throw IllegalArgumentException("missing loadGeneration"),
+                    prepareToken = readLong(nextPayload, "prepareToken")
+                        ?: throw IllegalArgumentException("missing prepareToken"),
+                    queueRevision = readLong(nextPayload, "queueRevision")
+                        ?: throw IllegalArgumentException("missing queueRevision"),
                     title = readString(nextPayload, "title") ?: "",
                     artist = readString(nextPayload, "artist") ?: "",
                     album = readString(nextPayload, "album") ?: "",
@@ -757,6 +862,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MPVLib.command(arrayOf("loadfile", url, "append"))
                 hasPlaylistPreparedTrack = true
                 preparedPlaylistIndex = appendIndex
+                Log.d(
+                    TAG,
+                    "prepareNext: mediaId=${preparedTrack?.mediaId} " +
+                        "generation=${preparedTrack?.loadGeneration} " +
+                        "token=${preparedTrack?.prepareToken} " +
+                        "queueRevision=${preparedTrack?.queueRevision} index=$appendIndex",
+                )
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.w(TAG, "prepareNext failed", e)
@@ -836,6 +948,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             stopRequested = true
             pendingPlaylistCompaction = false
             clearPreparedTrack(removeFromPlaylist = true)
+            activeTrackIdentity = null
+            loadingTrackIdentity = null
             loadingGeneration = -1L
             pendingUnpauseGeneration = -1L
             ignoreEndFileUntilMs = System.currentTimeMillis() + END_FILE_SUPPRESS_MS
@@ -1051,21 +1165,50 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             when (eventId) {
                 MPVLib.MPV_EVENT_START_FILE -> {
                     val generation = currentLoadGeneration
-                    loadingGeneration = generation
-                    if (pendingUnpauseGeneration == generation) {
+                    val explicitLoading = loadingTrackIdentity
+                        ?.takeIf { currentPathMatches(it.url) }
+                    val preparedLoading = preparedTrack
+                        ?.takeIf { currentPathMatches(it.url) }
+                    loadingGeneration = if (explicitLoading != null) generation else -1L
+                    if (
+                        explicitLoading != null &&
+                        pendingUnpauseGeneration == generation
+                    ) {
                         emitState("buffering")
                         scheduleUnpauseRetries(generation)
-                    } else {
+                    } else if (explicitLoading != null) {
                         MPVLib.setPropertyBoolean("pause", true)
                         emitState("paused")
+                    } else if (preparedLoading != null) {
+                        // 等 END_FILE 验证 playlist-pos 并提升 generation 后再允许 unpause。
+                        emitState("buffering")
+                    } else {
+                        Log.d(TAG, "START_FILE ignored for stale/unidentified path")
                     }
                 }
                 MPVLib.MPV_EVENT_FILE_LOADED -> {
                     val generation = currentLoadGeneration
+                    val explicitIdentity = loadingTrackIdentity
+                        ?.takeIf {
+                            it.loadGeneration == generation && currentPathMatches(it.url)
+                        }
+                    val confirmedIdentity = activeTrackIdentity
+                        ?.takeIf {
+                            it.loadGeneration == generation && currentPathMatches(it.url)
+                        }
+                    if (explicitIdentity == null && confirmedIdentity == null) {
+                        Log.d(TAG, "FILE_LOADED ignored for stale/unidentified path")
+                        return@runMpvCallbackOnMain
+                    }
                     if (loadingGeneration == generation) {
                         loadingGeneration = -1L
                     }
                     updateDurationFromMpv()
+                    explicitIdentity?.let { identity ->
+                        activeTrackIdentity = identity
+                        loadingTrackIdentity = null
+                        emitActiveTrackChanged(identity, "loaded")
+                    }
                     if (pendingUnpauseGeneration == generation) {
                         forceUnpause(generation)
                     } else {
@@ -1074,6 +1217,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                 }
                 MPVLib.MPV_EVENT_PLAYBACK_RESTART -> {
+                    val identity = loadingTrackIdentity ?: activeTrackIdentity
+                    if (identity == null || !currentPathMatches(identity.url)) {
+                        return@runMpvCallbackOnMain
+                    }
                     updateDurationFromMpv()
                     val generation = currentLoadGeneration
                     if (pendingUnpauseGeneration == generation) {
@@ -1092,7 +1239,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                     pendingUnpauseGeneration = -1L
                     loadingGeneration = -1L
-                    val autoAdvanced = promotePreparedTrack()
+                    val endedIdentity = activeTrackIdentity
+                    val promotedTrack = promotePreparedTrack()
+                    val autoAdvanced = promotedTrack != null
+                    Log.d(
+                        TAG,
+                        "END_FILE handled: endedMediaId=${endedIdentity?.mediaId} " +
+                            "promotedMediaId=${promotedTrack?.mediaId} autoAdvanced=$autoAdvanced",
+                    )
                     if (!autoAdvanced && durationSecs > 0) {
                         positionSecs = durationSecs
                         emitProgress(force = true)
@@ -1102,6 +1256,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         Arguments.createMap().apply {
                             putString("reason", "end")
                             putBoolean("autoAdvanced", autoAdvanced)
+                            endedIdentity?.let { putString("endedMediaId", it.mediaId) }
+                            promotedTrack?.let {
+                                putString("promotedMediaId", it.mediaId)
+                                putDouble("prepareToken", it.prepareToken.toDouble())
+                                putDouble("queueRevision", it.queueRevision.toDouble())
+                                putDouble("loadGeneration", it.loadGeneration.toDouble())
+                            }
                         },
                     )
                     if (autoAdvanced) {

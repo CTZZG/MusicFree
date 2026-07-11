@@ -1,4 +1,7 @@
-import { mergeEditedListWithConcurrentChanges } from "../localMusicSheetPolicy";
+import {
+    mergeEditedListWithConcurrentChanges,
+    resolveLocalMusicImportFields,
+} from "../localMusicSheetPolicy";
 
 interface IItem {
     id: string;
@@ -50,5 +53,78 @@ describe("mergeEditedListWithConcurrentChanges", () => {
                 getKey: value => value.id,
             }),
         ).toEqual([added, a]);
+    });
+});
+
+describe("resolveLocalMusicImportFields", () => {
+    it("prefers embedded metadata over a Bluetooth-renamed display filename", () => {
+        expect(
+            resolveLocalMusicImportFields({
+                filename: "爱情废柴 - 周杰伦_073402.flac",
+                embeddedMetadata: {
+                    title: "爱情废柴",
+                    artist: "周杰伦",
+                },
+                fallbackTitle: "爱情废柴 - 周杰伦_073402.flac",
+                fallbackArtist: "未知歌手",
+            }),
+        ).toEqual({
+            platform: undefined,
+            id: undefined,
+            title: "爱情废柴",
+            artist: "周杰伦",
+        });
+    });
+
+    it("falls back to a display filename when embedded metadata is absent", () => {
+        expect(
+            resolveLocalMusicImportFields({
+                filename: "爱情废柴 - 周杰伦_073402.flac",
+                embeddedMetadata: null,
+                fallbackTitle: "爱情废柴 - 周杰伦_073402.flac",
+                fallbackArtist: "未知歌手",
+            }),
+        ).toMatchObject({
+            title: "爱情废柴",
+            artist: "周杰伦_073402",
+        });
+    });
+
+    it("preserves structured MusicFree filename identity and display fields", () => {
+        expect(
+            resolveLocalMusicImportFields({
+                filename: "酷我音乐@123@文件标题@文件歌手.flac",
+                embeddedMetadata: {
+                    title: "标签标题",
+                    artist: "标签歌手",
+                },
+                fallbackTitle: "fallback.flac",
+                fallbackArtist: "未知歌手",
+            }),
+        ).toEqual({
+            platform: "酷我音乐",
+            id: "123",
+            title: "文件标题",
+            artist: "文件歌手",
+        });
+    });
+
+    it("uses embedded metadata for missing structured display fields", () => {
+        expect(
+            resolveLocalMusicImportFields({
+                filename: "酷我音乐@123@@.flac",
+                embeddedMetadata: {
+                    title: "标签标题",
+                    artist: "标签歌手",
+                },
+                fallbackTitle: "fallback.flac",
+                fallbackArtist: "未知歌手",
+            }),
+        ).toEqual({
+            platform: "酷我音乐",
+            id: "123",
+            title: "标签标题",
+            artist: "标签歌手",
+        });
     });
 });

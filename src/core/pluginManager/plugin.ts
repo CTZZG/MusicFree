@@ -4,6 +4,7 @@ import {
 } from "@/constants/commonConst";
 import pathConst from "@/constants/pathConst";
 import Mp3Util from "@/native/mp3Util";
+import { resolveLocalMusicArtwork } from "@/core/localMusicArtworkManager";
 import delay from "@/utils/delay";
 import { addFileScheme, getFileName } from "@/utils/fileUtils";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
@@ -1506,11 +1507,8 @@ const localFilePluginDefine: IPlugin.IPluginDefine = {
     async getMusicInfo(musicBase) {
         const localPath = getLocalPath(musicBase);
         if (localPath && !isRemoteMediaUrl(localPath)) {
-            const normalizedLocalPath = normalizeLocalFilePath(localPath);
-            // 原生侧会按格式选择安全的封面读取器
-            const coverImg = await Mp3Util.getMediaCoverImg(
-                normalizedLocalPath,
-            );
+            // 与列表和播放器共用路径级缓存，避免同一文件重复提取封面。
+            const coverImg = await resolveLocalMusicArtwork(musicBase);
             return {
                 artwork: coverImg ?? "",
             };

@@ -58,7 +58,7 @@ export function resolveMpvLoadQueueStartIndex(
     if (queueLength <= 0) {
         return null;
     }
-    return isValidMpvQueueIndex(startIndex, queueLength) ? startIndex : 0;
+    return isValidMpvQueueIndex(startIndex, queueLength) ? startIndex : null;
 }
 
 export function resolveMpvPlayAction(cursor: MpvPlayDecisionCursor): MpvPlayAction {

@@ -17,6 +17,12 @@ import { atom, getDefaultStore, useAtomValue } from "jotai";
 import shuffle from "@/utils/shuffle";
 import { useEffect } from "react";
 import LocalMusicSheet from "../localMusicSheet";
+import {
+    getDirectArtworkUri,
+    mergeResolvedArtwork,
+    resolveLocalMusicArtwork,
+    stripEphemeralLocalArtwork,
+} from "../localMusicArtworkManager";
 import DislikeMusic from "../dislikeMusic";
 import MediaCache from "../mediaCache";
 
@@ -119,6 +125,7 @@ export interface IPlaybackDiagnosticSnapshot {
         sourceCacheKey?: string;
         sourceResolvedAt?: number;
     } | null;
+    backendDiagnostics?: Record<string, unknown>;
     recentErrors: Array<{
         message: string;
         code?: string;
@@ -221,7 +228,10 @@ class TrackPlayer
         [];
     private unsubscribeDislikeMusicUpdated?: () => void;
     private preparedNextSyncSerial = 0;
+    private localArtworkSyncInFlight = new Set<string>();
     private lastMpvActiveTrackSyncAt = 0;
+    private lastMpvHistoryGeneration: number | null = null;
+    private handlingMpvNaturalEnd = false;
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
 
@@ -417,7 +427,22 @@ class TrackPlayer
                     musicId: syncedMusic?.id,
                     platform: syncedMusic?.platform,
                 });
-                if (evt.reason === "end") {
+                if (this.backend.name === "mpv") {
+                    const generation = Number(evt.activationGeneration);
+                    if (
+                        syncedMusic &&
+                        Number.isFinite(generation) &&
+                        generation !== this.lastMpvHistoryGeneration
+                    ) {
+                        this.lastMpvHistoryGeneration = generation;
+                        this.musicHistoryService.addMusic(syncedMusic);
+                    }
+                } else if (evt.reason === "end" || evt.reason === "repeat") {
+                    if (syncedMusic) {
+                        this.musicHistoryService.addMusic(syncedMusic);
+                    }
+                }
+                if (this.backend.name !== "mpv" && evt.reason === "end") {
                     const playedLater = await this.playNextLaterQueue();
                     if (playedLater) {
                         this.emit(TrackPlayerEvents.PlayEnd);
@@ -427,9 +452,21 @@ class TrackPlayer
                         await this.skipAutoDislikedMusic();
                     }
                 }
-                if (evt.reason === "end" || evt.reason === "repeat") {
+                if (
+                    this.backend.name !== "mpv" &&
+                    (evt.reason === "end" || evt.reason === "repeat")
+                ) {
                     this.emit(TrackPlayerEvents.PlayEnd);
                 }
+            });
+
+            this.backend.addEventListener("playEnd", async evt => {
+                if (this.isForceExiting || this.backend.name !== "mpv") {
+                    return;
+                }
+                await this.handleMpvNaturalEnd(evt).catch(error => {
+                    errorLog("处理 mpv 自然结束失败", error?.message ?? error);
+                });
             });
 
             this.backend.addEventListener("tracksNeedUpdate", async evt => {
@@ -547,7 +584,10 @@ class TrackPlayer
         return this.playListIndexMap.has(musicItem);
     }
 
-    private replacePlayListMusicIfPresent(musicItem: IMusic.IMusicItem) {
+    private replacePlayListMusicIfPresent(
+        musicItem: IMusic.IMusicItem,
+        persist = true,
+    ) {
         const result = replaceQueueItemByIdentity(
             this.playList,
             musicItem,
@@ -565,7 +605,7 @@ class TrackPlayer
             hasLocalPath: !!getLocalPath(musicItem),
             hasCencKey: !!musicItem.cek,
         });
-        this.setPlayList(result.queue);
+        this.setPlayList(result.queue, persist);
         return true;
     }
 
@@ -1048,9 +1088,11 @@ class TrackPlayer
 
             track.userAgent = track.userAgent || getAppUserAgent();
 
-            // 8. 新增历史记录
-            this.musicHistoryService.addMusic(musicItem);
 
+            // MPV 只在原生确认 active identity 后计入历史；Nitro 保持显式播放路径。
+            if (this.backend.name !== "mpv") {
+                this.musicHistoryService.addMusic(musicItem);
+            }
             trace("获取音源成功", track);
             // 9. 设置音源
             await this.setTrackSource(
@@ -1072,19 +1114,25 @@ class TrackPlayer
                 }
             } catch {}
 
+
             // 11. 设置补充信息
             if (info && this.isCurrentMusic(musicItem)) {
+                const metadataMusic = this.mergeTrackSource(
+                    musicItem,
+                    info,
+                ) as IMusic.IMusicItem;
                 const mergedTrack = this.mergeTrackSource(track, info);
                 mergedTrack.userAgent =
                     mergedTrack.userAgent || getAppUserAgent();
+                this.replacePlayListMusicIfPresent(metadataMusic, false);
                 getDefaultStore().set(
                     currentMusicAtom,
                     mergedTrack as IMusic.IMusicItem,
                 );
-                await this.backend.updateTrack(
-                    mergedTrack as unknown as MusicFreePlayerTrack,
-                    0,
-                );
+                await this.backend.updateTrack({
+                    ...mergedTrack,
+                    musicItem: metadataMusic,
+                } as unknown as MusicFreePlayerTrack);
             }
         } catch (e: any) {
             this.recordPlaybackError(e);
@@ -1141,7 +1189,10 @@ class TrackPlayer
             }
 
             if (progress.position > 0) {
-                PersistStatus.set("music.musicItem", currentMusic);
+                PersistStatus.set(
+                    "music.musicItem",
+                    stripEphemeralLocalArtwork(currentMusic),
+                );
                 this.persistPlaybackProgress(progress.position, true);
             }
         }
@@ -1389,6 +1440,7 @@ class TrackPlayer
             backendRepeatMode,
             nativeDiagnostics,
             backendNextTracks,
+            backendDiagnostics,
         ] = await Promise.all([
             this.backend.getState().catch(() => "error" as PlayerBackendState),
             this.backend
@@ -1417,6 +1469,9 @@ class TrackPlayer
             this.backend.getNextTracks
                 ? this.backend.getNextTracks(3).catch(() => [])
                 : Promise.resolve([]),
+            this.backend.getPlaybackDiagnostics
+                ? this.backend.getPlaybackDiagnostics().catch(() => undefined)
+                : Promise.resolve(undefined),
         ]);
 
         const queueIndex = this.getMusicIndexInPlayList(currentMusic);
@@ -1492,6 +1547,7 @@ class TrackPlayer
                               activeTrack.playbackSource?.resolvedAt,
                     }
                     : null,
+            backendDiagnostics,
             recentErrors: [...this.recentPlaybackErrors],
             recovery: {
                 persistedMusic: this.getDiagnosticMusicIdentity(
@@ -1540,9 +1596,64 @@ class TrackPlayer
                 };
         this.currentIndex = this.getMusicIndexInPlayList(normalizedMusicItem);
         getDefaultStore().set(currentMusicAtom, normalizedMusicItem);
-        PersistStatus.set("music.musicItem", normalizedMusicItem);
+        PersistStatus.set(
+            "music.musicItem",
+            stripEphemeralLocalArtwork(normalizedMusicItem),
+        );
 
         this.emit(TrackPlayerEvents.CurrentMusicChanged, normalizedMusicItem);
+        this.syncLocalMusicArtwork(normalizedMusicItem).catch(error => {
+            errorLog("同步本地音乐封面失败", error?.message ?? error);
+        });
+    }
+
+
+    private async syncLocalMusicArtwork(musicItem: IMusic.IMusicItem) {
+        if (getDirectArtworkUri(musicItem.artwork)) {
+            return musicItem;
+        }
+
+        const key = getMediaUniqueKey(musicItem);
+        if (this.localArtworkSyncInFlight.has(key)) {
+            return musicItem;
+        }
+
+        this.localArtworkSyncInFlight.add(key);
+        try {
+            const artwork = await resolveLocalMusicArtwork(musicItem);
+            if (!artwork) {
+                return musicItem;
+            }
+
+            const queueIndex = this.getMusicIndexInPlayList(musicItem);
+            const queueMusic =
+                queueIndex >= 0 ? this.playList[queueIndex] : null;
+            const metadataMusic = {
+                ...(queueMusic ?? musicItem),
+                artwork,
+            } as IMusic.IMusicItem;
+
+            if (queueMusic) {
+                this.replacePlayListMusicIfPresent(metadataMusic, false);
+            }
+
+            const isCurrent = isSameMediaItem(this.currentMusic, musicItem);
+            const currentMusic = isCurrent
+                ? ({ ...this.currentMusic!, artwork } as IMusic.IMusicItem)
+                : metadataMusic;
+            if (isCurrent) {
+                getDefaultStore().set(currentMusicAtom, currentMusic);
+            }
+
+            await this.backend.updateTrack({
+                ...currentMusic,
+                musicItem: metadataMusic,
+            } as unknown as MusicFreePlayerTrack);
+            this.syncPreparedNextTrack("local-artwork");
+            return currentMusic;
+        } finally {
+            this.localArtworkSyncInFlight.delete(key);
+        }
     }
 
     private setRepeatMode(mode: MusicRepeatMode) {
@@ -1757,7 +1868,25 @@ class TrackPlayer
         autoPlay = true,
         seekTo?: number,
     ) {
-        const clonedTrack = this.patchMediaArtwork(track);
+        const queueIndex = this.getMusicIndexInPlayList(
+            track as unknown as IMusic.IMusicItem,
+        );
+        const queueMusic =
+            queueIndex >= 0 ? this.playList[queueIndex] : null;
+        const trackWithCurrentArtwork = mergeResolvedArtwork(
+            track,
+            isSameMediaItem(
+                this.currentMusic,
+                track as unknown as IMusic.IMusicItem,
+            )
+                ? this.currentMusic?.artwork
+                : undefined,
+        );
+        const trackWithArtwork = mergeResolvedArtwork(
+            trackWithCurrentArtwork,
+            queueMusic?.artwork,
+        );
+        const clonedTrack = this.patchMediaArtwork(trackWithArtwork);
         if (!clonedTrack) {
             return;
         }
@@ -1789,7 +1918,10 @@ class TrackPlayer
             errorLog("预解析下一首失败", error?.message ?? error);
         });
         this.syncPreparedNextTrack("track-source");
-        PersistStatus.set("music.musicItem", track as IMusic.IMusicItem);
+        PersistStatus.set(
+            "music.musicItem",
+            stripEphemeralLocalArtwork(track as IMusic.IMusicItem),
+        );
         this.setPersistedPlaybackProgress(initialProgress);
         const currentProgress = setPlayerProgress({
             position: initialProgress,
@@ -1864,7 +1996,10 @@ class TrackPlayer
         this.playListIndexMap = createMediaIndexMap(newPlayList);
 
         if (persist) {
-            PersistStatus.set("music.playList", newPlayList);
+            PersistStatus.set(
+                "music.playList",
+                newPlayList.map(stripEphemeralLocalArtwork),
+            );
         }
 
         this.currentIndex = this.getMusicIndexInPlayList(this.currentMusic);
@@ -1883,7 +2018,10 @@ class TrackPlayer
 
     private setPlayLaterQueue(queue: IMusic.IMusicItem[]) {
         getDefaultStore().set(playLaterQueueAtom, queue);
-        PersistStatus.set("music.playLaterQueue", queue);
+        PersistStatus.set(
+            "music.playLaterQueue",
+            queue.map(stripEphemeralLocalArtwork),
+        );
         this.syncPreparedNextTrack("play-later");
     }
 
@@ -1902,6 +2040,80 @@ class TrackPlayer
         }
         await this.play(nextMusic, true);
         return true;
+    }
+
+    private async handleMpvNaturalEnd(evt: {
+        autoAdvanced?: boolean;
+        endedMediaId?: string;
+        promotedMediaId?: string;
+        queueRevision?: number;
+    }) {
+        if (this.handlingMpvNaturalEnd) {
+            trace("忽略重复的 mpv 自然结束事件", evt);
+            return;
+        }
+        this.handlingMpvNaturalEnd = true;
+        try {
+            this.emit(TrackPlayerEvents.PlayEnd);
+            trace("统一处理 mpv 自然结束", {
+                ...evt,
+                currentIndex: this.currentIndex,
+                currentMusicId: this.currentMusic?.id,
+                repeatMode: this.repeatMode,
+                playLaterLength: this.playLaterQueue.length,
+            });
+
+            // 原生 prepared promotion 已经通过身份/token/revision 校验并激活。
+            if (evt.autoAdvanced) {
+                return;
+            }
+
+            // 1. App“稍后播放”拥有最高优先级。
+            if (await this.playNextLaterQueue()) {
+                return;
+            }
+
+            // 2. 消费后端 play-next/up-next 临时队列，但不让后端决定主队列。
+            if (await this.backend.consumeTemporaryNextTrack?.()) {
+                return;
+            }
+
+            const currentMusic = this.currentMusic;
+            if (!currentMusic) {
+                await this.backend.stop().catch(() => undefined);
+                return;
+            }
+
+            // 3. 单曲循环明确重载，禁止 prepared 同一首。
+            if (this.repeatMode === MusicRepeatMode.SINGLE) {
+                await this.play(currentMusic, true);
+                return;
+            }
+
+            // 4/5. 主队列下一首，跳过不喜欢；到末尾时按队列模式回第一首。
+            const candidate = findNextPlayableQueueItem(
+                this.playList,
+                this.currentIndex,
+                currentMusic,
+                {
+                    isSameItem: isSameMediaItem,
+                    isSkipped: item => DislikeMusic.isDisliked(item),
+                },
+            );
+            if (candidate) {
+                if (DislikeMusic.isDisliked(this.nextMusic)) {
+                    this.emit(TrackPlayerEvents.AutoSkipDislikedMusic);
+                }
+                await this.play(candidate, true);
+                return;
+            }
+
+            // 6. 没有可播放项时保持 ended，并明确停止出声。
+            await this.backend.stop().catch(() => undefined);
+            this.emit(TrackPlayerEvents.NoPlayableMusic);
+        } finally {
+            this.handlingMpvNaturalEnd = false;
+        }
     }
 
     private async skipAutoDislikedMusic() {
@@ -2544,13 +2756,23 @@ class TrackPlayer
 
             this.nitroPendingSourceRequests.add(key);
             try {
-                const source = await this.resolveDirectMediaSource(musicItem);
+                const [source, artwork] = await Promise.all([
+                    this.resolveDirectMediaSource(musicItem),
+                    resolveLocalMusicArtwork(musicItem).catch(() => ""),
+                ]);
+                const resolvedMusic =
+                    artwork && !getDirectArtworkUri(musicItem.artwork)
+                        ? ({ ...musicItem, artwork } as IMusic.IMusicItem)
+                        : musicItem;
+                if (resolvedMusic !== musicItem) {
+                    this.replacePlayListMusicIfPresent(resolvedMusic, false);
+                }
                 if (!source?.url) {
                     continue;
                 }
                 const updatedTrack = this.patchMediaArtwork(
                     this.mergeTrackSource(
-                        musicItem,
+                        resolvedMusic,
                         source,
                     ) as unknown as MusicFreePlayerTrack,
                 );
@@ -2600,21 +2822,24 @@ class TrackPlayer
         if (!musicItem) {
             return null;
         }
-        const syncedMusic = track?.url
-            ? (this.mergeTrackSource(musicItem, {
-                url: track.url,
-                headers: track.headers,
-                userAgent: track.userAgent,
-                ekey: track.ekey,
-                cek: track.cek,
-                playbackSource: track.playbackSource,
-            }) as IMusic.IMusicItem)
-            : musicItem;
+        const adapterArtwork = getDirectArtworkUri(track?.artwork);
+        const syncedMusic = this.mergeTrackSource(musicItem, {
+            ...(track?.url
+                ? {
+                    url: track.url,
+                    headers: track.headers,
+                    userAgent: track.userAgent,
+                    ekey: track.ekey,
+                    cek: track.cek,
+                    playbackSource: track.playbackSource,
+                }
+                : {}),
+            ...(adapterArtwork ? { artwork: adapterArtwork } : {}),
+        }) as IMusic.IMusicItem;
         const shouldResetProgress =
             !isSameMediaItem(this.currentMusic, syncedMusic) ||
             reason === "repeat";
         this.setCurrentMusic(syncedMusic);
-        PersistStatus.set("music.musicItem", syncedMusic);
         if (shouldResetProgress) {
             this.setPersistedPlaybackProgress(0);
             setPlayerProgress({

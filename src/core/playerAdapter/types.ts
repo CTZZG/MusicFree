@@ -222,6 +222,12 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
      */
     prepareNextTrack?(track?: TTrack | null): Promise<void>;
 
+    /** 消费后端自己的 play-next/up-next 临时队列，不触碰主队列。 */
+    consumeTemporaryNextTrack?(): Promise<boolean>;
+
+    /** 后端内部一致性诊断；不得用 UI 镜像伪装原生 active 身份。 */
+    getPlaybackDiagnostics?(): Promise<Record<string, unknown>>;
+
     /**
      * 把后端队列整体重排为最新的播放列表顺序（上层在每次 setPlayList 时调用）。
      * 用于像 mpv 这种由 JS 维护队列的后端，在洗牌/增删/重排后重新对齐内部队列与当前下标；
