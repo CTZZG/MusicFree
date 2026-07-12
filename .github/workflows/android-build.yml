@@ -250,7 +250,11 @@ jobs:
                   for apk in dist/*.apk; do
                     verification="$("$APKSIGNER" verify --verbose --print-certs "$apk")"
                     echo "$verification"
-                    actual_cert="$(echo "$verification" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+                    actual_cert="$(printf '%s\n' "$verification" | awk '/certificate SHA-256 digest:/ {print $NF; exit}' | tr -d '\r' | tr '[:upper:]' '[:lower:]')"
+                    if ! [[ "$actual_cert" =~ ^[0-9a-f]{64}$ ]]; then
+                      echo "::error title=Release certificate parsing failed::Could not extract a SHA-256 certificate digest from apksigner output for $apk."
+                      exit 1
+                    fi
                     if [ "$actual_cert" != "$EXPECTED_RELEASE_CERT_SHA256" ]; then
                       echo "::error title=Unexpected release certificate::$apk was signed by $actual_cert instead of the pinned certificate."
                       exit 1
