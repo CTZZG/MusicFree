@@ -74,6 +74,7 @@ docs/
 docs/*
 !docs/round20-format-sample-matrix.md
 !docs/0.6.8-audit-report.md
+!docs/release-notes-v0.6.8.md
 /1.jpg
 /2.jpg
 /FINAL_SUMMARY.md
