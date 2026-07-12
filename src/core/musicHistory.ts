@@ -161,5 +161,9 @@ export function useMostPlayedMusic() {
     );
 }
 
+export function useMusicPlayStats() {
+    return useAtomValue(musicPlayStatsAtom);
+}
+
 const musicHistory = new MusicHistory();
 export default musicHistory;

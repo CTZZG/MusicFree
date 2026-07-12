@@ -42,7 +42,7 @@ export default function NavBar() {
     }, [colors]);
 
     return (
-        <AppBar contentStyle={styles.navBarContentStyle}
+        <AppBar backgroundColor="transparent" spacious contentStyle={styles.navBarContentStyle}
             actionComponent={<IconButton
                 name="save-outline"
                 sizeType="normal"
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
     navBarContentStyle: {
         flexDirection: "row",
         justifyContent: "center",
-
+        paddingVertical: rpx(12),
     },
     divider: {
         marginHorizontal: rpx(16),
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
     },
     selectedIndicator: {
         position: "absolute",
-        bottom: -rpx(12),
+        bottom: -rpx(18),
         height: rpx(6),
         width: "100%",
     },

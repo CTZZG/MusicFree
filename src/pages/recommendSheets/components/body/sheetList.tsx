@@ -20,7 +20,13 @@ function SheetList(props: ISheetListProps) {
     const [query, sheets, status] = useRecommendSheets(pluginHash, tag);
 
     function renderItem({ item }: { item: IMusic.IMusicSheetItemBase }) {
-        return <SheetItem sheetInfo={item} pluginHash={pluginHash} />;
+        return (
+            <SheetItem
+                sheetInfo={item}
+                pluginHash={pluginHash}
+                presentation="cards"
+            />
+        );
     }
     const orientation = useOrientation();
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));

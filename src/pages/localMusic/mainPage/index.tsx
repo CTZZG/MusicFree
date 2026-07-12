@@ -30,6 +30,8 @@ export default function MainPage() {
         <>
             <AppBar
                 withStatusBar
+                backgroundColor="transparent"
+                spacious
                 menuIcon="bars-3"
                 menuPosition="left"
                 actions={[

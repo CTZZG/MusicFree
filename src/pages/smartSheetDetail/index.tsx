@@ -21,6 +21,9 @@ function getSmartSheetTitle(
     platform?: string,
     value?: string,
 ) {
+    if (type === "recommended") {
+        return t("smartSheet.recommended");
+    }
     if (type === "recent-played") {
         return t("smartSheet.recentPlayed");
     }
@@ -213,6 +216,7 @@ export default function SmartSheetDetail() {
             showArtwork
             showQuality
             showDuration
+            presentation="cards"
         />
     );
 }

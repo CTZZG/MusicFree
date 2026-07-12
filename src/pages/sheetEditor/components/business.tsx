@@ -1,6 +1,7 @@
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
 import { editingMusicSheetAtom, musicSheetChangedAtom, sheetTypeAtom } from "../store/atom";
 import { useEffect, useRef } from "react";
+import { InteractionManager } from "react-native";
 import MusicSheet from "@/core/musicSheet";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { useNavigation } from "@react-navigation/native";
@@ -22,12 +23,23 @@ export default function Business() {
     }, [sheetType]);
 
     useEffect(() => {
-        const sheets = selectedSheetType === "starred" ? MusicSheet.getStarredSheets() : MusicSheet.getSheets().slice(1);
-        setEditingMusicSheetAtom(sheets.map(it => ({
-            checked: false,
-            musicSheetItem: it,
-        })));
-    }, [selectedSheetType]);
+        let cancelled = false;
+        let interactionTask: ReturnType<typeof InteractionManager.runAfterInteractions> | undefined;
+        const frame = requestAnimationFrame(() => {
+            interactionTask = InteractionManager.runAfterInteractions(() => {
+                if (cancelled) {
+                    return;
+                }
+                setEditingMusicSheetAtom(createEditorItems(selectedSheetType));
+            });
+        });
+
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(frame);
+            interactionTask?.cancel();
+        };
+    }, [selectedSheetType, setEditingMusicSheetAtom]);
 
 
     useEffect(() => {
@@ -62,7 +74,17 @@ export default function Business() {
             setMusicSheetChangedAtom(false);
             navigation.removeListener("beforeRemove", navigationBackHandler);
         };
-    }, []);
+    }, [navigation, setEditingMusicSheetAtom, setMusicSheetChangedAtom]);
 
     return null;
+}
+
+function createEditorItems(sheetType: "local" | "starred") {
+    const sheets = sheetType === "starred"
+        ? MusicSheet.getStarredSheets()
+        : MusicSheet.getSheets().slice(1);
+    return sheets.map(musicSheetItem => ({
+        checked: false,
+        musicSheetItem,
+    }));
 }

@@ -22,6 +22,7 @@ interface IMusicListProps {
     showArtwork?: boolean;
     showQuality?: boolean;
     showDuration?: boolean;
+    presentation?: "plain" | "cards";
 }
 export default function SheetMusicList(props: IMusicListProps) {
     const {
@@ -34,6 +35,7 @@ export default function SheetMusicList(props: IMusicListProps) {
         showArtwork,
         showQuality,
         showDuration,
+        presentation = "plain",
     } = props;
     const currentMusic = useCurrentMusic();
 
@@ -60,6 +62,7 @@ export default function SheetMusicList(props: IMusicListProps) {
                         showArtwork={showArtwork}
                         showQuality={showQuality}
                         showDuration={showDuration}
+                        presentation={presentation}
                         onItemPress={(musicItem, currentMusicList) => {
                             if (
                                 Config.getConfig(

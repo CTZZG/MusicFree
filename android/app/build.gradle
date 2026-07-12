@@ -116,7 +116,7 @@ static def getVersion() {
 // }
 
 def appVersion = getVersion()
-def appVersionCode = 400016
+def appVersionCode = 400017
 
 android {
     ndkVersion = rootProject.ext.ndkVersion

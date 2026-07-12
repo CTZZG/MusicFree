@@ -15,7 +15,7 @@ import color from "color";
 import IconButton from "./iconButton";
 import globalStyle from "@/constants/globalStyle";
 import ThemeText from "./themeText";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useTheme } from "@react-navigation/native";
 import Animated, {
     Easing,
     type EasingFunction,
@@ -26,6 +26,7 @@ import Animated, {
 import Portal from "./portal";
 import ListItem from "./listItem";
 import { IIconName } from "@/components/base/icon.tsx";
+import PageBackground from "./pageBackground";
 
 interface IAppBarProps {
     titleTextOpacity?: number;
@@ -49,6 +50,8 @@ interface IAppBarProps {
     contentStyle?: StyleProp<ViewStyle>;
     actionComponent?: ReactNode;
     onBackPress?: () => void;
+    backgroundColor?: string;
+    spacious?: boolean;
 }
 
 const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);
@@ -74,12 +77,15 @@ export default function AppBar(props: IAppBarProps) {
         children,
         actionComponent,
         onBackPress,
+        backgroundColor,
+        spacious = false,
     } = props;
 
     const colors = useColors();
     const navigation = useNavigation();
+    const theme = useTheme();
 
-    const bgColor = color(colors.appBar ?? colors.primary).toString();
+    const bgColor = backgroundColor ?? color(colors.appBar ?? colors.primary).toString();
     const contentColor = _color ?? colors.appBarText;
 
     const [showMenu, setShowMenu] = useState(false);
@@ -89,6 +95,7 @@ export default function AppBar(props: IAppBarProps) {
 
     const hasMenu = menu?.length > 0;
     const menuOnLeft = hasMenu && menuPosition === "left";
+    const showSurfaceBackground = spacious && bgColor === "transparent";
 
     useEffect(() => {
         if (showMenu) {
@@ -96,7 +103,7 @@ export default function AppBar(props: IAppBarProps) {
         } else {
             scaleRate.value = withTiming(0, timingConfig);
         }
-    }, [showMenu]);
+    }, [scaleRate, showMenu]);
 
     const transformStyle = useAnimatedStyle(() => {
         return {
@@ -106,84 +113,104 @@ export default function AppBar(props: IAppBarProps) {
 
     return (
         <>
-            {withStatusBar ? <StatusBar backgroundColor={bgColor} /> : null}
-            <View
-                style={[
-                    styles.container,
-                    containerStyle,
-                    { backgroundColor: bgColor },
-                ]}>
-                {menuOnLeft ? (
-                    <IconButton
-                        name={menuIcon}
-                        sizeType="normal"
-                        onLayout={evt => {
-                            setMenuIconLayout(evt.nativeEvent.layout);
-                        }}
-                        color={contentColor}
-                        style={globalStyle.noShrinkNoGrow}
-                        onPress={() => {
-                            setShowMenu(true);
-                        }}
-                    />
-                ) : (
-                    <IconButton
-                        name="arrow-left"
-                        sizeType="normal"
-                        color={contentColor}
-                        style={globalStyle.noShrinkNoGrow}
-                        onPress={
-                            onBackPress ||
+            {withStatusBar ? (
+                <StatusBar
+                    backgroundColor={showSurfaceBackground ? "transparent" : bgColor}
+                    barStyle={
+                        spacious
+                            ? theme.dark
+                                ? "light-content"
+                                : "dark-content"
+                            : undefined
+                    }
+                />
+            ) : null}
+            <View style={showSurfaceBackground ? styles.surfaceHeader : null}>
+                {showSurfaceBackground ? <PageBackground /> : null}
+                <View
+                    style={[
+                        styles.container,
+                        spacious ? styles.spaciousContainer : null,
+                        containerStyle,
+                        { backgroundColor: bgColor },
+                    ]}>
+                    {menuOnLeft ? (
+                        <IconButton
+                            name={menuIcon}
+                            sizeType="normal"
+                            onLayout={evt => {
+                                setMenuIconLayout(evt.nativeEvent.layout);
+                            }}
+                            color={contentColor}
+                            style={globalStyle.noShrinkNoGrow}
+                            onPress={() => {
+                                setShowMenu(true);
+                            }}
+                        />
+                    ) : (
+                        <IconButton
+                            name="arrow-left"
+                            sizeType="normal"
+                            color={contentColor}
+                            style={globalStyle.noShrinkNoGrow}
+                            onPress={
+                                onBackPress ||
                             (() => {
                                 navigation.goBack();
                             })
-                        }
-                    />
-                )}
-                <View style={[globalStyle.grow, styles.content, contentStyle]}>
-                    {typeof children === "string" ? (
-                        <ThemeText
-                            fontSize="title"
-                            fontWeight="bold"
-                            numberOfLines={1}
-                            color={
-                                titleTextOpacity !== 1
-                                    ? color(contentColor)
-                                        .alpha(titleTextOpacity)
-                                        .toString()
-                                    : contentColor
-                            }>
-                            {children}
-                        </ThemeText>
-                    ) : (
-                        children
+                            }
+                        />
                     )}
+                    <View style={[
+                        globalStyle.grow,
+                        styles.content,
+                        spacious ? styles.spaciousContent : null,
+                        contentStyle,
+                    ]}>
+                        {typeof children === "string" ? (
+                            <ThemeText
+                                fontSize="title"
+                                fontWeight="bold"
+                                numberOfLines={1}
+                                color={
+                                    titleTextOpacity !== 1
+                                        ? color(contentColor)
+                                            .alpha(titleTextOpacity)
+                                            .toString()
+                                        : contentColor
+                                }>
+                                {children}
+                            </ThemeText>
+                        ) : (
+                            children
+                        )}
+                    </View>
+                    {actions.map((action, index) => (
+                        <IconButton
+                            key={index}
+                            name={action.icon}
+                            sizeType="normal"
+                            color={contentColor}
+                            style={[globalStyle.noShrinkNoGrow, styles.rightButton]}
+                            onPress={action.onPress}
+                        />
+                    ))}
+                    {actionComponent ?? null}
+                    {hasMenu && !menuOnLeft ? (
+                        <IconButton
+                            name={menuIcon}
+                            sizeType="normal"
+                            onLayout={evt => {
+                                setMenuIconLayout(evt.nativeEvent.layout);
+                            }}
+                            color={contentColor}
+                            style={[globalStyle.noShrinkNoGrow, styles.rightButton]}
+                            onPress={() => {
+                                setShowMenu(true);
+                            }}
+                        />
+                    ) : null}
                 </View>
-                {actions.map((action, index) => (
-                    <IconButton
-                        key={index}
-                        name={action.icon}
-                        sizeType="normal"
-                        color={contentColor}
-                        style={[globalStyle.noShrinkNoGrow, styles.rightButton]}
-                        onPress={action.onPress}
-                    />
-                ))}
-                {actionComponent ?? null}
-                {hasMenu && !menuOnLeft ? (
-                    <IconButton
-                        name={menuIcon}
-                        sizeType="normal"
-                        onLayout={evt => {
-                            setMenuIconLayout(evt.nativeEvent.layout);
-                        }}
-                        color={contentColor}
-                        style={[globalStyle.noShrinkNoGrow, styles.rightButton]}
-                        onPress={() => {
-                            setShowMenu(true);
-                        }}
-                    />
-                ) : null}
             </View>
             <Portal>
                 {showMenu ? (
@@ -273,6 +300,18 @@ const styles = StyleSheet.create({
         flexBasis: 0,
         alignItems: "center",
         paddingHorizontal: rpx(24),
+    },
+    spaciousContainer: {
+        height: rpx(116),
+        paddingHorizontal: rpx(30),
+        paddingVertical: rpx(12),
+    },
+    spaciousContent: {
+        paddingHorizontal: rpx(28),
+    },
+    surfaceHeader: {
+        width: "100%",
+        overflow: "hidden",
     },
     rightButton: {
         marginLeft: rpx(28),

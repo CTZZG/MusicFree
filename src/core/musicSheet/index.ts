@@ -9,7 +9,7 @@ import EventEmitter from "eventemitter3";
 import { Immer } from "immer";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { nanoid } from "nanoid";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import migrate, { migrateV2 } from "./migrate.ts";
 import SortedMusicList from "./sortedMusicList.ts";
 import storage from "./storage.ts";
@@ -670,6 +670,41 @@ function useSheetsBase() {
     return useAtomValue(musicSheetsBaseAtom);
 }
 
+function useMusicSheetsSnapshot() {
+    const sheetsBase = useAtomValue(musicSheetsBaseAtom);
+    const [musicListRevision, setMusicListRevision] = useState(0);
+    const snapshotCacheRef = useRef<{
+        sheetsBase: IMusic.IMusicSheetItemBase[];
+        revision: number;
+        value: IMusic.IMusicSheetItem[];
+    } | null>(null);
+
+    useEffect(() => {
+        const onUpdateMusicList = () => {
+            setMusicListRevision(revision => revision + 1);
+        };
+        ee.on("UpdateMusicList", onUpdateMusicList);
+        return () => {
+            ee.off("UpdateMusicList", onUpdateMusicList);
+        };
+    }, []);
+
+    if (
+        snapshotCacheRef.current?.sheetsBase !== sheetsBase ||
+        snapshotCacheRef.current.revision !== musicListRevision
+    ) {
+        snapshotCacheRef.current = {
+            sheetsBase,
+            revision: musicListRevision,
+            value: sheetsBase.map(sheet => ({
+                ...sheet,
+                musicList: musicListMap.get(sheet.id)?.musicList ?? [],
+            })) as IMusic.IMusicSheetItem[],
+        };
+    }
+    return snapshotCacheRef.current.value;
+}
+
 // sheetId should not change
 function useSheetItem(sheetId: string) {
     const sheetsBase = useAtomValue(musicSheetsBaseAtom);
@@ -681,6 +716,13 @@ function useSheetItem(sheetId: string) {
     });
 
     useEffect(() => {
+        setSheetItem({
+            ...(getDefaultStore()
+                .get(musicSheetsBaseAtom)
+                .find(it => it.id === sheetId) ||
+                ({} as IMusic.IMusicSheetItemBase)),
+            musicList: musicListMap.get(sheetId)?.musicList || [],
+        });
         const onUpdateMusicList = ({ sheetId: updatedSheetId }) => {
             if (updatedSheetId !== sheetId) {
                 return;
@@ -709,7 +751,7 @@ function useSheetItem(sheetId: string) {
             ee.off("UpdateMusicList", onUpdateMusicList);
             ee.off("UpdateSheetBasic", onUpdateSheetBasic);
         };
-    }, []);
+    }, [sheetId]);
 
     return sheetItem;
 }
@@ -760,4 +802,11 @@ function useStarredSheets() {
 }
 
 
-export { useSheetIsStarred, useSheetsBase, useSheetItem, useStarredSheets, useFavorite };
+export {
+    useSheetIsStarred,
+    useSheetsBase,
+    useMusicSheetsSnapshot,
+    useSheetItem,
+    useStarredSheets,
+    useFavorite,
+};

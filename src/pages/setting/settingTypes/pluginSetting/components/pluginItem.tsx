@@ -31,6 +31,7 @@ import {
     pluginSupportsCapability,
 } from "../capabilityUtils";
 import { showPluginInstallResults } from "../installPluginUtils";
+import { useShortcutCardStyle } from "@/components/base/shortcutPageSurface";
 
 interface IPluginItemProps {
     plugin: Plugin;
@@ -64,17 +65,17 @@ function getPluginTestSearchTypes(plugin: Plugin): ICommon.SupportMediaType[] {
 
 function getSearchTypeIcon(type: ICommon.SupportMediaType): IIconName {
     switch (type) {
-        case "album":
-            return "album-outline";
-        case "artist":
-            return "user";
-        case "sheet":
-            return "playlist";
-        case "lyric":
-            return "lyric";
-        case "music":
-        default:
-            return "musical-note";
+    case "album":
+        return "album-outline";
+    case "artist":
+        return "user";
+    case "sheet":
+        return "playlist";
+    case "lyric":
+        return "lyric";
+    case "music":
+    default:
+        return "musical-note";
     }
 }
 
@@ -162,8 +163,12 @@ function getMissingUserVariableLabels(
         .map(getUserVariableLabel);
 }
 
-function _PluginItem(props: IPluginItemProps) {
+function PluginItemContent(props: IPluginItemProps) {
     const { plugin, onPluginConfigChanged, onPluginEnabledChanged } = props;
+    const cardStyle = useShortcutCardStyle({
+        compact: true,
+        elevated: false,
+    });
     const colors = useColors();
     const enabled = usePluginEnabled(plugin);
     const { t } = useI18N();
@@ -224,17 +229,17 @@ function _PluginItem(props: IPluginItemProps) {
 
     function getSearchTypeLabel(type: ICommon.SupportMediaType) {
         switch (type) {
-            case "album":
-                return t("common.album");
-            case "artist":
-                return t("common.artist");
-            case "sheet":
-                return t("common.sheet");
-            case "lyric":
-                return t("home.sourceCapability.lyric");
-            case "music":
-            default:
-                return t("common.singleMusic");
+        case "album":
+            return t("common.album");
+        case "artist":
+            return t("common.artist");
+        case "sheet":
+            return t("common.sheet");
+        case "lyric":
+            return t("home.sourceCapability.lyric");
+        case "music":
+        default:
+            return t("common.singleMusic");
         }
     }
 
@@ -331,7 +336,7 @@ function _PluginItem(props: IPluginItemProps) {
                         },
                         onReject(reason, hideDialog) {
                             hideDialog();
-                            const latestDiagnostic = getPluginDiagnosticEvents(
+                            const recentDiagnostic = getPluginDiagnosticEvents(
                                 plugin.hash,
                                 plugin.name,
                                 5,
@@ -343,7 +348,7 @@ function _PluginItem(props: IPluginItemProps) {
                                 keyword,
                                 searchType,
                                 reason,
-                                latestDiagnostic?.message,
+                                recentDiagnostic?.message,
                             );
                         },
                     });
@@ -691,10 +696,8 @@ function _PluginItem(props: IPluginItemProps) {
     return (
         <View
             style={[
+                cardStyle,
                 styles.container,
-                {
-                    backgroundColor: colors.card,
-                },
             ]}>
             <View style={styles.header}>
                 <View style={styles.headerPluginContainer}>
@@ -747,12 +750,20 @@ function _PluginItem(props: IPluginItemProps) {
                 </ThemeText>
             </View> : null}
             <View style={styles.tags}>
-                <PluginTag>{sourceInfo.label}</PluginTag>
+                <PluginTag backgroundColor={colors.placeholder}>
+                    {sourceInfo.label}
+                </PluginTag>
                 {visibleCapabilityLabels.map(label => (
-                    <PluginTag key={label}>{label}</PluginTag>
+                    <PluginTag
+                        key={label}
+                        backgroundColor={colors.placeholder}>
+                        {label}
+                    </PluginTag>
                 ))}
                 {hiddenCapabilityCount > 0 ? (
-                    <PluginTag>{`+${hiddenCapabilityCount}`}</PluginTag>
+                    <PluginTag backgroundColor={colors.placeholder}>
+                        {`+${hiddenCapabilityCount}`}
+                    </PluginTag>
                 ) : null}
             </View>
             {userVariableSummary ? (
@@ -836,19 +847,21 @@ function _PluginItem(props: IPluginItemProps) {
     );
 }
 
-const PluginItem = memo(_PluginItem, (prev, curr) => {
+const PluginItem = memo(PluginItemContent, (prev, curr) => {
     return prev.plugin === curr.plugin;
 });
 export default PluginItem;
 
-function PluginTag(props: { children: string }) {
-    const colors = useColors();
+const PluginTag = memo(function PluginTagContent(props: {
+    children: string;
+    backgroundColor?: string;
+}) {
     return (
         <View
             style={[
                 styles.tag,
                 {
-                    backgroundColor: colors.placeholder,
+                    backgroundColor: props.backgroundColor,
                 },
             ]}>
             <ThemeText
@@ -859,15 +872,13 @@ function PluginTag(props: { children: string }) {
             </ThemeText>
         </View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
-        borderRadius: rpx(8),
-        marginHorizontal: rpx(24),
+        width: "auto",
         paddingVertical: rpx(18),
-        marginTop: rpx(36),
+        marginTop: rpx(10),
     },
     header: {
         paddingHorizontal: rpx(16),

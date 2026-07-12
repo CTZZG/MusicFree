@@ -73,6 +73,7 @@ interface IMusicListProps {
     showAddNextIcon?: boolean;
     enableAlphabetIndex?: boolean;
     alphabetIndexText?: (musicItem: IMusic.IMusicItem) => unknown;
+    presentation?: "plain" | "cards";
 }
 /** 音乐列表 */
 export default function MusicList(props: IMusicListProps) {
@@ -94,6 +95,7 @@ export default function MusicList(props: IMusicListProps) {
         emptyDescription,
         enableAlphabetIndex,
         alphabetIndexText,
+        presentation = "plain",
     } = props;    
     const colors = useColors();
     const { t } = useI18N();
@@ -423,6 +425,7 @@ export default function MusicList(props: IMusicListProps) {
                     showQuality={showQuality}
                     showDuration={showDuration}
                     showAddNextIcon={showAddNextIcon}
+                    presentation={presentation}
                     onPress={handleItemPress}
                     onLongPress={handleItemLongPress}
                 />
@@ -439,6 +442,7 @@ export default function MusicList(props: IMusicListProps) {
             showQuality,
             showDuration,
             showAddNextIcon,
+            presentation,
             handleItemPress,
             handleItemLongPress,
         ],
@@ -558,6 +562,9 @@ export default function MusicList(props: IMusicListProps) {
                 viewabilityConfig={viewabilityConfig}
                 onViewableItemsChanged={handleViewableItemsChanged}
                 renderItem={renderItem}
+                contentContainerStyle={
+                    presentation === "cards" ? styles.cardListContent : undefined
+                }
                 onEndReached={() => {
                     if (state === RequestStateCode.IDLE || state === RequestStateCode.PARTLY_DONE) {
                         onLoadMore?.();
@@ -701,6 +708,7 @@ interface IMusicListItemProps {
     showQuality?: boolean;
     showDuration?: boolean;
     showAddNextIcon?: boolean;
+    presentation: "plain" | "cards";
     onPress: (index: number, musicItem: IMusic.IMusicItem) => void;
     onLongPress: (index: number, musicItem: IMusic.IMusicItem) => void;
 }
@@ -723,6 +731,7 @@ function MusicListItemImpl(props: IMusicListItemProps) {
         showQuality,
         showDuration,
         showAddNextIcon,
+        presentation,
         onPress,
         onLongPress,
     } = props;
@@ -750,6 +759,7 @@ function MusicListItemImpl(props: IMusicListItemProps) {
         <MusicItem
             musicItem={musicItem}
             index={showArtwork ? undefined : displayIndex}
+            cardIndex={presentation === "cards" ? displayIndex : undefined}
             onItemPress={handlePress}
             onItemLongPress={handleLongPress}
             left={left}
@@ -761,6 +771,7 @@ function MusicListItemImpl(props: IMusicListItemProps) {
             showQuality={showQuality}
             showDuration={showDuration}
             showAddNextIcon={showAddNextIcon && !selectionMode}
+            presentation={presentation}
         />
     );
 }
@@ -803,6 +814,9 @@ function SelectionAction(props: ISelectionActionProps) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+    },
+    cardListContent: {
+        paddingTop: rpx(8),
     },
     badge: {
         position: "absolute",

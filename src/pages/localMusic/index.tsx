@@ -1,12 +1,11 @@
 import React from "react";
 import MainPage from "./mainPage";
-import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
-import globalStyle from "@/constants/globalStyle";
+import { ShortcutPageSurface } from "@/components/base/shortcutPageSurface";
 
 export default function LocalMusic() {
     return (
-        <VerticalSafeAreaView style={globalStyle.fwflex1}>
+        <ShortcutPageSurface>
             <MainPage />
-        </VerticalSafeAreaView>
+        </ShortcutPageSurface>
     );
 }

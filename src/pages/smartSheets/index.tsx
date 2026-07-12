@@ -1,90 +1,146 @@
-import ListItem, { ListItemHeader } from "@/components/base/listItem";
+import ListItem from "@/components/base/listItem";
+import AppBar from "@/components/base/appBar";
+import {
+    ShortcutPageSurface,
+    ShortcutSectionTitle,
+    ShortcutStatusBar,
+    useShortcutCardStyle,
+} from "@/components/base/shortcutPageSurface";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useI18N } from "@/core/i18n";
 import {
     SmartSheetType,
-    useSmartSheetFacets,
-    useSmartSheetMusicList,
-    useSmartSheetSourceFacets,
+    useSmartSheetLibrarySnapshot,
 } from "@/core/smartMusicSheet";
-import React from "react";
-import { ScrollView, StyleSheet } from "react-native";
-import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
-import globalStyle from "@/constants/globalStyle";
-import StatusBar from "@/components/base/statusBar";
-import AppBar from "@/components/base/appBar";
-import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import React, { useMemo } from "react";
+import { SectionList, StyleSheet } from "react-native";
 import rpx from "@/utils/rpx";
 
-interface ISmartSheetTemplate {
+interface ISmartSheetListItem {
     key: string;
     type: SmartSheetType;
     title: string;
     icon: Parameters<typeof ListItem.ListItemIcon>[0]["icon"];
+    count: number;
     platform?: string;
     value?: string;
+    description?: string;
 }
 
 export default function SmartSheets() {
     const navigate = useNavigate();
     const { t } = useI18N();
-    const sourceFacets = useSmartSheetSourceFacets();
-    const artistFacets = useSmartSheetFacets("artist");
-    const albumFacets = useSmartSheetFacets("album");
-    const recentPlayedCount = useSmartSheetMusicList("recent-played").length;
-    const recentAddedCount = useSmartSheetMusicList("recent-added").length;
-    const mostPlayedCount = useSmartSheetMusicList("most-played").length;
-    const favoriteCount = useSmartSheetMusicList("favorite").length;
-    const localCount = useSmartSheetMusicList("local").length;
-    const downloadedCount = useSmartSheetMusicList("downloaded").length;
+    const snapshot = useSmartSheetLibrarySnapshot();
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
+    const cardStyle = useShortcutCardStyle({ compact: true });
 
-    const templates: Array<ISmartSheetTemplate & { count: number }> = [
-        {
-            key: "recent-played",
-            type: "recent-played",
-            title: t("smartSheet.recentPlayed"),
-            icon: "clock-outline",
-            count: recentPlayedCount,
-        },
-        {
-            key: "recent-added",
-            type: "recent-added",
-            title: t("smartSheet.recentAdded"),
-            icon: "plus",
-            count: recentAddedCount,
-        },
-        {
-            key: "most-played",
-            type: "most-played",
-            title: t("smartSheet.mostPlayed"),
-            icon: "fire",
-            count: mostPlayedCount,
-        },
-        {
-            key: "favorite",
-            type: "favorite",
-            title: t("smartSheet.favorite"),
-            icon: "heart",
-            count: favoriteCount,
-        },
-        {
-            key: "local",
-            type: "local",
-            title: t("smartSheet.localMusic"),
-            icon: "folder-music-outline",
-            count: localCount,
-        },
-        {
-            key: "downloaded",
-            type: "downloaded",
-            title: t("smartSheet.downloaded"),
-            icon: "arrow-down-tray",
-            count: downloadedCount,
-        },
-    ];
+    const sections = useMemo(() => {
+        const builtInItems: ISmartSheetListItem[] = [
+            {
+                key: "recent-played",
+                type: "recent-played",
+                title: t("smartSheet.recentPlayed"),
+                icon: "clock-outline",
+                count: snapshot.recentPlayed.length,
+            },
+            {
+                key: "recent-added",
+                type: "recent-added",
+                title: t("smartSheet.recentAdded"),
+                icon: "plus",
+                count: snapshot.recentAdded.length,
+            },
+            {
+                key: "most-played",
+                type: "most-played",
+                title: t("smartSheet.mostPlayed"),
+                icon: "fire",
+                count: snapshot.mostPlayed.length,
+            },
+            {
+                key: "favorite",
+                type: "favorite",
+                title: t("smartSheet.favorite"),
+                icon: "heart",
+                count: snapshot.favorite.length,
+            },
+            {
+                key: "local",
+                type: "local",
+                title: t("smartSheet.localMusic"),
+                icon: "folder-music-outline",
+                count: snapshot.local.length,
+            },
+            {
+                key: "downloaded",
+                type: "downloaded",
+                title: t("smartSheet.downloaded"),
+                icon: "arrow-down-tray",
+                count: snapshot.downloaded.length,
+            },
+        ];
+        const artistItems = snapshot.artistFacets.slice(0, 10).map(item => ({
+            key: `artist-${item.value}`,
+            type: "artist" as const,
+            value: item.value,
+            title: item.title,
+            icon: "user" as const,
+            count: item.count,
+        }));
+        const albumItems = snapshot.albumFacets.slice(0, 10).map(item => ({
+            key: `album-${item.value}`,
+            type: "album" as const,
+            value: item.value,
+            title: item.title,
+            icon: "album-outline" as const,
+            count: item.count,
+        }));
+        const sourceItems = snapshot.sourceFacets.slice(0, 8).map(item => ({
+            key: `plugin-source-${item.value}`,
+            type: "plugin-source" as const,
+            platform: item.value,
+            title: t("smartSheet.pluginSourceTitle", {
+                platform: item.title,
+            }),
+            icon: "javascript" as const,
+            count: item.count,
+        }));
 
-    function openSmartSheet(item: ISmartSheetTemplate) {
+        return [
+            {
+                title: t("smartSheet.forYou"),
+                data: [{
+                    key: "recommended",
+                    type: "recommended" as const,
+                    title: t("smartSheet.recommended"),
+                    description: t("smartSheet.recommendedHint", {
+                        count: snapshot.recommended.length,
+                    }),
+                    icon: "strategy" as const,
+                    count: snapshot.recommended.length,
+                }],
+            },
+            {
+                title: t("smartSheet.builtInTemplates"),
+                data: builtInItems,
+            },
+            ...(artistItems.length ? [{
+                title: t("smartSheet.artists"),
+                data: artistItems,
+            }] : []),
+            ...(albumItems.length ? [{
+                title: t("smartSheet.albums"),
+                data: albumItems,
+            }] : []),
+            ...(sourceItems.length ? [{
+                title: t("smartSheet.pluginSources"),
+                data: sourceItems,
+            }] : []),
+        ];
+    }, [snapshot, t]);
+
+    function openSmartSheet(item: ISmartSheetListItem) {
         navigate(ROUTE_PATH.SMART_SHEET_DETAIL, {
             type: item.type,
             platform: item.platform,
@@ -93,120 +149,59 @@ export default function SmartSheets() {
     }
 
     return (
-        <VerticalSafeAreaView style={globalStyle.fwflex1}>
-            <StatusBar />
-            <AppBar>{t("smartSheet.title")}</AppBar>
-            <ScrollView
-                style={style.wrapper}
-                contentContainerStyle={{
-                    paddingBottom: musicBarBottomInset || rpx(24),
-                }}>
-                <ListItemHeader>{t("smartSheet.builtInTemplates")}</ListItemHeader>
-                {templates.map(item => (
+        <ShortcutPageSurface>
+            <ShortcutStatusBar />
+            <AppBar backgroundColor="transparent" spacious>
+                {t("smartSheet.title")}
+            </AppBar>
+            <SectionList
+                style={styles.wrapper}
+                sections={sections}
+                keyExtractor={item => item.key}
+                renderSectionHeader={({ section }) => (
+                    <ShortcutSectionTitle>{section.title}</ShortcutSectionTitle>
+                )}
+                renderItem={({ item }) => (
                     <ListItem
-                        key={item.key}
                         withHorizontalPadding
+                        pressableStyle={cardStyle}
                         onPress={() => openSmartSheet(item)}>
                         <ListItem.ListItemIcon icon={item.icon} />
                         <ListItem.Content
                             title={item.title}
-                            description={t("home.songCount", {
-                                count: item.count,
-                            })}
+                            description={
+                                item.description ?? t("home.songCount", {
+                                    count: item.count,
+                                })
+                            }
+                        />
+                        <ListItem.ListItemIcon
+                            icon="chevron-right"
+                            position="right"
                         />
                     </ListItem>
-                ))}
-                {artistFacets.length ? (
-                    <>
-                        <ListItemHeader>{t("smartSheet.artists")}</ListItemHeader>
-                        {artistFacets.map(item => (
-                            <ListItem
-                                key={item.value}
-                                withHorizontalPadding
-                                onPress={() =>
-                                    openSmartSheet({
-                                        key: `artist-${item.value}`,
-                                        type: "artist",
-                                        value: item.value,
-                                        title: item.title,
-                                        icon: "user",
-                                    })
-                                }>
-                                <ListItem.ListItemIcon icon="user" />
-                                <ListItem.Content
-                                    title={item.title}
-                                    description={t("home.songCount", {
-                                        count: item.count,
-                                    })}
-                                />
-                            </ListItem>
-                        ))}
-                    </>
-                ) : null}
-                {albumFacets.length ? (
-                    <>
-                        <ListItemHeader>{t("smartSheet.albums")}</ListItemHeader>
-                        {albumFacets.map(item => (
-                            <ListItem
-                                key={item.value}
-                                withHorizontalPadding
-                                onPress={() =>
-                                    openSmartSheet({
-                                        key: `album-${item.value}`,
-                                        type: "album",
-                                        value: item.value,
-                                        title: item.title,
-                                        icon: "album-outline",
-                                    })
-                                }>
-                                <ListItem.ListItemIcon icon="album-outline" />
-                                <ListItem.Content
-                                    title={item.title}
-                                    description={t("home.songCount", {
-                                        count: item.count,
-                                    })}
-                                />
-                            </ListItem>
-                        ))}
-                    </>
-                ) : null}
-                {sourceFacets.length ? (
-                    <>
-                        <ListItemHeader>{t("smartSheet.pluginSources")}</ListItemHeader>
-                        {sourceFacets.map(item => (
-                            <ListItem
-                                key={item.value}
-                                withHorizontalPadding
-                                onPress={() =>
-                                    openSmartSheet({
-                                        key: `plugin-source-${item.value}`,
-                                        type: "plugin-source",
-                                        platform: item.value,
-                                        title: item.title,
-                                        icon: "javascript",
-                                    })
-                                }>
-                                <ListItem.ListItemIcon icon="javascript" />
-                                <ListItem.Content
-                                    title={t("smartSheet.pluginSourceTitle", {
-                                        platform: item.title,
-                                    })}
-                                    description={t("home.songCount", {
-                                        count: item.count,
-                                    })}
-                                />
-                            </ListItem>
-                        ))}
-                    </>
-                ) : null}
-            </ScrollView>
-        </VerticalSafeAreaView>
+                )}
+                contentContainerStyle={[
+                    styles.content,
+                    { paddingBottom: musicBarBottomInset || rpx(24) },
+                ]}
+                initialNumToRender={10}
+                maxToRenderPerBatch={8}
+                updateCellsBatchingPeriod={40}
+                windowSize={7}
+                stickySectionHeadersEnabled={false}
+                removeClippedSubviews
+            />
+        </ShortcutPageSurface>
     );
 }
 
-const style = StyleSheet.create({
+const styles = StyleSheet.create({
     wrapper: {
         width: "100%",
         flex: 1,
+    },
+    content: {
+        paddingTop: rpx(6),
     },
 });

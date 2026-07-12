@@ -2,15 +2,15 @@
 // It is committed with a baseline value so TypeScript can compile before the first generated build.
 
 export const buildInfo = {
-    "appVersion": "0.6.7",
-    "packageVersion": "0.6.7",
-    "versionCode": "400016",
-    "gitSha": "e37f3ae9e7d6314729f996478a1aa0d3a8865e4e",
-    "shortSha": "e37f3ae",
+    "appVersion": "0.6.8",
+    "packageVersion": "0.6.8",
+    "versionCode": "400017",
+    "gitSha": "d82e5577deae38a592a9ae057739b9694da072f2",
+    "shortSha": "d82e557",
     "gitRef": "feat/mpv-player",
     "gitRefType": "branch",
     "buildRunUrl": "",
-    "buildDate": "2026-07-11T04:44:12.990Z",
+    "buildDate": "2026-07-12T01:50:45.445Z",
     "signing": "configured",
     "node": "v24.15.0",
     "react": "19.2.3",

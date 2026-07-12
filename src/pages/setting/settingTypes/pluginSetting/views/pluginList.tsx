@@ -1,10 +1,11 @@
-import React, { useState } from "react";
-import { FlatList, StyleSheet, View } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import { StyleSheet, View } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import rpx from "@/utils/rpx";
 import * as DocumentPicker from "expo-document-picker";
 import Loading from "@/components/base/loading";
 
-import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
+import PluginManager, { Plugin, useSortedPlugins } from "@/core/pluginManager";
 import { trace } from "@/utils/log";
 
 import Toast from "@/utils/toast";
@@ -39,7 +40,7 @@ export default function PluginList() {
 
     const navigator = useNavigation<any>();
 
-    const menuOptions: IOption[] = [
+    const menuOptions = useMemo<IOption[]>(() => [
         {
             icon: "bookmark-square",
             title: t("pluginSetting.menu.subscriptionSetting"),
@@ -76,7 +77,18 @@ export default function PluginList() {
                 });
             },
         },
-    ];
+    ], [navigator, t]);
+
+    const renderPluginItem = useCallback(
+        ({ item }: { item: Plugin }) => (
+            <PluginItem plugin={item} />
+        ),
+        [],
+    );
+    const keyExtractor = useCallback(
+        (plugin: Plugin) => plugin.hash,
+        [],
+    );
 
     async function onInstallFromLocalClick() {
         try {
@@ -215,7 +227,7 @@ export default function PluginList() {
             ],
             onPress(item) {
                 if (item.value === "local") {
-                    void onInstallLxSourceFromLocalClick();
+                    onInstallLxSourceFromLocalClick();
                 } else if (item.value === "url") {
                     showPanel("SimpleInput", {
                         title: t("lxSource.importFromUrl"),
@@ -305,15 +317,15 @@ export default function PluginList() {
     }
 
     async function onUpdateAllClick() {
-        const plugins = PluginManager.getEnabledPlugins();
+        const enabledPlugins = PluginManager.getEnabledPlugins();
         setLoading(true);
 
         const successResults: IInstallPluginResult[] = [];
         const failResults: IInstallPluginResult[] = [];
 
         try {
-            for (let i = 0; i < plugins.length; ++i) {
-                const srcUrl = plugins[i].instance.srcUrl;
+            for (let i = 0; i < enabledPlugins.length; ++i) {
+                const srcUrl = enabledPlugins[i].instance.srcUrl;
                 if (srcUrl) {
                     const result = await installPluginFromUrlText(srcUrl);
                     if (result[0]) {
@@ -355,7 +367,7 @@ export default function PluginList() {
 
     return (
         <>
-            <AppBar menu={menuOptions}>
+            <AppBar backgroundColor="transparent" spacious menu={menuOptions}>
                 {t("sidebar.pluginManagement")}
             </AppBar>
             <HorizontalSafeAreaView style={style.wrapper}>
@@ -363,17 +375,14 @@ export default function PluginList() {
                     {loading ? (
                         <Loading />
                     ) : (
-                        <FlatList
+                        <FlashList
+                            style={style.list}
                             ListEmptyComponent={Empty}
-                            ListFooterComponent={<View style={style.blank} />}
+                            ListFooterComponent={PluginListFooter}
                             data={plugins ?? []}
-                            keyExtractor={_ => _.hash}
-                            renderItem={({ item: plugin }) => (
-                                <PluginItem
-                                    key={plugin.hash}
-                                    plugin={plugin}
-                                />
-                            )}
+                            drawDistance={rpx(320)}
+                            keyExtractor={keyExtractor}
+                            renderItem={renderPluginItem}
                         />
                     )}
 
@@ -428,9 +437,16 @@ export default function PluginList() {
     );
 }
 
+function PluginListFooter() {
+    return <View style={style.blank} />;
+}
+
 const style = StyleSheet.create({
     wrapper: {
         width: "100%",
+        flex: 1,
+    },
+    list: {
         flex: 1,
     },
     blank: {

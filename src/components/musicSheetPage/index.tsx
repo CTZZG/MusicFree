@@ -2,6 +2,7 @@ import React from "react";
 import NavBar from "./components/navBar";
 import SheetMusicList from "./components/sheetMusicList";
 import StatusBar from "@/components/base/statusBar";
+import { ShortcutStatusBar } from "../base/shortcutPageSurface";
 import globalStyle from "@/constants/globalStyle";
 import VerticalSafeAreaView from "../base/verticalSafeAreaView";
 import { RequestStateCode } from "@/constants/commonConst";
@@ -26,6 +27,7 @@ interface IMusicSheetPageProps {
         show?: boolean;
         onPress?: () => void;
     }>;
+    presentation?: "plain" | "cards";
 }
 
 export default function MusicSheetPage(props: IMusicSheetPageProps) {
@@ -41,15 +43,18 @@ export default function MusicSheetPage(props: IMusicSheetPageProps) {
         showQuality,
         showDuration,
         navMenu,
+        presentation = "plain",
     } = props;
 
     return (
         <VerticalSafeAreaView style={globalStyle.fwflex1}>
-            <StatusBar />
+            {presentation === "cards" ? <ShortcutStatusBar /> : <StatusBar />}
             <NavBar
                 musicList={musicList ?? sheetInfo?.musicList ?? []}
                 navTitle={navTitle}
                 menu={navMenu}
+                backgroundColor={presentation === "cards" ? "transparent" : undefined}
+                spacious={presentation === "cards"}
             />
             <SheetMusicList
                 canStar={canStar}
@@ -61,6 +66,7 @@ export default function MusicSheetPage(props: IMusicSheetPageProps) {
                 showArtwork={showArtwork}
                 showQuality={showQuality}
                 showDuration={showDuration}
+                presentation={presentation}
             />
         </VerticalSafeAreaView>
     );

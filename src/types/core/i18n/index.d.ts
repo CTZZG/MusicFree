@@ -295,6 +295,9 @@ export interface ILanguageData {
     "history.title": string; // 历史记录
     "history.clearHistory": string; // 清除历史记录
     "smartSheet.title": string; // 智能歌单
+    "smartSheet.forYou": string; // 为你推荐
+    "smartSheet.recommended": string; // 个性化推荐
+    "smartSheet.recommendedHint": string; // 个性化推荐说明
     "smartSheet.builtInTemplates": string; // 内置模板
     "smartSheet.pluginSources": string; // 插件来源
     "smartSheet.recentPlayed": string; // 最近播放

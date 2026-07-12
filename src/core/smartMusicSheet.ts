@@ -1,12 +1,21 @@
-import { localPluginPlatform } from "@/constants/commonConst";
-import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
 import { useMemo } from "react";
+
+import { localPluginPlatform } from "@/constants/commonConst";
+import { getLocalPath } from "@/utils/mediaUtils";
 import LocalMusicSheet from "./localMusicSheet";
-import { useMostPlayedMusic, useMusicHistory } from "./musicHistory";
-import MusicSheet, { useSheetsBase } from "./musicSheet";
-import { useSortedPlugins } from "./pluginManager";
+import {
+    useMusicHistory,
+    useMusicPlayStats,
+} from "./musicHistory";
+import { useMusicSheetsSnapshot } from "./musicSheet";
+import {
+    buildSmartSheetLibrarySnapshot,
+    ISmartSheetFacet,
+    ISmartSheetLibrarySnapshot,
+} from "./smartMusicSheetPolicy";
 
 export type SmartSheetType =
+    | "recommended"
     | "recent-played"
     | "recent-added"
     | "most-played"
@@ -23,96 +32,69 @@ export interface ISmartSheetParams {
     value?: string;
 }
 
-export interface ISmartSheetFacet {
-    value: string;
-    title: string;
-    count: number;
+export type { ISmartSheetFacet, ISmartSheetLibrarySnapshot };
+
+export function useSmartSheetLibrarySnapshot() {
+    const history = useMusicHistory();
+    const playStats = useMusicPlayStats();
+    const localMusicList = LocalMusicSheet.useMusicList();
+    const sheets = useMusicSheetsSnapshot();
+
+    return useMemo(
+        () =>
+            buildSmartSheetLibrarySnapshot({
+                history,
+                playStats,
+                localMusicList,
+                downloadedMusicList: localMusicList.filter(
+                    musicItem =>
+                        musicItem.platform !== localPluginPlatform &&
+                        !!getLocalPath(musicItem),
+                ),
+                localPluginPlatform,
+                sheets,
+            }),
+        [history, localMusicList, playStats, sheets],
+    );
 }
 
-function dedupeMusicList(musicList: IMusic.IMusicItem[]) {
-    const seen = new Set<string>();
-    const result: IMusic.IMusicItem[] = [];
-
-    for (let musicItem of musicList) {
-        const key = getMediaUniqueKey(musicItem);
-        if (!seen.has(key)) {
-            seen.add(key);
-            result.push(musicItem);
-        }
+export function getSmartSheetMusicList(
+    snapshot: ISmartSheetLibrarySnapshot,
+    type: SmartSheetType,
+    platform?: string,
+    value?: string,
+) {
+    if (type === "recommended") {
+        return snapshot.recommended;
     }
-
-    return result;
-}
-
-function getSheetMusicList() {
-    return MusicSheet.backupSheets().flatMap(sheet => sheet.musicList ?? []);
-}
-
-function normalizeFacetValue(value?: string | null) {
-    return `${value ?? ""}`.trim();
-}
-
-function getRecentAddedMusicList() {
-    return dedupeMusicList(
-        getSheetMusicList()
-            .filter(musicItem => Number(musicItem.$timestamp) > 0)
-            .sort(
-                (a, b) =>
-                    Number(b.$timestamp) - Number(a.$timestamp) ||
-                    (b.$sortIndex ?? 0) - (a.$sortIndex ?? 0),
-            ),
-    );
-}
-
-function getFacetValue(
-    musicItem: IMusic.IMusicItem,
-    type: "artist" | "album" | "platform",
-) {
-    return normalizeFacetValue(musicItem[type]);
-}
-
-function buildSmartSheetFacets(
-    musicList: IMusic.IMusicItem[],
-    type: "artist" | "album" | "platform",
-) {
-    const facetMap = new Map<string, ISmartSheetFacet>();
-    musicList.forEach(musicItem => {
-        const value = getFacetValue(musicItem, type);
-        if (!value) {
-            return;
-        }
-        const current = facetMap.get(value);
-        if (current) {
-            current.count += 1;
-        } else {
-            facetMap.set(value, {
-                value,
-                title: value,
-                count: 1,
-            });
-        }
-    });
-
-    return [...facetMap.values()].sort((a, b) =>
-        a.title.localeCompare(b.title),
-    );
-}
-
-function getFavoriteMusicList() {
-    return MusicSheet.backupSheets().find(
-        sheet => sheet.id === MusicSheet.defaultSheet.id,
-    )?.musicList ?? [];
-}
-
-function getKnownMusicList(
-    history: IMusic.IMusicItem[],
-    localMusicList: IMusic.IMusicItem[],
-) {
-    return dedupeMusicList([
-        ...history,
-        ...localMusicList,
-        ...getSheetMusicList(),
-    ]);
+    if (type === "recent-played") {
+        return snapshot.recentPlayed;
+    }
+    if (type === "recent-added") {
+        return snapshot.recentAdded;
+    }
+    if (type === "most-played") {
+        return snapshot.mostPlayed;
+    }
+    if (type === "favorite") {
+        return snapshot.favorite;
+    }
+    if (type === "local") {
+        return snapshot.local;
+    }
+    if (type === "downloaded") {
+        return snapshot.downloaded;
+    }
+    if (type === "plugin-source" && platform) {
+        return snapshot.bySource.get(platform) ?? [];
+    }
+    if (type === "artist" && value) {
+        return snapshot.byArtist.get(value) ?? [];
+    }
+    if (type === "album" && value) {
+        return snapshot.byAlbum.get(value) ?? [];
+    }
+    return [];
 }
 
 export function useSmartSheetMusicList(
@@ -120,96 +102,24 @@ export function useSmartSheetMusicList(
     platform?: string,
     value?: string,
 ) {
-    const history = useMusicHistory();
-    const mostPlayedMusic = useMostPlayedMusic();
-    const localMusicList = LocalMusicSheet.useMusicList();
-    const sheetsBase = useSheetsBase();
-
-    return useMemo(() => {
-        if (type === "recent-played") {
-            return history;
-        }
-        if (type === "recent-added") {
-            return getRecentAddedMusicList();
-        }
-        if (type === "most-played") {
-            return mostPlayedMusic;
-        }
-        if (type === "favorite") {
-            return getFavoriteMusicList();
-        }
-        if (type === "local") {
-            return localMusicList;
-        }
-        if (type === "downloaded") {
-            return localMusicList.filter(
-                musicItem =>
-                    musicItem.platform !== localPluginPlatform &&
-                    !!getLocalPath(musicItem),
-            );
-        }
-        if (type === "plugin-source" && platform) {
-            return getKnownMusicList(history, localMusicList)
-                .filter(musicItem => musicItem.platform === platform);
-        }
-        if ((type === "artist" || type === "album") && value) {
-            return getKnownMusicList(history, localMusicList)
-                .filter(musicItem => getFacetValue(musicItem, type) === value);
-        }
-        return [];
-    }, [history, localMusicList, mostPlayedMusic, platform, sheetsBase, type, value]);
-}
-
-export function useSmartSheetSourcePlatforms() {
-    const plugins = useSortedPlugins();
-    const history = useMusicHistory();
-    const localMusicList = LocalMusicSheet.useMusicList();
-    const sheetsBase = useSheetsBase();
-
-    return useMemo(() => {
-        const platforms = new Set<string>();
-        plugins.forEach(plugin => {
-            if (plugin.name && plugin.name !== localPluginPlatform) {
-                platforms.add(plugin.name);
-            }
-        });
-        getKnownMusicList(history, localMusicList).forEach(musicItem => {
-            if (musicItem.platform && musicItem.platform !== localPluginPlatform) {
-                platforms.add(musicItem.platform);
-            }
-        });
-        return [...platforms].sort((a, b) => a.localeCompare(b));
-    }, [history, localMusicList, plugins, sheetsBase]);
+    const snapshot = useSmartSheetLibrarySnapshot();
+    return useMemo(
+        () => getSmartSheetMusicList(snapshot, type, platform, value),
+        [platform, snapshot, type, value],
+    );
 }
 
 export function useSmartSheetFacets(type: "artist" | "album") {
-    const history = useMusicHistory();
-    const localMusicList = LocalMusicSheet.useMusicList();
-    const sheetsBase = useSheetsBase();
-
-    return useMemo(() => {
-        return buildSmartSheetFacets(
-            getKnownMusicList(history, localMusicList),
-            type,
-        );
-    }, [history, localMusicList, sheetsBase, type]);
+    const snapshot = useSmartSheetLibrarySnapshot();
+    return type === "artist" ? snapshot.artistFacets : snapshot.albumFacets;
 }
 
 export function useSmartSheetSourceFacets() {
-    const history = useMusicHistory();
-    const localMusicList = LocalMusicSheet.useMusicList();
-    const sheetsBase = useSheetsBase();
+    return useSmartSheetLibrarySnapshot().sourceFacets;
+}
 
-    return useMemo(() => {
-        return buildSmartSheetFacets(
-            getKnownMusicList(history, localMusicList)
-                .filter(musicItem =>
-                    musicItem.platform &&
-                    musicItem.platform !== localPluginPlatform,
-                ),
-            "platform",
-        );
-    }, [history, localMusicList, sheetsBase]);
+export function useSmartSheetSourcePlatforms() {
+    return useSmartSheetLibrarySnapshot().sourceFacets.map(item => item.value);
 }
 
 export function getSmartSheetId(

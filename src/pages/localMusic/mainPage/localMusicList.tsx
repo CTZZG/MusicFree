@@ -22,6 +22,7 @@ import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import Color from "color";
 import shuffle from "@/utils/shuffle";
+import { useShortcutCardStyle } from "@/components/base/shortcutPageSurface";
 
 type LocalMusicFileStatus = "exists" | "missing" | "unknown" | "unavailable";
 type LocalMusicSortMode = "default" | "title" | "artist" | "album" | "folder";
@@ -165,6 +166,7 @@ export default function LocalMusicList() {
     const currentMusic = useCurrentMusic();
     const { t } = useI18N();
     const colors = useColors();
+    const shortcutCardStyle = useShortcutCardStyle({ compact: true });
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
     const [viewMode, setViewMode] = useState<LocalMusicViewMode>("songs");
     const [artistFilter, setArtistFilter] = useState<string>("all");
@@ -701,6 +703,7 @@ export default function LocalMusicList() {
             <ListItem
                 withHorizontalPadding
                 heightType="normal"
+                pressableStyle={shortcutCardStyle}
                 onPress={() => openGroup(filterType, item.value)}>
                 <ListItem.ListItemIcon icon={item.icon} />
                 <ListItem.Content
@@ -760,7 +763,8 @@ export default function LocalMusicList() {
                     <ListItem
                         key={folder}
                         withHorizontalPadding
-                        heightType="normal">
+                        heightType="normal"
+                        pressableStyle={shortcutCardStyle}>
                         <ListItem.ListItemIcon icon="folder-outline" />
                         <ListItem.Content
                             title={folder}
@@ -818,9 +822,12 @@ export default function LocalMusicList() {
                     <MusicList
                         Header={viewMode === "hidden" ? renderHiddenHeader : undefined}
                         musicList={sortedMusicList}
+                        showIndex
                         showArtwork
                         showQuality
+                        showDuration
                         showAddNextIcon
+                        presentation="cards"
                         enableAlphabetIndex={viewMode === "songs"}
                         alphabetIndexText={getAlphabetIndexText}
                         highlightMusicItem={currentMusic}

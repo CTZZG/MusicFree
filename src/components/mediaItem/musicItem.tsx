@@ -27,6 +27,8 @@ import {
 } from "@/core/downloadFinalizationPolicy";
 import useColors from "@/hooks/useColors";
 import useLocalMusicArtwork from "@/hooks/useLocalMusicArtwork";
+import Tag from "../base/tag";
+import { useShortcutCardStyle } from "../base/shortcutPageSurface";
 
 type DownloadWriteStatus = DownloadWriteResult;
 
@@ -45,6 +47,8 @@ interface IMusicItemProps {
     showQuality?: boolean;
     showDuration?: boolean;
     showAddNextIcon?: boolean;
+    presentation?: "plain" | "cards";
+    cardIndex?: string | number;
 }
 
 function getMusicItemQualityBadge(musicItem: IMusic.IMusicItem) {
@@ -78,8 +82,11 @@ function formatDuration(duration?: number | string) {
         : `${minutes}:${paddedSeconds}`;
 }
 
-function formatMusicMetadata(musicItem: IMusic.IMusicItem) {
-    return [musicItem.artist, musicItem.album]
+function formatMusicMetadata(
+    artist?: string,
+    album?: string,
+) {
+    return [artist, album]
         .map(item =>
             item === undefined || item === null ? "" : String(item).trim(),
         )
@@ -103,6 +110,8 @@ function MusicItem(props: IMusicItemProps) {
         showQuality = false,
         showDuration = false,
         showAddNextIcon = false,
+        presentation = "plain",
+        cardIndex,
     } = props;
     const colors = useColors();
     const qualityBadge = useMemo(
@@ -172,17 +181,23 @@ function MusicItem(props: IMusicItemProps) {
         [musicItem.duration, showDuration],
     );
     const metadataText = useMemo(
-        () => formatMusicMetadata(musicItem),
+        () => formatMusicMetadata(musicItem.artist, musicItem.album),
         [musicItem.artist, musicItem.album],
     );
+    const cardStyle = useShortcutCardStyle({ highlighted: highlight });
+    const isCard = presentation === "cards";
 
     return (
         <ListItem
-            heightType="big"
-            style={containerStyle}
+            heightType={isCard ? "none" : "big"}
+            pressableStyle={isCard ? cardStyle : null}
+            style={[
+                containerStyle,
+                isCard ? styles.cardContainer : null,
+            ]}
             withHorizontalPadding
-            leftPadding={index !== undefined ? 0 : undefined}
-            rightPadding={itemPaddingRight}
+            leftPadding={isCard ? rpx(14) : index !== undefined ? 0 : undefined}
+            rightPadding={isCard ? rpx(6) : itemPaddingRight}
             onLongPress={onItemLongPress}
             onPress={() => {
                 if (localMusicItem && localFileExists === false) {
@@ -196,6 +211,16 @@ function MusicItem(props: IMusicItemProps) {
                 }
             }}>
             {Left ? <Left /> : null}
+            {isCard && cardIndex !== undefined ? (
+                <ListItem.ListItemText
+                    width={rpx(52)}
+                    position="none"
+                    fixedWidth
+                    fontColor={highlight ? "primary" : "text"}
+                    contentStyle={styles.indexText}>
+                    {cardIndex}
+                </ListItem.ListItemText>
+            ) : null}
             {!Left && showArtwork ? (
                 <ListItem.ListItemImage
                     uri={displayArtwork}
@@ -203,7 +228,7 @@ function MusicItem(props: IMusicItemProps) {
                     contentStyle={styles.artwork}
                 />
             ) : null}
-            {index !== undefined ? (
+            {!isCard && index !== undefined ? (
                 <ListItem.ListItemText
                     width={rpx(86)}
                     position="none"
@@ -216,11 +241,21 @@ function MusicItem(props: IMusicItemProps) {
             <ListItem.Content
                 containerStyle={styles.content}
                 title={
-                    <TitleAndTag
-                        title={musicItem.title}
-                        titleFontColor={highlight ? "primary": "text"}
-                        tag={musicItem.platform}
-                    />
+                    isCard ? (
+                        <ThemeText
+                            numberOfLines={1}
+                            fontWeight="semibold"
+                            fontColor={highlight ? "primary" : "text"}
+                            style={styles.cardTitle}>
+                            {musicItem.title}
+                        </ThemeText>
+                    ) : (
+                        <TitleAndTag
+                            title={musicItem.title}
+                            titleFontColor={highlight ? "primary": "text"}
+                            tag={musicItem.platform}
+                        />
+                    )
                 }
                 description={
                     <View style={styles.descContainer}>
@@ -241,6 +276,22 @@ function MusicItem(props: IMusicItemProps) {
                                     {qualityBadge}
                                 </ThemeText>
                             </View>
+                        ) : null}
+                        {isCard ? (
+                            <ThemeText
+                                numberOfLines={1}
+                                fontSize="description"
+                                color={
+                                    localFileExists === false
+                                        ? "#e66767"
+                                        : undefined
+                                }
+                                fontColor={highlight ? "primary" : "textSecondary"}
+                                style={styles.cardDescText}>
+                                {localFileExists === false
+                                    ? t("localMusic.fileMissing")
+                                    : metadataText}
+                            </ThemeText>
                         ) : null}
                         {localFileExists !== false
                             ? downloadWriteBadges.map(badge => (
@@ -270,24 +321,43 @@ function MusicItem(props: IMusicItemProps) {
                                 </View>
                             ))
                             : null}
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="description"
-                            color={
-                                localFileExists === false
-                                    ? "#e66767"
-                                    : undefined
-                            }
-                            fontColor={highlight ? "primary" : "textSecondary"}
-                            style={styles.descText}>
-                            {localFileExists === false
-                                ? t("localMusic.fileMissing")
-                                : metadataText}
-                        </ThemeText>
+                        {!isCard ? (
+                            <ThemeText
+                                numberOfLines={1}
+                                fontSize="description"
+                                color={
+                                    localFileExists === false
+                                        ? "#e66767"
+                                        : undefined
+                                }
+                                fontColor={highlight ? "primary" : "textSecondary"}
+                                style={styles.descText}>
+                                {localFileExists === false
+                                    ? t("localMusic.fileMissing")
+                                    : metadataText}
+                            </ThemeText>
+                        ) : null}
                     </View>
                 }
             />
-            {durationText ? (
+            {isCard ? (
+                <View style={styles.cardMeta}>
+                    {musicItem.platform ? (
+                        <Tag
+                            tagName={musicItem.platform}
+                            containerStyle={styles.cardSourceTag}
+                        />
+                    ) : null}
+                    {durationText ? (
+                        <ThemeText
+                            fontSize="description"
+                            fontColor="textSecondary"
+                            style={styles.cardDuration}>
+                            {durationText}
+                        </ThemeText>
+                    ) : null}
+                </View>
+            ) : durationText ? (
                 <ListItem.ListItemText
                     width={rpx(72)}
                     position="none"
@@ -351,10 +421,34 @@ const styles = StyleSheet.create({
     content: {
         minWidth: 0,
     },
+    cardContainer: {
+        minHeight: rpx(132),
+        paddingVertical: rpx(14),
+    },
+    cardTitle: {
+        fontSize: rpx(30),
+        lineHeight: rpx(40),
+    },
     artwork: {
         width: rpx(68),
         height: rpx(68),
         borderRadius: rpx(12),
+    },
+    cardMeta: {
+        width: rpx(128),
+        minHeight: rpx(84),
+        alignItems: "flex-end",
+        justifyContent: "center",
+        paddingHorizontal: rpx(8),
+        flexShrink: 0,
+    },
+    cardSourceTag: {
+        maxWidth: rpx(124),
+        marginRight: 0,
+    },
+    cardDuration: {
+        marginTop: rpx(12),
+        textAlign: "right",
     },
     icon: {
         marginRight: rpx(6),
@@ -370,6 +464,11 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         flexShrink: 1,
         minWidth: 0,
+    },
+    cardDescText: {
+        flexShrink: 1,
+        minWidth: rpx(72),
+        marginRight: rpx(8),
     },
     qualityBadge: {
         height: rpx(28),

@@ -3,19 +3,27 @@ import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import ImageBtn from "../base/imageBtn";
+import { useShortcutCardStyle } from "../base/shortcutPageSurface";
 
 interface ISheetItemProps {
     pluginHash: string;
     sheetInfo: IMusic.IMusicSheetItemBase;
+    presentation?: "plain" | "cards";
 }
 
 const marginBottom = rpx(16);
 
 export default function SheetItem(props: ISheetItemProps) {
-    const { sheetInfo, pluginHash } = props ?? {};
+    const { sheetInfo, pluginHash, presentation = "plain" } = props ?? {};
     const navigate = useNavigate();
+    const cardStyle = useShortcutCardStyle({ compact: true });
     return (
-        <View style={style.imageWrapper}>
+        <View
+            style={[
+                presentation === "cards" ? cardStyle : null,
+                style.imageWrapper,
+                presentation === "cards" ? style.cardWrapper : null,
+            ]}>
             <ImageBtn
                 style={{
                     marginBottom,
@@ -37,5 +45,12 @@ const style = StyleSheet.create({
         width: "100%",
         justifyContent: "center",
         alignItems: "center",
+    },
+    cardWrapper: {
+        width: "auto",
+        alignSelf: "stretch",
+        paddingHorizontal: rpx(10),
+        paddingTop: rpx(10),
+        paddingBottom: rpx(4),
     },
 });

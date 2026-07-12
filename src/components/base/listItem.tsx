@@ -31,6 +31,8 @@ interface IListItemProps {
     rightPadding?: number;
     // height:
     style?: StyleProp<ViewStyle>;
+    // 外层可点击容器样式（卡片背景、边框、阴影等）
+    pressableStyle?: StyleProp<ViewStyle>;
     // 高度类型
     heightType?: "big" | "small" | "smallest" | "normal" | "none";
     children?: ReactNode;
@@ -55,6 +57,7 @@ function ListItem(props: IListItemProps) {
         leftPadding = defaultPadding,
         rightPadding = defaultPadding,
         style,
+        pressableStyle,
         heightType = "normal",
         children,
         onPress,
@@ -75,6 +78,7 @@ function ListItem(props: IListItemProps) {
         <Pressable
             style={({ pressed }) => [
                 styles.container,
+                pressableStyle,
                 pressed && isPressable
                     ? { backgroundColor: colors.listActive }
                     : null,

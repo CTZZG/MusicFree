@@ -30,14 +30,14 @@ export default function Bottom() {
             prev => prev.filter(it => !it.checked),
         );
         setMusicSheetChanged(true);
-    }, [selectedItems]);
+    }, [selectedItems, setEditingMusicSheet, setMusicSheetChanged]);
 
 
     const isSelected = selectedItems.length > 0;
 
     return (
         <Pressable style={[styles.bottomContainer, {
-            backgroundColor: colors.appBar,
+            borderTopColor: colors.divider,
         }]} 
         onPress={onPress} >
             <Icon name='trash-outline' size={iconSizeConst.big} color={colors.appBarText} style={isSelected ? null : styles.opacityButton} onPress={onPress}/>
@@ -52,6 +52,8 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         gap: rpx(12),
+        backgroundColor: "transparent",
+        borderTopWidth: StyleSheet.hairlineWidth,
     },
     opacityButton: {
         opacity: 0.6,

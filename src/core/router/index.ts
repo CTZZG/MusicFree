@@ -146,6 +146,7 @@ interface RouterParams extends RouterParamsBase {
     "smart-sheets": undefined;
     "smart-sheet-detail": {
         type:
+            | "recommended"
             | "recent-played"
             | "recent-added"
             | "most-played"

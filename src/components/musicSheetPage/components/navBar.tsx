@@ -13,14 +13,18 @@ interface INavBarProps {
         show?: boolean;
         onPress?: () => void;
     }>;
+    backgroundColor?: string;
+    spacious?: boolean;
 }
 
 export default function (props: INavBarProps) {
     const navigate = useNavigate();
-    const { navTitle, musicList = [], menu = [] } = props;
+    const { navTitle, musicList = [], menu = [], backgroundColor, spacious } = props;
 
     return (
         <AppBar
+            backgroundColor={backgroundColor}
+            spacious={spacious}
             actions={[
                 {
                     icon: "magnifying-glass",

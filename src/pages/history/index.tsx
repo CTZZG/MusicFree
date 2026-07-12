@@ -1,7 +1,4 @@
 import React from "react";
-import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
-import globalStyle from "@/constants/globalStyle";
-import StatusBar from "@/components/base/statusBar";
 import musicHistory, { useMusicHistory } from "@/core/musicHistory";
 import MusicList from "@/components/musicList";
 import { musicHistorySheetId, RequestStateCode } from "@/constants/commonConst";
@@ -9,6 +6,10 @@ import AppBar from "@/components/base/appBar";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useI18N } from "@/core/i18n";
 import { useCurrentMusic } from "@/core/trackPlayer";
+import {
+    ShortcutPageSurface,
+    ShortcutStatusBar,
+} from "@/components/base/shortcutPageSurface";
 
 export default function History() {
     const musicHistoryList = useMusicHistory();
@@ -18,9 +19,11 @@ export default function History() {
     const { t } = useI18N();
 
     return (
-        <VerticalSafeAreaView style={globalStyle.fwflex1}>
-            <StatusBar />
+        <ShortcutPageSurface>
+            <ShortcutStatusBar />
             <AppBar
+                backgroundColor="transparent"
+                spacious
                 menu={[
                     {
                         icon: "trash-outline",
@@ -50,6 +53,10 @@ export default function History() {
             <MusicList
                 musicList={musicHistoryList}
                 showIndex
+                showArtwork
+                showQuality
+                showDuration
+                presentation="cards"
                 state={RequestStateCode.IDLE}
                 highlightMusicItem={currentMusic}
                 musicSheet={{
@@ -58,6 +65,6 @@ export default function History() {
                     musicList: musicHistoryList,
                 } as IMusic.IMusicSheetItem}
             />
-        </VerticalSafeAreaView>
+        </ShortcutPageSurface>
     );
 }

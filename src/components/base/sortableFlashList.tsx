@@ -65,6 +65,8 @@ interface ISortableFlashListProps<T> {
     estimatedItemSize?: number;
     // 高亮元素样式
     activeBackgroundColor?: string;
+    // 为虚拟列表提供稳定身份，避免数据源切换时按下标重建全部行
+    keyExtractor?: (item: T, index: number) => string;
 
 }
 
@@ -72,7 +74,14 @@ interface ISortableFlashListProps<T> {
 export default function SortableFlashList<T extends any = any>(
     props: ISortableFlashListProps<T>
 ) {
-    const { data, renderItem, onSortEnd, estimatedItemSize, activeBackgroundColor } = props;
+    const {
+        data,
+        renderItem,
+        onSortEnd,
+        estimatedItemSize,
+        activeBackgroundColor,
+        keyExtractor,
+    } = props;
 
     const draggingIndexRef = useRef<number>(-1);
     const [dragging, setDragging] = useState(false);
@@ -165,7 +174,12 @@ export default function SortableFlashList<T extends any = any>(
             }
             
         };
-    }, [dragging, listLayout]);
+    }, [
+        dragging,
+        draggingElementOffsetValue,
+        itemHeightValue,
+        listLayout,
+    ]);
 
 
     const startDrag = useCallback((index: number) => {
@@ -174,7 +188,7 @@ export default function SortableFlashList<T extends any = any>(
             draggingIndexRef.current = index;
             setDragging(true);
         }
-    }, []);
+    }, [draggingElementOffsetValue]);
 
     const renderSortableItem = useCallback(({ item, index }: { item: T; index: number }) => {
         return <SortableFlashListItem index={index} startDrag={startDrag} onLayout={(layoutEvent: LayoutChangeEvent) => {
@@ -183,7 +197,7 @@ export default function SortableFlashList<T extends any = any>(
         }}>
             {renderItem({ item, index })}
         </SortableFlashListItem>;
-    }, [renderItem, startDrag]);
+    }, [itemHeightValue, renderItem, startDrag]);
 
     ;
 
@@ -256,6 +270,8 @@ export default function SortableFlashList<T extends any = any>(
                 ref={listRef}
                 data={data}
                 renderItem={renderSortableItem}
+                keyExtractor={keyExtractor}
+                drawDistance={(estimatedItemSize || rpx(120)) * 4}
                 scrollEnabled={!dragging}
                 scrollEventThrottle={16}
                 onScroll={scrollHandler}

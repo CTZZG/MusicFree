@@ -15,6 +15,7 @@ import { fontSizeConst } from "@/constants/uiConst";
 import PanelBase from "../base/panelBase";
 import PanelHeader from "../base/panelHeader";
 import { hidePanel } from "../usePanel";
+import { useShortcutCardStyle } from "@/components/base/shortcutPageSurface";
 
 function buildMusicBase(pluginName: string, inputValue: string) {
     return {
@@ -31,6 +32,7 @@ function buildMusicBase(pluginName: string, inputValue: string) {
 export default function PlayById() {
     const { t } = useI18N();
     const colors = useColors();
+    const cardStyle = useShortcutCardStyle();
     const navigate = useNavigate();
 
     const plugins = useMemo(
@@ -94,7 +96,7 @@ export default function PlayById() {
             await TrackPlayer.play(musicItem);
             navigate(ROUTE_PATH.MUSIC_DETAIL);
             Toast.success(t("panel.playById.playingNow"));
-        } catch (error) {
+        } catch {
             Toast.warn(t("panel.playById.fetchFailed"));
         } finally {
             setLoading(false);
@@ -104,7 +106,7 @@ export default function PlayById() {
     return (
         <PanelBase
             keyboardAvoidBehavior="height"
-            height={vmax(45)}
+            height={vmax(58)}
             renderBody={() => (
                 <>
                     <PanelHeader
@@ -118,7 +120,7 @@ export default function PlayById() {
 
                     {plugins.length ? (
                         <>
-                            <View style={styles.pluginSection}>
+                            <View style={[cardStyle, styles.pluginSection]}>
                                 <ThemeText
                                     fontSize="subTitle"
                                     fontColor="textSecondary"
@@ -165,7 +167,7 @@ export default function PlayById() {
                                 </View>
                             </View>
 
-                            <View style={styles.inputSection}>
+                            <View style={[cardStyle, styles.inputSection]}>
                                 <TextInput
                                     value={musicId}
                                     accessible
@@ -203,13 +205,13 @@ export default function PlayById() {
                                     selectedPlugin?.name?.startsWith(
                                         "QQ音乐",
                                     ) ? (
-                                        <ThemeText
-                                            style={styles.hintLine}
-                                            fontSize="description"
-                                            fontColor="textSecondary">
-                                            {t("panel.playById.qqHint")}
-                                        </ThemeText>
-                                    ) : null}
+                                            <ThemeText
+                                                style={styles.hintLine}
+                                                fontSize="description"
+                                                fontColor="textSecondary">
+                                                {t("panel.playById.qqHint")}
+                                            </ThemeText>
+                                        ) : null}
                                 </View>
                             </View>
                         </>
@@ -224,8 +226,8 @@ export default function PlayById() {
 
 const styles = StyleSheet.create({
     pluginSection: {
-        paddingHorizontal: rpx(24),
-        marginTop: rpx(8),
+        paddingHorizontal: rpx(20),
+        paddingVertical: rpx(20),
     },
     sectionLabel: {
         marginBottom: rpx(12),
@@ -236,22 +238,26 @@ const styles = StyleSheet.create({
         gap: rpx(12),
     },
     pluginChip: {
-        width: "23%",
-        paddingVertical: rpx(12),
-        borderRadius: rpx(20),
+        minWidth: "22%",
+        paddingHorizontal: rpx(14),
+        paddingVertical: rpx(14),
+        borderRadius: rpx(22),
         borderWidth: 1,
         alignItems: "center",
         justifyContent: "center",
     },
     inputSection: {
-        marginTop: rpx(24),
+        paddingVertical: rpx(20),
     },
     input: {
-        marginHorizontal: rpx(24),
-        borderRadius: rpx(12),
+        marginHorizontal: rpx(20),
+        borderRadius: rpx(16),
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: "rgba(128,128,128,0.28)",
         fontSize: fontSizeConst.content,
         lineHeight: fontSizeConst.content * 1.5,
-        padding: rpx(12),
+        paddingHorizontal: rpx(18),
+        paddingVertical: rpx(16),
     },
     hints: {
         paddingHorizontal: rpx(24),

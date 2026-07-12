@@ -57,6 +57,8 @@ import {
     resolveCompletedDownloadFileExists,
     sortDownloadItems,
 } from "./downloadingList.utils";
+import { useShortcutCardStyle } from "@/components/base/shortcutPageSurface";
+import { ImgAsset } from "@/constants/assetsConst";
 
 
 interface DownloadingListItemProps {
@@ -92,6 +94,7 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
     const taskInfo = useDownloadTask(musicItem);
     const { t } = useI18N();
     const colors = useColors();
+    const cardStyle = useShortcutCardStyle({ compact: true });
     const rawDownloadMetadataStatus = useMediaExtraProperty(
         musicItem,
         "downloadMetadataStatus",
@@ -296,6 +299,9 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
 
     return <ListItem
         withHorizontalPadding
+        heightType="none"
+        pressableStyle={cardStyle}
+        style={style.downloadCard}
         rightPadding={rpx(4)}
         onLongPress={handleLongPress}
         onPress={
@@ -309,6 +315,13 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
             <View style={style.checkBoxWrapper}>
                 <CheckBox checked={selected} />
             </View>
+        ) : null}
+        {!selectionMode ? (
+            <ListItem.ListItemImage
+                uri={musicItem.artwork}
+                fallbackImg={ImgAsset.albumDefault}
+                contentStyle={style.downloadArtwork}
+            />
         ) : null}
         <ListItem.Content
             title={musicItem.title}
@@ -419,6 +432,7 @@ export default function DownloadingList() {
     const downloadTasks = useDownloadTasksSnapshot();
     const { t } = useI18N();
     const colors = useColors();
+    const summaryCardStyle = useShortcutCardStyle({ compact: true });
     const [filter, setFilter] = useState<DownloadFilter>("all");
     const [sourceFilter, setSourceFilter] = useState("all");
     const [artistFilter, setArtistFilter] = useState("all");
@@ -1263,7 +1277,7 @@ export default function DownloadingList() {
     return (
         <View style={style.wrapper}>
             {downloadQueue.length ? (
-                <View style={style.writeSummary}>
+                <View style={[summaryCardStyle, style.writeSummary]}>
                     <ThemeText
                         fontSize="description"
                         fontColor="textSecondary">
@@ -1565,8 +1579,17 @@ const style = StyleSheet.create({
     },
     writeSummary: {
         paddingHorizontal: rpx(24),
-        paddingTop: rpx(16),
+        paddingVertical: rpx(18),
         gap: rpx(8),
+    },
+    downloadCard: {
+        minHeight: rpx(126),
+        paddingVertical: rpx(14),
+    },
+    downloadArtwork: {
+        width: rpx(72),
+        height: rpx(72),
+        borderRadius: rpx(14),
     },
     checkBoxWrapper: {
         marginRight: rpx(18),

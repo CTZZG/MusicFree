@@ -13,16 +13,22 @@ import { localPluginPlatform } from "@/constants/commonConst";
 import Checkbox from "@/components/base/checkbox";
 import useColors from "@/hooks/useColors";
 import Empty from "@/components/base/empty";
+import { useShortcutCardStyle } from "@/components/base/shortcutPageSurface";
+import { getMediaUniqueKey } from "@/utils/mediaUtils";
 
 
 interface ISheetEditorItemProps {
     index: number;
     editorMusicSheet: IEditorMusicSheetItem;
 }
-function _SheetEditorItem(props: ISheetEditorItemProps) {
+function SheetEditorItemContent(props: ISheetEditorItemProps) {
     const { index, editorMusicSheet } = props;
     const sheet = editorMusicSheet.musicSheetItem;
     const { t } = useI18N();
+    const cardStyle = useShortcutCardStyle({
+        compact: true,
+        elevated: false,
+    });
 
     const setEditingMusicSheet = useSetAtom(editingMusicSheetAtom);
 
@@ -32,7 +38,7 @@ function _SheetEditorItem(props: ISheetEditorItemProps) {
                 draft[index].checked = !draft[index].checked;
             }),
         );
-    }, [index]);
+    }, [index, setEditingMusicSheet]);
 
     const isLocalSheet = !(
         sheet.platform && sheet.platform !== localPluginPlatform
@@ -42,6 +48,7 @@ function _SheetEditorItem(props: ISheetEditorItemProps) {
         <ListItem
             heightType="big"
             withHorizontalPadding
+            pressableStyle={cardStyle}
             style={styles.sheetItemContainer}
             onPress={onPress}
         >
@@ -65,7 +72,7 @@ function _SheetEditorItem(props: ISheetEditorItemProps) {
 }
 
 const SheetEditorItem = memo(
-    _SheetEditorItem,
+    SheetEditorItemContent,
     (prev, curr) =>
         prev.editorMusicSheet === curr.editorMusicSheet &&
         prev.index === curr.index,
@@ -77,8 +84,30 @@ export default function SheetList() {
 
     const [editingSheetList, setEditingMusicList] = useAtom(editingMusicSheetAtom);
     const setSheetChanged = useSetAtom(musicSheetChangedAtom);
-    const selectedItems = useMemo(() => editingSheetList.filter(_ => _.checked), [editingSheetList]);
+    const selectedItemCount = useMemo(
+        () => editingSheetList.reduce(
+            (count, item) => count + (item.checked ? 1 : 0),
+            0,
+        ),
+        [editingSheetList],
+    );
     const colors = useColors();
+
+    const renderItem = useCallback(
+        ({ item, index }: { item: IEditorMusicSheetItem; index: number }) => (
+            <SheetEditorItem index={index} editorMusicSheet={item} />
+        ),
+        [],
+    );
+    const keyExtractor = useCallback(
+        (item: IEditorMusicSheetItem) =>
+            getMediaUniqueKey(item.musicSheetItem),
+        [],
+    );
+    const onSortEnd = useCallback((newData: IEditorMusicSheetItem[]) => {
+        setEditingMusicList(newData);
+        setSheetChanged(true);
+    }, [setEditingMusicList, setSheetChanged]);
 
     return (
         <>
@@ -86,7 +115,7 @@ export default function SheetList() {
                 <TextButton
                     onPress={() => {
                         if (
-                            selectedItems.length !== editingSheetList.length &&
+                            selectedItemCount !== editingSheetList.length &&
                             editingSheetList.length
                         ) {
                             setEditingMusicList(
@@ -104,21 +133,20 @@ export default function SheetList() {
                             );
                         }
                     }}>
-                    {`${((selectedItems.length !== editingSheetList.length &&
+                    {`${((selectedItemCount !== editingSheetList.length &&
                         editingSheetList.length) || !editingSheetList.length)
                         ? t("common.selectAll")
                         : t("common.unselectAll")
-                    } (${t("musicSheetEditor.selectSheetCount", { count: selectedItems.length })})`}
+                    } (${t("musicSheetEditor.selectSheetCount", { count: selectedItemCount })})`}
                 </TextButton>
             </View>
-            {editingSheetList.length === 0 ? <Empty /> : <SortableFlashList 
+            {editingSheetList.length === 0 ? <Empty /> : <SortableFlashList
                 activeBackgroundColor={colors.placeholder}
-                data={editingSheetList} 
-                renderItem={({ item, index }) => <SheetEditorItem index={index} editorMusicSheet={item} />} 
-                onSortEnd={newData => {
-                    setEditingMusicList(newData);
-                    setSheetChanged(true);
-                }}
+                data={editingSheetList}
+                estimatedItemSize={rpx(132)}
+                keyExtractor={keyExtractor}
+                renderItem={renderItem}
+                onSortEnd={onSortEnd}
             />}
         </>
     );
