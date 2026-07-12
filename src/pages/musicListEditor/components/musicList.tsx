@@ -15,13 +15,11 @@ import useColors from "@/hooks/useColors";
 import Empty from "@/components/base/empty";
 import SortableFlashList from "@/components/base/sortableFlashList";
 
-const ITEM_HEIGHT = rpx(120);
-
 interface IMusicEditorItemProps {
     index: number;
     editorMusicItem: IEditorMusicItem;
 }
-function _MusicEditorItem(props: IMusicEditorItemProps) {
+function MusicEditorItemView(props: IMusicEditorItemProps) {
     const { index, editorMusicItem } = props;
     const setEditingMusicList = useSetAtom(editingMusicListAtom);
 
@@ -31,7 +29,7 @@ function _MusicEditorItem(props: IMusicEditorItemProps) {
                 draft[index].checked = !draft[index].checked;
             }),
         );
-    }, [index]);
+    }, [index, setEditingMusicList]);
 
     return (
         <MusicItem
@@ -49,7 +47,7 @@ function _MusicEditorItem(props: IMusicEditorItemProps) {
 }
 
 const MusicEditorItem = memo(
-    _MusicEditorItem,
+    MusicEditorItemView,
     (prev, curr) =>
         prev.editorMusicItem === curr.editorMusicItem &&
         prev.index === curr.index,
@@ -65,19 +63,25 @@ export default function MusicList() {
         ({ index, item }: any) => {
             return <MusicEditorItem editorMusicItem={item} index={index!} />;
         },
-        [editingMusicList],
+        [],
     );
+    const keyExtractor = useCallback(
+        (item: IEditorMusicItem) => `${item.musicItem.platform}-${item.musicItem.id}`,
+        [],
+    );
+    const onSortEnd = useCallback((newData: IEditorMusicItem[]) => {
+        setEditingMusicList(newData);
+        setMusicListChanged(true);
+    }, [setEditingMusicList, setMusicListChanged]);
     const colors = useColors();
 
     return editingMusicList?.length ? (
         <SortableFlashList 
             activeBackgroundColor={colors.placeholder}
             data={editingMusicList} 
+            keyExtractor={keyExtractor}
             renderItem={renderItem} 
-            onSortEnd={newData => {
-                setEditingMusicList(newData);
-                setMusicListChanged(true);
-            }}
+            onSortEnd={onSortEnd}
         />
     ) : (
         <Empty />

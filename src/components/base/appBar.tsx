@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useState } from "react";
+import React, { ReactNode, useEffect, useRef, useState } from "react";
 import {
     LayoutRectangle,
     StatusBar as OriginalStatusBar,
@@ -26,7 +26,6 @@ import Animated, {
 import Portal from "./portal";
 import ListItem from "./listItem";
 import { IIconName } from "@/components/base/icon.tsx";
-import PageBackground from "./pageBackground";
 
 interface IAppBarProps {
     titleTextOpacity?: number;
@@ -35,12 +34,14 @@ interface IAppBarProps {
     actions?: Array<{
         icon: IIconName;
         onPress?: () => void;
+        accessibilityLabel?: string;
     }>;
     menu?: Array<{
         icon: IIconName;
         title: string;
         show?: boolean;
         onPress?: () => void;
+        accessibilityLabel?: string;
     }>;
     menuIcon?: IIconName;
     menuPosition?: "left" | "right";
@@ -55,7 +56,7 @@ interface IAppBarProps {
 }
 
 const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);
-const ANIMATION_DURATION = 500;
+const ANIMATION_DURATION = 200;
 
 const timingConfig = {
     duration: ANIMATION_DURATION,
@@ -86,16 +87,20 @@ export default function AppBar(props: IAppBarProps) {
     const theme = useTheme();
 
     const bgColor = backgroundColor ?? color(colors.appBar ?? colors.primary).toString();
-    const contentColor = _color ?? colors.appBarText;
+    const contentColor =
+        _color ?? (bgColor === "transparent" ? colors.text : colors.appBarText);
 
     const [showMenu, setShowMenu] = useState(false);
     const [menuIconLayout, setMenuIconLayout] =
         useState<LayoutRectangle | null>(null);
     const scaleRate = useSharedValue(0);
+    const menuActionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+        null,
+    );
 
     const hasMenu = menu?.length > 0;
     const menuOnLeft = hasMenu && menuPosition === "left";
-    const showSurfaceBackground = spacious && bgColor === "transparent";
+    const transparentSurface = spacious && bgColor === "transparent";
 
     useEffect(() => {
         if (showMenu) {
@@ -104,6 +109,15 @@ export default function AppBar(props: IAppBarProps) {
             scaleRate.value = withTiming(0, timingConfig);
         }
     }, [scaleRate, showMenu]);
+
+    useEffect(
+        () => () => {
+            if (menuActionTimerRef.current) {
+                clearTimeout(menuActionTimerRef.current);
+            }
+        },
+        [],
+    );
 
     const transformStyle = useAnimatedStyle(() => {
         return {
@@ -115,7 +129,7 @@ export default function AppBar(props: IAppBarProps) {
         <>
             {withStatusBar ? (
                 <StatusBar
-                    backgroundColor={showSurfaceBackground ? "transparent" : bgColor}
+                    backgroundColor={transparentSurface ? "transparent" : bgColor}
                     barStyle={
                         spacious
                             ? theme.dark
@@ -125,8 +139,7 @@ export default function AppBar(props: IAppBarProps) {
                     }
                 />
             ) : null}
-            <View style={showSurfaceBackground ? styles.surfaceHeader : null}>
-                {showSurfaceBackground ? <PageBackground /> : null}
+            <View style={transparentSurface ? styles.surfaceHeader : null}>
                 <View
                     style={[
                         styles.container,
@@ -146,6 +159,7 @@ export default function AppBar(props: IAppBarProps) {
                             onPress={() => {
                                 setShowMenu(true);
                             }}
+                            accessibilityLabel={menuIcon}
                         />
                     ) : (
                         <IconButton
@@ -159,6 +173,7 @@ export default function AppBar(props: IAppBarProps) {
                                 navigation.goBack();
                             })
                             }
+                            accessibilityLabel="back"
                         />
                     )}
                     <View style={[
@@ -193,6 +208,9 @@ export default function AppBar(props: IAppBarProps) {
                             color={contentColor}
                             style={[globalStyle.noShrinkNoGrow, styles.rightButton]}
                             onPress={action.onPress}
+                            accessibilityLabel={
+                                action.accessibilityLabel ?? action.icon
+                            }
                         />
                     ))}
                     {actionComponent ?? null}
@@ -208,6 +226,7 @@ export default function AppBar(props: IAppBarProps) {
                             onPress={() => {
                                 setShowMenu(true);
                             }}
+                            accessibilityLabel={menuIcon}
                         />
                     ) : null}
                 </View>
@@ -270,7 +289,11 @@ export default function AppBar(props: IAppBarProps) {
                                     onPress={() => {
                                         setShowMenu(false);
                                         // async
-                                        setTimeout(() => {
+                                        if (menuActionTimerRef.current) {
+                                            clearTimeout(menuActionTimerRef.current);
+                                        }
+                                        menuActionTimerRef.current = setTimeout(() => {
+                                            menuActionTimerRef.current = null;
                                             it.onPress?.();
                                         }, 20);
                                     }}>

@@ -53,4 +53,13 @@ export function clearLocalMusicArtworkCache() {
     localMusicArtworkResolver.clear();
 }
 
+export function invalidateLocalMusicArtworkCache(localPath?: string | null) {
+    if (!localPath || isRemoteMediaUrl(localPath)) {
+        return;
+    }
+    localMusicArtworkResolver.invalidate(
+        normalizeLocalArtworkPath(localPath),
+    );
+}
+
 export { getDirectArtworkUri, mergeResolvedArtwork, stripEphemeralLocalArtwork };

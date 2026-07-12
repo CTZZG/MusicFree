@@ -10,8 +10,13 @@ import {fileURLToPath} from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
+const expectedNitroVersion = '1.4.3';
 const nitroRoot = path.join(rootDir, 'node_modules', 'react-native-nitro-player');
-const patchPath = path.join(rootDir, 'patches', 'react-native-nitro-player+1.4.1.patch');
+const patchPath = path.join(
+    rootDir,
+    'patches',
+    `react-native-nitro-player+${expectedNitroVersion}.patch`,
+);
 const musicfreePackagePath = 'node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree';
 const musicfreeDir = path.join(rootDir, musicfreePackagePath);
 const patchGeneratorPath = path.join(rootDir, 'generator', 'patch-media3-ffmpeg-aar.mjs');
@@ -31,9 +36,11 @@ const patchedAarPath = path.join(
 
 const allowedSeamFiles = [
     'node_modules/react-native-nitro-player/android/build.gradle',
+    'node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerCore.kt',
     'node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt',
     'node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerQueueBuild.kt',
     'node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/ExoPlayerBuilder.kt',
+    'node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt',
 ];
 
 const requiredMusicfreeFiles = [
@@ -98,11 +105,17 @@ function extractPatchFiles(patchSource) {
         .sort();
 }
 
-function checkPatchReverseApplies() {
+function checkPatchPackageState() {
     try {
+        const patchPackageEntry = path.join(
+            rootDir,
+            'node_modules',
+            'patch-package',
+            'index.js',
+        );
         execFileSync(
-            'git',
-            ['apply', '--reverse', '--check', relative(patchPath)],
+            process.execPath,
+            [patchPackageEntry, '--check'],
             {
                 cwd: rootDir,
                 encoding: 'utf8',
@@ -111,7 +124,7 @@ function checkPatchReverseApplies() {
         );
     } catch (error) {
         errors.push(
-            `Patch no longer reverse-applies cleanly: ${relative(patchPath)}\n${error.stderr ?? error.message}`,
+            `patch-package state check failed for ${relative(patchPath)}\n${error.stderr ?? error.message}`,
         );
     }
 }
@@ -122,9 +135,9 @@ requireFile(wrapperSourcePath, 'Media3 FFmpeg JNI wrapper source');
 requireFile(patchedAarPath, 'patched Media3 FFmpeg AAR');
 
 const nitroPackageJson = JSON.parse(read(path.join(nitroRoot, 'package.json')) || '{}');
-if (nitroPackageJson.version !== '1.4.1') {
+if (nitroPackageJson.version !== expectedNitroVersion) {
     errors.push(
-        `Unexpected react-native-nitro-player version: ${nitroPackageJson.version ?? 'unknown'} (expected 1.4.1). Update the Round 20 upgrade audit before upgrading.`,
+        `Unexpected react-native-nitro-player version: ${nitroPackageJson.version ?? 'unknown'} (expected ${expectedNitroVersion}). Update the Round 20 upgrade audit before upgrading.`,
     );
 }
 
@@ -171,8 +184,13 @@ requireTokens('Nitro android/build.gradle seam', buildGradle, [
     'MUSICFREE_ENABLE_WMA_EXTRACTOR',
     'musicfreeEnableWmaExtractor',
     'musicfreeEnableExperimentalWmaExtractor',
+]);
+
+const appBuildGradle = read(path.join(rootDir, 'android', 'app', 'build.gradle'));
+requireTokens('App android/build.gradle FFmpeg seam', appBuildGradle, [
     'musicfreeEnableNitroFfmpeg',
-    'musicfree-media3-ffmpeg-decoder-$media3_version+1.aar',
+    'musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar',
+    'Nitro Media3 FFmpeg is the only packaged audio extension path',
 ]);
 
 const exoPlayerBuilder = read(path.join(
@@ -247,7 +265,7 @@ requireTokens('Media3 FFmpeg JNI wrapper source', wrapperSource, [
     'swr_convert',
 ]);
 
-checkPatchReverseApplies();
+checkPatchPackageState();
 
 if (errors.length > 0) {
     console.error('Round 20 upgrade boundary audit failed:');

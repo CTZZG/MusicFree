@@ -7,9 +7,6 @@ type CompatibleMMKV = MMKV & {
 
 const _mmkvCache: Record<string, CompatibleMMKV> = {};
 
-// @ts-ignore;
-global.mmkv = _mmkvCache;
-
 // Internal Method
 const getOrCreateMMKV = (dbName: string, cachePath = false) => {
     if (_mmkvCache[dbName]) {

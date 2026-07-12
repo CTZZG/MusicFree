@@ -126,7 +126,7 @@ jobs:
                     echo "SIGNING_STATUS=configured" >> "$GITHUB_ENV"
                     echo "SIGNING_VALIDATION=passed" >> "$GITHUB_ENV"
                   else
-                    echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
+                    echo "Release signing secrets were not provided. This Beta workflow will publish explicitly labelled unsigned test artifacts only."
                     echo "SIGNING_STATUS=unsigned" >> "$GITHUB_ENV"
                     echo "SIGNING_VALIDATION=skipped" >> "$GITHUB_ENV"
                   fi
@@ -196,7 +196,11 @@ jobs:
 
                   for apk in "${apks[@]}"; do
                     base="$(basename "$apk" .apk)"
-                    cp "$apk" "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-${base}.apk"
+                    if [ "${SIGNING_STATUS:-unsigned}" = "unsigned" ]; then
+                      cp "$apk" "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-UNSIGNED-TEST-ONLY-${base}.apk"
+                    else
+                      cp "$apk" "dist/MusicFree-${APP_VERSION}-${SHORT_SHA}-${base}.apk"
+                    fi
                   done
 
                   mapping_dir="android/app/build/outputs/mapping/release"
@@ -211,7 +215,7 @@ jobs:
             - name: Upload Beta APKs
               uses: actions/upload-artifact@v7
               with:
-                  name: beta-apks-${{ needs.check-version.outputs.version }}
+                  name: beta-apks-${{ needs.check-version.outputs.version }}-${{ env.SIGNING_STATUS }}
                   path: dist/*
                   if-no-files-found: error
                   retention-days: 30

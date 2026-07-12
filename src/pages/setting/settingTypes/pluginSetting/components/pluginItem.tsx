@@ -20,8 +20,8 @@ import { useI18N } from "@/core/i18n";
 import IconButton from "@/components/base/iconButton";
 import useRerender from "@/hooks/useRerender";
 import {
-    getLatestPluginDiagnosticEvent,
     getPluginDiagnosticEvents,
+    type PluginDiagnosticEvent,
 } from "@/core/pluginManager/diagnostics";
 import {
     getPluginCapabilityLabels,
@@ -37,6 +37,7 @@ interface IPluginItemProps {
     plugin: Plugin;
     onPluginConfigChanged?: () => void;
     onPluginEnabledChanged?: () => void;
+    latestDiagnostic?: PluginDiagnosticEvent | null;
 }
 
 interface IOption {
@@ -164,7 +165,12 @@ function getMissingUserVariableLabels(
 }
 
 function PluginItemContent(props: IPluginItemProps) {
-    const { plugin, onPluginConfigChanged, onPluginEnabledChanged } = props;
+    const {
+        plugin,
+        onPluginConfigChanged,
+        onPluginEnabledChanged,
+        latestDiagnostic,
+    } = props;
     const cardStyle = useShortcutCardStyle({
         compact: true,
         elevated: false,
@@ -215,10 +221,6 @@ function PluginItemContent(props: IPluginItemProps) {
                 total: declaredUserVariables.length,
             })
         : null;
-    const latestDiagnostic = getLatestPluginDiagnosticEvent(
-        plugin.hash,
-        plugin.name,
-    );
     const diagnosticSummary = latestDiagnostic
         ? t("pluginSetting.pluginItem.recentDiagnostic", {
             method: latestDiagnostic.method,
@@ -848,7 +850,10 @@ function PluginItemContent(props: IPluginItemProps) {
 }
 
 const PluginItem = memo(PluginItemContent, (prev, curr) => {
-    return prev.plugin === curr.plugin;
+    return (
+        prev.plugin === curr.plugin &&
+        prev.latestDiagnostic === curr.latestDiagnostic
+    );
 });
 export default PluginItem;
 

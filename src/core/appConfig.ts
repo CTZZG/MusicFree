@@ -190,7 +190,13 @@ class AppConfig implements IAppConfig {
         if (value === undefined) {
             return undefined;
         }
-        return JSON.parse(value);
+        try {
+            return JSON.parse(value);
+        } catch {
+            // Isolate a corrupted value instead of breaking bootstrap/settings.
+            configStore.delete(key);
+            return undefined;
+        }
     }
 }
 

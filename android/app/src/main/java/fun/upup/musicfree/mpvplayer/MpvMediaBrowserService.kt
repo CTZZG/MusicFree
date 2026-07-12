@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaDescriptionCompat
 import androidx.media.MediaBrowserServiceCompat
+import androidx.media.MediaSessionManager
 import androidx.media.utils.MediaConstants
 
 /**
@@ -42,7 +43,22 @@ class MpvMediaBrowserService : MediaBrowserServiceCompat() {
         clientPackageName: String,
         clientUid: Int,
         rootHints: Bundle?,
-    ): BrowserRoot {
+    ): BrowserRoot? {
+        val packageBelongsToUid = packageManager
+            .getPackagesForUid(clientUid)
+            ?.contains(clientPackageName) == true
+        val remoteUser = MediaSessionManager.RemoteUserInfo(
+            clientPackageName,
+            -1,
+            clientUid,
+        )
+        if (
+            !packageBelongsToUid ||
+            !MediaSessionManager.getSessionManager(this)
+                .isTrustedForMediaControl(remoteUser)
+        ) {
+            return null
+        }
         publishSessionTokenIfAvailable()
         return BrowserRoot(ROOT_ID, browserRootExtras())
     }

@@ -5,27 +5,54 @@ type LocalMusicArtworkLoader = (
 export interface ILocalMusicArtworkResolver {
     resolve(localPath: string): Promise<string>;
     clear(): void;
+    invalidate(localPath: string): void;
+}
+
+interface ILocalMusicArtworkResolverOptions {
+    failureTtlMs?: number;
+    maxEntries?: number;
+    now?: () => number;
+    successTtlMs?: number;
 }
 
 export function createLocalMusicArtworkResolver(
     loader: LocalMusicArtworkLoader,
     maxConcurrent = 3,
+    options: ILocalMusicArtworkResolverOptions = {},
 ): ILocalMusicArtworkResolver {
     if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
         throw new Error("maxConcurrent must be a positive integer");
     }
 
-    const cache = new Map<string, string>();
+    const maxEntries = options.maxEntries ?? 300;
+    const failureTtlMs = options.failureTtlMs ?? 30_000;
+    const successTtlMs = options.successTtlMs ?? Number.POSITIVE_INFINITY;
+    const now = options.now ?? Date.now;
+    const cache = new Map<string, { artwork: string; expiresAt: number }>();
     const inFlight = new Map<string, Promise<string>>();
+    const generations = new Map<string, number>();
     const pending: Array<{
         localPath: string;
+        generation: number;
         resolve(value: string): void;
     }> = [];
     let activeCount = 0;
+    let epoch = 0;
+
+    function trimCache() {
+        while (cache.size > maxEntries) {
+            const oldestKey = cache.keys().next().value;
+            if (typeof oldestKey !== "string") {
+                break;
+            }
+            cache.delete(oldestKey);
+        }
+    }
 
     function drain() {
         while (activeCount < maxConcurrent && pending.length) {
             const task = pending.shift()!;
+            const taskEpoch = epoch;
             activeCount += 1;
             Promise.resolve()
                 .then(() => loader(task.localPath))
@@ -35,12 +62,31 @@ export function createLocalMusicArtworkResolver(
                     () => "",
                 )
                 .then(artwork => {
-                    cache.set(task.localPath, artwork);
+                    if (
+                        taskEpoch === epoch &&
+                        (generations.get(task.localPath) ?? 0) ===
+                            task.generation
+                    ) {
+                        cache.delete(task.localPath);
+                        cache.set(task.localPath, {
+                            artwork,
+                            expiresAt:
+                                now() +
+                                (artwork ? successTtlMs : failureTtlMs),
+                        });
+                        trimCache();
+                    }
                     task.resolve(artwork);
                 })
                 .finally(() => {
                     activeCount -= 1;
-                    inFlight.delete(task.localPath);
+                    if (
+                        taskEpoch === epoch &&
+                        (generations.get(task.localPath) ?? 0) ===
+                            task.generation
+                    ) {
+                        inFlight.delete(task.localPath);
+                    }
                     drain();
                 });
         }
@@ -52,8 +98,14 @@ export function createLocalMusicArtworkResolver(
             if (!normalizedPath) {
                 return Promise.resolve("");
             }
-            if (cache.has(normalizedPath)) {
-                return Promise.resolve(cache.get(normalizedPath)!);
+            const cached = cache.get(normalizedPath);
+            if (cached) {
+                if (cached.expiresAt > now()) {
+                    cache.delete(normalizedPath);
+                    cache.set(normalizedPath, cached);
+                    return Promise.resolve(cached.artwork);
+                }
+                cache.delete(normalizedPath);
             }
             const existingRequest = inFlight.get(normalizedPath);
             if (existingRequest) {
@@ -61,14 +113,33 @@ export function createLocalMusicArtworkResolver(
             }
 
             const request = new Promise<string>(resolve => {
-                pending.push({ localPath: normalizedPath, resolve });
+                pending.push({
+                    localPath: normalizedPath,
+                    generation: generations.get(normalizedPath) ?? 0,
+                    resolve,
+                });
                 drain();
             });
             inFlight.set(normalizedPath, request);
             return request;
         },
         clear() {
+            epoch += 1;
             cache.clear();
+            inFlight.clear();
+            generations.clear();
+        },
+        invalidate(localPath) {
+            const normalizedPath = localPath.trim();
+            if (!normalizedPath) {
+                return;
+            }
+            cache.delete(normalizedPath);
+            inFlight.delete(normalizedPath);
+            generations.set(
+                normalizedPath,
+                (generations.get(normalizedPath) ?? 0) + 1,
+            );
         },
     };
 }

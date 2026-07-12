@@ -22,6 +22,26 @@ const defaultState: IHomeDiscoveryPreview = {
 };
 
 const HOME_DISCOVERY_PREVIEW_LIMIT = 6;
+const HOME_DISCOVERY_TIMEOUT_MS = 10_000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise<never>((_resolve, reject) => {
+                timer = setTimeout(
+                    () => reject(new Error("Home discovery request timed out")),
+                    timeoutMs,
+                );
+            }),
+        ]);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
+}
 
 function flattenTopLists(groups: IMusic.IMusicSheetGroupItem[]) {
     return groups.flatMap(group => group.data ?? []);
@@ -109,8 +129,9 @@ export default function useHomeDiscovery(topListPlugins: Plugin[]) {
 
             if (topListPlugin) {
                 try {
-                    const result = await Promise.resolve(
-                        topListPlugin.methods.getTopLists(),
+                    const result = await withTimeout(
+                        Promise.resolve(topListPlugin.methods.getTopLists()),
+                        HOME_DISCOVERY_TIMEOUT_MS,
                     );
 
                     topLists = flattenTopLists(result ?? []).slice(

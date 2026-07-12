@@ -36,6 +36,10 @@ import type {
     PlayerAdapterConfig,
     PlayerAdapterRemoteCapability,
 } from "@/core/playerAdapter";
+import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
+
+let linkingUrlSubscription: ReturnType<typeof Linking.addEventListener> | null =
+    null;
 
 // 依赖管理
 PluginManager.injectDependencies(Config);
@@ -402,12 +406,42 @@ async function extraMakeup() {
     }
 
     async function handleLinkingUrl(url: string) {
+        const confirmRemoteInstall = (kind: "插件" | "LX 音源", remoteUrl: string) =>
+            new Promise<boolean>(resolve => {
+                const validation = validateRemoteInstallUrl(remoteUrl);
+                if (!validation.ok) {
+                    Toast.warn(`${kind}安装已阻止：${validation.reason}`);
+                    resolve(false);
+                    return;
+                }
+
+                let settled = false;
+                const settle = (value: boolean) => {
+                    if (!settled) {
+                        settled = true;
+                        resolve(value);
+                    }
+                };
+                showDialog("SimpleDialog", {
+                    title: `确认安装${kind}`,
+                    content: `外部链接请求安装${kind}。\n\n来源：${validation.hostname}\n地址：${validation.url}\n\n安装后将执行第三方代码，请仅在信任来源时继续。`,
+                    okText: "确认安装",
+                    cancelText: "取消",
+                    onOk: () => settle(true),
+                    onCancel: () => settle(false),
+                    onDismiss: () => settle(false),
+                });
+            });
+
         // 插件
         try {
             if (url.startsWith("musicfree://install-lx-source/")) {
                 const sourceUrl = decodeURIComponent(
                     url.slice("musicfree://install-lx-source/".length),
                 );
+                if (!await confirmRemoteInstall("LX 音源", sourceUrl)) {
+                    return;
+                }
                 const result = await LxSource.installFromUrl(sourceUrl);
                 if (result.success) {
                     Toast.success(i18n.t("lxSource.installSuccess", {
@@ -425,12 +459,13 @@ async function extraMakeup() {
                     .slice(20)
                     .split(",")
                     .map(decodeURIComponent);
-                await Promise.all(
-                    plugins.map(it =>
-                        PluginManager.installPluginFromUrl(it).catch(emptyFunction),
-                    ),
-                );
-                Toast.success("安装成功~");
+                for (const pluginUrl of plugins) {
+                    if (!await confirmRemoteInstall("插件", pluginUrl)) {
+                        continue;
+                    }
+                    await PluginManager.installPluginFromUrl(pluginUrl)
+                        .catch(emptyFunction);
+                }
             } else if (url.endsWith(".js")) {
                 PluginManager.installPluginFromLocalFile(url, {
                     notCheckVersion: Config.getConfig(
@@ -464,8 +499,8 @@ async function extraMakeup() {
     }
 
     // 开启监听
-    Linking.removeAllListeners("url");
-    Linking.addEventListener("url", data => {
+    linkingUrlSubscription?.remove();
+    linkingUrlSubscription = Linking.addEventListener("url", data => {
         if (data.url) {
             handleLinkingUrl(data.url);
         }

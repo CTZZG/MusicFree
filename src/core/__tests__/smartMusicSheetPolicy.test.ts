@@ -1,4 +1,8 @@
-import { buildSmartSheetLibrarySnapshot } from "@/core/smartMusicSheetPolicy";
+import {
+    buildSmartSheetLibrarySnapshot,
+    createSmartSheetLibrarySnapshotCache,
+    getSmartSheetAddedAt,
+} from "@/core/smartMusicSheetPolicy";
 import type { IMusicPlayStat } from "@/types/core/musicHistory";
 
 const localPluginPlatform = "本地";
@@ -115,5 +119,40 @@ describe("smartMusicSheetPolicy", () => {
             "older",
         ]);
         expect(snapshot.downloaded.map(item => item.id)).toEqual(["downloaded"]);
+    });
+
+    it("reuses cached snapshots and invalidates them when scoring inputs change", () => {
+        const track = music("cached");
+        const options = {
+            now,
+            history: [track],
+            playStats: {},
+            localMusicList: [],
+            downloadedMusicList: [],
+            localPluginPlatform,
+            sheets: [],
+        };
+        const cache = createSmartSheetLibrarySnapshotCache();
+
+        const first = cache.get(options);
+        expect(cache.get(options)).toBe(first);
+
+        const rescored = cache.get({
+            ...options,
+            playStats: {
+                "source-a@cached": stat(track, 3, now),
+            },
+        });
+        expect(rescored).not.toBe(first);
+        expect(rescored.mostPlayed.map(item => item.id)).toEqual(["cached"]);
+    });
+
+    it("normalizes recent-added timestamps from common metadata fields", () => {
+        expect(getSmartSheetAddedAt(music("seconds", { addedAt: 1234 }))).toBe(
+            1_234_000,
+        );
+        expect(getSmartSheetAddedAt(music("iso", {
+            createdAt: "2026-07-12T00:00:00Z",
+        }))).toBe(now);
     });
 });

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function useDelayFalsy<T extends any = any>(
     init?: T,
@@ -7,7 +7,11 @@ export default function useDelayFalsy<T extends any = any>(
     const [_state, _setState] = useState<T | undefined>(init);
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-    function setState(st: T) {
+    useEffect(() => () => {
+        if (timer.current) clearTimeout(timer.current);
+    }, []);
+
+    const setState = useCallback((st: T) => {
         if (st === undefined || st === null || st === false) {
             timer.current && clearTimeout(timer.current);
             timer.current = setTimeout(() => {
@@ -19,7 +23,7 @@ export default function useDelayFalsy<T extends any = any>(
         timer.current && clearTimeout(timer.current);
         timer.current = undefined;
         _setState(st);
-    }
+    }, [ms]);
 
     return [_state, setState, _setState] as [
         ...ReturnType<typeof useState<T>>,

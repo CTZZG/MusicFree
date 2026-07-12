@@ -1,6 +1,11 @@
 import AppBar from "@/components/base/appBar";
-import { useAtom } from "jotai";
-import { musicSheetChangedAtom, sheetTypeAtom } from "../store/atom";
+import { useAtomValue } from "jotai";
+import {
+    musicSheetChangedAtom,
+    sheetEditorReadyAtom,
+    sheetEditorSavingAtom,
+    sheetTypeAtom,
+} from "../store/atom";
 import { useI18N } from "@/core/i18n";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ILanguageData } from "@/types/core/i18n";
@@ -10,8 +15,11 @@ import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { Fragment, useMemo } from "react";
 import IconButton from "@/components/base/iconButton";
-import { saveEditingMusicSheet } from "../store/action";
-import Toast from "@/utils/toast";
+import { beginSheetTypeChange } from "../store/action";
+import {
+    confirmSheetEditorTransition,
+    saveEditingMusicSheetWithFeedback,
+} from "../store/transition";
 
 
 const tabs: Array<{
@@ -26,11 +34,13 @@ const tabs: Array<{
 }];
 
 export default function NavBar() {
-    const [sheetType, setSheetType] = useAtom(sheetTypeAtom);
+    const sheetType = useAtomValue(sheetTypeAtom);
 
     const { t } = useI18N();
     const colors = useColors();
-    const [sheetChanged, setSheetChanged] = useAtom(musicSheetChangedAtom);
+    const sheetChanged = useAtomValue(musicSheetChangedAtom);
+    const isReady = useAtomValue(sheetEditorReadyAtom);
+    const isSaving = useAtomValue(sheetEditorSavingAtom);
     
     const selectedIndicatorStyle = useMemo(() => {
         return [
@@ -46,12 +56,11 @@ export default function NavBar() {
             actionComponent={<IconButton
                 name="save-outline"
                 sizeType="normal"
-                color={sheetChanged ? colors.primary : colors.appBarText}
+                color={sheetChanged ? colors.primary : colors.text}
                 opacity={sheetChanged ? 1 : 0.6}
-                onPress={() => {
-                    if (sheetChanged) {
-                        saveEditingMusicSheet();
-                        Toast.success(t("toast.saveSuccess"));
+                onPress={async () => {
+                    if (sheetChanged && isReady && !isSaving) {
+                        await saveEditingMusicSheetWithFeedback();
                     }
                 }}
             />}
@@ -60,8 +69,9 @@ export default function NavBar() {
                 <Fragment key={tab.key}>
                     <Pressable onPress={() => {
                         if (sheetType !== tab.key) {
-                            setSheetType(tab.key);
-                            setSheetChanged(false);
+                            confirmSheetEditorTransition(() => {
+                                beginSheetTypeChange(tab.key);
+                            });
                         }
                     }}>
                         <ThemeText style={sheetType === tab.key ? styles.selectTabText : null}>{t(tab.i18nKey)}</ThemeText>

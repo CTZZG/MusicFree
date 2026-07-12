@@ -1,4 +1,4 @@
-import React, { memo, useLayoutEffect, useMemo } from "react";
+import React, { memo, useLayoutEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import rpx from "@/utils/rpx";
 import FastImage from "../base/fastImage";
@@ -118,30 +118,39 @@ interface IMusicInfoProps {
     paddingLeft?: number;
 }
 
-function skipMusicItem(direction: number) {
-    if (direction === -1) {
-        TrackPlayer.skipToNext();
-    } else if (direction === 1) {
-        TrackPlayer.skipToPrevious();
+let skipInFlight = false;
+
+async function skipMusicItem(direction: number) {
+    if (skipInFlight) {
+        return;
+    }
+    skipInFlight = true;
+    try {
+        if (direction === -1) {
+            await TrackPlayer.skipToNext();
+        } else if (direction === 1) {
+            await TrackPlayer.skipToPrevious();
+        }
+    } catch {
+        // Keep gesture callbacks from surfacing an unhandled rejection.
+    } finally {
+        skipInFlight = false;
     }
 }
 
 export default function MusicInfo(props: IMusicInfoProps) {
     const { musicItem } = props;
     const navigate = useNavigate();
-    const playLists = usePlayList();
-    const siblingMusicItems = useMemo(() => {
-        if (!musicItem) {
-            return {
-                prev: null,
-                next: null,
-            };
-        }
-        return {
+    usePlayList();
+    const siblingMusicItems = musicItem
+        ? {
             prev: TrackPlayer.previousMusic,
             next: TrackPlayer.nextMusic,
+        }
+        : {
+            prev: null,
+            next: null,
         };
-    }, [musicItem, playLists]);
 
     // +- 1
     const transformSharedValue = useSharedValue(0);
@@ -149,14 +158,16 @@ export default function MusicInfo(props: IMusicInfoProps) {
     const musicItemWidthValue = useSharedValue(0);
 
     const tapGesture = Gesture.Tap()
-        .onStart(() => {
-            navigate(ROUTE_PATH.MUSIC_DETAIL);
+        .onEnd((_event, success) => {
+            if (success) {
+                navigate(ROUTE_PATH.MUSIC_DETAIL);
+            }
         })
         .runOnJS(true);
 
     useLayoutEffect(() => {
         transformSharedValue.value = 0;
-    }, [musicItem]);
+    }, [musicItem, transformSharedValue]);
 
     const panGesture = Gesture.Pan()
         .minPointers(1)

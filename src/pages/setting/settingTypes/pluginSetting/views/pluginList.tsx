@@ -26,6 +26,7 @@ import {
     installPluginFromUrlText,
     showPluginInstallResults,
 } from "../installPluginUtils";
+import { getAllPluginDiagnosticEvents } from "@/core/pluginManager/diagnostics";
 
 interface IOption {
     icon: IIconName;
@@ -39,6 +40,25 @@ export default function PluginList() {
     const [loading, setLoading] = useState(false);
 
     const navigator = useNavigation<any>();
+    const pluginRevision = (plugins ?? [])
+        .map(plugin => plugin.hash)
+        .join("\u0000");
+    const latestDiagnostics = useMemo(() => {
+        const byPlugin = new Map<
+            string,
+            ReturnType<typeof getAllPluginDiagnosticEvents>[number]
+        >();
+        if (!pluginRevision) {
+            return byPlugin;
+        }
+        for (const event of getAllPluginDiagnosticEvents()) {
+            const key = event.pluginHash ?? event.pluginName;
+            if (key && !byPlugin.has(key)) {
+                byPlugin.set(key, event);
+            }
+        }
+        return byPlugin;
+    }, [pluginRevision]);
 
     const menuOptions = useMemo<IOption[]>(() => [
         {
@@ -71,8 +91,11 @@ export default function PluginList() {
                     content: t("pluginSetting.menu.uninstallAllContent"),
                     async onOk() {
                         setLoading(true);
-                        await PluginManager.uninstallAllPlugins();
-                        setLoading(false);
+                        try {
+                            await PluginManager.uninstallAllPlugins();
+                        } finally {
+                            setLoading(false);
+                        }
                     },
                 });
             },
@@ -81,9 +104,16 @@ export default function PluginList() {
 
     const renderPluginItem = useCallback(
         ({ item }: { item: Plugin }) => (
-            <PluginItem plugin={item} />
+            <PluginItem
+                plugin={item}
+                latestDiagnostic={
+                    latestDiagnostics.get(item.hash) ??
+                    latestDiagnostics.get(item.name) ??
+                    null
+                }
+            />
         ),
-        [],
+        [latestDiagnostics],
     );
     const keyExtractor = useCallback(
         (plugin: Plugin) => plugin.hash,
@@ -146,24 +176,23 @@ export default function PluginList() {
             async onOk(text, closePanel) {
                 setLoading(true);
                 closePanel();
+                try {
+                    const result = await installPluginFromUrlText(text.trim());
 
-                const result = await installPluginFromUrlText(text.trim());
-
-                // 检查是否全部安装成功
-                const successResults: IInstallPluginResult[] = [];
-                const failResults: IInstallPluginResult[] = [];
-                for (let i = 0; i < result.length; ++i) {
-                    if (result[i].success) {
-                        successResults.push(result[i]);
-                    } else {
-                        failResults.push(result[i]);
+                    // 检查是否全部安装成功
+                    const successResults: IInstallPluginResult[] = [];
+                    const failResults: IInstallPluginResult[] = [];
+                    for (let i = 0; i < result.length; ++i) {
+                        if (result[i].success) {
+                            successResults.push(result[i]);
+                        } else {
+                            failResults.push(result[i]);
+                        }
                     }
+                    showPluginInstallResults(successResults, failResults, t);
+                } finally {
+                    setLoading(false);
                 }
-
-                showPluginInstallResults(successResults, failResults, t);
-
-
-                setLoading(false);
             },
         });
     }
@@ -312,8 +341,9 @@ export default function PluginList() {
                     Toast.warn(t("toast.subscriptionInvalid"));
                 }
             }
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }
 
     async function onUpdateAllClick() {
@@ -361,8 +391,9 @@ export default function PluginList() {
             Toast.warn(t("toast.unknownError", {
                 reason: e?.message ?? e,
             }));
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }
 
     return (

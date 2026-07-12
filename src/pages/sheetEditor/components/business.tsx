@@ -1,36 +1,52 @@
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
-import { editingMusicSheetAtom, musicSheetChangedAtom, sheetTypeAtom } from "../store/atom";
+import {
+    editingMusicSheetAtom,
+    loadedSheetTypeAtom,
+    musicSheetChangedAtom,
+    sheetTypeAtom,
+} from "../store/atom";
 import { useEffect, useRef } from "react";
 import { InteractionManager } from "react-native";
 import MusicSheet from "@/core/musicSheet";
-import { showDialog } from "@/components/dialogs/useDialog";
 import { useNavigation } from "@react-navigation/native";
-import { saveEditingMusicSheet } from "../store/action";
-import Toast from "@/utils/toast";
-import i18n from "@/core/i18n";
 import { useParams } from "@/core/router";
+import { beginSheetTypeChange } from "../store/action";
+import { confirmSheetEditorTransition } from "../store/transition";
 
 export default function Business() {
     const { sheetType } = useParams<"sheet-editor">();
     const selectedSheetType = useAtomValue(sheetTypeAtom);
     const setEditingMusicSheetAtom = useSetAtom(editingMusicSheetAtom);
+    const setLoadedSheetType = useSetAtom(loadedSheetTypeAtom);
     const setMusicSheetChangedAtom = useSetAtom(musicSheetChangedAtom);
     const navigation = useNavigation();
     const doubleConfirmRef = useRef(false);
 
     useEffect(() => {
-        getDefaultStore().set(sheetTypeAtom, sheetType);
+        const store = getDefaultStore();
+        if (
+            store.get(sheetTypeAtom) !== sheetType ||
+            store.get(loadedSheetTypeAtom) !== sheetType
+        ) {
+            beginSheetTypeChange(sheetType);
+        }
     }, [sheetType]);
 
     useEffect(() => {
         let cancelled = false;
         let interactionTask: ReturnType<typeof InteractionManager.runAfterInteractions> | undefined;
+        setLoadedSheetType(null);
+        setEditingMusicSheetAtom([]);
         const frame = requestAnimationFrame(() => {
             interactionTask = InteractionManager.runAfterInteractions(() => {
-                if (cancelled) {
+                if (
+                    cancelled ||
+                    getDefaultStore().get(sheetTypeAtom) !== selectedSheetType
+                ) {
                     return;
                 }
                 setEditingMusicSheetAtom(createEditorItems(selectedSheetType));
+                setLoadedSheetType(selectedSheetType);
             });
         });
 
@@ -39,31 +55,20 @@ export default function Business() {
             cancelAnimationFrame(frame);
             interactionTask?.cancel();
         };
-    }, [selectedSheetType, setEditingMusicSheetAtom]);
+    }, [
+        selectedSheetType,
+        setEditingMusicSheetAtom,
+        setLoadedSheetType,
+    ]);
 
 
     useEffect(() => {
         const navigationBackHandler = (e) => {
             if (e.data.action.type === "GO_BACK" && !doubleConfirmRef.current && getDefaultStore().get(musicSheetChangedAtom)) {
                 e.preventDefault();
-                showDialog("SimpleDialog", {
-                    "title": i18n.t("dialog.simpleDialog.hasUnsavedChange.title"),
-                    "content": i18n.t("dialog.simpleDialog.hasUnsavedChange.content"),
-                    okText: i18n.t("common.save"),
-                    cancelText: i18n.t("common.notSave"),
-                    onOk() {
-                        saveEditingMusicSheet();
-                        doubleConfirmRef.current = true;
-                        Toast.success(i18n.t("toast.saveSuccess"));
-                        navigation.goBack();
-                    },
-                    onCancel() {
-                        doubleConfirmRef.current = true;
-                        navigation.goBack();
-                    },
-                    onDismiss() {
-                        doubleConfirmRef.current = false;
-                    },
+                confirmSheetEditorTransition(() => {
+                    doubleConfirmRef.current = true;
+                    navigation.dispatch(e.data.action);
                 });
             }
         };
@@ -71,10 +76,16 @@ export default function Business() {
 
         return () => {
             setEditingMusicSheetAtom([]);
+            setLoadedSheetType(null);
             setMusicSheetChangedAtom(false);
             navigation.removeListener("beforeRemove", navigationBackHandler);
         };
-    }, [navigation, setEditingMusicSheetAtom, setMusicSheetChangedAtom]);
+    }, [
+        navigation,
+        setEditingMusicSheetAtom,
+        setLoadedSheetType,
+        setMusicSheetChangedAtom,
+    ]);
 
     return null;
 }

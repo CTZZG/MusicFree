@@ -42,6 +42,7 @@ import {
     formatDownloadCompletedAt,
     getCompletedDownloadDetailText,
     getCompletedDownloadFileExistsFromStatus,
+    getCompletedDownloadFileSignature,
     getCompletedDownloadFileStatus,
     getCompletedDownloadFileStatusFromExists,
     getCompletedDownloadFolderPath,
@@ -59,6 +60,7 @@ import {
 } from "./downloadingList.utils";
 import { useShortcutCardStyle } from "@/components/base/shortcutPageSurface";
 import { ImgAsset } from "@/constants/assetsConst";
+import { localFileExistsResolver } from "@/utils/localFileStatusCache";
 
 
 interface DownloadingListItemProps {
@@ -812,23 +814,39 @@ export default function DownloadingList() {
             }),
         [downloadQueue, downloadTasks, sourceFilter, artistFilter, albumFilter],
     );
+    const completedFileEntries = useMemo(
+        () =>
+            downloadQueue.flatMap(musicItem => {
+                const key = getMediaUniqueKey(musicItem);
+                const status =
+                    downloadTasks.get(key)?.status ?? DownloadStatus.Error;
+                return status === DownloadStatus.Completed
+                    ? [{
+                        key,
+                        path: getCompletedDownloadLocalPath(musicItem),
+                        musicItem,
+                    }]
+                    : [];
+            }),
+        [downloadQueue, downloadTasks, mediaExtraVersion],
+    );
+    const completedFileEntriesRef = useRef(completedFileEntries);
+    completedFileEntriesRef.current = completedFileEntries;
+    const completedFileSignature = getCompletedDownloadFileSignature(
+        completedFileEntries,
+    );
+    const completedFileStatusGeneration = useRef(0);
 
     useEffect(() => {
-        let cancelled = false;
-        const completedItems = downloadQueue.filter(musicItem => {
-            const status =
-                downloadTasks.get(getMediaUniqueKey(musicItem))?.status ??
-                DownloadStatus.Error;
-            return status === DownloadStatus.Completed;
-        });
+        const generation = ++completedFileStatusGeneration.current;
+        const currentEntries = completedFileEntriesRef.current;
         const initialStatusMap: Record<string, CompletedDownloadFileStatus> =
             {};
 
-        completedItems.forEach(musicItem => {
-            const key = getMediaUniqueKey(musicItem);
+        currentEntries.forEach(({ key, path }) => {
             initialStatusMap[key] = getCompletedDownloadFileStatusFromExists(
-                getCompletedDownloadLocalPath(musicItem),
-                null,
+                path,
+                path ? localFileExistsResolver.peek(path) ?? null : null,
             );
         });
 
@@ -851,32 +869,28 @@ export default function DownloadingList() {
             return next;
         });
 
-        Promise.all(
-            completedItems.map(async musicItem => {
-                const filePath = getCompletedDownloadLocalPath(musicItem);
-                const fileExists =
-                    await resolveCompletedDownloadFileExists(filePath);
-                return [
-                    getMediaUniqueKey(musicItem),
-                    getCompletedDownloadFileStatusFromExists(
-                        filePath,
-                        fileExists,
-                    ),
-                ] as const;
-            }),
-        ).then(entries => {
-            if (!cancelled) {
-                const next = Object.fromEntries(entries);
-                setCompletedFileStatusMap(prev =>
-                    areCompletedFileStatusMapsEqual(prev, next) ? prev : next,
-                );
+        currentEntries.forEach(({ key, path }) => {
+            if (!path || path.startsWith("content://")) {
+                return;
             }
+            resolveCompletedDownloadFileExists(path).then(fileExists => {
+                if (completedFileStatusGeneration.current !== generation) {
+                    return;
+                }
+                const status = getCompletedDownloadFileStatusFromExists(
+                    path,
+                    fileExists,
+                );
+                setCompletedFileStatusMap(prev =>
+                    prev[key] === status ? prev : { ...prev, [key]: status },
+                );
+            });
         });
 
         return () => {
-            cancelled = true;
+            completedFileStatusGeneration.current += 1;
         };
-    }, [downloadQueue, downloadTasks, mediaExtraVersion]);
+    }, [completedFileSignature]);
 
     useEffect(() => {
         if (!sourceFilters.includes(sourceFilter)) {

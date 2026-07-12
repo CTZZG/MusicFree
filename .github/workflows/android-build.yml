@@ -34,6 +34,7 @@ jobs:
             RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
             RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.RELEASE_KEY_ALIAS }}
             RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD || secrets.RELEASE_KEY_PASSWORD }}
+            EXPECTED_RELEASE_CERT_SHA256: d6ff76f4b8d7b43d3e58bca3fa3f9607d364ab13217c35bf63e05df4efbaa1fd
         steps:
             - name: Checkout
               uses: actions/checkout@v5
@@ -65,6 +66,14 @@ jobs:
                   NODE_ENV: development
                   HUSKY: 0
               run: npm ci
+
+            - name: Static and regression gates
+              run: |
+                  npm run audit:round20-static
+                  npm test -- --runInBand
+                  node ./node_modules/patch-package/index.js --check
+                  npm audit --omit=dev --audit-level=critical --registry=https://registry.npmjs.org
+                  git diff --check
 
             - name: Generate build metadata
               run: |
@@ -112,7 +121,11 @@ jobs:
             - name: Setup signing key
               run: |
                   if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
-                    echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
+                    if [ "${{ github.event_name }}" != "pull_request" ]; then
+                      echo "::error title=Signing configuration missing::Formal release and tag builds require release signing secrets."
+                      exit 1
+                    fi
+                    echo "Signing secrets were not provided for this merged-PR verification build; unsigned artifacts are allowed but will not be published as a release."
                     exit 0
                   fi
 
@@ -156,7 +169,11 @@ jobs:
                       echo "Signing validation: passed"
                     } >> android-build-info.txt
                   else
-                    echo "Release signing secrets were not provided. Gradle will build unsigned release APKs."
+                    if [ "${{ github.event_name }}" != "pull_request" ]; then
+                      echo "::error title=Signing validation missing::Formal release and tag builds must have a validated signing key."
+                      exit 1
+                    fi
+                    echo "Unsigned merged-PR verification build; GitHub Release publication is disabled for this event."
                     echo "SIGNING_STATUS=unsigned" >> "$GITHUB_ENV"
                     echo "SIGNING_VALIDATION=skipped" >> "$GITHUB_ENV"
                     {
@@ -217,6 +234,28 @@ jobs:
                   cp android-build-info.txt dist/android-build-info.txt
                   (cd dist && sha256sum * > SHA256SUMS.txt)
                   ls -lh dist
+
+            - name: Verify signed release APKs
+              if: github.event_name != 'pull_request'
+              run: |
+                  if [ "${SIGNING_STATUS:-}" != "configured" ] || [ "${SIGNING_VALIDATION:-}" != "passed" ]; then
+                    echo "::error title=Release signing gate failed::Signing was not configured and validated."
+                    exit 1
+                  fi
+                  APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+                  if [ -z "$APKSIGNER" ]; then
+                    echo "::error title=APK verification unavailable::apksigner was not found in the Android SDK."
+                    exit 1
+                  fi
+                  for apk in dist/*.apk; do
+                    verification="$("$APKSIGNER" verify --verbose --print-certs "$apk")"
+                    echo "$verification"
+                    actual_cert="$(echo "$verification" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+                    if [ "$actual_cert" != "$EXPECTED_RELEASE_CERT_SHA256" ]; then
+                      echo "::error title=Unexpected release certificate::$apk was signed by $actual_cert instead of the pinned certificate."
+                      exit 1
+                    fi
+                  done
 
             - name: Upload APK artifacts
               uses: actions/upload-artifact@v7

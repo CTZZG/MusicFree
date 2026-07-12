@@ -14,6 +14,20 @@ const mediaCacheStore = getOrCreateMMKV("cache.MediaCache", true);
 
 // 最多缓存1500条数据
 const maxCacheCount = 1500;
+const evictionCount = Math.floor(maxCacheCount / 2);
+const evictionBatchSize = 25;
+let evictionTask: Promise<void> | null = null;
+
+export async function evictMediaCacheKeys(
+    keys: readonly string[],
+    removeEntry: (key: string) => Promise<void>,
+    batchSize = evictionBatchSize,
+) {
+    for (let index = 0; index < keys.length; index += batchSize) {
+        await Promise.all(keys.slice(index, index + batchSize).map(removeEntry));
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+}
 
 /** 获取meta信息 */
 const getMediaCache = (mediaItem: ICommon.IMediaBase) => {
@@ -33,17 +47,13 @@ const getMediaCache = (mediaItem: ICommon.IMediaBase) => {
 const setMediaCache = (mediaItem: ICommon.IMediaBase) => {
     if (mediaItem.platform && mediaItem.id) {
         const allKeys = mediaCacheStore.getAllKeys();
-        if (allKeys.length >= maxCacheCount) {
-            // TODO: 随机删一半
-            for (let i = 0; i < maxCacheCount / 2; ++i) {
-                const rawCacheMedia = mediaCacheStore.getString(allKeys[i]);
-                const cacheData = rawCacheMedia
-                    ? safeParse(rawCacheMedia)
-                    : null;
-                clearLocalCaches(cacheData);
-
-                mediaCacheStore.delete(allKeys[i]);
-            }
+        if (allKeys.length >= maxCacheCount && !evictionTask) {
+            evictionTask = evictMediaCacheKeys(
+                allKeys.slice(0, evictionCount),
+                removeMediaCacheEntry,
+            ).finally(() => {
+                evictionTask = null;
+            });
         }
 
         mediaCacheStore.set(getMediaUniqueKey(mediaItem), JSON.stringify(mediaItem));
@@ -120,6 +130,7 @@ const getMediaCacheStats = () => {
 };
 
 const clearAllMediaCache = async () => {
+    await evictionTask;
     const keys = mediaCacheStore.getAllKeys();
     await Promise.all(
         keys.map(async key => {
@@ -142,6 +153,7 @@ const MediaCache = {
     getMediaCacheEntries,
     getMediaCacheStats,
     clearAllMediaCache,
+    waitForPendingEviction: async () => evictionTask,
 };
 
 export default MediaCache;

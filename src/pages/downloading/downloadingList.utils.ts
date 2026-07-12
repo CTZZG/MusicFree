@@ -1,4 +1,3 @@
-import { exists } from "react-native-fs";
 import { getDirectory, removeFileScheme } from "@/utils/fileUtils";
 import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
@@ -9,6 +8,7 @@ import {
     normalizeDownloadWriteResult,
     type DownloadWriteResult,
 } from "@/core/downloadFinalizationPolicy";
+import { localFileExistsResolver } from "@/utils/localFileStatusCache";
 
 type TFunction = ReturnType<typeof useI18N>["t"];
 
@@ -74,11 +74,20 @@ export async function resolveCompletedDownloadFileExists(
     if (!filePath || filePath.startsWith("content://")) {
         return null;
     }
-    try {
-        return await exists(filePath);
-    } catch {
-        return false;
-    }
+    return localFileExistsResolver.resolve(filePath);
+}
+
+export interface ICompletedDownloadFileEntry {
+    key: string;
+    path: string | null;
+}
+
+export function getCompletedDownloadFileSignature(
+    entries: readonly ICompletedDownloadFileEntry[],
+) {
+    return entries
+        .map(entry => `${entry.key}\u0000${entry.path ?? ""}`)
+        .join("\u0001");
 }
 
 export function getCompletedDownloadFileStatusFromExists(

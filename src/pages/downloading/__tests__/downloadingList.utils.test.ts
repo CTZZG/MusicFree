@@ -37,6 +37,7 @@ jest.mock("react-native-fs", () => ({
 import { DownloadStatus } from "@/core/downloader";
 import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import {
+    getCompletedDownloadFileSignature,
     getDownloadDetailLyricStatusText,
     getDownloadDetailMetadataStatusText,
     getDownloadWriteStatus,
@@ -45,6 +46,26 @@ import {
 } from "../downloadingList.utils";
 
 const mockGetMediaExtraProperty = getMediaExtraProperty as jest.Mock;
+
+describe("completed download file signature", () => {
+    it("only changes when a completed key or path changes", () => {
+        const first = getCompletedDownloadFileSignature([
+            { key: "a", path: "/music/a.flac" },
+            { key: "b", path: "/music/b.flac" },
+        ]);
+        const same = getCompletedDownloadFileSignature([
+            { key: "a", path: "/music/a.flac" },
+            { key: "b", path: "/music/b.flac" },
+        ]);
+        const changed = getCompletedDownloadFileSignature([
+            { key: "a", path: "/music/a-new.flac" },
+            { key: "b", path: "/music/b.flac" },
+        ]);
+
+        expect(same).toBe(first);
+        expect(changed).not.toBe(first);
+    });
+});
 
 describe("download write status helpers", () => {
     const musicItem = {

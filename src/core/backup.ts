@@ -5,6 +5,7 @@ import PluginManager from "./pluginManager";
 import MusicSheet from "@/core/musicSheet";
 import { ResumeMode } from "@/constants/commonConst.ts";
 import LocalMusicSheet from "@/core/localMusicSheet";
+import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
 
 /**
  * 结果：一份大的json文件
@@ -252,6 +253,14 @@ async function resumePlugins(
         }
 
         try {
+            const validation = validateRemoteInstallUrl(plugin.srcUrl);
+            if (!validation.ok) {
+                report.failedCount += 1;
+                report.failureReasons.push(
+                    `${plugin.srcUrl}: ${validation.reason}`,
+                );
+                continue;
+            }
             const installedPlugin = validPlugins.find(
                 validPlugin =>
                     validPlugin.instance.srcUrl === plugin.srcUrl &&
@@ -394,6 +403,14 @@ async function resumePluginBackupV2Installed(
 
         if (item.sourceType === "network" && item.srcUrl) {
             try {
+                const validation = validateRemoteInstallUrl(item.srcUrl);
+                if (!validation.ok) {
+                    report.failedCount += 1;
+                    report.failureReasons.push(
+                        `${item.name}: ${validation.reason}`,
+                    );
+                    continue;
+                }
                 const result = await PluginManager.installPluginFromUrl(
                     item.srcUrl,
                 );

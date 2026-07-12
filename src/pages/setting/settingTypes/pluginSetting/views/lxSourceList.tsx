@@ -176,7 +176,9 @@ export default function LxSourceList() {
 
     return (
         <>
-            <AppBar>{t("lxSource.title")}</AppBar>
+            <AppBar backgroundColor="transparent" spacious>
+                {t("lxSource.title")}
+            </AppBar>
             <HorizontalSafeAreaView style={globalStyle.flex1}>
                 {loading ? (
                     <Loading />

@@ -6,12 +6,13 @@ export function useOnMounted() {
 
     useEffect(() => {
         onMounted.current = true;
-        setTimeout(() => {
+        const timer = setTimeout(() => {
             setLoading(false);
         });
 
         return () => {
             onMounted.current = false;
+            clearTimeout(timer);
         };
     }, []);
 

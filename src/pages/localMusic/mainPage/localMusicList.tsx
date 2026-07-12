@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { exists } from "react-native-fs";
 
 import Icon, { IIconName } from "@/components/base/icon";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
@@ -18,6 +17,7 @@ import TrackPlayer, { useCurrentMusic } from "@/core/trackPlayer";
 import useColors from "@/hooks/useColors";
 import { getLocalPath, getMediaUniqueKey } from "@/utils/mediaUtils";
 import { removeFileScheme } from "@/utils/fileUtils";
+import { localFileExistsResolver } from "@/utils/localFileStatusCache";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import Color from "color";
@@ -64,7 +64,7 @@ async function resolveLocalMusicFileStatus(
         return "unknown";
     }
     const fsPath = normalizeLocalMusicFsPath(localPath);
-    const fileExists = await exists(fsPath).catch(() => false);
+    const fileExists = await localFileExistsResolver.resolve(fsPath);
     return fileExists ? "exists" : "missing";
 }
 
@@ -176,6 +176,26 @@ export default function LocalMusicList() {
     const [fileStatusMap, setFileStatusMap] = useState<
         Record<string, LocalMusicFileStatus>
     >({});
+    const fileStatusGeneration = useRef(0);
+    const fileStatusEntries = useMemo(
+        () =>
+            musicList.map(musicItem => {
+                const key = getMediaUniqueKey(musicItem);
+                const localPath = getLocalPath(musicItem);
+                const fsPath = localPath
+                    ? normalizeLocalMusicFsPath(localPath)
+                    : null;
+                return { key, fsPath, musicItem };
+            }),
+        [musicList],
+    );
+    const fileStatusSignature = useMemo(
+        () =>
+            fileStatusEntries
+                .map(entry => `${entry.key}\u0000${entry.fsPath ?? ""}`)
+                .join("\u0001"),
+        [fileStatusEntries],
+    );
 
     const visibleMusicList = useMemo(
         () => musicList.filter(musicItem => !LocalMusicSheet.isHiddenMusic(musicItem)),
@@ -426,11 +446,20 @@ export default function LocalMusicList() {
         fileStatusStats.missing > 0;
 
     useEffect(() => {
-        let cancelled = false;
+        const generation = ++fileStatusGeneration.current;
         const initialStatusMap: Record<string, LocalMusicFileStatus> = {};
 
-        musicList.forEach(musicItem => {
-            initialStatusMap[getMediaUniqueKey(musicItem)] = "unknown";
+        fileStatusEntries.forEach(({ key, fsPath }) => {
+            if (!fsPath) {
+                initialStatusMap[key] = "unavailable";
+            } else if (fsPath.startsWith("content://")) {
+                initialStatusMap[key] = "unknown";
+            } else {
+                const cached = localFileExistsResolver.peek(fsPath);
+                initialStatusMap[key] = cached === undefined
+                    ? "unknown"
+                    : cached ? "exists" : "missing";
+            }
         });
         setFileStatusMap(prev => {
             const next = { ...initialStatusMap };
@@ -442,21 +471,24 @@ export default function LocalMusicList() {
             return next;
         });
 
-        Promise.all(
-            musicList.map(async musicItem => [
-                getMediaUniqueKey(musicItem),
-                await resolveLocalMusicFileStatus(musicItem),
-            ] as const),
-        ).then(entries => {
-            if (!cancelled) {
-                setFileStatusMap(Object.fromEntries(entries));
+        fileStatusEntries.forEach(({ key, fsPath, musicItem }) => {
+            if (!fsPath || fsPath.startsWith("content://")) {
+                return;
             }
+            resolveLocalMusicFileStatus(musicItem).then(status => {
+                if (fileStatusGeneration.current !== generation) {
+                    return;
+                }
+                setFileStatusMap(prev =>
+                    prev[key] === status ? prev : { ...prev, [key]: status },
+                );
+            });
         });
 
         return () => {
-            cancelled = true;
+            fileStatusGeneration.current += 1;
         };
-    }, [musicList]);
+    }, [fileStatusEntries, fileStatusSignature]);
 
     function selectViewMode(nextViewMode: LocalMusicViewMode) {
         setViewMode(nextViewMode);

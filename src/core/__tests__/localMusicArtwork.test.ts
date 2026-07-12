@@ -60,12 +60,38 @@ describe("createLocalMusicArtworkResolver", () => {
     });
 
     it("uses and caches the empty fallback when extraction fails", async () => {
+        let now = 100;
         const loader = jest.fn().mockRejectedValue(new Error("unsupported"));
-        const resolver = createLocalMusicArtworkResolver(loader);
+        const resolver = createLocalMusicArtworkResolver(loader, 3, {
+            failureTtlMs: 10,
+            now: () => now,
+        });
 
         await expect(resolver.resolve("/music/no-cover.dsf")).resolves.toBe("");
         await expect(resolver.resolve("/music/no-cover.dsf")).resolves.toBe("");
         expect(loader).toHaveBeenCalledTimes(1);
+
+        now += 11;
+        await expect(resolver.resolve("/music/no-cover.dsf")).resolves.toBe("");
+        expect(loader).toHaveBeenCalledTimes(2);
+    });
+
+    it("evicts least recently used artwork and supports path invalidation", async () => {
+        const loader = jest.fn(async path => `file:///cache/${path}.jpg`);
+        const resolver = createLocalMusicArtworkResolver(loader, 2, {
+            maxEntries: 2,
+        });
+
+        await resolver.resolve("a");
+        await resolver.resolve("b");
+        await resolver.resolve("a");
+        await resolver.resolve("c");
+        await resolver.resolve("b");
+        expect(loader).toHaveBeenCalledTimes(4);
+
+        resolver.invalidate("a");
+        await resolver.resolve("a");
+        expect(loader).toHaveBeenCalledTimes(5);
     });
 });
 

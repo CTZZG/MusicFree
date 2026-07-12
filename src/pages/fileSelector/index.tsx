@@ -59,8 +59,11 @@ export default function FileSelector() {
     const navigation = useNavigation();
     const colors = useColors();
     const [loading, setLoading] = useState(false);
+    const loadGeneration = useRef(0);
 
     useEffect(() => {
+        const generation = ++loadGeneration.current;
+        currentPathRef.current = currentPath;
         (async () => {
             // 路径变化时，重新读取
             setLoading(true);
@@ -79,6 +82,7 @@ export default function FileSelector() {
                                     )
                                 ).every(val => val)
                             ) {
+                                if (generation !== loadGeneration.current) return;
                                 setFilesData(
                                     sdCardPaths.map(_ => ({
                                         type: "folder",
@@ -129,15 +133,20 @@ export default function FileSelector() {
                                 path: _.path,
                             }));
                     }
+                    if (generation !== loadGeneration.current) return;
                     setFilesData([...folders, ...files]);
                 }
             } catch {
-                setFilesData([]);
+                if (generation === loadGeneration.current) setFilesData([]);
             }
-            setLoading(false);
-            currentPathRef.current = currentPath;
+            if (generation === loadGeneration.current) setLoading(false);
         })();
-    }, [currentPath.path]);
+        return () => {
+            if (loadGeneration.current === generation) {
+                loadGeneration.current = generation + 1;
+            }
+        };
+    }, [currentPath, fileType, matchExtension]);
 
     useHardwareBack(() => {
         // 注意闭包
@@ -173,10 +182,10 @@ export default function FileSelector() {
                 );
             }
         },
-        [],
+        [multi],
     );
 
-    const renderItem = ({ item }: { item: IFileItem }) => (
+    const renderItem = useCallback(({ item }: { item: IFileItem }) => (
         <FileItem
             path={item.path}
             type={item.type}
@@ -196,7 +205,7 @@ export default function FileSelector() {
                 selectPath(item, checked);
             }}
         />
-    );
+    ), [checkedPaths, currentPath.path, selectPath]);
 
     const currentPageAllChecked = useMemo(() => {
         return (
@@ -234,6 +243,8 @@ export default function FileSelector() {
                         // 返回上一级
                         if (currentPath.parent !== null) {
                             setCurrentPath(currentPath.parent);
+                        } else {
+                            navigation.goBack();
                         }
                     }}
                 />
@@ -254,6 +265,7 @@ export default function FileSelector() {
                         ListEmptyComponent={Empty}
                         style={globalStyle.fwflex1}
                         data={filesData}
+                        keyExtractor={item => `${item.type}:${item.path}`}
                         getItemLayout={(_, index) => ({
                             length: ITEM_HEIGHT,
                             offset: ITEM_HEIGHT * index,

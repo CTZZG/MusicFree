@@ -47,7 +47,7 @@ jest.mock("react-native-fs", () => ({
     unlink: jest.fn(() => Promise.resolve()),
 }));
 
-import MediaCache from "../mediaCache";
+import MediaCache, { evictMediaCacheKeys } from "../mediaCache";
 import { exists, unlink } from "react-native-fs";
 
 const mockExists = exists as jest.Mock;
@@ -130,5 +130,27 @@ describe("MediaCache", () => {
         expect(getMockStores().get("cache.MediaCache")!.has("test@track-1")).toBe(
             false,
         );
+    });
+
+    it("evicts entries in bounded batches", async () => {
+        jest.useFakeTimers();
+        const active: number[] = [];
+        let running = 0;
+        let maxRunning = 0;
+        const removeEntry = jest.fn(async (key: string) => {
+            running++;
+            maxRunning = Math.max(maxRunning, running);
+            active.push(Number(key));
+            await Promise.resolve();
+            running--;
+        });
+
+        const task = evictMediaCacheKeys(["1", "2", "3", "4", "5"], removeEntry, 2);
+        await jest.runAllTimersAsync();
+        await task;
+
+        expect(active).toEqual([1, 2, 3, 4, 5]);
+        expect(maxRunning).toBeLessThanOrEqual(2);
+        jest.useRealTimers();
     });
 });

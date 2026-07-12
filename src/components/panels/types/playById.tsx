@@ -8,6 +8,7 @@ import useColors from "@/hooks/useColors";
 import rpx, { vmax } from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import React, { useMemo, useState } from "react";
+import { useOnMounted } from "@/hooks/useMounted";
 import { StyleSheet, View } from "react-native";
 import { Pressable, TextInput } from "react-native-gesture-handler";
 import NoPlugin from "@/components/base/noPlugin";
@@ -44,6 +45,7 @@ export default function PlayById() {
     );
     const [musicId, setMusicId] = useState("");
     const [loading, setLoading] = useState(false);
+    const { onMounted } = useOnMounted();
 
     const handlePlay = async () => {
         if (loading) {
@@ -92,14 +94,14 @@ export default function PlayById() {
                     musicInfo?.copyrightId || musicBase.copyrightId,
             } as IMusic.IMusicItem;
 
-            hidePanel();
             await TrackPlayer.play(musicItem);
+            hidePanel();
             navigate(ROUTE_PATH.MUSIC_DETAIL);
             Toast.success(t("panel.playById.playingNow"));
         } catch {
             Toast.warn(t("panel.playById.fetchFailed"));
         } finally {
-            setLoading(false);
+            if (onMounted()) setLoading(false);
         }
     };
 

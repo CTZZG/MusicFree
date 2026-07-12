@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ImageRequireSource } from "react-native";
 import { Image, ImageProps } from "expo-image";
 
@@ -10,7 +10,7 @@ interface IImageProps {
 }
 export default function (props: IImageProps) {
     const { style, placeholderSource, defaultSource, source } = props ?? {};
-    const [isError, setIsError] = useState(false);
+    const [failedSourceKey, setFailedSourceKey] = useState<string>();
 
 
     let realSource: IImageProps["source"];
@@ -26,9 +26,8 @@ export default function (props: IImageProps) {
     }
 
 
-    useEffect(() => {
-        setIsError(false);
-    }, [source]);
+    const sourceKey = useMemo(() => JSON.stringify(realSource ?? null), [realSource]);
+    const isError = failedSourceKey === sourceKey;
 
 
     return (
@@ -36,8 +35,7 @@ export default function (props: IImageProps) {
             style={style}
             source={isError ? placeholderSource : realSource}
             onError={() => {
-                setIsError(true);
-                console.error("Image load error:", realSource);
+                setFailedSourceKey(sourceKey);
             }}
             defaultSource={defaultSource}
             placeholder={defaultSource}

@@ -9,10 +9,12 @@ import {
 } from "./musicHistory";
 import { useMusicSheetsSnapshot } from "./musicSheet";
 import {
-    buildSmartSheetLibrarySnapshot,
+    createSmartSheetLibrarySnapshotCache,
     ISmartSheetFacet,
     ISmartSheetLibrarySnapshot,
 } from "./smartMusicSheetPolicy";
+
+const smartSheetLibrarySnapshotCache = createSmartSheetLibrarySnapshotCache();
 
 export type SmartSheetType =
     | "recommended"
@@ -39,22 +41,27 @@ export function useSmartSheetLibrarySnapshot() {
     const playStats = useMusicPlayStats();
     const localMusicList = LocalMusicSheet.useMusicList();
     const sheets = useMusicSheetsSnapshot();
+    const downloadedMusicList = useMemo(
+        () =>
+            localMusicList.filter(
+                musicItem =>
+                    musicItem.platform !== localPluginPlatform &&
+                    !!getLocalPath(musicItem),
+            ),
+        [localMusicList],
+    );
 
     return useMemo(
         () =>
-            buildSmartSheetLibrarySnapshot({
+            smartSheetLibrarySnapshotCache.get({
                 history,
                 playStats,
                 localMusicList,
-                downloadedMusicList: localMusicList.filter(
-                    musicItem =>
-                        musicItem.platform !== localPluginPlatform &&
-                        !!getLocalPath(musicItem),
-                ),
+                downloadedMusicList,
                 localPluginPlatform,
                 sheets,
             }),
-        [history, localMusicList, playStats, sheets],
+        [downloadedMusicList, history, localMusicList, playStats, sheets],
     );
 }
 

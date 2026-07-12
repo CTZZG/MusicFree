@@ -21,6 +21,8 @@ import {
     findLocalMusicItem,
     resolveLocalFileCheckItem,
 } from "@/utils/localMusicStatus";
+import { localFileExistsResolver } from "@/utils/localFileStatusCache";
+import { invalidateLocalMusicArtworkCache } from "./localMusicArtworkManager";
 import { errorLog, trace } from "@/utils/log";
 import SerializedStateRepository from "@/utils/serializedStateRepository";
 import {
@@ -31,7 +33,7 @@ import StateMapper from "@/utils/stateMapper";
 import { getStorage, setStorage, setStorageStrict } from "@/utils/storage";
 import CryptoJs from "crypto-js";
 import { nanoid } from "nanoid";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ReadDirItem, exists, readDir, unlink } from "react-native-fs";
 import MusicSheet from "./musicSheet";
 
@@ -152,6 +154,13 @@ export async function addMusic(
     musicItem: IMusic.IMusicItem | IMusic.IMusicItem[],
 ) {
     const musicItems = Array.isArray(musicItem) ? musicItem : [musicItem];
+    musicItems.forEach(item => {
+        const localPath = getLocalPath(item);
+        if (localPath) {
+            localFileExistsResolver.invalidate(normalizeFsPath(localPath));
+            invalidateLocalMusicArtworkCache(localPath);
+        }
+    });
     await localSheetRepository.mutate(current => {
         const newSheet = [...current];
         musicItems.forEach(mi => {
@@ -164,6 +173,19 @@ export async function addMusic(
 }
 
 async function upsertMusic(musicItem: IMusic.IMusicItem) {
+    const previousMusicItem = localSheet.find(item =>
+        isSameMediaItem(item, musicItem),
+    );
+    const previousLocalPath = previousMusicItem
+        ? getLocalPath(previousMusicItem)
+        : null;
+    const nextLocalPath = getLocalPath(musicItem);
+    [previousLocalPath, nextLocalPath].forEach(localPath => {
+        if (localPath) {
+            localFileExistsResolver.invalidate(normalizeFsPath(localPath));
+            invalidateLocalMusicArtworkCache(localPath);
+        }
+    });
     await localSheetRepository.mutate(current => {
         const idx = current.findIndex(item => isSameMediaItem(item, musicItem));
         if (idx === -1) {
@@ -237,6 +259,10 @@ export async function removeMusic(
                 throw e;
             }
         }
+    }
+    if (removedLocalPath) {
+        localFileExistsResolver.invalidate(normalizeFsPath(removedLocalPath));
+        invalidateLocalMusicArtworkCache(removedLocalPath);
     }
 }
 
@@ -948,41 +974,42 @@ function useIsLocal(musicItem: IMusic.IMusicItem | null) {
 
 function useLocalFileExists(musicItem: IMusic.IMusicItem | null) {
     const localMusicState = localSheetStateMapper.useMappedState();
-    const [fileExists, setFileExists] = useState<boolean | null>(null);
+    const requestGeneration = useRef(0);
+    const fileCheckItem = useMemo(
+        () => resolveLocalFileCheckItem(localMusicState, musicItem),
+        [localMusicState, musicItem],
+    );
+    const localPath = fileCheckItem ? getLocalPath(fileCheckItem) : null;
+    const fsPath = localPath ? normalizeFsPath(localPath) : null;
+    const [fileStatus, setFileStatus] = useState<{
+        path: string | null;
+        value: boolean | null;
+    }>({ path: null, value: null });
 
     useEffect(() => {
-        let cancelled = false;
-        async function checkFileExists() {
-            if (!musicItem) {
-                setFileExists(null);
-                return;
-            }
-            const fileCheckItem = resolveLocalFileCheckItem(
-                localMusicState,
-                musicItem,
-            );
-            const localPath = fileCheckItem
-                ? getLocalPath(fileCheckItem)
-                : null;
-            if (!localPath) {
-                setFileExists(null);
-                return;
-            }
-            const fsPath = normalizeFsPath(localPath);
-            const result = await exists(fsPath).catch(() => false);
-            if (!cancelled) {
-                setFileExists(result);
-            }
+        const generation = ++requestGeneration.current;
+        if (!fsPath || fsPath.startsWith("content://")) {
+            setFileStatus({ path: fsPath, value: null });
+            return;
         }
 
-        checkFileExists();
+        const cached = localFileExistsResolver.peek(fsPath);
+        setFileStatus({ path: fsPath, value: cached ?? null });
+        localFileExistsResolver.resolve(fsPath).then(result => {
+            if (
+                requestGeneration.current === generation &&
+                fsPath === normalizeFsPath(localPath ?? "")
+            ) {
+                setFileStatus({ path: fsPath, value: result });
+            }
+        });
 
         return () => {
-            cancelled = true;
+            requestGeneration.current += 1;
         };
-    }, [localMusicState, musicItem]);
+    }, [fsPath, localPath]);
 
-    return fileExists;
+    return fileStatus.path === fsPath ? fileStatus.value : null;
 }
 
 function getMusicList() {
@@ -1007,6 +1034,7 @@ async function updateMusicList(
 
 async function relocateMusic(musicItem: IMusic.IMusicItem, newPath: string) {
     const nextLocalPath = normalizeFsPath(newPath);
+    const previousLocalPath = getLocalPath(musicItem);
     if (!isSupportedLocalMediaFile(nextLocalPath)) {
         throw new Error("不支持的音频格式");
     }
@@ -1030,6 +1058,12 @@ async function relocateMusic(musicItem: IMusic.IMusicItem, newPath: string) {
     });
 
     await syncLocalMusicPathReferences(updatedMusicItem!);
+    [previousLocalPath, nextLocalPath].forEach(localPath => {
+        if (localPath) {
+            localFileExistsResolver.invalidate(normalizeFsPath(localPath));
+            invalidateLocalMusicArtworkCache(localPath);
+        }
+    });
     return updatedMusicItem!;
 }
 

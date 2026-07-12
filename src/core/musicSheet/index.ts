@@ -221,6 +221,7 @@ class MusicSheetClazz implements IInjectable {
 
     // 只有排序器会用到，不应该在其他地方调用
     async setSortedSheets(sheets: IMusic.IMusicSheetItemBase[]) {
+        const previousSheets = getDefaultStore().get(musicSheetsBaseAtom);
         let newSheets = [...sheets];
         // 检查是否有默认歌单
         const defaultSheetIndex = sheets.findIndex(it => it.id === _defaultSheet.id);
@@ -235,19 +236,18 @@ class MusicSheetClazz implements IInjectable {
             newSheets.unshift(defaultSheet);
         }
 
-        // 如果歌单数量变化，清理 musicListMap 中不存在的歌单数据
-        if (newSheets.length < getDefaultStore().get(musicSheetsBaseAtom).length) {
-            const existingSheetIds = new Set(newSheets.map(it => it.id));
-            for (let sheetId of musicListMap.keys()) {
-                if (!existingSheetIds.has(sheetId)) {
-                    musicListMap.delete(sheetId);
-                    storage.removeMusicList(sheetId);
-                }
-            }
-        }
+        const existingSheetIds = new Set(newSheets.map(it => it.id));
+        const removedSheetIds = previousSheets
+            .map(it => it.id)
+            .filter(sheetId => !existingSheetIds.has(sheetId));
 
-        getDefaultStore().set(musicSheetsBaseAtom, newSheets);
+        // 索引是权威数据。只有新索引成功落盘后，才提交内存状态并清理孤立数据。
         await storage.setSheets(newSheets);
+        getDefaultStore().set(musicSheetsBaseAtom, newSheets);
+        for (const sheetId of removedSheetIds) {
+            musicListMap.delete(sheetId);
+            storage.removeMusicList(sheetId);
+        }
     }
 
 
@@ -523,9 +523,7 @@ class MusicSheetClazz implements IInjectable {
             patchData.coverImg = musicList.at(0)?.artwork;
         }
         patchData.worksNum = musicList.length;
-        await this.updateMusicSheetBase(sheetId, {
-            coverImg: musicList.at(0)?.artwork,
-        });
+        await this.updateMusicSheetBase(sheetId, patchData);
 
         await storage.setMusicList(sheetId, musicList.musicList);
         ee.emit("UpdateMusicList", {
@@ -633,8 +631,8 @@ class MusicSheetClazz implements IInjectable {
     }
 
     async setStarredMusicSheets(sheets: IMusic.IMusicSheetItem[]) {
-        getDefaultStore().set(starredMusicSheetsAtom, sheets);
         await storage.setStarredSheets(sheets);
+        getDefaultStore().set(starredMusicSheetsAtom, sheets);
     }
 
     async resumeStarredMusicSheets(sheets?: IMusic.IMusicSheetItem[]) {

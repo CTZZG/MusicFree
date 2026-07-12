@@ -16,6 +16,8 @@ import {
 import React, { useMemo } from "react";
 import { SectionList, StyleSheet } from "react-native";
 import rpx from "@/utils/rpx";
+import TextButton from "@/components/base/textButton";
+import { useState } from "react";
 
 interface ISmartSheetListItem {
     key: string;
@@ -34,6 +36,11 @@ export default function SmartSheets() {
     const snapshot = useSmartSheetLibrarySnapshot();
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
     const cardStyle = useShortcutCardStyle({ compact: true });
+    const [expandedFacets, setExpandedFacets] = useState({
+        artist: false,
+        album: false,
+        source: false,
+    });
 
     const sections = useMemo(() => {
         const builtInItems: ISmartSheetListItem[] = [
@@ -80,32 +87,38 @@ export default function SmartSheets() {
                 count: snapshot.downloaded.length,
             },
         ];
-        const artistItems = snapshot.artistFacets.slice(0, 10).map(item => ({
-            key: `artist-${item.value}`,
-            type: "artist" as const,
-            value: item.value,
-            title: item.title,
-            icon: "user" as const,
-            count: item.count,
-        }));
-        const albumItems = snapshot.albumFacets.slice(0, 10).map(item => ({
-            key: `album-${item.value}`,
-            type: "album" as const,
-            value: item.value,
-            title: item.title,
-            icon: "album-outline" as const,
-            count: item.count,
-        }));
-        const sourceItems = snapshot.sourceFacets.slice(0, 8).map(item => ({
-            key: `plugin-source-${item.value}`,
-            type: "plugin-source" as const,
-            platform: item.value,
-            title: t("smartSheet.pluginSourceTitle", {
-                platform: item.title,
-            }),
-            icon: "javascript" as const,
-            count: item.count,
-        }));
+        const artistItems = snapshot.artistFacets
+            .slice(0, expandedFacets.artist ? undefined : 10)
+            .map(item => ({
+                key: `artist-${item.value}`,
+                type: "artist" as const,
+                value: item.value,
+                title: item.title,
+                icon: "user" as const,
+                count: item.count,
+            }));
+        const albumItems = snapshot.albumFacets
+            .slice(0, expandedFacets.album ? undefined : 10)
+            .map(item => ({
+                key: `album-${item.value}`,
+                type: "album" as const,
+                value: item.value,
+                title: item.title,
+                icon: "album-outline" as const,
+                count: item.count,
+            }));
+        const sourceItems = snapshot.sourceFacets
+            .slice(0, expandedFacets.source ? undefined : 8)
+            .map(item => ({
+                key: `plugin-source-${item.value}`,
+                type: "plugin-source" as const,
+                platform: item.value,
+                title: t("smartSheet.pluginSourceTitle", {
+                    platform: item.title,
+                }),
+                icon: "javascript" as const,
+                count: item.count,
+            }));
 
         return [
             {
@@ -128,17 +141,23 @@ export default function SmartSheets() {
             ...(artistItems.length ? [{
                 title: t("smartSheet.artists"),
                 data: artistItems,
+                facet: "artist" as const,
+                total: snapshot.artistFacets.length,
             }] : []),
             ...(albumItems.length ? [{
                 title: t("smartSheet.albums"),
                 data: albumItems,
+                facet: "album" as const,
+                total: snapshot.albumFacets.length,
             }] : []),
             ...(sourceItems.length ? [{
                 title: t("smartSheet.pluginSources"),
                 data: sourceItems,
+                facet: "source" as const,
+                total: snapshot.sourceFacets.length,
             }] : []),
         ];
-    }, [snapshot, t]);
+    }, [expandedFacets, snapshot, t]);
 
     function openSmartSheet(item: ISmartSheetListItem) {
         navigate(ROUTE_PATH.SMART_SHEET_DETAIL, {
@@ -159,7 +178,23 @@ export default function SmartSheets() {
                 sections={sections}
                 keyExtractor={item => item.key}
                 renderSectionHeader={({ section }) => (
-                    <ShortcutSectionTitle>{section.title}</ShortcutSectionTitle>
+                    <ShortcutSectionTitle
+                        action={
+                            section.facet &&
+                            section.data.length < (section.total ?? 0) ? (
+                                    <TextButton
+                                        onPress={() => {
+                                            setExpandedFacets(current => ({
+                                                ...current,
+                                                [section.facet!]: true,
+                                            }));
+                                        }}>
+                                        {t("smartSheet.limit.all")}
+                                    </TextButton>
+                                ) : undefined
+                        }>
+                        {section.title}
+                    </ShortcutSectionTitle>
                 )}
                 renderItem={({ item }) => (
                     <ListItem

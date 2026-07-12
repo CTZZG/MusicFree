@@ -5,7 +5,6 @@ import bootstrap from "./bootstrap/bootstrap";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Dialogs from "@/components/dialogs";
 import Panels from "@/components/panels";
-import PageBackground from "@/components/base/pageBackground";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import Debug from "@/components/debug";
 import { PortalHost } from "@/components/base/portal";
@@ -94,7 +93,7 @@ export default function Pages() {
     return (
         <>
             <BootstrapComponent />
-            <ReducedMotionConfig mode={ReduceMotion.Never} />
+            <ReducedMotionConfig mode={ReduceMotion.System} />
             <GestureHandlerRootView style={globalStyle.flex1}>
                 <SafeAreaProvider>
                     <MusicBarLayoutProvider
@@ -107,7 +106,6 @@ export default function Pages() {
                             onStateChange={stageCurrentRouteName}>
                             <ErrorBoundary>
                                 <View style={globalStyle.flex1}>
-                                    <PageBackground />
                                     <Stack.Navigator
                                         initialRouteName={routes[0].path}
                                         screenOptions={{

@@ -29,7 +29,9 @@ export default function PluginSort() {
     }
     return (
         <>
-            <AppBar>{t("pluginSetting.menu.sort")}</AppBar>
+            <AppBar backgroundColor="transparent" spacious>
+                {t("pluginSetting.menu.sort")}
+            </AppBar>
             <HorizontalSafeAreaView style={style.sortWrapper}>
                 <>
                     <ThemeText fontWeight="bold">{t("pluginSetting.menu.sort")}</ThemeText>

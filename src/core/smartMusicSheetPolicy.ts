@@ -1,5 +1,7 @@
 import type { IMusicPlayStat } from "@/types/core/musicHistory";
 
+const smartSheetScoreTimeBucket = 60 * 60 * 1000;
+
 export interface ISmartSheetFacet {
     value: string;
     title: string;
@@ -24,7 +26,7 @@ export interface ISmartSheetLibrarySnapshot {
     bySource: Map<string, IMusic.IMusicItem[]>;
 }
 
-interface IBuildSmartSheetSnapshotOptions {
+export interface IBuildSmartSheetSnapshotOptions {
     history: IMusic.IMusicItem[];
     playStats: Record<string, IMusicPlayStat>;
     localMusicList: IMusic.IMusicItem[];
@@ -34,12 +36,59 @@ interface IBuildSmartSheetSnapshotOptions {
     now?: number;
 }
 
+interface ISmartSheetLibraryIndex {
+    recentAdded: IMusic.IMusicItem[];
+    favorite: IMusic.IMusicItem[];
+    local: IMusic.IMusicItem[];
+    downloaded: IMusic.IMusicItem[];
+    known: IMusic.IMusicItem[];
+    knownByKey: Map<string, IMusic.IMusicItem>;
+    favoriteKeys: Set<string>;
+    localKeys: Set<string>;
+    sheetKeys: Set<string>;
+    addedAtByKey: Map<string, number>;
+    byArtist: Map<string, IMusic.IMusicItem[]>;
+    byAlbum: Map<string, IMusic.IMusicItem[]>;
+    bySource: Map<string, IMusic.IMusicItem[]>;
+}
+
+interface ISmartSheetDynamicSnapshot {
+    mostPlayed: IMusic.IMusicItem[];
+    recommended: IMusic.IMusicItem[];
+    artistFacets: ISmartSheetFacet[];
+    albumFacets: ISmartSheetFacet[];
+    sourceFacets: ISmartSheetFacet[];
+}
+
 function normalizeFacetValue(value?: string | null) {
     return `${value ?? ""}`.trim();
 }
 
 function getMediaUniqueKey(mediaItem: ICommon.IMediaBase) {
     return `${mediaItem.platform}@${mediaItem.id}`;
+}
+
+function isBasicMusicItemValid(musicItem: IMusic.IMusicItem | null | undefined) {
+    return !!(
+        musicItem &&
+        normalizeFacetValue(musicItem.id) &&
+        normalizeFacetValue(musicItem.platform) &&
+        normalizeFacetValue(musicItem.title)
+    );
+}
+
+function isObviouslyAvailableMusicItem(
+    musicItem: IMusic.IMusicItem | null | undefined,
+    localPluginPlatform: string,
+    localKeys: ReadonlySet<string>,
+) {
+    if (!isBasicMusicItemValid(musicItem)) {
+        return false;
+    }
+    return (
+        musicItem!.platform !== localPluginPlatform ||
+        localKeys.has(getMediaUniqueKey(musicItem!))
+    );
 }
 
 function dedupeMusicList(musicList: IMusic.IMusicItem[]) {
@@ -53,6 +102,30 @@ function dedupeMusicList(musicList: IMusic.IMusicItem[]) {
         }
     }
     return result;
+}
+
+function normalizeTimestamp(value: unknown) {
+    if (typeof value === "string" && value.trim() && !Number.isFinite(Number(value))) {
+        const parsed = Date.parse(value);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        return 0;
+    }
+    return numericValue < 10_000_000_000
+        ? numericValue * 1000
+        : numericValue;
+}
+
+export function getSmartSheetAddedAt(musicItem: IMusic.IMusicItem) {
+    return Math.max(
+        normalizeTimestamp(musicItem.$timestamp),
+        normalizeTimestamp(musicItem.addedAt),
+        normalizeTimestamp(musicItem.createAt),
+        normalizeTimestamp(musicItem.createdAt),
+    );
 }
 
 function getRecencyScore(lastPlayedAt: number, now: number) {
@@ -153,47 +226,69 @@ function diversifyRecommendations(
     return selected;
 }
 
-export function buildSmartSheetLibrarySnapshot(
+function buildHistoryLibraryRevision(history: IMusic.IMusicItem[]) {
+    return history
+        .filter(isBasicMusicItemValid)
+        .map(musicItem => [
+            getMediaUniqueKey(musicItem),
+            normalizeFacetValue(musicItem.title),
+            normalizeFacetValue(musicItem.artist),
+            normalizeFacetValue(musicItem.album),
+            normalizeFacetValue(musicItem.artwork),
+            getSmartSheetAddedAt(musicItem),
+        ].join("\u0001"))
+        .sort()
+        .join("\u0002");
+}
+
+function buildSmartSheetLibraryIndex(
     options: IBuildSmartSheetSnapshotOptions,
-): ISmartSheetLibrarySnapshot {
-    const now = options.now ?? Date.now();
-    const sheetMusic = options.sheets.flatMap(sheet => sheet.musicList ?? []);
+): ISmartSheetLibraryIndex {
+    const local = dedupeMusicList(options.localMusicList.filter(isBasicMusicItemValid));
+    const localKeys = new Set(local.map(getMediaUniqueKey));
+    const isAvailable = (musicItem: IMusic.IMusicItem) =>
+        isObviouslyAvailableMusicItem(
+            musicItem,
+            options.localPluginPlatform,
+            localKeys,
+        );
+    const sheetMusic = options.sheets
+        .flatMap(sheet => sheet.musicList ?? [])
+        .filter(isAvailable);
     const favorite = dedupeMusicList(
-        options.sheets.find(sheet => sheet.id === "favorite")?.musicList ?? [],
+        (options.sheets.find(sheet => sheet.id === "favorite")?.musicList ?? [])
+            .filter(isAvailable),
     );
-    const favoriteKeys = new Set(favorite.map(getMediaUniqueKey));
-    const localKeys = new Set(options.localMusicList.map(getMediaUniqueKey));
-    const sheetKeys = new Set(sheetMusic.map(getMediaUniqueKey));
+    const downloaded = dedupeMusicList(
+        options.downloadedMusicList.filter(isAvailable),
+    );
+    const validHistory = options.history.filter(isAvailable);
     const known = dedupeMusicList([
-        ...options.history,
-        ...options.localMusicList,
+        ...validHistory,
+        ...local,
         ...sheetMusic,
     ]);
-
-    const trackScores = new Map<string, number>();
-    for (const musicItem of known) {
+    const knownByKey = new Map(
+        known.map(musicItem => [getMediaUniqueKey(musicItem), musicItem]),
+    );
+    const favoriteKeys = new Set(favorite.map(getMediaUniqueKey));
+    const sheetKeys = new Set(sheetMusic.map(getMediaUniqueKey));
+    const addedAtByKey = new Map<string, number>();
+    for (const musicItem of [...validHistory, ...local, ...sheetMusic, ...downloaded]) {
         const key = getMediaUniqueKey(musicItem);
-        const stat = options.playStats[key];
-        const score =
-            Math.log2((stat?.count ?? 0) + 1) * 34 +
-            getRecencyScore(stat?.lastPlayedAt ?? 0, now) +
-            (favoriteKeys.has(key) ? 28 : 0) +
-            (localKeys.has(key) ? 8 : 0) +
-            (sheetKeys.has(key) ? 6 : 0) +
-            getRecentlyAddedScore(Number(musicItem.$timestamp) || 0, now);
-        trackScores.set(key, score);
+        addedAtByKey.set(
+            key,
+            Math.max(addedAtByKey.get(key) ?? 0, getSmartSheetAddedAt(musicItem)),
+        );
     }
 
-    const rankedMusic = [...known].sort((a, b) => {
-        const leftKey = getMediaUniqueKey(a);
-        const rightKey = getMediaUniqueKey(b);
-        return (
-            (trackScores.get(rightKey) ?? 0) -
-                (trackScores.get(leftKey) ?? 0) ||
-            Number(b.$timestamp ?? 0) - Number(a.$timestamp ?? 0)
+    const recentAdded = known
+        .filter(musicItem => (addedAtByKey.get(getMediaUniqueKey(musicItem)) ?? 0) > 0)
+        .sort((a, b) =>
+            (addedAtByKey.get(getMediaUniqueKey(b)) ?? 0) -
+                (addedAtByKey.get(getMediaUniqueKey(a)) ?? 0) ||
+            (b.$sortIndex ?? 0) - (a.$sortIndex ?? 0),
         );
-    });
-
     const byArtist = new Map<string, IMusic.IMusicItem[]>();
     const byAlbum = new Map<string, IMusic.IMusicItem[]>();
     const bySource = new Map<string, IMusic.IMusicItem[]>();
@@ -206,36 +301,238 @@ export function buildSmartSheetLibrarySnapshot(
         }
     }
 
-    const mostPlayed = Object.values(options.playStats)
-        .filter(stat => stat?.musicItem && stat.count > 0)
-        .sort(
-            (a, b) =>
-                b.count - a.count || b.lastPlayedAt - a.lastPlayedAt,
-        )
-        .map(stat => stat.musicItem);
-
     return {
-        recentPlayed: options.history,
-        recentAdded: dedupeMusicList(
-            [...sheetMusic]
-                .filter(musicItem => Number(musicItem.$timestamp) > 0)
-                .sort(
-                    (a, b) =>
-                        Number(b.$timestamp) - Number(a.$timestamp) ||
-                        (b.$sortIndex ?? 0) - (a.$sortIndex ?? 0),
-                ),
-        ),
-        mostPlayed,
-        recommended: diversifyRecommendations(rankedMusic),
+        recentAdded,
         favorite,
-        local: options.localMusicList,
-        downloaded: dedupeMusicList(options.downloadedMusicList),
+        local,
+        downloaded,
         known,
-        artistFacets: buildFacets(byArtist, trackScores),
-        albumFacets: buildFacets(byAlbum, trackScores),
-        sourceFacets: buildFacets(bySource, trackScores),
+        knownByKey,
+        favoriteKeys,
+        localKeys,
+        sheetKeys,
+        addedAtByKey,
         byArtist,
         byAlbum,
         bySource,
     };
+}
+
+function buildSmartSheetDynamicSnapshot(
+    index: ISmartSheetLibraryIndex,
+    options: IBuildSmartSheetSnapshotOptions,
+    now: number,
+): ISmartSheetDynamicSnapshot {
+    const trackScores = new Map<string, number>();
+    for (const musicItem of index.known) {
+        const key = getMediaUniqueKey(musicItem);
+        const stat = options.playStats[key];
+        const score =
+            Math.log2((stat?.count ?? 0) + 1) * 34 +
+            getRecencyScore(stat?.lastPlayedAt ?? 0, now) +
+            (index.favoriteKeys.has(key) ? 28 : 0) +
+            (index.localKeys.has(key) ? 8 : 0) +
+            (index.sheetKeys.has(key) ? 6 : 0) +
+            getRecentlyAddedScore(index.addedAtByKey.get(key) ?? 0, now);
+        trackScores.set(key, score);
+    }
+
+    const rankedMusic = [...index.known].sort((a, b) => {
+        const leftKey = getMediaUniqueKey(a);
+        const rightKey = getMediaUniqueKey(b);
+        return (
+            (trackScores.get(rightKey) ?? 0) -
+                (trackScores.get(leftKey) ?? 0) ||
+            (index.addedAtByKey.get(rightKey) ?? 0) -
+                (index.addedAtByKey.get(leftKey) ?? 0)
+        );
+    });
+
+    const mostPlayed = dedupeMusicList(
+        Object.values(options.playStats)
+            .filter(stat =>
+                stat?.musicItem &&
+                stat.count > 0 &&
+                isObviouslyAvailableMusicItem(
+                    stat.musicItem,
+                    options.localPluginPlatform,
+                    index.localKeys,
+                ),
+            )
+            .sort(
+                (a, b) =>
+                    b.count - a.count || b.lastPlayedAt - a.lastPlayedAt,
+            )
+            .map(stat =>
+                index.knownByKey.get(getMediaUniqueKey(stat.musicItem)) ??
+                stat.musicItem,
+            ),
+    );
+
+    return {
+        mostPlayed,
+        recommended: diversifyRecommendations(rankedMusic),
+        artistFacets: buildFacets(index.byArtist, trackScores),
+        albumFacets: buildFacets(index.byAlbum, trackScores),
+        sourceFacets: buildFacets(index.bySource, trackScores),
+    };
+}
+
+function buildRecentPlayed(
+    history: IMusic.IMusicItem[],
+    localPluginPlatform: string,
+    localKeys: ReadonlySet<string>,
+) {
+    return dedupeMusicList(
+        history.filter(musicItem =>
+            isObviouslyAvailableMusicItem(
+                musicItem,
+                localPluginPlatform,
+                localKeys,
+            ),
+        ),
+    );
+}
+
+function composeSmartSheetLibrarySnapshot(
+    index: ISmartSheetLibraryIndex,
+    dynamic: ISmartSheetDynamicSnapshot,
+    recentPlayed: IMusic.IMusicItem[],
+): ISmartSheetLibrarySnapshot {
+    return {
+        recentPlayed,
+        recentAdded: index.recentAdded,
+        mostPlayed: dynamic.mostPlayed,
+        recommended: dynamic.recommended,
+        favorite: index.favorite,
+        local: index.local,
+        downloaded: index.downloaded,
+        known: index.known,
+        artistFacets: dynamic.artistFacets,
+        albumFacets: dynamic.albumFacets,
+        sourceFacets: dynamic.sourceFacets,
+        byArtist: index.byArtist,
+        byAlbum: index.byAlbum,
+        bySource: index.bySource,
+    };
+}
+
+function getCacheScoringNow(now?: number) {
+    if (now !== undefined) {
+        return now;
+    }
+    const current = Date.now();
+    return current - current % smartSheetScoreTimeBucket;
+}
+
+export function createSmartSheetLibrarySnapshotCache() {
+    let indexEntry: {
+        localMusicList: IMusic.IMusicItem[];
+        downloadedMusicList: IMusic.IMusicItem[];
+        localPluginPlatform: string;
+        sheets: IMusic.IMusicSheetItem[];
+        historyLibraryRevision: string;
+        value: ISmartSheetLibraryIndex;
+    } | null = null;
+    let dynamicEntry: {
+        index: ISmartSheetLibraryIndex;
+        playStats: Record<string, IMusicPlayStat>;
+        now: number;
+        value: ISmartSheetDynamicSnapshot;
+    } | null = null;
+    let snapshotEntry: {
+        history: IMusic.IMusicItem[];
+        index: ISmartSheetLibraryIndex;
+        dynamic: ISmartSheetDynamicSnapshot;
+        value: ISmartSheetLibrarySnapshot;
+    } | null = null;
+
+    return {
+        get(options: IBuildSmartSheetSnapshotOptions) {
+            const historyLibraryRevision = buildHistoryLibraryRevision(options.history);
+            if (
+                !indexEntry ||
+                indexEntry.localMusicList !== options.localMusicList ||
+                indexEntry.downloadedMusicList !== options.downloadedMusicList ||
+                indexEntry.localPluginPlatform !== options.localPluginPlatform ||
+                indexEntry.sheets !== options.sheets ||
+                indexEntry.historyLibraryRevision !== historyLibraryRevision
+            ) {
+                indexEntry = {
+                    localMusicList: options.localMusicList,
+                    downloadedMusicList: options.downloadedMusicList,
+                    localPluginPlatform: options.localPluginPlatform,
+                    sheets: options.sheets,
+                    historyLibraryRevision,
+                    value: buildSmartSheetLibraryIndex(options),
+                };
+            }
+
+            const index = indexEntry.value;
+            const now = getCacheScoringNow(options.now);
+            if (
+                !dynamicEntry ||
+                dynamicEntry.index !== index ||
+                dynamicEntry.playStats !== options.playStats ||
+                dynamicEntry.now !== now
+            ) {
+                dynamicEntry = {
+                    index,
+                    playStats: options.playStats,
+                    now,
+                    value: buildSmartSheetDynamicSnapshot(index, options, now),
+                };
+            }
+
+            const dynamic = dynamicEntry.value;
+            if (
+                snapshotEntry?.history === options.history &&
+                snapshotEntry.index === index &&
+                snapshotEntry.dynamic === dynamic
+            ) {
+                return snapshotEntry.value;
+            }
+
+            snapshotEntry = {
+                history: options.history,
+                index,
+                dynamic,
+                value: composeSmartSheetLibrarySnapshot(
+                    index,
+                    dynamic,
+                    buildRecentPlayed(
+                        options.history,
+                        options.localPluginPlatform,
+                        index.localKeys,
+                    ),
+                ),
+            };
+            return snapshotEntry.value;
+        },
+        clear() {
+            indexEntry = null;
+            dynamicEntry = null;
+            snapshotEntry = null;
+        },
+    };
+}
+
+export function buildSmartSheetLibrarySnapshot(
+    options: IBuildSmartSheetSnapshotOptions,
+): ISmartSheetLibrarySnapshot {
+    const index = buildSmartSheetLibraryIndex(options);
+    const dynamic = buildSmartSheetDynamicSnapshot(
+        index,
+        options,
+        options.now ?? Date.now(),
+    );
+    return composeSmartSheetLibrarySnapshot(
+        index,
+        dynamic,
+        buildRecentPlayed(
+            options.history,
+            options.localPluginPlatform,
+            index.localKeys,
+        ),
+    );
 }

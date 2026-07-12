@@ -13,6 +13,7 @@ import {fileURLToPath} from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
+const expectedNitroVersion = '1.4.3';
 const nitroAndroidDir = path.join(
     rootDir,
     'node_modules',
@@ -33,7 +34,7 @@ const musicfreeDir = path.join(
 const patchPath = path.join(
     rootDir,
     'patches',
-    'react-native-nitro-player+1.4.1.patch',
+    `react-native-nitro-player+${expectedNitroVersion}.patch`,
 );
 const media3FfmpegAarPath = path.join(
     rootDir,
@@ -143,11 +144,17 @@ function forbidTokens(label, source, tokens) {
     }
 }
 
-function checkPatchAppliesReverse() {
+function checkPatchPackageState() {
     try {
+        const patchPackageEntry = path.join(
+            rootDir,
+            'node_modules',
+            'patch-package',
+            'index.js',
+        );
         execFileSync(
-            'git',
-            ['apply', '--reverse', '--check', relative(patchPath)],
+            process.execPath,
+            [patchPackageEntry, '--check'],
             {
                 cwd: rootDir,
                 encoding: 'utf8',
@@ -156,7 +163,7 @@ function checkPatchAppliesReverse() {
         );
     } catch (error) {
         errors.push(
-            `Patch no longer reverse-applies cleanly: ${relative(patchPath)}\n${error.stderr ?? error.message}`,
+            `patch-package state check failed for ${relative(patchPath)}\n${error.stderr ?? error.message}`,
         );
     }
 }
@@ -419,12 +426,11 @@ const ffmpegJniWrapperLegacy = read(files.ffmpegJniWrapperLegacy);
 const patch = read(files.patch);
 
 requireTokens('android/app/build.gradle', appGradle, [
+    'musicfreeEnableNitroFfmpeg',
+    'musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar',
     'Nitro Media3 FFmpeg is the only packaged audio extension path',
 ]);
 requireTokens('react-native-nitro-player/android/build.gradle', nitroGradle, [
-    'musicfreeEnableNitroFfmpeg',
-    'enableMusicFreeNitroFfmpeg',
-    'musicfree-media3-ffmpeg-decoder-$media3_version+1.aar',
     'MUSICFREE_ENABLE_WMA_EXTRACTOR',
     'musicfreeEnableWmaExtractor',
     'musicfreeEnableExperimentalWmaExtractor',
@@ -531,7 +537,6 @@ requireTokens('mediaFormatDiagnostics.ts', mediaFormatDiagnostics, [
 ]);
 requireTokens('patch-package patch', patch, [
     'MUSICFREE_ENABLE_WMA_EXTRACTOR',
-    'musicfreeEnableNitroFfmpeg',
     'MusicFreePlayerExtensions.kt',
     'MusicFreeExtractorsFactory.kt',
     'MusicFreeAudioExtractorRegistry.kt',
@@ -542,7 +547,7 @@ requireTokens('patch-package patch', patch, [
     'AsfWmaPayloadAssembler.kt',
     'AsfWmaExtractor.kt',
 ]);
-checkPatchAppliesReverse();
+checkPatchPackageState();
 checkPatchedAarCodecMapping();
 
 console.log('Nitro format extension audit');

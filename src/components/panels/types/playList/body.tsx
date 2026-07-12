@@ -41,7 +41,7 @@ interface IPlayListProps {
     isPlayLater?: boolean;
 }
 
-function _PlayListItem(props: IPlayListProps) {
+function PlayListItemView(props: IPlayListProps) {
     const colors = useColors();
     const { item, isCurrentMusic, isPlayLater } = props;
 
@@ -106,9 +106,14 @@ function _PlayListItem(props: IPlayListProps) {
 }
 
 const PlayListItem = React.memo(
-    _PlayListItem,
+    PlayListItemView,
     (prev, next) =>
         !!isSameMediaItem(prev.item, next.item) &&
+        prev.item.title === next.item.title &&
+        prev.item.artist === next.item.artist &&
+        prev.item.album === next.item.album &&
+        prev.item.artwork === next.item.artwork &&
+        prev.item.platform === next.item.platform &&
         prev.isCurrentMusic === next.isCurrentMusic &&
         prev.isPlayLater === next.isPlayLater,
 );
@@ -166,7 +171,7 @@ export default function Body(props: IBodyProps) {
             row.type === "normal" && isSameMediaItem(row.item, currentMusicItem),
         );
         return index === -1 ? undefined : index;
-    }, []);
+    }, [currentMusicItem, listData]);
 
     const renderItem = ({ item }: { item: IPlayListRow; index: number }) => {
         return item.type === "header" ? (

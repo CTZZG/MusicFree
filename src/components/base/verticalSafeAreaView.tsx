@@ -12,7 +12,10 @@ export default function VerticalSafeAreaView(
 ) {
     const { children, style, mode } = props;
     return (
-        <SafeAreaView style={style} mode={mode} edges={["top", "bottom"]}>
+        <SafeAreaView
+            style={style}
+            mode={mode}
+            edges={["top", "right", "bottom", "left"]}>
             {children}
         </SafeAreaView>
     );

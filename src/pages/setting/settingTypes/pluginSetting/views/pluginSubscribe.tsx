@@ -126,7 +126,9 @@ export default function PluginSubscribe() {
 
     return (
         <>
-            <AppBar>{t("pluginSetting.menu.subscriptionSetting")}</AppBar>
+            <AppBar backgroundColor="transparent" spacious>
+                {t("pluginSetting.menu.subscriptionSetting")}
+            </AppBar>
             <HorizontalSafeAreaView style={globalStyle.flex1}>
                 {loading ? (
                     <Loading />

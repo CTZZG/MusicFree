@@ -22,7 +22,11 @@ export default function ListEmpty(props: IEmptyProps) {
     const colors = useColors();
     const { t } = useI18N();
 
-    if (state === RequestStateCode.FINISHED || state === RequestStateCode.PARTLY_DONE) {
+    if (
+        state === RequestStateCode.IDLE ||
+        state === RequestStateCode.FINISHED ||
+        state === RequestStateCode.PARTLY_DONE
+    ) {
         return <View style={style.wrapper}>
             <ThemeText fontSize="title">
                 {title ?? t("common.emptyList")}

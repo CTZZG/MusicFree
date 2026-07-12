@@ -1,0 +1,21 @@
+# Round 20 音频格式样本矩阵
+
+该矩阵用于记录 Nitro/Media3 扩展格式的静态门禁与后续真机证据。样本文件不提交到仓库；本地或 CI 可通过 `MUSICFREE_FORMAT_SAMPLE_DIRS` 指定一个或多个样本目录。设置 `MUSICFREE_REQUIRE_FORMAT_SAMPLES=1` 后，缺少 Gate 3 必选样本会使审计失败。
+
+| 样本 ID | 格式 | Gate 3 | 验证重点 |
+| --- | --- | --- | --- |
+| `m4a-aac-small` | M4A/AAC | 可选 | AAC 回归、时长与 seek |
+| `m4a-alac-small` | M4A/ALAC | 必选 | ALAC 解码与 metadata |
+| `m4a-alac-long` | M4A/ALAC | 必选 | 大文件连续播放与 seek |
+| `wma-v2-small` | WMA/ASF | 必选 | WMA v2、WAVEFORMATEX 初始化数据 |
+| `wma-pro-small` | WMA/ASF | 可选 | WMA Pro 解码 |
+| `wma-lossless-small` | WMA/ASF | 可选 | WMA Lossless 解码 |
+| `asf-audio-only` | WMA/ASF | 必选 | ASF 音频流、packet/payload 组装 |
+| `dsf-small` | DSF | 必选 | DSD LSBF planar 解码 |
+| `dsf-long` | DSF | 必选 | 长时播放、内存与 seek |
+| `mp3-regression` | MP3 | 必选 | 常规格式回归 |
+| `flac-regression` | FLAC | 必选 | 无损格式与内嵌封面回归 |
+| `ogg-regression` | OGG/Opus | 必选 | OGG/Opus 回归 |
+| `dff-small` | DFF/DSDIFF | 目标外 | **DFF/DSDIFF 不在原始目标内**，不得宣称支持 |
+
+默认审计只检查矩阵完整性并报告本机找到的样本；正式格式验收应启用强制样本模式，并归档设备、后端、播放时长、seek、自动切歌和错误日志。
