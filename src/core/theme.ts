@@ -238,6 +238,15 @@ function setBackground(backgroundInfo: Partial<IBackgroundInfo>) {
     backgroundStore.setValue(newBgInfo);
 }
 
+function clearBackground() {
+    const currentBackgroundInfo = backgroundStore.getValue();
+    Config.setConfig("theme.background", undefined);
+    backgroundStore.setValue({
+        blur: currentBackgroundInfo?.blur ?? 20,
+        opacity: currentBackgroundInfo?.opacity ?? 0.6,
+    });
+}
+
 const configableColorKey: Array<keyof CustomizedColors> = [
     "primary",
     "text",
@@ -258,6 +267,7 @@ const Theme = {
     setup,
     setTheme,
     setBackground,
+    clearBackground,
     setColors,
     useTheme: themeStore.useValue,
     getTheme: themeStore.getValue,

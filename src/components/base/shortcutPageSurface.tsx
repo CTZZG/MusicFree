@@ -22,7 +22,6 @@ export function useShortcutCardStyle(
     return useMemo<StyleProp<ViewStyle>>(() => {
         const isGlass = theme.id === "p-frosted-glass";
         const highlighted = options.highlighted === true;
-        const elevated = options.elevated !== false;
         const backgroundColor = highlighted
             ? Color(colors.primary).alpha(isGlass ? 0.16 : 0.1).toString()
             : colors.card;
@@ -40,16 +39,13 @@ export function useShortcutCardStyle(
                     ? "rgba(255,255,255,0.58)"
                     : Color(colors.text).alpha(0.07).toString(),
             backgroundColor,
-            shadowColor: colors.shadow,
-            shadowOffset: { width: 0, height: rpx(5) },
-            shadowOpacity: isGlass || !elevated ? 0 : 0.13,
-            shadowRadius: elevated ? rpx(12) : 0,
-            elevation: isGlass || !elevated ? 0 : 3,
+            // Android 会把半透明背景与 elevation 阴影渲染成两层实体色块。
+            // 快捷页统一采用单层描边表面，避免“外灰内白/外灰内黑”。
+            overflow: "hidden",
         };
     }, [
         colors,
         options.compact,
-        options.elevated,
         options.highlighted,
         theme.id,
     ]);

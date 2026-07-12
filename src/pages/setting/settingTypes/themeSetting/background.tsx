@@ -10,6 +10,8 @@ import ThemeCard from "./themeCard";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import Theme from "@/core/theme";
 import { useI18N } from "@/core/i18n";
+import { showDialog } from "@/components/dialogs/useDialog";
+import Toast from "@/utils/toast";
 
 export default function Background() {
     const { t } = useI18N();
@@ -20,6 +22,7 @@ export default function Background() {
         useAppConfig("theme.frostedCustomBgFrost") ?? true;
     const musicBarLiquidGlass =
         useAppConfig("theme.musicBarLiquidGlass") ?? false;
+    const theme = Theme.useTheme();
 
     const navigate = useNavigate();
 
@@ -152,20 +155,42 @@ export default function Background() {
                         // showPanel('ColorPicker');
                     }}
                 />
-
-                {/* <ImageCard
-                    emptySrc={ImgAsset.backgroundDefault}
-                    onPress={() => {
-                        Config.set('setting.theme.background', undefined);
-                        Config.set('setting.theme.colors', undefined);
-                    }}
-                />
-                <ImageCard
-                    uri={theme?.background}
-                    emptySrc={ImgAsset.addBackground}
-                    onPress={onCustomBgPress}
-                /> */}
             </View>
+            {themeBackground ? (
+                <ListItem
+                    withHorizontalPadding
+                    onPress={() => {
+                        showDialog("SimpleDialog", {
+                            title: t("themeSettings.removeCustomBackground"),
+                            content: t(
+                                "themeSettings.removeCustomBackground.confirm",
+                            ),
+                            onOk() {
+                                Theme.clearBackground();
+                                Toast.success(
+                                    t(
+                                        "themeSettings.removeCustomBackground.success",
+                                    ),
+                                );
+                            },
+                        });
+                    }}>
+                    <ListItem.ListItemIcon
+                        icon="trash-outline"
+                        color={theme.colors.danger}
+                    />
+                    <ListItem.Content
+                        title={t("themeSettings.removeCustomBackground")}
+                        description={t(
+                            "themeSettings.removeCustomBackground.desc",
+                        )}
+                    />
+                    <ListItem.ListItemIcon
+                        icon="chevron-right"
+                        position="right"
+                    />
+                </ListItem>
+            ) : null}
             {themeSelectedTheme === "p-frosted-glass" ? (
                 <>
                     <ListItem withHorizontalPadding>

@@ -565,6 +565,10 @@ export interface ILanguageData {
     "themeSettings.musicBarLiquidGlass": string; // 播放条液态玻璃
     "themeSettings.musicBarLiquidGlass.desc": string; // 液态玻璃开关说明
     "themeSettings.customMode": string; // 自定义模式
+    "themeSettings.removeCustomBackground": string; // 移除自定义背景
+    "themeSettings.removeCustomBackground.desc": string; // 移除自定义背景说明
+    "themeSettings.removeCustomBackground.confirm": string; // 移除自定义背景确认
+    "themeSettings.removeCustomBackground.success": string; // 移除自定义背景成功
     "themeSettings.coverStyle": string; // 封面样式
     "themeSettings.coverStyleSquare": string; // 方形
     "themeSettings.coverStyleCircle": string; // 圆形

@@ -143,7 +143,7 @@ export default function PlayById() {
                                                         backgroundColor:
                                                             isSelected
                                                                 ? colors.primary
-                                                                : colors.placeholder,
+                                                                : "transparent",
                                                         borderColor:
                                                             isSelected
                                                                 ? colors.primary
@@ -184,8 +184,8 @@ export default function PlayById() {
                                         styles.input,
                                         {
                                             color: colors.text,
-                                            backgroundColor:
-                                                colors.placeholder,
+                                            backgroundColor: "transparent",
+                                            borderColor: colors.divider,
                                         },
                                     ]}
                                     placeholderTextColor={
@@ -254,8 +254,7 @@ const styles = StyleSheet.create({
     input: {
         marginHorizontal: rpx(20),
         borderRadius: rpx(16),
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: "rgba(128,128,128,0.28)",
+        borderWidth: 1,
         fontSize: fontSizeConst.content,
         lineHeight: fontSizeConst.content * 1.5,
         paddingHorizontal: rpx(18),
