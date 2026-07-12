@@ -28,10 +28,29 @@ const sheetEditorReadyAtom = atom(
         !get(sheetEditorSavingAtom),
 );
 
+/** 原子化替换标签及对应快照，避免中间空列表触发昂贵的卸载/重建。 */
+const replaceSheetEditorSnapshotAtom = atom(
+    null,
+    (
+        _get,
+        set,
+        snapshot: {
+            type: SheetEditorType;
+            items: IEditorMusicSheetItem[];
+        },
+    ) => {
+        set(musicSheetChangedAtom, false);
+        set(sheetTypeAtom, snapshot.type);
+        set(editingMusicSheetAtom, snapshot.items);
+        set(loadedSheetTypeAtom, snapshot.type);
+    },
+);
+
 export {
     editingMusicSheetAtom,
     loadedSheetTypeAtom,
     musicSheetChangedAtom,
+    replaceSheetEditorSnapshotAtom,
     sheetEditorReadyAtom,
     sheetEditorSavingAtom,
     sheetTypeAtom,

@@ -1,6 +1,8 @@
 jest.mock("@/core/musicSheet", () => ({
     __esModule: true,
     default: {
+        getSheets: jest.fn(),
+        getStarredSheets: jest.fn(),
         setSortedSheets: jest.fn(),
         setStarredMusicSheets: jest.fn(),
     },
@@ -32,6 +34,11 @@ describe("sheet editor actions", () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        jest.mocked(MusicSheet.getSheets).mockReturnValue([
+            { id: "favorite", platform: "local", title: "Favorite" },
+            localSheet,
+        ] as IMusic.IMusicSheetItem[]);
+        jest.mocked(MusicSheet.getStarredSheets).mockReturnValue([]);
         store.set(sheetTypeAtom, "local");
         store.set(loadedSheetTypeAtom, "local");
         store.set(editingMusicSheetAtom, [{ musicSheetItem: localSheet }]);
@@ -95,12 +102,23 @@ describe("sheet editor actions", () => {
         expect(setSortedSheets).not.toHaveBeenCalled();
     });
 
-    it("invalidates old editor data before selecting a new tab", () => {
+    it("switches tabs with a ready snapshot immediately", () => {
+        const starredSheet = {
+            ...localSheet,
+            id: "starred-sheet",
+        } as IMusic.IMusicSheetItem;
+        jest.mocked(MusicSheet.getStarredSheets).mockReturnValueOnce([
+            starredSheet,
+        ]);
+
         beginSheetTypeChange("starred");
 
         expect(store.get(sheetTypeAtom)).toBe("starred");
-        expect(store.get(loadedSheetTypeAtom)).toBeNull();
-        expect(store.get(editingMusicSheetAtom)).toEqual([]);
+        expect(store.get(loadedSheetTypeAtom)).toBe("starred");
+        expect(store.get(editingMusicSheetAtom)).toEqual([{
+            checked: false,
+            musicSheetItem: starredSheet,
+        }]);
         expect(store.get(musicSheetChangedAtom)).toBe(false);
     });
 });

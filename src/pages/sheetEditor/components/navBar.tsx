@@ -67,13 +67,22 @@ export default function NavBar() {
         >
             {tabs.map((tab, index) => (
                 <Fragment key={tab.key}>
-                    <Pressable onPress={() => {
-                        if (sheetType !== tab.key) {
-                            confirmSheetEditorTransition(() => {
-                                beginSheetTypeChange(tab.key);
-                            });
-                        }
-                    }}>
+                    <Pressable
+                        accessibilityRole="tab"
+                        accessibilityState={{
+                            selected: sheetType === tab.key,
+                            disabled: isSaving,
+                        }}
+                        disabled={isSaving}
+                        hitSlop={rpx(12)}
+                        style={styles.tab}
+                        onPress={() => {
+                            if (sheetType !== tab.key) {
+                                confirmSheetEditorTransition(() => {
+                                    beginSheetTypeChange(tab.key);
+                                });
+                            }
+                        }}>
                         <ThemeText style={sheetType === tab.key ? styles.selectTabText : null}>{t(tab.i18nKey)}</ThemeText>
                         <View style={sheetType === tab.key ? selectedIndicatorStyle : null} />
                     </Pressable>
@@ -96,6 +105,12 @@ const styles = StyleSheet.create({
         marginHorizontal: rpx(16),
         width: rpx(4),
         height: rpx(24),
+    },
+    tab: {
+        minWidth: rpx(132),
+        minHeight: rpx(56),
+        alignItems: "center",
+        justifyContent: "center",
     },
     selectTabText: {
         fontWeight: "bold",

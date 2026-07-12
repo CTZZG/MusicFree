@@ -3,6 +3,7 @@ import {
     editingMusicSheetAtom,
     loadedSheetTypeAtom,
     musicSheetChangedAtom,
+    replaceSheetEditorSnapshotAtom,
     sheetEditorSavingAtom,
     sheetTypeAtom,
     SheetEditorType,
@@ -11,10 +12,20 @@ import MusicSheet from "@/core/musicSheet";
 
 export function beginSheetTypeChange(nextType: SheetEditorType) {
     const store = getDefaultStore();
-    store.set(loadedSheetTypeAtom, null);
-    store.set(editingMusicSheetAtom, []);
-    store.set(musicSheetChangedAtom, false);
-    store.set(sheetTypeAtom, nextType);
+    const sheets = nextType === "starred"
+        ? MusicSheet.getStarredSheets()
+        : MusicSheet.getSheets().slice(1);
+    const editorItems = sheets.map(musicSheetItem => ({
+        checked: false,
+        musicSheetItem,
+    }));
+
+    // 列表快照只做一次同步映射，不再等待 InteractionManager。
+    // 否则点击标签后会长时间停留在旧列表/空状态，造成点击失效错觉。
+    store.set(replaceSheetEditorSnapshotAtom, {
+        type: nextType,
+        items: editorItems,
+    });
 }
 
 export async function saveEditingMusicSheet(): Promise<boolean> {
