@@ -68,6 +68,8 @@ jobs:
               run: npm ci
 
             - name: Static and regression gates
+              env:
+                  NODE_ENV: test
               run: |
                   npm run audit:round20-static
                   npm test -- --runInBand
