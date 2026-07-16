@@ -14,6 +14,7 @@ import { checkAndCreateDir } from "@/utils/fileUtils";
 import {
     LYRIC_INSTRUMENTAL_GAP_TEXT,
     formatLyricSurfaceText,
+    normalizeLyricSurfaceText,
 } from "@/utils/lyricDisplayPolicy";
 import { autoDecryptLyric } from "@/utils/musicDecrypter";
 import {
@@ -32,6 +33,7 @@ import {
     withTiming,
     type SharedValue,
 } from "react-native-reanimated";
+import { buildNativeStatusBarLyricPayload } from "@/utils/nativeStatusBarLyric";
 
 export type LyricLineType = "original" | "translation" | "romanization";
 
@@ -335,6 +337,8 @@ class LyricManager implements IInjectable {
     private positionClockRate = 1;
     private lastPositionClockSyncTime = 0;
     private positionClockCorrectionUntil = 0;
+    private playbackStateSyncGeneration = 0;
+    private nativeStatusBarPayloadSequence = 0;
 
     get currentLyricItem() {
         return getDefaultStore().get(currentLyricItemAtom);
@@ -467,14 +471,30 @@ class LyricManager implements IInjectable {
     setup() {
         // 更新歌词
         this.trackPlayer.on(TrackPlayerEvents.CurrentMusicChanged, () => {
+            this.playbackStateSyncGeneration += 1;
+            this.lastProgressPositionMs = 0;
+            getDefaultStore().set(currentPositionMsAtom, 0);
+            this.stopPositionClock(0);
+            this.setLyricAsLoadingState();
+            // 先用新歌曲身份清空上一首逐字状态，再异步加载新歌词。
+            this.publishNativeLyricOutput({
+                force: true,
+                positionMs: 0,
+                isPlaying: this.isPlaybackAdvancing,
+            });
             this.refreshLyric(true, true);
-            this.publishNativeLyricOutput({ force: true });
         });
 
+        const initialStateGeneration = this.playbackStateSyncGeneration;
         this.trackPlayer.playerAdapter
             .getState()
             .then(state => {
-                this.isPlaybackAdvancing = state === "playing";
+                if (
+                    initialStateGeneration ===
+                    this.playbackStateSyncGeneration
+                ) {
+                    this.isPlaybackAdvancing = state === "playing";
+                }
             })
             .catch(() => undefined);
 
@@ -482,9 +502,16 @@ class LyricManager implements IInjectable {
             "playbackStateChanged",
             state => {
                 this.isPlaybackAdvancing = state === "playing";
+                const syncGeneration = ++this.playbackStateSyncGeneration;
                 this.trackPlayer
                     .getProgress()
                     .then(progress => {
+                        if (
+                            syncGeneration !==
+                            this.playbackStateSyncGeneration
+                        ) {
+                            return;
+                        }
                         const positionMs = progress.position * 1000;
                         getDefaultStore().set(
                             currentPositionMsAtom,
@@ -496,6 +523,11 @@ class LyricManager implements IInjectable {
                             this.stopPositionClock(positionMs);
                         }
                         this.lastProgressPositionMs = positionMs;
+                        this.publishNativeLyricOutput({
+                            force: true,
+                            positionMs,
+                            isPlaying: this.isPlaybackAdvancing,
+                        });
                     })
                     .catch(() => undefined);
             },
@@ -504,10 +536,26 @@ class LyricManager implements IInjectable {
         this.trackPlayer.playerAdapter.addEventListener(
             "playbackSeeked",
             evt => {
+                this.playbackStateSyncGeneration += 1;
                 const positionMs = (evt?.position ?? 0) * 1000;
                 getDefaultStore().set(currentPositionMsAtom, positionMs);
                 this.syncPositionClock(positionMs, true);
                 this.lastProgressPositionMs = positionMs;
+                const parser = this.lyricParser;
+                if (
+                    parser &&
+                    this.trackPlayer.isCurrentMusic(parser.musicItem)
+                ) {
+                    getDefaultStore().set(
+                        currentLyricItemAtom,
+                        parser.getPosition(evt?.position ?? 0) ?? null,
+                    );
+                }
+                this.publishNativeLyricOutput({
+                    force: true,
+                    positionMs,
+                    isPlaying: this.isPlaybackAdvancing,
+                });
             },
         );
 
@@ -531,7 +579,7 @@ class LyricManager implements IInjectable {
                     newLyricItem ?? null,
                 );
 
-                this.publishNativeLyricOutput();
+                this.publishNativeLyricOutput({ positionMs });
             }
         });
 
@@ -597,6 +645,45 @@ class LyricManager implements IInjectable {
         });
     }
 
+    private getNativeOriginalLineOffset(
+        lyricLine: INormalizedCurrentLyricLine | null | undefined,
+    ) {
+        if (!lyricLine) {
+            return undefined;
+        }
+        const showTranslation =
+            this.appConfig.getConfig("lyric.statusBarShowTranslation") ?? false;
+        const showRomanization =
+            this.appConfig.getConfig("lyric.statusBarShowRomanization") ??
+            false;
+        let offset = 0;
+
+        for (const type of this.getLyricDisplayOrder()) {
+            if (type === "translation" && !showTranslation) {
+                continue;
+            }
+            if (type === "romanization" && !showRomanization) {
+                continue;
+            }
+            const text = normalizeLyricSurfaceText(
+                type === "original"
+                    ? lyricLine.originalText
+                    : type === "translation"
+                        ? lyricLine.translationText
+                        : lyricLine.romanizationText,
+            );
+            if (!text) {
+                continue;
+            }
+            if (type === "original") {
+                return offset;
+            }
+            offset += text.length + 1;
+        }
+
+        return undefined;
+    }
+
     private getNativeNotificationMode(
         text: string,
     ): NativeLyricNotificationMode {
@@ -612,7 +699,13 @@ class LyricManager implements IInjectable {
         return "none";
     }
 
-    private publishNativeLyricOutput(options: {force?: boolean} = {}) {
+    private publishNativeLyricOutput(
+        options: {
+            force?: boolean;
+            positionMs?: number;
+            isPlaying?: boolean;
+        } = {},
+    ) {
         const normalizedState = getDefaultStore().get(
             normalizedCurrentLyricStateAtom,
         );
@@ -653,9 +746,29 @@ class LyricManager implements IInjectable {
         getDefaultStore().set(nativeLyricOutputAtom, output);
 
         if (this.appConfig.getConfig("lyric.showStatusBarLyric")) {
-            LyricUtil.setStatusBarLyricText(statusBarText).catch(
-                () => undefined,
+            const originalPart = lyricLine?.parts.find(
+                part => part.type === "original",
             );
+            const payload = buildNativeStatusBarLyricPayload({
+                sequence: ++this.nativeStatusBarPayloadSequence,
+                text: statusBarText,
+                part: originalPart,
+                partOffset: this.getNativeOriginalLineOffset(lyricLine),
+                normalizedPartText: normalizeLyricSurfaceText(
+                    lyricLine?.originalText,
+                ),
+                positionMs:
+                    options.positionMs ??
+                    getDefaultStore().get(currentPositionMsAtom),
+                isPlaying: options.isPlaying ?? this.isPlaybackAdvancing,
+                playbackRate: this.getPositionClockRate(),
+                musicKey: output.musicKey,
+                lyricIndex: output.lyricIndex,
+            });
+            const publish = LyricUtil.setStatusBarLyricPayload
+                ? LyricUtil.setStatusBarLyricPayload(payload)
+                : LyricUtil.setStatusBarLyricText(statusBarText);
+            publish.catch(() => undefined);
         }
 
         if (

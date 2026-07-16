@@ -2,6 +2,7 @@ import Config from "@/core/appConfig";
 import Toast from "@/utils/toast";
 import { NativeModule, NativeModules } from "react-native";
 import { errorLog } from "@/utils/log.ts";
+import type { INativeStatusBarLyricPayload } from "@/utils/nativeStatusBarLyric";
 
 export enum NativeTextAlignment {
     // 左对齐
@@ -23,6 +24,10 @@ interface ILyricUtil extends NativeModule {
     hideStatusBarLyric: () => Promise<void>;
     /** 设置歌词文本 */
     setStatusBarLyricText: (lyric: string) => Promise<void>;
+    /** 一次同步逐字时间表，后续高亮由原生时钟推进，避免高频跨桥。 */
+    setStatusBarLyricPayload?: (
+        payload: INativeStatusBarLyricPayload,
+    ) => Promise<void>;
     /** 设置媒体通知/系统媒体卡片歌词 */
     setMediaNotificationLyricText?: (lyric: string) => Promise<void>;
     /** 清除媒体通知/系统媒体卡片歌词 */

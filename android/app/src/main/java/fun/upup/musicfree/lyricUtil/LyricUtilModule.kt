@@ -15,7 +15,17 @@ import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.zip.Inflater
 
-class LyricUtilModule(private val reactContext: ReactApplicationContext): ReactContextBaseJavaModule(reactContext) {
+class LyricUtilModule(private val reactContext: ReactApplicationContext):
+    ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
+    private companion object {
+        const val MAX_TIMELINE_MS = 7L * 24L * 60L * 60L * 1000L
+        const val MAX_WORD_DURATION_MS = 60L * 60L * 1000L
+    }
+
+    init {
+        reactContext.addLifecycleEventListener(this)
+    }
+
     override fun getName() = "LyricUtil"
     private var lyricView: LyricView? = null
     private val liveUpdateLyricNotifier by lazy {
@@ -110,6 +120,113 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext): ReactC
                 lyricView?.setText(lyric)
             }
             promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    private fun finiteLong(
+        value: Double,
+        maximum: Long,
+        fallback: Long = 0L,
+    ): Long {
+        if (!value.isFinite()) return fallback
+        return value.coerceIn(0.0, maximum.toDouble()).toLong()
+    }
+
+    override fun onHostResume() = Unit
+
+    override fun onHostPause() = Unit
+
+    override fun onHostDestroy() {
+        UiThreadUtil.runOnUiThread {
+            lyricView?.dispose()
+            lyricView = null
+        }
+    }
+
+    override fun invalidate() {
+        reactContext.removeLifecycleEventListener(this)
+        UiThreadUtil.runOnUiThread {
+            lyricView?.dispose()
+            lyricView = null
+        }
+        super.invalidate()
+    }
+
+    @ReactMethod
+    fun setStatusBarLyricPayload(payload: ReadableMap, promise: Promise) {
+        try {
+            val text = payload.getString("text") ?: ""
+            val positionMs = if (payload.hasKey("positionMs")) {
+                finiteLong(payload.getDouble("positionMs"), MAX_TIMELINE_MS)
+            } else {
+                0L
+            }
+            val isPlaying = payload.hasKey("isPlaying") && payload.getBoolean("isPlaying")
+            val playbackRate = if (payload.hasKey("playbackRate")) {
+                payload.getDouble("playbackRate")
+                    .takeIf { it.isFinite() && it > 0.0 }
+                    ?.coerceAtMost(8.0) ?: 1.0
+            } else {
+                1.0
+            }
+            val sequence = if (payload.hasKey("sequence")) {
+                finiteLong(payload.getDouble("sequence"), Long.MAX_VALUE)
+            } else {
+                0L
+            }
+            val words = mutableListOf<LyricWordTiming>()
+            payload.getArray("words")?.let { wordArray ->
+                for (index in 0 until wordArray.size()) {
+                    val word = wordArray.getMap(index) ?: continue
+                    if (
+                        !word.hasKey("startTime") ||
+                        !word.hasKey("duration") ||
+                        !word.hasKey("startIndex") ||
+                        !word.hasKey("endIndex")
+                    ) {
+                        continue
+                    }
+                    words.add(
+                        LyricWordTiming(
+                            startTimeMs = finiteLong(
+                                word.getDouble("startTime"),
+                                MAX_TIMELINE_MS,
+                            ),
+                            durationMs = finiteLong(
+                                word.getDouble("duration"),
+                                MAX_WORD_DURATION_MS,
+                                1L,
+                            ).coerceAtLeast(1L),
+                            startIndex = finiteLong(
+                                word.getDouble("startIndex"),
+                                text.length.toLong(),
+                            ).toInt(),
+                            endIndex = finiteLong(
+                                word.getDouble("endIndex"),
+                                text.length.toLong(),
+                            ).toInt(),
+                        )
+                    )
+                }
+            }
+
+            UiThreadUtil.runOnUiThread {
+                try {
+                    lyricView?.setTimedText(
+                        text = text,
+                        words = words,
+                        positionMs = positionMs,
+                        isPlaying = isPlaying,
+                        playbackRate = playbackRate,
+                        sequence = sequence,
+                    )
+                    promise.resolve(true)
+                } catch (e: Exception) {
+                    promise.reject("Exception", e.message)
+                }
+            }
         } catch (e: Exception) {
             promise.reject("Exception", e.message)
         }

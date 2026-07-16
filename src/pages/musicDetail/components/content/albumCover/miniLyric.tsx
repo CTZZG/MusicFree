@@ -33,6 +33,10 @@ import {
     type LyricWordLineType,
 } from "@/utils/lyricWordByWord";
 import { BreathingDots } from "../lyric/lyricItem";
+import {
+    LYRIC_TRANSITION_DURATION_MS,
+    getMiniLyricOpacity,
+} from "@/utils/lyricTransition";
 
 interface IMiniLyricProps {
     compact?: boolean;
@@ -255,6 +259,59 @@ function MiniWordByWordLine(props: {
     );
 }
 
+function MiniLyricGroup(props: {
+    active: boolean;
+    distance: number;
+    minHeight: number;
+    children: React.ReactNode;
+}) {
+    const { active, distance, minHeight, children } = props;
+    const opacity = useSharedValue(getMiniLyricOpacity(distance));
+    const translateY = useSharedValue(0);
+    const wasActiveRef = useRef(active);
+
+    useEffect(() => {
+        const wasActive = wasActiveRef.current;
+        const targetOpacity = getMiniLyricOpacity(distance);
+
+        if (active && !wasActive) {
+            translateY.value = rpx(8);
+            translateY.value = withTiming(0, {
+                duration: LYRIC_TRANSITION_DURATION_MS,
+                easing: Easing.out(Easing.cubic),
+            });
+        } else if (!active && wasActive) {
+            translateY.value = withTiming(-rpx(6), {
+                duration: LYRIC_TRANSITION_DURATION_MS,
+                easing: Easing.out(Easing.cubic),
+            });
+        } else if (!active) {
+            translateY.value = withTiming(0, {
+                duration: LYRIC_TRANSITION_DURATION_MS,
+                easing: Easing.out(Easing.cubic),
+            });
+        }
+
+        opacity.value = withTiming(targetOpacity, {
+            duration: LYRIC_TRANSITION_DURATION_MS,
+            easing: Easing.out(Easing.cubic),
+        });
+        wasActiveRef.current = active;
+    }, [active, distance, opacity, translateY]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        opacity: opacity.value,
+        transform: [{ translateY: translateY.value }],
+    }));
+
+    return (
+        <Animated.View
+            style={[styles.lyricGroup, { minHeight }, animatedStyle]}>
+            {children}
+        </Animated.View>
+    );
+}
+
 export default function MiniLyric(props: IMiniLyricProps) {
     const { compact = false, onPress } = props;
     const lyricState = useLyricState();
@@ -363,7 +420,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
             translateY.value = targetY;
         } else if (lastIndexRef.current !== currentIndex) {
             translateY.value = withTiming(targetY, {
-                duration: 420,
+                duration: LYRIC_TRANSITION_DURATION_MS,
                 easing: Easing.bezier(0.25, 0.1, 0.25, 1),
             });
         }
@@ -412,28 +469,24 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 {lyrics.map((item, index) => {
                     const isActive = index === currentIndex;
                     const distance = Math.abs(index - currentIndex);
-                    const opacity =
-                        distance === 0
-                            ? 1
-                            : distance === 1
-                                ? 0.46
-                                : distance === 2
-                                    ? 0.2
-                                    : 0.06;
+                    if (distance > 3) {
+                        return (
+                            <View
+                                key={`${item.time}-${index}`}
+                                style={{ minHeight: groupHeights[index] }}
+                            />
+                        );
+                    }
                     const hasText = visibleTypes.some(type =>
                         getLineText(item, type).trim(),
                     );
 
                     return (
-                        <View
+                        <MiniLyricGroup
                             key={`${item.time}-${index}`}
-                            style={[
-                                styles.lyricGroup,
-                                {
-                                    minHeight: groupHeights[index],
-                                    opacity,
-                                },
-                            ]}>
+                            active={isActive}
+                            distance={distance}
+                            minHeight={groupHeights[index]}>
                             {!hasText ? (
                                 isActive && enableBreathingDots ? (
                                     <View style={styles.dotsLine}>
@@ -502,7 +555,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                     );
                                 })
                             )}
-                        </View>
+                        </MiniLyricGroup>
                     );
                 })}
             </Animated.View>

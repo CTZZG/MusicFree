@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo } from "react";
+import React, { memo, useEffect, useMemo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { TextStyle } from "react-native";
 import Animated, {
@@ -19,6 +19,10 @@ import {
     normalizeLyricWords,
 } from "@/utils/lyricWordByWord";
 import { useAppConfig } from "@/core/appConfig";
+import {
+    LYRIC_TRANSITION_DURATION_MS,
+    getFullLyricOpacity,
+} from "@/utils/lyricTransition";
 
 interface ILyricLine {
     key: string;
@@ -60,6 +64,7 @@ const ACTIVE_FLOAT_RATE = 0.12;
 const ACTIVE_SCALE_RATE = 0.05;
 const DOT_SIZE = rpx(12);
 const DOT_GAP = rpx(10);
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export const BreathingDots = memo(function BreathingDots(props: {
     color: string;
@@ -526,6 +531,45 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
             ? 1.22
             : 0.88
         : 1;
+    const wasHighlightedRef = useRef(!!highlight);
+    const transitionOpacity = useSharedValue(
+        getFullLyricOpacity({ highlight, light, amllLiteMode }),
+    );
+    const transitionY = useSharedValue(0);
+
+    useEffect(() => {
+        const wasHighlighted = wasHighlightedRef.current;
+        const timing = {
+            duration: LYRIC_TRANSITION_DURATION_MS,
+            easing: Easing.out(Easing.cubic),
+        };
+
+        if (highlight && !wasHighlighted) {
+            transitionY.value = rpx(10);
+            transitionY.value = withTiming(0, timing);
+        } else if (!highlight && wasHighlighted) {
+            transitionY.value = withTiming(-rpx(7), timing);
+        } else if (!highlight) {
+            transitionY.value = withTiming(0, timing);
+        }
+
+        transitionOpacity.value = withTiming(
+            getFullLyricOpacity({ highlight, light, amllLiteMode }),
+            timing,
+        );
+        wasHighlightedRef.current = !!highlight;
+    }, [
+        amllLiteMode,
+        highlight,
+        light,
+        transitionOpacity,
+        transitionY,
+    ]);
+
+    const transitionStyle = useAnimatedStyle(() => ({
+        opacity: transitionOpacity.value,
+        transform: [{ translateY: transitionY.value }],
+    }));
 
     const itemStyle = [
         lyricStyles.item,
@@ -634,22 +678,22 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
 
     if (onPress) {
         return (
-            <Pressable
+            <AnimatedPressable
                 onLayout={handleLayout}
                 onPress={onPress}
                 onPressIn={onPressIn}
-                style={itemStyle}>
+                style={[itemStyle, transitionStyle]}>
                 {content}
-            </Pressable>
+            </AnimatedPressable>
         );
     }
 
     return (
-        <View
+        <Animated.View
             onLayout={handleLayout}
-            style={itemStyle}>
+            style={[itemStyle, transitionStyle]}>
             {content}
-        </View>
+        </Animated.View>
     );
 }
 

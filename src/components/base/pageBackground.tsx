@@ -45,12 +45,14 @@ function PageBackground() {
         : background?.opacity ?? 0.6;
 
     return (
-        <>
+        <View
+            pointerEvents="none"
+            style={[style.wrapper, { height }]}
+        >
             <View
                 style={[
-                    style.wrapper,
+                    StyleSheet.absoluteFill,
                     {
-                        height,
                         backgroundColor:
                             colors?.pageBackground ?? colors.background,
                     },
@@ -64,16 +66,15 @@ function PageBackground() {
                     <Image
                         uri={background.url}
                         style={[
-                            style.wrapper,
+                            StyleSheet.absoluteFill,
                             {
-                                height,
                                 opacity: backgroundOpacity,
                             },
                         ]}
                         blurRadius={backgroundBlur}
                     />
                 ) : null}
-        </>
+        </View>
     );
 }
 export default memo(PageBackground, () => true);

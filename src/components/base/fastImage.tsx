@@ -7,9 +7,16 @@ interface IImageProps {
     defaultSource?: ImageProps["defaultSource"];
     placeholderSource?: ImageRequireSource;
     source?: ImageProps["source"] | string;
+    transition?: ImageProps["transition"];
 }
 export default function (props: IImageProps) {
-    const { style, placeholderSource, defaultSource, source } = props ?? {};
+    const {
+        style,
+        placeholderSource,
+        defaultSource,
+        source,
+        transition,
+    } = props ?? {};
     const [failedSourceKey, setFailedSourceKey] = useState<string>();
 
 
@@ -39,6 +46,7 @@ export default function (props: IImageProps) {
             }}
             defaultSource={defaultSource}
             placeholder={defaultSource}
+            transition={transition}
         />
     );
 }

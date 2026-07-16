@@ -11,6 +11,7 @@ import Lyric from "./components/content/lyric";
 import NavBar from "./components/navBar";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { MusicDetailArtworkProvider } from "./artworkContext";
 
 export default function MusicDetail() {
     const orientation = useOrientation();
@@ -29,7 +30,7 @@ export default function MusicDetail() {
     }, []);
 
     return (
-        <>
+        <MusicDetailArtworkProvider>
             <Background />
             <SafeAreaView
                 edges={immersiveMode ? ["left", "right", "bottom"] : undefined}
@@ -51,7 +52,7 @@ export default function MusicDetail() {
                     ) : null}
                 </View>
             </SafeAreaView>
-        </>
+        </MusicDetailArtworkProvider>
     );
 }
 

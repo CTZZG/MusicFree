@@ -1,5 +1,5 @@
 import React from "react";
-import { StatusBar, StatusBarProps, View } from "react-native";
+import { StatusBar, StatusBarProps, StyleSheet, View } from "react-native";
 import useColors from "@/hooks/useColors";
 
 interface IStatusBarProps extends StatusBarProps {}
@@ -17,17 +17,28 @@ export default function (props: IStatusBarProps) {
             />
             {hidden ? null : (
                 <View
-                    style={{
-                        zIndex: 10000,
-                        position: "absolute",
-                        top: 0,
-                        backgroundColor:
-                            backgroundColor ?? colors.appBar ?? colors.primary,
-                        width: "100%",
-                        height: StatusBar.currentHeight,
-                    }}
+                    pointerEvents="none"
+                    style={[
+                        styles.background,
+                        {
+                            backgroundColor:
+                                backgroundColor ??
+                                colors.appBar ??
+                                colors.primary,
+                            height: StatusBar.currentHeight,
+                        },
+                    ]}
                 />
             )}
         </>
     );
 }
+
+const styles = StyleSheet.create({
+    background: {
+        zIndex: 10000,
+        position: "absolute",
+        top: 0,
+        width: "100%",
+    },
+});

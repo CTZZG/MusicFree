@@ -5,7 +5,12 @@ import FastImage from "@/components/base/fastImage";
 import useOrientation from "@/hooks/useOrientation";
 import { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
 import globalStyle from "@/constants/globalStyle";
-import { Pressable, useWindowDimensions, View } from "react-native";
+import {
+    Pressable,
+    StyleSheet,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import Operations from "./operations";
 import { showPanel } from "@/components/panels/usePanel.ts";
 import SongInfo from "./songInfo";
@@ -21,6 +26,7 @@ import Animated, {
     withRepeat,
     withTiming,
 } from "react-native-reanimated";
+import { useMusicDetailArtwork } from "../../../artworkContext";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -38,6 +44,7 @@ export default function AlbumCover(props: IProps) {
     const { immersiveMode = false, onTurnPageClick } = props;
 
     const musicItem = useCurrentMusic();
+    const artwork = useMusicDetailArtwork();
     const musicState = useMusicState();
     const orientation = useOrientation();
     const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
@@ -98,9 +105,18 @@ export default function AlbumCover(props: IProps) {
                 overflow: "hidden" as const,
             };
         if (orientation === "vertical") {
+            const availableWidth = Math.max(rpx(360), windowWidth - rpx(24));
+            const comfortableHeight = Math.max(
+                rpx(420),
+                usableWindowHeight * 0.43,
+            );
+            const coverSize = Math.min(availableWidth, comfortableHeight);
             return {
-                width: rpx(500),
-                height: rpx(500),
+                width: coverSize,
+                height: coverSize,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: "rgba(255,255,255,0.28)",
+                elevation: 12,
                 ...circleStyle,
             };
         } else {
@@ -110,7 +126,12 @@ export default function AlbumCover(props: IProps) {
                 ...circleStyle,
             };
         }
-    }, [isCircleCover, orientation]);
+    }, [
+        isCircleCover,
+        orientation,
+        usableWindowHeight,
+        windowWidth,
+    ]);
 
     useEffect(() => {
         if (shouldRotateCover) {
@@ -149,13 +170,12 @@ export default function AlbumCover(props: IProps) {
 
     const handleLongPress = useCallback(() => {
         longPressTriggeredRef.current = true;
-        const artwork = musicItem?.artwork;
         if (typeof artwork === "string" && artwork.trim().length > 0) {
             showPanel("ImageViewer", {
                 url: artwork,
             });
         }
-    }, [musicItem?.artwork]);
+    }, [artwork]);
 
     if (orientation === "horizontal") {
         return (
@@ -171,8 +191,9 @@ export default function AlbumCover(props: IProps) {
                         >
                             <FastImage
                                 style={styles.coverImage}
-                                source={musicItem?.artwork}
+                                source={artwork}
                                 placeholderSource={ImgAsset.albumDefault}
+                                transition={260}
                             />
                         </Animated.View>
                     </View>
@@ -199,8 +220,9 @@ export default function AlbumCover(props: IProps) {
                     >
                         <FastImage
                             style={styles.coverImage}
-                            source={musicItem?.artwork}
+                            source={artwork}
                             placeholderSource={ImgAsset.albumDefault}
+                            transition={260}
                         />
                     </Animated.View>
                 </View>
