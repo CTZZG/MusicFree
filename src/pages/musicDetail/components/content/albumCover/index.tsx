@@ -5,12 +5,7 @@ import FastImage from "@/components/base/fastImage";
 import useOrientation from "@/hooks/useOrientation";
 import { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
 import globalStyle from "@/constants/globalStyle";
-import {
-    Pressable,
-    StyleSheet,
-    useWindowDimensions,
-    View,
-} from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import Operations from "./operations";
 import { showPanel } from "@/components/panels/usePanel.ts";
 import SongInfo from "./songInfo";
@@ -27,6 +22,7 @@ import Animated, {
     withTiming,
 } from "react-native-reanimated";
 import { useMusicDetailVisuals } from "../../../artworkContext";
+import { getMusicDetailHeroLayout } from "../../../heroLayout";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -44,7 +40,8 @@ export default function AlbumCover(props: IProps) {
     const { immersiveMode = false, onTurnPageClick } = props;
 
     const musicItem = useCurrentMusic();
-    const { displayArtwork, heroArtwork } = useMusicDetailVisuals();
+    const { displayArtwork, coverArtwork, ambientArtwork } =
+        useMusicDetailVisuals();
     const musicState = useMusicState();
     const orientation = useOrientation();
     const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
@@ -52,7 +49,9 @@ export default function AlbumCover(props: IProps) {
     const safeAreaInsets = useSafeAreaInsets();
     const longPressTriggeredRef = useRef(false);
     const [containerHeight, setContainerHeight] = useState<number | null>(null);
-    const [operationsBottom, setOperationsBottom] = useState<number | null>(null);
+    const [operationsBottom, setOperationsBottom] = useState<number | null>(
+        null,
+    );
 
     const usableWindowHeight =
         windowHeight - safeAreaInsets.top - safeAreaInsets.bottom;
@@ -61,7 +60,9 @@ export default function AlbumCover(props: IProps) {
         if (orientation !== "vertical") {
             return "normal" as const;
         }
-        return usableAspectRatio < 1.9 ? ("compact" as const) : ("normal" as const);
+        return usableAspectRatio < 1.9
+            ? ("compact" as const)
+            : ("normal" as const);
     }, [orientation, usableAspectRatio]);
     const [miniLyricLayout, setMiniLyricLayout] = useState<
         "normal" | "compact" | "hidden"
@@ -69,11 +70,16 @@ export default function AlbumCover(props: IProps) {
     const rotation = useSharedValue(0);
     const isCircleCover = coverStyle === "circle";
     const shouldRotateCover = isCircleCover && !musicIsPaused(musicState);
-    const heroTapHeight = Math.max(
-        rpx(300),
-        Math.min(usableWindowHeight * 0.44, windowWidth * 1.02),
+    const heroLayout = useMemo(
+        () =>
+            getMusicDetailHeroLayout({
+                windowWidth,
+                windowHeight,
+                safeAreaTop: safeAreaInsets.top,
+                safeAreaBottom: safeAreaInsets.bottom,
+            }),
+        [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
     );
-
     useEffect(() => {
         setMiniLyricLayout(baseMiniLyricLayout);
         setOperationsBottom(null);
@@ -130,12 +136,7 @@ export default function AlbumCover(props: IProps) {
                 ...circleStyle,
             };
         }
-    }, [
-        isCircleCover,
-        orientation,
-        usableWindowHeight,
-        windowWidth,
-    ]);
+    }, [isCircleCover, orientation, usableWindowHeight, windowWidth]);
 
     useEffect(() => {
         if (shouldRotateCover) {
@@ -174,7 +175,7 @@ export default function AlbumCover(props: IProps) {
 
     const handleLongPress = useCallback(() => {
         longPressTriggeredRef.current = true;
-        const previewArtwork = heroArtwork;
+        const previewArtwork = coverArtwork || ambientArtwork;
         if (
             typeof previewArtwork === "string" &&
             previewArtwork.trim().length > 0
@@ -183,7 +184,7 @@ export default function AlbumCover(props: IProps) {
                 url: previewArtwork,
             });
         }
-    }, [heroArtwork]);
+    }, [ambientArtwork, coverArtwork]);
 
     if (orientation === "horizontal") {
         return (
@@ -195,8 +196,7 @@ export default function AlbumCover(props: IProps) {
                     style={styles.horizontalCoverArea}>
                     <View style={globalStyle.fullCenter}>
                         <Animated.View
-                            style={[artworkStyle, coverAnimatedStyle]}
-                        >
+                            style={[artworkStyle, coverAnimatedStyle]}>
                             <FastImage
                                 style={styles.coverImage}
                                 source={displayArtwork}
@@ -213,32 +213,16 @@ export default function AlbumCover(props: IProps) {
 
     if (!isCircleCover) {
         return (
-            <View
-                style={styles.verticalRoot}
-                onLayout={event => {
-                    setContainerHeight(event.nativeEvent.layout.height);
-                }}>
+            <View style={[styles.verticalRoot, styles.heroVerticalRoot]}>
                 <Pressable
                     delayLongPress={500}
                     onPress={handlePress}
                     onLongPress={handleLongPress}
-                    style={[styles.heroTapArea, { height: heroTapHeight }]}
+                    style={[styles.heroTapArea, { height: heroLayout.tapHeight }]}
                 />
-                <SongInfo showHeart variant="hero" />
-                {miniLyricLayout === "hidden" ? null : (
-                    <MiniLyric
-                        compact={miniLyricLayout === "compact"}
-                        onPress={onTurnPageClick}
-                    />
-                )}
-                <View style={globalStyle.flex1} />
-                <View
-                    onLayout={event => {
-                        const layout = event.nativeEvent.layout;
-                        setOperationsBottom(layout.y + layout.height);
-                    }}>
-                    {immersiveMode ? null : <Operations />}
-                </View>
+                <MiniLyric variant="hero" onPress={onTurnPageClick} />
+                <SongInfo variant="hero" />
+                {immersiveMode ? null : <Operations />}
             </View>
         );
     }
@@ -255,9 +239,7 @@ export default function AlbumCover(props: IProps) {
                 onLongPress={handleLongPress}
                 style={styles.coverArea}>
                 <View style={styles.coverCenter}>
-                    <Animated.View
-                        style={[artworkStyle, coverAnimatedStyle]}
-                    >
+                    <Animated.View style={[artworkStyle, coverAnimatedStyle]}>
                         <FastImage
                             style={styles.coverImage}
                             source={displayArtwork}
@@ -291,6 +273,9 @@ const styles = {
         width: "100%" as const,
         flex: 1,
     },
+    heroVerticalRoot: {
+        paddingBottom: rpx(64),
+    },
     coverArea: {
         width: "100%" as const,
         flex: 1,
@@ -304,7 +289,7 @@ const styles = {
     },
     heroTapArea: {
         width: "100%" as const,
-        minHeight: rpx(300),
+        flexShrink: 0,
     },
     coverImage: {
         width: "100%" as const,

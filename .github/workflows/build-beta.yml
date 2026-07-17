@@ -51,8 +51,6 @@ jobs:
             NODE_VERSION: '22'
             JAVA_VERSION: '17'
             NODE_ENV: production
-            EXPO_PUBLIC_TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
-            EXPO_PUBLIC_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
             RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 || secrets.RELEASE_KEYSTORE_BASE64 }}
             RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
             RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.RELEASE_KEY_ALIAS }}

@@ -4,14 +4,11 @@ import { getMediaUniqueKey } from "@/utils/mediaUtils";
 const LOOKUP_TIMEOUT_MS = 3_000;
 const SUCCESS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const FAILURE_CACHE_TTL_MS = 10 * 60 * 1000;
-const BACKDROP_SUCCESS_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-const BACKDROP_FAILURE_CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 96;
-const MAX_BACKDROP_CACHE_ENTRIES = 64;
 const MAX_GLOBAL_PLUGIN_LOOKUPS = 4;
 const MAX_CONCURRENT_LOOKUPS = 2;
-const TMDB_REQUEST_TIMEOUT_MS = 2_600;
-const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/original";
+const ITUNES_REQUEST_TIMEOUT_MS = 3_200;
+const ITUNES_ARTWORK_SIZE = 1200;
 
 interface IArtworkCacheEntry {
     artwork?: string;
@@ -26,17 +23,16 @@ export interface IMusicDetailArtworkLookup {
     search?: (query: string) => Promise<IMusic.IMusicItem[]>;
 }
 
-export interface IMusicDetailBackdropLookup {
-    searchArtist: (artist: string) => Promise<string | undefined>;
+interface IItunesSearchResult {
+    trackId?: number;
+    trackName?: string;
+    artistName?: string;
+    collectionName?: string;
+    artworkUrl100?: string;
 }
 
 const artworkCache = new Map<string, IArtworkCacheEntry>();
 const inFlightLookups = new Map<string, Promise<string | undefined>>();
-const backdropCache = new Map<string, IArtworkCacheEntry>();
-const inFlightBackdropLookups = new Map<
-    string,
-    Promise<string | undefined>
->();
 
 let activeLookupCount = 0;
 interface ILookupWaiter {
@@ -108,6 +104,29 @@ function normalizeMatchText(value?: string) {
         .replace(/[\s\p{P}\p{S}]+/gu, "");
 }
 
+export function getMusicArtworkLookupKey(musicItem: IMusic.IMusicItem) {
+    return [
+        getMediaUniqueKey(musicItem),
+        normalizeMatchText(musicItem.title),
+        normalizeMatchText(musicItem.artist),
+        normalizeMatchText(musicItem.album),
+    ].join("|");
+}
+
+export function getCachedMusicArtwork(musicItem: IMusic.IMusicItem) {
+    if (isUsableMusicDetailArtwork(musicItem.artwork)) {
+        return musicItem.artwork.trim();
+    }
+
+    const key = getMusicArtworkLookupKey(musicItem);
+    const now = Date.now();
+    const cached = artworkCache.get(key);
+    if (cached && cached.expiresAt > now) {
+        return cached.artwork;
+    }
+    return undefined;
+}
+
 function selectArtworkFromSearchResults(
     musicItem: IMusic.IMusicItem,
     results: IMusic.IMusicItem[],
@@ -124,23 +143,39 @@ function selectArtworkFromSearchResults(
         .map(item => {
             const title = normalizeMatchText(item.title);
             const artist = normalizeMatchText(item.artist);
-            if (title !== expectedTitle) {
-                return null;
-            }
-
-            const artistMatches =
-                !expectedArtist ||
-                (artist &&
-                    (artist === expectedArtist ||
-                        artist.includes(expectedArtist) ||
-                        expectedArtist.includes(artist)));
-            if (!artistMatches) {
+            const getArtistScore = (candidate: string, expected: string) => {
+                if (!expected) {
+                    return 1;
+                }
+                if (!candidate) {
+                    return 0;
+                }
+                if (candidate === expected) {
+                    return 2;
+                }
+                return candidate.includes(expected) ||
+                    expected.includes(candidate)
+                    ? 1
+                    : 0;
+            };
+            const directArtistScore =
+                title === expectedTitle
+                    ? getArtistScore(artist, expectedArtist)
+                    : 0;
+            // 部分本地文件会把 title / artist 标签写反；仅接受两边都能精确对应的互换结果。
+            const swappedArtistScore =
+                expectedArtist.length > 0 && title === expectedArtist
+                    ? getArtistScore(artist, expectedTitle)
+                    : 0;
+            if (!directArtistScore && !swappedArtistScore) {
                 return null;
             }
 
             return {
                 artwork: item.artwork.trim(),
-                score: artist === expectedArtist ? 2 : 1,
+                score: directArtistScore
+                    ? 100 + directArtistScore
+                    : 10 + swappedArtistScore,
             };
         })
         .filter(
@@ -188,7 +223,10 @@ function withDeadline<T>(
             );
             Promise.resolve()
                 .then(task)
-                .then(value => finish(value), () => finish(undefined));
+                .then(
+                    value => finish(value),
+                    () => finish(undefined),
+                );
         });
     });
 }
@@ -241,6 +279,71 @@ function createGlobalPluginLookups(musicItem: IMusic.IMusicItem) {
                 return result?.data ?? [];
             },
         }));
+}
+
+function upscaleItunesArtwork(artwork?: string) {
+    if (!isUsableMusicDetailArtwork(artwork)) {
+        return undefined;
+    }
+    return artwork
+        .trim()
+        .replace(
+            /\/\d+x\d+bb\.(jpg|jpeg|png)$/iu,
+            `/${ITUNES_ARTWORK_SIZE}x${ITUNES_ARTWORK_SIZE}bb.$1`,
+        );
+}
+
+function createItunesArtworkLookup(): IMusicDetailArtworkLookup {
+    return {
+        search: async query => {
+            const controller = new AbortController();
+            const timeout = setTimeout(
+                () => controller.abort(),
+                ITUNES_REQUEST_TIMEOUT_MS,
+            );
+            try {
+                const params = [
+                    `term=${encodeURIComponent(query)}`,
+                    "media=music",
+                    "entity=song",
+                    "limit=12",
+                ].join("&");
+                const response = await fetch(
+                    `https://itunes.apple.com/search?${params}`,
+                    {
+                        signal: controller.signal,
+                        headers: { accept: "application/json" },
+                    },
+                );
+                if (!response.ok) {
+                    return [];
+                }
+                const payload = (await response.json()) as {
+                    results?: IItunesSearchResult[];
+                };
+                return (payload.results ?? [])
+                    .map((item, index) => {
+                        const artwork = upscaleItunesArtwork(
+                            item.artworkUrl100,
+                        );
+                        if (!artwork) {
+                            return null;
+                        }
+                        return {
+                            id: String(item.trackId ?? `result-${index}`),
+                            platform: "itunes-cover",
+                            title: item.trackName ?? "",
+                            artist: item.artistName ?? "",
+                            album: item.collectionName ?? "",
+                            artwork,
+                        } as IMusic.IMusicItem;
+                    })
+                    .filter((item): item is IMusic.IMusicItem => item !== null);
+            } finally {
+                clearTimeout(timeout);
+            }
+        },
+    };
 }
 
 function trimCache(
@@ -305,6 +408,14 @@ async function resolveUncachedArtwork(
         .filter(Boolean)
         .join(" ")
         .trim();
+    const itunesArtworkPromise = includeGlobalPlugins
+        ? resolveWithLookup(
+            musicItem,
+            createItunesArtworkLookup(),
+            query,
+            Date.now() + ITUNES_REQUEST_TIMEOUT_MS,
+        )
+        : undefined;
     const primaryArtwork = await resolveWithLookup(
         musicItem,
         lookup,
@@ -329,103 +440,12 @@ async function resolveUncachedArtwork(
             return artwork;
         }
     }
-    return undefined;
-}
-
-function readTmdbCredentials() {
-    const readAccessToken = process.env.EXPO_PUBLIC_TMDB_READ_ACCESS_TOKEN?.trim();
-    const apiKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
-    return { readAccessToken, apiKey };
-}
-
-function getPrimaryArtist(artist?: string) {
-    return (artist ?? "")
-        .split(/[,，/&、;；]/u)[0]
-        ?.trim();
-}
-
-function createTmdbBackdropLookup(): IMusicDetailBackdropLookup | undefined {
-    const { readAccessToken, apiKey } = readTmdbCredentials();
-    if (!readAccessToken && !apiKey) {
-        return undefined;
-    }
-
-    return {
-        searchArtist: async artist => {
-            const controller = new AbortController();
-            const timeout = setTimeout(
-                () => controller.abort(),
-                TMDB_REQUEST_TIMEOUT_MS,
-            );
-            try {
-                const query = [
-                    `query=${encodeURIComponent(artist)}`,
-                    "include_adult=false",
-                    "language=zh-CN",
-                    "page=1",
-                    ...(apiKey
-                        ? [`api_key=${encodeURIComponent(apiKey)}`]
-                        : []),
-                ].join("&");
-                const response = await fetch(
-                    `https://api.themoviedb.org/3/search/person?${query}`,
-                    {
-                        signal: controller.signal,
-                        headers: {
-                            accept: "application/json",
-                            ...(readAccessToken
-                                ? {
-                                    authorization: `Bearer ${readAccessToken}`,
-                                }
-                                : {}),
-                        },
-                    },
-                );
-                if (!response.ok) {
-                    return undefined;
-                }
-                const payload = (await response.json()) as {
-                    results?: Array<{
-                        name?: string;
-                        original_name?: string;
-                        profile_path?: string | null;
-                        popularity?: number;
-                    }>;
-                };
-                const expected = normalizeMatchText(artist);
-                const candidate = (payload.results ?? [])
-                    .filter(item => item.profile_path)
-                    .map(item => {
-                        const names = [item.name, item.original_name]
-                            .map(normalizeMatchText)
-                            .filter(Boolean);
-                        const exact = names.some(name => name === expected);
-                        const compatible = names.some(
-                            name =>
-                                name.includes(expected) ||
-                                expected.includes(name),
-                        );
-                        return {
-                            ...item,
-                            score:
-                                (exact ? 2_000 : compatible ? 1_000 : 0) +
-                                Math.min(999, Number(item.popularity) || 0),
-                        };
-                    })
-                    .filter(item => item.score >= 1_000)
-                    .sort((a, b) => b.score - a.score)[0];
-                return candidate?.profile_path
-                    ? `${TMDB_IMAGE_BASE_URL}${candidate.profile_path}`
-                    : undefined;
-            } finally {
-                clearTimeout(timeout);
-            }
-        },
-    };
+    return itunesArtworkPromise;
 }
 
 /**
- * 只供播放详情页调用。查询结果仅保存在内存中，不修改播放队列或持久化状态。
+ * 供需要展示歌曲封面的界面共享。查询结果仅保存在内存中，不修改播放队列、
+ * 历史记录或本地音频文件。
  */
 export function resolveMusicDetailArtwork(
     musicItem: IMusic.IMusicItem,
@@ -435,7 +455,7 @@ export function resolveMusicDetailArtwork(
         return Promise.resolve(musicItem.artwork.trim());
     }
 
-    const key = getMediaUniqueKey(musicItem);
+    const key = getMusicArtworkLookupKey(musicItem);
     const now = Date.now();
     const cached = artworkCache.get(key);
     if (cached && cached.expiresAt > now) {
@@ -481,76 +501,9 @@ export function resolveMusicDetailArtwork(
     return task;
 }
 
-/**
- * 可选 TMDB 艺人背景，只作为播放详情页 hero/backdrop 使用。它不会回写歌曲
- * artwork，也不会进入列表、通知栏或持久化缓存。
- */
-export function resolveMusicDetailBackdrop(
-    musicItem: IMusic.IMusicItem,
-    lookup: IMusicDetailBackdropLookup | undefined = createTmdbBackdropLookup(),
-) {
-    const artist = getPrimaryArtist(musicItem.artist);
-    const key = normalizeMatchText(artist);
-    if (!artist || !key || !lookup) {
-        return Promise.resolve(undefined);
-    }
-
-    const now = Date.now();
-    const cached = backdropCache.get(key);
-    if (cached && cached.expiresAt > now) {
-        cached.lastAccessedAt = now;
-        return Promise.resolve(cached.artwork);
-    }
-    if (cached) {
-        backdropCache.delete(key);
-    }
-
-    const inFlight = inFlightBackdropLookups.get(key);
-    if (inFlight) {
-        return inFlight;
-    }
-
-    const deadline = Date.now() + TMDB_REQUEST_TIMEOUT_MS;
-    const task = withDeadline(() => lookup.searchArtist(artist), deadline)
-        .catch(() => undefined)
-        .then(backdrop => {
-            const safeBackdrop =
-                typeof backdrop === "string" &&
-                backdrop.startsWith("https://image.tmdb.org/")
-                    ? backdrop
-                    : undefined;
-            const resolvedAt = Date.now();
-            backdropCache.set(key, {
-                artwork: safeBackdrop,
-                expiresAt:
-                    resolvedAt +
-                    (safeBackdrop
-                        ? BACKDROP_SUCCESS_CACHE_TTL_MS
-                        : BACKDROP_FAILURE_CACHE_TTL_MS),
-                lastAccessedAt: resolvedAt,
-            });
-            trimCache(
-                backdropCache,
-                MAX_BACKDROP_CACHE_ENTRIES,
-                resolvedAt,
-            );
-            return safeBackdrop;
-        })
-        .finally(() => {
-            if (inFlightBackdropLookups.get(key) === task) {
-                inFlightBackdropLookups.delete(key);
-            }
-        });
-
-    inFlightBackdropLookups.set(key, task);
-    return task;
-}
-
 export function resetMusicDetailArtworkCacheForTests() {
     artworkCache.clear();
     inFlightLookups.clear();
-    backdropCache.clear();
-    inFlightBackdropLookups.clear();
     activeLookupCount = 0;
     lookupWaiters.splice(0, lookupWaiters.length).forEach(waiter => {
         clearTimeout(waiter.timeout);

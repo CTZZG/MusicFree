@@ -16,7 +16,7 @@ import { StatusBar, StyleSheet, View } from "react-native";
 import { ReduceMotion, ReducedMotionConfig } from "react-native-reanimated";
 import { routes } from "@/core/router/routes.tsx";
 import ErrorBoundary from "@/components/errorBoundary";
-import { navigationRef } from "@/core/router";
+import { navigationRef, ROUTE_PATH } from "@/core/router";
 import MusicBar from "@/components/musicBar";
 import ScreenSurface from "@/components/base/screenSurface";
 import {
@@ -64,7 +64,9 @@ const surfacedRoutes = routes.map(route => {
 
 export default function Pages() {
     const theme = Theme.useTheme();
-    const [currentRouteName, setCurrentRouteName] = useState<string>(routes[0].path);
+    const [currentRouteName, setCurrentRouteName] = useState<string>(
+        routes[0].path,
+    );
     const [transitionInProgress, setTransitionInProgress] = useState(false);
     const pendingRouteNameRef = useRef(currentRouteName);
     const transitionFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -94,10 +96,7 @@ export default function Pages() {
         if (transitionFallbackRef.current) {
             clearTimeout(transitionFallbackRef.current);
         }
-        transitionFallbackRef.current = setTimeout(
-            commitCurrentRouteName,
-            600,
-        );
+        transitionFallbackRef.current = setTimeout(commitCurrentRouteName, 600);
     }, [commitCurrentRouteName, readCurrentRouteName]);
 
     useEffect(
@@ -133,13 +132,25 @@ export default function Pages() {
                                             animationDuration: 100,
                                         }}
                                         screenListeners={{
-                                            transitionEnd: commitCurrentRouteName,
+                                            transitionEnd:
+                                                commitCurrentRouteName,
                                         }}>
                                         {surfacedRoutes.map(route => (
                                             <Stack.Screen
                                                 key={route.path}
                                                 name={route.path}
                                                 component={route.component}
+                                                options={
+                                                    route.path ===
+                                                    ROUTE_PATH.MUSIC_DETAIL
+                                                        ? {
+                                                            statusBarBackgroundColor:
+                                                                  "transparent",
+                                                            statusBarTranslucent:
+                                                                  true,
+                                                        }
+                                                        : undefined
+                                                }
                                             />
                                         ))}
                                     </Stack.Navigator>

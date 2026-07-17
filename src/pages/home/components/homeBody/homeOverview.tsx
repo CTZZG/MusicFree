@@ -14,6 +14,7 @@ import TrackPlayer, {
 } from "@/core/trackPlayer";
 import Theme from "@/core/theme";
 import useColors from "@/hooks/useColors";
+import useResolvedMusicArtwork from "@/hooks/useResolvedMusicArtwork";
 import rpx from "@/utils/rpx";
 import { musicIsPaused } from "@/utils/trackUtils";
 import {
@@ -157,6 +158,7 @@ function ContinueListening(props: {
     const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
     const navigate = useNavigate();
+    const resolvedArtwork = useResolvedMusicArtwork(featuredMusic);
 
     const isCurrent =
         !!currentMusic &&
@@ -238,7 +240,7 @@ function ContinueListening(props: {
                     }
                 }}>
                 <FastImage
-                    source={featuredMusic.artwork}
+                    source={resolvedArtwork ?? featuredMusic.artwork}
                     placeholderSource={ImgAsset.albumDefault}
                     style={styles.continueCover}
                 />

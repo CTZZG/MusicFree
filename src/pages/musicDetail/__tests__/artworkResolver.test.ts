@@ -11,9 +11,9 @@ jest.mock("@/utils/mediaUtils", () => ({
 }));
 
 import {
+    getCachedMusicArtwork,
     resetMusicDetailArtworkCacheForTests,
     resolveMusicDetailArtwork,
-    resolveMusicDetailBackdrop,
 } from "../artworkResolver";
 
 function music(overrides: Partial<IMusic.IMusicItem> = {}) {
@@ -48,10 +48,9 @@ describe("music detail artwork resolver", () => {
             artwork: "https://img/safe.jpg",
         }));
         await expect(
-            resolveMusicDetailArtwork(
-                music({ artwork: "javascript:alert(1)" }),
-                { getMusicInfo },
-            ),
+            resolveMusicDetailArtwork(music({ artwork: "javascript:alert(1)" }), {
+                getMusicInfo,
+            }),
         ).resolves.toBe("https://img/safe.jpg");
         expect(getMusicInfo).toHaveBeenCalledTimes(1);
     });
@@ -77,6 +76,34 @@ describe("music detail artwork resolver", () => {
         expect(getMusicInfo).toHaveBeenCalledTimes(1);
     });
 
+    it("exposes a resolved cover to other visible UI consumers", async () => {
+        const item = music();
+        await resolveMusicDetailArtwork(item, {
+            getMusicInfo: jest.fn(async () => ({
+                artwork: "https://img/shared.jpg",
+            })),
+        });
+
+        expect(getCachedMusicArtwork(item)).toBe("https://img/shared.jpg");
+    });
+
+    it("does not reuse a cached cover when a plugin reuses an id for another song", async () => {
+        const getMusicInfo = jest.fn(async (item: IMusic.IMusicItem) => ({
+            artwork: `https://img/${item.title}.jpg`,
+        }));
+
+        await expect(
+            resolveMusicDetailArtwork(music(), { getMusicInfo }),
+        ).resolves.toBe("https://img/想得美.jpg");
+        await expect(
+            resolveMusicDetailArtwork(
+                music({ title: "你要的全拿走", album: "你要的全拿走" }),
+                { getMusicInfo },
+            ),
+        ).resolves.toBe("https://img/你要的全拿走.jpg");
+        expect(getMusicInfo).toHaveBeenCalledTimes(2);
+    });
+
     it("accepts only an exact title and compatible artist from search", async () => {
         const search = jest.fn(async () => [
             music({
@@ -93,6 +120,24 @@ describe("music detail artwork resolver", () => {
         await expect(
             resolveMusicDetailArtwork(music(), { search }),
         ).resolves.toBe("https://img/match.jpg");
+    });
+
+    it("accepts an exact result when local title and artist tags are swapped", async () => {
+        const search = jest.fn(async () => [
+            music({
+                id: "itunes-match",
+                title: "Back In My Life",
+                artist: "Alice Deejay",
+                artwork: "https://img/back-in-my-life.jpg",
+            }),
+        ]);
+
+        await expect(
+            resolveMusicDetailArtwork(
+                music({ title: "Alice Deejay", artist: "Back In My Life" }),
+                { search },
+            ),
+        ).resolves.toBe("https://img/back-in-my-life.jpg");
     });
 
     it("does not use a similarly named song as a cover fallback", async () => {
@@ -133,34 +178,44 @@ describe("music detail artwork resolver", () => {
         expect(getMusicInfo).toHaveBeenCalledTimes(1);
     });
 
-    it("shares the optional artist backdrop cache across songs", async () => {
-        const searchArtist = jest.fn(async () =>
-            "https://image.tmdb.org/t/p/original/artist.jpg",
-        );
+    it("uses a high-resolution iTunes album cover when plugins have no artwork", async () => {
+        const originalFetch = globalThis.fetch;
+        const fetchMock = jest.fn(async () => ({
+            ok: true,
+            json: async () => ({
+                results: [
+                    {
+                        trackId: 123,
+                        trackName: "Back In My Life",
+                        artistName: "Alice Deejay",
+                        collectionName: "Back In My Life",
+                        artworkUrl100:
+                            "https://is1-ssl.mzstatic.com/image/100x100bb.jpg",
+                    },
+                ],
+            }),
+        }));
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-        await expect(
-            resolveMusicDetailBackdrop(music(), { searchArtist }),
-        ).resolves.toBe(
-            "https://image.tmdb.org/t/p/original/artist.jpg",
-        );
-        await expect(
-            resolveMusicDetailBackdrop(
-                music({ id: "song-2", title: "另一首歌" }),
-                { searchArtist },
-            ),
-        ).resolves.toBe(
-            "https://image.tmdb.org/t/p/original/artist.jpg",
-        );
-        expect(searchArtist).toHaveBeenCalledTimes(1);
-    });
-
-    it("rejects non-TMDB URLs from the backdrop-only channel", async () => {
-        const searchArtist = jest.fn(async () =>
-            "https://untrusted.example/artist.jpg",
-        );
-
-        await expect(
-            resolveMusicDetailBackdrop(music(), { searchArtist }),
-        ).resolves.toBeUndefined();
+        try {
+            await expect(
+                resolveMusicDetailArtwork(
+                    music({
+                        title: "Alice Deejay",
+                        artist: "Back In My Life",
+                    }),
+                ),
+            ).resolves.toBe(
+                "https://is1-ssl.mzstatic.com/image/1200x1200bb.jpg",
+            );
+            expect(fetchMock).toHaveBeenCalledWith(
+                expect.stringContaining(
+                    "term=Alice%20Deejay%20Back%20In%20My%20Life",
+                ),
+                expect.objectContaining({ signal: expect.anything() }),
+            );
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
     });
 });

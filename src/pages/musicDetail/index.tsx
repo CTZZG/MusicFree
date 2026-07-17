@@ -15,15 +15,14 @@ import { MusicDetailArtworkProvider } from "./artworkContext";
 
 export default function MusicDetail() {
     const orientation = useOrientation();
-    const immersiveMode = useAppConfig("basic.musicDetailImmersiveMode") ?? false;
+    const immersiveMode =
+        useAppConfig("basic.musicDetailImmersiveMode") ?? false;
     const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
     const [tab, setTab] = useState<"album" | "lyric">(
         Config.getConfig("basic.musicDetailDefault") || "album",
     );
-    const useHeroLayout =
-        orientation === "vertical" && coverStyle !== "circle";
-    const showOverlayNav =
-        immersiveMode || (useHeroLayout && tab === "album");
+    const useHeroLayout = orientation === "vertical" && coverStyle !== "circle";
+    const showOverlayNav = immersiveMode || (useHeroLayout && tab === "album");
 
     useEffect(() => {
         const needAwake = Config.getConfig("basic.musicDetailAwake");
@@ -47,6 +46,7 @@ export default function MusicDetail() {
                     hidden={immersiveMode}
                     backgroundColor={"transparent"}
                     barStyle="light-content"
+                    translucent
                 />
                 <View style={style.bodyWrapper}>
                     <View style={globalStyle.flex1}>

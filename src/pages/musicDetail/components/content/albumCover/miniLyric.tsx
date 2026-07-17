@@ -41,6 +41,7 @@ import {
 interface IMiniLyricProps {
     compact?: boolean;
     onPress?: () => void;
+    variant?: "default" | "hero";
 }
 
 type MiniLyricLineType = LyricWordLineType;
@@ -51,8 +52,13 @@ const COMPACT_LINE_HEIGHT = rpx(36);
 const GROUP_SPACING = rpx(8);
 const CONTAINER_HEIGHT = rpx(198);
 const COMPACT_CONTAINER_HEIGHT = rpx(96);
+const HERO_CONTAINER_HEIGHT = rpx(112);
+const HERO_GROUP_HEIGHT = rpx(52);
+const HERO_PRIMARY_LINE_HEIGHT = rpx(48);
+const HERO_SECONDARY_LINE_HEIGHT = rpx(36);
 const FADE_HEIGHT = rpx(56);
 const COMPACT_FADE_HEIGHT = rpx(26);
+const HERO_FADE_HEIGHT = rpx(4);
 const MIN_WORD_DURATION = 50;
 
 const defaultMiniLyricOrder: MiniLyricLineType[] = [
@@ -125,13 +131,21 @@ function MiniAnimatedCharacter(props: {
     inactiveColor: string;
     fontSize: number;
     lineHeight: number;
+    subtle?: boolean;
 }) {
-    const { word, activeColor, inactiveColor, fontSize, lineHeight } = props;
+    const {
+        word,
+        activeColor,
+        inactiveColor,
+        fontSize,
+        lineHeight,
+        subtle = false,
+    } = props;
     const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
     const wordStartTime = word.startTime;
     const wordDuration = word.duration;
-    const activeShadowRadius = rpx(9);
-    const activeFloatDistance = rpx(3);
+    const activeShadowRadius = subtle ? rpx(4) : rpx(9);
+    const activeFloatDistance = subtle ? rpx(1) : rpx(3);
     const animatedStyle = useAnimatedStyle(() => {
         const duration = Math.max(wordDuration || 0, MIN_WORD_DURATION);
         const endTime = wordStartTime + duration;
@@ -161,7 +175,7 @@ function MiniAnimatedCharacter(props: {
                     translateY: -wave * activeFloatDistance,
                 },
                 {
-                    scale: 1 + wave * 0.04,
+                    scale: 1 + wave * (subtle ? 0.015 : 0.04),
                 },
             ],
         };
@@ -170,6 +184,7 @@ function MiniAnimatedCharacter(props: {
         activeFloatDistance,
         activeShadowRadius,
         inactiveColor,
+        subtle,
         wordDuration,
         wordStartTime,
     ]);
@@ -182,6 +197,7 @@ function MiniAnimatedCharacter(props: {
                     fontSize,
                     lineHeight,
                 },
+                subtle ? styles.heroActiveCharacter : null,
                 animatedStyle,
             ]}>
             {word.text}
@@ -198,6 +214,8 @@ function MiniWordByWordLine(props: {
     fontSize: number;
     lineHeight: number;
     enableWordByWord: boolean;
+    align?: "left" | "center";
+    subtle?: boolean;
 }) {
     const {
         item,
@@ -208,6 +226,8 @@ function MiniWordByWordLine(props: {
         fontSize,
         lineHeight,
         enableWordByWord,
+        align = "left",
+        subtle = false,
     } = props;
     const text = getLineText(item, type);
     const lyricWordData = useMemo(
@@ -219,17 +239,23 @@ function MiniWordByWordLine(props: {
         [lyricWordData.words],
     );
 
-    if (!enableWordByWord || !lyricWordData.hasWordByWord || !characters.length) {
+    if (
+        !enableWordByWord ||
+        !lyricWordData.hasWordByWord ||
+        !characters.length
+    ) {
         return (
             <Text
                 numberOfLines={1}
                 style={[
                     styles.activeLine,
+                    subtle ? styles.heroActiveLine : null,
                     {
                         color: activeColor,
                         fontSize,
                         height: lineHeight,
                         lineHeight,
+                        textAlign: align,
                     },
                 ]}>
                 {text}
@@ -241,6 +267,8 @@ function MiniWordByWordLine(props: {
         <View
             style={[
                 styles.activeWordLine,
+                align === "center" ? styles.centeredWordLine : null,
+                subtle ? styles.heroActiveWordLine : null,
                 {
                     minHeight: lineHeight,
                 },
@@ -253,6 +281,7 @@ function MiniWordByWordLine(props: {
                     inactiveColor={inactiveColor}
                     fontSize={fontSize}
                     lineHeight={lineHeight}
+                    subtle={subtle}
                 />
             ))}
         </View>
@@ -313,13 +342,17 @@ function MiniLyricGroup(props: {
 }
 
 export default function MiniLyric(props: IMiniLyricProps) {
-    const { compact = false, onPress } = props;
+    const { compact = false, onPress, variant = "default" } = props;
+    const isHero = variant === "hero";
     const lyricState = useLyricState();
     const normalizedCurrentLyricState = useNormalizedCurrentLyricState();
     const { width: windowWidth } = useWindowDimensions();
     const infoWidth = useMemo(
-        () => getSongInfoWidth(windowWidth),
-        [windowWidth],
+        () =>
+            isHero
+                ? Math.max(rpx(320), windowWidth - rpx(88))
+                : getSongInfoWidth(windowWidth),
+        [isHero, windowWidth],
     );
     const translateY = useSharedValue(0);
     const lastIndexRef = useRef(-1);
@@ -349,12 +382,23 @@ export default function MiniLyric(props: IMiniLyricProps) {
             Math.max(0, lyrics.length - 1),
         ),
     );
-    const containerHeight = compact ? COMPACT_CONTAINER_HEIGHT : CONTAINER_HEIGHT;
-    const fadeHeight = compact ? COMPACT_FADE_HEIGHT : FADE_HEIGHT;
+    const containerHeight = isHero
+        ? HERO_CONTAINER_HEIGHT
+        : compact
+            ? COMPACT_CONTAINER_HEIGHT
+            : CONTAINER_HEIGHT;
+    const fadeHeight = isHero
+        ? HERO_FADE_HEIGHT
+        : compact
+            ? COMPACT_FADE_HEIGHT
+            : FADE_HEIGHT;
     const activeColor = pureWhiteMode ? "white" : "rgba(126, 229, 255, 1)";
     const inactiveColor = "rgba(255, 255, 255, 0.36)";
 
     const visibleTypes = useMemo(() => {
+        if (isHero) {
+            return ["original"] as MiniLyricLineType[];
+        }
         if (compact) {
             return ["original"] as MiniLyricLineType[];
         }
@@ -372,6 +416,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
         });
     }, [
         compact,
+        isHero,
         lyricOrder,
         lyricState.hasRomanization,
         lyricState.hasTranslation,
@@ -382,12 +427,17 @@ export default function MiniLyric(props: IMiniLyricProps) {
     const groupHeights = useMemo(
         () =>
             lyrics.map(item => {
+                if (isHero) {
+                    return HERO_GROUP_HEIGHT;
+                }
                 const hasText = visibleTypes.some(type =>
                     getLineText(item, type).trim(),
                 );
                 if (!hasText) {
-                    return (compact ? COMPACT_LINE_HEIGHT : PRIMARY_LINE_HEIGHT) +
-                        GROUP_SPACING;
+                    return (
+                        (compact ? COMPACT_LINE_HEIGHT : PRIMARY_LINE_HEIGHT) +
+                        GROUP_SPACING
+                    );
                 }
                 const lineCount = Math.max(1, visibleTypes.length);
                 if (compact) {
@@ -399,7 +449,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
                     GROUP_SPACING
                 );
             }),
-        [compact, lyrics, visibleTypes],
+        [compact, isHero, lyrics, visibleTypes],
     );
 
     useEffect(() => {
@@ -413,8 +463,9 @@ export default function MiniLyric(props: IMiniLyricProps) {
         const currentGroupHeight =
             groupHeights[currentIndex] ??
             (compact ? COMPACT_LINE_HEIGHT : PRIMARY_LINE_HEIGHT);
-        const targetY =
-            -beforeHeight + (containerHeight - currentGroupHeight) / 2;
+        const targetY = isHero
+            ? -beforeHeight + rpx(4)
+            : -beforeHeight + (containerHeight - currentGroupHeight) / 2;
 
         if (lastIndexRef.current === -1) {
             translateY.value = targetY;
@@ -430,6 +481,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
         containerHeight,
         currentIndex,
         groupHeights,
+        isHero,
         lyrics.length,
         translateY,
     ]);
@@ -460,7 +512,19 @@ export default function MiniLyric(props: IMiniLyricProps) {
     );
 
     if (lyricState.loading || lyrics.length === 0) {
-        return null;
+        return isHero ? (
+            <View
+                style={[
+                    styles.container,
+                    {
+                        width: infoWidth,
+                        height: containerHeight,
+                        marginTop: rpx(4),
+                        marginBottom: rpx(52),
+                    },
+                ]}
+            />
+        ) : null;
     }
 
     const lyricContent = (
@@ -469,7 +533,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 {lyrics.map((item, index) => {
                     const isActive = index === currentIndex;
                     const distance = Math.abs(index - currentIndex);
-                    if (distance > 3) {
+                    if (distance > (isHero ? 2 : 3)) {
                         return (
                             <View
                                 key={`${item.time}-${index}`}
@@ -492,7 +556,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                     <View style={styles.dotsLine}>
                                         <BreathingDots
                                             color={activeColor}
-                                            align="left"
+                                            align={isHero ? "center" : "left"}
                                             highlight
                                         />
                                     </View>
@@ -506,16 +570,24 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                         return null;
                                     }
                                     const isPrimary = typeIndex === 0;
-                                    const fontSize = compact
-                                        ? fontSizeConst.subTitle
-                                        : isPrimary
-                                            ? fontSizeConst.title
-                                            : fontSizeConst.content;
-                                    const lineHeight = compact
-                                        ? COMPACT_LINE_HEIGHT
-                                        : isPrimary
-                                            ? PRIMARY_LINE_HEIGHT
-                                            : SECONDARY_LINE_HEIGHT;
+                                    const fontSize = isHero
+                                        ? isActive
+                                            ? rpx(34)
+                                            : rpx(26)
+                                        : compact
+                                            ? fontSizeConst.subTitle
+                                            : isPrimary
+                                                ? fontSizeConst.title
+                                                : fontSizeConst.content;
+                                    const lineHeight = isHero
+                                        ? isActive
+                                            ? HERO_PRIMARY_LINE_HEIGHT
+                                            : HERO_SECONDARY_LINE_HEIGHT
+                                        : compact
+                                            ? COMPACT_LINE_HEIGHT
+                                            : isPrimary
+                                                ? PRIMARY_LINE_HEIGHT
+                                                : SECONDARY_LINE_HEIGHT;
                                     if (isActive && isPrimary) {
                                         return (
                                             <MiniWordByWordLine
@@ -530,25 +602,32 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                                 enableWordByWord={
                                                     enableWordByWord
                                                 }
+                                                align={
+                                                    isHero ? "center" : "left"
+                                                }
+                                                subtle={isHero}
                                             />
                                         );
                                     }
+                                    const lineStyle = {
+                                        color: isActive
+                                            ? activeColor
+                                            : "white",
+                                        fontSize,
+                                        height: lineHeight,
+                                        lineHeight,
+                                    };
                                     return (
                                         <Text
                                             key={type}
                                             numberOfLines={1}
                                             style={[
-                                                isPrimary
-                                                    ? styles.contextPrimaryLine
-                                                    : styles.contextSecondaryLine,
-                                                {
-                                                    color: isActive
-                                                        ? activeColor
-                                                        : "white",
-                                                    fontSize,
-                                                    height: lineHeight,
-                                                    lineHeight,
-                                                },
+                                                isHero
+                                                    ? styles.heroContextLine
+                                                    : isPrimary
+                                                        ? styles.contextPrimaryLine
+                                                        : styles.contextSecondaryLine,
+                                                lineStyle,
                                             ]}>
                                             {text}
                                         </Text>
@@ -570,7 +649,8 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 {
                     width: infoWidth,
                     height: containerHeight,
-                    marginTop: compact ? rpx(8) : rpx(16),
+                    marginTop: isHero ? rpx(4) : compact ? rpx(8) : rpx(16),
+                    marginBottom: isHero ? rpx(52) : 0,
                 },
                 pressed ? styles.pressed : null,
             ]}>
@@ -629,6 +709,11 @@ const styles = StyleSheet.create({
         },
         textShadowRadius: rpx(10),
     },
+    heroActiveLine: {
+        fontWeight: fontWeightConst.semibold,
+        textShadowColor: "rgba(0, 0, 0, 0.32)",
+        textShadowRadius: rpx(4),
+    },
     activeCharacter: {
         color: "white",
         fontWeight: fontWeightConst.bold,
@@ -639,12 +724,22 @@ const styles = StyleSheet.create({
             height: 0,
         },
     },
+    heroActiveCharacter: {
+        fontWeight: fontWeightConst.semibold,
+        textShadowColor: "rgba(0, 0, 0, 0.3)",
+    },
     activeWordLine: {
         width: "100%",
         flexDirection: "row",
         alignItems: "center",
         flexWrap: "wrap",
         overflow: "hidden",
+    },
+    centeredWordLine: {
+        justifyContent: "center",
+    },
+    heroActiveWordLine: {
+        flexWrap: "nowrap",
     },
     contextPrimaryLine: {
         width: "100%",
@@ -666,6 +761,19 @@ const styles = StyleSheet.create({
         includeFontPadding: false,
         opacity: 0.72,
         textAlign: "left",
+    },
+    heroContextLine: {
+        width: "100%",
+        color: "white",
+        fontWeight: fontWeightConst.medium,
+        includeFontPadding: false,
+        textAlign: "center",
+        textShadowColor: "rgba(0, 0, 0, 0.24)",
+        textShadowOffset: {
+            width: 0,
+            height: rpx(1),
+        },
+        textShadowRadius: rpx(3),
     },
     dotsLine: {
         minHeight: PRIMARY_LINE_HEIGHT,

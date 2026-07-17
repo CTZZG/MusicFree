@@ -230,9 +230,13 @@ export default function SongInfo(props: ISongInfoProps) {
                 variant === "hero" ? styles.heroContainer : null,
                 { width: infoWidth },
             ]}>
-            <View style={styles.titleRow}>
+            <View
+                style={[
+                    styles.titleRow,
+                    variant === "hero" ? styles.heroTitleRow : null,
+                ]}>
                 <Text
-                    numberOfLines={2}
+                    numberOfLines={variant === "hero" ? 1 : 2}
                     style={[
                         styles.title,
                         variant === "hero" ? styles.heroTitle : null,
@@ -285,19 +289,14 @@ export default function SongInfo(props: ISongInfoProps) {
                     />
                 ) : null}
             </View>
-            {musicItem.album ? (
+            {musicItem.album && variant !== "hero" ? (
                 <Pressable
                     onPress={handleAlbumPress}
                     style={({ pressed }) => [
                         styles.clickableContainer,
                         pressed ? styles.pressed : null,
                     ]}>
-                    <Text
-                        numberOfLines={1}
-                        style={[
-                            styles.album,
-                            variant === "hero" ? styles.heroAlbum : null,
-                        ]}>
+                    <Text numberOfLines={1} style={styles.album}>
                         {musicItem.album}
                     </Text>
                 </Pressable>
@@ -313,7 +312,8 @@ const styles = StyleSheet.create({
         alignItems: "flex-start",
     },
     heroContainer: {
-        paddingVertical: rpx(10),
+        paddingTop: rpx(12),
+        paddingBottom: rpx(8),
     },
     titleRow: {
         flexDirection: "row",
@@ -321,6 +321,9 @@ const styles = StyleSheet.create({
         justifyContent: "space-between",
         width: "100%",
         marginBottom: rpx(16),
+    },
+    heroTitleRow: {
+        marginBottom: rpx(10),
     },
     title: {
         color: "white",
@@ -332,12 +335,12 @@ const styles = StyleSheet.create({
         marginRight: rpx(16),
     },
     heroTitle: {
-        fontSize: rpx(48),
-        lineHeight: rpx(58),
+        fontSize: rpx(40),
+        lineHeight: rpx(48),
         fontWeight: fontWeightConst.bold,
-        textShadowColor: "rgba(0,0,0,0.28)",
+        textShadowColor: "rgba(0,0,0,0.22)",
         textShadowOffset: { width: 0, height: rpx(2) },
-        textShadowRadius: rpx(8),
+        textShadowRadius: rpx(6),
     },
     artistRow: {
         flexDirection: "row",
@@ -352,8 +355,8 @@ const styles = StyleSheet.create({
         opacity: 0.9,
     },
     heroArtist: {
-        fontSize: rpx(28),
-        opacity: 0.94,
+        fontSize: rpx(24),
+        opacity: 0.86,
     },
     clickableContainer: {
         maxWidth: "100%",
@@ -375,9 +378,5 @@ const styles = StyleSheet.create({
         fontSize: fontSizeConst.content,
         includeFontPadding: false,
         opacity: 0.7,
-    },
-    heroAlbum: {
-        fontSize: rpx(26),
-        opacity: 0.74,
     },
 });

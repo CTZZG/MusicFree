@@ -1,11 +1,13 @@
 {
-  "version": "0.6.5-rebuild.5",
+  "version": "0.7.0",
   "changeLog": [
-    "【新增】支持 Nitro 与 MPV 播放内核切换，MPV 补齐媒体会话、通知、歌词与自动下一曲能力",
-    "【新增】Live Update 灵动岛歌词通知支持歌曲封面、播放进度和展开卡片控制",
-    "【优化】升级 Nitro/MPV 原生依赖与格式支持，完善 ASF、M4A、WMA、DSF 等格式播放路径"
+    "【播放界面】沉浸式封面改为单画布模糊、清晰与渐变融合，减少纯色封面的明显分层",
+    "【歌曲信息/歌词】调整 Hero 歌曲信息和 Mini 歌词的位置、字号与切换动画",
+    "【封面】无封面歌曲支持 iTunes 高清专辑图，并同步到底部播放条和首页继续听",
+    "【Android】启用 Edge-to-Edge 与透明状态栏，让封面延伸到系统状态栏区域",
+    "【发布】版本升级至 0.7.0，Release 自动读取 docs 更新说明并附加实际构建信息"
   ],
   "download": [
-    "https://r0rvr854dd1.feishu.cn/drive/folder/KLqKfWOA3lx8MKdo8xNcYpR8n7t"
+    "https://github.com/CTZZG/MusicFree/releases/tag/v0.7.0"
   ]
 }

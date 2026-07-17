@@ -4,7 +4,7 @@ on:
     workflow_dispatch:
         inputs:
             version_name:
-                description: Optional version name for artifact labels
+                description: Optional version name; when provided it must match package.json
                 required: false
                 type: string
     push:
@@ -30,8 +30,6 @@ jobs:
             NODE_VERSION: '22'
             JAVA_VERSION: '17'
             NODE_ENV: production
-            EXPO_PUBLIC_TMDB_READ_ACCESS_TOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
-            EXPO_PUBLIC_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
             RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 || secrets.RELEASE_KEYSTORE_BASE64 }}
             RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD || secrets.RELEASE_STORE_PASSWORD }}
             RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS || secrets.RELEASE_KEY_ALIAS }}
@@ -83,16 +81,30 @@ jobs:
               run: |
                   INPUT_VERSION="${{ inputs.version_name }}"
                   PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-                  APP_VERSION="${INPUT_VERSION:-$PACKAGE_VERSION}"
+                  if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "$PACKAGE_VERSION" ]; then
+                    echo "::error title=Version mismatch::Manual version $INPUT_VERSION must match package.json version $PACKAGE_VERSION."
+                    exit 1
+                  fi
+                  APP_VERSION="$PACKAGE_VERSION"
                   SHORT_SHA="${GITHUB_SHA::7}"
                   BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
                   BUILD_REF_NAME="${GITHUB_REF_NAME:-unknown}"
                   BUILD_REF_TYPE="${GITHUB_REF_TYPE:-unknown}"
                   BUILD_RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
                   if [ "$BUILD_REF_TYPE" = "tag" ] && [ -n "$GITHUB_REF_NAME" ]; then
-                    RELEASE_TAG="$GITHUB_REF_NAME"
+                    EXPECTED_TAG="v$PACKAGE_VERSION"
+                    if [ "$GITHUB_REF_NAME" != "$EXPECTED_TAG" ]; then
+                      echo "::error title=Tag version mismatch::Tag $GITHUB_REF_NAME must match package.json version $PACKAGE_VERSION ($EXPECTED_TAG)."
+                      exit 1
+                    fi
+                    RELEASE_TAG="$EXPECTED_TAG"
                   else
                     RELEASE_TAG="v$APP_VERSION"
+                  fi
+                  RELEASE_NOTES_PATH="docs/release-notes-v${APP_VERSION}.md"
+                  if [ "${{ github.event_name }}" != "pull_request" ] && [ ! -f "$RELEASE_NOTES_PATH" ]; then
+                    echo "::error title=Release notes missing::$RELEASE_NOTES_PATH is required before publishing $RELEASE_TAG."
+                    exit 1
                   fi
 
                   {
@@ -104,6 +116,7 @@ jobs:
                     echo "BUILD_REF_TYPE=$BUILD_REF_TYPE"
                     echo "BUILD_RUN_URL=$BUILD_RUN_URL"
                     echo "RELEASE_TAG=$RELEASE_TAG"
+                    echo "RELEASE_NOTES_PATH=$RELEASE_NOTES_PATH"
                   } >> "$GITHUB_ENV"
 
                   {
@@ -115,6 +128,7 @@ jobs:
                     echo "Ref type: $BUILD_REF_TYPE"
                     echo "Ref: $GITHUB_REF"
                     echo "Release tag: $RELEASE_TAG"
+                    echo "Release notes: $RELEASE_NOTES_PATH"
                     echo "Build date: $BUILD_DATE"
                     echo "Workflow: $GITHUB_WORKFLOW"
                     echo "Run: $BUILD_RUN_URL"
@@ -372,6 +386,25 @@ jobs:
                   }
                   NODE
 
+            - name: Prepare GitHub release notes
+              if: github.event_name != 'pull_request'
+              run: |
+                  RELEASE_BODY_PATH="$RUNNER_TEMP/release-notes-${APP_VERSION}.md"
+                  cp "$RELEASE_NOTES_PATH" "$RELEASE_BODY_PATH"
+                  sed -i "s/<短 SHA>/${SHORT_SHA}/g" "$RELEASE_BODY_PATH"
+                  {
+                    echo
+                    echo "## 🧾 本次 Action 构建"
+                    echo
+                    echo "- 版本：${APP_VERSION}"
+                    echo "- 提交：[${SHORT_SHA}](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})"
+                    echo "- Ref：${BUILD_REF_NAME}（${BUILD_REF_TYPE}）"
+                    echo "- 构建时间：${BUILD_DATE}"
+                    echo "- 签名：${SIGNING_STATUS}"
+                    echo "- Action：[查看构建日志](${BUILD_RUN_URL})"
+                  } >> "$RELEASE_BODY_PATH"
+                  echo "RELEASE_BODY_PATH=$RELEASE_BODY_PATH" >> "$GITHUB_ENV"
+
             - name: Publish GitHub release assets
               if: github.event_name != 'pull_request'
               uses: softprops/action-gh-release@v3
@@ -379,15 +412,9 @@ jobs:
                   tag_name: ${{ env.RELEASE_TAG }}
                   target_commitish: ${{ github.sha }}
                   name: MusicFree ${{ env.APP_VERSION }}
-                  body: |
-                      Android build for `${{ env.APP_VERSION }}`.
-
-                      - Commit: `${{ github.sha }}`
-                      - Ref: `${{ env.BUILD_REF_NAME }}`
-                      - Build date: `${{ env.BUILD_DATE }}`
-                      - Signing: `${{ env.SIGNING_STATUS }}`; details are recorded in `android-build-info.txt`.
+                  body_path: ${{ env.RELEASE_BODY_PATH }}
                   files: dist/*
-                  generate_release_notes: true
+                  generate_release_notes: false
                   prerelease: ${{ contains(env.APP_VERSION, '-') }}
                   make_latest: ${{ contains(env.APP_VERSION, '-') && 'false' || 'true' }}
                   overwrite_files: true
@@ -405,6 +432,7 @@ jobs:
                     echo "- Build date: ${BUILD_DATE}"
                     echo "- Run: ${BUILD_RUN_URL}"
                     echo "- Signing: ${SIGNING_STATUS:-unknown}"
+                    echo "- Release notes: ${RELEASE_NOTES_PATH}"
                     echo
                     echo "### Artifacts"
                     ls -1 dist | sed 's/^/- /'

@@ -6,6 +6,7 @@ import { ImgAsset } from "@/constants/assetsConst";
 import Color from "color";
 import ThemeText from "../base/themeText";
 import useColors from "@/hooks/useColors";
+import useResolvedMusicArtwork from "@/hooks/useResolvedMusicArtwork";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import TrackPlayer, { usePlayList } from "@/core/trackPlayer";
@@ -28,6 +29,9 @@ function BarMusicItemInner(props: IBarMusicItemProps) {
     const { musicItem, activeIndex, transformSharedValue } = props;
     const colors = useColors();
     const safeAreaInsets = useSafeAreaInsets();
+    const resolvedArtwork = useResolvedMusicArtwork(
+        activeIndex === 0 ? musicItem : null,
+    );
 
     const animatedStyles = useAnimatedStyle(() => {
         return {
@@ -55,7 +59,7 @@ function BarMusicItemInner(props: IBarMusicItemProps) {
             <View style={styles.artworkWrapper}>
                 <FastImage
                     style={styles.artworkImg}
-                    source={musicItem.artwork}
+                    source={resolvedArtwork ?? musicItem.artwork}
                     placeholderSource={ImgAsset.albumDefault}
                 />
             </View>

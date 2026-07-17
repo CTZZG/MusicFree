@@ -13,9 +13,7 @@ module.exports = {
             'transform-inline-environment-variables',
             {
                 include: [
-                    'EXPO_PUBLIC_AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING',
-                    'EXPO_PUBLIC_TMDB_READ_ACCESS_TOKEN',
-                    'EXPO_PUBLIC_TMDB_API_KEY'
+                    'EXPO_PUBLIC_AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING'
                 ]
             }
         ],
