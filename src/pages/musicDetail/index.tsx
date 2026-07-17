@@ -50,7 +50,15 @@ export default function MusicDetail() {
                 />
                 <View style={style.bodyWrapper}>
                     <View style={globalStyle.flex1}>
-                        {showOverlayNav ? null : <NavBar />}
+                        {showOverlayNav ? null : (
+                            <NavBar
+                                onTitlePress={
+                                    tab === "lyric"
+                                        ? () => setTab("album")
+                                        : undefined
+                                }
+                            />
+                        )}
                         <Content
                             immersiveMode={immersiveMode}
                             tab={tab}

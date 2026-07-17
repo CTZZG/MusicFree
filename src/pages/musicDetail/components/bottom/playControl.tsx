@@ -41,7 +41,7 @@ export default function () {
                     name={"skip-left"}
                     size={rpx(56)}
                     onPress={() => {
-                        TrackPlayer.skipToPrevious();
+                        TrackPlayer.skipToPrevious().catch(() => undefined);
                     }}
                 />
                 {
@@ -65,7 +65,7 @@ export default function () {
                     name={"skip-right"}
                     size={rpx(56)}
                     onPress={() => {
-                        TrackPlayer.skipToNext();
+                        TrackPlayer.skipToNext().catch(() => undefined);
                     }}
                 />
                 <Icon

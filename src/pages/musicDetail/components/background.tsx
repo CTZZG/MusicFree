@@ -2,7 +2,6 @@ import React, { useMemo } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import { Image } from "expo-image";
 import LinearGradient from "react-native-linear-gradient";
-import rpx from "@/utils/rpx";
 import { useMusicDetailVisuals } from "../artworkContext";
 
 interface IBackgroundProps {
@@ -15,7 +14,20 @@ export default function Background(props: IBackgroundProps) {
     const { heroArtwork, hasHeroArtwork } = useMusicDetailVisuals();
     const { height, width } = useWindowDimensions();
     const showHero = tab === "album" && useHeroLayout;
-    const heroHeight = Math.min(height * 0.58, width * 1.18);
+    const viewportHeight = Math.max(1, height);
+    const heroHeight = Math.min(viewportHeight * 0.58, width * 1.18);
+    const heroFadeStart = Math.max(0, heroHeight * 0.76);
+    const heroFadeEnd = Math.min(
+        viewportHeight * 0.84,
+        heroHeight + viewportHeight * 0.18,
+    );
+    const heroGradientLocations = [
+        0,
+        heroFadeStart / viewportHeight,
+        heroHeight / viewportHeight,
+        heroFadeEnd / viewportHeight,
+        1,
+    ];
 
     const artworkSource = useMemo(
         () => (heroArtwork ? { uri: heroArtwork } : undefined),
@@ -36,7 +48,7 @@ export default function Background(props: IBackgroundProps) {
             ) : null}
             {showHero && hasHeroArtwork ? (
                 <Image
-                    style={[style.hero, { height: heroHeight }]}
+                    style={[style.hero, { height: heroFadeEnd }]}
                     contentFit="cover"
                     contentPosition="center"
                     transition={240}
@@ -48,8 +60,9 @@ export default function Background(props: IBackgroundProps) {
                     showHero
                         ? [
                             "rgba(0,0,0,0.06)",
-                            "rgba(7,9,12,0.12)",
-                            "rgba(10,12,16,0.78)",
+                            "rgba(7,9,12,0.08)",
+                            "rgba(10,12,16,0.24)",
+                            "rgba(10,12,16,0.86)",
                             "rgba(10,12,16,0.96)",
                         ]
                         : [
@@ -58,26 +71,9 @@ export default function Background(props: IBackgroundProps) {
                             "rgba(0,0,0,0.78)",
                         ]
                 }
-                locations={showHero ? [0, 0.34, 0.63, 1] : [0, 0.5, 1]}
+                locations={showHero ? heroGradientLocations : [0, 0.5, 1]}
                 style={StyleSheet.absoluteFill}
             />
-            {showHero ? (
-                <LinearGradient
-                    colors={[
-                        "rgba(255,255,255,0)",
-                        "rgba(12,14,18,0.2)",
-                        "rgba(12,14,18,0.92)",
-                    ]}
-                    locations={[0, 0.32, 1]}
-                    style={[
-                        style.heroFade,
-                        {
-                            top: Math.max(0, heroHeight - rpx(280)),
-                            height: rpx(380),
-                        },
-                    ]}
-                />
-            ) : null}
         </View>
     );
 }
@@ -106,10 +102,5 @@ const style = StyleSheet.create({
         left: 0,
         right: 0,
         width: "100%",
-    },
-    heroFade: {
-        position: "absolute",
-        left: 0,
-        right: 0,
     },
 });

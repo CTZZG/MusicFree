@@ -30,6 +30,19 @@ export function resolveLyricRestoreIndex(params: {
     return Math.max(0, Math.min(safeIndex, lyricsLength - 1));
 }
 
+export function resolveLyricActiveIndex(params: {
+    lyricsLength: number;
+    progressIndex?: number | null;
+    activeIndex?: number | null;
+}) {
+    const progressIndex = normalizeIndex(params.progressIndex);
+    return resolveLyricRestoreIndex({
+        lyricsLength: params.lyricsLength,
+        activeIndex:
+            progressIndex >= 0 ? progressIndex : params.activeIndex,
+    });
+}
+
 export function getLyricScrollTargetIndex(
     lyrics: readonly Pick<IParsedLrcItem, "time">[],
     positionMs: number,

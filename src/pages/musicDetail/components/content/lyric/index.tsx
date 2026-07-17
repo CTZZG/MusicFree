@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { LayoutRectangle, StyleSheet, Text, View } from "react-native";
 import rpx from "@/utils/rpx";
 import useDelayFalsy from "@/hooks/useDelayFalsy";
@@ -27,6 +34,7 @@ import { getLyricWordData } from "@/utils/lyricWordByWord";
 import {
     createLyricPayloadIdentity,
     getLyricScrollTargetIndex,
+    resolveLyricActiveIndex,
     resolveLyricRestoreIndex,
 } from "./lyricScrollState";
 import { getLyricSeekTimeSeconds } from "./lyricSeekPolicy";
@@ -313,7 +321,7 @@ export default function Lyric(props: IProps) {
 
     const currentMusicItem = useCurrentMusic();
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         lyricManager.hydrateCurrentPosition();
     }, [currentMusicItem?.id, currentMusicItem?.platform]);
 
@@ -422,11 +430,12 @@ export default function Lyric(props: IProps) {
 
     const getActiveLyricIndex = useCallback(
         () =>
-            resolveLyricRestoreIndex({
+            resolveLyricActiveIndex({
                 lyricsLength: lyrics.length,
+                progressIndex: scrollTargetIndex,
                 activeIndex: activeLyricIndexRef.current,
             }),
-        [lyrics.length],
+        [lyrics.length, scrollTargetIndex],
     );
 
     const getRestoreScrollIndex = useCallback(
@@ -519,14 +528,6 @@ export default function Lyric(props: IProps) {
         lyricsIdentity,
         scheduleInitialPositioning,
     ]);
-
-    useEffect(() => {
-        scrollPhaseRef.current = ScrollPhase.WaitingForContent;
-        lastScrollIndexRef.current = -1;
-        restoreScrollIndexRef.current = -1;
-        setShouldApplyInitialContentOffset(true);
-        setIsListReady(false);
-    }, [currentMusicItem?.id]);
 
     useEffect(() => {
         restoreScrollIndexRef.current = getActiveLyricIndex();

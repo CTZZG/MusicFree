@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import rpx from "@/utils/rpx";
 import { useNavigation } from "@react-navigation/native";
 import Tag from "@/components/base/tag";
@@ -11,10 +11,11 @@ import { useCurrentMusic } from "@/core/trackPlayer";
 
 interface INavBarProps {
     compact?: boolean;
+    onTitlePress?: () => void;
 }
 
 export default function NavBar(props: INavBarProps) {
-    const { compact = false } = props;
+    const { compact = false, onTitlePress } = props;
     const navigation = useNavigation();
     const musicItem = useCurrentMusic();
     // const {showShare} = useShare();
@@ -37,7 +38,19 @@ export default function NavBar(props: INavBarProps) {
             {compact ? (
                 <View style={styles.headerContent} />
             ) : (
-                <View style={styles.headerContent}>
+                <Pressable
+                    accessibilityHint={
+                        onTitlePress ? "返回沉浸式封面页" : undefined
+                    }
+                    accessibilityLabel={
+                        onTitlePress
+                            ? `${musicItem?.title ?? "当前歌曲"}，返回封面页`
+                            : undefined
+                    }
+                    accessibilityRole={onTitlePress ? "button" : undefined}
+                    disabled={!onTitlePress}
+                    onPress={onTitlePress}
+                    style={styles.headerContent}>
                     <Text numberOfLines={1} style={styles.headerTitleText}>
                         {musicItem?.title ?? "--"}
                     </Text>
@@ -53,7 +66,7 @@ export default function NavBar(props: INavBarProps) {
                             />
                         ) : null}
                     </View>
-                </View>
+                </Pressable>
             )}
             <IconButton
                 name="share"

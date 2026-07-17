@@ -1,6 +1,7 @@
 import {
     createLyricPayloadIdentity,
     getLyricScrollTargetIndex,
+    resolveLyricActiveIndex,
     resolveLyricRestoreIndex,
 } from "../lyricScrollState";
 
@@ -47,6 +48,23 @@ describe("lyric scroll state helpers", () => {
                 restoreIndex: -1,
             }),
         ).toBe(0);
+    });
+
+    it("prefers the hydrated progress index over a stale highlighted line", () => {
+        expect(
+            resolveLyricActiveIndex({
+                lyricsLength: 8,
+                progressIndex: 5,
+                activeIndex: 0,
+            }),
+        ).toBe(5);
+        expect(
+            resolveLyricActiveIndex({
+                lyricsLength: 8,
+                progressIndex: -1,
+                activeIndex: 3,
+            }),
+        ).toBe(3);
     });
 
     it("builds a stable identity from the music and lyric payload boundaries", () => {
