@@ -92,6 +92,11 @@ export interface IPlaybackDiagnosticSnapshot {
     native?: IPlaybackNativeDiagnostics;
 }
 
+export interface ITrackPlayerProgressSnapshot extends PlayerAdapterProgress {
+    mediaKey?: string;
+    sequence: number;
+}
+
 export interface ITrackPlayer
     extends IInjectable,
         EventEmitter<{
@@ -293,6 +298,12 @@ export interface ITrackPlayer
      * @returns 包含播放位置和总时长的对象
      */
     getProgress(): Promise<PlayerAdapterProgress>;
+
+    /**
+     * 获取最近一次已发布到 JS 状态层的同步进度快照。
+     * 供歌词等新挂载界面首帧水合，随后再由异步原生进度校正。
+     */
+    getProgressSnapshot(): ITrackPlayerProgressSnapshot;
 
     /**
      * 获取 JS 层播放诊断快照

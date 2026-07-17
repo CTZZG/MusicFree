@@ -1,20 +1,18 @@
-import React, { useState } from "react";
+import React from "react";
 import { View } from "react-native";
 import AlbumCover from "./albumCover";
 import Lyric from "./lyric";
 import useOrientation from "@/hooks/useOrientation";
-import Config from "@/core/appConfig";
 import globalStyle from "@/constants/globalStyle";
 
 interface IContentProps {
     immersiveMode?: boolean;
+    tab: "album" | "lyric";
+    onTabChange(tab: "album" | "lyric"): void;
 }
 
 export default function Content(props: IContentProps) {
-    const { immersiveMode = false } = props;
-    const [tab, selectTab] = useState<"album" | "lyric">(
-        Config.getConfig("basic.musicDetailDefault") || "album",
-    );
+    const { immersiveMode = false, tab, onTabChange } = props;
     const orientation = useOrientation();
     const showAlbumCover = tab === "album" || orientation === "horizontal";
 
@@ -23,9 +21,9 @@ export default function Content(props: IContentProps) {
             return;
         }
         if (tab === "album") {
-            selectTab("lyric");
+            onTabChange("lyric");
         } else {
-            selectTab("album");
+            onTabChange("album");
         }
     };
 

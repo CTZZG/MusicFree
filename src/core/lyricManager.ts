@@ -3,7 +3,7 @@ import { ITrackPlayer } from "@/types/core/trackPlayer";
 import { IInjectable } from "@/types/infra";
 import LyricParser, { IParsedLrcItem } from "@/utils/lrcParser";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
-import { isSameMediaItem } from "@/utils/mediaUtils";
+import { getMediaUniqueKey, isSameMediaItem } from "@/utils/mediaUtils";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { Plugin } from "./pluginManager";
 import { getLyricCandidateDistance } from "./lyricSearchPolicy";
@@ -338,6 +338,7 @@ class LyricManager implements IInjectable {
     private lastPositionClockSyncTime = 0;
     private positionClockCorrectionUntil = 0;
     private playbackStateSyncGeneration = 0;
+    private positionHydrationGeneration = 0;
     private nativeStatusBarPayloadSequence = 0;
 
     get currentLyricItem() {
@@ -468,10 +469,85 @@ class LyricManager implements IInjectable {
         this.lastProgressPositionMs = positionMs;
     }
 
+    private applyProgressToLyric(
+        progress: {position?: number} | null | undefined,
+        forceNativeOutput = false,
+    ) {
+        const position = Number(progress?.position);
+        const safePosition = Number.isFinite(position)
+            ? Math.max(0, position)
+            : 0;
+        const positionMs = safePosition * 1000;
+        this.updatePositionClockFromProgress(positionMs);
+
+        const parser = this.lyricParser;
+        if (!parser || !this.trackPlayer.isCurrentMusic(parser.musicItem)) {
+            return positionMs;
+        }
+
+        const previousLyric = getDefaultStore().get(currentLyricItemAtom);
+        const nextLyric = parser.getPosition(safePosition) ?? null;
+        if (previousLyric?.index !== nextLyric?.index) {
+            getDefaultStore().set(currentLyricItemAtom, nextLyric);
+            this.publishNativeLyricOutput({
+                force: forceNativeOutput,
+                positionMs,
+            });
+        } else if (forceNativeOutput) {
+            this.publishNativeLyricOutput({ force: true, positionMs });
+        }
+        return positionMs;
+    }
+
+    private getCurrentProgressSnapshot() {
+        const currentMusicItem = this.trackPlayer.currentMusic;
+        const snapshot = this.trackPlayer.getProgressSnapshot();
+        if (
+            !currentMusicItem ||
+            snapshot.mediaKey !== getMediaUniqueKey(currentMusicItem)
+        ) {
+            return null;
+        }
+        return snapshot;
+    }
+
+    /**
+     * 歌词页是按 tab 动态挂载的。先使用 TrackPlayer 已发布的同步快照完成
+     * 首帧定位，再异步读取原生进度校正，避免页面停在 0 秒等待下一次回调。
+     */
+    hydrateCurrentPosition() {
+        const currentMusicItem = this.trackPlayer.currentMusic;
+        const generation = ++this.positionHydrationGeneration;
+        const progressSnapshot = this.getCurrentProgressSnapshot();
+        const progressSequence =
+            progressSnapshot?.sequence ??
+            this.trackPlayer.getProgressSnapshot().sequence;
+        if (progressSnapshot) {
+            this.applyProgressToLyric(progressSnapshot);
+        }
+
+        this.trackPlayer
+            .getProgress()
+            .then(progress => {
+                if (
+                    generation !== this.positionHydrationGeneration ||
+                    !currentMusicItem ||
+                    !this.trackPlayer.isCurrentMusic(currentMusicItem) ||
+                    this.trackPlayer.getProgressSnapshot().sequence !==
+                        progressSequence
+                ) {
+                    return;
+                }
+                this.applyProgressToLyric(progress);
+            })
+            .catch(() => undefined);
+    }
+
     setup() {
         // 更新歌词
         this.trackPlayer.on(TrackPlayerEvents.CurrentMusicChanged, () => {
             this.playbackStateSyncGeneration += 1;
+            this.positionHydrationGeneration += 1;
             this.lastProgressPositionMs = 0;
             getDefaultStore().set(currentPositionMsAtom, 0);
             this.stopPositionClock(0);
@@ -482,7 +558,7 @@ class LyricManager implements IInjectable {
                 positionMs: 0,
                 isPlaying: this.isPlaybackAdvancing,
             });
-            this.refreshLyric(true, true);
+            this.refreshLyric(true, false);
         });
 
         const initialStateGeneration = this.playbackStateSyncGeneration;
@@ -537,6 +613,7 @@ class LyricManager implements IInjectable {
             "playbackSeeked",
             evt => {
                 this.playbackStateSyncGeneration += 1;
+                this.positionHydrationGeneration += 1;
                 const positionMs = (evt?.position ?? 0) * 1000;
                 getDefaultStore().set(currentPositionMsAtom, positionMs);
                 this.syncPositionClock(positionMs, true);
@@ -1167,18 +1244,31 @@ class LyricManager implements IInjectable {
                 emptyReason: undefined,
             });
 
+            const parser = this.lyricParser;
+            const progressSnapshot = this.getCurrentProgressSnapshot();
+            const snapshotPosition = Number(progressSnapshot?.position) || 0;
+            const snapshotLyric = ignoreProgress
+                ? lyricItems[0] ?? null
+                : parser.getPosition(snapshotPosition);
+            this.updatePositionClockFromProgress(snapshotPosition * 1000);
+            getDefaultStore().set(currentLyricItemAtom, snapshotLyric || null);
+            this.publishNativeLyricOutput({ force: true });
+
+            const hydrationGeneration = ++this.positionHydrationGeneration;
+            const progressSequence =
+                progressSnapshot?.sequence ??
+                this.trackPlayer.getProgressSnapshot().sequence;
             const progress = await this.trackPlayer.getProgress();
-            if (!this.trackPlayer.isCurrentMusic(currentMusicItem)) {
+            if (
+                hydrationGeneration !== this.positionHydrationGeneration ||
+                this.lyricParser !== parser ||
+                !this.trackPlayer.isCurrentMusic(currentMusicItem) ||
+                this.trackPlayer.getProgressSnapshot().sequence !==
+                    progressSequence
+            ) {
                 return;
             }
-            const currentLyric = ignoreProgress
-                ? lyricItems[0] ?? null
-                : this.lyricParser.getPosition(progress.position);
-            const positionMs = progress.position * 1000;
-            this.updatePositionClockFromProgress(positionMs);
-            getDefaultStore().set(currentLyricItemAtom, currentLyric || null);
-
-            this.publishNativeLyricOutput({ force: true });
+            this.applyProgressToLyric(progress);
         } catch (err) {
             if (this.trackPlayer.isCurrentMusic(currentMusicItem)) {
                 this.lyricParser = null;

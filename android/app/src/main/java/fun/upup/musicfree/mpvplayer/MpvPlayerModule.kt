@@ -135,6 +135,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         val queueRevision: Long,
     )
 
+    private data class PendingNaturalEnd(
+        val serial: Long,
+        val endedIdentity: TrackIdentity?,
+    )
+
     private var positionSecs = 0.0
     private var durationSecs = 0.0
     private var cacheAheadSecs = 0.0
@@ -160,6 +165,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var hasPlaylistPreparedTrack = false
     private var preparedPlaylistIndex = -1
     private var pendingPlaylistCompaction = false
+    private var pendingNaturalEnd: PendingNaturalEnd? = null
+    private var naturalEndSerial = 0L
     private var androidAutoConnectionDetector: MpvAndroidAutoConnectionDetector? = null
     private var isAndroidAutoConnected = false
 
@@ -174,7 +181,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private const val ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
             "onMpvAndroidAutoConnectionChanged"
         private const val END_FILE_SUPPRESS_MS = 1200L
+        private const val NATURAL_END_DEDUP_MS = 350L
         private val PLAYLIST_COMPACT_DELAYS_MS = longArrayOf(0L, 120L, 500L)
+        private val PREPARED_PROMOTION_RETRY_DELAYS_MS =
+            longArrayOf(0L, 24L, 80L, 220L, 600L, 1200L)
         private val UNPAUSE_RETRY_DELAYS_MS = longArrayOf(0L, 80L, 250L, 700L)
     }
 
@@ -494,16 +504,21 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         preparedPlaylistIndex = -1
     }
 
-    private fun promotePreparedTrack(): PreparedTrack? {
+    private fun promotePreparedTrack(requireCurrentPath: Boolean = false): PreparedTrack? {
         val prepared = preparedTrack ?: return null
         val playlistPosition = readPlaylistPosition()
-        if (!hasPlaylistPreparedTrack || playlistPosition != preparedPlaylistIndex) {
+        val pathMatches = currentPathMatches(prepared.url)
+        if (
+            !hasPlaylistPreparedTrack ||
+            playlistPosition != preparedPlaylistIndex ||
+            (requireCurrentPath && !pathMatches)
+        ) {
             Log.w(
                 TAG,
                 "prepared promotion rejected: pos=$playlistPosition expected=$preparedPlaylistIndex " +
-                    "mediaId=${prepared.mediaId} token=${prepared.prepareToken}",
+                    "pathMatches=$pathMatches mediaId=${prepared.mediaId} " +
+                    "token=${prepared.prepareToken}",
             )
-            clearPreparedTrack(removeFromPlaylist = false)
             return null
         }
         preparedTrack = null
@@ -538,6 +553,89 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         )
         schedulePlaylistCompaction()
         return prepared
+    }
+
+    private fun completeNaturalEnd(
+        pending: PendingNaturalEnd,
+        promotedTrack: PreparedTrack?,
+    ) {
+        if (pendingNaturalEnd?.serial != pending.serial) return
+        pendingNaturalEnd = null
+        val autoAdvanced = promotedTrack != null
+        val now = System.currentTimeMillis()
+        Log.d(
+            TAG,
+            "END_FILE completed: endedMediaId=${pending.endedIdentity?.mediaId} " +
+                "promotedMediaId=${promotedTrack?.mediaId} autoAdvanced=$autoAdvanced",
+        )
+        if (!autoAdvanced && durationSecs > 0) {
+            positionSecs = durationSecs
+            emitProgress(force = true)
+        }
+        sendEvent(
+            ON_MPV_ENDED,
+            Arguments.createMap().apply {
+                putString("reason", "end")
+                putBoolean("autoAdvanced", autoAdvanced)
+                pending.endedIdentity?.let { putString("endedMediaId", it.mediaId) }
+                promotedTrack?.let {
+                    putString("promotedMediaId", it.mediaId)
+                    putDouble("prepareToken", it.prepareToken.toDouble())
+                    putDouble("queueRevision", it.queueRevision.toDouble())
+                    putDouble("loadGeneration", it.loadGeneration.toDouble())
+                }
+            },
+        )
+        if (autoAdvanced) {
+            ignoreEndFileUntilMs = max(ignoreEndFileUntilMs, now + NATURAL_END_DEDUP_MS)
+            pendingUnpauseGeneration = currentLoadGeneration
+            suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
+            scheduleUnpauseRetries(currentLoadGeneration)
+            emitState("buffering")
+        } else {
+            emitState("ended")
+        }
+    }
+
+    private fun resolvePendingPreparedPromotion(trigger: String): Boolean {
+        val pending = pendingNaturalEnd ?: return false
+        val promoted = promotePreparedTrack(requireCurrentPath = true) ?: return false
+        Log.d(
+            TAG,
+            "prepared promotion resolved by $trigger: mediaId=${promoted.mediaId} " +
+                "token=${promoted.prepareToken}",
+        )
+        completeNaturalEnd(pending, promoted)
+        return true
+    }
+
+    private fun schedulePendingPreparedPromotion(pending: PendingNaturalEnd) {
+        PREPARED_PROMOTION_RETRY_DELAYS_MS.forEachIndexed { index, delayMs ->
+            mainHandler.postDelayed({
+                if (pendingNaturalEnd?.serial != pending.serial) {
+                    return@postDelayed
+                }
+                if (resolvePendingPreparedPromotion("retry-$index")) {
+                    return@postDelayed
+                }
+                if (index == PREPARED_PROMOTION_RETRY_DELAYS_MS.lastIndex) {
+                    val stalePrepared = preparedTrack
+                    Log.e(
+                        TAG,
+                        "prepared promotion timed out: mediaId=${stalePrepared?.mediaId} " +
+                            "pos=${readPlaylistPosition()} expected=$preparedPlaylistIndex",
+                    )
+                    // mpv may still advance its appended playlist after END_FILE. Stop
+                    // before handing control back to JS so unconfirmed audio can never
+                    // continue underneath the previous UI identity.
+                    ignoreEndFileUntilMs =
+                        System.currentTimeMillis() + END_FILE_SUPPRESS_MS
+                    clearPreparedTrack(removeFromPlaylist = true)
+                    MPVLib.command(arrayOf("stop"))
+                    completeNaturalEnd(pending, null)
+                }
+            }, delayMs)
+        }
     }
 
     @ReactMethod
@@ -660,6 +758,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             try {
                 stopRequested = true
                 pendingPlaylistCompaction = false
+                pendingNaturalEnd = null
                 clearPreparedTrack(removeFromPlaylist = false)
                 activeTrackIdentity = null
                 loadingTrackIdentity = null
@@ -769,6 +868,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 cachedAlbum = readString(payload, "album") ?: ""
                 cachedArtwork = readString(payload, "artwork")
                 pendingPlaylistCompaction = false
+                pendingNaturalEnd = null
                 clearPreparedTrack(removeFromPlaylist = false)
 
                 val mediaId = readString(payload, "mediaId")?.takeIf { it.isNotBlank() }
@@ -947,6 +1047,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         mainHandler.post {
             stopRequested = true
             pendingPlaylistCompaction = false
+            pendingNaturalEnd = null
             clearPreparedTrack(removeFromPlaylist = true)
             activeTrackIdentity = null
             loadingTrackIdentity = null
@@ -1164,11 +1265,19 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         runMpvCallbackOnMain {
             when (eventId) {
                 MPVLib.MPV_EVENT_START_FILE -> {
-                    val generation = currentLoadGeneration
                     val explicitLoading = loadingTrackIdentity
                         ?.takeIf { currentPathMatches(it.url) }
                     val preparedLoading = preparedTrack
                         ?.takeIf { currentPathMatches(it.url) }
+                    if (
+                        explicitLoading == null &&
+                        preparedLoading != null &&
+                        resolvePendingPreparedPromotion("START_FILE")
+                    ) {
+                        loadingGeneration = -1L
+                        return@runMpvCallbackOnMain
+                    }
+                    val generation = currentLoadGeneration
                     loadingGeneration = if (explicitLoading != null) generation else -1L
                     if (
                         explicitLoading != null &&
@@ -1187,6 +1296,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                 }
                 MPVLib.MPV_EVENT_FILE_LOADED -> {
+                    resolvePendingPreparedPromotion("FILE_LOADED")
                     val generation = currentLoadGeneration
                     val explicitIdentity = loadingTrackIdentity
                         ?.takeIf {
@@ -1232,7 +1342,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     if (
                         stopRequested ||
                         now < ignoreEndFileUntilMs ||
-                        loadingGeneration == currentLoadGeneration
+                        loadingGeneration == currentLoadGeneration ||
+                        pendingNaturalEnd != null
                     ) {
                         Log.d(TAG, "END_FILE suppressed")
                         return@runMpvCallbackOnMain
@@ -1240,38 +1351,28 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     pendingUnpauseGeneration = -1L
                     loadingGeneration = -1L
                     val endedIdentity = activeTrackIdentity
-                    val promotedTrack = promotePreparedTrack()
-                    val autoAdvanced = promotedTrack != null
-                    Log.d(
-                        TAG,
-                        "END_FILE handled: endedMediaId=${endedIdentity?.mediaId} " +
-                            "promotedMediaId=${promotedTrack?.mediaId} autoAdvanced=$autoAdvanced",
+                    val pending = PendingNaturalEnd(
+                        serial = ++naturalEndSerial,
+                        endedIdentity = endedIdentity,
                     )
-                    if (!autoAdvanced && durationSecs > 0) {
-                        positionSecs = durationSecs
-                        emitProgress(force = true)
-                    }
-                    sendEvent(
-                        ON_MPV_ENDED,
-                        Arguments.createMap().apply {
-                            putString("reason", "end")
-                            putBoolean("autoAdvanced", autoAdvanced)
-                            endedIdentity?.let { putString("endedMediaId", it.mediaId) }
-                            promotedTrack?.let {
-                                putString("promotedMediaId", it.mediaId)
-                                putDouble("prepareToken", it.prepareToken.toDouble())
-                                putDouble("queueRevision", it.queueRevision.toDouble())
-                                putDouble("loadGeneration", it.loadGeneration.toDouble())
-                            }
-                        },
+                    pendingNaturalEnd = pending
+                    val promotedTrack = promotePreparedTrack(
+                        requireCurrentPath = true,
                     )
-                    if (autoAdvanced) {
-                        pendingUnpauseGeneration = currentLoadGeneration
+                    if (promotedTrack != null) {
+                        completeNaturalEnd(pending, promotedTrack)
+                    } else if (preparedTrack != null && hasPlaylistPreparedTrack) {
+                        Log.d(
+                            TAG,
+                            "END_FILE waiting for prepared START_FILE: " +
+                                "endedMediaId=${endedIdentity?.mediaId} " +
+                                "preparedMediaId=${preparedTrack?.mediaId}",
+                        )
                         suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
-                        scheduleUnpauseRetries(currentLoadGeneration)
                         emitState("buffering")
+                        schedulePendingPreparedPromotion(pending)
                     } else {
-                        emitState("ended")
+                        completeNaturalEnd(pending, null)
                     }
                 }
                 MPVLib.MPV_EVENT_SHUTDOWN -> {

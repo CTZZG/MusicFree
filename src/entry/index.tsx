@@ -19,7 +19,10 @@ import ErrorBoundary from "@/components/errorBoundary";
 import { navigationRef } from "@/core/router";
 import MusicBar from "@/components/musicBar";
 import ScreenSurface from "@/components/base/screenSurface";
-import { MusicBarLayoutProvider } from "@/components/musicBar/layoutState";
+import {
+    MusicBarLayoutProvider,
+    useMusicBarLayoutState,
+} from "@/components/musicBar/layoutState";
 
 /**
  * 字体颜色
@@ -30,6 +33,22 @@ StatusBar.setTranslucent(true);
 
 bootstrap();
 const Stack = createNativeStackNavigator<any>();
+
+function MusicBarOverlay() {
+    const { drawerOpen, layout } = useMusicBarLayoutState();
+    const interactive = layout.visible && !drawerOpen;
+    return (
+        <View
+            collapsable={false}
+            pointerEvents={interactive ? "box-none" : "none"}
+            style={[
+                styles.musicBarOverlay,
+                drawerOpen ? styles.musicBarOverlayBehindDrawer : null,
+            ]}>
+            <MusicBar />
+        </View>
+    );
+}
 
 const surfacedRoutes = routes.map(route => {
     const RouteComponent = route.component;
@@ -124,12 +143,7 @@ export default function Pages() {
                                             />
                                         ))}
                                     </Stack.Navigator>
-                                    <View
-                                        collapsable={false}
-                                        pointerEvents="box-none"
-                                        style={styles.musicBarOverlay}>
-                                        <MusicBar />
-                                    </View>
+                                    <MusicBarOverlay />
                                     <Panels />
                                     <Dialogs />
                                     <Debug />
@@ -154,5 +168,10 @@ const styles = StyleSheet.create({
         left: 0,
         zIndex: 100,
         elevation: 8,
+    },
+    musicBarOverlayBehindDrawer: {
+        opacity: 0,
+        zIndex: -1,
+        elevation: 0,
     },
 });

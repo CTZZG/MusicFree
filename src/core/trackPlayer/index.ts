@@ -156,6 +156,17 @@ const progressAtom = atom<PlayerAdapterProgress>({
     duration: 0,
     buffered: 0,
 });
+interface ITrackPlayerProgressSnapshot extends PlayerAdapterProgress {
+    mediaKey?: string;
+    sequence: number;
+}
+let progressSnapshotSequence = 0;
+const progressSnapshotAtom = atom<ITrackPlayerProgressSnapshot>({
+    position: 0,
+    duration: 0,
+    buffered: 0,
+    sequence: 0,
+});
 
 function normalizeAdapterProgress(
     progress?: Partial<PlayerAdapterProgress> | null,
@@ -183,7 +194,16 @@ function setPlayerProgress(
         progress,
         fallbackDuration,
     );
-    getDefaultStore().set(progressAtom, normalizedProgress);
+    const store = getDefaultStore();
+    store.set(progressAtom, normalizedProgress);
+    const currentMusic = store.get(currentMusicAtom);
+    store.set(progressSnapshotAtom, {
+        ...normalizedProgress,
+        mediaKey: currentMusic
+            ? getMediaUniqueKey(currentMusic)
+            : undefined,
+        sequence: ++progressSnapshotSequence,
+    });
     return normalizedProgress;
 }
 
@@ -261,6 +281,10 @@ class TrackPlayer
 
     public get currentMusic() {
         return getDefaultStore().get(currentMusicAtom);
+    }
+
+    public getProgressSnapshot() {
+        return getDefaultStore().get(progressSnapshotAtom);
     }
 
     public get nextMusic() {
@@ -2065,6 +2089,26 @@ class TrackPlayer
 
             // 原生 prepared promotion 已经通过身份/token/revision 校验并激活。
             if (evt.autoAdvanced) {
+                const syncedMusic =
+                    await this.syncCurrentMusicFromBackendActiveTrack(
+                        "mpv-natural-end",
+                    );
+                if (
+                    evt.promotedMediaId &&
+                    (!syncedMusic ||
+                        getMediaUniqueKey(syncedMusic) !== evt.promotedMediaId)
+                ) {
+                    trace(
+                        "mpv 自动提升后 UI 身份复核失败",
+                        {
+                            promotedMediaId: evt.promotedMediaId,
+                            currentMusicId: syncedMusic?.id,
+                            currentMusicPlatform: syncedMusic?.platform,
+                            queueRevision: evt.queueRevision,
+                        },
+                        "error",
+                    );
+                }
                 return;
             }
 

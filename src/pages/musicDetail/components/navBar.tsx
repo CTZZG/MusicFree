@@ -9,13 +9,22 @@ import { B64Asset } from "@/constants/assetsConst";
 import IconButton from "@/components/base/iconButton";
 import { useCurrentMusic } from "@/core/trackPlayer";
 
-export default function NavBar() {
+interface INavBarProps {
+    compact?: boolean;
+}
+
+export default function NavBar(props: INavBarProps) {
+    const { compact = false } = props;
     const navigation = useNavigation();
     const musicItem = useCurrentMusic();
     // const {showShare} = useShare();
 
     return (
-        <View style={styles.container}>
+        <View
+            style={[
+                styles.container,
+                compact ? styles.compactContainer : null,
+            ]}>
             <IconButton
                 name="arrow-left"
                 sizeType={"normal"}
@@ -25,23 +34,27 @@ export default function NavBar() {
                     navigation.goBack();
                 }}
             />
-            <View style={styles.headerContent}>
-                <Text numberOfLines={1} style={styles.headerTitleText}>
-                    {musicItem?.title ?? "--"}
-                </Text>
-                <View style={styles.headerDesc}>
-                    <Text style={styles.headerArtistText} numberOfLines={1}>
-                        {musicItem?.artist}
+            {compact ? (
+                <View style={styles.headerContent} />
+            ) : (
+                <View style={styles.headerContent}>
+                    <Text numberOfLines={1} style={styles.headerTitleText}>
+                        {musicItem?.title ?? "--"}
                     </Text>
-                    {musicItem?.platform ? (
-                        <Tag
-                            tagName={musicItem.platform}
-                            containerStyle={styles.tagBg}
-                            style={styles.tagText}
-                        />
-                    ) : null}
+                    <View style={styles.headerDesc}>
+                        <Text style={styles.headerArtistText} numberOfLines={1}>
+                            {musicItem?.artist}
+                        </Text>
+                        {musicItem?.platform ? (
+                            <Tag
+                                tagName={musicItem.platform}
+                                containerStyle={styles.tagBg}
+                                style={styles.tagText}
+                            />
+                        ) : null}
+                    </View>
                 </View>
-            </View>
+            )}
             <IconButton
                 name="share"
                 color="white"
@@ -71,8 +84,11 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "space-between",
     },
+    compactContainer: {
+        height: rpx(112),
+    },
     button: {
-        marginHorizontal: rpx(24),
+        marginHorizontal: rpx(20),
     },
     headerContent: {
         flex: 1,

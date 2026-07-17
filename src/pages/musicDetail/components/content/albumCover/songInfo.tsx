@@ -23,6 +23,7 @@ import rpx from "@/utils/rpx";
 
 interface ISongInfoProps {
     showHeart?: boolean;
+    variant?: "default" | "hero";
 }
 
 interface ISingerInfo {
@@ -118,7 +119,7 @@ function canOpenArtistDetail(
 }
 
 export default function SongInfo(props: ISongInfoProps) {
-    const { showHeart = false } = props;
+    const { showHeart = false, variant = "default" } = props;
     const musicItem = useCurrentMusic();
     const isFavorite = useFavorite(musicItem);
     const navigate = useNavigate();
@@ -126,8 +127,11 @@ export default function SongInfo(props: ISongInfoProps) {
 
     const singerList = useMemo(() => getSingerList(musicItem), [musicItem]);
     const infoWidth = useMemo(
-        () => getSongInfoWidth(windowWidth),
-        [windowWidth],
+        () =>
+            variant === "hero"
+                ? Math.max(rpx(280), windowWidth - rpx(72))
+                : getSongInfoWidth(windowWidth),
+        [variant, windowWidth],
     );
 
     const handleArtistPress = useCallback(() => {
@@ -220,9 +224,19 @@ export default function SongInfo(props: ISongInfoProps) {
     }
 
     return (
-        <View style={[styles.container, { width: infoWidth }]}>
+        <View
+            style={[
+                styles.container,
+                variant === "hero" ? styles.heroContainer : null,
+                { width: infoWidth },
+            ]}>
             <View style={styles.titleRow}>
-                <Text numberOfLines={2} style={styles.title}>
+                <Text
+                    numberOfLines={2}
+                    style={[
+                        styles.title,
+                        variant === "hero" ? styles.heroTitle : null,
+                    ]}>
                     {musicItem.title || "--"}
                 </Text>
                 {showHeart ? (
@@ -254,7 +268,12 @@ export default function SongInfo(props: ISongInfoProps) {
                         styles.clickableContainer,
                         pressed ? styles.pressed : null,
                     ]}>
-                    <Text numberOfLines={1} style={styles.artist}>
+                    <Text
+                        numberOfLines={1}
+                        style={[
+                            styles.artist,
+                            variant === "hero" ? styles.heroArtist : null,
+                        ]}>
                         {musicItem.artist || "--"}
                     </Text>
                 </Pressable>
@@ -273,7 +292,12 @@ export default function SongInfo(props: ISongInfoProps) {
                         styles.clickableContainer,
                         pressed ? styles.pressed : null,
                     ]}>
-                    <Text numberOfLines={1} style={styles.album}>
+                    <Text
+                        numberOfLines={1}
+                        style={[
+                            styles.album,
+                            variant === "hero" ? styles.heroAlbum : null,
+                        ]}>
                         {musicItem.album}
                     </Text>
                 </Pressable>
@@ -287,6 +311,9 @@ const styles = StyleSheet.create({
         alignSelf: "center",
         paddingVertical: rpx(18),
         alignItems: "flex-start",
+    },
+    heroContainer: {
+        paddingVertical: rpx(10),
     },
     titleRow: {
         flexDirection: "row",
@@ -304,6 +331,14 @@ const styles = StyleSheet.create({
         flex: 1,
         marginRight: rpx(16),
     },
+    heroTitle: {
+        fontSize: rpx(48),
+        lineHeight: rpx(58),
+        fontWeight: fontWeightConst.bold,
+        textShadowColor: "rgba(0,0,0,0.28)",
+        textShadowOffset: { width: 0, height: rpx(2) },
+        textShadowRadius: rpx(8),
+    },
     artistRow: {
         flexDirection: "row",
         alignItems: "center",
@@ -315,6 +350,10 @@ const styles = StyleSheet.create({
         fontSize: fontSizeConst.subTitle,
         includeFontPadding: false,
         opacity: 0.9,
+    },
+    heroArtist: {
+        fontSize: rpx(28),
+        opacity: 0.94,
     },
     clickableContainer: {
         maxWidth: "100%",
@@ -336,5 +375,9 @@ const styles = StyleSheet.create({
         fontSize: fontSizeConst.content,
         includeFontPadding: false,
         opacity: 0.7,
+    },
+    heroAlbum: {
+        fontSize: rpx(26),
+        opacity: 0.74,
     },
 });

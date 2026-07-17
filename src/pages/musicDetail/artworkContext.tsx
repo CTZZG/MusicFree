@@ -12,14 +12,32 @@ import React, {
 import {
     isUsableMusicDetailArtwork,
     resolveMusicDetailArtwork,
+    resolveMusicDetailBackdrop,
 } from "./artworkResolver";
 
 interface IResolvedArtworkState {
     musicKey?: string;
-    artwork?: string;
+    cover?: string;
+    backdrop?: string;
 }
 
-const MusicDetailArtworkContext = createContext<any>(ImgAsset.albumDefault);
+export interface IMusicDetailArtworkContextValue {
+    cover?: string;
+    backdrop?: string;
+    heroArtwork?: string;
+    displayArtwork: string | number;
+    hasRealCover: boolean;
+    hasHeroArtwork: boolean;
+}
+
+const defaultArtworkValue: IMusicDetailArtworkContextValue = {
+    displayArtwork: ImgAsset.albumDefault,
+    hasRealCover: false,
+    hasHeroArtwork: false,
+};
+
+const MusicDetailArtworkContext =
+    createContext<IMusicDetailArtworkContextValue>(defaultArtworkValue);
 
 export function MusicDetailArtworkProvider({ children }: PropsWithChildren) {
     const musicItem = useCurrentMusic();
@@ -32,14 +50,34 @@ export function MusicDetailArtworkProvider({ children }: PropsWithChildren) {
     );
 
     useEffect(() => {
-        if (!musicItem || !musicKey || directArtwork) {
+        if (!musicItem || !musicKey) {
+            setResolvedState({});
+            return;
+        }
+        if (directArtwork) {
+            setResolvedState({ musicKey, cover: directArtwork });
             return;
         }
 
         let active = true;
-        resolveMusicDetailArtwork(musicItem).then(artwork => {
+        // 先清掉上一首的视觉结果，避免快速切歌时旧图短暂串到新歌曲。
+        setResolvedState({ musicKey });
+        resolveMusicDetailArtwork(musicItem).then(cover => {
             if (active) {
-                setResolvedState({ musicKey, artwork });
+                setResolvedState(previous =>
+                    previous.musicKey === musicKey
+                        ? { ...previous, cover }
+                        : { musicKey, cover },
+                );
+            }
+        });
+        resolveMusicDetailBackdrop(musicItem).then(backdrop => {
+            if (active) {
+                setResolvedState(previous =>
+                    previous.musicKey === musicKey
+                        ? { ...previous, backdrop }
+                        : { musicKey, backdrop },
+                );
             }
         });
         return () => {
@@ -47,23 +85,32 @@ export function MusicDetailArtworkProvider({ children }: PropsWithChildren) {
         };
     }, [directArtwork, musicItem, musicKey]);
 
-    const artwork = useMemo(() => {
-        if (directArtwork) {
-            return directArtwork;
-        }
-        if (resolvedState.musicKey === musicKey && resolvedState.artwork) {
-            return resolvedState.artwork;
-        }
-        return ImgAsset.albumDefault;
+    const value = useMemo<IMusicDetailArtworkContextValue>(() => {
+        const stateMatches = resolvedState.musicKey === musicKey;
+        const cover = directArtwork || (stateMatches ? resolvedState.cover : undefined);
+        const backdrop = stateMatches ? resolvedState.backdrop : undefined;
+        const heroArtwork = backdrop || cover;
+        return {
+            cover,
+            backdrop,
+            heroArtwork,
+            displayArtwork: cover || ImgAsset.albumDefault,
+            hasRealCover: !!cover,
+            hasHeroArtwork: !!heroArtwork,
+        };
     }, [directArtwork, musicKey, resolvedState]);
 
     return (
-        <MusicDetailArtworkContext.Provider value={artwork}>
+        <MusicDetailArtworkContext.Provider value={value}>
             {children}
         </MusicDetailArtworkContext.Provider>
     );
 }
 
 export function useMusicDetailArtwork() {
+    return useContext(MusicDetailArtworkContext).displayArtwork;
+}
+
+export function useMusicDetailVisuals() {
     return useContext(MusicDetailArtworkContext);
 }

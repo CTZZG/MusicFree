@@ -1,64 +1,115 @@
 import React, { useMemo } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, useWindowDimensions, View } from "react-native";
 import { Image } from "expo-image";
 import LinearGradient from "react-native-linear-gradient";
-import { useMusicDetailArtwork } from "../artworkContext";
+import rpx from "@/utils/rpx";
+import { useMusicDetailVisuals } from "../artworkContext";
 
-export default function Background() {
-    const artwork = useMusicDetailArtwork();
+interface IBackgroundProps {
+    tab: "album" | "lyric";
+    useHeroLayout: boolean;
+}
 
-    const artworkSource = useMemo(() => {
-        if (typeof artwork === "string") {
-            return {
-                uri: artwork,
-            };
-        }
-        return artwork;
-    }, [artwork]);
+export default function Background(props: IBackgroundProps) {
+    const { tab, useHeroLayout } = props;
+    const { heroArtwork, hasHeroArtwork } = useMusicDetailVisuals();
+    const { height, width } = useWindowDimensions();
+    const showHero = tab === "album" && useHeroLayout;
+    const heroHeight = Math.min(height * 0.58, width * 1.18);
+
+    const artworkSource = useMemo(
+        () => (heroArtwork ? { uri: heroArtwork } : undefined),
+        [heroArtwork],
+    );
 
     return (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <View style={style.background} />
-            <Image
-                style={style.blur}
-                blurRadius={42}
-                contentFit="cover"
-                transition={260}
-                source={artworkSource}
-            />
+            {hasHeroArtwork ? (
+                <Image
+                    style={style.blur}
+                    blurRadius={showHero ? 34 : 46}
+                    contentFit="cover"
+                    transition={220}
+                    source={artworkSource}
+                />
+            ) : null}
+            {showHero && hasHeroArtwork ? (
+                <Image
+                    style={[style.hero, { height: heroHeight }]}
+                    contentFit="cover"
+                    contentPosition="center"
+                    transition={240}
+                    source={artworkSource}
+                />
+            ) : null}
             <LinearGradient
-                colors={[
-                    "rgba(0,0,0,0.08)",
-                    "rgba(0,0,0,0.3)",
-                    "rgba(0,0,0,0.72)",
-                ]}
-                locations={[0, 0.48, 1]}
+                colors={
+                    showHero
+                        ? [
+                            "rgba(0,0,0,0.06)",
+                            "rgba(7,9,12,0.12)",
+                            "rgba(10,12,16,0.78)",
+                            "rgba(10,12,16,0.96)",
+                        ]
+                        : [
+                            "rgba(0,0,0,0.16)",
+                            "rgba(0,0,0,0.4)",
+                            "rgba(0,0,0,0.78)",
+                        ]
+                }
+                locations={showHero ? [0, 0.34, 0.63, 1] : [0, 0.5, 1]}
                 style={StyleSheet.absoluteFill}
             />
+            {showHero ? (
+                <LinearGradient
+                    colors={[
+                        "rgba(255,255,255,0)",
+                        "rgba(12,14,18,0.2)",
+                        "rgba(12,14,18,0.92)",
+                    ]}
+                    locations={[0, 0.32, 1]}
+                    style={[
+                        style.heroFade,
+                        {
+                            top: Math.max(0, heroHeight - rpx(280)),
+                            height: rpx(380),
+                        },
+                    ]}
+                />
+            ) : null}
         </View>
     );
 }
 
 const style = StyleSheet.create({
     background: {
-        width: "100%",
-        height: "100%",
         position: "absolute",
         top: 0,
-        left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: "#000",
+        left: 0,
+        backgroundColor: "#0a0c10",
     },
     blur: {
-        width: "100%",
-        height: "100%",
+        position: "absolute",
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        opacity: 0.58,
+        transform: [{ scale: 1.08 }],
+    },
+    hero: {
         position: "absolute",
         top: 0,
         left: 0,
         right: 0,
-        bottom: 0,
-        opacity: 0.72,
-        transform: [{ scale: 1.08 }],
+        width: "100%",
+    },
+    heroFade: {
+        position: "absolute",
+        left: 0,
+        right: 0,
     },
 });

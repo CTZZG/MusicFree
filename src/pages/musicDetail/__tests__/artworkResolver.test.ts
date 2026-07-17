@@ -13,6 +13,7 @@ jest.mock("@/utils/mediaUtils", () => ({
 import {
     resetMusicDetailArtworkCacheForTests,
     resolveMusicDetailArtwork,
+    resolveMusicDetailBackdrop,
 } from "../artworkResolver";
 
 function music(overrides: Partial<IMusic.IMusicItem> = {}) {
@@ -40,6 +41,19 @@ describe("music detail artwork resolver", () => {
             ),
         ).resolves.toBe("https://img/existing.jpg");
         expect(getMusicInfo).not.toHaveBeenCalled();
+    });
+
+    it("does not trust an unsupported artwork URI scheme", async () => {
+        const getMusicInfo = jest.fn(async () => ({
+            artwork: "https://img/safe.jpg",
+        }));
+        await expect(
+            resolveMusicDetailArtwork(
+                music({ artwork: "javascript:alert(1)" }),
+                { getMusicInfo },
+            ),
+        ).resolves.toBe("https://img/safe.jpg");
+        expect(getMusicInfo).toHaveBeenCalledTimes(1);
     });
 
     it("deduplicates detail lookups and caches the successful result", async () => {
@@ -117,5 +131,36 @@ describe("music detail artwork resolver", () => {
             resolveMusicDetailArtwork(item, { getMusicInfo }),
         ).resolves.toBeUndefined();
         expect(getMusicInfo).toHaveBeenCalledTimes(1);
+    });
+
+    it("shares the optional artist backdrop cache across songs", async () => {
+        const searchArtist = jest.fn(async () =>
+            "https://image.tmdb.org/t/p/original/artist.jpg",
+        );
+
+        await expect(
+            resolveMusicDetailBackdrop(music(), { searchArtist }),
+        ).resolves.toBe(
+            "https://image.tmdb.org/t/p/original/artist.jpg",
+        );
+        await expect(
+            resolveMusicDetailBackdrop(
+                music({ id: "song-2", title: "另一首歌" }),
+                { searchArtist },
+            ),
+        ).resolves.toBe(
+            "https://image.tmdb.org/t/p/original/artist.jpg",
+        );
+        expect(searchArtist).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects non-TMDB URLs from the backdrop-only channel", async () => {
+        const searchArtist = jest.fn(async () =>
+            "https://untrusted.example/artist.jpg",
+        );
+
+        await expect(
+            resolveMusicDetailBackdrop(music(), { searchArtist }),
+        ).resolves.toBeUndefined();
     });
 });

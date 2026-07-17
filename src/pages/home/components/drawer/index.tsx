@@ -17,6 +17,7 @@ import React, { memo } from "react";
 import { BackHandler, Platform, StyleSheet, View } from "react-native";
 import { default as DeviceInfo, default as deviceInfoModule } from "react-native-device-info";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const ITEM_HEIGHT = rpx(108);
 
@@ -29,7 +30,10 @@ interface ISettingOptions {
 function HomeDrawer(props: any) {
     const navigate = useNavigate();
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
+    const safeAreaInsets = useSafeAreaInsets();
+    const closeDrawer = () => props.navigation?.closeDrawer?.();
     function navigateToSetting(settingType: string) {
+        closeDrawer();
         navigate(ROUTE_PATH.SETTING, {
             type: settingType,
         });
@@ -82,6 +86,7 @@ function HomeDrawer(props: any) {
             icon: "shield-keyhole-outline",
             title: t("sidebar.permissionManagement"),
             onPress: () => {
+                closeDrawer();
                 navigate(ROUTE_PATH.PERMISSIONS);
             },
         });
@@ -96,8 +101,12 @@ function HomeDrawer(props: any) {
                 style={[props.style, style.scrollWrapper]}
                 contentContainerStyle={[
                     props.contentContainerStyle,
-                    style.scrollContent,
-                    { paddingBottom: musicBarBottomInset },
+                    {
+                        paddingBottom: Math.max(
+                            musicBarBottomInset,
+                            safeAreaInsets.bottom + rpx(24),
+                        ),
+                    },
                 ]}>
                 <View style={style.header}>
                     <ThemeText fontSize="appbar" fontWeight="bold">
@@ -238,7 +247,7 @@ function HomeDrawer(props: any) {
     );
 }
 
-export default memo(HomeDrawer, () => true);
+export default memo(HomeDrawer);
 
 const style = StyleSheet.create({
     wrapper: {
@@ -248,17 +257,13 @@ const style = StyleSheet.create({
     scrollWrapper: {
         flex: 1,
     },
-    scrollContent: {
-        paddingTop: rpx(12),
-    },
-
     header: {
         height: rpx(120),
         width: "100%",
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        marginLeft: rpx(24),
+        paddingHorizontal: rpx(24),
     },
     card: {
         marginBottom: rpx(24),

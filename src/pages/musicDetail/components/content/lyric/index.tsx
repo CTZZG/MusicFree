@@ -312,6 +312,11 @@ export default function Lyric(props: IProps) {
         useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     const currentMusicItem = useCurrentMusic();
+
+    useEffect(() => {
+        lyricManager.hydrateCurrentPosition();
+    }, [currentMusicItem?.id, currentMusicItem?.platform]);
+
     const activeLyricIndexRef = useRef(currentLyricIndex);
     activeLyricIndexRef.current = currentLyricIndex;
     const lyricsIdentity = useMemo(

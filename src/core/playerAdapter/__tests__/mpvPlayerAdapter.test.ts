@@ -211,6 +211,53 @@ describe("MpvPlayerAdapter identity state machine", () => {
         expect((await adapter.getActiveTrack())?.id).toBe("c");
     });
 
+    it("commits the promoted item when ended arrives before activeTrackChanged", async () => {
+        const adapter = await createAdapter();
+        const changes: any[] = [];
+        adapter.addEventListener("trackChanged", event => changes.push(event));
+        await adapter.loadQueue([track("a"), track("b")], 0);
+        await confirmLastExplicitLoad();
+        await adapter.prepareNextTrack(track("b"));
+        const prepared = lastPreparePayload();
+
+        mockListeners.ended?.({
+            reason: "end",
+            autoAdvanced: true,
+            endedMediaId: "a",
+            promotedMediaId: prepared.mediaId,
+            loadGeneration: prepared.loadGeneration,
+            prepareToken: prepared.prepareToken,
+            queueRevision: prepared.queueRevision,
+        });
+        await flushAsyncEvents();
+
+        expect((await adapter.getActiveTrack())?.id).toBe("b");
+        expect(changes.map(item => item.track.id)).toEqual(["a", "b"]);
+
+        mockListeners.active?.({
+            mediaId: prepared.mediaId,
+            loadGeneration: prepared.loadGeneration,
+            prepareToken: prepared.prepareToken,
+            queueRevision: prepared.queueRevision,
+            source: "prepared",
+        });
+        await flushAsyncEvents();
+        expect(changes.map(item => item.track.id)).toEqual(["a", "b"]);
+    });
+
+    it("keeps repeated preparation of the same adjacent item idempotent", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a"), track("b")], 0);
+        await confirmLastExplicitLoad();
+
+        await adapter.prepareNextTrack(track("b"));
+        const firstPrepared = lastPreparePayload();
+        await adapter.prepareNextTrack(track("b"));
+
+        expect(mockNativeMpvPlayer.prepareNext).toHaveBeenCalledTimes(1);
+        expect(lastPreparePayload()).toEqual(firstPrepared);
+    });
+
     it("does not prepare the wrapped first item from the last queue item", async () => {
         const adapter = await createAdapter();
         const playEnds: any[] = [];

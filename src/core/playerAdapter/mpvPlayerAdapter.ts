@@ -482,6 +482,27 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.upNextQueue.length === 0 &&
             this.activeIndex >= 0 &&
             index === this.activeIndex + 1;
+
+        const existingPrepared = this.preparedNextTrack;
+        if (
+            canPrepare &&
+            existingPrepared &&
+            existingPrepared.mediaId === key &&
+            existingPrepared.sourceMediaId === this.activeMediaId &&
+            existingPrepared.index === index &&
+            existingPrepared.queueRevision === this.queueRevision &&
+            existingPrepared.track.url === resolvedTrack.url
+        ) {
+            // TrackPlayer 会在封面补齐、音源预解析等多个时机重复同步同一首
+            // prepared next。重复 remove/append 会使已经在原生切换中的 token
+            // 失效，最终出现“声音已到 B，UI 仍是 A”。相同身份应保持幂等。
+            this.preparedNextTrack = {
+                ...existingPrepared,
+                track: resolvedTrack,
+            };
+            return;
+        }
+
         const prepareToken = this.nextPrepareToken();
         const loadGeneration = this.nextLoadGeneration();
         this.preparedNextTrack = {
@@ -502,14 +523,21 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             return;
         }
 
-        await NativeMpvPlayer.prepareNext(
-            toLoadPayload(resolvedTrack, {
-                mediaId: key,
-                loadGeneration,
-                prepareToken,
-                queueRevision: this.queueRevision,
-            }),
-        );
+        try {
+            await NativeMpvPlayer.prepareNext(
+                toLoadPayload(resolvedTrack, {
+                    mediaId: key,
+                    loadGeneration,
+                    prepareToken,
+                    queueRevision: this.queueRevision,
+                }),
+            );
+        } catch (error) {
+            if (this.preparedNextTrack?.prepareToken === prepareToken) {
+                this.preparedNextTrack = null;
+            }
+            throw error;
+        }
     }
 
     private getQueueInfoSnapshot() {
@@ -633,6 +661,13 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             duration: Number(track.duration) || 0,
             buffered: 0,
         };
+        NativeMpvPlayer.updateMetadata({
+            title: typeof track.title === "string" ? track.title : "",
+            artist: normalizeArtist(track.artist),
+            album: typeof track.album === "string" ? track.album : "",
+            artwork: typeof track.artwork === "string" ? track.artwork : null,
+            duration: Number(track.duration) || 0,
+        }).catch(() => undefined);
         if (!alreadyCommitted) {
             this.emitTrackChanged(track, index, reason);
         }

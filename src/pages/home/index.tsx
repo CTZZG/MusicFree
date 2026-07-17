@@ -1,12 +1,14 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
+    BackHandler,
+    Platform,
     StatusBar as NativeStatusBar,
     StyleSheet,
     useWindowDimensions,
 } from "react-native";
 
 import NavBar from "./components/navBar";
-import { createDrawerNavigator, useDrawerStatus } from "@react-navigation/drawer";
+import { createDrawerNavigator } from "@react-navigation/drawer";
 import HomeDrawer from "./components/drawer";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import StatusBar from "@/components/base/statusBar";
@@ -25,17 +27,10 @@ const DRAWER_MIN_WIDTH = 320;
 function Home() {
     const orientation = useOrientation();
     const safeAreaInsets = useSafeAreaInsets();
-    const drawerStatus = useDrawerStatus();
-    const { setDrawerOpen } = useMusicBarLayoutState();
     const topInset = Math.max(
         safeAreaInsets.top,
         NativeStatusBar.currentHeight ?? 0,
     );
-
-    useEffect(() => {
-        setDrawerOpen(drawerStatus === "open");
-        return () => setDrawerOpen(false);
-    }, [drawerStatus, setDrawerOpen]);
 
     return (
         <SafeAreaView
@@ -85,6 +80,8 @@ export default function App() {
     const orientation = useOrientation();
     const theme = Theme.useTheme();
     const { width } = useWindowDimensions();
+    const { drawerOpen, setDrawerOpen } = useMusicBarLayoutState();
+    const drawerNavigationRef = useRef<any>(null);
     const drawerWidth = useMemo(() => {
         const safeWindowWidth = Math.max(0, width);
         if (orientation === "horizontal") {
@@ -102,8 +99,52 @@ export default function App() {
         return Math.min(safeWindowWidth, targetWidth);
     }, [orientation, width]);
 
+    useEffect(
+        () => () => {
+            setDrawerOpen(false);
+        },
+        [setDrawerOpen],
+    );
+
+    useEffect(() => {
+        if (Platform.OS !== "android") {
+            return;
+        }
+        const subscription = BackHandler.addEventListener(
+            "hardwareBackPress",
+            () => {
+                if (!drawerOpen) {
+                    return false;
+                }
+                drawerNavigationRef.current?.closeDrawer?.();
+                setDrawerOpen(false);
+                return true;
+            },
+        );
+        return () => subscription.remove();
+    }, [drawerOpen, setDrawerOpen]);
+
     return (
         <LeftDrawer.Navigator
+            screenListeners={({ navigation }) => {
+                drawerNavigationRef.current = navigation;
+                return {
+                    drawerOpen: () => {
+                        setDrawerOpen(true);
+                    },
+                    drawerClose: () => {
+                        setDrawerOpen(false);
+                    },
+                    blur: () => {
+                        // The navigator event can outlive the render that
+                        // created this listener. Always close the native
+                        // drawer instead of trusting a potentially stale
+                        // React state snapshot.
+                        navigation.closeDrawer();
+                        setDrawerOpen(false);
+                    },
+                };
+            }}
             screenOptions={{
                 headerShown: false,
                 sceneStyle: {

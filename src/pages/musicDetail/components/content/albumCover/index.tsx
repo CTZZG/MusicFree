@@ -26,7 +26,7 @@ import Animated, {
     withRepeat,
     withTiming,
 } from "react-native-reanimated";
-import { useMusicDetailArtwork } from "../../../artworkContext";
+import { useMusicDetailVisuals } from "../../../artworkContext";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -44,7 +44,7 @@ export default function AlbumCover(props: IProps) {
     const { immersiveMode = false, onTurnPageClick } = props;
 
     const musicItem = useCurrentMusic();
-    const artwork = useMusicDetailArtwork();
+    const { displayArtwork, heroArtwork } = useMusicDetailVisuals();
     const musicState = useMusicState();
     const orientation = useOrientation();
     const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
@@ -69,6 +69,10 @@ export default function AlbumCover(props: IProps) {
     const rotation = useSharedValue(0);
     const isCircleCover = coverStyle === "circle";
     const shouldRotateCover = isCircleCover && !musicIsPaused(musicState);
+    const heroTapHeight = Math.max(
+        rpx(300),
+        Math.min(usableWindowHeight * 0.44, windowWidth * 1.02),
+    );
 
     useEffect(() => {
         setMiniLyricLayout(baseMiniLyricLayout);
@@ -170,12 +174,16 @@ export default function AlbumCover(props: IProps) {
 
     const handleLongPress = useCallback(() => {
         longPressTriggeredRef.current = true;
-        if (typeof artwork === "string" && artwork.trim().length > 0) {
+        const previewArtwork = heroArtwork;
+        if (
+            typeof previewArtwork === "string" &&
+            previewArtwork.trim().length > 0
+        ) {
             showPanel("ImageViewer", {
-                url: artwork,
+                url: previewArtwork,
             });
         }
-    }, [artwork]);
+    }, [heroArtwork]);
 
     if (orientation === "horizontal") {
         return (
@@ -191,7 +199,7 @@ export default function AlbumCover(props: IProps) {
                         >
                             <FastImage
                                 style={styles.coverImage}
-                                source={artwork}
+                                source={displayArtwork}
                                 placeholderSource={ImgAsset.albumDefault}
                                 transition={260}
                             />
@@ -199,6 +207,38 @@ export default function AlbumCover(props: IProps) {
                     </View>
                 </Pressable>
                 {immersiveMode ? null : <Operations />}
+            </View>
+        );
+    }
+
+    if (!isCircleCover) {
+        return (
+            <View
+                style={styles.verticalRoot}
+                onLayout={event => {
+                    setContainerHeight(event.nativeEvent.layout.height);
+                }}>
+                <Pressable
+                    delayLongPress={500}
+                    onPress={handlePress}
+                    onLongPress={handleLongPress}
+                    style={[styles.heroTapArea, { height: heroTapHeight }]}
+                />
+                <SongInfo showHeart variant="hero" />
+                {miniLyricLayout === "hidden" ? null : (
+                    <MiniLyric
+                        compact={miniLyricLayout === "compact"}
+                        onPress={onTurnPageClick}
+                    />
+                )}
+                <View style={globalStyle.flex1} />
+                <View
+                    onLayout={event => {
+                        const layout = event.nativeEvent.layout;
+                        setOperationsBottom(layout.y + layout.height);
+                    }}>
+                    {immersiveMode ? null : <Operations />}
+                </View>
             </View>
         );
     }
@@ -220,7 +260,7 @@ export default function AlbumCover(props: IProps) {
                     >
                         <FastImage
                             style={styles.coverImage}
-                            source={artwork}
+                            source={displayArtwork}
                             placeholderSource={ImgAsset.albumDefault}
                             transition={260}
                         />
@@ -261,6 +301,10 @@ const styles = {
         width: "100%" as const,
         justifyContent: "center" as const,
         alignItems: "center" as const,
+    },
+    heroTapArea: {
+        width: "100%" as const,
+        minHeight: rpx(300),
     },
     coverImage: {
         width: "100%" as const,
