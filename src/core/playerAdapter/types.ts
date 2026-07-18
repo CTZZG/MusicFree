@@ -179,6 +179,12 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
 
     skipToIndex(index: number): Promise<boolean>;
 
+    /**
+     * 放弃尚未确认的切歌目标，并重新加载最后一次原生确认的 active track。
+     * 仅供拥有“目标/已确认 active”双状态的后端实现失败回滚。
+     */
+    restoreActiveTrack?(options?: {autoPlay?: boolean}): Promise<boolean>;
+
     seekTo(position: number): Promise<void>;
 
     getProgress(): Promise<PlayerAdapterProgress>;

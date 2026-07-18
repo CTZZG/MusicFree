@@ -3,7 +3,7 @@ import rpx from "@/utils/rpx";
 const HERO_NAV_HEIGHT = 112;
 const PLAYER_BOTTOM_HEIGHT = 240;
 const CONTENT_BELOW_ARTWORK_RESERVE = 454;
-const HERO_FOCUS_HEIGHT_RATIO = 0.92;
+const HERO_FOCUS_HEIGHT_RATIO = 0.96;
 const HERO_IMAGE_HEIGHT_RATIO = 1.18;
 
 interface IMusicDetailHeroLayoutOptions {

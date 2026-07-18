@@ -59,13 +59,25 @@ import {
 import { getLyricCandidateDistance } from "../lyricSearchPolicy";
 import { shouldEvictRecoveredRemoteSourceCacheAfterFailure } from "./sourceRecoveryPolicy";
 import {
+    IManualSkipOperationToken,
+    IMpvTrackTransitionToken,
     ManualSkipOperationGate,
+    MpvTrackTransitionGate,
     waitForExpectedActive,
 } from "./manualSkipCoordinator";
 
 type MusicFreePlayerTrack = PlayerAdapterTrack &
     Partial<IMusic.IMusicItem> &
     Record<string, any>;
+
+interface IMpvManualSkipTransition {
+    token: IMpvTrackTransitionToken;
+    expectedMusic: IMusic.IMusicItem;
+    previousMusic: IMusic.IMusicItem | null;
+    previousProgress: PlayerAdapterProgress;
+    resumeOnRollback: boolean;
+    reason: string;
+}
 
 interface IPlaybackDiagnosticMusicIdentity {
     id?: string;
@@ -211,6 +223,12 @@ function setPlayerProgress(
     return normalizedProgress;
 }
 
+function hasPlayableSourceUrl(
+    source?: {url?: string | null} | null,
+): source is {url: string} {
+    return typeof source?.url === "string" && source.url.trim().length > 0;
+}
+
 class TrackPlayer
     extends EventEmitter<{
         [TrackPlayerEvents.PlayEnd]: () => void;
@@ -254,9 +272,12 @@ class TrackPlayer
     private preparedNextSyncSerial = 0;
     private localArtworkSyncInFlight = new Set<string>();
     private lastMpvActiveTrackSyncAt = 0;
+    private mpvActiveTrackSyncSerial = 0;
     private lastMpvHistoryGeneration: number | null = null;
     private handlingMpvNaturalEnd = false;
     private manualSkipGate = new ManualSkipOperationGate();
+    private mpvTrackTransitionGate = new MpvTrackTransitionGate();
+    private mpvManualSkipTransition: IMpvManualSkipTransition | null = null;
     // 播放队列索引map
     private playListIndexMap = createMediaIndexMap([] as IMusic.IMusicItem[]);
 
@@ -442,6 +463,9 @@ class TrackPlayer
                 if (this.isForceExiting) {
                     return;
                 }
+                if (this.shouldIgnoreMpvTrackChangeDuringManualSkip(evt)) {
+                    return;
+                }
                 if (this.shouldIgnoreNitroTrackChange(evt)) {
                     return;
                 }
@@ -493,6 +517,15 @@ class TrackPlayer
                 if (this.isForceExiting || this.backend.name !== "mpv") {
                     return;
                 }
+                if (this.hasActiveMpvManualSkipTransition()) {
+                    trace("MPV 手动切歌期间忽略旧自然结束事件", {
+                        endedMediaId: evt.endedMediaId,
+                        promotedMediaId: evt.promotedMediaId,
+                        expectedKey:
+                            this.mpvManualSkipTransition?.token.expectedKey,
+                    });
+                    return;
+                }
                 await this.handleMpvNaturalEnd(evt).catch(error => {
                     errorLog("处理 mpv 自然结束失败", error?.message ?? error);
                 });
@@ -510,6 +543,13 @@ class TrackPlayer
                 errorLog("播放出错", e.message);
                 // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
                 const currentTrack = await this.backend.getActiveTrack?.();
+                if (
+                    this.shouldIgnoreMpvPlaybackErrorDuringManualSkip(
+                        currentTrack,
+                    )
+                ) {
+                    return;
+                }
                 if (currentTrack?.isInit) {
                     // HACK: 避免初始失败的情况
                     await this.backend.updateTrack(
@@ -547,12 +587,23 @@ class TrackPlayer
                 }
                 const normalizedState = normalizeMusicState(state);
                 getDefaultStore().set(musicStateAtom, normalizedState);
-                if (normalizedState === "paused") {
+                if (
+                    normalizedState === "paused" &&
+                    !this.shouldSuppressMpvProgressDuringManualSkip()
+                ) {
+                    const syncSerial = this.mpvActiveTrackSyncSerial;
                     this.backend
                         .getProgress()
-                        .then(progress => {
+                        .then(adapterProgress => {
+                            if (
+                                syncSerial !==
+                                    this.mpvActiveTrackSyncSerial ||
+                                this.shouldSuppressMpvProgressDuringManualSkip()
+                            ) {
+                                return;
+                            }
                             const currentProgress = setPlayerProgress(
-                                progress,
+                                adapterProgress,
                                 this.currentMusic?.duration ?? 0,
                             );
                             this.persistPlaybackProgress(
@@ -564,24 +615,30 @@ class TrackPlayer
                 }
             });
 
-            this.backend.addEventListener("progress", progress => {
+            this.backend.addEventListener("progress", adapterProgress => {
                 if (this.isForceExiting) {
+                    return;
+                }
+                if (this.shouldSuppressMpvProgressDuringManualSkip()) {
                     return;
                 }
                 this.syncMpvActiveTrackFromProgress("progress");
                 const currentProgress = setPlayerProgress(
-                    progress,
+                    adapterProgress,
                     this.currentMusic?.duration ?? 0,
                 );
                 this.persistPlaybackProgress(currentProgress.position);
             });
 
-            this.backend.addEventListener("playbackSeeked", progress => {
+            this.backend.addEventListener("playbackSeeked", adapterProgress => {
                 if (this.isForceExiting) {
                     return;
                 }
+                if (this.shouldSuppressMpvProgressDuringManualSkip()) {
+                    return;
+                }
                 const currentProgress = setPlayerProgress(
-                    progress,
+                    adapterProgress,
                     this.currentMusic?.duration ?? 0,
                 );
                 this.persistPlaybackProgress(currentProgress.position, true);
@@ -829,7 +886,9 @@ class TrackPlayer
     async play(
         musicItem?: IMusic.IMusicItem | null,
         forcePlay?: boolean,
+        mpvTransitionOwner?: IMpvManualSkipTransition | null,
     ): Promise<void> {
+        let ownedMpvTransition: IMpvManualSkipTransition | null = null;
         try {
             trace("TrackPlayer.play start", {
                 backend: this.backend.name,
@@ -850,8 +909,88 @@ class TrackPlayer
             if (!musicItem) {
                 throw new Error(PlayFailReason.PLAY_LIST_IS_EMPTY);
             }
+            if (this.backend.name === "mpv" && !mpvTransitionOwner) {
+                this.manualSkipGate.cancelPending();
+            }
+            const existingMpvTransition = this.mpvManualSkipTransition;
+            if (
+                existingMpvTransition &&
+                this.isMpvManualSkipTransitionActive(
+                    existingMpvTransition,
+                ) &&
+                existingMpvTransition.token.expectedKey ===
+                    getMediaUniqueKey(musicItem) &&
+                mpvTransitionOwner?.token.id !==
+                    existingMpvTransition.token.id
+            ) {
+                await this.waitForMpvActiveMusic(
+                    musicItem,
+                    4300,
+                    existingMpvTransition,
+                );
+                return;
+            }
+            const previousMusicBeforePlay = this.currentMusic;
+            this.cancelMpvManualSkipTransitionForTarget(
+                musicItem,
+                "explicit-play",
+            );
+            if (
+                this.backend.name === "mpv" &&
+                !this.hasActiveMpvManualSkipTransition() &&
+                (forcePlay ||
+                    !isSameMediaItem(previousMusicBeforePlay, musicItem))
+            ) {
+                ownedMpvTransition = this.beginMpvManualSkipTransition(
+                    musicItem,
+                    previousMusicBeforePlay,
+                    "explicit-play",
+                );
+                await this.pauseMpvActiveTrackForTransition(
+                    ownedMpvTransition,
+                );
+                if (
+                    !this.isMpvManualSkipTransitionActive(
+                        ownedMpvTransition,
+                    )
+                ) {
+                    return;
+                }
+            }
 
-            const seekToTime = this.resolveResumeSeekTime(musicItem);
+            const resolvedMusicItem = musicItem;
+            const seekToTime = this.resolveResumeSeekTime(resolvedMusicItem);
+            const shouldDeferMpvCurrentCommit =
+                this.backend.name === "mpv" &&
+                !!(ownedMpvTransition || mpvTransitionOwner);
+            const isPlayRequestActive = () => {
+                if (ownedMpvTransition) {
+                    return this.isMpvManualSkipTransitionActive(
+                        ownedMpvTransition,
+                    );
+                }
+                if (mpvTransitionOwner) {
+                    return this.isMpvManualSkipTransitionActive(
+                        mpvTransitionOwner,
+                    );
+                }
+                return this.isCurrentMusic(resolvedMusicItem);
+            };
+            const commitProposedMusic = () => {
+                this.setCurrentMusic(resolvedMusicItem);
+                const proposedProgress = setPlayerProgress(
+                    {
+                        position: seekToTime ?? 0,
+                        duration: resolvedMusicItem.duration || 0,
+                        buffered: seekToTime ?? 0,
+                    },
+                    resolvedMusicItem.duration || 0,
+                );
+                this.emit(
+                    TrackPlayerEvents.ProgressChanged,
+                    proposedProgress,
+                );
+            };
 
             // 1. 移动网络禁止播放
             const localPath = getLocalPath(musicItem);
@@ -938,16 +1077,9 @@ class TrackPlayer
             }
 
             // 4. 更新列表状态和当前音乐
-            this.setCurrentMusic(musicItem);
-            const proposedProgress = setPlayerProgress(
-                {
-                    position: seekToTime ?? 0,
-                    duration: musicItem.duration || 0,
-                    buffered: seekToTime ?? 0,
-                },
-                musicItem.duration || 0,
-            );
-            this.emit(TrackPlayerEvents.ProgressChanged, proposedProgress);
+            if (!shouldDeferMpvCurrentCommit) {
+                commitProposedMusic();
+            }
 
             // 5. 获取音源
             let track: IMusic.IMusicItem;
@@ -965,7 +1097,7 @@ class TrackPlayer
             // 5.3 插件返回音源
             let source: IPlugin.IMediaSourceResult | null = null;
             for (let quality of qualityOrder) {
-                if (this.isCurrentMusic(musicItem)) {
+                if (isPlayRequestActive()) {
                     trace("TrackPlayer.play getMediaSource start", {
                         musicId: musicItem.id,
                         platform: musicItem.platform,
@@ -1002,7 +1134,7 @@ class TrackPlayer
                 }
             }
 
-            if (!this.isCurrentMusic(musicItem)) {
+            if (!isPlayRequestActive()) {
                 return;
             }
             if (!source) {
@@ -1041,7 +1173,7 @@ class TrackPlayer
                         const similarMusic = await this.getSimilarMusic(
                             musicItem,
                             "music",
-                            () => !this.isCurrentMusic(musicItem),
+                            () => !isPlayRequestActive(),
                         );
 
                         if (similarMusic) {
@@ -1051,7 +1183,7 @@ class TrackPlayer
                                 );
 
                             for (let quality of qualityOrder) {
-                                if (this.isCurrentMusic(musicItem)) {
+                                if (isPlayRequestActive()) {
                                     const candidate =
                                         (await similarMusicPlugin?.methods?.getMediaSource(
                                             similarMusic,
@@ -1104,6 +1236,13 @@ class TrackPlayer
                 throw new Error(PlayFailReason.INVALID_SOURCE);
             }
 
+            if (shouldDeferMpvCurrentCommit) {
+                if (!isPlayRequestActive()) {
+                    return;
+                }
+                commitProposedMusic();
+            }
+
             // 6. 特殊类型源
             if (getUrlExt(source.url) === ".m3u8") {
                 // @ts-ignore
@@ -1129,41 +1268,66 @@ class TrackPlayer
                 true,
                 seekToTime,
             );
-
-            // 10. 获取补充信息
-            let info: Partial<IMusic.IMusicItem> | null = null;
-            try {
-                info =
-                    (await plugin?.methods?.getMusicInfo?.(musicItem)) ?? null;
-                if (
-                    (typeof info?.url === "string" && info.url.trim() === "") ||
-                    (info?.url && typeof info.url !== "string")
-                ) {
-                    delete info.url;
-                }
-            } catch {}
-
-
-            // 11. 设置补充信息
-            if (info && this.isCurrentMusic(musicItem)) {
-                const metadataMusic = this.mergeTrackSource(
-                    musicItem,
-                    info,
-                ) as IMusic.IMusicItem;
-                const mergedTrack = this.mergeTrackSource(track, info);
-                mergedTrack.userAgent =
-                    mergedTrack.userAgent || getAppUserAgent();
-                this.replacePlayListMusicIfPresent(metadataMusic, false);
-                getDefaultStore().set(
-                    currentMusicAtom,
-                    mergedTrack as IMusic.IMusicItem,
-                );
-                await this.backend.updateTrack({
-                    ...mergedTrack,
-                    musicItem: metadataMusic,
-                } as unknown as MusicFreePlayerTrack);
+            if (
+                mpvTransitionOwner &&
+                !this.isMpvManualSkipTransitionActive(mpvTransitionOwner)
+            ) {
+                return;
             }
+            if (
+                ownedMpvTransition &&
+                this.isMpvManualSkipTransitionActive(ownedMpvTransition)
+            ) {
+                const confirmed = await this.confirmMpvManualSkip(
+                    musicItem,
+                    "explicit-play",
+                    ownedMpvTransition,
+                );
+                if (confirmed) {
+                    this.completeMpvManualSkipTransition(
+                        ownedMpvTransition,
+                        "explicit-play",
+                    );
+                } else {
+                    await this.rollbackMpvManualSkipTransition(
+                        ownedMpvTransition,
+                        "explicit-play-timeout",
+                    );
+                    return;
+                }
+            }
+
+            const supplementalInfoPromise = this.updateSupplementalMusicInfo(
+                musicItem,
+                track,
+            );
+            if (mpvTransitionOwner) {
+                supplementalInfoPromise.catch(error => {
+                    errorLog(
+                        "切歌后补充歌曲信息失败",
+                        error?.message ?? error,
+                    );
+                });
+                return;
+            }
+            await supplementalInfoPromise;
         } catch (e: any) {
+            const transitionToRollback =
+                ownedMpvTransition &&
+                this.isMpvManualSkipTransitionActive(ownedMpvTransition)
+                    ? ownedMpvTransition
+                    : mpvTransitionOwner &&
+                        this.isMpvManualSkipTransitionActive(
+                            mpvTransitionOwner,
+                        )
+                        ? mpvTransitionOwner
+                        : null;
+            if (transitionToRollback) {
+                await this.rollbackMpvManualSkipTransition(
+                    transitionToRollback,
+                    "explicit-play-error",
+                ).catch(() => undefined);
+            }
             this.recordPlaybackError(e);
             const message = e?.message;
             trace(
@@ -1190,6 +1354,43 @@ class TrackPlayer
                 // 队列是空的，不应该出现这种情况
             }
         }
+    }
+
+    private async updateSupplementalMusicInfo(
+        musicItem: IMusic.IMusicItem,
+        track: IMusic.IMusicItem,
+    ) {
+        const plugin = this.pluginManagerService.getByName(musicItem.platform);
+        let info: Partial<IMusic.IMusicItem> | null = null;
+        try {
+            info =
+                (await plugin?.methods?.getMusicInfo?.(musicItem)) ?? null;
+            if (
+                (typeof info?.url === "string" && info.url.trim() === "") ||
+                (info?.url && typeof info.url !== "string")
+            ) {
+                delete info.url;
+            }
+        } catch {}
+
+        if (!info || !this.isCurrentMusic(musicItem)) {
+            return;
+        }
+        const metadataMusic = this.mergeTrackSource(
+            musicItem,
+            info,
+        ) as IMusic.IMusicItem;
+        const mergedTrack = this.mergeTrackSource(track, info);
+        mergedTrack.userAgent = mergedTrack.userAgent || getAppUserAgent();
+        this.replacePlayListMusicIfPresent(metadataMusic, false);
+        getDefaultStore().set(
+            currentMusicAtom,
+            mergedTrack as IMusic.IMusicItem,
+        );
+        await this.backend.updateTrack({
+            ...mergedTrack,
+            musicItem: metadataMusic,
+        } as unknown as MusicFreePlayerTrack);
     }
 
     async pause(): Promise<void> {
@@ -1233,6 +1434,8 @@ class TrackPlayer
 
     // 清空播放队列
     async clearPlayList(): Promise<void> {
+        this.manualSkipGate.cancelPending();
+        this.cancelMpvManualSkipTransition("clear-playlist");
         this.setPlayList([]);
         this.setCurrentMusic(null);
 
@@ -1242,25 +1445,84 @@ class TrackPlayer
     }
 
     async skipToNext(): Promise<void> {
-        return this.manualSkipGate.run(() => this.skipToNextInternal());
+        return this.manualSkipGate.run(token =>
+            this.skipToNextInternal(token),
+        );
     }
 
-    private async skipToNextInternal(): Promise<void> {
+    private async skipToNextInternal(
+        operationToken: IManualSkipOperationToken,
+    ): Promise<void> {
         if (this.backend.name === "mpv") {
             await this.alignMpvCurrentBeforeManualSkip(
                 "manual-next-start",
             );
+            if (!this.manualSkipGate.isActive(operationToken)) {
+                return;
+            }
         }
 
         const playLaterTarget = this.playLaterQueue[0] ?? null;
-        if (await this.playNextLaterQueue()) {
-            if (this.backend.name === "mpv" && playLaterTarget) {
-                await this.confirmMpvManualSkip(
+        const playLaterTransition =
+            this.backend.name === "mpv" && playLaterTarget
+                ? this.beginMpvManualSkipTransition(
                     playLaterTarget,
+                    this.currentMusic,
                     "play-later-next",
+                )
+                : null;
+        if (playLaterTransition) {
+            await this.pauseMpvActiveTrackForTransition(
+                playLaterTransition,
+            );
+            if (
+                !this.isMpvManualSkipTransitionActive(
+                    playLaterTransition,
+                )
+            ) {
+                return;
+            }
+        }
+        let playedLater = false;
+        try {
+            playedLater = await this.playNextLaterQueue(
+                playLaterTransition,
+            );
+        } catch (error) {
+            if (playLaterTransition) {
+                await this.rollbackMpvManualSkipTransition(
+                    playLaterTransition,
+                    "play-later-next-error",
                 );
             }
+            throw error;
+        }
+        if (playedLater) {
+            if (this.backend.name === "mpv" && playLaterTarget) {
+                const confirmed = await this.confirmMpvManualSkip(
+                    playLaterTarget,
+                    "play-later-next",
+                    playLaterTransition,
+                );
+                if (confirmed && playLaterTransition) {
+                    this.completeMpvManualSkipTransition(
+                        playLaterTransition,
+                        "play-later-next",
+                    );
+                } else if (playLaterTransition) {
+                    await this.rollbackMpvManualSkipTransition(
+                        playLaterTransition,
+                        "play-later-next-timeout",
+                    );
+                }
+            }
             return;
+        }
+        if (playLaterTransition) {
+            await this.rollbackMpvManualSkipTransition(
+                playLaterTransition,
+                "play-later-next-missing",
+            );
         }
 
         if (this.isPlayListEmpty()) {
@@ -1270,6 +1532,8 @@ class TrackPlayer
 
         const previousMusic = this.currentMusic;
         let optimisticMpvNext: IMusic.IMusicItem | null = null;
+        let mpvManualTransition: IMpvManualSkipTransition | null = null;
+        let resolvedMpvNextTrack: MusicFreePlayerTrack | null = null;
         let mpvTemporaryNextTrack: Partial<IMusic.IMusicItem> | null = null;
         let mpvTemporaryNextMusic: IMusic.IMusicItem | null = null;
         if (this.backend.name === "mpv" && previousMusic) {
@@ -1283,6 +1547,9 @@ class TrackPlayer
                 playNextQueuePromise,
                 upNextQueuePromise,
             ]);
+            if (!this.manualSkipGate.isActive(operationToken)) {
+                return;
+            }
             mpvTemporaryNextTrack =
                 playNextQueue.find(Boolean) ??
                 upNextQueue.find(Boolean) ??
@@ -1301,21 +1568,46 @@ class TrackPlayer
                 optimisticMpvNext &&
                 !isSameMediaItem(previousMusic, optimisticMpvNext)
             ) {
+                mpvManualTransition = this.beginMpvManualSkipTransition(
+                    optimisticMpvNext,
+                    previousMusic,
+                    "manual-next",
+                );
+                await this.pauseMpvActiveTrackForTransition(
+                    mpvManualTransition,
+                );
+                if (
+                    !this.isMpvManualSkipTransitionActive(
+                        mpvManualTransition,
+                    )
+                ) {
+                    return;
+                }
+                resolvedMpvNextTrack =
+                    await this.resolveMpvTransitionTrackSource(
+                        optimisticMpvNext,
+                        mpvManualTransition,
+                    );
+                if (
+                    !this.isMpvManualSkipTransitionActive(
+                        mpvManualTransition,
+                    )
+                ) {
+                    return;
+                }
+                if (!resolvedMpvNextTrack) {
+                    await this.playMpvTransitionTargetWithFallback(
+                        optimisticMpvNext,
+                        mpvManualTransition,
+                        "manual-next-source-fallback",
+                    );
+                    return;
+                }
                 this.setCurrentMusic(optimisticMpvNext);
                 setPlayerProgress({
                     position: 0,
                     duration: Number(optimisticMpvNext.duration) || 0,
                     buffered: 0,
-                });
-            }
-            if (mpvTemporaryNextTrack) {
-                await this.resolveNitroQueuedTracks([
-                    mpvTemporaryNextTrack,
-                ]).catch(error => {
-                    errorLog(
-                        "MPV 临时下一首音源预解析失败",
-                        error?.message ?? error,
-                    );
                 });
             }
         }
@@ -1328,36 +1620,156 @@ class TrackPlayer
                     errorLog("后端下一首队列读取失败", error?.message ?? error);
                     return [];
                 });
+            if (
+                this.backend.name === "mpv" &&
+                !this.manualSkipGate.isActive(operationToken)
+            ) {
+                return;
+            }
             if (nextTracks.length > 0) {
                 backendNextMusic = this.resolveMusicFromAdapterTrack(
                     nextTracks[0],
                 );
-                await this.resolveNitroQueuedTracks(nextTracks).catch(error => {
-                    errorLog(
-                        "后端下一首音源预解析失败",
-                        error?.message ?? error,
+                if (
+                    this.backend.name === "mpv" &&
+                    !mpvManualTransition &&
+                    previousMusic &&
+                    backendNextMusic &&
+                    !isSameMediaItem(previousMusic, backendNextMusic)
+                ) {
+                    mpvManualTransition =
+                        this.beginMpvManualSkipTransition(
+                            backendNextMusic,
+                            previousMusic,
+                            "manual-next-backend",
+                        );
+                    await this.pauseMpvActiveTrackForTransition(
+                        mpvManualTransition,
                     );
-                });
+                    if (
+                        !this.isMpvManualSkipTransitionActive(
+                            mpvManualTransition,
+                        )
+                    ) {
+                        return;
+                    }
+                    resolvedMpvNextTrack =
+                        await this.resolveMpvTransitionTrackSource(
+                            backendNextMusic,
+                            mpvManualTransition,
+                        );
+                    if (
+                        !this.isMpvManualSkipTransitionActive(
+                            mpvManualTransition,
+                        )
+                    ) {
+                        return;
+                    }
+                    if (!resolvedMpvNextTrack) {
+                        await this.playMpvTransitionTargetWithFallback(
+                            backendNextMusic,
+                            mpvManualTransition,
+                            "manual-next-backend-source-fallback",
+                        );
+                        return;
+                    }
+                    this.setCurrentMusic(backendNextMusic);
+                    setPlayerProgress({
+                        position: 0,
+                        duration: Number(backendNextMusic.duration) || 0,
+                        buffered: 0,
+                    });
+                }
+                if (this.backend.name !== "mpv" || !mpvManualTransition) {
+                    await this.resolveNitroQueuedTracks(nextTracks).catch(
+                        error => {
+                            errorLog(
+                                "后端下一首音源预解析失败",
+                                error?.message ?? error,
+                            );
+                        },
+                    );
+                }
+                if (
+                    mpvManualTransition &&
+                    !this.isMpvManualSkipTransitionActive(
+                        mpvManualTransition,
+                    )
+                ) {
+                    return;
+                }
+                if (
+                    this.backend.name === "mpv" &&
+                    !this.manualSkipGate.isActive(operationToken)
+                ) {
+                    return;
+                }
             }
         }
+        if (
+            this.backend.name === "mpv" &&
+            !this.manualSkipGate.isActive(operationToken)
+        ) {
+            return;
+        }
+        const expectedMpvNext = optimisticMpvNext ?? backendNextMusic;
         try {
-            await this.backend.skipToNext();
-        } catch (error) {
             if (
-                optimisticMpvNext &&
-                previousMusic &&
-                isSameMediaItem(this.currentMusic, optimisticMpvNext)
+                this.backend.name === "mpv" &&
+                mpvTemporaryNextTrack &&
+                resolvedMpvNextTrack &&
+                this.backend.playTrack
             ) {
-                this.setCurrentMusic(previousMusic);
+                const removedFromPlayNext =
+                    (await this.backend.removeFromPlayNext?.(
+                        mpvTemporaryNextTrack as PlayerAdapterTrack,
+                    )) ?? false;
+                if (!removedFromPlayNext) {
+                    await this.backend.removeFromUpNext?.(
+                        mpvTemporaryNextTrack as PlayerAdapterTrack,
+                    );
+                }
+                await this.backend.playTrack(resolvedMpvNextTrack);
+            } else if (
+                this.backend.name === "mpv" &&
+                mpvManualTransition &&
+                expectedMpvNext
+            ) {
+                const expectedIndex =
+                    this.getMusicIndexInPlayList(expectedMpvNext);
+                const started = await this.backend.skipToIndex(expectedIndex);
+                if (!started) {
+                    throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
+                }
+            } else {
+                await this.backend.skipToNext();
+            }
+        } catch (error) {
+            if (mpvManualTransition) {
+                await this.rollbackMpvManualSkipTransition(
+                    mpvManualTransition,
+                    "manual-next-error",
+                );
             }
             throw error;
         }
-        const expectedMpvNext = optimisticMpvNext ?? backendNextMusic;
         if (this.backend.name === "mpv" && expectedMpvNext) {
-            await this.confirmMpvManualSkip(
+            const confirmed = await this.confirmMpvManualSkip(
                 expectedMpvNext,
                 "manual-next",
+                mpvManualTransition,
             );
+            if (confirmed && mpvManualTransition) {
+                this.completeMpvManualSkipTransition(
+                    mpvManualTransition,
+                    "manual-next",
+                );
+            } else if (mpvManualTransition) {
+                await this.rollbackMpvManualSkipTransition(
+                    mpvManualTransition,
+                    "manual-next-timeout",
+                );
+            }
             return;
         }
         const syncedMusic =
@@ -1372,14 +1784,21 @@ class TrackPlayer
     }
 
     async skipToPrevious(): Promise<void> {
-        return this.manualSkipGate.run(() => this.skipToPreviousInternal());
+        return this.manualSkipGate.run(token =>
+            this.skipToPreviousInternal(token),
+        );
     }
 
-    private async skipToPreviousInternal(): Promise<void> {
+    private async skipToPreviousInternal(
+        operationToken: IManualSkipOperationToken,
+    ): Promise<void> {
         if (this.backend.name === "mpv") {
             await this.alignMpvCurrentBeforeManualSkip(
                 "manual-previous-start",
             );
+            if (!this.manualSkipGate.isActive(operationToken)) {
+                return;
+            }
         }
 
         if (this.isPlayListEmpty()) {
@@ -1402,33 +1821,73 @@ class TrackPlayer
         });
         if (this.backend.name === "mpv") {
             const currentMusic = this.currentMusic;
+            const mpvManualTransition =
+                this.beginMpvManualSkipTransition(
+                    previous.item,
+                    currentMusic,
+                    "manual-previous",
+                );
+            await this.pauseMpvActiveTrackForTransition(
+                mpvManualTransition,
+            );
+            if (
+                !this.isMpvManualSkipTransitionActive(
+                    mpvManualTransition,
+                )
+            ) {
+                return;
+            }
+            const resolvedTrack = await this.resolveMpvTransitionTrackSource(
+                previous.item,
+                mpvManualTransition,
+            );
+            if (
+                !this.isMpvManualSkipTransitionActive(mpvManualTransition)
+            ) {
+                return;
+            }
+            if (!resolvedTrack) {
+                await this.playMpvTransitionTargetWithFallback(
+                    previous.item,
+                    mpvManualTransition,
+                    "manual-previous-source-fallback",
+                );
+                return;
+            }
             this.setCurrentMusic(previous.item);
             setPlayerProgress({
                 position: 0,
                 duration: Number(previous.item.duration) || 0,
                 buffered: 0,
             });
-            await this.resolveNitroQueuedTracks([previous.item]).catch(error => {
-                errorLog(
-                    "MPV 上一首音源预解析失败",
-                    error?.message ?? error,
-                );
-            });
             try {
-                await this.backend.skipToPrevious();
-            } catch (error) {
-                if (
-                    currentMusic &&
-                    isSameMediaItem(this.currentMusic, previous.item)
-                ) {
-                    this.setCurrentMusic(currentMusic);
+                const started = await this.backend.skipToIndex(previous.index);
+                if (!started) {
+                    throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
                 }
+            } catch (error) {
+                await this.rollbackMpvManualSkipTransition(
+                    mpvManualTransition,
+                    "manual-previous-error",
+                );
                 throw error;
             }
-            await this.confirmMpvManualSkip(
+            const confirmed = await this.confirmMpvManualSkip(
                 previous.item,
                 "manual-previous",
+                mpvManualTransition,
             );
+            if (confirmed) {
+                this.completeMpvManualSkipTransition(
+                    mpvManualTransition,
+                    "manual-previous",
+                );
+            } else {
+                await this.rollbackMpvManualSkipTransition(
+                    mpvManualTransition,
+                    "manual-previous-timeout",
+                );
+            }
             return;
         }
         await this.play(previous.item, true);
@@ -1467,6 +1926,7 @@ class TrackPlayer
     private async waitForMpvActiveMusic(
         expectedMusic: IMusic.IMusicItem,
         timeoutMs: number,
+        transition?: IMpvManualSkipTransition | null,
     ) {
         return waitForExpectedActive(
             () => this.readMpvActiveMusic(),
@@ -1475,6 +1935,10 @@ class TrackPlayer
                 timeoutMs,
                 pollIntervalMs: 32,
                 sleep: durationMs => delay(durationMs, false),
+                isCancelled: transition
+                    ? () =>
+                        !this.isMpvManualSkipTransitionActive(transition)
+                    : undefined,
             },
         );
     }
@@ -1482,12 +1946,26 @@ class TrackPlayer
     private async confirmMpvManualSkip(
         expectedMusic: IMusic.IMusicItem,
         reason: string,
+        transition?: IMpvManualSkipTransition | null,
     ) {
+        if (
+            transition &&
+            !this.isMpvManualSkipTransitionActive(transition)
+        ) {
+            return false;
+        }
         let activeMusic = await this.waitForMpvActiveMusic(
             expectedMusic,
             1600,
+            transition,
         );
         if (!activeMusic) {
+            if (
+                transition &&
+                !this.isMpvManualSkipTransitionActive(transition)
+            ) {
+                return false;
+            }
             trace(
                 "MPV 手动切歌确认超时，显式重载目标歌曲",
                 {
@@ -1497,33 +1975,357 @@ class TrackPlayer
                 },
                 "error",
             );
-            await this.play(expectedMusic, true);
+            await this.play(expectedMusic, true, transition);
             activeMusic = await this.waitForMpvActiveMusic(
                 expectedMusic,
                 2600,
+                transition,
             );
         }
         if (!activeMusic) {
-            const actualMusic =
-                await this.syncCurrentMusicFromBackendActiveTrack(
-                    `${reason}-timeout`,
-                );
             trace(
                 "MPV 手动切歌最终确认失败",
                 {
                     reason,
                     expectedId: expectedMusic.id,
                     expectedPlatform: expectedMusic.platform,
-                    actualId: actualMusic?.id,
-                    actualPlatform: actualMusic?.platform,
                 },
                 "error",
             );
             return false;
         }
+        if (
+            transition &&
+            !this.isMpvManualSkipTransitionActive(transition)
+        ) {
+            return false;
+        }
         const syncedMusic =
             await this.syncCurrentMusicFromBackendActiveTrack(reason);
         return !!syncedMusic && isSameMediaItem(syncedMusic, expectedMusic);
+    }
+
+    private async playMpvTransitionTargetWithFallback(
+        expectedMusic: IMusic.IMusicItem,
+        transition: IMpvManualSkipTransition,
+        reason: string,
+    ) {
+        await this.play(expectedMusic, true, transition);
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return false;
+        }
+        const confirmed = await this.confirmMpvManualSkip(
+            expectedMusic,
+            reason,
+            transition,
+        );
+        if (confirmed) {
+            this.completeMpvManualSkipTransition(transition, reason);
+            return true;
+        }
+        await this.rollbackMpvManualSkipTransition(
+            transition,
+            `${reason}-timeout`,
+        );
+        return false;
+    }
+
+    private beginMpvManualSkipTransition(
+        expectedMusic: IMusic.IMusicItem,
+        previousMusic: IMusic.IMusicItem | null,
+        reason: string,
+    ): IMpvManualSkipTransition {
+        const token = this.mpvTrackTransitionGate.begin(
+            getMediaUniqueKey(expectedMusic),
+        );
+        this.mpvActiveTrackSyncSerial += 1;
+        const transition = {
+            token,
+            expectedMusic,
+            previousMusic,
+            previousProgress: {
+                ...getDefaultStore().get(progressAtom),
+            },
+            resumeOnRollback: false,
+            reason,
+        };
+        this.mpvManualSkipTransition = transition;
+        trace("MPV 手动切歌事务开始", {
+            id: token.id,
+            reason,
+            expectedKey: token.expectedKey,
+            previousKey: previousMusic
+                ? getMediaUniqueKey(previousMusic)
+                : null,
+        });
+        return transition;
+    }
+
+    private async pauseMpvActiveTrackForTransition(
+        transition: IMpvManualSkipTransition,
+    ) {
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return;
+        }
+        const state = await this.backend.getState().catch(() => null);
+        if (
+            (state !== "playing" && state !== "buffering") ||
+            !this.isMpvManualSkipTransitionActive(transition)
+        ) {
+            return;
+        }
+        transition.resumeOnRollback = true;
+        await this.backend.pause().catch(() => undefined);
+    }
+
+    private isMpvManualSkipTransitionActive(
+        transition?: IMpvManualSkipTransition | null,
+    ) {
+        return (
+            !!transition &&
+            this.mpvManualSkipTransition?.token.id === transition.token.id &&
+            this.mpvTrackTransitionGate.isActive(transition.token)
+        );
+    }
+
+    private hasActiveMpvManualSkipTransition() {
+        return this.isMpvManualSkipTransitionActive(
+            this.mpvManualSkipTransition,
+        );
+    }
+
+    private shouldSuppressMpvProgressDuringManualSkip() {
+        return (
+            this.backend.name === "mpv" &&
+            this.hasActiveMpvManualSkipTransition()
+        );
+    }
+
+    private cancelMpvManualSkipTransition(reason: string) {
+        const transition = this.mpvManualSkipTransition;
+        if (
+            !transition ||
+            !this.isMpvManualSkipTransitionActive(transition)
+        ) {
+            return false;
+        }
+        this.mpvTrackTransitionGate.clear(transition.token);
+        this.mpvManualSkipTransition = null;
+        this.mpvActiveTrackSyncSerial += 1;
+        this.manualSkipGate.cancelPending();
+        trace("MPV 手动切歌事务被新操作取消", {
+            id: transition.token.id,
+            reason,
+            expectedKey: transition.token.expectedKey,
+        });
+        return true;
+    }
+
+    private cancelMpvManualSkipTransitionForTarget(
+        musicItem: IMusic.IMusicItem,
+        reason: string,
+    ) {
+        const transition = this.mpvManualSkipTransition;
+        if (
+            !transition ||
+            !this.isMpvManualSkipTransitionActive(transition)
+        ) {
+            return false;
+        }
+        if (
+            transition.token.expectedKey === getMediaUniqueKey(musicItem)
+        ) {
+            return false;
+        }
+        return this.cancelMpvManualSkipTransition(reason);
+    }
+
+    private completeMpvManualSkipTransition(
+        transition: IMpvManualSkipTransition,
+        reason: string,
+    ) {
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return false;
+        }
+        this.mpvTrackTransitionGate.clear(transition.token);
+        this.mpvManualSkipTransition = null;
+        this.mpvActiveTrackSyncSerial += 1;
+        trace("MPV 手动切歌事务完成", {
+            id: transition.token.id,
+            reason,
+            expectedKey: transition.token.expectedKey,
+        });
+        return true;
+    }
+
+    private async rollbackMpvManualSkipTransition(
+        transition: IMpvManualSkipTransition,
+        reason: string,
+    ) {
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return false;
+        }
+
+        const activeMusic = await this.readMpvActiveMusic();
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return false;
+        }
+        const backendProgress = activeMusic
+            ? await this.backend.getProgress().catch(() => null)
+            : null;
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return false;
+        }
+
+        const restoredMusic = activeMusic ?? transition.previousMusic;
+        let restoredProgress: PlayerAdapterProgress | null = null;
+        if (restoredMusic) {
+            this.setCurrentMusic(restoredMusic);
+            const progress =
+                backendProgress ??
+                (transition.previousMusic &&
+                isSameMediaItem(restoredMusic, transition.previousMusic)
+                    ? transition.previousProgress
+                    : {
+                        position: 0,
+                        duration: Number(restoredMusic.duration) || 0,
+                        buffered: 0,
+                    });
+            restoredProgress = setPlayerProgress(
+                progress,
+                restoredMusic.duration ?? 0,
+            );
+            this.emit(TrackPlayerEvents.ProgressChanged, restoredProgress);
+            this.persistPlaybackProgress(restoredProgress.position, true);
+        }
+
+        const targetAlreadyActive =
+            !!activeMusic &&
+            isSameMediaItem(activeMusic, transition.expectedMusic);
+        let backendRestored = false;
+        if (
+            restoredMusic &&
+            !targetAlreadyActive &&
+            this.backend.restoreActiveTrack
+        ) {
+            backendRestored = await this.backend
+                .restoreActiveTrack({
+                    autoPlay: transition.resumeOnRollback,
+                })
+                .catch(error => {
+                    errorLog(
+                        "MPV 切歌回滚重新加载已确认曲目失败",
+                        error?.message ?? error,
+                    );
+                    return false;
+                });
+            if (!this.isMpvManualSkipTransitionActive(transition)) {
+                return false;
+            }
+            if (backendRestored && (restoredProgress?.position ?? 0) > 0) {
+                await this.backend
+                    .seekTo(restoredProgress!.position)
+                    .catch(error => {
+                        errorLog(
+                            "MPV 切歌回滚恢复进度失败",
+                            error?.message ?? error,
+                        );
+                    });
+            }
+        }
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return false;
+        }
+        if (
+            transition.resumeOnRollback &&
+            restoredMusic &&
+            (!backendRestored || targetAlreadyActive)
+        ) {
+            await this.backend.play().catch(error => {
+                errorLog(
+                    "MPV 手动切歌回滚后恢复播放失败",
+                    error?.message ?? error,
+                );
+            });
+        } else if (!transition.resumeOnRollback && restoredMusic) {
+            await this.backend.pause().catch(() => undefined);
+        }
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return false;
+        }
+        this.mpvTrackTransitionGate.clear(transition.token);
+        this.mpvManualSkipTransition = null;
+        this.mpvActiveTrackSyncSerial += 1;
+        trace("MPV 手动切歌事务回滚", {
+            id: transition.token.id,
+            reason,
+            expectedKey: transition.token.expectedKey,
+            activeKey: activeMusic ? getMediaUniqueKey(activeMusic) : null,
+        });
+        return true;
+    }
+
+    private shouldIgnoreMpvTrackChangeDuringManualSkip(evt: {
+        track?: Partial<IMusic.IMusicItem> | null;
+        index?: number;
+        reason?: unknown;
+    }) {
+        if (!this.hasActiveMpvManualSkipTransition()) {
+            return false;
+        }
+        const musicItem = this.resolveMusicFromAdapterTrack(
+            evt.track,
+            evt.index,
+        );
+        const activeKey = musicItem ? getMediaUniqueKey(musicItem) : null;
+        if (this.mpvTrackTransitionGate.acceptsActiveKey(activeKey)) {
+            return false;
+        }
+        trace("MPV 手动切歌期间忽略旧 trackChanged", {
+            reason: evt.reason,
+            activeKey,
+            expectedKey: this.mpvManualSkipTransition?.token.expectedKey,
+        });
+        return true;
+    }
+
+    private shouldIgnoreMpvPlaybackErrorDuringManualSkip(
+        track?: Partial<IMusic.IMusicItem> | null,
+    ) {
+        if (!this.hasActiveMpvManualSkipTransition()) {
+            return false;
+        }
+        const musicItem = this.resolveMusicFromAdapterTrack(track);
+        const activeKey = musicItem ? getMediaUniqueKey(musicItem) : null;
+        const shouldIgnore =
+            !this.mpvTrackTransitionGate.acceptsActiveKey(activeKey);
+        if (shouldIgnore) {
+            trace("MPV 手动切歌期间忽略旧 playbackError", {
+                activeKey,
+                expectedKey:
+                    this.mpvManualSkipTransition?.token.expectedKey,
+            });
+        }
+        return shouldIgnore;
+    }
+
+    private shouldIgnoreMpvActiveMusicDuringManualSkip(
+        activeMusic: IMusic.IMusicItem,
+        reason?: unknown,
+    ) {
+        if (!this.hasActiveMpvManualSkipTransition()) {
+            return false;
+        }
+        const activeKey = getMediaUniqueKey(activeMusic);
+        if (this.mpvTrackTransitionGate.acceptsActiveKey(activeKey)) {
+            return false;
+        }
+        trace("MPV 手动切歌期间忽略旧 active track 同步", {
+            reason,
+            activeKey,
+            expectedKey: this.mpvManualSkipTransition?.token.expectedKey,
+        });
+        return true;
     }
 
     async changeQuality(newQuality: IMusic.IQualityKey): Promise<boolean> {
@@ -1647,10 +2449,20 @@ class TrackPlayer
         return this.backend.seekTo(progress);
     }
 
-    getProgress = () => this.backend.getProgress();
+    getProgress = () => {
+        if (this.shouldSuppressMpvProgressDuringManualSkip()) {
+            const progress = getDefaultStore().get(progressAtom);
+            return Promise.resolve({ ...progress });
+        }
+        return this.backend.getProgress();
+    };
     getRate = () => this.backend.getRate();
     setRate = (rate: number) => this.backend.setRate(rate);
-    reset = () => this.backend.reset();
+    reset = () => {
+        this.manualSkipGate.cancelPending();
+        this.cancelMpvManualSkipTransition("reset");
+        return this.backend.reset();
+    };
 
     async getPlaybackDiagnosticSnapshot(): Promise<IPlaybackDiagnosticSnapshot> {
         const currentMusic = this.currentMusic;
@@ -2248,7 +3060,9 @@ class TrackPlayer
         this.syncPreparedNextTrack("play-later");
     }
 
-    private async playNextLaterQueue() {
+    private async playNextLaterQueue(
+        mpvTransitionOwner?: IMpvManualSkipTransition | null,
+    ) {
         const [nextMusic, ...restQueue] = this.playLaterQueue;
         if (!nextMusic) {
             return false;
@@ -2261,7 +3075,7 @@ class TrackPlayer
                 this.currentIndex >= 0 ? this.currentIndex + 1 : undefined,
             );
         }
-        await this.play(nextMusic, true);
+        await this.play(nextMusic, true, mpvTransitionOwner);
         return true;
     }
 
@@ -2476,7 +3290,7 @@ class TrackPlayer
             origin,
             recovered,
         );
-        if (!sourceWithMeta?.url) {
+        if (!hasPlayableSourceUrl(sourceWithMeta)) {
             return null;
         }
         if (this.isUnsupportedEncryptedSource(sourceWithMeta)) {
@@ -2486,7 +3300,9 @@ class TrackPlayer
         try {
             const playableSource =
                 await resolveEncryptedMediaStreamIfNeeded(sourceWithMeta);
-            return playableSource?.url ? playableSource : null;
+            return hasPlayableSourceUrl(playableSource)
+                ? playableSource
+                : null;
         } catch (error: any) {
             errorLog("加密音源代理失败", {
                 musicId: mediaItem.id,
@@ -2634,6 +3450,7 @@ class TrackPlayer
         if (this.backend.name !== "mpv") {
             return null;
         }
+        const syncSerial = ++this.mpvActiveTrackSyncSerial;
         const activeTrack = await this.backend
             .getActiveTrack?.()
             .catch(error => {
@@ -2643,18 +3460,33 @@ class TrackPlayer
                 );
                 return null;
             });
+        if (syncSerial !== this.mpvActiveTrackSyncSerial) {
+            return null;
+        }
         if (!activeTrack) {
             return null;
         }
         const activeIndex = await this.backend
             .getActiveTrackIndex?.()
             .catch(() => null);
+        if (syncSerial !== this.mpvActiveTrackSyncSerial) {
+            return null;
+        }
         const preferredIndex =
             typeof activeIndex === "number" ? activeIndex : undefined;
         const activeMusic = this.resolveMusicFromAdapterTrack(
             activeTrack as Partial<IMusic.IMusicItem>,
             preferredIndex,
         );
+        if (
+            activeMusic &&
+            this.shouldIgnoreMpvActiveMusicDuringManualSkip(
+                activeMusic,
+                reason,
+            )
+        ) {
+            return null;
+        }
         if (activeMusic && isSameMediaItem(this.currentMusic, activeMusic)) {
             return this.currentMusic;
         }
@@ -2983,10 +3815,78 @@ class TrackPlayer
         });
     }
 
+    private async resolveMpvTransitionTrackSource(
+        musicItem: IMusic.IMusicItem,
+        transition: IMpvManualSkipTransition,
+    ) {
+        if (!this.isMpvManualSkipTransitionActive(transition)) {
+            return null;
+        }
+        try {
+            const [source, artwork] = await Promise.all([
+                this.resolveDirectMediaSource(musicItem),
+                resolveLocalMusicArtwork(musicItem).catch(() => ""),
+            ]);
+            if (!this.isMpvManualSkipTransitionActive(transition)) {
+                return null;
+            }
+            if (!source?.url) {
+                trace(
+                    "MPV 切歌目标未获得可播放 URL",
+                    {
+                        reason: transition.reason,
+                        musicId: musicItem.id,
+                        platform: musicItem.platform,
+                    },
+                    "error",
+                );
+                return null;
+            }
+
+            const resolvedMusic =
+                artwork && !getDirectArtworkUri(musicItem.artwork)
+                    ? ({ ...musicItem, artwork } as IMusic.IMusicItem)
+                    : musicItem;
+            if (resolvedMusic !== musicItem) {
+                this.replacePlayListMusicIfPresent(resolvedMusic, false);
+            }
+            const updatedTrack = this.patchMediaArtwork(
+                this.mergeTrackSource(
+                    resolvedMusic,
+                    source,
+                ) as unknown as MusicFreePlayerTrack,
+            );
+            if (!updatedTrack?.url) {
+                return null;
+            }
+            const queueIndex = this.getMusicIndexInPlayList(resolvedMusic);
+            await this.backend.updateTrack(
+                updatedTrack,
+                queueIndex >= 0 ? queueIndex : undefined,
+            );
+            return this.isMpvManualSkipTransitionActive(transition)
+                ? updatedTrack
+                : null;
+        } catch (error: any) {
+            errorLog(
+                "MPV 切歌目标音源解析失败",
+                error?.message ?? error,
+            );
+            return null;
+        }
+    }
+
     private async resolveNitroQueuedTracks(
         tracks: Array<Partial<IMusic.IMusicItem>>,
+        transitionToken?: IMpvTrackTransitionToken,
     ) {
         for (let track of tracks) {
+            if (
+                transitionToken &&
+                !this.mpvTrackTransitionGate.isActive(transitionToken)
+            ) {
+                return;
+            }
             const musicItem = this.resolveMusicFromAdapterTrack(track);
             if (!musicItem) {
                 continue;
@@ -3003,6 +3903,12 @@ class TrackPlayer
                     this.resolveDirectMediaSource(musicItem),
                     resolveLocalMusicArtwork(musicItem).catch(() => ""),
                 ]);
+                if (
+                    transitionToken &&
+                    !this.mpvTrackTransitionGate.isActive(transitionToken)
+                ) {
+                    return;
+                }
                 const resolvedMusic =
                     artwork && !getDirectArtworkUri(musicItem.artwork)
                         ? ({ ...musicItem, artwork } as IMusic.IMusicItem)
@@ -3020,6 +3926,14 @@ class TrackPlayer
                     ) as unknown as MusicFreePlayerTrack,
                 );
                 if (updatedTrack) {
+                    if (
+                        transitionToken &&
+                        !this.mpvTrackTransitionGate.isActive(
+                            transitionToken,
+                        )
+                    ) {
+                        return;
+                    }
                     trace("预解析音源成功", {
                         musicId: musicItem.id,
                         platform: musicItem.platform,

@@ -1006,6 +1006,80 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         return true;
     }
 
+    async restoreActiveTrack(options?: {autoPlay?: boolean}) {
+        const activeIndex = this.activeIndex;
+        const activeTrack = this.activeTrack;
+        if (
+            !activeTrack ||
+            !isValidMpvQueueIndex(activeIndex, this.queue.length) ||
+            keyOf(this.queue[activeIndex]) !== keyOf(activeTrack) ||
+            !isPlayableUrl(activeTrack.url)
+        ) {
+            return false;
+        }
+
+        const autoPlay = options?.autoPlay ?? this.currentState === "playing";
+        const alreadyAligned =
+            !this.pendingActivation &&
+            this.pendingIndex < 0 &&
+            this.pendingLoadIndex < 0 &&
+            this.desiredIndex === activeIndex;
+        if (alreadyAligned) {
+            if (autoPlay) {
+                await this.play();
+            } else {
+                await this.pause();
+            }
+            return true;
+        }
+
+        await this.clearPreparedNextTrack();
+        this.confirmedPromotion = null;
+        this.pendingActivation = null;
+        this.pendingIndex = -1;
+        this.pendingLoadIndex = -1;
+        await this.playIndex(
+            activeIndex,
+            "manual",
+            autoPlay,
+        );
+        let restoreGeneration = (
+            this.pendingActivation as PendingActivation | null
+        )?.loadGeneration;
+        if (!restoreGeneration) {
+            return (
+                this.activeMediaId === keyOf(activeTrack) &&
+                this.activeIndex === activeIndex
+            );
+        }
+        const minimumRestoreGeneration = restoreGeneration;
+        const deadline = Date.now() + 2600;
+        while (Date.now() <= deadline) {
+            if (
+                typeof this.activeLoadGeneration === "number" &&
+                this.activeLoadGeneration >= minimumRestoreGeneration &&
+                this.activeMediaId === keyOf(activeTrack) &&
+                this.activeIndex === activeIndex
+            ) {
+                return true;
+            }
+            const pendingActivation = this.pendingActivation as
+                | PendingActivation
+                | null;
+            if (pendingActivation) {
+                if (
+                    pendingActivation.mediaId !== keyOf(activeTrack) ||
+                    pendingActivation.index !== activeIndex
+                ) {
+                    return false;
+                }
+                restoreGeneration = pendingActivation.loadGeneration;
+            }
+            await new Promise(resolve => setTimeout(resolve, 32));
+        }
+        return false;
+    }
+
     async seekTo(position: number) {
         await NativeMpvPlayer.seekTo(position);
         this.currentProgress = {

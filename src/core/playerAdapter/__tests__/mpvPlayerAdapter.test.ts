@@ -180,7 +180,7 @@ describe("MpvPlayerAdapter identity state machine", () => {
 
         adapter.addEventListener("trackChanged", event => {
             if (event.reason === "end" && event.track?.id === "c") {
-                void adapter.prepareNextTrack(track("d"));
+                adapter.prepareNextTrack(track("d")).catch(() => undefined);
             }
         });
 
@@ -316,6 +316,152 @@ describe("MpvPlayerAdapter identity state machine", () => {
         await adapter.loadQueue([track("a"), track("b")], 9);
         expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
         expect(errors.at(-1)?.code).toBe("mpv-invalid-start-index");
+    });
+
+    it("never commits an older native activation after a newer skip target", async () => {
+        const adapter = await createAdapter();
+        const changes: any[] = [];
+        adapter.addEventListener("trackChanged", event => changes.push(event));
+
+        await adapter.loadQueue([track("a"), track("b"), track("c")], 0);
+        const staleLoad = lastLoadPayload();
+        await adapter.skipToNext();
+        const requestedNext = lastLoadPayload();
+        expect(requestedNext.mediaId).toBe("b");
+
+        mockListeners.active?.({
+            mediaId: staleLoad.mediaId,
+            loadGeneration: staleLoad.loadGeneration,
+            prepareToken: 0,
+            queueRevision: staleLoad.queueRevision,
+            source: "loaded",
+        });
+        await flushAsyncEvents();
+
+        expect(await adapter.getActiveTrack()).toBeNull();
+        expect(changes).toHaveLength(0);
+        expect(mockNativeMpvPlayer.stop).toHaveBeenCalled();
+        const recoveredNext = lastLoadPayload();
+        expect(recoveredNext.mediaId).toBe("b");
+        expect(recoveredNext.loadGeneration).not.toBe(
+            staleLoad.loadGeneration,
+        );
+
+        mockListeners.active?.({
+            mediaId: recoveredNext.mediaId,
+            loadGeneration: recoveredNext.loadGeneration,
+            prepareToken: 0,
+            queueRevision: recoveredNext.queueRevision,
+            source: "loaded",
+        });
+        await flushAsyncEvents();
+
+        expect((await adapter.getActiveTrack())?.id).toBe("b");
+        expect(changes.map(item => item.track.id)).toEqual(["b"]);
+    });
+
+    it("restores the last confirmed item and resets next navigation after rollback", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a"), track("b"), track("c")], 0);
+        await confirmLastExplicitLoad();
+
+        await adapter.skipToNext();
+        expect(lastLoadPayload().mediaId).toBe("b");
+
+        const restorePromise = adapter.restoreActiveTrack({
+            autoPlay: false,
+        });
+        await flushAsyncEvents();
+        const restored = lastLoadPayload();
+        expect(restored.mediaId).toBe("a");
+        expect(restored.autoPlay).toBe(false);
+        mockListeners.active?.({
+            mediaId: restored.mediaId,
+            loadGeneration: restored.loadGeneration,
+            prepareToken: 0,
+            queueRevision: restored.queueRevision,
+            source: "loaded",
+        });
+        await expect(restorePromise).resolves.toBe(true);
+        expect((await adapter.getActiveTrack())?.id).toBe("a");
+
+        await adapter.skipToNext();
+        expect(lastLoadPayload().mediaId).toBe("b");
+    });
+
+    it("follows a recovery reload when a stale activation arrives during rollback", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a"), track("b")], 0);
+        await confirmLastExplicitLoad();
+
+        await adapter.skipToNext();
+        const staleTarget = lastLoadPayload();
+        const restorePromise = adapter.restoreActiveTrack({
+            autoPlay: true,
+        });
+        await flushAsyncEvents();
+        const firstRestore = lastLoadPayload();
+        expect(firstRestore.mediaId).toBe("a");
+
+        mockListeners.active?.({
+            mediaId: staleTarget.mediaId,
+            loadGeneration: staleTarget.loadGeneration,
+            prepareToken: 0,
+            queueRevision: staleTarget.queueRevision,
+            source: "loaded",
+        });
+        await flushAsyncEvents();
+        const recoveryRestore = lastLoadPayload();
+        expect(recoveryRestore.mediaId).toBe("a");
+        expect(recoveryRestore.loadGeneration).not.toBe(
+            firstRestore.loadGeneration,
+        );
+
+        mockListeners.active?.({
+            mediaId: recoveryRestore.mediaId,
+            loadGeneration: recoveryRestore.loadGeneration,
+            prepareToken: 0,
+            queueRevision: recoveryRestore.queueRevision,
+            source: "loaded",
+        });
+
+        await expect(restorePromise).resolves.toBe(true);
+        expect((await adapter.getActiveTrack())?.id).toBe("a");
+    });
+
+    it("realigns from an unresolved URL target before the next intent", async () => {
+        const adapter = await createAdapter();
+        const unresolved = { ...track("b"), url: "" };
+        const requestedUpdates: any[] = [];
+        adapter.addEventListener("tracksNeedUpdate", event =>
+            requestedUpdates.push(event),
+        );
+        await adapter.loadQueue([track("a"), unresolved, track("c")], 0);
+        await confirmLastExplicitLoad();
+        mockNativeMpvPlayer.loadAndPlay.mockClear();
+
+        await adapter.skipToNext();
+        expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
+        expect(requestedUpdates.at(-1)?.tracks?.[0]?.id).toBe("b");
+
+        const restorePromise = adapter.restoreActiveTrack({
+            autoPlay: false,
+        });
+        await flushAsyncEvents();
+        const restored = lastLoadPayload();
+        expect(restored.mediaId).toBe("a");
+        mockListeners.active?.({
+            mediaId: restored.mediaId,
+            loadGeneration: restored.loadGeneration,
+            prepareToken: 0,
+            queueRevision: restored.queueRevision,
+            source: "loaded",
+        });
+        await expect(restorePromise).resolves.toBe(true);
+
+        await adapter.updateTrack(track("b"), 1);
+        await adapter.skipToNext();
+        expect(lastLoadPayload().mediaId).toBe("b");
     });
 
     it("keeps the confirmed active item when the next load command fails", async () => {

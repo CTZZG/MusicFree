@@ -19,7 +19,7 @@
 
 ## 本分支说明
 
-这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.7.0`，不代表上游官方发布。本分支主要增强 Android 播放体验：默认使用 Nitro 播放内核，同时提供可选的 mpv 播放内核，用来覆盖更多音频格式和更复杂的本地播放场景。
+这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.7.1`，不代表上游官方发布。本分支主要增强 Android 播放体验：默认使用 Nitro 播放内核，同时提供可选的 mpv 播放内核，用来覆盖更多音频格式和更复杂的本地播放场景。
 
 默认情况下不需要额外设置，直接使用 Nitro 即可；如果遇到 Nitro/系统解码不支持的格式，可以在 `设置 -> 基础设置 -> 播放内核` 中切换到 mpv。播放内核切换后需要重启 App 生效。
 

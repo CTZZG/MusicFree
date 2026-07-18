@@ -13,6 +13,7 @@ import HeartIcon from "../heartIcon";
 import Icon from "@/components/base/icon.tsx";
 import lyricManager, { useLyricState } from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
+import { PORTRAIT_GESTURE_EXTENSION } from "../../bottom/layout";
 
 interface ILyricOperationsProps {
     scrollToCurrentLrcItem: () => void;
@@ -42,7 +43,13 @@ export default function LyricOperations(props: ILyricOperationsProps) {
     const { t } = useI18N();
 
     return (
-        <View style={styles.container}>
+        <View
+            style={[
+                styles.container,
+                orientation === "vertical"
+                    ? styles.verticalContainer
+                    : null,
+            ]}>
             {orientation === "vertical" ? <HeartIcon /> : null}
             <Icon
                 name="lyric"
@@ -228,5 +235,8 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-around",
+    },
+    verticalContainer: {
+        marginBottom: rpx(24 + PORTRAIT_GESTURE_EXTENSION),
     },
 });
