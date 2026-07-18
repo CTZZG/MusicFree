@@ -22,69 +22,136 @@ interface IBackgroundProps {
     useHeroLayout: boolean;
 }
 
-interface IAmbientColorState {
-    artwork?: string;
+interface ISynchronizedArtworkState {
+    ambientArtwork?: string;
+    coverArtwork?: string;
     color: string;
 }
 
-function useArtworkAmbientColor(artwork?: string) {
-    const [state, setState] = useState<IAmbientColorState>({
+const ARTWORK_SYNC_TIMEOUT_MS = 180;
+
+function getArtworkAmbientColor(artwork?: string) {
+    if (!artwork) {
+        return Promise.resolve(DEFAULT_IMMERSIVE_AMBIENT_COLOR);
+    }
+
+    return ImageColors.getColors(artwork, {
+        fallback: DEFAULT_IMMERSIVE_AMBIENT_COLOR,
+        cache: true,
+        key: createArtworkColorCacheKey(artwork),
+        pixelSpacing: 5,
+        quality: "low",
+    })
+        .then(result => resolveImmersiveAmbientColor(result))
+        .catch(() => DEFAULT_IMMERSIVE_AMBIENT_COLOR);
+}
+
+/**
+ * Commit artwork and its palette as one visual generation. The old generation
+ * stays on screen while a new URL is prefetched, so the hero and its tail do
+ * not enter separate blank/fade states during a track change.
+ */
+function useSynchronizedArtworkVisuals(
+    ambientArtwork?: string,
+    coverArtwork?: string,
+) {
+    const [state, setState] = useState<ISynchronizedArtworkState>(() => ({
+        ambientArtwork,
+        coverArtwork,
         color: DEFAULT_IMMERSIVE_AMBIENT_COLOR,
-    });
+    }));
 
     useEffect(() => {
-        if (!artwork) {
-            setState({ color: DEFAULT_IMMERSIVE_AMBIENT_COLOR });
-            return;
+        let active = true;
+        const nextAmbientArtwork = ambientArtwork;
+        const nextCoverArtwork = coverArtwork;
+
+        if (!nextAmbientArtwork && !nextCoverArtwork) {
+            setState({
+                ambientArtwork: undefined,
+                coverArtwork: undefined,
+                color: DEFAULT_IMMERSIVE_AMBIENT_COLOR,
+            });
+            return () => {
+                active = false;
+            };
         }
 
-        let active = true;
-        setState({
-            artwork,
-            color: DEFAULT_IMMERSIVE_AMBIENT_COLOR,
+        const urls = Array.from(
+            new Set(
+                [nextAmbientArtwork, nextCoverArtwork].filter(
+                    (url): url is string => !!url,
+                ),
+            ),
+        );
+        const prefetchPromise = Promise.all(
+            urls.map(url =>
+                Image.prefetch(url, "memory-disk").catch(() => false),
+            ),
+        );
+        const colorPromise = getArtworkAmbientColor(nextAmbientArtwork);
+
+        const commitArtwork = (color?: string) => {
+            if (!active) {
+                return;
+            }
+            setState(current => ({
+                ambientArtwork: nextAmbientArtwork,
+                coverArtwork: nextCoverArtwork,
+                color: color ?? current.color,
+            }));
+        };
+
+        const timeoutId = setTimeout(
+            () => commitArtwork(),
+            ARTWORK_SYNC_TIMEOUT_MS,
+        );
+
+        Promise.all([prefetchPromise, colorPromise]).then(([, color]) => {
+            clearTimeout(timeoutId);
+            commitArtwork(color);
         });
-        ImageColors.getColors(artwork, {
-            fallback: DEFAULT_IMMERSIVE_AMBIENT_COLOR,
-            cache: true,
-            key: createArtworkColorCacheKey(artwork),
-            pixelSpacing: 5,
-            quality: "low",
-        })
-            .then(result => {
-                if (active) {
-                    setState({
-                        artwork,
-                        color: resolveImmersiveAmbientColor(result),
-                    });
+
+        // If palette extraction is slower than the image prefetch timeout,
+        // update only the already-committed generation instead of reviving a
+        // stale track's color.
+        colorPromise.then(color => {
+            if (!active) {
+                return;
+            }
+            setState(current => {
+                if (
+                    current.ambientArtwork !== nextAmbientArtwork ||
+                    current.coverArtwork !== nextCoverArtwork
+                ) {
+                    return current;
                 }
-            })
-            .catch(() => {
-                if (active) {
-                    setState({
-                        artwork,
-                        color: DEFAULT_IMMERSIVE_AMBIENT_COLOR,
-                    });
-                }
+                return { ...current, color };
             });
+        });
 
         return () => {
             active = false;
+            clearTimeout(timeoutId);
         };
-    }, [artwork]);
+    }, [ambientArtwork, coverArtwork]);
 
-    return state.artwork === artwork
-        ? state.color
-        : DEFAULT_IMMERSIVE_AMBIENT_COLOR;
+    return state;
 }
 
 export default function Background(props: IBackgroundProps) {
     const { tab, useHeroLayout } = props;
     const musicItem = useCurrentMusic();
-    const { ambientArtwork, coverArtwork, musicKey } = useMusicDetailVisuals();
+    const visuals = useMusicDetailVisuals();
+    const synchronizedArtwork = useSynchronizedArtworkVisuals(
+        visuals.ambientArtwork,
+        visuals.coverArtwork,
+    );
+    const { ambientArtwork, coverArtwork, color: ambientColor } =
+        synchronizedArtwork;
     const { height: windowHeight, width: windowWidth } = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
     const showHero = tab === "album" && useHeroLayout;
-    const ambientColor = useArtworkAmbientColor(ambientArtwork);
     const heroLayout = useMemo(
         () =>
             getMusicDetailHeroLayout({
@@ -104,9 +171,6 @@ export default function Background(props: IBackgroundProps) {
         [coverArtwork],
     );
     const heroSource = coverSource ?? ambientSource;
-    const visualKey = `${musicKey ?? "none"}:${
-        coverArtwork ?? ambientArtwork ?? "generated"
-    }`;
     const ambientScale = 1.24;
     const heroStageHeight = heroLayout.top + heroLayout.imageHeight;
     const sharpMaskLocations = [
@@ -134,7 +198,6 @@ export default function Background(props: IBackgroundProps) {
 
             {ambientSource ? (
                 <Image
-                    key={`ambient-${visualKey}`}
                     style={[
                         styles.fullArtwork,
                         {
@@ -143,10 +206,10 @@ export default function Background(props: IBackgroundProps) {
                         },
                     ]}
                     blurRadius={showHero ? 66 : 54}
+                    cachePolicy="memory-disk"
                     contentFit="cover"
                     contentPosition="center"
-                    recyclingKey={`ambient-${visualKey}`}
-                    transition={360}
+                    transition={180}
                     source={ambientSource}
                 />
             ) : null}
@@ -177,16 +240,15 @@ export default function Background(props: IBackgroundProps) {
                         { top: 0, height: heroStageHeight },
                     ]}>
                     <Image
-                        key={`hero-blur-${visualKey}`}
                         style={[
                             styles.heroBlurredArtwork,
                             { transform: [{ scale: 1.08 }] },
                         ]}
                         blurRadius={56}
+                        cachePolicy="memory-disk"
                         contentFit="cover"
                         contentPosition="center"
-                        recyclingKey={`hero-blur-${visualKey}`}
-                        transition={360}
+                        transition={180}
                         source={heroSource}
                     />
 
@@ -210,12 +272,11 @@ export default function Background(props: IBackgroundProps) {
                                 />
                             }>
                             <Image
-                                key={`hero-sharp-${visualKey}`}
                                 style={styles.heroSharpArtwork}
+                                cachePolicy="memory-disk"
                                 contentFit="cover"
                                 contentPosition="center"
-                                recyclingKey={`hero-sharp-${visualKey}`}
-                                transition={360}
+                                transition={180}
                                 source={coverSource}
                             />
                         </MaskedView>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import rpx from "@/utils/rpx";
 import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
@@ -23,6 +23,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useMusicDetailVisuals } from "../../../artworkContext";
 import { getMusicDetailHeroLayout } from "../../../heroLayout";
+import { getMusicDetailCircleLayout } from "../../../circleLayout";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -48,25 +49,9 @@ export default function AlbumCover(props: IProps) {
     const { height: windowHeight, width: windowWidth } = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
     const longPressTriggeredRef = useRef(false);
-    const [containerHeight, setContainerHeight] = useState<number | null>(null);
-    const [operationsBottom, setOperationsBottom] = useState<number | null>(
-        null,
-    );
 
     const usableWindowHeight =
         windowHeight - safeAreaInsets.top - safeAreaInsets.bottom;
-    const usableAspectRatio = usableWindowHeight / Math.max(1, windowWidth);
-    const baseMiniLyricLayout = useMemo(() => {
-        if (orientation !== "vertical") {
-            return "normal" as const;
-        }
-        return usableAspectRatio < 1.9
-            ? ("compact" as const)
-            : ("normal" as const);
-    }, [orientation, usableAspectRatio]);
-    const [miniLyricLayout, setMiniLyricLayout] = useState<
-        "normal" | "compact" | "hidden"
-    >(baseMiniLyricLayout);
     const rotation = useSharedValue(0);
     const isCircleCover = coverStyle === "circle";
     const shouldRotateCover = isCircleCover && !musicIsPaused(musicState);
@@ -80,29 +65,16 @@ export default function AlbumCover(props: IProps) {
             }),
         [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
     );
-    useEffect(() => {
-        setMiniLyricLayout(baseMiniLyricLayout);
-        setOperationsBottom(null);
-    }, [baseMiniLyricLayout, windowHeight, windowWidth]);
-
-    useEffect(() => {
-        if (
-            orientation !== "vertical" ||
-            containerHeight === null ||
-            operationsBottom === null
-        ) {
-            return;
-        }
-        if (operationsBottom > containerHeight + rpx(2)) {
-            setOperationsBottom(null);
-            setMiniLyricLayout(current => {
-                if (current === "normal") {
-                    return "compact";
-                }
-                return "hidden";
-            });
-        }
-    }, [containerHeight, operationsBottom, orientation]);
+    const circleLayout = useMemo(
+        () =>
+            getMusicDetailCircleLayout({
+                windowWidth,
+                windowHeight,
+                safeAreaTop: safeAreaInsets.top,
+                safeAreaBottom: safeAreaInsets.bottom,
+            }),
+        [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
+    );
 
     const artworkStyle = useMemo(() => {
         const circleStyle = isCircleCover
@@ -120,7 +92,9 @@ export default function AlbumCover(props: IProps) {
                 rpx(420),
                 usableWindowHeight * 0.43,
             );
-            const coverSize = Math.min(availableWidth, comfortableHeight);
+            const coverSize = isCircleCover
+                ? circleLayout.coverSize
+                : Math.min(availableWidth, comfortableHeight);
             return {
                 width: coverSize,
                 height: coverSize,
@@ -136,7 +110,13 @@ export default function AlbumCover(props: IProps) {
                 ...circleStyle,
             };
         }
-    }, [isCircleCover, orientation, usableWindowHeight, windowWidth]);
+    }, [
+        circleLayout.coverSize,
+        isCircleCover,
+        orientation,
+        usableWindowHeight,
+        windowWidth,
+    ]);
 
     useEffect(() => {
         if (shouldRotateCover) {
@@ -229,15 +209,20 @@ export default function AlbumCover(props: IProps) {
 
     return (
         <View
-            style={styles.verticalRoot}
-            onLayout={event => {
-                setContainerHeight(event.nativeEvent.layout.height);
-            }}>
+            style={[
+                styles.circleVerticalRoot,
+                {
+                    paddingTop: circleLayout.navHeight + circleLayout.topGap,
+                },
+            ]}>
             <Pressable
                 delayLongPress={500}
                 onPress={handlePress}
                 onLongPress={handleLongPress}
-                style={styles.coverArea}>
+                style={[
+                    styles.coverArea,
+                    { height: circleLayout.coverSize + rpx(24) },
+                ]}>
                 <View style={styles.coverCenter}>
                     <Animated.View style={[artworkStyle, coverAnimatedStyle]}>
                         <FastImage
@@ -249,19 +234,12 @@ export default function AlbumCover(props: IProps) {
                     </Animated.View>
                 </View>
             </Pressable>
-            {immersiveMode ? null : <SongInfo />}
-            {miniLyricLayout === "hidden" ? null : (
-                <MiniLyric
-                    compact={miniLyricLayout === "compact"}
-                    onPress={onTurnPageClick}
-                />
-            )}
+            <View style={styles.circleSongInfo}>
+                <SongInfo />
+            </View>
+            <MiniLyric variant="circle" onPress={onTurnPageClick} />
             <View style={globalStyle.flex1} />
-            <View
-                onLayout={event => {
-                    const layout = event.nativeEvent.layout;
-                    setOperationsBottom(layout.y + layout.height);
-                }}>
+            <View style={styles.circleOperationsArea}>
                 {immersiveMode ? null : <Operations />}
             </View>
         </View>
@@ -276,10 +254,13 @@ const styles = {
     heroVerticalRoot: {
         paddingBottom: rpx(64),
     },
-    coverArea: {
+    circleVerticalRoot: {
         width: "100%" as const,
         flex: 1,
-        minHeight: rpx(360),
+    },
+    coverArea: {
+        width: "100%" as const,
+        flexShrink: 0,
         justifyContent: "center" as const,
     },
     coverCenter: {
@@ -289,6 +270,12 @@ const styles = {
     },
     heroTapArea: {
         width: "100%" as const,
+        flexShrink: 0,
+    },
+    circleSongInfo: {
+        flexShrink: 0,
+    },
+    circleOperationsArea: {
         flexShrink: 0,
     },
     coverImage: {

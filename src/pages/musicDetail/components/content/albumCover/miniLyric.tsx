@@ -37,11 +37,12 @@ import {
     LYRIC_TRANSITION_DURATION_MS,
     getMiniLyricOpacity,
 } from "@/utils/lyricTransition";
+import { getMusicDetailCircleLyricLayout } from "../../../circleLayout";
 
 interface IMiniLyricProps {
     compact?: boolean;
     onPress?: () => void;
-    variant?: "default" | "hero";
+    variant?: "default" | "hero" | "circle";
 }
 
 type MiniLyricLineType = LyricWordLineType;
@@ -344,9 +345,18 @@ function MiniLyricGroup(props: {
 export default function MiniLyric(props: IMiniLyricProps) {
     const { compact = false, onPress, variant = "default" } = props;
     const isHero = variant === "hero";
+    const isCircle = variant === "circle";
     const lyricState = useLyricState();
     const normalizedCurrentLyricState = useNormalizedCurrentLyricState();
-    const { width: windowWidth } = useWindowDimensions();
+    const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+    const circleLyricLayout = useMemo(
+        () =>
+            getMusicDetailCircleLyricLayout({
+                windowWidth,
+                windowHeight,
+            }),
+        [windowHeight, windowWidth],
+    );
     const infoWidth = useMemo(
         () =>
             isHero
@@ -384,22 +394,23 @@ export default function MiniLyric(props: IMiniLyricProps) {
     );
     const containerHeight = isHero
         ? HERO_CONTAINER_HEIGHT
-        : compact
-            ? COMPACT_CONTAINER_HEIGHT
-            : CONTAINER_HEIGHT;
+        : isCircle
+            ? circleLyricLayout.containerHeight
+            : compact
+                ? COMPACT_CONTAINER_HEIGHT
+                : CONTAINER_HEIGHT;
     const fadeHeight = isHero
         ? HERO_FADE_HEIGHT
-        : compact
-            ? COMPACT_FADE_HEIGHT
-            : FADE_HEIGHT;
+        : isCircle
+            ? circleLyricLayout.fadeHeight
+            : compact
+                ? COMPACT_FADE_HEIGHT
+                : FADE_HEIGHT;
     const activeColor = pureWhiteMode ? "white" : "rgba(126, 229, 255, 1)";
     const inactiveColor = "rgba(255, 255, 255, 0.36)";
 
     const visibleTypes = useMemo(() => {
-        if (isHero) {
-            return ["original"] as MiniLyricLineType[];
-        }
-        if (compact) {
+        if (isHero || isCircle || compact) {
             return ["original"] as MiniLyricLineType[];
         }
         return lyricOrder.filter(type => {
@@ -416,6 +427,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
         });
     }, [
         compact,
+        isCircle,
         isHero,
         lyricOrder,
         lyricState.hasRomanization,
@@ -429,6 +441,9 @@ export default function MiniLyric(props: IMiniLyricProps) {
             lyrics.map(item => {
                 if (isHero) {
                     return HERO_GROUP_HEIGHT;
+                }
+                if (isCircle) {
+                    return circleLyricLayout.groupHeight;
                 }
                 const hasText = visibleTypes.some(type =>
                     getLineText(item, type).trim(),
@@ -449,7 +464,14 @@ export default function MiniLyric(props: IMiniLyricProps) {
                     GROUP_SPACING
                 );
             }),
-        [compact, isHero, lyrics, visibleTypes],
+        [
+            circleLyricLayout.groupHeight,
+            compact,
+            isCircle,
+            isHero,
+            lyrics,
+            visibleTypes,
+        ],
     );
 
     useEffect(() => {
@@ -462,7 +484,11 @@ export default function MiniLyric(props: IMiniLyricProps) {
             .reduce((sum, height) => sum + height, 0);
         const currentGroupHeight =
             groupHeights[currentIndex] ??
-            (compact ? COMPACT_LINE_HEIGHT : PRIMARY_LINE_HEIGHT);
+            (isCircle
+                ? circleLyricLayout.groupHeight
+                : compact
+                    ? COMPACT_LINE_HEIGHT
+                    : PRIMARY_LINE_HEIGHT);
         const targetY = isHero
             ? -beforeHeight + rpx(4)
             : -beforeHeight + (containerHeight - currentGroupHeight) / 2;
@@ -478,9 +504,11 @@ export default function MiniLyric(props: IMiniLyricProps) {
         lastIndexRef.current = currentIndex;
     }, [
         compact,
+        circleLyricLayout.groupHeight,
         containerHeight,
         currentIndex,
         groupHeights,
+        isCircle,
         isHero,
         lyrics.length,
         translateY,
@@ -574,20 +602,28 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                         ? isActive
                                             ? rpx(34)
                                             : rpx(26)
-                                        : compact
-                                            ? fontSizeConst.subTitle
-                                            : isPrimary
-                                                ? fontSizeConst.title
-                                                : fontSizeConst.content;
+                                        : isCircle
+                                            ? isActive
+                                                ? circleLyricLayout.activeFontSize
+                                                : circleLyricLayout.contextFontSize
+                                            : compact
+                                                ? fontSizeConst.subTitle
+                                                : isPrimary
+                                                    ? fontSizeConst.title
+                                                    : fontSizeConst.content;
                                     const lineHeight = isHero
                                         ? isActive
                                             ? HERO_PRIMARY_LINE_HEIGHT
                                             : HERO_SECONDARY_LINE_HEIGHT
-                                        : compact
-                                            ? COMPACT_LINE_HEIGHT
-                                            : isPrimary
-                                                ? PRIMARY_LINE_HEIGHT
-                                                : SECONDARY_LINE_HEIGHT;
+                                        : isCircle
+                                            ? isActive
+                                                ? circleLyricLayout.activeLineHeight
+                                                : circleLyricLayout.contextLineHeight
+                                            : compact
+                                                ? COMPACT_LINE_HEIGHT
+                                                : isPrimary
+                                                    ? PRIMARY_LINE_HEIGHT
+                                                    : SECONDARY_LINE_HEIGHT;
                                     if (isActive && isPrimary) {
                                         return (
                                             <MiniWordByWordLine
@@ -649,7 +685,13 @@ export default function MiniLyric(props: IMiniLyricProps) {
                 {
                     width: infoWidth,
                     height: containerHeight,
-                    marginTop: isHero ? rpx(4) : compact ? rpx(8) : rpx(16),
+                    marginTop: isHero
+                        ? rpx(4)
+                        : isCircle
+                            ? circleLyricLayout.marginTop
+                            : compact
+                                ? rpx(8)
+                                : rpx(16),
                     marginBottom: isHero ? rpx(52) : 0,
                 },
                 pressed ? styles.pressed : null,

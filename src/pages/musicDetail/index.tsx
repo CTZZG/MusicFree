@@ -27,7 +27,11 @@ export default function MusicDetail() {
         Config.getConfig("basic.musicDetailDefault") || "album",
     );
     const useHeroLayout = orientation === "vertical" && coverStyle !== "circle";
-    const showOverlayNav = immersiveMode || (useHeroLayout && tab === "album");
+    const isCircleAlbumLayout =
+        orientation === "vertical" && coverStyle === "circle" && tab === "album";
+    const showOverlayNav =
+        immersiveMode ||
+        (orientation === "vertical" && tab === "album");
     const swipeProgress = useSharedValue(0);
     const pageSwipeLift = rpx(72);
     const backgroundSwipeLift = rpx(36);
@@ -100,7 +104,12 @@ export default function MusicDetail() {
                                 tab={tab}
                                 onTabChange={setTab}
                             />
-                            <Bottom swipeProgress={swipeProgress} />
+                            <Bottom
+                                swipeProgress={swipeProgress}
+                                layoutMode={
+                                    isCircleAlbumLayout ? "circle" : "default"
+                                }
+                            />
                             {showOverlayNav ? (
                                 <View
                                     pointerEvents="box-none"

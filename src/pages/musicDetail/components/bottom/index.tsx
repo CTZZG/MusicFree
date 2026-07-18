@@ -9,10 +9,11 @@ import { PORTRAIT_GESTURE_EXTENSION } from "./layout";
 
 interface IBottomProps {
     swipeProgress: SharedValue<number>;
+    layoutMode?: "default" | "circle";
 }
 
 export default function Bottom(props: IBottomProps) {
-    const { swipeProgress } = props;
+    const { swipeProgress, layoutMode = "default" } = props;
     const orientation = useOrientation();
     if (orientation === "horizontal") {
         return (
@@ -24,7 +25,13 @@ export default function Bottom(props: IBottomProps) {
     }
 
     return (
-        <View style={[style.wrapper, style.portraitWrapper]}>
+        <View
+            style={[
+                style.wrapper,
+                layoutMode === "circle"
+                    ? style.circlePortraitWrapper
+                    : style.portraitWrapper,
+            ]}>
             <SeekBar />
             <PlayControl swipeProgress={swipeProgress} />
         </View>
@@ -42,5 +49,8 @@ const style = StyleSheet.create({
         height: rpx(240 + PORTRAIT_GESTURE_EXTENSION),
         marginBottom: rpx(-PORTRAIT_GESTURE_EXTENSION),
         transform: [{ translateY: rpx(-PORTRAIT_GESTURE_EXTENSION) }],
+    },
+    circlePortraitWrapper: {
+        height: rpx(240 + PORTRAIT_GESTURE_EXTENSION),
     },
 });
