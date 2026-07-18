@@ -66,6 +66,7 @@ export interface IAppConfigProperties {
     "lyric.detailSecondaryFontScale": number;
     "lyric.statusBarShowTranslation": boolean;
     "lyric.statusBarShowRomanization": boolean;
+    "lyric.statusBarWordByWord": boolean;
     "lyric.autoSearchLyric": boolean;
     "lyric.enableWordByWord": boolean;
     "lyric.enableWordByWordFloat": boolean;

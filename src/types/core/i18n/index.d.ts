@@ -740,6 +740,7 @@ export interface ILanguageData {
     "basicSettings.lyric.detailShowRomanization": string; // 详情页显示音译
     "basicSettings.lyric.statusBarShowTranslation": string; // 桌面歌词显示翻译
     "basicSettings.lyric.statusBarShowRomanization": string; // 桌面歌词显示音译
+    "basicSettings.lyric.statusBarWordByWord": string; // 桌面歌词逐字高亮
     "basicSettings.lyric.enableWordByWord": string; // 详情页逐字歌词
     "basicSettings.lyric.enableWordByWordFloat": string; // 逐字歌词浮动动画
     "basicSettings.lyric.pureWhiteMode": string; // 歌词纯白高亮

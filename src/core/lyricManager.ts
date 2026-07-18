@@ -841,6 +841,11 @@ class LyricManager implements IInjectable {
                 playbackRate: this.getPositionClockRate(),
                 musicKey: output.musicKey,
                 lyricIndex: output.lyricIndex,
+                enableWordByWord:
+                    this.appConfig.getConfig(
+                        "lyric.statusBarWordByWord",
+                    ) ?? true,
+                allowPseudoWordByWord: true,
             });
             const publish = LyricUtil.setStatusBarLyricPayload
                 ? LyricUtil.setStatusBarLyricPayload(payload)

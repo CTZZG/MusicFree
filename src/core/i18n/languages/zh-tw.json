@@ -673,6 +673,7 @@
     "basicSettings.lyric.detailShowRomanization": "詳情頁顯示音譯",
     "basicSettings.lyric.statusBarShowTranslation": "桌面歌詞顯示翻譯",
     "basicSettings.lyric.statusBarShowRomanization": "桌面歌詞顯示音譯",
+    "basicSettings.lyric.statusBarWordByWord": "桌面歌詞逐字高亮",
     "basicSettings.lyric.enableWordByWord": "詳情頁逐字歌詞",
     "basicSettings.lyric.enableWordByWordFloat": "逐字歌詞浮動動畫",
     "basicSettings.lyric.pureWhiteMode": "歌詞純白高亮",

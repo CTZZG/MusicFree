@@ -33,11 +33,12 @@ export function buildNativeStatusBarLyricWords(
     part?: INativeLyricPartInput,
     partOffset?: number,
     normalizedPartText?: string,
+    allowPseudoWordByWord = false,
 ) {
     if (
         !part ||
         !part.hasWordByWord ||
-        part.isPseudoWordByWord ||
+        (part.isPseudoWordByWord && !allowPseudoWordByWord) ||
         !part.text ||
         !part.words.length
     ) {
@@ -91,17 +92,23 @@ export function buildNativeStatusBarLyricPayload(options: {
     playbackRate?: number;
     musicKey?: string;
     lyricIndex?: number;
+    enableWordByWord?: boolean;
+    allowPseudoWordByWord?: boolean;
 }): INativeStatusBarLyricPayload {
     const playbackRate = Number(options.playbackRate);
     return {
         sequence: finiteNonNegative(options.sequence ?? 0),
         text: options.text,
-        words: buildNativeStatusBarLyricWords(
-            options.text,
-            options.part,
-            options.partOffset,
-            options.normalizedPartText,
-        ),
+        words:
+            options.enableWordByWord === false
+                ? []
+                : buildNativeStatusBarLyricWords(
+                    options.text,
+                    options.part,
+                    options.partOffset,
+                    options.normalizedPartText,
+                    options.allowPseudoWordByWord,
+                ),
         positionMs: finiteNonNegative(options.positionMs),
         isPlaying: options.isPlaying,
         playbackRate:

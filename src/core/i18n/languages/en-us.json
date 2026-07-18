@@ -673,6 +673,7 @@
     "basicSettings.lyric.detailShowRomanization": "Show romanization in detail lyrics",
     "basicSettings.lyric.statusBarShowTranslation": "Show translation in desktop lyrics",
     "basicSettings.lyric.statusBarShowRomanization": "Show romanization in desktop lyrics",
+    "basicSettings.lyric.statusBarWordByWord": "Word-by-word desktop lyric highlight",
     "basicSettings.lyric.enableWordByWord": "Detail word-by-word lyrics",
     "basicSettings.lyric.enableWordByWordFloat": "Word-by-word float animation",
     "basicSettings.lyric.pureWhiteMode": "Pure white lyric highlight",

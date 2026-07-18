@@ -907,6 +907,7 @@ function LyricSetting() {
      *     "lyric.detailSecondaryFontScale": number;
      *     "lyric.statusBarShowTranslation": boolean;
      *     "lyric.statusBarShowRomanization": boolean;
+     *     "lyric.statusBarWordByWord": boolean;
      *     "lyric.showMediaNotificationLyric": boolean;
      *     "lyric.autoSearchLyric": boolean;
      */
@@ -939,6 +940,7 @@ function LyricSetting() {
     const statusBarShowRomanization = useAppConfig(
         "lyric.statusBarShowRomanization",
     );
+    const statusBarWordByWord = useAppConfig("lyric.statusBarWordByWord");
     const enableAutoSearchLyric = useAppConfig("lyric.autoSearchLyric");
     const enableWordByWord = useAppConfig("lyric.enableWordByWord");
     const enableWordByWordFloat = useAppConfig("lyric.enableWordByWordFloat");
@@ -1050,6 +1052,16 @@ function LyricSetting() {
         statusBarShowRomanization ?? false,
         newValue => {
             Config.setConfig("lyric.statusBarShowRomanization", newValue);
+            lyricManager.refreshNativeNotificationLyric();
+        },
+    );
+
+    const desktopWordByWord = createSwitch(
+        t("basicSettings.lyric.statusBarWordByWord"),
+        "lyric.statusBarWordByWord",
+        statusBarWordByWord ?? true,
+        newValue => {
+            Config.setConfig("lyric.statusBarWordByWord", newValue);
             lyricManager.refreshNativeNotificationLyric();
         },
     );
@@ -1182,6 +1194,13 @@ function LyricSetting() {
                 onPress={openStatusBarLyric.onPress}>
                 <ListItem.Content title={openStatusBarLyric.title} />
                 {openStatusBarLyric.right}
+            </ListItem>
+            <ListItem
+                withHorizontalPadding
+                heightType="small"
+                onPress={desktopWordByWord.onPress}>
+                <ListItem.Content title={desktopWordByWord.title} />
+                {desktopWordByWord.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding

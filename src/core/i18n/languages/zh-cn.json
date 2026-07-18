@@ -673,6 +673,7 @@
     "basicSettings.lyric.detailShowRomanization": "详情页显示音译",
     "basicSettings.lyric.statusBarShowTranslation": "桌面歌词显示翻译",
     "basicSettings.lyric.statusBarShowRomanization": "桌面歌词显示音译",
+    "basicSettings.lyric.statusBarWordByWord": "桌面歌词逐字高亮",
     "basicSettings.lyric.enableWordByWord": "详情页逐字歌词",
     "basicSettings.lyric.enableWordByWordFloat": "逐字歌词浮动动画",
     "basicSettings.lyric.pureWhiteMode": "歌词纯白高亮",
