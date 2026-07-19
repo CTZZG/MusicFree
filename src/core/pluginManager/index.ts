@@ -35,6 +35,7 @@ import { IInjectable } from "@/types/infra";
 import { IAppConfig } from "@/types/core/config";
 import delay from "@/utils/delay";
 import { recordPluginInstallFailure } from "./diagnostics";
+import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
 
 const pluginsAtom = atom<Plugin[]>([]);
 const pluginCacheStore = getOrCreateMMKV("plugin.cache");
@@ -305,14 +306,6 @@ class PluginManager implements IPluginManager, IInjectable {
 
                 if (plugin.state === PluginState.Mounted) {
                     const fn = nanoid();
-                    if (oldVersionPlugin) {
-                        allPlugins = allPlugins.filter(
-                            _ => _.hash !== oldVersionPlugin.hash,
-                        );
-                        try {
-                            await unlink(oldVersionPlugin.path);
-                        } catch {}
-                    }
                     const _pluginPath = `${pathConst.pluginPath}${fn}.js`;
                     if (config?.useExpoFs) {
                         await writeFile(_pluginPath, funcCode, "utf8");
@@ -320,8 +313,18 @@ class PluginManager implements IPluginManager, IInjectable {
                         await copyFile(pluginPath, _pluginPath);
                     }
                     plugin.path = _pluginPath;
+                    if (oldVersionPlugin) {
+                        allPlugins = allPlugins.filter(
+                            _ => _.hash !== oldVersionPlugin.hash,
+                        );
+                    }
                     allPlugins = allPlugins.concat(plugin);
                     this.setPlugins(allPlugins);
+                    if (oldVersionPlugin) {
+                        try {
+                            await unlink(oldVersionPlugin.path);
+                        } catch {}
+                    }
 
                     return {
                         success: true,
@@ -373,10 +376,25 @@ class PluginManager implements IPluginManager, IInjectable {
         url: string,
         config?: IInstallPluginConfig,
     ): Promise<IInstallPluginResult> {
+        const validation = validateRemoteInstallUrl(url);
+        if (!validation.ok) {
+            return recordFailedInstallResult({
+                success: false,
+                message: validation.reason,
+                pluginUrl: url,
+                sourceType: "network",
+                failureReason: "network",
+                retryable: false,
+            });
+        }
+        url = validation.url;
         let funcCode: string;
         try {
             funcCode = (
                 await axios.get(url, {
+                    // Do not follow a validated HTTPS URL into an HTTP/private
+                    // endpoint. Callers can explicitly provide a new URL.
+                    maxRedirects: 0,
                     headers: {
                         "Cache-Control": "no-cache",
                         Pragma: "no-cache",
@@ -455,11 +473,13 @@ class PluginManager implements IPluginManager, IInjectable {
                         allPlugins = allPlugins.filter(
                             _ => _.hash !== oldVersionPlugin.hash,
                         );
+                    }
+                    this.setPlugins(allPlugins);
+                    if (oldVersionPlugin) {
                         try {
                             await unlink(oldVersionPlugin.path);
                         } catch {}
                     }
-                    this.setPlugins(allPlugins);
                     return {
                         success: true,
                         pluginName: plugin.name,
@@ -538,7 +558,7 @@ class PluginManager implements IPluginManager, IInjectable {
                     const pluginName = plugin.name;
                     await unlink(plugin.path);
                     removeAllMediaExtra(pluginName);
-                } catch (e) {}
+                } catch {}
             }),
         );
         this.setPlugins([]);
@@ -564,7 +584,13 @@ class PluginManager implements IPluginManager, IInjectable {
             throw new Error("没有更新源");
         }
         try {
-            await this.installPluginFromUrl(updateUrl);
+            const result = await this.installPluginFromUrl(updateUrl);
+            if (result.message === "插件已安装") {
+                throw new Error("插件已安装");
+            }
+            if (!result.success) {
+                throw new Error(result.message || "插件更新失败");
+            }
         } catch (e: any) {
             if (e.message === "插件已安装") {
                 throw new Error(i18n.t("checkUpdate.error.latestVersion"));

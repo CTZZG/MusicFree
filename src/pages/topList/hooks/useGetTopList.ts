@@ -1,8 +1,8 @@
 import { RequestStateCode } from "@/constants/commonConst";
 import PluginManager from "@/core/pluginManager";
 import { produce } from "immer";
-import { useAtom } from "jotai";
-import { useCallback } from "react";
+import { getDefaultStore, useSetAtom } from "jotai";
+import { useCallback, useRef } from "react";
 import { pluginsTopListAtom } from "../store/atoms";
 
 export const TOP_LIST_CACHE_TTL = 30 * 60 * 1000;
@@ -16,12 +16,15 @@ interface IGetTopListOptions {
 }
 
 export default function useGetTopList() {
-    const [pluginsTopList, setPluginsTopList] = useAtom(pluginsTopListAtom);
+    const setPluginsTopList = useSetAtom(pluginsTopListAtom);
+    const requestGenerationRef = useRef<Record<string, number>>({});
 
     const getTopList = useCallback(
         async (pluginHash: string, options: IGetTopListOptions = {}) => {
+            let requestGeneration: number | undefined;
             try {
-                const currentTopList = pluginsTopList[pluginHash];
+                const currentTopList =
+                    getDefaultStore().get(pluginsTopListAtom)[pluginHash];
                 if (
                     !options.force &&
                     currentTopList?.state === RequestStateCode.FINISHED &&
@@ -41,6 +44,10 @@ export default function useGetTopList() {
                     return;
                 }
 
+                requestGeneration =
+                    (requestGenerationRef.current[pluginHash] ?? 0) + 1;
+                requestGenerationRef.current[pluginHash] = requestGeneration;
+
                 setPluginsTopList(
                     produce(draft => {
                         draft[pluginHash] = {
@@ -51,6 +58,12 @@ export default function useGetTopList() {
                     }),
                 );
                 const result = await plugin?.methods?.getTopLists();
+                if (
+                    requestGenerationRef.current[pluginHash] !==
+                    requestGeneration
+                ) {
+                    return;
+                }
                 setPluginsTopList(
                     produce(draft => {
                         draft[pluginHash] = {
@@ -61,6 +74,13 @@ export default function useGetTopList() {
                     }),
                 );
             } catch {
+                if (
+                    requestGeneration === undefined ||
+                    requestGenerationRef.current[pluginHash] !==
+                        requestGeneration
+                ) {
+                    return;
+                }
                 setPluginsTopList(
                     produce(draft => {
                         draft[pluginHash] = {
@@ -72,7 +92,7 @@ export default function useGetTopList() {
                 );
             }
         },
-        [pluginsTopList, setPluginsTopList],
+        [setPluginsTopList],
     );
 
     return getTopList;

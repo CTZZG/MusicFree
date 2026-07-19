@@ -19,6 +19,7 @@ import LyricUtil, { NativeTextAlignment } from "@/native/lyricUtil";
 import { buildInfo } from "@/constants/buildInfo.generated";
 import { AppConfigPropertyKey } from "@/types/core/config";
 import appMeta from "@/utils/appMeta";
+import telemetry from "@/core/telemetry";
 import { clearCache, getCacheSize, sizeFormatter } from "@/utils/fileUtils";
 import { clearLog, getErrorLogContent } from "@/utils/log";
 import { getQualityKeys, getQualityText } from "@/utils/qualities";
@@ -709,13 +710,16 @@ export default function BasicSetting() {
                 createSwitch(
                     t("basicSettings.developer.disableTelemetry"),
                     "debug.disableTelemetry",
-                    telemetryAvailable ? disableTelemetry ?? false : false,
+                    telemetryAvailable ? disableTelemetry ?? true : true,
                     newVal => {
                         if (!telemetryAvailable) {
                             Toast.warn(t("toast.telemetryNotAvailable"));
                             return;
                         }
                         Config.setConfig("debug.disableTelemetry", newVal);
+                        if (newVal === false) {
+                            telemetry.setup().catch(() => undefined);
+                        }
                     },
                 ),
                 createSwitch(

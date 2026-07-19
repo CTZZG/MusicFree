@@ -6,9 +6,11 @@ import { nanoid } from "nanoid";
 import { IAppConfig } from "@/types/core/config";
 import delay from "@/utils/delay";
 import DeviceInfo from "react-native-device-info";
+import { isTelemetryOptedIn } from "./telemetryPolicy";
 
 class Telemetry implements IInjectable {
     private appInsights: ApplicationInsights | null = null;
+    private availabilityCheckScheduled = false;
 
     private appConfigService!: IAppConfig;
 
@@ -29,8 +31,19 @@ class Telemetry implements IInjectable {
         return Telemetry.debugId;
     }
 
-    async setup() {
-        if (process.env.EXPO_PUBLIC_AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING) {
+    private initializeClientIfAllowed() {
+        if (
+            this.appInsights ||
+            !appMeta.telemetryAvailable ||
+            !isTelemetryOptedIn(
+                this.appConfigService.getConfig("debug.disableTelemetry"),
+            ) ||
+            !process.env.EXPO_PUBLIC_AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING
+        ) {
+            return;
+        }
+
+        try {
             this.appInsights = new ApplicationInsights({
                 config: {
                     connectionString: process.env.EXPO_PUBLIC_AZURE_APPLICATION_INSIGHTS_CONNECTION_STRING,
@@ -40,12 +53,21 @@ class Telemetry implements IInjectable {
                 },
             });
             this.appInsights.loadAppInsights();
+        } catch {
+            this.appInsights = null;
         }
+    }
 
+    async setup() {
         if (__DEV__) {
             // 开发模式不启用性能服务检测
             return;
         }
+        this.initializeClientIfAllowed();
+        if (this.availabilityCheckScheduled) {
+            return;
+        }
+        this.availabilityCheckScheduled = true;
         // 延迟20秒后检查，先让出主线程
         delay(20000, true).then(async () => {
             const telemetryCheckTimestamp = appMeta.telemetryCheckTimestamp;
@@ -60,6 +82,7 @@ class Telemetry implements IInjectable {
                         };
                         if (config.disableTelemetry !== true) {
                             appMeta.setTelemetryAvailable(true);
+                            this.initializeClientIfAllowed();
                         } else {
                             appMeta.setTelemetryAvailable(false);
                         }
@@ -71,7 +94,7 @@ class Telemetry implements IInjectable {
         });
     }
 
-    private checkTelemetryEnabled(withUserPerference: boolean = true): boolean {
+    private checkTelemetryEnabled(withUserPreference: boolean = true): boolean {
         if (__DEV__) {
             return false;
         }
@@ -84,8 +107,14 @@ class Telemetry implements IInjectable {
             return false;
         }
 
-        if (withUserPerference) {
-            if (this.appConfigService.getConfig("debug.disableTelemetry")) {
+        if (withUserPreference) {
+            if (
+                !isTelemetryOptedIn(
+                    this.appConfigService.getConfig(
+                        "debug.disableTelemetry",
+                    ),
+                )
+            ) {
                 return false;
             }
         }

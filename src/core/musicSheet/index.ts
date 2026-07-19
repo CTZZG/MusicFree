@@ -398,9 +398,10 @@ class MusicSheetClazz implements IInjectable {
         // 删除后的歌单
         const newSheets = musicSheets.filter(item => item.id !== sheetId);
 
-        // 写入存储
-        storage.removeMusicList(sheetId);
+        // 索引是权威数据。只有新索引成功落盘后，才清理歌单内容，
+        // 避免写入失败或进程退出时留下“索引仍在、歌曲已丢”的半提交状态。
         await storage.setSheets(newSheets);
+        storage.removeMusicList(sheetId);
 
         // 修改状态
         getDefaultStore().set(musicSheetsBaseAtom, newSheets);

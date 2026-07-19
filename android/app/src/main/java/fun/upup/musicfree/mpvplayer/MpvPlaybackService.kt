@@ -144,7 +144,10 @@ class MpvPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        if (intent == null) {
+            return START_NOT_STICKY
+        }
+        when (intent.action) {
             ACTION_START_FOREGROUND -> startForegroundSafely()
             ACTION_PLAY_PAUSE -> {
                 if (
@@ -179,6 +182,7 @@ class MpvPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         MpvServiceBridge.service = null
         cancelLiveUpdateProgressTicker()
         unregisterNoisyReceiver()

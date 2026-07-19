@@ -31,8 +31,8 @@ export default function ResultList(props: IResultListProps) {
     const queryArtist = useQueryArtist(pluginHash);
 
     useEffect(() => {
-        queryState === RequestStateCode.IDLE && queryArtist(artistItem, 1, tab);
-    }, []);
+        queryArtist(artistItem, 1, tab);
+    }, [artistItem, pluginHash, queryArtist, tab]);
 
     useEffect(() => {
         setQueryState(data?.state ?? RequestStateCode.IDLE);

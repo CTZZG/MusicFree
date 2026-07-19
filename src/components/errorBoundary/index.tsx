@@ -123,9 +123,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         
         // 这里可以添加错误日志上报
         console.error("ErrorBoundary caught an error:", error, errorInfo);
-        telemetry.logException(error, {
-            i: errorInfo,
-        });
+        telemetry.logException(error);
     }
 
     render() {

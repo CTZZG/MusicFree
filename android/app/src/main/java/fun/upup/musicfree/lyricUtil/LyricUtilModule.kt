@@ -28,8 +28,25 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
 
     override fun getName() = "LyricUtil"
     private var lyricView: LyricView? = null
+    @Volatile
+    private var activePlayerBackend: String? = null
     private val liveUpdateLyricNotifier by lazy {
         LiveUpdateLyricNotifier(reactContext.applicationContext)
+    }
+
+    private fun routesToMpv() = activePlayerBackend == null || activePlayerBackend == "mpv"
+
+    private fun routesToNitro() =
+        activePlayerBackend == null || activePlayerBackend == "nitro-player"
+
+    @ReactMethod
+    fun setActivePlayerBackend(backend: String, promise: Promise) {
+        if (backend != "mpv" && backend != "nitro-player") {
+            promise.reject("InvalidBackend", "Unsupported player backend: $backend")
+            return
+        }
+        activePlayerBackend = backend
+        promise.resolve(true)
     }
 
     @ReactMethod
@@ -235,8 +252,12 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     @ReactMethod
     fun setMediaNotificationLyricText(lyric: String, promise: Promise) {
         try {
-            MpvServiceBridge.service?.onMediaNotificationLyricChanged(lyric)
-            NitroPlayerPlaybackService.setMediaNotificationLyricText(lyric)
+            if (routesToMpv()) {
+                MpvServiceBridge.service?.onMediaNotificationLyricChanged(lyric)
+            }
+            if (routesToNitro()) {
+                NitroPlayerPlaybackService.setMediaNotificationLyricText(lyric)
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("Exception", e.message)
@@ -246,8 +267,12 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     @ReactMethod
     fun clearMediaNotificationLyricText(promise: Promise) {
         try {
-            MpvServiceBridge.service?.onMediaNotificationLyricChanged(null)
-            NitroPlayerPlaybackService.setMediaNotificationLyricText(null)
+            if (routesToMpv()) {
+                MpvServiceBridge.service?.onMediaNotificationLyricChanged(null)
+            }
+            if (routesToNitro()) {
+                NitroPlayerPlaybackService.setMediaNotificationLyricText(null)
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("Exception", e.message)
@@ -257,8 +282,12 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     @ReactMethod
     fun setLiveUpdateLyricText(lyric: String, promise: Promise) {
         try {
-            val handledByMpv = MpvServiceBridge.service?.onLiveUpdateLyricChanged(lyric) == true
-            val handledByNitro = NitroPlayerPlaybackService.setLiveUpdateLyricText(lyric)
+            val handledByMpv =
+                routesToMpv() &&
+                    MpvServiceBridge.service?.onLiveUpdateLyricChanged(lyric) == true
+            val handledByNitro =
+                routesToNitro() &&
+                    NitroPlayerPlaybackService.setLiveUpdateLyricText(lyric)
             if (handledByMpv || handledByNitro) {
                 liveUpdateLyricNotifier.clear()
             } else {
@@ -273,8 +302,12 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     @ReactMethod
     fun clearLiveUpdateLyricText(promise: Promise) {
         try {
-            MpvServiceBridge.service?.onLiveUpdateLyricChanged(null)
-            NitroPlayerPlaybackService.setLiveUpdateLyricText(null)
+            if (routesToMpv()) {
+                MpvServiceBridge.service?.onLiveUpdateLyricChanged(null)
+            }
+            if (routesToNitro()) {
+                NitroPlayerPlaybackService.setLiveUpdateLyricText(null)
+            }
             liveUpdateLyricNotifier.clear()
             promise.resolve(true)
         } catch (e: Exception) {

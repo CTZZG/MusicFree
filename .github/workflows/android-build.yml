@@ -71,10 +71,11 @@ jobs:
               env:
                   NODE_ENV: test
               run: |
+                  npx tsc --noEmit --pretty false
                   npm run audit:round20-static
                   npm test -- --runInBand
                   node ./node_modules/patch-package/index.js --check
-                  npm audit --omit=dev --audit-level=critical --registry=https://registry.npmjs.org
+                  npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org
                   git diff --check
 
             - name: Generate build metadata

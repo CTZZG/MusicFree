@@ -85,6 +85,7 @@ import {
 } from "./downloadFinalizationJournal";
 import { runDownloadFinalizationTransaction } from "./downloadFinalizationRunner";
 import { withTimeout } from "@/utils/promiseTimeout";
+import DownloadPathReservation from "./downloadPathReservation";
 
 type IWriteResult = DownloadWriteResult;
 
@@ -391,7 +392,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private pluginManagerService!: IPluginManager;
 
     private downloadingCount = 0;
-    private reservedDownloadPaths = new Set<string>();
+    private downloadPathReservation = new DownloadPathReservation({
+        resolvePath: fileName => this.getDownloadPath(fileName),
+        exists,
+        createId: nanoid,
+    });
 
     static generateLegacyFilename(musicItem: IMusic.IMusicItem) {
         return `${escapeCharacter(musicItem.platform)}@${escapeCharacter(
@@ -621,42 +626,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     }
 
     private async getAvailableDownloadPath(fileName: string) {
-        let candidate = this.getDownloadPath(fileName);
-        if (
-            !this.reservedDownloadPaths.has(candidate) &&
-            !(await exists(candidate))
-        ) {
-            this.reservedDownloadPaths.add(candidate);
-            return candidate;
-        }
-
-        const extension = path.extname(fileName);
-        const basename = extension
-            ? fileName.slice(0, -extension.length)
-            : fileName;
-        for (let index = 1; index < 1000; index += 1) {
-            candidate = this.getDownloadPath(
-                `${basename} (${index})${extension}`,
-            );
-            if (
-                !this.reservedDownloadPaths.has(candidate) &&
-                !(await exists(candidate))
-            ) {
-                this.reservedDownloadPaths.add(candidate);
-                return candidate;
-            }
-        }
-
-        candidate = this.getDownloadPath(`${basename}-${nanoid()}${extension}`);
-        this.reservedDownloadPaths.add(candidate);
-        return candidate;
+        return this.downloadPathReservation.reserve(fileName);
     }
 
     private releaseReservedDownloadPath(filePath?: string | null) {
         if (!filePath) {
             return;
         }
-        this.reservedDownloadPaths.delete(removeFileScheme(filePath));
+        this.downloadPathReservation.release(removeFileScheme(filePath));
     }
 
     private async hasDownloadArtifact(filePath: string) {
@@ -1375,7 +1352,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         );
         for (const task of tasks) {
             const journal = task.finalization!;
-            this.reservedDownloadPaths.add(journal.targetPath);
+            this.downloadPathReservation.retain(journal.targetPath);
             const [cacheExists, targetExists] = await Promise.all([
                 this.hasDownloadArtifact(journal.cachePath),
                 this.hasDownloadArtifact(journal.targetPath),

@@ -15,6 +15,10 @@ export enum NativeTextAlignment {
 
 // 状态栏歌词的工具
 interface ILyricUtil extends NativeModule {
+    /** Select the only playback service that may receive notification lyrics. */
+    setActivePlayerBackend?: (
+        backend: "nitro-player" | "mpv",
+    ) => Promise<void>;
     /** 显示状态栏歌词 */
     showStatusBarLyric: (
         initLyric?: string,

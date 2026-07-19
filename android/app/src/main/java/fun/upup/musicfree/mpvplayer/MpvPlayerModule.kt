@@ -1008,9 +1008,17 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
         mainHandler.post {
-            MPVLib.setPropertyBoolean("pause", true)
-            emitState("paused")
-            promise.resolve(null)
+            if (!isInitialized.get()) {
+                promise.reject("E_NOT_INIT", "not init")
+                return@post
+            }
+            try {
+                MPVLib.setPropertyBoolean("pause", true)
+                emitState("paused")
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("E_PAUSE", e.message, e)
+            }
         }
     }
 
@@ -1021,6 +1029,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
         mainHandler.post {
+            if (!isInitialized.get()) {
+                promise.reject("E_NOT_INIT", "not init")
+                return@post
+            }
             try {
                 startPlaybackService(foreground = true)
                 val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
@@ -1045,21 +1057,29 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
         mainHandler.post {
-            stopRequested = true
-            pendingPlaylistCompaction = false
-            pendingNaturalEnd = null
-            clearPreparedTrack(removeFromPlaylist = true)
-            activeTrackIdentity = null
-            loadingTrackIdentity = null
-            loadingGeneration = -1L
-            pendingUnpauseGeneration = -1L
-            ignoreEndFileUntilMs = System.currentTimeMillis() + END_FILE_SUPPRESS_MS
-            MPVLib.command(arrayOf("stop"))
-            positionSecs = 0.0
-            cacheAheadSecs = 0.0
-            emitProgress(force = true)
-            emitState("idle")
-            promise.resolve(null)
+            if (!isInitialized.get()) {
+                promise.reject("E_NOT_INIT", "not init")
+                return@post
+            }
+            try {
+                stopRequested = true
+                pendingPlaylistCompaction = false
+                pendingNaturalEnd = null
+                clearPreparedTrack(removeFromPlaylist = true)
+                activeTrackIdentity = null
+                loadingTrackIdentity = null
+                loadingGeneration = -1L
+                pendingUnpauseGeneration = -1L
+                ignoreEndFileUntilMs = System.currentTimeMillis() + END_FILE_SUPPRESS_MS
+                MPVLib.command(arrayOf("stop"))
+                positionSecs = 0.0
+                cacheAheadSecs = 0.0
+                emitProgress(force = true)
+                emitState("idle")
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("E_STOP", e.message, e)
+            }
         }
     }
 
@@ -1070,10 +1090,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
         mainHandler.post {
-            MPVLib.command(arrayOf("seek", seconds.toString(), "absolute"))
-            positionSecs = seconds.coerceAtLeast(0.0)
-            emitProgress(force = true)
-            promise.resolve(null)
+            if (!isInitialized.get()) {
+                promise.reject("E_NOT_INIT", "not init")
+                return@post
+            }
+            try {
+                MPVLib.command(arrayOf("seek", seconds.toString(), "absolute"))
+                positionSecs = seconds.coerceAtLeast(0.0)
+                emitProgress(force = true)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("E_SEEK", e.message, e)
+            }
         }
     }
 
@@ -1084,8 +1112,16 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
         mainHandler.post {
-            MPVLib.setPropertyInt("volume", (volume * 100).toInt().coerceIn(0, 100))
-            promise.resolve(null)
+            if (!isInitialized.get()) {
+                promise.reject("E_NOT_INIT", "not init")
+                return@post
+            }
+            try {
+                MPVLib.setPropertyInt("volume", (volume * 100).toInt().coerceIn(0, 100))
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("E_VOLUME", e.message, e)
+            }
         }
     }
 
@@ -1096,8 +1132,16 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
         mainHandler.post {
-            MPVLib.setPropertyDouble("speed", rate)
-            promise.resolve(null)
+            if (!isInitialized.get()) {
+                promise.reject("E_NOT_INIT", "not init")
+                return@post
+            }
+            try {
+                MPVLib.setPropertyDouble("speed", rate)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                promise.reject("E_RATE", e.message, e)
+            }
         }
     }
 

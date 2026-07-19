@@ -21,6 +21,7 @@ interface IMarkdownDialogProps {
 export default function MarkdownDialog(props: IMarkdownDialogProps) {
     const { title, markdownContent, okText } = props;
     const markedRef = useRef<Marked>(new Marked());
+    const parseGenerationRef = useRef(0);
     const [loading, setLoading] = useState(true);
     const [htmlContent, setHtmlContent] = useState<string>("");
     const { onMounted } = useOnMounted();
@@ -31,11 +32,16 @@ export default function MarkdownDialog(props: IMarkdownDialogProps) {
 
     useEffect(() => {
         const md = markedRef.current;
+        const parseGeneration = ++parseGenerationRef.current;
+        setLoading(true);
 
         md.parse(markdownContent, {
             async: true,
         }).then(html => {
-            if (onMounted()) {
+            if (
+                parseGenerationRef.current === parseGeneration &&
+                onMounted()
+            ) {
                 setHtmlContent(`
 <!DOCTYPE html>
 <html lang="en">
@@ -249,13 +255,21 @@ export default function MarkdownDialog(props: IMarkdownDialogProps) {
                 setLoading(false);
             }
         }).catch(() => {
-            if (onMounted()) {
+            if (
+                parseGenerationRef.current === parseGeneration &&
+                onMounted()
+            ) {
                 setHtmlContent(markdownContent);
                 setLoading(false);
             }
         });
 
-    }, [markdownContent, onMounted, colors]);
+        return () => {
+            if (parseGenerationRef.current === parseGeneration) {
+                parseGenerationRef.current += 1;
+            }
+        };
+    }, [markdownContent, onMounted, colors, title]);
 
     const actions = [
         {

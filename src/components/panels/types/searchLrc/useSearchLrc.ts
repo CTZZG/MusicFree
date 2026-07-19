@@ -12,6 +12,8 @@ const PLUGIN_SEARCH_TIMEOUT_MS = 15_000;
 export default function useSearchLrc() {
     // 当前正在搜索
     const currentQueryRef = useRef<string>("");
+    const searchGenerationRef = useRef(0);
+    const pluginRequestGenerationRef = useRef<Record<string, number>>({});
 
     /**
      * query: 搜索词
@@ -24,7 +26,21 @@ export default function useSearchLrc() {
         pluginHash?: string,
     ) {
         /** 如果没有指定插件，就用所有插件搜索 */
-        console.log("SEARCH LRC", query, queryPage);
+        const requestQuery =
+            query ?? searchResultStore.getValue().query ?? "";
+        const startsNewSearch = query !== undefined || queryPage === 1;
+        if (startsNewSearch) {
+            searchGenerationRef.current += 1;
+            currentQueryRef.current = requestQuery;
+            searchResultStore.setValue(
+                produce(draft => {
+                    draft.query = requestQuery;
+                }),
+            );
+        } else if (!currentQueryRef.current) {
+            currentQueryRef.current = requestQuery;
+        }
+        const searchGeneration = searchGenerationRef.current;
         let plugins: Plugin[] = [];
         if (pluginHash) {
             const tgtPlugin = PluginManager.getByHash(pluginHash);
@@ -33,6 +49,9 @@ export default function useSearchLrc() {
             plugins = PluginManager.getSearchablePlugins("lyric");
         }
         if (plugins.length === 0) {
+            if (searchGenerationRef.current !== searchGeneration) {
+                return;
+            }
             searchResultStore.setValue(
                 produce(draft => {
                     draft.data = {};
@@ -53,6 +72,10 @@ export default function useSearchLrc() {
                 );
                 return;
             }
+            const pluginRequestGeneration =
+                (pluginRequestGenerationRef.current[_hash] ?? 0) + 1;
+            pluginRequestGenerationRef.current[_hash] =
+                pluginRequestGeneration;
 
             // 上一份搜索结果
             const prevPluginResult =
@@ -73,11 +96,6 @@ export default function useSearchLrc() {
                 query !== undefined ||
                 prevPluginResult?.page === undefined ||
                 queryPage === 1;
-
-            // 本次搜索关键词
-            const requestQuery =
-                query ?? searchResultStore.getValue().query ?? "";
-            currentQueryRef.current = requestQuery;
 
             /** 搜索的页码 */
             const page = resolveSearchPage(
@@ -107,7 +125,12 @@ export default function useSearchLrc() {
                     "搜索超时",
                 );
                 /** 如果搜索结果不是本次结果 */
-                if (currentQueryRef.current !== requestQuery) {
+                if (
+                    searchGenerationRef.current !== searchGeneration ||
+                    pluginRequestGenerationRef.current[_hash] !==
+                        pluginRequestGeneration ||
+                    currentQueryRef.current !== requestQuery
+                ) {
                     return;
                 }
                 /** 切换到结果页 */
@@ -143,7 +166,12 @@ export default function useSearchLrc() {
                 );
             } catch (e: any) {
                 /** 如果搜索结果不是本次结果 */
-                if (currentQueryRef.current !== requestQuery) {
+                if (
+                    searchGenerationRef.current !== searchGeneration ||
+                    pluginRequestGenerationRef.current[_hash] !==
+                        pluginRequestGeneration ||
+                    currentQueryRef.current !== requestQuery
+                ) {
                     return;
                 }
                 errorLog("搜索失败", e?.message);

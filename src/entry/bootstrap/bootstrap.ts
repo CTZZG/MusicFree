@@ -189,6 +189,7 @@ export async function initTrackPlayer() {
     const playerTimestamp: Record<string, number> = {};
     const playerMetrics: Record<string, number> = {}; 
     playerTimestamp.Start = Date.now();
+    TrackPlayer.setReady(false);
     TrackPlayer.lockBackend();
 
     const capabilities = Config.getConfig("basic.showExitOnNotification")
@@ -248,6 +249,7 @@ export async function initTrackPlayer() {
 
     // [新增] 设置播放服务观察者，用于和插件通信
     playbackServiceObserver.setupPlaybackObserver();
+    TrackPlayer.setReady(true);
     telemetry.logMetric("Bootstrap.TrackPlayerTrace", Date.now() - playerTimestamp.Start, playerMetrics);
 }
 
@@ -288,7 +290,6 @@ async function extraMakeup() {
         const musicItem = await PluginManager.getByHash(
             localPluginHash,
         )?.instance?.importMusicItem?.(url);
-        console.log(musicItem);
         if (musicItem) {
             await TrackPlayer.play(musicItem, true);
         }
@@ -432,6 +433,34 @@ async function extraMakeup() {
                     onDismiss: () => settle(false),
                 });
             });
+        const confirmLocalPluginInstall = (localUrl: string) =>
+            new Promise<boolean>(resolve => {
+                const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(localUrl)?.[1]
+                    ?.toLowerCase();
+                if (scheme && scheme !== "file" && scheme !== "content") {
+                    Toast.warn("插件安装已阻止：不支持此外部链接类型");
+                    resolve(false);
+                    return;
+                }
+
+                let settled = false;
+                const settle = (value: boolean) => {
+                    if (!settled) {
+                        settled = true;
+                        resolve(value);
+                    }
+                };
+                showDialog("SimpleDialog", {
+                    title: "确认安装本地插件",
+                    content:
+                        "外部应用请求安装一个本地 JavaScript 插件。安装后将执行第三方代码，请仅在确认文件来源可信时继续。",
+                    okText: "确认安装",
+                    cancelText: "取消",
+                    onOk: () => settle(true),
+                    onCancel: () => settle(false),
+                    onDismiss: () => settle(false),
+                });
+            });
 
         // 插件
         try {
@@ -466,7 +495,29 @@ async function extraMakeup() {
                     await PluginManager.installPluginFromUrl(pluginUrl)
                         .catch(emptyFunction);
                 }
-            } else if (url.endsWith(".js")) {
+            } else if (getComparableMediaUrl(url).endsWith(".js")) {
+                if (/^https?:\/\//i.test(url)) {
+                    if (!await confirmRemoteInstall("插件", url)) {
+                        return;
+                    }
+                    const result = await PluginManager.installPluginFromUrl(
+                        url,
+                        {
+                            notCheckVersion: Config.getConfig(
+                                "basic.notCheckPluginVersion",
+                            ),
+                        },
+                    );
+                    if (result.success) {
+                        Toast.success(`插件「${result.pluginName}」安装成功~`);
+                    } else {
+                        Toast.warn("安装失败: " + result.message);
+                    }
+                    return;
+                }
+                if (!await confirmLocalPluginInstall(url)) {
+                    return;
+                }
                 PluginManager.installPluginFromLocalFile(url, {
                     notCheckVersion: Config.getConfig(
                         "basic.notCheckPluginVersion",
@@ -480,7 +531,7 @@ async function extraMakeup() {
                         }
                     })
                     .catch(e => {
-                        console.log(e);
+                        errorLog("外部本地插件安装失败", e);
                         Toast.warn(e?.message ?? "无法识别此插件");
                     });
             } else if (isSupportedMediaUrl(url)) {

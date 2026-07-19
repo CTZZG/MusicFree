@@ -1,4 +1,5 @@
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -21,6 +22,15 @@ const checks = [
         args: baseArgs,
     },
     {
+        name: 'MusicFree app Kotlin compile',
+        args: [
+            ':app:compileReleaseKotlin',
+            '--no-daemon',
+            '--console=plain',
+            '--rerun-tasks',
+        ],
+    },
+    {
         name: 'Nitro WMA disabled rollback Kotlin compile',
         args: [
             ':react-native-nitro-player:compileReleaseKotlin',
@@ -31,6 +41,77 @@ const checks = [
         ],
     },
 ];
+
+const lifecycleSources = {
+    service: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/mpvplayer/MpvPlaybackService.kt',
+        ),
+        'utf8',
+    ),
+    bridge: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/mpvplayer/MpvServiceBridge.kt',
+        ),
+        'utf8',
+    ),
+    module: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/mpvplayer/MpvPlayerModule.kt',
+        ),
+        'utf8',
+    ),
+    lyricUtil: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/lyricUtil/LyricUtilModule.kt',
+        ),
+        'utf8',
+    ),
+};
+
+const lifecycleAssertions = [
+    [
+        'null service restart is non-sticky',
+        lifecycleSources.service,
+        /intent\s*==\s*null[\s\S]{0,120}START_NOT_STICKY/,
+    ],
+    [
+        'service handler callbacks are cleared',
+        lifecycleSources.service,
+        /mainHandler\.removeCallbacksAndMessages\(null\)/,
+    ],
+    [
+        'service bridge is volatile',
+        lifecycleSources.bridge,
+        /@Volatile\s+var service:/,
+    ],
+    [
+        'command bridge is volatile',
+        lifecycleSources.bridge,
+        /@Volatile\s+var onCommand:/,
+    ],
+    [
+        'queued commands re-check initialization',
+        lifecycleSources.module,
+        /mainHandler\.post\s*\{\s*if\s*\(!isInitialized\.get\(\)\)/,
+    ],
+    [
+        'native lyric updates follow the active backend',
+        lifecycleSources.lyricUtil,
+        /routesToMpv[\s\S]+routesToNitro[\s\S]+setActivePlayerBackend/,
+    ],
+];
+
+for (const [name, source, pattern] of lifecycleAssertions) {
+    if (!pattern.test(source)) {
+        console.error(`MPV lifecycle assertion failed: ${name}`);
+        process.exit(1);
+    }
+}
 
 for (const check of checks) {
     console.log(`\n==> ${check.name}`);

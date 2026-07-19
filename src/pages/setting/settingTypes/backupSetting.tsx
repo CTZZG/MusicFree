@@ -32,6 +32,7 @@ import { getDocumentAsync } from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { DocumentDirectoryPath } from "react-native-fs";
 import Clipboard from "@react-native-clipboard/clipboard";
+import { validateWebdavUrl } from "@/core/webdavUrl";
 
 const preRestoreBackupDir = `${DocumentDirectoryPath}/MusicFree`;
 
@@ -219,7 +220,6 @@ export default function BackupSetting() {
                 onReject(reason, hideDialog) {
                     hideDialog();
                     resolve(false);
-                    console.log(reason);
                     Toast.warn(t("toast.resumeFail", {
                         reason: reason?.message ?? reason,
                     }));
@@ -286,7 +286,6 @@ export default function BackupSetting() {
                         onReject(reason, hideDialog) {
                             hideDialog();
                             resolve(false);
-                            console.log(reason);
                             Toast.warn(t("toast.backupFail", { reason: reason?.message ?? reason }));
                         },
                     });
@@ -434,12 +433,12 @@ export default function BackupSetting() {
 
     function getWebdavAutoBackupSkipReasonLabel() {
         switch (webdavAutoBackupLastSkipReason) {
-            case "wifiOnly":
-                return t(
-                    "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly",
-                );
-            default:
-                return "";
+        case "wifiOnly":
+            return t(
+                "backupAndResume.webdavAutoBackupStatus.skipReason.wifiOnly",
+            );
+        default:
+            return "";
         }
     }
 
@@ -574,9 +573,31 @@ export default function BackupSetting() {
                             },
                         ],
                         onOk(values, closePanel) {
-                            Config.setConfig("webdav.url", values?.url);
-                            Config.setConfig("webdav.username", values?.username);
-                            Config.setConfig("webdav.password", values?.password);
+                            const rawUrl = values?.url?.trim() ?? "";
+                            const username = values?.username?.trim() ?? "";
+                            const password = values?.password ?? "";
+                            if (!rawUrl && !username && !password) {
+                                Config.setConfig("webdav.url", undefined);
+                                Config.setConfig("webdav.username", undefined);
+                                Config.setConfig("webdav.password", undefined);
+                                Toast.success(t("toast.saveSuccess"));
+                                closePanel();
+                                return;
+                            }
+                            const validation = validateWebdavUrl(
+                                rawUrl,
+                            );
+                            if (!validation.ok) {
+                                Toast.warn(validation.reason);
+                                return;
+                            }
+                            if (!username || !password) {
+                                Toast.warn(t("toast.resumePreCheckFailed"));
+                                return;
+                            }
+                            Config.setConfig("webdav.url", validation.url);
+                            Config.setConfig("webdav.username", username);
+                            Config.setConfig("webdav.password", password);
 
                             Toast.success(t("toast.saveSuccess"));
                             closePanel();

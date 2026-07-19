@@ -161,6 +161,7 @@ export async function addMusic(
             invalidateLocalMusicArtworkCache(localPath);
         }
     });
+    let addedCount = 0;
     await localSheetRepository.mutate(current => {
         const newSheet = [...current];
         musicItems.forEach(mi => {
@@ -168,8 +169,10 @@ export async function addMusic(
                 newSheet.push(mi);
             }
         });
+        addedCount = newSheet.length - current.length;
         return newSheet.length === current.length ? current : newSheet;
     });
+    return addedCount;
 }
 
 async function upsertMusic(musicItem: IMusic.IMusicItem) {
@@ -1177,8 +1180,15 @@ async function resumeMusicList(
 
     if (validMusicItems.length) {
         try {
-            await addMusic(validMusicItems);
-            report.successCount = validMusicItems.length;
+            const addedCount = await addMusic(validMusicItems);
+            report.successCount = addedCount;
+            const duplicateCount = validMusicItems.length - addedCount;
+            if (duplicateCount > 0) {
+                report.skippedCount += duplicateCount;
+                report.failureReasons.push(
+                    `${duplicateCount} 首本地音乐已存在，未重复添加`,
+                );
+            }
         } catch (e: any) {
             report.failedCount += validMusicItems.length;
             report.failureReasons.push(e?.message ?? String(e));

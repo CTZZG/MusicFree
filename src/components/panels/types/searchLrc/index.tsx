@@ -30,10 +30,12 @@ export default function SearchLrc(props: INewMusicSheetProps) {
     const searchLrc = useSearchLrc();
 
     useEffect(() => {
-        if (musicItem) {
-            searchLrc(musicItem.alias || musicItem.title, 1);
+        const nextInput = musicItem?.alias ?? musicItem?.title ?? "";
+        setInput(nextInput);
+        if (nextInput) {
+            searchLrc(nextInput, 1);
         }
-    }, []);
+    }, [musicItem, searchLrc]);
 
     return (
         <PanelBase

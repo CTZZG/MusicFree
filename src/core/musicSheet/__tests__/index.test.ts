@@ -158,6 +158,46 @@ describe("MusicSheet transactional updates", () => {
         expect(mockedStorage.removeMusicList).not.toHaveBeenCalled();
     });
 
+    it("persists a removed sheet index before deleting its music", async () => {
+        let resolveWrite!: () => void;
+        setSheetsMock.mockReturnValueOnce(
+            new Promise<void>(resolve => {
+                resolveWrite = resolve;
+            }),
+        );
+
+        const removal = MusicSheet.removeSheet(sheetA.id);
+
+        expect(mockedStorage.removeMusicList).not.toHaveBeenCalled();
+        expect(MusicSheet.getSheets().map(sheet => sheet.id)).toContain(
+            sheetA.id,
+        );
+
+        resolveWrite();
+        await removal;
+
+        expect(mockedStorage.removeMusicList).toHaveBeenCalledWith(sheetA.id);
+        expect(setSheetsMock.mock.invocationCallOrder[0]).toBeLessThan(
+            mockedStorage.removeMusicList.mock.invocationCallOrder[0],
+        );
+        expect(MusicSheet.getSheets().map(sheet => sheet.id)).not.toContain(
+            sheetA.id,
+        );
+    });
+
+    it("keeps removed sheet data when index persistence fails", async () => {
+        setSheetsMock.mockRejectedValueOnce(new Error("disk full"));
+
+        await expect(MusicSheet.removeSheet(sheetA.id)).rejects.toThrow(
+            "disk full",
+        );
+
+        expect(mockedStorage.removeMusicList).not.toHaveBeenCalled();
+        expect(MusicSheet.getSheets().map(sheet => sheet.id)).toContain(
+            sheetA.id,
+        );
+    });
+
     it("updates worksNum while preserving a custom local cover", async () => {
         await MusicSheet.removeMusic(sheetA.id, songA);
 

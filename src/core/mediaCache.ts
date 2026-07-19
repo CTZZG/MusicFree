@@ -18,9 +18,14 @@ const evictionCount = Math.floor(maxCacheCount / 2);
 const evictionBatchSize = 25;
 let evictionTask: Promise<void> | null = null;
 
-export async function evictMediaCacheKeys(
-    keys: readonly string[],
-    removeEntry: (key: string) => Promise<void>,
+interface IMediaCacheEvictionCandidate {
+    key: string;
+    raw: string;
+}
+
+export async function evictMediaCacheKeys<T>(
+    keys: readonly T[],
+    removeEntry: (key: T) => Promise<unknown>,
     batchSize = evictionBatchSize,
 ) {
     for (let index = 0; index < keys.length; index += batchSize) {
@@ -46,39 +51,61 @@ const getMediaCache = (mediaItem: ICommon.IMediaBase) => {
 /** 设置meta信息 */
 const setMediaCache = (mediaItem: ICommon.IMediaBase) => {
     if (mediaItem.platform && mediaItem.id) {
+        const cacheKey = getMediaUniqueKey(mediaItem);
+        const rawCacheMedia = JSON.stringify(mediaItem);
+
+        // Commit the newest value first and never select that key for the
+        // eviction started by this write.
+        mediaCacheStore.set(cacheKey, rawCacheMedia);
         const allKeys = mediaCacheStore.getAllKeys();
         if (allKeys.length >= maxCacheCount && !evictionTask) {
+            const candidates = allKeys
+                .filter(key => key !== cacheKey)
+                .slice(0, evictionCount)
+                .map(key => ({
+                    key,
+                    raw: mediaCacheStore.getString(key),
+                }))
+                .filter(
+                    (candidate): candidate is IMediaCacheEvictionCandidate =>
+                        typeof candidate.raw === "string",
+                );
             evictionTask = evictMediaCacheKeys(
-                allKeys.slice(0, evictionCount),
-                removeMediaCacheEntry,
+                candidates,
+                candidate =>
+                    removeMediaCacheEntry(candidate.key, candidate.raw),
             ).finally(() => {
                 evictionTask = null;
             });
         }
-
-        mediaCacheStore.set(getMediaUniqueKey(mediaItem), JSON.stringify(mediaItem));
         return true;
     }
 
     return false;
 };
 
-async function clearLocalCaches(cacheData?: IMusic.IMusicItemCache | null) {
+async function clearLocalCaches(
+    cacheData?: IMusic.IMusicItemCache | null,
+    canRemove: () => boolean = () => true,
+) {
     if (!cacheData) {
         return;
     }
     if (cacheData.$localLyric) {
-        await checkPathAndRemove(cacheData.$localLyric.rawLrc);
-        await checkPathAndRemove(cacheData.$localLyric.translation);
+        await checkPathAndRemove(cacheData.$localLyric.rawLrc, canRemove);
+        await checkPathAndRemove(cacheData.$localLyric.translation, canRemove);
     }
 }
 
-async function checkPathAndRemove(filePath?: string) {
-    if (!filePath) {
+async function checkPathAndRemove(
+    filePath?: string,
+    canRemove: () => boolean = () => true,
+) {
+    if (!filePath || !canRemove()) {
         return;
     }
     filePath = addFileScheme(filePath);
-    if (await exists(filePath)) {
+    if ((await exists(filePath)) && canRemove()) {
         await unlink(filePath);
     }
 }
@@ -93,18 +120,28 @@ const removeMediaCache = (mediaItem: ICommon.IMediaBase) => {
     return false;
 };
 
-const removeMediaCacheEntry = async (key: string) => {
+const removeMediaCacheEntry = async (key: string, expectedRaw?: string) => {
     const rawCacheMedia = mediaCacheStore.getString(key);
+    if (expectedRaw !== undefined && rawCacheMedia !== expectedRaw) {
+        return false;
+    }
+    const snapshotRaw = expectedRaw ?? rawCacheMedia;
     const cacheData = rawCacheMedia
         ? safeParse<IMusic.IMusicItemCache>(rawCacheMedia)
         : null;
-    await clearLocalCaches(cacheData);
+    const isCurrent = () =>
+        mediaCacheStore.getString(key) === snapshotRaw;
+    await clearLocalCaches(cacheData, isCurrent);
+    if (!isCurrent()) {
+        return false;
+    }
     mediaCacheStore.delete(key);
+    return true;
 };
 
 const removeMediaCacheEntries = async (keys: readonly string[]) => {
     const uniqueKeys = getUniqueMediaCacheKeys(keys);
-    await Promise.all(uniqueKeys.map(removeMediaCacheEntry));
+    await Promise.all(uniqueKeys.map(key => removeMediaCacheEntry(key)));
     return uniqueKeys.length;
 };
 

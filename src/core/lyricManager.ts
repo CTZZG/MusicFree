@@ -5,8 +5,9 @@ import LyricParser, { IParsedLrcItem } from "@/utils/lrcParser";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
 import { getMediaUniqueKey, isSameMediaItem } from "@/utils/mediaUtils";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
-import { Plugin } from "./pluginManager";
+import type { Plugin } from "./pluginManager";
 import { getLyricCandidateDistance } from "./lyricSearchPolicy";
+import type { PlayerAdapterSubscription } from "./playerAdapter";
 
 import pathConst from "@/constants/pathConst";
 import LyricUtil from "@/native/lyricUtil";
@@ -340,6 +341,10 @@ class LyricManager implements IInjectable {
     private playbackStateSyncGeneration = 0;
     private positionHydrationGeneration = 0;
     private nativeStatusBarPayloadSequence = 0;
+    private initialized = false;
+    private listenerLifecycleGeneration = 0;
+    private currentMusicChangedListener: (() => void) | null = null;
+    private playerSubscriptions: PlayerAdapterSubscription[] = [];
 
     get currentLyricItem() {
         return getDefaultStore().get(currentLyricItemAtom);
@@ -543,142 +548,197 @@ class LyricManager implements IInjectable {
             .catch(() => undefined);
     }
 
-    setup() {
-        // 更新歌词
-        this.trackPlayer.on(TrackPlayerEvents.CurrentMusicChanged, () => {
-            this.playbackStateSyncGeneration += 1;
-            this.positionHydrationGeneration += 1;
-            this.lastProgressPositionMs = 0;
-            getDefaultStore().set(currentPositionMsAtom, 0);
-            this.stopPositionClock(0);
-            this.setLyricAsLoadingState();
-            // 先用新歌曲身份清空上一首逐字状态，再异步加载新歌词。
-            this.publishNativeLyricOutput({
-                force: true,
-                positionMs: 0,
-                isPlaying: this.isPlaybackAdvancing,
-            });
-            this.refreshLyric(true, false);
-        });
+    async setup() {
+        if (this.initialized) {
+            return;
+        }
+        this.dispose();
+        const lifecycleGeneration = ++this.listenerLifecycleGeneration;
+        this.initialized = true;
+        if (LyricUtil.setActivePlayerBackend) {
+            await LyricUtil.setActivePlayerBackend(
+                this.trackPlayer.playerAdapter.name,
+            ).catch(() => undefined);
+        }
+        try {
+            if (
+                !this.initialized ||
+                this.listenerLifecycleGeneration !== lifecycleGeneration
+            ) {
+                return;
+            }
 
-        const initialStateGeneration = this.playbackStateSyncGeneration;
-        this.trackPlayer.playerAdapter
-            .getState()
-            .then(state => {
-                if (
-                    initialStateGeneration ===
+            // 更新歌词
+            this.currentMusicChangedListener = () => {
+                this.playbackStateSyncGeneration += 1;
+                this.positionHydrationGeneration += 1;
+                this.lastProgressPositionMs = 0;
+                getDefaultStore().set(currentPositionMsAtom, 0);
+                this.stopPositionClock(0);
+                this.setLyricAsLoadingState();
+                // 先用新歌曲身份清空上一首逐字状态，再异步加载新歌词。
+                this.publishNativeLyricOutput({
+                    force: true,
+                    positionMs: 0,
+                    isPlaying: this.isPlaybackAdvancing,
+                });
+                this.refreshLyric(true, false);
+            };
+            this.trackPlayer.on(
+                TrackPlayerEvents.CurrentMusicChanged,
+                this.currentMusicChangedListener,
+            );
+
+            const initialStateGeneration = this.playbackStateSyncGeneration;
+            this.trackPlayer.playerAdapter
+                .getState()
+                .then(state => {
+                    if (
+                        initialStateGeneration ===
                     this.playbackStateSyncGeneration
-                ) {
-                    this.isPlaybackAdvancing = state === "playing";
-                }
-            })
-            .catch(() => undefined);
+                    ) {
+                        this.isPlaybackAdvancing = state === "playing";
+                    }
+                })
+                .catch(() => undefined);
 
-        this.trackPlayer.playerAdapter.addEventListener(
-            "playbackStateChanged",
-            state => {
-                this.isPlaybackAdvancing = state === "playing";
-                const syncGeneration = ++this.playbackStateSyncGeneration;
-                this.trackPlayer
-                    .getProgress()
-                    .then(progress => {
-                        if (
-                            syncGeneration !==
+            this.playerSubscriptions.push(
+                this.trackPlayer.playerAdapter.addEventListener(
+                    "playbackStateChanged",
+                    state => {
+                        this.isPlaybackAdvancing = state === "playing";
+                        const syncGeneration = ++this.playbackStateSyncGeneration;
+                        this.trackPlayer
+                            .getProgress()
+                            .then(progress => {
+                                if (
+                                    syncGeneration !==
                             this.playbackStateSyncGeneration
-                        ) {
-                            return;
-                        }
-                        const positionMs = progress.position * 1000;
-                        getDefaultStore().set(
-                            currentPositionMsAtom,
-                            positionMs,
-                        );
-                        if (this.isPlaybackAdvancing) {
-                            this.syncPositionClock(positionMs, true);
-                        } else {
-                            this.stopPositionClock(positionMs);
-                        }
+                                ) {
+                                    return;
+                                }
+                                const positionMs = progress.position * 1000;
+                                getDefaultStore().set(
+                                    currentPositionMsAtom,
+                                    positionMs,
+                                );
+                                if (this.isPlaybackAdvancing) {
+                                    this.syncPositionClock(positionMs, true);
+                                } else {
+                                    this.stopPositionClock(positionMs);
+                                }
+                                this.lastProgressPositionMs = positionMs;
+                                this.publishNativeLyricOutput({
+                                    force: true,
+                                    positionMs,
+                                    isPlaying: this.isPlaybackAdvancing,
+                                });
+                            })
+                            .catch(() => undefined);
+                    },
+                ),
+            );
+
+            this.playerSubscriptions.push(
+                this.trackPlayer.playerAdapter.addEventListener(
+                    "playbackSeeked",
+                    evt => {
+                        this.playbackStateSyncGeneration += 1;
+                        this.positionHydrationGeneration += 1;
+                        const positionMs = (evt?.position ?? 0) * 1000;
+                        getDefaultStore().set(currentPositionMsAtom, positionMs);
+                        this.syncPositionClock(positionMs, true);
                         this.lastProgressPositionMs = positionMs;
+                        const parser = this.lyricParser;
+                        if (
+                            parser &&
+                    this.trackPlayer.isCurrentMusic(parser.musicItem)
+                        ) {
+                            getDefaultStore().set(
+                                currentLyricItemAtom,
+                                parser.getPosition(evt?.position ?? 0) ?? null,
+                            );
+                        }
                         this.publishNativeLyricOutput({
                             force: true,
                             positionMs,
                             isPlaying: this.isPlaybackAdvancing,
                         });
-                    })
-                    .catch(() => undefined);
-            },
-        );
-
-        this.trackPlayer.playerAdapter.addEventListener(
-            "playbackSeeked",
-            evt => {
-                this.playbackStateSyncGeneration += 1;
-                this.positionHydrationGeneration += 1;
-                const positionMs = (evt?.position ?? 0) * 1000;
-                getDefaultStore().set(currentPositionMsAtom, positionMs);
-                this.syncPositionClock(positionMs, true);
-                this.lastProgressPositionMs = positionMs;
-                const parser = this.lyricParser;
-                if (
-                    parser &&
-                    this.trackPlayer.isCurrentMusic(parser.musicItem)
-                ) {
-                    getDefaultStore().set(
-                        currentLyricItemAtom,
-                        parser.getPosition(evt?.position ?? 0) ?? null,
-                    );
-                }
-                this.publishNativeLyricOutput({
-                    force: true,
-                    positionMs,
-                    isPlaying: this.isPlaybackAdvancing,
-                });
-            },
-        );
-
-        this.trackPlayer.playerAdapter.addEventListener("progress", evt => {
-            const parser = this.lyricParser;
-            const positionMs = evt.position * 1000;
-            this.updatePositionClockFromProgress(positionMs);
-
-            if (!parser || !this.trackPlayer.isCurrentMusic(parser.musicItem)) {
-                return;
-            }
-
-            const currentLyricItem =
-                getDefaultStore().get(currentLyricItemAtom);
-            const newLyricItem = parser.getPosition(evt.position);
-
-            if (currentLyricItem?.index !== newLyricItem?.index) {
-                // 更新当前歌词状态
-                getDefaultStore().set(
-                    currentLyricItemAtom,
-                    newLyricItem ?? null,
-                );
-
-                this.publishNativeLyricOutput({ positionMs });
-            }
-        });
-
-        if (this.appConfig.getConfig("lyric.showStatusBarLyric")) {
-            const statusBarLyricConfig = {
-                topPercent: this.appConfig.getConfig("lyric.topPercent"),
-                leftPercent: this.appConfig.getConfig("lyric.leftPercent"),
-                align: this.appConfig.getConfig("lyric.align"),
-                color: this.appConfig.getConfig("lyric.color"),
-                backgroundColor: this.appConfig.getConfig(
-                    "lyric.backgroundColor",
+                    },
                 ),
-                widthPercent: this.appConfig.getConfig("lyric.widthPercent"),
-                fontSize: this.appConfig.getConfig("lyric.fontSize"),
-            };
-            LyricUtil.showStatusBarLyric(
-                "MusicFree",
-                statusBarLyricConfig ?? {},
             );
-        }
 
-        this.refreshLyric(true);
+            this.playerSubscriptions.push(
+                this.trackPlayer.playerAdapter.addEventListener("progress", evt => {
+                    const parser = this.lyricParser;
+                    const positionMs = evt.position * 1000;
+                    this.updatePositionClockFromProgress(positionMs);
+
+                    if (
+                        !parser ||
+                    !this.trackPlayer.isCurrentMusic(parser.musicItem)
+                    ) {
+                        return;
+                    }
+
+                    const currentLyricItem =
+                    getDefaultStore().get(currentLyricItemAtom);
+                    const newLyricItem = parser.getPosition(evt.position);
+
+                    if (currentLyricItem?.index !== newLyricItem?.index) {
+                    // 更新当前歌词状态
+                        getDefaultStore().set(
+                            currentLyricItemAtom,
+                            newLyricItem ?? null,
+                        );
+
+                        this.publishNativeLyricOutput({ positionMs });
+                    }
+                }),
+            );
+
+            if (this.appConfig.getConfig("lyric.showStatusBarLyric")) {
+                const statusBarLyricConfig = {
+                    topPercent: this.appConfig.getConfig("lyric.topPercent"),
+                    leftPercent: this.appConfig.getConfig("lyric.leftPercent"),
+                    align: this.appConfig.getConfig("lyric.align"),
+                    color: this.appConfig.getConfig("lyric.color"),
+                    backgroundColor: this.appConfig.getConfig(
+                        "lyric.backgroundColor",
+                    ),
+                    widthPercent: this.appConfig.getConfig("lyric.widthPercent"),
+                    fontSize: this.appConfig.getConfig("lyric.fontSize"),
+                };
+                LyricUtil.showStatusBarLyric(
+                    "MusicFree",
+                    statusBarLyricConfig ?? {},
+                );
+            }
+
+            this.refreshLyric(true);
+        } catch (error) {
+            this.dispose();
+            throw error;
+        }
+    }
+
+    dispose() {
+        this.listenerLifecycleGeneration += 1;
+        this.playbackStateSyncGeneration += 1;
+        this.positionHydrationGeneration += 1;
+        this.playerSubscriptions.splice(0).forEach(subscription => {
+            try {
+                subscription.remove();
+            } catch {}
+        });
+        if (this.currentMusicChangedListener) {
+            this.trackPlayer.off(
+                TrackPlayerEvents.CurrentMusicChanged,
+                this.currentMusicChangedListener,
+            );
+            this.currentMusicChangedListener = null;
+        }
+        this.initialized = false;
     }
 
     private getLyricDisplayOrder() {

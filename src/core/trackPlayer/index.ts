@@ -65,6 +65,7 @@ import {
     MpvTrackTransitionGate,
     waitForExpectedActive,
 } from "./manualSkipCoordinator";
+import { shouldHydratePlayerHooks } from "./playerStartupPolicy";
 
 type MusicFreePlayerTrack = PlayerAdapterTrack &
     Partial<IMusic.IMusicItem> &
@@ -167,6 +168,7 @@ const qualityAtom = atom<IMusic.IQualityKey>("standard");
 const playListAtom = atom<IMusic.IMusicItem[]>([]);
 const playLaterQueueAtom = atom<IMusic.IMusicItem[]>([]);
 const musicStateAtom = atom<PlayerBackendState>("idle");
+const playerReadyAtom = atom(false);
 const progressAtom = atom<PlayerAdapterProgress>({
     position: 0,
     duration: 0,
@@ -343,6 +345,14 @@ class TrackPlayer
             this.lockBackend();
         }
         return this.backend;
+    }
+
+    public get isReady() {
+        return getDefaultStore().get(playerReadyAtom);
+    }
+
+    public setReady(ready: boolean) {
+        getDefaultStore().set(playerReadyAtom, ready);
     }
 
     injectDependencies(
@@ -4176,8 +4186,12 @@ export const useRepeatMode = () => useAtomValue(repeatModeAtom);
 export const useMusicQuality = () => useAtomValue(qualityAtom);
 export function useMusicState() {
     const musicState = useAtomValue(musicStateAtom);
+    const playerReady = useAtomValue(playerReadyAtom);
 
     useEffect(() => {
+        if (!shouldHydratePlayerHooks(playerReady)) {
+            return;
+        }
         let cancelled = false;
         trackPlayer.playerAdapter
             .getState()
@@ -4191,15 +4205,19 @@ export function useMusicState() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [playerReady]);
 
     return musicState;
 }
 
 export function useProgress(_updateInterval?: number) {
     const progress = useAtomValue(progressAtom);
+    const playerReady = useAtomValue(playerReadyAtom);
 
     useEffect(() => {
+        if (!shouldHydratePlayerHooks(playerReady)) {
+            return;
+        }
         let cancelled = false;
         trackPlayer
             .getProgress()
@@ -4216,7 +4234,7 @@ export function useProgress(_updateInterval?: number) {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [playerReady]);
 
     return progress;
 }

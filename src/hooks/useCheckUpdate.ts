@@ -14,7 +14,6 @@ export const checkUpdateAndShowResult = (
         if (updateInfo?.needUpdate) {
             const { data } = updateInfo;
             const skipVersion = PersistStatus.get("app.skipVersion");
-            console.log(skipVersion, data);
             if (
                 checkSkip &&
                 skipVersion &&

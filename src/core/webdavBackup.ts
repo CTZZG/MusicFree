@@ -4,6 +4,7 @@ import { errorLog, trace } from "@/utils/log";
 import network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { AuthType, createClient } from "webdav";
+import { validateWebdavUrl } from "./webdavUrl";
 
 export type IWebdavAutoBackupInterval = "off" | "daily" | "weekly";
 type IWebdavAutoBackupSkipReason = "wifiOnly";
@@ -71,7 +72,12 @@ function createConfiguredWebdavClient() {
         throw new Error("WebDAV settings are incomplete");
     }
 
-    return createClient(url, {
+    const validation = validateWebdavUrl(url);
+    if (!validation.ok) {
+        throw new Error(validation.reason);
+    }
+
+    return createClient(validation.url, {
         authType: AuthType.Password,
         username,
         password,

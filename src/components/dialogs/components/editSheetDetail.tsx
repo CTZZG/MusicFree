@@ -40,10 +40,9 @@ export default function EditSheetDetailDialog(props: IEditSheetDetailProps) {
             if (!uri) {
                 return;
             }
-            console.log(uri);
             setCoverImg(uri);
-        } catch (e) {
-            console.log(e);
+        } catch {
+            Toast.warn("选择封面失败");
         }
     };
 
@@ -75,8 +74,8 @@ export default function EditSheetDetailDialog(props: IEditSheetDetailProps) {
                     from: coverImg,
                     to: newCoverImg,
                 });
-            } catch (e) {
-                console.log(e);
+            } catch {
+                Toast.warn("保存封面失败");
             }
         }
         let _title = title;

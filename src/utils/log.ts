@@ -62,7 +62,6 @@ export async function clearLog() {
 export async function getErrorLogContent() {
     try {
         const files = await readDir(pathConst.logPath);
-        console.log(files);
         const today = new Date();
         // 两天的错误日志
         const yesterday = new Date();

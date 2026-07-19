@@ -132,6 +132,45 @@ describe("MediaCache", () => {
         );
     });
 
+    it("does not evict a cache entry that changed while cleanup was pending", async () => {
+        let resolveExists!: (value: boolean) => void;
+        mockExists.mockImplementationOnce(
+            () =>
+                new Promise<boolean>(resolve => {
+                    resolveExists = resolve;
+                }),
+        );
+        const oldValue = JSON.stringify({
+            ...mediaItem,
+            title: "Old Track",
+            $localLyric: {
+                rawLrc: "/cache/old.lrc",
+            },
+        });
+        setRawCache(oldValue);
+
+        const eviction = MediaCache.removeMediaCacheEntry(
+            "test@track-1",
+            oldValue,
+        );
+        await Promise.resolve();
+
+        MediaCache.setMediaCache({
+            ...mediaItem,
+            title: "New Track",
+            $localLyric: {
+                rawLrc: "/cache/new.lrc",
+            },
+        } as IMusic.IMusicItemCache);
+        resolveExists(true);
+        await eviction;
+
+        expect(MediaCache.getMediaCache(mediaItem)).toMatchObject({
+            title: "New Track",
+        });
+        expect(mockUnlink).not.toHaveBeenCalled();
+    });
+
     it("evicts entries in bounded batches", async () => {
         jest.useFakeTimers();
         const active: number[] = [];
