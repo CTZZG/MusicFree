@@ -29,7 +29,37 @@ const nitroAdapterPath = path.join(
     'playerAdapter',
     'nitroPlayerAdapter.ts',
 );
-const servicePath = path.join(rootDir, 'src', 'service', 'index.ts');
+const androidPlayerExtensionsPath = path.join(
+    rootDir,
+    'node_modules',
+    'react-native-nitro-player',
+    'android',
+    'src',
+    'main',
+    'java',
+    'com',
+    'margelo',
+    'nitro',
+    'nitroplayer',
+    'musicfree',
+    'MusicFreePlayerExtensions.kt',
+);
+const iosQueueBuildPath = path.join(
+    rootDir,
+    'node_modules',
+    'react-native-nitro-player',
+    'ios',
+    'core',
+    'TrackPlayerQueueBuild.swift',
+);
+const iosResourceLoaderPath = path.join(
+    rootDir,
+    'node_modules',
+    'react-native-nitro-player',
+    'ios',
+    'core',
+    'TrackPlayerRedirectResolver.swift',
+);
 
 function readProjectFile(filePath) {
     try {
@@ -55,7 +85,7 @@ function getSection(source, startMarker, endMarker) {
 
 function extractMethods(section) {
     const methods = new Set();
-    const methodPattern = /^  ([A-Za-z_]\w*)\s*\(/gm;
+    const methodPattern = /^ {2}([A-Za-z_]\w*)\s*\(/gm;
     let match;
     while ((match = methodPattern.exec(section))) {
         methods.add(match[1]);
@@ -356,6 +386,20 @@ const expected = {
         'iOS-only Nitro route picker',
         'Tracked for Nitro upgrade parity; Round 20 Media3/FFmpeg work is Android-focused.',
     ),
+    Cast: scopedMethods(
+        [
+            'configure',
+            'endCastSession',
+            'getCastDeviceName',
+            'getCastState',
+            'isCasting',
+            'onCastStateChange',
+            'showCastPicker',
+        ],
+        'deferred',
+        'No MusicFree Google Cast adapter yet',
+        'Added by Nitro Player 1.5.0; the dependency upgrade keeps the existing PlayerAdapter surface unchanged.',
+    ),
     DownloadManager: scopedMethods(
         [
             'cancelAllDownloads',
@@ -429,8 +473,10 @@ const spec = readProjectFile(specPath);
 const adapterEvidence = [
     readProjectFile(adapterTypesPath),
     readProjectFile(nitroAdapterPath),
-    readProjectFile(servicePath),
 ].join('\n');
+const androidPlayerExtensions = readProjectFile(androidPlayerExtensionsPath);
+const iosQueueBuild = readProjectFile(iosQueueBuildPath);
+const iosResourceLoader = readProjectFile(iosResourceLoaderPath);
 
 const specMethods = {
     PlayerQueue: extractMethods(
@@ -446,6 +492,9 @@ const specMethods = {
     AudioRoutePicker: extractMethods(
         readProjectFile(path.join(specsDir, 'AudioRoutePicker.nitro.ts')),
     ),
+    Cast: extractMethods(
+        readProjectFile(path.join(specsDir, 'Cast.nitro.ts')),
+    ),
     DownloadManager: extractMethods(
         readProjectFile(path.join(specsDir, 'DownloadManager.nitro.ts')),
     ),
@@ -455,6 +504,36 @@ const specMethods = {
 };
 
 const errors = [];
+// The MusicFree-controlled DataSource was reverted on 2026-07-26. What must
+// still hold is that Nitro uses Media3's HTTP stack and does not re-enable
+// cross-protocol redirects.
+if (
+    !androidPlayerExtensions.includes(
+        'ResolvingDataSource.Factory(DefaultHttpDataSource.Factory())',
+    ) ||
+    androidPlayerExtensions.includes('MusicFreePublicHttpDataSourceFactory') ||
+    androidPlayerExtensions.includes('.setAllowCrossProtocolRedirects(true)')
+) {
+    errors.push(
+        'Nitro Android media transport must use Media3 HTTP data sources, must not reinstate the reverted MusicFree data source, and must not allow cross-protocol redirects.',
+    );
+}
+if (
+    !iosQueueBuild.includes('TrackPlayerRedirectResolver.wrap(url)') ||
+    !iosQueueBuild.includes('asset.resourceLoader.setDelegate(redirectResolver, queue: redirectResolver.queue)') ||
+    !iosResourceLoader.includes('AVAssetResourceLoaderDelegate, URLSessionDataDelegate') ||
+    !iosResourceLoader.includes('Only HTTPS remote media URLs are allowed') ||
+    !iosResourceLoader.includes('Only same-origin HTTPS redirects are allowed') ||
+    !iosResourceLoader.includes('getaddrinfo') ||
+    !iosResourceLoader.includes('isBlockedIpv4') ||
+    !iosResourceLoader.includes('isBlockedIpv6') ||
+    !iosResourceLoader.includes('request.setValue(rangeHeader, forHTTPHeaderField: "Range")') ||
+    !iosResourceLoader.includes('request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")')
+) {
+    errors.push(
+        'Nitro iOS media transport must use the MusicFree controlled AVAsset/URLSession loader.',
+    );
+}
 let mapped = 0;
 let partial = 0;
 let deferred = 0;

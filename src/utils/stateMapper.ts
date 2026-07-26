@@ -1,28 +1,39 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 export default class StateMapper<T> {
-    private getFun: () => T;
-    private cbs: Set<Function> = new Set([]);
+    private readonly getFun: () => T;
+    private readonly cbs = new Set<() => void>();
+    private snapshot: T;
+    public readonly useMappedState: () => T;
+
     constructor(getFun: () => T) {
         this.getFun = getFun;
+        this.snapshot = getFun();
+        this.useMappedState = createStateMapperHook(this);
     }
 
     notify = () => {
-        this.cbs.forEach(_ => _?.());
+        this.snapshot = this.getFun();
+        this.cbs.forEach(callback => callback());
     };
 
-    useMappedState = () => {
-        const [_state, _setState] = useState<T>(this.getFun);
-        const updateState = () => {
-            _setState(this.getFun());
+    getSnapshot = () => this.snapshot;
+
+    subscribe = (callback: () => void) => {
+        this.cbs.add(callback);
+        return () => {
+            this.cbs.delete(callback);
         };
-        useEffect(() => {
-            this.cbs.add(updateState);
-            return () => {
-                this.cbs.delete(updateState);
-            };
-        }, []);
-        return _state;
+    };
+}
+
+function createStateMapperHook<T>(stateMapper: StateMapper<T>) {
+    return function useMappedState() {
+        return useSyncExternalStore(
+            stateMapper.subscribe,
+            stateMapper.getSnapshot,
+            stateMapper.getSnapshot,
+        );
     };
 }
 

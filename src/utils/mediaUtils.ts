@@ -4,41 +4,10 @@ import {
 } from "@/constants/commonConst";
 import { getMediaExtraProperty } from "./mediaExtra";
 
-/**
- * 获取媒体资源的唯一key
- * @param mediaItem 
- * @returns 
- */
-export function getMediaUniqueKey(mediaItem: ICommon.IMediaBase) {
-    return `${mediaItem.platform}@${mediaItem.id}`;
-}
-
-/**
- * 解析媒体资源的唯一key
- * @param key 
- * @returns 
- */
-export function parseMediaUniqueKey(key: string): ICommon.IMediaBase {
-    try {
-        const str = JSON.parse(key.trim());
-        let platform, id;
-        if (typeof str === "string") {
-            [platform, id] = str.split("@");
-        } else {
-            platform = str?.platform;
-            id = str?.id;
-        }
-        if (!platform || !id) {
-            throw new Error("mediakey不完整");
-        }
-        return {
-            platform,
-            id,
-        };
-    } catch (e: any) {
-        throw e;
-    }
-}
+export {
+    getMediaUniqueKey,
+    parseMediaUniqueKey,
+} from "./mediaIdentity";
 
 /**
  * 比较两个媒体资源是否相同

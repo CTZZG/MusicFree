@@ -71,7 +71,7 @@
 
 - [x] **R10 / P0：WebDAV 强制安全传输**
   - 位置：`src/core/webdavBackup.ts`、设置页及测试。
-  - 修复：统一 URL 校验，默认只允许 HTTPS，保存与建连两处均拒绝不安全地址。
+  - 历史初版修复口径：统一 URL 校验，默认只允许 HTTPS，保存与建连两处均拒绝不安全地址。该口径已在 2026-07-26 被纠正：用户 WebDAV 采用平衡传输策略，HTTPS 默认推荐，HTTP 可由用户确认后仅在该 WebDAV endpoint 的专用原生 HTTP bridge 中使用。
   - 验收：HTTP、内嵌凭据、无效 URL 被拒；HTTPS 可用。
 
 - [x] **R11 / P1：插件下载入口统一安全策略**

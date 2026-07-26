@@ -1,4 +1,4 @@
-import axios, { AxiosRequestConfig } from "axios";
+import type { AxiosRequestConfig } from "axios";
 import asyncToGenerator from "@babel/runtime/helpers/asyncToGenerator";
 import babelRegenerator from "@babel/runtime/helpers/regenerator";
 import babelTypeof from "@babel/runtime/helpers/typeof";
@@ -9,6 +9,7 @@ import { URL, URLSearchParams } from "react-native-url-polyfill";
 import DeviceInfo from "react-native-device-info";
 import { devLog } from "@/utils/log";
 import { rsaEncrypt } from "./rsa";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
 import {
     ILxRequestHandler,
     ILxRequestPayload,
@@ -236,30 +237,66 @@ function toAxiosConfig(options?: any): AxiosRequestConfig {
     return config;
 }
 
-function lxRequest(url: string, options?: any, callback?: (err: any, resp?: any, body?: any) => void) {
-    const controller = new AbortController();
-    axios(url, {
-        ...toAxiosConfig(options),
-        signal: controller.signal,
-        // lx 的 request 是 request.js 风格：任何 HTTP 状态码都回调 resp，
-        // 让脚本自行根据 resp.statusCode / resp.body 处理（如 403 重试、读错误体）。
-        // axios 默认对非 2xx 抛错，会丢掉 resp，必须放开。
-        validateStatus: () => true,
-    })
-        .then(resp => {
-            callback?.(null, {
-                statusCode: resp.status,
-                status: resp.status,
-                headers: resp.headers,
-                body: resp.data,
-            }, resp.data);
-        })
-        .catch(err => {
-            callback?.(err);
-        });
-
-    return () => controller.abort();
+interface ILxHttpClient {
+    (
+        url: string,
+        config: AxiosRequestConfig,
+    ): Promise<{
+        status: number;
+        headers: unknown;
+        data: unknown;
+    }>;
 }
+
+export function createLxRequest(
+    httpClient: ILxHttpClient,
+) {
+    return function lxRequest(
+        url: string,
+        options?: any,
+        callback?: (err: any, resp?: any, body?: any) => void,
+    ) {
+        const controller = new AbortController();
+        httpClient(url, {
+            ...toAxiosConfig(options),
+            signal: controller.signal,
+            // lx 的 request 是 request.js 风格：任何 HTTP 状态码都回调 resp，
+            // 让脚本自行根据 resp.statusCode / resp.body 处理（如 403 重试、读错误体）。
+            // axios 默认对非 2xx 抛错，会丢掉 resp，必须放开。
+            validateStatus: () => true,
+        })
+            .then(resp => {
+                callback?.(null, {
+                    statusCode: resp.status,
+                    status: resp.status,
+                    headers: resp.headers,
+                    body: resp.data,
+                }, resp.data);
+            })
+            .catch(err => {
+                callback?.(err);
+            });
+
+        return () => controller.abort();
+    };
+}
+
+/**
+ * LX 音源和普通插件同属第三方脚本，共用同一个明文开关。
+ *
+ * 这里用注入而不是直接 import appConfig：runtime.ts 目前不依赖 MMKV，
+ * 直接引入会把存储层拖进这个模块的依赖图（并让 runtime 的单测无法加载）。
+ * 由已经持有 Config 的 lxSource/index.ts 在导入时注册。
+ */
+let lxAllowInsecureHttp: () => boolean = () => false;
+
+export function setLxAllowInsecureHttp(getter: () => boolean) {
+    lxAllowInsecureHttp = getter;
+}
+
+const lxRequest = createLxRequest(createRestrictedHttpClient({
+    allowHttp: () => lxAllowInsecureHttp(),
+}));
 
 function normalizeLxQuality(rawQuality: string): ILxQuality | null {
     const quality = String(rawQuality ?? "").trim().toLowerCase();
@@ -317,8 +354,8 @@ function normalizeSources(rawSources: any): ILxSourceInitSources {
     return result;
 }
 
-function createRuntimeGlobal(lx: any) {
-    const globalThisObject: Record<string, any> = {
+export function createRuntimeGlobal(lx: any) {
+    const globalThisObject = Object.assign(Object.create(null), {
         lx,
         setTimeout,
         clearTimeout,
@@ -340,9 +377,13 @@ function createRuntimeGlobal(lx: any) {
         MUSIC_SOURCE: {},
         MUSIC_SOURCES: {},
         MUSIC_QUALITY: {},
+        fetch: undefined,
+        XMLHttpRequest: undefined,
+        WebSocket: undefined,
+        constructor: undefined,
         httpFetch: lxRequest,
         ...babelHelpers,
-    };
+    }) as Record<string, any>;
 
     globalThisObject.window = globalThisObject;
     globalThisObject.self = globalThisObject;
@@ -399,6 +440,9 @@ const runtimeParameterNames = new Set([
     "self",
     "global",
     "globalThis",
+    "fetch",
+    "XMLHttpRequest",
+    "WebSocket",
     "_regenerator",
     "_regeneratorRuntime",
     "regeneratorRuntime",
@@ -409,7 +453,7 @@ const runtimeParameterNames = new Set([
     "_typeof",
 ]);
 
-function runScriptInRuntimeGlobal(
+export function runScriptInRuntimeGlobal(
     script: string,
     globalThisObject: Record<string, any>,
 ) {

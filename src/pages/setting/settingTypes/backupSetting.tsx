@@ -8,19 +8,23 @@ import Backup, {
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import Toast from "@/utils/toast";
 import React from "react";
-import { ScrollView, StyleSheet } from "react-native";
+import { Platform, ScrollView, StyleSheet } from "react-native";
 
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
-import axios from "axios";
 
 import { ResumeMode } from "@/constants/commonConst.ts";
-import Config, { useAppConfig } from "@/core/appConfig";
+import Config, {
+    getCredentialMigrationError,
+    retryLegacyCredentialMigration,
+    useAppConfig,
+} from "@/core/appConfig";
 import { useI18N } from "@/core/i18n";
 import {
     backupToWebdav,
     formatBackupTimestamp,
     getWebdavBackupCandidates,
+    hasConfiguredWebdav,
     readWebdavBackup,
     type IWebdavAutoBackupInterval,
 } from "@/core/webdavBackup";
@@ -30,20 +34,31 @@ import { errorLog } from "@/utils/log.ts";
 import PersistStatus from "@/utils/persistStatus";
 import { getDocumentAsync } from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
-import { DocumentDirectoryPath } from "react-native-fs";
+import { DocumentDirectoryPath, unlink } from "react-native-fs";
 import Clipboard from "@react-native-clipboard/clipboard";
-import { validateWebdavUrl } from "@/core/webdavUrl";
+import SecureCredential, {
+    setCredentialVerified,
+    webdavPasswordCredentialKey,
+} from "@/native/secureCredential";
+import StorageUri from "@/native/storageUri";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
+import { createWebdavSettingsTransaction } from "./webdavSettingsTransaction";
 
 const preRestoreBackupDir = `${DocumentDirectoryPath}/MusicFree`;
+const remoteBackupHttpClient = createRestrictedHttpClient({
+    maxResponseBytes: 32 * 1024 * 1024,
+});
 
 export default function BackupSetting() {
     const { t } = useI18N();
     const navigate = useNavigate();
 
     const resumeMode = useAppConfig("backup.resumeMode");
+    // 启动时的凭据迁移只跑一次，因此读一次初值即可；重试成功后本地清掉。
+    const [credentialMigrationError, setCredentialMigrationError] =
+        React.useState(getCredentialMigrationError);
     const webdavUrl = useAppConfig("webdav.url");
     const webdavUsername = useAppConfig("webdav.username");
-    const webdavPassword = useAppConfig("webdav.password");
     const webdavAutoBackupInterval =
         useAppConfig("webdav.autoBackupInterval") ?? "off";
     const webdavAutoBackupWifiOnly =
@@ -213,10 +228,6 @@ export default function BackupSetting() {
                     showResumeReport(report);
                     resolve(true);
                 },
-                onCancel(hideDialog) {
-                    hideDialog();
-                    resolve(false);
-                },
                 onReject(reason, hideDialog) {
                     hideDialog();
                     resolve(false);
@@ -258,6 +269,46 @@ export default function BackupSetting() {
     }
 
     const onBackupToLocal = async () => {
+        if (Platform.OS === "android") {
+            const exportPath =
+                `${preRestoreBackupDir}/backup-export-${Date.now()}.json`;
+            showDialog("LoadingDialog", {
+                title: t("backupAndResume.backupDialogTitle"),
+                loadingText: t("backupAndResume.backuping"),
+                promise: (async () => {
+                    await checkAndCreateDir(preRestoreBackupDir);
+                    await writeInChunks(exportPath, Backup.backup());
+                    try {
+                        return await StorageUri.exportDocument(
+                            exportPath,
+                            "application/json",
+                            "musicfree-backup.json",
+                        );
+                    } finally {
+                        await unlink(exportPath).catch(() => undefined);
+                    }
+                })(),
+                // 备份是「只写新文件」，放弃等待不会改动任何既有数据，
+                // 因此允许用户退出对话框；恢复（showResumeLoading）不给取消，
+                // 因为那会在改数据的中途让用户误以为已停止。
+                onCancel(hideDialog) {
+                    hideDialog();
+                },
+                onResolve(result, hideDialog) {
+                    hideDialog();
+                    if (result) {
+                        Toast.success(t("toast.backupSuccess"));
+                    }
+                },
+                onReject(reason, hideDialog) {
+                    hideDialog();
+                    Toast.warn(t("toast.backupFail", {
+                        reason: reason?.message ?? reason,
+                    }));
+                },
+            });
+            return;
+        }
         navigate(ROUTE_PATH.FILE_SELECTOR, {
             fileType: "folder",
             multi: false,
@@ -274,14 +325,15 @@ export default function BackupSetting() {
                             }backup.json`,
                             raw,
                         ),
+                        // 同上：写出备份文件，放弃等待不影响既有数据。
+                        onCancel(hideDialog) {
+                            hideDialog();
+                            resolve(false);
+                        },
                         onResolve(_, hideDialog) {
                             Toast.success(t("toast.backupSuccess"));
                             hideDialog();
                             resolve(true);
-                        },
-                        onCancel(hideDialog) {
-                            hideDialog();
-                            resolve(false);
                         },
                         onReject(reason, hideDialog) {
                             hideDialog();
@@ -320,7 +372,9 @@ export default function BackupSetting() {
                 try {
                     const url = text.trim();
                     if (url.endsWith(".json") || url.endsWith(".txt")) {
-                        const raw = (await axios.get(text)).data;
+                        const raw = String(
+                            (await remoteBackupHttpClient.get(url)).data ?? "",
+                        );
                         closePanel();
                         setTimeout(() => {
                             showResumePreview(raw);
@@ -336,11 +390,6 @@ export default function BackupSetting() {
     }
 
     async function onResumeFromWebdav() {
-        if (!(webdavUsername && webdavPassword && webdavUrl)) {
-            Toast.warn(t("toast.resumePreCheckFailed"));
-            return;
-        }
-
         async function showWebdavResumePreview(path: string) {
             try {
                 const resumeData = await readWebdavBackup(path);
@@ -351,6 +400,10 @@ export default function BackupSetting() {
         }
 
         try {
+            if (!(await hasConfiguredWebdav())) {
+                Toast.warn(t("toast.resumePreCheckFailed"));
+                return;
+            }
             const candidates = (await getWebdavBackupCandidates()).map(
                 item => ({
                     title:
@@ -388,12 +441,11 @@ export default function BackupSetting() {
     }
 
     async function onBackupToWebdav() {
-        if (!(webdavUsername && webdavPassword && webdavUrl)) {
-            Toast.warn(t("toast.resumePreCheckFailed"));
-            return;
-        }
-
         try {
+            if (!(await hasConfiguredWebdav())) {
+                Toast.warn(t("toast.resumePreCheckFailed"));
+                return;
+            }
             await backupToWebdav();
             Toast.success(t("toast.backupSuccess"));
         } catch (e: any) {
@@ -547,15 +599,54 @@ export default function BackupSetting() {
                 <ListItem.Content title={t("backupAndResume.resumeFromUrlDialogTitle")} />
             </ListItem>
             <ListItemHeader>Webdav</ListItemHeader>
+            {credentialMigrationError ? (
+                <ListItem
+                    withHorizontalPadding
+                    onPress={async () => {
+                        try {
+                            await retryLegacyCredentialMigration();
+                            setCredentialMigrationError(null);
+                            Toast.success(
+                                t(
+                                    "backupAndResume.credentialMigrationRetrySuccess",
+                                ),
+                            );
+                        } catch {
+                            // 旧明文和 schema 都保持不变，下次启动仍会自动重试。
+                            Toast.warn(
+                                t(
+                                    "backupAndResume.credentialMigrationRetryFailed",
+                                ),
+                            );
+                        }
+                    }}>
+                    <ListItem.Content
+                        title={t("backupAndResume.credentialMigrationFailed")}
+                        description={t(
+                            "backupAndResume.credentialMigrationFailedDesc",
+                        )}
+                    />
+                </ListItem>
+            ) : null}
             <ListItem
                 withHorizontalPadding
-                onPress={() => {
+                onPress={async () => {
+                    let hasStoredPassword = false;
+                    try {
+                        hasStoredPassword =
+                            await SecureCredential.hasCredential(
+                                webdavPasswordCredentialKey,
+                            );
+                    } catch (e: any) {
+                        Toast.warn(e?.message ?? "Secure credential unavailable");
+                        return;
+                    }
                     showPanel("SetUserVariables", {
                         title: t("backupAndResume.webdavSettings"),
                         initValues: {
                             url: webdavUrl ?? "",
                             username: webdavUsername ?? "",
-                            password: webdavPassword ?? "",
+                            password: "",
                         },
                         variables: [
                             {
@@ -570,37 +661,74 @@ export default function BackupSetting() {
                             {
                                 key: "password",
                                 name: t("common.password"),
+                                hint: hasStoredPassword
+                                    ? t(
+                                        "backupAndResume.webdavPasswordStoredHint",
+                                    )
+                                    : t(
+                                        "backupAndResume.webdavPasswordMissingHint",
+                                    ),
+                                secureTextEntry: true,
                             },
                         ],
-                        onOk(values, closePanel) {
-                            const rawUrl = values?.url?.trim() ?? "";
-                            const username = values?.username?.trim() ?? "";
-                            const password = values?.password ?? "";
-                            if (!rawUrl && !username && !password) {
-                                Config.setConfig("webdav.url", undefined);
-                                Config.setConfig("webdav.username", undefined);
-                                Config.setConfig("webdav.password", undefined);
-                                Toast.success(t("toast.saveSuccess"));
-                                closePanel();
+                        async onOk(values, closePanel) {
+                            const transaction =
+                                createWebdavSettingsTransaction(values, {
+                                    currentUrl: webdavUrl,
+                                    deletePassword: () =>
+                                        SecureCredential.deleteCredential(
+                                            webdavPasswordCredentialKey,
+                                        ),
+                                    hasStoredPassword,
+                                    onSuccess: () => {
+                                        Toast.success(t("toast.saveSuccess"));
+                                        closePanel();
+                                    },
+                                    setConfig: (key, value) => {
+                                        Config.setConfig(key, value as any);
+                                    },
+                                    setPassword: password =>
+                                        setCredentialVerified(
+                                            webdavPasswordCredentialKey,
+                                            password,
+                                        ),
+                                });
+                            if (transaction.kind === "invalid") {
+                                Toast.warn(
+                                    transaction.reason === "incomplete"
+                                        ? t("toast.resumePreCheckFailed")
+                                        : transaction.reason,
+                                );
                                 return;
                             }
-                            const validation = validateWebdavUrl(
-                                rawUrl,
-                            );
-                            if (!validation.ok) {
-                                Toast.warn(validation.reason);
+                            const saveSettings = async () => {
+                                try {
+                                    await transaction.commit();
+                                } catch (e: any) {
+                                    Toast.warn(
+                                        e?.message ??
+                                        "Secure credential unavailable",
+                                    );
+                                }
+                            };
+                            if (transaction.requiresHttpConfirmation) {
+                                showDialog("SimpleDialog", {
+                                    title: t(
+                                        "backupAndResume.webdavHttpWarningTitle",
+                                    ),
+                                    content: t(
+                                        "backupAndResume.webdavHttpWarningContent",
+                                    ),
+                                    okText: t(
+                                        "backupAndResume.webdavHttpWarningConfirm",
+                                    ),
+                                    onOk() {
+                                        saveSettings();
+                                    },
+                                });
                                 return;
                             }
-                            if (!username || !password) {
-                                Toast.warn(t("toast.resumePreCheckFailed"));
-                                return;
-                            }
-                            Config.setConfig("webdav.url", validation.url);
-                            Config.setConfig("webdav.username", username);
-                            Config.setConfig("webdav.password", password);
-
-                            Toast.success(t("toast.saveSuccess"));
-                            closePanel();
+                            await saveSettings();
                         },
                     });
                 }}>

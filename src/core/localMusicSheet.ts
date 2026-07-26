@@ -5,6 +5,9 @@ import {
     supportLocalMediaType,
 } from "@/constants/commonConst";
 import mp3Util, { IBasicMeta } from "@/native/mp3Util";
+import StorageUri, {
+    type IMediaStoreAudioItem,
+} from "@/native/storageUri";
 import {
     addFileScheme,
     getDirectory,
@@ -26,6 +29,7 @@ import { invalidateLocalMusicArtworkCache } from "./localMusicArtworkManager";
 import { errorLog, trace } from "@/utils/log";
 import SerializedStateRepository from "@/utils/serializedStateRepository";
 import {
+    createLocalMusicFileIdentity,
     mergeEditedListWithConcurrentChanges,
     resolveLocalMusicImportFields,
 } from "./localMusicSheetPolicy";
@@ -34,7 +38,14 @@ import { getStorage, setStorage, setStorageStrict } from "@/utils/storage";
 import CryptoJs from "crypto-js";
 import { nanoid } from "nanoid";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ReadDirItem, exists, readDir, unlink } from "react-native-fs";
+import { Platform } from "react-native";
+import {
+    ReadDirItem,
+    exists,
+    readDir,
+    stat,
+    unlink,
+} from "react-native-fs";
 import MusicSheet from "./musicSheet";
 
 let localSheet: IMusic.IMusicItem[] = [];
@@ -76,6 +87,7 @@ interface ILocalMusicWeakMatchInfo {
 interface ILocalMusicMatchContext {
     localPathStatusByKey: Map<string, LocalPathStatus>;
     localPathByKey: Map<string, string | null>;
+    fileIdentityCandidates: Map<string, string[]>;
     weakCandidates: Array<{
         key: string;
         info: ILocalMusicWeakMatchInfo;
@@ -93,6 +105,12 @@ interface ILocalMusicImportReport extends ILocalMusicImportMergeReport {
     filteredCount: number;
 }
 
+interface ILocalMusicImportCandidate {
+    musicPath: string;
+    displayName?: string | null;
+    size?: number | null;
+}
+
 interface ILocalMusicRelocatePreview {
     currentLabel: string;
     selectedLabel: string;
@@ -100,6 +118,7 @@ interface ILocalMusicRelocatePreview {
 }
 
 const weakMatchDurationToleranceSeconds = 2;
+const localFileIdentityKey = "localFileIdentity";
 const unknownComparableValues = new Set([
     "unknown",
     "unknown song",
@@ -233,7 +252,13 @@ export async function removeMusic(
 
     if (deleteOriginalFile && removedLocalPath) {
         try {
-            await unlink(normalizeFsPath(removedLocalPath));
+            if (removedLocalPath.startsWith("content://")) {
+                if (!await StorageUri.delete(removedLocalPath)) {
+                    throw new Error("Unable to delete the selected document");
+                }
+            } else {
+                await unlink(normalizeFsPath(removedLocalPath));
+            }
         } catch (e: any) {
             if (e.message !== "File does not exist" && removedMusicItem) {
                 await localSheetRepository
@@ -513,12 +538,60 @@ async function resolveLocalPathStatus(
         return "missing";
     }
     if (localPath.startsWith("content://")) {
-        return "unknown";
+        return (await StorageUri.exists(localPath).catch(() => false))
+            ? "exists"
+            : "missing";
     }
 
     return (await exists(normalizeFsPath(localPath)).catch(() => false))
         ? "exists"
         : "missing";
+}
+
+function getStoredLocalFileIdentity(
+    musicItem: IMusic.IMusicItem,
+): string | null {
+    const value = musicItem[internalSerializeKey]?.[localFileIdentityKey];
+    return typeof value === "string" && value ? value : null;
+}
+
+async function resolveLocalFileIdentity(
+    musicItem: IMusic.IMusicItem,
+    status: LocalPathStatus,
+) {
+    const storedIdentity = getStoredLocalFileIdentity(musicItem);
+    if (storedIdentity) {
+        return storedIdentity;
+    }
+    if (status !== "exists") {
+        return null;
+    }
+
+    const localPath = getLocalPath(musicItem);
+    if (!localPath) {
+        return null;
+    }
+    try {
+        const metadata = localPath.startsWith("content://")
+            ? await StorageUri.getMetadata(localPath)
+            : {
+                displayName: getFileName(localPath, true),
+                size: Number((await stat(normalizeFsPath(localPath))).size),
+            };
+        const durationSeconds = Number(musicItem.duration);
+        return createLocalMusicFileIdentity({
+            displayName: metadata.displayName,
+            size: metadata.size,
+            durationMilliseconds: Number.isFinite(durationSeconds)
+                ? durationSeconds * 1000
+                : null,
+            title: musicItem.title,
+            artist: musicItem.artist,
+            album: musicItem.album,
+        });
+    } catch {
+        return null;
+    }
 }
 
 async function readMusicMeta(musicPath: string) {
@@ -549,6 +622,7 @@ function formatMusicLabel(
 function patchLocalPath(
     musicItem: IMusic.IMusicItem,
     localPath: string,
+    localFileIdentity?: string | null,
 ): IMusic.IMusicItem {
     const shouldPatchUrl =
         typeof musicItem.url === "string" &&
@@ -560,6 +634,9 @@ function patchLocalPath(
         [internalSerializeKey]: {
             ...(musicItem[internalSerializeKey] ?? {}),
             localPath,
+            ...(localFileIdentity
+                ? { [localFileIdentityKey]: localFileIdentity }
+                : {}),
         },
     };
 }
@@ -618,6 +695,16 @@ async function getMusicStats(folderPaths: string[]) {
 
 function cancelImportLocal() {
     importToken = null;
+    if (Platform.OS === "android") {
+        try {
+            StorageUri.cancelDirectoryScan();
+        } catch (error: any) {
+            trace(
+                "取消 SAF 目录扫描失败",
+                error?.message ?? String(error),
+            );
+        }
+    }
 }
 
 // 导入本地音乐
@@ -692,6 +779,7 @@ async function createLocalMusicMatchContext(
 ): Promise<ILocalMusicMatchContext> {
     const localPathStatusByKey = new Map<string, LocalPathStatus>();
     const localPathByKey = new Map<string, string | null>();
+    const fileIdentityCandidates = new Map<string, string[]>();
     const weakCandidates: ILocalMusicMatchContext["weakCandidates"] = [];
 
     for (const musicItem of snapshot) {
@@ -699,6 +787,19 @@ async function createLocalMusicMatchContext(
         const status = await resolveLocalPathStatus(musicItem);
         localPathStatusByKey.set(key, status);
         localPathByKey.set(key, getLocalPath(musicItem));
+
+        if (musicItem.platform === localPluginPlatform) {
+            const fileIdentity = await resolveLocalFileIdentity(
+                musicItem,
+                status,
+            );
+            if (fileIdentity) {
+                const candidates =
+                    fileIdentityCandidates.get(fileIdentity) ?? [];
+                candidates.push(key);
+                fileIdentityCandidates.set(fileIdentity, candidates);
+            }
+        }
 
         if (
             status !== "missing" ||
@@ -719,8 +820,28 @@ async function createLocalMusicMatchContext(
     return {
         localPathStatusByKey,
         localPathByKey,
+        fileIdentityCandidates,
         weakCandidates,
     };
+}
+
+function findUniqueFileIdentityMatchKey(
+    importedMusicItem: IMusic.IMusicItem,
+    context: ILocalMusicMatchContext,
+    usedMatchKeys: ReadonlySet<string>,
+    availableKeys: ReadonlySet<string>,
+) {
+    const fileIdentity = getStoredLocalFileIdentity(importedMusicItem);
+    if (!fileIdentity) {
+        return null;
+    }
+    const candidates = context.fileIdentityCandidates.get(fileIdentity) ?? [];
+    const availableCandidates = candidates.filter(
+        key => !usedMatchKeys.has(key) && availableKeys.has(key),
+    );
+    return availableCandidates.length === 1
+        ? availableCandidates[0]
+        : null;
 }
 
 function findUniqueWeakMatchKey(
@@ -798,6 +919,22 @@ async function mergeImportedMusicItems(
             existingIndexByKey.set(getMediaUniqueKey(musicItem), index);
         });
         const usedWeakMatchKeys = new Set<string>();
+        const usedFileIdentityMatchKeys = new Set<string>();
+        const availableFileIdentityMatchKeys = new Set<string>();
+        context.fileIdentityCandidates.forEach(candidateKeys => {
+            candidateKeys.forEach(candidateKey => {
+                const currentIndex = existingIndexByKey.get(candidateKey);
+                if (
+                    currentIndex !== undefined &&
+                    isSameLocalPath(
+                        getLocalPath(nextSheet[currentIndex]),
+                        context.localPathByKey.get(candidateKey) ?? null,
+                    )
+                ) {
+                    availableFileIdentityMatchKeys.add(candidateKey);
+                }
+            });
+        });
         const availableWeakMatchKeys = new Set(
             context.weakCandidates
                 .filter(candidate => {
@@ -816,6 +953,8 @@ async function mergeImportedMusicItems(
 
         musicItems.forEach(importedMusicItem => {
             const importedLocalPath = getLocalPath(importedMusicItem);
+            const importedFileIdentity =
+                getStoredLocalFileIdentity(importedMusicItem);
             const importedKey = getMediaUniqueKey(importedMusicItem);
             const exactMatchIndex = existingIndexByKey.get(importedKey);
 
@@ -837,12 +976,49 @@ async function mergeImportedMusicItems(
                     const updatedMusicItem = patchLocalPath(
                         existingMusicItem,
                         importedLocalPath,
+                        importedFileIdentity,
                     );
                     nextSheet[exactMatchIndex] = updatedMusicItem;
                     referenceUpdates.set(importedKey, updatedMusicItem);
                     report.exactMatchedCount += 1;
                     changed = true;
                 }
+                return;
+            }
+
+            const fileIdentityMatchKey = findUniqueFileIdentityMatchKey(
+                importedMusicItem,
+                context,
+                usedFileIdentityMatchKeys,
+                availableFileIdentityMatchKeys,
+            );
+            const fileIdentityMatchIndex = fileIdentityMatchKey
+                ? existingIndexByKey.get(fileIdentityMatchKey)
+                : undefined;
+            if (
+                fileIdentityMatchKey &&
+                fileIdentityMatchIndex !== undefined
+            ) {
+                if (
+                    importedLocalPath &&
+                    context.localPathStatusByKey.get(
+                        fileIdentityMatchKey,
+                    ) === "missing"
+                ) {
+                    const updatedMusicItem = patchLocalPath(
+                        nextSheet[fileIdentityMatchIndex],
+                        importedLocalPath,
+                        importedFileIdentity,
+                    );
+                    nextSheet[fileIdentityMatchIndex] = updatedMusicItem;
+                    referenceUpdates.set(
+                        fileIdentityMatchKey,
+                        updatedMusicItem,
+                    );
+                    report.exactMatchedCount += 1;
+                    changed = true;
+                }
+                usedFileIdentityMatchKeys.add(fileIdentityMatchKey);
                 return;
             }
 
@@ -863,6 +1039,7 @@ async function mergeImportedMusicItems(
                 const updatedMusicItem = patchLocalPath(
                     nextSheet[weakMatchIndex],
                     importedLocalPath,
+                    importedFileIdentity,
                 );
                 nextSheet[weakMatchIndex] = updatedMusicItem;
                 usedWeakMatchKeys.add(weakMatchKey);
@@ -888,12 +1065,11 @@ async function mergeImportedMusicItems(
     return report;
 }
 
-async function importLocal(_folderPaths: string[]) {
-    const folderPaths = [..._folderPaths.map(normalizeFsPath)];
-    trace("本地音乐扫描开始", {
-        folderCount: folderPaths.length,
-    });
-    const { musicList, token } = await getMusicStats(folderPaths);
+async function importMusicCandidates(
+    candidates: ILocalMusicImportCandidate[],
+    token: string,
+) {
+    const musicList = candidates.map(candidate => candidate.musicPath);
     if (token !== importToken) {
         throw new Error("Import Broken");
     }
@@ -902,19 +1078,40 @@ async function importLocal(_folderPaths: string[]) {
     if (token !== importToken) {
         throw new Error("Import Broken");
     }
-    const scannedItems = musicList
-        .map((musicPath, index) => ({
-            musicPath,
-            meta: metas[index],
-        }))
-        .filter(item => !isLikelyNonMusicAudio(item.musicPath, item.meta));
+    const scannedItems = candidates
+        .map((candidate, index) => {
+            const musicPath = candidate.musicPath;
+            const displayName =
+                candidate.displayName ??
+                getFileName(musicPath, true);
+            return {
+                musicPath,
+                displayName,
+                size: candidate.size,
+                meta: metas[index],
+            };
+        })
+        .filter(item => !isLikelyNonMusicAudio(item.displayName, item.meta));
     const musicItems: IMusic.IMusicItem[] = await Promise.all(
-        scannedItems.map(async ({ musicPath, meta }) => {
+        scannedItems.map(async ({ musicPath, displayName, size, meta }) => {
             const fields = resolveLocalMusicImportFields({
-                filename: getFileName(musicPath, true),
+                filename: displayName,
                 embeddedMetadata: meta,
-                fallbackTitle: getFileName(musicPath),
+                fallbackTitle: getFileName(displayName),
                 fallbackArtist: "未知歌手",
+            });
+            const durationMilliseconds = parseInt(
+                meta?.duration ?? "0",
+                10,
+            );
+            const album = meta?.album ?? "未知专辑";
+            const localFileIdentity = createLocalMusicFileIdentity({
+                displayName,
+                size,
+                durationMilliseconds,
+                title: fields.title,
+                artist: fields.artist,
+                album,
             });
             return {
                 id:
@@ -923,11 +1120,14 @@ async function importLocal(_folderPaths: string[]) {
                 platform: fields.platform ?? localPluginPlatform,
                 title: fields.title,
                 artist: fields.artist,
-                duration: parseInt(meta?.duration ?? "0", 10) / 1000,
-                album: meta?.album ?? "未知专辑",
+                duration: durationMilliseconds / 1000,
+                album,
                 artwork: "",
                 [internalSerializeKey]: {
                     localPath: musicPath,
+                    ...(localFileIdentity
+                        ? { [localFileIdentityKey]: localFileIdentity }
+                        : {}),
                 },
             } as IMusic.IMusicItem;
         }),
@@ -953,6 +1153,71 @@ async function importLocal(_folderPaths: string[]) {
         exactMatchedCount: mergeReport.exactMatchedCount,
         weakMatchedCount: mergeReport.weakMatchedCount,
     } as ILocalMusicImportReport;
+}
+
+async function importLocal(_folderPaths: string[]) {
+    const folderPaths = [..._folderPaths.map(normalizeFsPath)];
+    trace("本地音乐扫描开始", {
+        folderCount: folderPaths.length,
+    });
+    const { musicList, token } = await getMusicStats(folderPaths);
+    return importMusicCandidates(
+        musicList.map(musicPath => ({ musicPath })),
+        token,
+    );
+}
+
+async function importAndroidCandidates(
+    sourceLabel: string,
+    loadCandidates: () => Promise<ILocalMusicImportCandidate[]>,
+) {
+    const token = nanoid();
+    importToken = token;
+    trace(`${sourceLabel} 本地音乐扫描开始`);
+    try {
+        const candidates = await loadCandidates();
+        if (token !== importToken) {
+            throw new Error("Import Broken");
+        }
+        trace(`${sourceLabel} 本地音乐查询完成`, {
+            count: candidates.length,
+        });
+        return await importMusicCandidates(candidates, token);
+    } finally {
+        if (token === importToken) {
+            importToken = null;
+        }
+    }
+}
+
+async function importAndroidMediaStore() {
+    return importAndroidCandidates("MediaStore", async () => {
+        const items: IMediaStoreAudioItem[] =
+            await StorageUri.queryAudioMediaStore();
+        return items
+            .filter(item => item.exists && item.uri.startsWith("content://"))
+            .map(item => ({
+                musicPath: item.uri,
+                displayName: item.displayName,
+                size: item.size,
+            }));
+    });
+}
+
+async function importAndroidDirectory(treeUri: string) {
+    return importAndroidCandidates("SAF", async () => {
+        const items = await StorageUri.listDirectoryDocuments(
+            treeUri,
+            supportLocalMediaType,
+        );
+        return items
+            .filter(item => item.exists && item.uri.startsWith("content://"))
+            .map(item => ({
+                musicPath: item.uri,
+                displayName: item.displayName,
+                size: item.size,
+            }));
+    });
 }
 
 /** 是否为本地音乐 */
@@ -991,9 +1256,25 @@ function useLocalFileExists(musicItem: IMusic.IMusicItem | null) {
 
     useEffect(() => {
         const generation = ++requestGeneration.current;
-        if (!fsPath || fsPath.startsWith("content://")) {
+        if (!fsPath) {
             setFileStatus({ path: fsPath, value: null });
             return;
+        }
+        if (fsPath.startsWith("content://")) {
+            setFileStatus({ path: fsPath, value: null });
+            StorageUri.exists(fsPath)
+                .catch(() => false)
+                .then(result => {
+                    if (
+                        requestGeneration.current === generation &&
+                        fsPath === normalizeFsPath(localPath ?? "")
+                    ) {
+                        setFileStatus({ path: fsPath, value: result });
+                    }
+                });
+            return () => {
+                requestGeneration.current += 1;
+            };
         }
 
         const cached = localFileExistsResolver.peek(fsPath);
@@ -1207,6 +1488,8 @@ const LocalMusicSheet = {
     addMusicDraft,
     saveLocalSheet,
     importLocal,
+    importAndroidMediaStore,
+    importAndroidDirectory,
     cancelImportLocal,
     isLocalMusic,
     isSupportedLocalMediaFile,

@@ -35,10 +35,13 @@ class MpvAndroidAutoConnectionDetector(
 
     private val receiver = CarConnectionBroadcastReceiver()
     private val queryHandler = CarConnectionQueryHandler(context.contentResolver)
+    @Volatile
     private var isRegistered = false
 
+    @Volatile
     var onConnectionChanged: ((connected: Boolean, connectionType: Int) -> Unit)? = null
 
+    @Synchronized
     fun register() {
         if (isRegistered) return
 
@@ -57,19 +60,23 @@ class MpvAndroidAutoConnectionDetector(
         }
     }
 
+    @Synchronized
     fun unregister() {
-        if (!isRegistered) return
-
-        try {
-            context.unregisterReceiver(receiver)
-        } catch (error: Exception) {
-            Log.w(TAG, "unregister failed", error)
-        } finally {
-            isRegistered = false
+        val wasRegistered = isRegistered
+        isRegistered = false
+        onConnectionChanged = null
+        queryHandler.cancelOperation(QUERY_TOKEN)
+        if (wasRegistered) {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (error: Exception) {
+                Log.w(TAG, "unregister failed", error)
+            }
         }
     }
 
     private fun queryForState() {
+        if (!isRegistered) return
         try {
             queryHandler.startQuery(
                 QUERY_TOKEN,
@@ -109,6 +116,9 @@ class MpvAndroidAutoConnectionDetector(
             response: Cursor?,
         ) {
             response.use { cursor ->
+                if (!isRegistered) {
+                    return
+                }
                 if (cursor == null) {
                     notifyDisconnected()
                     return

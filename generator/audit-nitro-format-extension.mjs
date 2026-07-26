@@ -13,7 +13,7 @@ import {fileURLToPath} from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
-const expectedNitroVersion = '1.4.3';
+const expectedNitroVersion = '1.5.0';
 const nitroAndroidDir = path.join(
     rootDir,
     'node_modules',
@@ -233,7 +233,7 @@ function checkPatchedAarCodecMapping() {
         }
         const createInputBufferBody =
             decoderJavapOutput.match(
-                /protected androidx\.media3\.decoder\.DecoderInputBuffer createInputBuffer\(\);[\s\S]*?(?=\n  (?:protected|public|private|static)|\n})/,
+                /protected androidx\.media3\.decoder\.DecoderInputBuffer createInputBuffer\(\);[\s\S]*?(?=\n {2}(?:protected|public|private|static)|\n})/,
             )?.[0] ?? '';
         if (!createInputBufferBody.includes('iconst_2')) {
             errors.push(

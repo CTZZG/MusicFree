@@ -29,9 +29,9 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import `fun`.upup.musicfree.R
+import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy
 import java.io.ByteArrayOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import okhttp3.Request
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.max
@@ -77,6 +77,10 @@ class MpvPlaybackService : Service() {
     }
 
     private lateinit var mediaSession: MediaSessionCompat
+    private val artworkHttpClient = PublicHttpsNetworkPolicy.clientBuilder()
+        .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val artworkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var notificationManager: NotificationManager? = null
@@ -938,22 +942,25 @@ class MpvPlaybackService : Service() {
         }
     }
 
-    private fun fetchBitmap(url: String): Bitmap? =
-        try {
+    private fun fetchBitmap(url: String): Bitmap? {
+        return try {
             when {
                 url.startsWith("http://") || url.startsWith("https://") -> {
-                    val connection = URL(url).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 5000
-                    connection.readTimeout = 5000
-                    connection.doInput = true
-                    connection.connect()
-                    try {
-                        val bytes = connection.inputStream.use { input ->
-                            readBoundedBytes(input, MAX_ARTWORK_DOWNLOAD_BYTES)
+                    val request = Request.Builder()
+                        .url(PublicHttpsNetworkPolicy.requirePublicRemote(url))
+                        .get()
+                        .build()
+                    artworkHttpClient.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            null
+                        } else {
+                            val input = response.body?.byteStream()
+                                ?: return@use null
+                            val bytes = input.use {
+                                readBoundedBytes(it, MAX_ARTWORK_DOWNLOAD_BYTES)
+                            }
+                            decodeSampledBitmap(bytes)
                         }
-                        decodeSampledBitmap(bytes)
-                    } finally {
-                        connection.disconnect()
                     }
                 }
                 url.startsWith("content://") ||
@@ -966,6 +973,7 @@ class MpvPlaybackService : Service() {
         } catch (_: Throwable) {
             null
         }
+    }
 
     private fun readBoundedBytes(
         input: java.io.InputStream,

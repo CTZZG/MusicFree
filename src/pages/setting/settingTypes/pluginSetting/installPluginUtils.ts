@@ -2,13 +2,15 @@ import { showDialog } from "@/components/dialogs/useDialog";
 import Config from "@/core/appConfig";
 import PluginManager from "@/core/pluginManager";
 import Toast from "@/utils/toast";
-import axios from "axios";
 import {
     IInstallPluginFailureReason,
     IInstallPluginResult,
+    IPluginCapability,
 } from "@/types/core/pluginManager";
 import type { ILanguageData } from "@/types/core/i18n";
 import { recordPluginInstallFailure } from "@/core/pluginManager/diagnostics";
+import i18n from "@/core/i18n";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
 
 export type PluginInstallTranslate = <K extends keyof ILanguageData>(
     key: K,
@@ -32,11 +34,84 @@ const installFailureReasonI18nKeys: Record<
     network: "pluginSetting.installResult.failureReason.network",
     "not-found": "pluginSetting.installResult.failureReason.not-found",
     parse: "pluginSetting.installResult.failureReason.parse",
+    "capability-approval-required":
+        "pluginSetting.installResult.failureReason.capability-approval-required",
     "newer-version-installed":
         "pluginSetting.installResult.failureReason.newer-version-installed",
     unrecognized: "pluginSetting.installResult.failureReason.unrecognized",
     unknown: "pluginSetting.installResult.failureReason.unknown",
 };
+
+const remoteHttpClient = createRestrictedHttpClient();
+
+export function confirmPluginCapabilities(
+    capabilities: IPluginCapability[],
+) {
+    return new Promise<boolean>(resolve => {
+        let settled = false;
+        const settle = (result: boolean) => {
+            if (!settled) {
+                settled = true;
+                resolve(result);
+            }
+        };
+        showDialog("SimpleDialog", {
+            title: i18n.t("pluginSetting.capabilityApproval.title"),
+            content: i18n.t("pluginSetting.capabilityApproval.content", {
+                capabilities: capabilities
+                    .map(capability => `• ${capability}`)
+                    .join("\n"),
+            }),
+            okText: i18n.t("pluginSetting.capabilityApproval.approve"),
+            onOk: () => settle(true),
+            onCancel: () => settle(false),
+            onDismiss: () => settle(false),
+        });
+    });
+}
+
+export async function runPluginInstallWithCapabilityApproval(
+    installer: (
+        approvedCapabilities: IPluginCapability[],
+    ) => Promise<IInstallPluginResult>,
+) {
+    let result = await installer([]);
+    if (
+        result.failureReason !== "capability-approval-required" ||
+        !result.requiredCapabilities?.length
+    ) {
+        return result;
+    }
+    const approved = await confirmPluginCapabilities(
+        result.requiredCapabilities,
+    );
+    if (!approved) {
+        return {
+            ...result,
+            message: "用户未确认插件新增能力",
+            retryable: true,
+        };
+    }
+    result = await installer(result.requiredCapabilities);
+    return result;
+}
+
+export async function updatePluginWithCapabilityApproval(plugin: any) {
+    try {
+        await PluginManager.updatePlugin(plugin);
+    } catch (error: any) {
+        const capabilities = error?.requiredCapabilities as
+            | IPluginCapability[]
+            | undefined;
+        if (!capabilities?.length) {
+            throw error;
+        }
+        if (!(await confirmPluginCapabilities(capabilities))) {
+            throw new Error("用户未确认插件新增能力");
+        }
+        await PluginManager.updatePlugin(plugin, capabilities);
+    }
+}
 
 function getHttpStatus(error: any) {
     return (
@@ -194,7 +269,7 @@ export async function installPluginFromUrlText(
         let urls: string[] = [];
         if (urlKind === "collection") {
             const jsonFile = (
-                await axios.get(inputUrl, {
+                await remoteHttpClient.get(inputUrl, {
                     headers: {
                         "Cache-Control": "no-cache",
                         Pragma: "no-cache",
@@ -220,15 +295,19 @@ export async function installPluginFromUrlText(
         } else {
             urls = [inputUrl];
         }
-        return await Promise.all(
-            urls.map(url =>
-                PluginManager.installPluginFromUrl(url, {
-                    notCheckVersion: Config.getConfig(
-                        "basic.notCheckPluginVersion",
-                    ),
-                }),
-            ),
-        );
+        const results: IInstallPluginResult[] = [];
+        for (const url of urls) {
+            results.push(await runPluginInstallWithCapabilityApproval(
+                approvedCapabilities =>
+                    PluginManager.installPluginFromUrl(url, {
+                        notCheckVersion: Config.getConfig(
+                            "basic.notCheckPluginVersion",
+                        ),
+                        approvedCapabilities,
+                    }),
+            ));
+        }
+        return results;
     } catch (e: any) {
         const isNotFound = getHttpStatus(e) === 404;
         return [recordFailedInstallResult({

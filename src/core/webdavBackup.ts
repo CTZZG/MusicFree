@@ -3,8 +3,12 @@ import Config from "@/core/appConfig";
 import { errorLog, trace } from "@/utils/log";
 import network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
-import { AuthType, createClient } from "webdav";
 import { validateWebdavUrl } from "./webdavUrl";
+import SecureCredential, {
+    webdavPasswordCredentialKey,
+} from "@/native/secureCredential";
+import { createRestrictedWebdavFacade } from "./pluginManager/restrictedWebdav";
+import { webdavRuntime as webdav } from "./pluginManager/webdavRuntime";
 
 export type IWebdavAutoBackupInterval = "off" | "daily" | "weekly";
 type IWebdavAutoBackupSkipReason = "wifiOnly";
@@ -17,6 +21,14 @@ const webdavRootPath = "/MusicFree";
 const webdavLatestBackupPath = `${webdavRootPath}/MusicFreeBackup.json`;
 const webdavHistoryDir = `${webdavRootPath}/Backups`;
 const webdavHistoryKeepCount = 10;
+const webdavBackupMaxBytes = 32 * 1024 * 1024;
+const restrictedWebdav = createRestrictedWebdavFacade(webdav, {
+    allowHttp: true,
+    allowPrivateHosts: true,
+    maxRequestBytes: webdavBackupMaxBytes,
+    maxResponseBytes: webdavBackupMaxBytes,
+});
+type WebdavClient = ReturnType<typeof webdav.createClient>;
 const autoBackupIntervalMs: Record<Exclude<IWebdavAutoBackupInterval, "off">, number> = {
     daily: 24 * 60 * 60 * 1000,
     weekly: 7 * 24 * 60 * 60 * 1000,
@@ -45,7 +57,7 @@ export function formatBackupTimestamp(date = new Date()) {
 }
 
 async function ensureWebdavDirectory(
-    client: ReturnType<typeof createClient>,
+    client: WebdavClient,
     path: string,
 ) {
     if (!(await client.exists(path))) {
@@ -63,9 +75,11 @@ function isWebdavHistoryBackupFile(item: IWebdavBackupFile) {
         getWebdavBackupFileName(item).startsWith("MusicFreeBackup-");
 }
 
-function createConfiguredWebdavClient() {
+async function createConfiguredWebdavClient() {
     const username = Config.getConfig("webdav.username");
-    const password = Config.getConfig("webdav.password");
+    const password = await SecureCredential.getCredential(
+        webdavPasswordCredentialKey,
+    );
     const url = Config.getConfig("webdav.url");
 
     if (!(username && password && url)) {
@@ -77,23 +91,25 @@ function createConfiguredWebdavClient() {
         throw new Error(validation.reason);
     }
 
-    return createClient(validation.url, {
-        authType: AuthType.Password,
+    return restrictedWebdav.createClient(validation.url, {
+        authType: restrictedWebdav.AuthType.Password,
         username,
         password,
     });
 }
 
-function hasConfiguredWebdav() {
+export async function hasConfiguredWebdav() {
     return !!(
         Config.getConfig("webdav.username") &&
-        Config.getConfig("webdav.password") &&
-        Config.getConfig("webdav.url")
+        Config.getConfig("webdav.url") &&
+        await SecureCredential.hasCredential(
+            webdavPasswordCredentialKey,
+        )
     );
 }
 
 async function getWebdavHistoryBackups(
-    client: ReturnType<typeof createClient>,
+    client: WebdavClient,
 ) {
     if (!(await client.exists(webdavHistoryDir))) {
         return [];
@@ -109,7 +125,7 @@ async function getWebdavHistoryBackups(
         );
 }
 
-async function pruneWebdavBackupHistory(client: ReturnType<typeof createClient>) {
+async function pruneWebdavBackupHistory(client: WebdavClient) {
     try {
         const backupFiles = await getWebdavHistoryBackups(client);
 
@@ -121,12 +137,12 @@ async function pruneWebdavBackupHistory(client: ReturnType<typeof createClient>)
                 .map(filename => client.deleteFile(filename)),
         );
     } catch (e) {
-        errorLog("清理 WebDAV 备份历史失败", e);
+        errorLog("清理 WebDAV 备份历史失败", getSafeErrorMessage(e));
     }
 }
 
 export async function backupToWebdav(raw = Backup.backup()): Promise<IWebdavBackupResult> {
-    const client = createConfiguredWebdavClient();
+    const client = await createConfiguredWebdavClient();
 
     await ensureWebdavDirectory(client, webdavRootPath);
     await ensureWebdavDirectory(client, webdavHistoryDir);
@@ -156,7 +172,7 @@ export async function backupToWebdav(raw = Backup.backup()): Promise<IWebdavBack
 }
 
 export async function getWebdavBackupCandidates(): Promise<IWebdavBackupCandidate[]> {
-    const client = createConfiguredWebdavClient();
+    const client = await createConfiguredWebdavClient();
     const candidates: IWebdavBackupCandidate[] = [];
 
     if (await client.exists(webdavLatestBackupPath)) {
@@ -182,7 +198,7 @@ export async function getWebdavBackupCandidates(): Promise<IWebdavBackupCandidat
 }
 
 export async function readWebdavBackup(path: string) {
-    const client = createConfiguredWebdavClient();
+    const client = await createConfiguredWebdavClient();
     return client.getFileContents(
         path,
         {
@@ -225,9 +241,11 @@ function getSafeErrorMessage(error: unknown) {
         .slice(0, 160);
 }
 
-function checkAutoBackup(now = Date.now()): IWebdavAutoBackupCheckResult {
+async function checkAutoBackup(
+    now = Date.now(),
+): Promise<IWebdavAutoBackupCheckResult> {
     const interval = getAutoBackupInterval();
-    if (interval === "off" || !hasConfiguredWebdav()) {
+    if (interval === "off" || !(await hasConfiguredWebdav())) {
         return { action: "idle" };
     }
 
@@ -247,7 +265,7 @@ function checkAutoBackup(now = Date.now()): IWebdavAutoBackupCheckResult {
 }
 
 export async function maybeRunAutoWebdavBackup() {
-    const checkResult = checkAutoBackup();
+    const checkResult = await checkAutoBackup();
     if (checkResult.action === "idle") {
         return false;
     }
@@ -280,7 +298,7 @@ export async function maybeRunAutoWebdavBackup() {
             "backup.webdavAutoBackupLastError",
             getSafeErrorMessage(e),
         );
-        errorLog("WebDAV 自动备份失败", e);
+        errorLog("WebDAV 自动备份失败", getSafeErrorMessage(e));
         return false;
     }
 }

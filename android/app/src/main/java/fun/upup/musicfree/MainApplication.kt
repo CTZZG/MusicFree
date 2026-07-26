@@ -18,6 +18,8 @@ import `fun`.upup.musicfree.cenc.CencPackage
 import `fun`.upup.musicfree.lyricUtil.LyricUtilPackage
 import `fun`.upup.musicfree.mp3Util.Mp3UtilPackage
 import `fun`.upup.musicfree.mpvplayer.MpvPlayerPackage
+import `fun`.upup.musicfree.securecredential.SecureCredentialPackage
+import `fun`.upup.musicfree.storageuri.StorageUriPackage
 import `fun`.upup.musicfree.utils.UtilsPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -31,6 +33,8 @@ class MainApplication : Application(), ReactApplication {
         add(LyricUtilPackage())
         add(CencPackage())
         add(MpvPlayerPackage())
+        add(SecureCredentialPackage())
+        add(StorageUriPackage())
       }
 
   override val reactNativeHost: ReactNativeHost =

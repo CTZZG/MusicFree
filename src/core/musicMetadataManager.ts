@@ -15,6 +15,9 @@ import {
     isLyricCandidateMatchAcceptable,
 } from "./lyricSearchPolicy";
 import { withTimeout } from "@/utils/promiseTimeout";
+import StorageUri from "@/native/storageUri";
+import { isContentUri } from "@/utils/storageUri";
+import { getNativeArtworkUri } from "@/utils/artworkSourcePolicy";
 
 const METADATA_VERIFY_KEYS = ["title", "artist", "album"] as const;
 
@@ -50,6 +53,19 @@ export class MusicMetadataManager {
 
     isAvailable() {
         return isMp3UtilNativeMethodAvailable("setMediaTag");
+    }
+
+    private describeStorageLocation(filePath: string) {
+        return isContentUri(filePath) ? "content-uri" : "file-path";
+    }
+
+    private async ensureWritableStorageLocation(filePath: string) {
+        if (!isContentUri(filePath)) {
+            return;
+        }
+        if (!await StorageUri.requestWriteAccess(filePath)) {
+            throw new Error("未授予媒体文件写入权限");
+        }
     }
 
     private normalizeMetadataValue(value: unknown) {
@@ -109,7 +125,7 @@ export class MusicMetadataManager {
             );
         } catch (error) {
             errorLog("校验音乐元数据写入失败", {
-                filePath,
+                storageKind: this.describeStorageLocation(filePath),
                 error: error instanceof Error ? error.message : String(error),
             });
             return false;
@@ -147,8 +163,9 @@ export class MusicMetadataManager {
         musicItem: IMusic.IMusicItem,
         deadline: number,
     ): Promise<string | undefined> {
-        if (typeof musicItem.artwork === "string" && musicItem.artwork.trim()) {
-            return musicItem.artwork;
+        const directArtwork = getNativeArtworkUri(musicItem.artwork);
+        if (directArtwork) {
+            return directArtwork;
         }
 
         const plugin = this.pluginManager?.getByMedia(musicItem);
@@ -163,7 +180,7 @@ export class MusicMetadataManager {
                 this.pluginCallTimeoutMs,
                 "获取下载封面超时",
             ).catch(() => null);
-        return fullMusicInfo?.artwork || undefined;
+        return getNativeArtworkUri(fullMusicInfo?.artwork);
     }
 
     private async formatLyricSourceForDownload(
@@ -350,9 +367,8 @@ export class MusicMetadataManager {
             config.writeLyric || config.downloadLyricFile === true;
         const shouldFetchCover = config.enabled && config.writeCover;
 
-        const normalizedPreferredCoverUrl = preferredCoverUrl?.trim()
-            ? preferredCoverUrl
-            : undefined;
+        const normalizedPreferredCoverUrl =
+            getNativeArtworkUri(preferredCoverUrl);
         const [lyricContent, coverUrl] = await Promise.all([
             shouldFetchLyric
                 ? this.getLyricContentForDownload(
@@ -400,6 +416,7 @@ export class MusicMetadataManager {
 
         try {
             const cleanFilePath = removeFileScheme(taskInfo.filePath);
+            await this.ensureWritableStorageLocation(cleanFilePath);
             const resolvedEnrichment =
                 enrichment ??
                 (await this.getDownloadEnrichment(
@@ -417,7 +434,7 @@ export class MusicMetadataManager {
             }
 
             const coverUrl = config.writeCover
-                ? resolvedEnrichment.coverUrl
+                ? getNativeArtworkUri(resolvedEnrichment.coverUrl)
                 : undefined;
             const deadline = Date.now() + this.nativeMetadataTimeoutMs;
 
@@ -448,16 +465,18 @@ export class MusicMetadataManager {
                         return true;
                     }
                     errorLog("写入带封面音乐元数据失败，改为写入基础标签", {
-                        filePath: taskInfo.filePath,
-                        coverUrl,
+                        storageKind:
+                            this.describeStorageLocation(cleanFilePath),
+                        hasCover: true,
                         reason: success
                             ? "metadata verification failed"
                             : "native returned false",
                     });
                 } catch (coverError) {
                     errorLog("写入带封面音乐元数据失败，改为写入基础标签", {
-                        filePath: taskInfo.filePath,
-                        coverUrl,
+                        storageKind:
+                            this.describeStorageLocation(cleanFilePath),
+                        hasCover: true,
                         error:
                             coverError instanceof Error
                                 ? coverError.message
@@ -474,7 +493,8 @@ export class MusicMetadataManager {
             );
             if (!success) {
                 errorLog("写入基础音乐元数据失败", {
-                    filePath: taskInfo.filePath,
+                    storageKind:
+                        this.describeStorageLocation(cleanFilePath),
                     reason: "native returned false",
                 });
                 return false;
@@ -487,14 +507,16 @@ export class MusicMetadataManager {
             );
             if (!verified) {
                 errorLog("写入基础音乐元数据后校验失败", {
-                    filePath: taskInfo.filePath,
+                    storageKind:
+                        this.describeStorageLocation(cleanFilePath),
                     expectedMetadata: metadata,
                 });
             }
             return verified;
         } catch (error) {
             errorLog("写入音乐元数据失败", {
-                filePath: taskInfo.filePath,
+                storageKind:
+                    this.describeStorageLocation(taskInfo.filePath),
                 musicItem: {
                     title: taskInfo.musicItem.title,
                     artist: taskInfo.musicItem.artist,
@@ -512,13 +534,23 @@ export class MusicMetadataManager {
         }
 
         try {
+            const safeCoverUrl = getNativeArtworkUri(coverUrl);
+            if (!safeCoverUrl) {
+                return false;
+            }
+            const cleanFilePath = removeFileScheme(filePath);
+            await this.ensureWritableStorageLocation(cleanFilePath);
             return await withTimeout(
-                Mp3Util.setMediaCover!(removeFileScheme(filePath), coverUrl),
+                Mp3Util.setMediaCover!(cleanFilePath, safeCoverUrl),
                 this.nativeMetadataTimeoutMs,
                 "写入音乐封面超时",
             );
         } catch (error) {
-            errorLog("写入音乐封面失败", { filePath, coverUrl, error });
+            errorLog("写入音乐封面失败", {
+                storageKind: this.describeStorageLocation(filePath),
+                hasCover: true,
+                error,
+            });
             return false;
         }
     }
@@ -529,15 +561,20 @@ export class MusicMetadataManager {
         }
 
         try {
+            const cleanFilePath = removeFileScheme(filePath);
+            await this.ensureWritableStorageLocation(cleanFilePath);
             return await withTimeout(
-                Mp3Util.setMediaTag(removeFileScheme(filePath), {
+                Mp3Util.setMediaTag(cleanFilePath, {
                     lyric: lyricContent,
                 }),
                 this.nativeMetadataTimeoutMs,
                 "写入歌词超时",
             );
         } catch (error) {
-            errorLog("写入歌词失败", { filePath, error });
+            errorLog("写入歌词失败", {
+                storageKind: this.describeStorageLocation(filePath),
+                error,
+            });
             return false;
         }
     }
@@ -554,7 +591,10 @@ export class MusicMetadataManager {
                 "读取音乐元数据超时",
             );
         } catch (error) {
-            errorLog("读取音乐元数据失败", { filePath, error });
+            errorLog("读取音乐元数据失败", {
+                storageKind: this.describeStorageLocation(filePath),
+                error,
+            });
             return null;
         }
     }

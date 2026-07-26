@@ -10,7 +10,6 @@ import {
     IPluginManager,
 } from "@/types/core/pluginManager";
 import { removeAllMediaExtra } from "@/utils/mediaExtra";
-import axios from "axios";
 import { compare } from "compare-versions";
 import EventEmitter from "eventemitter3";
 import { readAsStringAsync } from "expo-file-system/legacy";
@@ -23,6 +22,7 @@ import { devLog, errorLog, trace } from "../../utils/log";
 import pluginMeta from "./meta";
 import {
     builtinLyricPlugins,
+    clearInstalledPluginStorage,
     localFilePlugin,
     Plugin,
     PluginErrorReason,
@@ -36,9 +36,13 @@ import { IAppConfig } from "@/types/core/config";
 import delay from "@/utils/delay";
 import { recordPluginInstallFailure } from "./diagnostics";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
+import { detectPluginCapabilities } from "./capabilityFirewall";
+import type { IPluginCapability } from "@/types/core/pluginManager";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
 
 const pluginsAtom = atom<Plugin[]>([]);
 const pluginCacheStore = getOrCreateMMKV("plugin.cache");
+const remoteHttpClient = createRestrictedHttpClient();
 
 function getHttpStatus(error: any) {
     return (
@@ -59,6 +63,40 @@ function getPluginInstallParseFailureReason(plugin: Plugin) {
 function recordFailedInstallResult(result: IInstallPluginResult) {
     recordPluginInstallFailure(result);
     return result;
+}
+
+function getMissingPluginCapabilities(
+    funcCode: string,
+    approvedCapabilities: Iterable<IPluginCapability> = [],
+) {
+    const approved = new Set(approvedCapabilities);
+    return detectPluginCapabilities(funcCode).filter(
+        capability => !approved.has(capability),
+    );
+}
+
+function getCapabilityApprovalResult(
+    funcCode: string,
+    approvedCapabilities: Iterable<IPluginCapability> | undefined,
+    sourceType: IInstallPluginResult["sourceType"],
+    pluginUrl: string,
+): IInstallPluginResult | null {
+    const missing = getMissingPluginCapabilities(
+        funcCode,
+        approvedCapabilities,
+    );
+    if (!missing.length) {
+        return null;
+    }
+    return recordFailedInstallResult({
+        success: false,
+        message: `插件请求新增能力：${missing.join(", ")}`,
+        pluginUrl,
+        sourceType,
+        failureReason: "capability-approval-required",
+        retryable: true,
+        requiredCapabilities: missing,
+    });
 }
 
 const ee = new EventEmitter<{
@@ -111,6 +149,7 @@ class PluginManager implements IPluginManager, IInjectable {
                     path: plugin.path,
                     instance: plugin.instance,
                     supportedMethods: [...plugin.supportedMethods],
+                    runtimeCapabilities: [...plugin.runtimeCapabilities],
                 }),
             );
         }
@@ -158,6 +197,16 @@ class PluginManager implements IPluginManager, IInjectable {
                                 null,
                                 pluginFileItem.path,
                                 lazyProps,
+                                {
+                                    grantedCapabilities:
+                                        pluginMeta.getApprovedCapabilities(
+                                            lazyProps.name,
+                                        ),
+                                    legacyInstalled:
+                                        !pluginMeta.hasCapabilityDecision(
+                                            lazyProps.name,
+                                        ),
+                                },
                             );
                         } else {
                             isLazyLoad = false;
@@ -166,14 +215,24 @@ class PluginManager implements IPluginManager, IInjectable {
                                 pluginFileItem.path,
                                 "utf8",
                             );
-                            plugin = new Plugin(funcCode, pluginFileItem.path);
+                            plugin = new Plugin(
+                                funcCode,
+                                pluginFileItem.path,
+                                null,
+                                { legacyInstalled: true },
+                            );
                         }
                     } else {
                         const funcCode = await readFile(
                             pluginFileItem.path,
                             "utf8",
                         );
-                        plugin = new Plugin(funcCode, pluginFileItem.path);
+                        plugin = new Plugin(
+                            funcCode,
+                            pluginFileItem.path,
+                            null,
+                            { legacyInstalled: true },
+                        );
                     }
 
                     const _pluginIndex = allPlugins.findIndex(
@@ -185,6 +244,12 @@ class PluginManager implements IPluginManager, IInjectable {
                     }
                     if (plugin.state === PluginState.Mounted || isLazyLoad) {
                         allPlugins.push(plugin);
+                        if (plugin.state === PluginState.Mounted) {
+                            pluginMeta.setApprovedCapabilities(
+                                plugin.name,
+                                [...plugin.runtimeCapabilities],
+                            );
+                        }
                     }
                 }
             }
@@ -198,6 +263,10 @@ class PluginManager implements IPluginManager, IInjectable {
 
                     if (plugin.state === PluginState.Initializing) {
                         await plugin.ensureMounted();
+                        pluginMeta.setApprovedCapabilities(
+                            plugin.name,
+                            [...plugin.runtimeCapabilities],
+                        );
                         this.updatePluginCache(plugin);
                     }
                 }
@@ -248,7 +317,26 @@ class PluginManager implements IPluginManager, IInjectable {
 
         try {
             if (funcCode) {
-                const plugin = new Plugin(funcCode, pluginPath);
+                const approvedCapabilities = new Set([
+                    ...(config?.expectedPluginName
+                        ? pluginMeta.getApprovedCapabilities(
+                            config.expectedPluginName,
+                        )
+                        : []),
+                    ...(config?.approvedCapabilities ?? []),
+                ]);
+                const approvalResult = getCapabilityApprovalResult(
+                    funcCode,
+                    approvedCapabilities,
+                    "local-file",
+                    pluginPath,
+                );
+                if (approvalResult) {
+                    return approvalResult;
+                }
+                const plugin = new Plugin(funcCode, pluginPath, null, {
+                    grantedCapabilities: approvedCapabilities,
+                });
                 if (
                     config?.expectedPluginName &&
                     plugin.name !== config.expectedPluginName
@@ -313,6 +401,10 @@ class PluginManager implements IPluginManager, IInjectable {
                         await copyFile(pluginPath, _pluginPath);
                     }
                     plugin.path = _pluginPath;
+                    pluginMeta.setApprovedCapabilities(
+                        plugin.name,
+                        [...plugin.runtimeCapabilities],
+                    );
                     if (oldVersionPlugin) {
                         allPlugins = allPlugins.filter(
                             _ => _.hash !== oldVersionPlugin.hash,
@@ -391,7 +483,7 @@ class PluginManager implements IPluginManager, IInjectable {
         let funcCode: string;
         try {
             funcCode = (
-                await axios.get(url, {
+                await remoteHttpClient.get(url, {
                     // Do not follow a validated HTTPS URL into an HTTP/private
                     // endpoint. Callers can explicitly provide a new URL.
                     maxRedirects: 0,
@@ -421,7 +513,36 @@ class PluginManager implements IPluginManager, IInjectable {
 
         try {
             if (funcCode) {
-                const plugin = new Plugin(funcCode, "");
+                const sourcePlugin = this.getPlugins().find(plugin => {
+                    const sourceUrl = plugin.instance.srcUrl;
+                    if (!sourceUrl) {
+                        return false;
+                    }
+                    const sourceValidation =
+                        validateRemoteInstallUrl(sourceUrl);
+                    return sourceValidation.ok &&
+                        sourceValidation.url === url;
+                });
+                const approvedCapabilities = new Set([
+                    ...(sourcePlugin
+                        ? pluginMeta.getApprovedCapabilities(
+                            sourcePlugin.name,
+                        )
+                        : []),
+                    ...(config?.approvedCapabilities ?? []),
+                ]);
+                const approvalResult = getCapabilityApprovalResult(
+                    funcCode,
+                    approvedCapabilities,
+                    "network",
+                    url,
+                );
+                if (approvalResult) {
+                    return approvalResult;
+                }
+                const plugin = new Plugin(funcCode, "", null, {
+                    grantedCapabilities: approvedCapabilities,
+                });
                 let allPlugins = [...this.getPlugins()];
                 const pluginIndex = allPlugins.findIndex(
                     p => p.hash === plugin.hash,
@@ -468,6 +589,10 @@ class PluginManager implements IPluginManager, IInjectable {
                     const _pluginPath = `${pathConst.pluginPath}${fn}.js`;
                     await writeFile(_pluginPath, funcCode, "utf8");
                     plugin.path = _pluginPath;
+                    pluginMeta.setApprovedCapabilities(
+                        plugin.name,
+                        [...plugin.runtimeCapabilities],
+                    );
                     allPlugins = allPlugins.concat(plugin);
                     if (oldVersionPlugin) {
                         allPlugins = allPlugins.filter(
@@ -542,6 +667,8 @@ class PluginManager implements IPluginManager, IInjectable {
                 // 防止其他重名
                 if (plugins.every(_ => _.name !== pluginName)) {
                     removeAllMediaExtra(pluginName);
+                    pluginMeta.clearApprovedCapabilities(pluginName);
+                    clearInstalledPluginStorage(pluginName);
                 }
             } catch {}
         }
@@ -555,10 +682,12 @@ class PluginManager implements IPluginManager, IInjectable {
         await Promise.all(
             this.getPlugins().map(async plugin => {
                 try {
-                    const pluginName = plugin.name;
                     await unlink(plugin.path);
-                    removeAllMediaExtra(pluginName);
                 } catch {}
+                const pluginName = plugin.name;
+                removeAllMediaExtra(pluginName);
+                pluginMeta.clearApprovedCapabilities(pluginName);
+                clearInstalledPluginStorage(pluginName);
             }),
         );
         this.setPlugins([]);
@@ -578,18 +707,32 @@ class PluginManager implements IPluginManager, IInjectable {
      * @param plugin - 要更新的插件实例
      * @throws 如果插件没有源URL或更新失败时抛出错误
      */
-    async updatePlugin(plugin: Plugin) {
+    async updatePlugin(
+        plugin: Plugin,
+        approvedCapabilities: IPluginCapability[] = [],
+    ) {
         const updateUrl = plugin.instance.srcUrl;
         if (!updateUrl) {
             throw new Error("没有更新源");
         }
         try {
-            const result = await this.installPluginFromUrl(updateUrl);
+            const result = await this.installPluginFromUrl(updateUrl, {
+                approvedCapabilities: [
+                    ...pluginMeta.getApprovedCapabilities(plugin.name),
+                    ...approvedCapabilities,
+                ],
+            });
             if (result.message === "插件已安装") {
                 throw new Error("插件已安装");
             }
             if (!result.success) {
-                throw new Error(result.message || "插件更新失败");
+                const error = new Error(
+                    result.message || "插件更新失败",
+                ) as Error & {
+                    requiredCapabilities?: IPluginCapability[];
+                };
+                error.requiredCapabilities = result.requiredCapabilities;
+                throw error;
             }
         } catch (e: any) {
             if (e.message === "插件已安装") {

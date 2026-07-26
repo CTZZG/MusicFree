@@ -11,6 +11,8 @@ export enum TrackPlayerEvents {
     AutoSkipDislikedMusic = "auto-skip-disliked-music",
     // 队列中没有可播放的歌曲（UI 层应提示用户）
     NoPlayableMusic = "no-playable-music",
+    // 播放本地文件缺少音频读取权限（UI 层应提示用户去授权）
+    LocalAudioPermissionRequired = "local-audio-permission-required",
 }
 
 export enum MusicRepeatMode {

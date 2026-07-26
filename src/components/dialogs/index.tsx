@@ -11,7 +11,10 @@ export default function () {
 
     return (
         Component ? (
-            <Component {...(dialogInfoState.payload ?? {})} />
+            <Component
+                key={dialogInfoState.id}
+                {...(dialogInfoState.payload ?? {})}
+            />
         ) : null
     );
 }

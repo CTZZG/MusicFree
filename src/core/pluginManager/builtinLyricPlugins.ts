@@ -1,6 +1,5 @@
-import axios from "axios";
-
 import minDistance from "@/utils/minDistance";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
 
 type BuiltinLyricSourceKey = "netease" | "lrclib";
 
@@ -71,6 +70,10 @@ const LRCLIB_SEARCH_URL = "https://lrclib.net/api/search";
 const LRCLIB_GET_URL = "https://lrclib.net/api/get";
 const SEARCH_PAGE_SIZE = 8;
 const REQUEST_TIMEOUT_MS = 7000;
+const builtinLyricHttpClient = createRestrictedHttpClient({
+    maxResponseBytes: 2 * 1024 * 1024,
+    maxTimeoutMs: REQUEST_TIMEOUT_MS,
+});
 
 const builtinLyricHeaders = {
     "User-Agent": "MusicFree/0.6 builtin lyric source",
@@ -207,7 +210,7 @@ async function searchNeteaseLyrics(
     }
 
     try {
-        const response = await axios.get<INeteaseSearchResponse>(
+        const response = await builtinLyricHttpClient.get(
             NETEASE_SEARCH_URL,
             {
                 headers: neteaseHeaders,
@@ -220,7 +223,8 @@ async function searchNeteaseLyrics(
                 timeout: REQUEST_TIMEOUT_MS,
             },
         );
-        const songs = response.data.result?.songs ?? [];
+        const songs =
+            (response.data as INeteaseSearchResponse).result?.songs ?? [];
         const data = songs.map(song =>
             createLyricItem({
                 source: "netease",
@@ -255,7 +259,7 @@ async function getNeteaseLyric(
     }
 
     try {
-        const response = await axios.get<INeteaseLyricResponse>(
+        const response = await builtinLyricHttpClient.get(
             NETEASE_LYRIC_URL,
             {
                 headers: neteaseHeaders,
@@ -269,9 +273,10 @@ async function getNeteaseLyric(
                 timeout: REQUEST_TIMEOUT_MS,
             },
         );
-        const rawLrc = response.data.lrc?.lyric?.trim();
-        const translation = response.data.tlyric?.lyric?.trim();
-        const romanization = response.data.romalrc?.lyric?.trim();
+        const responseData = response.data as INeteaseLyricResponse;
+        const rawLrc = responseData.lrc?.lyric?.trim();
+        const translation = responseData.tlyric?.lyric?.trim();
+        const romanization = responseData.romalrc?.lyric?.trim();
 
         if (!rawLrc && !translation && !romanization) {
             return null;
@@ -297,7 +302,7 @@ async function searchLrcLibLyrics(
     }
 
     try {
-        const response = await axios.get<ILrcLibSearchItem[]>(
+        const response = await builtinLyricHttpClient.get(
             LRCLIB_SEARCH_URL,
             {
                 headers: builtinLyricHeaders,
@@ -307,7 +312,9 @@ async function searchLrcLibLyrics(
                 timeout: REQUEST_TIMEOUT_MS,
             },
         );
-        const data = (response.data ?? [])
+        const data = (
+            (response.data as ILrcLibSearchItem[] | undefined) ?? []
+        )
             .slice(0, SEARCH_PAGE_SIZE)
             .map(item =>
                 createLyricItem({
@@ -339,16 +346,17 @@ async function getLrcLibLyric(
     }
 
     try {
-        const response = await axios.get<ILrcLibTrackResponse>(
+        const response = await builtinLyricHttpClient.get(
             `${LRCLIB_GET_URL}/${encodeURIComponent(extra.remoteId)}`,
             {
                 headers: builtinLyricHeaders,
                 timeout: REQUEST_TIMEOUT_MS,
             },
         );
+        const responseData = response.data as ILrcLibTrackResponse;
         const rawLrc =
-            response.data.syncedLyrics?.trim() ||
-            response.data.plainLyrics?.trim();
+            responseData.syncedLyrics?.trim() ||
+            responseData.plainLyrics?.trim();
 
         if (!rawLrc) {
             return null;

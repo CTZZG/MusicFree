@@ -1,4 +1,5 @@
 import {
+    createLocalMusicFileIdentity,
     mergeEditedListWithConcurrentChanges,
     resolveLocalMusicImportFields,
 } from "../localMusicSheetPolicy";
@@ -126,5 +127,56 @@ describe("resolveLocalMusicImportFields", () => {
             title: "标签标题",
             artist: "标签歌手",
         });
+    });
+});
+
+describe("createLocalMusicFileIdentity", () => {
+    const base = {
+        displayName: "Track.DSF",
+        size: 14_114_908,
+        durationMilliseconds: 20_000,
+        title: "Track",
+        artist: "Artist",
+        album: "Album",
+    };
+
+    it("matches the same file exposed by different content providers", () => {
+        expect(createLocalMusicFileIdentity(base)).toBe(
+            createLocalMusicFileIdentity({
+                ...base,
+                displayName: " track.dsf ",
+                title: " track ",
+            }),
+        );
+    });
+
+    it("keeps same-named files distinct when size or duration differs", () => {
+        const identity = createLocalMusicFileIdentity(base);
+        expect(
+            createLocalMusicFileIdentity({ ...base, size: base.size + 1 }),
+        ).not.toBe(identity);
+        expect(
+            createLocalMusicFileIdentity({
+                ...base,
+                durationMilliseconds: base.durationMilliseconds + 1,
+            }),
+        ).not.toBe(identity);
+    });
+
+    it("requires bounded file facts instead of matching on labels alone", () => {
+        expect(
+            createLocalMusicFileIdentity({
+                displayName: "track.dsf",
+                size: null,
+                durationMilliseconds: 20_000,
+            }),
+        ).toBeNull();
+        expect(
+            createLocalMusicFileIdentity({
+                displayName: "track.dsf",
+                size: 100,
+                durationMilliseconds: Number.NaN,
+            }),
+        ).toBeNull();
     });
 });

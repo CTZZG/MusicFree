@@ -25,10 +25,10 @@ const formatSamplesAuditPath = path.join(
     'generator',
     'audit-round20-format-samples.mjs',
 );
-const trackPlayerImmutabilityAuditPath = path.join(
+const invariantsAuditPath = path.join(
     rootDir,
     'generator',
-    'audit-track-player-immutability.mjs',
+    'audit-invariants.mjs',
 );
 const rntpRemovalAuditPath = path.join(
     rootDir,
@@ -65,9 +65,9 @@ const checks = [
         args: [formatSamplesAuditPath],
     },
     {
-        name: 'TrackPlayer immutable queue handling',
+        name: 'Structural invariants',
         command: nodeCommand,
-        args: [trackPlayerImmutabilityAuditPath],
+        args: [invariantsAuditPath],
     },
     {
         name: 'RNTP v4 removal guard',

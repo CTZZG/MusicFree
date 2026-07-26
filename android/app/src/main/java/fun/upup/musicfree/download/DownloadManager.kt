@@ -1,6 +1,7 @@
 package `fun`.upup.musicfree.download
 
 import android.content.Context
+import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy
 import java.io.File
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
@@ -32,9 +33,7 @@ class DownloadManager(
     private val notificationManager = DownloadNotificationManager(appContext)
 
     private val downloadClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
-            .followRedirects(true)
-            .followSslRedirects(true)
+        PublicHttpsNetworkPolicy.clientBuilder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
@@ -73,6 +72,7 @@ class DownloadManager(
     }
 
     fun addTask(task: DownloadTask): Boolean {
+        PublicHttpsNetworkPolicy.requirePublicRemote(task.url)
         synchronized(lock) {
             val existing = tasks[task.taskId]
             if (existing != null && existing.status != DownloadTaskStatus.ERROR && existing.status != DownloadTaskStatus.CANCELED) {

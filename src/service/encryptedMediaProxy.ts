@@ -74,5 +74,6 @@ export async function resolveEncryptedMediaStreamIfNeeded<
         url: localUrl,
         headers: undefined,
         ekey: undefined,
+        trustedLocalMediaProxy: true,
     } as T;
 }

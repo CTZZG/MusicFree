@@ -1,58 +1,37 @@
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { devLog } from "@/utils/log";
+import {
+    EQUALIZER_BANDS,
+    EQUALIZER_GAIN,
+    EQUALIZER_PRESETS,
+    FLAT_GAINS,
+    CUSTOM_PRESET_ID,
+    type IEqualizerController,
+} from "./bands";
 
 /**
- * 均衡器（UI 外壳）
+ * 均衡器状态层。
  *
- * 本模块负责均衡器的状态管理与持久化，并通过 IEqualizerController 适配器把
- * 状态推给底层音频引擎。当前默认注入的是一个 no-op stub —— Nitro Player 的
- * DSP 接入完成后，调用 Equalizer.setController(realController) 即可让 UI 立即
- * 生效，无需改动界面层。
+ * 负责状态管理与持久化，通过 IEqualizerController 把状态推给底层音频引擎。
+ * 默认是 no-op，由 `bootstrap.ts` 在播放器初始化后注入
+ * `nitroEqualizerController`（真实 DSP）——注入必须晚于播放器初始化，
+ * 因为 Nitro 在那时才把效果器绑到音频会话。
+ *
+ * MPV 后端下不注入：效果器挂在播放器音频会话上，MPV 不经过该会话。
+ * 此时 UI 入口也会隐藏，避免重现「能拖但没声音变化」的假功能。
  */
 
-/** 频段中心频率（Hz），与 UI 行一一对应 */
-export const EQUALIZER_BANDS: { freq: number; label: string }[] = [
-    { freq: 60, label: "60" },
-    { freq: 230, label: "230" },
-    { freq: 910, label: "910" },
-    { freq: 3600, label: "3.6k" },
-    { freq: 14000, label: "14k" },
-];
-
-/** 增益范围（dB） */
-export const EQUALIZER_GAIN = {
-    min: -12,
-    max: 12,
-    step: 1,
-};
-
-export interface IEqualizerPreset {
-    id: string;
-    label: string;
-    gains: number[];
-}
-
-const FLAT_GAINS = EQUALIZER_BANDS.map(() => 0);
-
-/** 预设（增益数组长度需与 EQUALIZER_BANDS 一致） */
-export const EQUALIZER_PRESETS: IEqualizerPreset[] = [
-    { id: "flat", label: "默认", gains: [0, 0, 0, 0, 0] },
-    { id: "pop", label: "流行", gains: [-1, 2, 4, 2, -1] },
-    { id: "rock", label: "摇滚", gains: [4, 2, 0, 2, 4] },
-    { id: "classic", label: "古典", gains: [4, 3, 0, 2, 4] },
-    { id: "bass", label: "重低音", gains: [6, 4, 1, 0, 0] },
-    { id: "vocal", label: "人声", gains: [-2, 1, 4, 3, 0] },
-    { id: "treble", label: "高音", gains: [0, 0, 1, 4, 6] },
-];
-
-export const CUSTOM_PRESET_ID = "custom";
-
-/** 底层音频引擎适配器：UI 只依赖这个接口，不关心具体实现 */
-export interface IEqualizerController {
-    setEnabled(enabled: boolean): void;
-    setGains(gains: number[]): void;
-}
+export {
+    CUSTOM_PRESET_ID,
+    EQUALIZER_BANDS,
+    EQUALIZER_GAIN,
+    EQUALIZER_PRESETS,
+    FLAT_GAINS,
+    isEqualizerSupported,
+    type IEqualizerController,
+    type IEqualizerPreset,
+} from "./bands";
 
 const noopController: IEqualizerController = {
     setEnabled(enabled) {

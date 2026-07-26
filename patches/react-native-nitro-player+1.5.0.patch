@@ -1,31 +1,41 @@
 diff --git a/node_modules/react-native-nitro-player/android/build.gradle b/node_modules/react-native-nitro-player/android/build.gradle
-index 8f1a469..94e2b88 100644
+index 0b0adee..a6b0c3c 100644
 --- a/node_modules/react-native-nitro-player/android/build.gradle
 +++ b/node_modules/react-native-nitro-player/android/build.gradle
 @@ -35,6 +35,10 @@ def getExtOrIntegerDefault(name) {
    return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["NitroPlayer_" + name]).toInteger()
  }
-
+ 
 +def enableMusicFreeWmaExtractor =
 +        findProperty("musicfreeEnableWmaExtractor") != "false" &&
 +        findProperty("musicfreeEnableExperimentalWmaExtractor") != "false"
 +
  android {
    namespace "com.margelo.nitro.nitroplayer"
-
-@@ -45,6 +49,7 @@ android {
-     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
-     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+ 
+@@ -47,6 +51,7 @@ android {
      buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
+     // Keep the Cast OptionsProvider (referenced reflectively from the manifest) under R8.
+     consumerProguardFiles "consumer-rules.pro"
 +    buildConfigField "boolean", "MUSICFREE_ENABLE_WMA_EXTRACTOR", enableMusicFreeWmaExtractor.toString()
-
+ 
      externalNativeBuild {
        cmake {
+diff --git a/node_modules/react-native-nitro-player/android/consumer-rules.pro b/node_modules/react-native-nitro-player/android/consumer-rules.pro
+new file mode 100644
+index 0000000..c5255d9
+--- /dev/null
++++ b/node_modules/react-native-nitro-player/android/consumer-rules.pro
+@@ -0,0 +1,4 @@
++# Google Cast: the OptionsProvider is named in AndroidManifest meta-data and
++# instantiated by the Cast framework via reflection, so R8 must not remove/rename it.
++-keep class com.margelo.nitro.nitroplayer.media.NitroCastOptionsProvider { *; }
++-keep class * implements com.google.android.gms.cast.framework.OptionsProvider { *; }
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerCore.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerCore.kt
-index 1f772d4..999ab18 100644
+index 83096b8..34cb5bb 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerCore.kt
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerCore.kt
-@@ -244,7 +244,7 @@ class TrackPlayerCore private constructor(
+@@ -256,7 +256,7 @@ class TrackPlayerCore private constructor(
              }
          }
          scope.cancel()
@@ -40,7 +50,7 @@ index f22bd71..40737f6 100644
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerListener.kt
 @@ -3,6 +3,7 @@
  package com.margelo.nitro.nitroplayer.core
-
+ 
  import androidx.media3.common.MediaItem
 +import androidx.media3.common.PlaybackException
  import androidx.media3.common.Player
@@ -49,7 +59,7 @@ index f22bd71..40737f6 100644
 @@ -25,6 +26,18 @@ internal class TrackPlayerEventListener(
              // TRACK repeat: REPEAT_MODE_ONE fires this every loop — not a real track change
              if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
-
+ 
 +            // Metadata-only updates replace the current MediaItem with the same
 +            // mediaId so MediaSession can refresh without notifying JS as a track
 +            // change on every lyric line.
@@ -68,7 +78,7 @@ index f22bd71..40737f6 100644
 @@ -108,6 +121,16 @@ internal class TrackPlayerEventListener(
          core.emitStateChange()
      }
-
+ 
 +    override fun onPlayerError(error: PlaybackException) {
 +        NitroPlayerLogger.log("TrackPlayerError") {
 +            "errorCode=${error.errorCode}, " +
@@ -83,23 +93,23 @@ index f22bd71..40737f6 100644
          oldPosition: Player.PositionInfo,
          newPosition: Player.PositionInfo,
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerQueueBuild.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerQueueBuild.kt
-index 650b1a0..384f98c 100644
+index 2f83a78..c2a4cee 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerQueueBuild.kt
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/core/TrackPlayerQueueBuild.kt
-@@ -7,6 +7,7 @@ import androidx.media3.common.MediaItem
- import androidx.media3.common.MediaMetadata
+@@ -8,6 +8,7 @@ import androidx.media3.common.MediaMetadata
  import androidx.media3.common.Player
+ import com.margelo.nitro.nitroplayer.Reason
  import com.margelo.nitro.nitroplayer.TrackItem
 +import com.margelo.nitro.nitroplayer.musicfree.MusicFreePlayerExtensions
-
+ 
  /**
   * Queue-building helpers — called exclusively on the player thread.
-@@ -149,6 +150,7 @@ internal fun TrackPlayerCore.makeMediaItem(
-     }
-
-     val effectiveUrl = downloadManager.getEffectiveUrl(track)
+@@ -232,6 +233,7 @@ internal fun TrackPlayerCore.makeMediaItem(
+ 
+     // The receiver fetches media itself, so local download paths are unplayable there — cast uses the remote URL.
+     val effectiveUrl = if (isCastingField) track.url else downloadManager.getEffectiveUrl(track)
 +    MusicFreePlayerExtensions.registerTrackRequest(track, effectiveUrl)
-
+ 
      // Register custom HTTP headers (e.g. Authorization) from extraPayload.headers so they are
      // injected into the request for this URL. Applies to remote streams only — see ExoPlayerBuilder.
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/ExoPlayerBuilder.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/ExoPlayerBuilder.kt
@@ -115,20 +125,20 @@ index efaf1aa..ead48dc 100644
  import androidx.media3.exoplayer.ExoPlayer
 -import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 +import com.margelo.nitro.nitroplayer.musicfree.MusicFreePlayerExtensions
-
+ 
  /**
   * Builds an [ExoPlayer] with the standard NitroPlayer configuration.
 @@ -41,13 +40,11 @@ object ExoPlayerBuilder {
                  .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                  .build()
-
+ 
 -        // DefaultDataSource routes http/https through AuthAwareHttpDataSourceFactory (so custom
 -        // request headers can be injected) while handling file://, content:// and asset:// natively.
 -        val dataSourceFactory = DefaultDataSource.Factory(context, AuthAwareHttpDataSourceFactory())
 -        val mediaSourceFactory = DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory)
 +        val renderersFactory = MusicFreePlayerExtensions.createRenderersFactory(context)
 +        val mediaSourceFactory = MusicFreePlayerExtensions.createMediaSourceFactory(context)
-
+ 
          return ExoPlayer
 -            .Builder(context)
 +            .Builder(context, renderersFactory)
@@ -136,12 +146,12 @@ index efaf1aa..ead48dc 100644
              .setMediaSourceFactory(mediaSourceFactory)
              .setAudioAttributes(audioAttrs, /* handleAudioFocus */ true)
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
-index dbb5018..97f0cde 100644
+index 5ed20a9..40f800b 100644
 --- a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/media/PlaybackService.kt
-@@ -1,18 +1,42 @@
+@@ -1,20 +1,44 @@
  package com.margelo.nitro.nitroplayer.media
-
+ 
 +import android.app.Notification
 +import android.app.NotificationChannel
 +import android.app.NotificationManager
@@ -163,6 +173,7 @@ index dbb5018..97f0cde 100644
  import android.os.IBinder
  import android.os.Looper
 +import android.util.LruCache
+ import androidx.media3.cast.CastPlayer
 +import androidx.media3.common.MediaItem
 +import androidx.media3.common.MediaMetadata
 +import androidx.media3.common.Player
@@ -173,17 +184,18 @@ index dbb5018..97f0cde 100644
 +import androidx.media3.session.MediaNotification
  import androidx.media3.session.MediaSession
  import androidx.media3.session.MediaSessionService
+ import com.google.android.gms.cast.framework.CastContext
 +import com.google.common.collect.ImmutableList
  import com.margelo.nitro.nitroplayer.core.NitroPlayerLogger
  import com.margelo.nitro.nitroplayer.core.TrackPlayerCore
  import com.margelo.nitro.nitroplayer.playlist.PlaylistManager
 +import java.net.URL
 +import kotlin.concurrent.thread
-
+ 
  /**
   * Foreground service that **owns** the ExoPlayer and MediaSession.
-@@ -30,6 +54,18 @@ class NitroPlayerPlaybackService : MediaSessionService() {
-
+@@ -32,6 +56,18 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+ 
      companion object {
          const val ACTION_LOCAL_BIND = "com.margelo.nitro.nitroplayer.LOCAL_BIND"
 +        const val ACTION_SHUTDOWN = "com.margelo.nitro.nitroplayer.SHUTDOWN"
@@ -198,11 +210,11 @@ index dbb5018..97f0cde 100644
 +            val totalSec = (ms / 1000).coerceAtLeast(0L)
 +            return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
 +        }
-
+ 
          @Volatile
          var notificationSmallIconResName: String? = null
-@@ -42,13 +78,94 @@ class NitroPlayerPlaybackService : MediaSessionService() {
-
+@@ -44,13 +80,94 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+ 
          @Volatile
          private var instance: NitroPlayerPlaybackService? = null
 +        @Volatile
@@ -244,7 +256,7 @@ index dbb5018..97f0cde 100644
 +            return true
 +        }
      }
-
+ 
      // ── Created in onCreate ────────────────────────────────────────────────
      private lateinit var player: ExoPlayer
      private var mediaSession: MediaSession? = null
@@ -294,15 +306,15 @@ index dbb5018..97f0cde 100644
 +                updateLiveUpdateProgressTicker()
 +            }
 +        }
-
-     @Volatile
-     var trackPlayerCore: TrackPlayerCore? = null
-@@ -72,15 +189,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
-
+ 
+     /** Owns the CastPlayer + Cast session lifecycle; null when Cast is unavailable. */
+     private var castSessionController: CastSessionController? = null
+@@ -78,15 +195,19 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+ 
          // Build ExoPlayer on main looper (default)
          player = ExoPlayerBuilder.build(this)
 +        player.addListener(mediaNotificationMetadataListener)
-
+ 
          // Build MediaSession
          val playlistManager = PlaylistManager.getInstance(this)
 -        mediaSession = MediaSession
@@ -312,7 +324,7 @@ index dbb5018..97f0cde 100644
 -            .build()
 +        buildSessionActivity()?.let { sessionBuilder.setSessionActivity(it) }
 +        mediaSession = sessionBuilder.build()
-
+ 
 -        val provider = DefaultMediaNotificationProvider.Builder(this).build()
 +        val defaultProvider = DefaultMediaNotificationProvider.Builder(this).build()
 +        defaultNotificationProvider = defaultProvider
@@ -320,8 +332,8 @@ index dbb5018..97f0cde 100644
          notificationProvider = provider
          applyNotificationSmallIcon()
          setMediaNotificationProvider(provider)
-@@ -90,7 +211,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
-
+@@ -121,7 +242,7 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+ 
      private fun applyNotificationSmallIcon() {
          val name = notificationSmallIconResName ?: return
 -        val provider = notificationProvider ?: return
@@ -329,10 +341,10 @@ index dbb5018..97f0cde 100644
          val resId = resources.getIdentifier(name, "drawable", packageName)
          if (resId == 0) {
              NitroPlayerLogger.log("PlaybackService") {
-@@ -111,6 +232,422 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -142,6 +263,422 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          }
      }
-
+ 
 +    private fun onMediaNotificationLyricChanged(lyric: String?) {
 +        val nextLyric = lyric?.trim().orEmpty()
 +        if (cachedMediaNotificationLyric == nextLyric) return
@@ -751,11 +763,11 @@ index dbb5018..97f0cde 100644
 +
      override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
          mediaSession
-
-@@ -121,6 +658,72 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+ 
+@@ -152,6 +689,72 @@ class NitroPlayerPlaybackService : MediaSessionService() {
          return super.onBind(intent)
      }
-
+ 
 +    override fun onStartCommand(
 +        intent: Intent?,
 +        flags: Int,
@@ -825,16 +837,16 @@ index dbb5018..97f0cde 100644
      override fun onTaskRemoved(rootIntent: Intent?) {
          val session = mediaSession
          if (session == null || !session.player.playWhenReady) {
-@@ -132,7 +735,9 @@ class NitroPlayerPlaybackService : MediaSessionService() {
+@@ -163,7 +766,9 @@ class NitroPlayerPlaybackService : MediaSessionService() {
      override fun onDestroy() {
          NitroPlayerLogger.log("PlaybackService") { "onDestroy" }
          if (instance === this) instance = null
 +        cancelLiveUpdateProgressTicker()
          notificationProvider = null
 +        player.removeListener(mediaNotificationMetadataListener)
+         castSessionController?.release()
+         castSessionController = null
          mediaSession?.release()
-         mediaSession = null
-         player.release()
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree/AsfWmaExtractor.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree/AsfWmaExtractor.kt
 new file mode 100644
 index 0000000..747ec1d
@@ -2392,7 +2404,7 @@ index 0000000..cfb5ca8
 +}
 diff --git a/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree/MusicFreePlayerExtensions.kt b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree/MusicFreePlayerExtensions.kt
 new file mode 100644
-index 0000000..3cb045d
+index 0000000..715f403
 --- /dev/null
 +++ b/node_modules/react-native-nitro-player/android/src/main/java/com/margelo/nitro/nitroplayer/musicfree/MusicFreePlayerExtensions.kt
 @@ -0,0 +1,157 @@
@@ -2432,12 +2444,12 @@ index 0000000..3cb045d
 +
 +    fun createMediaSourceFactory(context: Context): MediaSource.Factory {
 +        MusicFreeAudioFormatRegistry.registerCustomMimeTypes()
-+        val httpDataSourceFactory =
-+            DefaultHttpDataSource
-+                .Factory()
-+                .setAllowCrossProtocolRedirects(true)
++        // Media3's own HTTP stack again. The MusicFree-controlled DataSource was
++        // reverted on 2026-07-26: it sat in the default playback hot path while
++        // the hole it claimed to close (a plugin reaching a private address) is
++        // reachable anyway, since plugin code runs in the app's own JS realm.
 +        val resolvingDataSourceFactory =
-+            ResolvingDataSource.Factory(httpDataSourceFactory) { dataSpec ->
++            ResolvingDataSource.Factory(DefaultHttpDataSource.Factory()) { dataSpec ->
 +                resolveRequestHeaders(dataSpec)
 +            }
 +        val dataSourceFactory =
@@ -2553,3 +2565,719 @@ index 0000000..3cb045d
 +        }
 +    }
 +}
+diff --git a/node_modules/react-native-nitro-player/ios/core/TrackPlayerCore.swift b/node_modules/react-native-nitro-player/ios/core/TrackPlayerCore.swift
+index afabc76..a843c7e 100644
+--- a/node_modules/react-native-nitro-player/ios/core/TrackPlayerCore.swift
++++ b/node_modules/react-native-nitro-player/ios/core/TrackPlayerCore.swift
+@@ -57,8 +57,9 @@ class TrackPlayerCore: NSObject {
+   internal let preloadQueue = DispatchQueue(label: "com.nitroplayer.preload", qos: .utility)
+   internal var didRequestUrlsForCurrentItem = false
+ 
+-  // Follows http→https redirects that AVURLAsset otherwise silently drops (issue #111).
+-  // Attached as the resource-loader delegate for cleartext-http assets only.
++  // Loads remote Nitro media through a MusicFree-controlled AVAsset resource loader.
++  // The loader enforces public HTTPS, safe headers, Range, cancellation, and
++  // same-origin redirect policy before URLSession is allowed to fetch media bytes.
+   internal let redirectResolver = TrackPlayerRedirectResolver()
+ 
+   // MARK: - Stall & network recovery
+diff --git a/node_modules/react-native-nitro-player/ios/core/TrackPlayerQueueBuild.swift b/node_modules/react-native-nitro-player/ios/core/TrackPlayerQueueBuild.swift
+index aa4edc8..bd9cf31 100644
+--- a/node_modules/react-native-nitro-player/ios/core/TrackPlayerQueueBuild.swift
++++ b/node_modules/react-native-nitro-player/ios/core/TrackPlayerQueueBuild.swift
+@@ -416,9 +416,10 @@ extension TrackPlayerCore {
+     return options
+   }
+ 
+-  /// Builds the AVURLAsset for a track URL. Cleartext-`http` remote URLs are routed through
+-  /// `redirectResolver` so AVFoundation follows http→https redirects it would otherwise drop
+-  /// (issue #111). HTTPS and local URLs load natively, unchanged.
++  /// Builds the AVURLAsset for a track URL. Remote HTTP(S) media is wrapped in a
++  /// MusicFree sentinel scheme so AVFoundation loads it through `redirectResolver`,
++  /// which enforces public HTTPS, safe headers, Range, cancellation, and same-origin
++  /// redirect policy with URLSession. Local and non-HTTP URLs load natively.
+   func makeAsset(for track: TrackItem, url: URL, isLocal: Bool) -> AVURLAsset {
+     let options = assetOptions(for: track, isLocal: isLocal)
+     guard !isLocal, let wrappedURL = TrackPlayerRedirectResolver.wrap(url) else {
+diff --git a/node_modules/react-native-nitro-player/ios/core/TrackPlayerRedirectResolver.swift b/node_modules/react-native-nitro-player/ios/core/TrackPlayerRedirectResolver.swift
+index 1a2692c..0d95404 100644
+--- a/node_modules/react-native-nitro-player/ios/core/TrackPlayerRedirectResolver.swift
++++ b/node_modules/react-native-nitro-player/ios/core/TrackPlayerRedirectResolver.swift
+@@ -4,61 +4,106 @@
+ //
+ //  Created by Ritesh Shukla.
+ //
+-//  AVURLAsset does not reliably follow HTTP→HTTPS redirects: when a cleartext `http://`
+-//  track URL answers with a 30x (e.g. a universal `308 → https://...` upgrade), AVFoundation
+-//  silently drops the redirect and the item fails to load (issue #111). Unlike ExoPlayer's
+-//  `setAllowCrossProtocolRedirects(true)`, AVFoundation exposes no such flag.
++//  MusicFree routes remote Nitro media through this resource-loader delegate instead of
++//  handing ordinary HTTP(S) URLs directly to AVFoundation. The delegate unwraps a sentinel
++//  asset URL, enforces the MusicFree public-HTTPS media policy, resolves the hostname before
++//  each request/redirect, forwards only safe headers, preserves Range requests, disables
++//  compressed responses, and cancels the URLSession task when AVFoundation cancels loading.
+ //
+-//  We work around it by giving such assets a sentinel URL scheme so AVFoundation has to ask
+-//  this resource-loader delegate to load them. We then resolve the redirect chain ourselves
+-//  with URLSession (which follows redirects) and hand AVFoundation a redirect to the final
+-//  URL — after which it loads the media natively from the resolved location.
+-//
+-//  Only cleartext-`http` URLs are routed here. HTTPS assets are left untouched: AVFoundation
+-//  follows same-scheme redirects on its own, so only the failing http path pays the extra
+-//  resolution request. The app must still permit the initial cleartext connection via ATS
+-//  (`NSAppTransportSecurity`); this delegate only fixes the redirect-following, not ATS.
++//  This keeps the iOS media path aligned with the Android controlled Media3 DataSource.
++//  URLSession does not expose DNS pinning, so this resolution is a preflight rather than
++//  connection-address binding. iOS compile/device playback and DNS/redirect runtime proof
++//  remain separate gates on hosts that can run them.
+ //
+ 
+ import AVFoundation
++import Darwin
+ import Foundation
++import UniformTypeIdentifiers
+ 
+-final class TrackPlayerRedirectResolver: NSObject, AVAssetResourceLoaderDelegate {
++final class TrackPlayerRedirectResolver: NSObject, AVAssetResourceLoaderDelegate, URLSessionDataDelegate {
+ 
+-  /// Sentinel scheme prefix. A wrapped URL looks like `nitroredirect+http://host/path`.
+-  private static let schemePrefix = "nitroredirect+"
++  /// Sentinel scheme prefix. A wrapped URL looks like `nitromedia+https://host/path`.
++  private static let schemePrefix = "nitromedia+"
++  private static let maxRedirects = 3
++  private static let blockedRequestHeaders: Set<String> = [
++    "host",
++    "range",
++    "accept-encoding",
++    "connection",
++    "transfer-encoding",
++    "content-length",
++  ]
+ 
+   /// Serial queue the resource-loader delegate methods (and our task bookkeeping) run on.
+-  let queue = DispatchQueue(label: "com.nitroplayer.redirect", qos: .userInitiated)
++  let queue = DispatchQueue(label: "com.musicfree.nitro.media", qos: .userInitiated)
+ 
+-  private let session: URLSession
++  private lazy var session: URLSession = {
++    let config = URLSessionConfiguration.ephemeral
++    config.requestCachePolicy = .reloadIgnoringLocalCacheData
++    config.httpShouldSetCookies = false
++    config.httpCookieAcceptPolicy = .never
++    config.timeoutIntervalForRequest = 30
++    config.timeoutIntervalForResource = 30
++    config.urlCache = nil
++    return URLSession(configuration: config, delegate: self, delegateQueue: nil)
++  }()
+ 
+-  // In-flight resolution tasks, keyed by loading request, so a cancelled request cancels its
+-  // task. Touched only on `queue` (delegate callbacks + the task completion is hopped onto it).
++  // In-flight media tasks, keyed by loading request, so a cancelled request cancels its task.
++  // Touched only on `queue`.
+   private var tasksByRequest: [ObjectIdentifier: URLSessionDataTask] = [:]
++  private var contextsByTask: [Int: LoadingContext] = [:]
+ 
+-  // Custom request headers (e.g. `Authorization`) per wrapped-URL, so the resolution request can
+-  // authenticate when a server requires auth even to return the redirect. Written on the player
+-  // queue (registerHeaders), read on `queue`; guarded by `headersLock`.
++  // Custom request headers (e.g. `Authorization`) per wrapped-URL. Written on the player queue
++  // (registerHeaders), read on `queue`; guarded by `headersLock`.
+   private var headersByURL: [String: [String: String]] = [:]
+   private let headersLock = NSLock()
+ 
+-  override init() {
+-    let config = URLSessionConfiguration.ephemeral
+-    config.requestCachePolicy = .reloadIgnoringLocalCacheData
+-    session = URLSession(configuration: config)
+-    super.init()
++  private struct MediaOrigin: Equatable {
++    let scheme: String
++    let host: String
++    let port: Int
++  }
++
++  private final class LoadingContext {
++    let loadingRequest: AVAssetResourceLoadingRequest
++    let originalOrigin: MediaOrigin
++    let headers: [String: String]
++    let rangeHeader: String?
++    let requestedOffset: Int64
++    let requestedLength: Int
++    var bytesResponded = 0
++    var redirectCount = 0
++    var didReceiveResponse = false
++    weak var task: URLSessionDataTask?
++
++    init(
++      loadingRequest: AVAssetResourceLoadingRequest,
++      originalOrigin: MediaOrigin,
++      headers: [String: String],
++      rangeHeader: String?,
++      requestedOffset: Int64,
++      requestedLength: Int
++    ) {
++      self.loadingRequest = loadingRequest
++      self.originalOrigin = originalOrigin
++      self.headers = headers
++      self.rangeHeader = rangeHeader
++      self.requestedOffset = requestedOffset
++      self.requestedLength = requestedLength
++    }
+   }
+ 
+   // MARK: - URL wrapping
+ 
+-  /// Wraps a cleartext-`http` URL in the sentinel scheme so AVFoundation routes it here.
+-  /// Returns nil for anything else (https, file, custom schemes) — those load natively.
++  /// Wraps a remote HTTP(S) URL in the sentinel scheme so AVFoundation routes it here.
++  /// Non-HTTP URLs (file, content, custom schemes) load natively.
+   static func wrap(_ url: URL) -> URL? {
+-    guard url.scheme?.lowercased() == "http",
++    guard let scheme = url.scheme?.lowercased(),
++      (scheme == "http" || scheme == "https"),
+       var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+     else { return nil }
+-    components.scheme = schemePrefix + "http"
++    components.scheme = schemePrefix + scheme
+     return components.url
+   }
+ 
+@@ -83,8 +128,21 @@ final class TrackPlayerRedirectResolver: NSObject, AVAssetResourceLoaderDelegate
+   /// Releases all registered headers. Call when the player is torn down.
+   func clear() {
+     headersLock.lock()
+-    defer { headersLock.unlock() }
+     headersByURL.removeAll()
++    headersLock.unlock()
++    queue.async { [weak self] in
++      guard let self else { return }
++      let cancellationError = NSError(
++        domain: NSURLErrorDomain,
++        code: NSURLErrorCancelled,
++        userInfo: [NSLocalizedDescriptionKey: "Nitro media loading was cancelled"])
++      Array(self.contextsByTask.keys).forEach {
++        self.finishLoading(taskIdentifier: $0, error: cancellationError, cancelTask: true)
++      }
++      self.tasksByRequest.values.forEach { $0.cancel() }
++      self.tasksByRequest.removeAll()
++      self.contextsByTask.removeAll()
++    }
+   }
+ 
+   private func headers(for wrappedURL: URL) -> [String: String]? {
+@@ -103,48 +161,483 @@ final class TrackPlayerRedirectResolver: NSObject, AVAssetResourceLoaderDelegate
+       let realURL = Self.unwrap(wrappedURL)
+     else { return false }
+ 
+-    var request = URLRequest(url: realURL)
+-    // HEAD is enough: we only need `response.url` after URLSession follows the redirect chain.
+-    // Even if the resolved endpoint rejects HEAD (405), the post-redirect URL is still reported.
+-    request.httpMethod = "HEAD"
+-    headers(for: wrappedURL)?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+-    loadingRequest.request.allHTTPHeaderFields?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
++    do {
++      try Self.validatePublicMediaURL(realURL)
++      try Self.resolvePublicHost(realURL)
++      let origin = try Self.origin(of: realURL)
++      let requestedOffset = Self.requestedOffset(for: loadingRequest.dataRequest)
++      let mergedHeaders = Self.safeHeaders(
++        headers(for: wrappedURL),
++        overlay: loadingRequest.request.allHTTPHeaderFields)
++      let rangeHeader = Self.rangeHeader(for: loadingRequest.dataRequest)
++      let request = Self.mediaRequest(
++        for: realURL,
++        headers: mergedHeaders,
++        rangeHeader: rangeHeader,
++        dataRequest: loadingRequest.dataRequest)
++      let context = LoadingContext(
++        loadingRequest: loadingRequest,
++        originalOrigin: origin,
++        headers: mergedHeaders,
++        rangeHeader: rangeHeader,
++        requestedOffset: requestedOffset,
++        requestedLength: loadingRequest.dataRequest?.requestedLength ?? 0)
++      let key = ObjectIdentifier(loadingRequest)
++      let task = session.dataTask(with: request)
++      context.task = task
++      tasksByRequest[key] = task
++      contextsByTask[task.taskIdentifier] = context
++      task.resume()
++    } catch {
++      NitroPlayerLogger.log("TrackPlayerCore", "❌ iOS Nitro media request rejected for \(realURL): \(error.localizedDescription)")
++      loadingRequest.finishLoading(with: error)
++    }
++    return true
++  }
+ 
++  func resourceLoader(
++    _ resourceLoader: AVAssetResourceLoader,
++    didCancel loadingRequest: AVAssetResourceLoadingRequest
++  ) {
+     let key = ObjectIdentifier(loadingRequest)
+-    let task = session.dataTask(with: request) { [weak self] _, response, error in
+-      self?.queue.async {
+-        guard let self else { return }
+-        self.tasksByRequest.removeValue(forKey: key)
+-        guard !loadingRequest.isCancelled, !loadingRequest.isFinished else { return }
+-
+-        if let error {
+-          NitroPlayerLogger.log("TrackPlayerCore", "❌ Redirect resolution failed for \(realURL): \(error.localizedDescription)")
+-          loadingRequest.finishLoading(with: error)
++    let task = tasksByRequest.removeValue(forKey: key)
++    if let task {
++      contextsByTask.removeValue(forKey: task.taskIdentifier)
++      task.cancel()
++    }
++  }
++
++  // MARK: - URLSessionDataDelegate
++
++  func urlSession(
++    _ session: URLSession,
++    task: URLSessionTask,
++    willPerformHTTPRedirection response: HTTPURLResponse,
++    newRequest request: URLRequest,
++    completionHandler: @escaping (URLRequest?) -> Void
++  ) {
++    queue.async { [weak self] in
++      guard let self else {
++        completionHandler(nil)
++        return
++      }
++      guard let context = self.contextsByTask[task.taskIdentifier],
++        let nextURL = request.url
++      else {
++        completionHandler(nil)
++        return
++      }
++      do {
++        context.redirectCount += 1
++        guard context.redirectCount <= Self.maxRedirects else {
++          throw Self.mediaError("Remote redirect limit exceeded")
++        }
++        try Self.validatePublicMediaURL(nextURL)
++        try Self.resolvePublicHost(nextURL)
++        guard try Self.origin(of: nextURL) == context.originalOrigin else {
++          throw Self.mediaError("Only same-origin HTTPS redirects are allowed")
++        }
++        let redirectedRequest = Self.mediaRequest(
++          for: nextURL,
++          headers: context.headers,
++          rangeHeader: context.rangeHeader,
++          dataRequest: context.loadingRequest.dataRequest)
++        completionHandler(redirectedRequest)
++      } catch {
++        NitroPlayerLogger.log("TrackPlayerCore", "❌ iOS Nitro media redirect rejected: \(error.localizedDescription)")
++        completionHandler(nil)
++        self.finishLoading(taskIdentifier: task.taskIdentifier, error: error)
++      }
++    }
++  }
++
++  func urlSession(
++    _ session: URLSession,
++    dataTask: URLSessionDataTask,
++    didReceive response: URLResponse,
++    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
++  ) {
++    queue.async { [weak self] in
++      guard let self else {
++        completionHandler(.cancel)
++        return
++      }
++      guard let context = self.contextsByTask[dataTask.taskIdentifier],
++        let httpResponse = response as? HTTPURLResponse
++      else {
++        completionHandler(.cancel)
++        return
++      }
++      do {
++        try Self.validateResponse(httpResponse, context: context)
++        Self.fillContentInformation(context.loadingRequest.contentInformationRequest, from: httpResponse)
++        context.didReceiveResponse = true
++        completionHandler(.allow)
++      } catch {
++        NitroPlayerLogger.log("TrackPlayerCore", "❌ iOS Nitro media response rejected: \(error.localizedDescription)")
++        completionHandler(.cancel)
++        self.finishLoading(taskIdentifier: dataTask.taskIdentifier, error: error)
++      }
++    }
++  }
++
++  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
++    queue.async { [weak self] in
++      guard let self,
++        let context = self.contextsByTask[dataTask.taskIdentifier],
++        let dataRequest = context.loadingRequest.dataRequest,
++        !context.loadingRequest.isCancelled,
++        !context.loadingRequest.isFinished
++      else { return }
++
++      if context.requestedLength > 0 {
++        let remaining = context.requestedLength - context.bytesResponded
++        guard remaining > 0 else {
++          self.finishLoading(taskIdentifier: dataTask.taskIdentifier, error: nil, cancelTask: true)
+           return
+         }
++        let chunk = data.count > remaining ? Data(data.prefix(remaining)) : data
++        dataRequest.respond(with: chunk)
++        context.bytesResponded += chunk.count
++        if context.bytesResponded >= context.requestedLength {
++          self.finishLoading(taskIdentifier: dataTask.taskIdentifier, error: nil, cancelTask: true)
++        }
++        return
++      }
++
++      dataRequest.respond(with: data)
++      context.bytesResponded += data.count
++    }
++  }
++
++  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
++    queue.async { [weak self] in
++      guard let self else { return }
++      guard self.contextsByTask[task.taskIdentifier] != nil else { return }
++      if let error = error as NSError?, error.domain == NSURLErrorDomain,
++        error.code == NSURLErrorCancelled
++      {
++        self.finishLoading(taskIdentifier: task.taskIdentifier, error: nil)
++        return
++      }
++      self.finishLoading(taskIdentifier: task.taskIdentifier, error: error)
++    }
++  }
++
++  // MARK: - Request / response helpers
++
++  private func finishLoading(
++    taskIdentifier: Int,
++    error: Error?,
++    cancelTask: Bool = false
++  ) {
++    guard let context = contextsByTask.removeValue(forKey: taskIdentifier) else { return }
++    if cancelTask {
++      context.task?.cancel()
++    }
++    tasksByRequest.removeValue(forKey: ObjectIdentifier(context.loadingRequest))
++    guard !context.loadingRequest.isCancelled, !context.loadingRequest.isFinished else { return }
++    if let error {
++      context.loadingRequest.finishLoading(with: error)
++    } else {
++      context.loadingRequest.finishLoading()
++    }
++  }
++
++  private static func mediaRequest(
++    for url: URL,
++    headers: [String: String],
++    rangeHeader: String?,
++    dataRequest: AVAssetResourceLoadingDataRequest?
++  ) -> URLRequest {
++    var request = URLRequest(url: url)
++    request.httpMethod = dataRequest == nil ? "HEAD" : "GET"
++    applySafeHeaders(headers, to: &request)
++    if let rangeHeader {
++      request.setValue(rangeHeader, forHTTPHeaderField: "Range")
++    }
++    request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
++    return request
++  }
+ 
+-        // `response.url` is the final URL after URLSession followed all redirects.
+-        let finalURL = response?.url ?? realURL
+-        if finalURL != realURL {
+-          NitroPlayerLogger.log("TrackPlayerCore", "↪️ Resolved redirect \(realURL) → \(finalURL)")
++  private static func safeHeaders(
++    _ headers: [String: String]?,
++    overlay: [String: String]?
++  ) -> [String: String] {
++    var result: [String: String] = [:]
++    [headers, overlay].forEach { source in
++      source?.forEach { name, value in
++        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
++        if !normalizedName.isEmpty && !value.isEmpty &&
++          !blockedRequestHeaders.contains(normalizedName.lowercased())
++        {
++          result[normalizedName] = value
+         }
+-        var redirect = URLRequest(url: finalURL)
+-        self.headers(for: wrappedURL)?.forEach { redirect.setValue($1, forHTTPHeaderField: $0) }
+-        loadingRequest.redirect = redirect
+-        loadingRequest.response = HTTPURLResponse(
+-          url: finalURL, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: nil)
+-        loadingRequest.finishLoading()
+       }
+     }
+-    tasksByRequest[key] = task
+-    task.resume()
+-    return true
++    return result
+   }
+ 
+-  func resourceLoader(
+-    _ resourceLoader: AVAssetResourceLoader,
+-    didCancel loadingRequest: AVAssetResourceLoadingRequest
++  private static func applySafeHeaders(_ headers: [String: String], to request: inout URLRequest) {
++    headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
++  }
++
++  private static func rangeHeader(for dataRequest: AVAssetResourceLoadingDataRequest?) -> String? {
++    guard let dataRequest else { return nil }
++    let start = requestedOffset(for: dataRequest)
++    let length = dataRequest.requestedLength
++    if start == 0 && length <= 0 {
++      return nil
++    }
++    if length > 0 {
++      let end = start + Int64(length) - 1
++      return "bytes=\(start)-\(end)"
++    }
++    return "bytes=\(start)-"
++  }
++
++  private static func requestedOffset(
++    for dataRequest: AVAssetResourceLoadingDataRequest?
++  ) -> Int64 {
++    guard let dataRequest else { return 0 }
++    return dataRequest.currentOffset != 0 ? dataRequest.currentOffset : dataRequest.requestedOffset
++  }
++
++  private static func validateResponse(_ response: HTTPURLResponse, context: LoadingContext) throws {
++    guard response.statusCode == 200 || response.statusCode == 206 else {
++      throw mediaError("Unexpected HTTP \(response.statusCode)")
++    }
++    if let encoding = header("Content-Encoding", in: response),
++      !encoding.isEmpty,
++      encoding.lowercased() != "identity"
++    {
++      throw mediaError("Encoded media responses are not supported")
++    }
++    if context.rangeHeader != nil {
++      if response.statusCode == 200 {
++        guard context.requestedOffset == 0 else {
++          throw mediaError("Remote server ignored the media Range request")
++        }
++        return
++      }
++      guard let contentRange = parsedContentRange(from: response),
++        contentRange.start == context.requestedOffset
++      else {
++        throw mediaError("Remote server returned an invalid media Content-Range")
++      }
++      if context.requestedLength > 0 {
++        let requestedEnd = context.requestedOffset + Int64(context.requestedLength) - 1
++        guard contentRange.end <= requestedEnd else {
++          throw mediaError("Remote server exceeded the requested media Range")
++        }
++      }
++    }
++  }
++
++  private static func fillContentInformation(
++    _ contentInformation: AVAssetResourceLoadingContentInformationRequest?,
++    from response: HTTPURLResponse
+   ) {
+-    tasksByRequest.removeValue(forKey: ObjectIdentifier(loadingRequest))?.cancel()
++    guard let contentInformation else { return }
++    if let mimeType = response.mimeType,
++      let contentType = UTType(mimeType: mimeType)?.identifier
++    {
++      contentInformation.contentType = contentType
++    } else {
++      contentInformation.contentType = UTType.data.identifier
++    }
++    contentInformation.isByteRangeAccessSupported =
++      response.statusCode == 206 || header("Accept-Ranges", in: response)?.lowercased() == "bytes"
++    if let totalLength = totalLength(from: response) {
++      contentInformation.contentLength = totalLength
++    }
++  }
++
++  private static func header(_ name: String, in response: HTTPURLResponse) -> String? {
++    for (key, value) in response.allHeaderFields {
++      if String(describing: key).caseInsensitiveCompare(name) == .orderedSame {
++        return String(describing: value)
++      }
++    }
++    return nil
++  }
++
++  private static func totalLength(from response: HTTPURLResponse) -> Int64? {
++    if let total = parsedContentRange(from: response)?.total {
++      return total
++    }
++    return response.expectedContentLength > 0 ? response.expectedContentLength : nil
++  }
++
++  private struct ParsedContentRange {
++    let start: Int64
++    let end: Int64
++    let total: Int64?
++  }
++
++  private static func parsedContentRange(from response: HTTPURLResponse) -> ParsedContentRange? {
++    guard let rawValue = header("Content-Range", in: response) else { return nil }
++    let components = rawValue.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
++    guard components.count == 2, components[0].lowercased() == "bytes" else { return nil }
++    let rangeAndTotal = components[1].split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
++    guard rangeAndTotal.count == 2 else { return nil }
++    let bounds = rangeAndTotal[0].split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
++    guard bounds.count == 2,
++      let start = Int64(bounds[0]),
++      let end = Int64(bounds[1]),
++      start >= 0,
++      end >= start
++    else { return nil }
++    let total = rangeAndTotal[1] == "*" ? nil : Int64(rangeAndTotal[1])
++    if rangeAndTotal[1] != "*" && total == nil {
++      return nil
++    }
++    if let total, total <= end {
++      return nil
++    }
++    return ParsedContentRange(start: start, end: end, total: total)
++  }
++
++  // MARK: - Public HTTPS policy
++
++  private static func validatePublicMediaURL(_ url: URL) throws {
++    let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
++    guard components?.scheme?.lowercased() == "https" else {
++      throw mediaError("Only HTTPS remote media URLs are allowed")
++    }
++    guard components?.user == nil && components?.password == nil else {
++      throw mediaError("Remote media URL credentials are not allowed")
++    }
++    guard let host = components?.host, !isBlockedHostname(host) else {
++      throw mediaError("Local, private, and reserved remote hosts are not allowed")
++    }
++  }
++
++  private static func origin(of url: URL) throws -> MediaOrigin {
++    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
++      let scheme = components.scheme?.lowercased(),
++      let host = components.host?.lowercased()
++    else {
++      throw mediaError("Remote media URL is invalid")
++    }
++    let port = components.port ?? (scheme == "https" ? 443 : 80)
++    return MediaOrigin(scheme: scheme, host: host, port: port)
++  }
++
++  private static func resolvePublicHost(_ url: URL) throws {
++    guard let host = URLComponents(url: url, resolvingAgainstBaseURL: false)?.host else {
++      throw mediaError("Remote media host is invalid")
++    }
++    var hints = addrinfo(
++      ai_flags: AI_ADDRCONFIG,
++      ai_family: AF_UNSPEC,
++      ai_socktype: SOCK_STREAM,
++      ai_protocol: 0,
++      ai_addrlen: 0,
++      ai_canonname: nil,
++      ai_addr: nil,
++      ai_next: nil)
++    var result: UnsafeMutablePointer<addrinfo>?
++    let status = getaddrinfo(host, nil, &hints, &result)
++    guard status == 0 else {
++      throw mediaError("Remote media hostname resolution failed")
++    }
++    defer {
++      if let result {
++        freeaddrinfo(result)
++      }
++    }
++    var foundAddress = false
++    var cursor = result
++    while let info = cursor {
++      if let address = info.pointee.ai_addr {
++        foundAddress = true
++        if isBlockedAddress(address) {
++          throw mediaError("Local, private, and reserved remote addresses are not allowed")
++        }
++      }
++      cursor = info.pointee.ai_next
++    }
++    guard foundAddress else {
++      throw mediaError("Remote media hostname did not resolve")
++    }
++  }
++
++  private static func isBlockedHostname(_ hostname: String) -> Bool {
++    let normalized = hostname.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
++    return normalized.isEmpty ||
++      normalized == "localhost" ||
++      normalized.hasSuffix(".localhost") ||
++      normalized.hasSuffix(".local")
++  }
++
++  private static func isBlockedAddress(_ address: UnsafePointer<sockaddr>) -> Bool {
++    switch Int32(address.pointee.sa_family) {
++    case AF_INET:
++      return address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { pointer in
++        let value = UInt32(bigEndian: pointer.pointee.sin_addr.s_addr)
++        let bytes = [
++          Int((value >> 24) & 0xff),
++          Int((value >> 16) & 0xff),
++          Int((value >> 8) & 0xff),
++          Int(value & 0xff),
++        ]
++        return isBlockedIpv4(bytes)
++      }
++    case AF_INET6:
++      return address.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { pointer in
++        var value = pointer.pointee.sin6_addr
++        let bytes = withUnsafeBytes(of: &value) { Array($0) }
++        return isBlockedIpv6(bytes)
++      }
++    default:
++      return true
++    }
++  }
++
++  private static func isBlockedIpv4(_ bytes: [Int]) -> Bool {
++    guard bytes.count == 4 else { return true }
++    let a = bytes[0]
++    let b = bytes[1]
++    let c = bytes[2]
++    return a == 0 ||
++      a == 10 ||
++      a == 127 ||
++      (a == 100 && b >= 64 && b <= 127) ||
++      (a == 169 && b == 254) ||
++      (a == 172 && b >= 16 && b <= 31) ||
++      (a == 192 && b == 0 && c == 0) ||
++      (a == 192 && b == 0 && c == 2) ||
++      (a == 192 && b == 88 && c == 99) ||
++      (a == 192 && b == 168) ||
++      (a == 198 && b >= 18 && b <= 19) ||
++      (a == 198 && b == 51 && c == 100) ||
++      (a == 203 && b == 0 && c == 113) ||
++      a >= 224
++  }
++
++  private static func isBlockedIpv6(_ bytes: [UInt8]) -> Bool {
++    guard bytes.count == 16 else { return true }
++    let allZero = bytes.allSatisfy { $0 == 0 }
++    let loopback = bytes.prefix(15).allSatisfy { $0 == 0 } && bytes[15] == 1
++    let uniqueLocal = bytes[0] >= 0xfc && bytes[0] <= 0xfd
++    let linkLocal = bytes[0] == 0xfe && bytes[1] >= 0x80 && bytes[1] <= 0xbf
++    let siteLocal = bytes[0] == 0xfe && bytes[1] >= 0xc0
++    let multicast = bytes[0] == 0xff
++    let documentation =
++      bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8
++    let discardOnly = bytes[0] == 0x01 && bytes.dropFirst().allSatisfy { $0 == 0 }
++    let ipv4Mapped =
++      bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
++    let mappedBlocked = ipv4Mapped && isBlockedIpv4(bytes.suffix(4).map(Int.init))
++    return allZero || loopback || uniqueLocal || linkLocal || siteLocal || multicast ||
++      documentation || discardOnly || mappedBlocked
++  }
++
++  private static func mediaError(_ message: String) -> NSError {
++    NSError(
++      domain: "MusicFreeNitroMediaTransport",
++      code: -1,
++      userInfo: [NSLocalizedDescriptionKey: message])
+   }
+ }

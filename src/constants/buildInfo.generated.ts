@@ -16,7 +16,7 @@ export const buildInfo = {
     "react": "19.2.3",
     "reactNative": "0.85.3",
     "expo": "56.0.8",
-    "nitroPlayer": "1.4.3",
+    "nitroPlayer": "1.5.0",
 } as const;
 
 export type BuildInfo = typeof buildInfo;

@@ -10,8 +10,16 @@ jest.mock("@/utils/mediaUtils", () => ({
         `${item.platform}@${item.id}`,
 }));
 
+const mockRestrictedGet = jest.fn();
+jest.mock("@/utils/restrictedHttpClient", () => ({
+    createRestrictedHttpClient: () => ({
+        get: (...args: unknown[]) => mockRestrictedGet(...args),
+    }),
+}));
+
 import {
     getCachedMusicArtwork,
+    isUsableMusicDetailArtwork,
     resetMusicDetailArtworkCacheForTests,
     resolveMusicDetailArtwork,
 } from "../artworkResolver";
@@ -30,7 +38,10 @@ function music(overrides: Partial<IMusic.IMusicItem> = {}) {
 }
 
 describe("music detail artwork resolver", () => {
-    beforeEach(() => resetMusicDetailArtworkCacheForTests());
+    beforeEach(() => {
+        jest.clearAllMocks();
+        resetMusicDetailArtworkCacheForTests();
+    });
 
     it("uses existing artwork without starting a network lookup", async () => {
         const getMusicInfo = jest.fn();
@@ -53,6 +64,20 @@ describe("music detail artwork resolver", () => {
             }),
         ).resolves.toBe("https://img/safe.jpg");
         expect(getMusicInfo).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects cleartext, credentialed, and private remote artwork", () => {
+        expect(isUsableMusicDetailArtwork("http://images.example/cover.jpg"))
+            .toBe(false);
+        expect(
+            isUsableMusicDetailArtwork(
+                "https://user:secret@images.example/cover.jpg",
+            ),
+        ).toBe(false);
+        expect(isUsableMusicDetailArtwork("https://127.0.0.1/cover.jpg"))
+            .toBe(false);
+        expect(isUsableMusicDetailArtwork("content://media/cover/1"))
+            .toBe(true);
     });
 
     it("deduplicates detail lookups and caches the successful result", async () => {
@@ -179,10 +204,8 @@ describe("music detail artwork resolver", () => {
     });
 
     it("uses a high-resolution iTunes album cover when plugins have no artwork", async () => {
-        const originalFetch = globalThis.fetch;
-        const fetchMock = jest.fn(async () => ({
-            ok: true,
-            json: async () => ({
+        mockRestrictedGet.mockResolvedValue({
+            data: {
                 results: [
                     {
                         trackId: 123,
@@ -193,29 +216,50 @@ describe("music detail artwork resolver", () => {
                             "https://is1-ssl.mzstatic.com/image/100x100bb.jpg",
                     },
                 ],
-            }),
-        }));
-        globalThis.fetch = fetchMock as unknown as typeof fetch;
+            },
+        });
 
-        try {
-            await expect(
-                resolveMusicDetailArtwork(
-                    music({
-                        title: "Alice Deejay",
-                        artist: "Back In My Life",
-                    }),
-                ),
-            ).resolves.toBe(
-                "https://is1-ssl.mzstatic.com/image/1200x1200bb.jpg",
-            );
-            expect(fetchMock).toHaveBeenCalledWith(
-                expect.stringContaining(
-                    "term=Alice%20Deejay%20Back%20In%20My%20Life",
-                ),
-                expect.objectContaining({ signal: expect.anything() }),
-            );
-        } finally {
-            globalThis.fetch = originalFetch;
-        }
+        await expect(
+            resolveMusicDetailArtwork(
+                music({
+                    title: "Alice Deejay",
+                    artist: "Back In My Life",
+                }),
+            ),
+        ).resolves.toBe(
+            "https://is1-ssl.mzstatic.com/image/1200x1200bb.jpg",
+        );
+        expect(mockRestrictedGet).toHaveBeenCalledWith(
+            expect.stringContaining(
+                "term=Alice%20Deejay%20Back%20In%20My%20Life",
+            ),
+            expect.objectContaining({
+                timeout: 3_200,
+            }),
+        );
+    });
+
+    it("drops an unsafe artwork URL returned by iTunes", async () => {
+        mockRestrictedGet.mockResolvedValue({
+            data: {
+                results: [
+                    {
+                        trackId: 123,
+                        trackName: "Back In My Life",
+                        artistName: "Alice Deejay",
+                        artworkUrl100: "https://127.0.0.1/100x100bb.jpg",
+                    },
+                ],
+            },
+        });
+
+        await expect(
+            resolveMusicDetailArtwork(
+                music({
+                    title: "Back In My Life",
+                    artist: "Alice Deejay",
+                }),
+            ),
+        ).resolves.toBeUndefined();
     });
 });

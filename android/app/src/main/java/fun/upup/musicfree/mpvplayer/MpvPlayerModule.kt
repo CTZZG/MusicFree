@@ -17,6 +17,8 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter
 import dev.jdtech.mpv.MPVLib as NativeMPVLib
+import `fun`.upup.musicfree.bridge.CancelablePromise
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
@@ -34,8 +36,81 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     NativeMPVLib.EventObserver {
 
     private val isInitialized = AtomicBoolean(false)
+    private val invalidated = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var mpvInstance: NativeMPVLib? = null
+    private val pendingMainTasks =
+        ConcurrentHashMap.newKeySet<PendingMainTask>()
+    private val activePromises =
+        ConcurrentHashMap.newKeySet<CancelablePromise>()
+
+    private inner class PendingMainTask(
+        private val promise: CancelablePromise,
+        private val cancellationCode: String,
+        private val action: () -> Unit,
+    ) : Runnable {
+        override fun run() {
+            pendingMainTasks.remove(this)
+            if (invalidated.get()) {
+                promise.cancel()
+                return
+            }
+            try {
+                action()
+            } catch (error: Throwable) {
+                promise.reject(
+                    cancellationCode,
+                    "MPV operation failed unexpectedly",
+                    error,
+                )
+            }
+        }
+
+        fun cancel() {
+            if (!pendingMainTasks.remove(this)) {
+                return
+            }
+            mainHandler.removeCallbacks(this)
+            promise.cancel()
+        }
+    }
+
+    private fun controlledPromise(
+        promise: Promise,
+        cancellationCode: String,
+    ): CancelablePromise {
+        val controlled = CancelablePromise(
+            promise,
+            cancellationCode,
+            "MPV operation was cancelled",
+        ) {
+            activePromises.remove(it)
+        }
+        activePromises.add(controlled)
+        if (invalidated.get()) {
+            controlled.cancel()
+        }
+        return controlled
+    }
+
+    private fun postPromise(
+        promise: Promise,
+        cancellationCode: String,
+        action: (Promise) -> Unit,
+    ) {
+        val controlled = controlledPromise(promise, cancellationCode)
+        if (invalidated.get()) {
+            controlled.cancel()
+            return
+        }
+        val task = PendingMainTask(controlled, cancellationCode) {
+            action(controlled)
+        }
+        pendingMainTasks.add(task)
+        if (!mainHandler.post(task)) {
+            task.cancel()
+        }
+    }
 
     @Suppress("PropertyName")
     private val MPVLib = MpvCompat()
@@ -201,13 +276,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun sendEvent(name: String, params: WritableMap?) {
+        if (invalidated.get()) return
         reactContext.getJSModule(RCTDeviceEventEmitter::class.java)
             .emit(name, params ?: Arguments.createMap())
     }
 
     private fun runMpvCallbackOnMain(action: () -> Unit) {
         val task = Runnable {
-            if (isInitialized.get()) {
+            if (isInitialized.get() && !invalidated.get()) {
                 action()
             }
         }
@@ -301,16 +377,28 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         androidAutoConnectionDetector =
             MpvAndroidAutoConnectionDetector(reactContext.applicationContext).apply {
                 onConnectionChanged = { connected, _ ->
-                    mainHandler.post { setAndroidAutoConnected(connected) }
+                    mainHandler.post {
+                        if (!invalidated.get()) {
+                            setAndroidAutoConnected(connected)
+                        }
+                    }
                 }
                 register()
             }
     }
 
-    private fun unregisterAndroidAutoConnectionDetector() {
+    private fun unregisterAndroidAutoConnectionDetector(
+        notifyJs: Boolean = true,
+    ) {
+        androidAutoConnectionDetector?.onConnectionChanged = null
         androidAutoConnectionDetector?.unregister()
         androidAutoConnectionDetector = null
-        setAndroidAutoConnected(false)
+        if (notifyJs && !invalidated.get()) {
+            setAndroidAutoConnected(false)
+        } else {
+            isAndroidAutoConnected = false
+            MpvServiceBridge.isAndroidAutoConnected = false
+        }
     }
 
     private fun readString(map: ReadableMap, key: String): String? =
@@ -324,6 +412,23 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     private fun readLong(map: ReadableMap, key: String): Long? =
         readDouble(map, key)?.takeIf { !it.isNaN() && !it.isInfinite() }?.toLong()
+
+    private fun readHeaders(map: ReadableMap?): Map<String, String> {
+        if (map == null) {
+            return emptyMap()
+        }
+        val result = mutableMapOf<String, String>()
+        val iterator = map.keySetIterator()
+        while (iterator.hasNextKey()) {
+            val rawKey = iterator.nextKey()
+            val key = rawKey.trim()
+            val value = readString(map, rawKey)?.trim()
+            if (key.isNotBlank() && !value.isNullOrBlank()) {
+                result[key] = value
+            }
+        }
+        return result
+    }
 
     private fun readDuckMode(options: ReadableMap): String =
         readString(options, "remoteDuckMode")
@@ -540,7 +645,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             prepareToken = prepared.prepareToken,
             queueRevision = prepared.queueRevision,
         )
-        activeTrackIdentity = identity
+        replaceActiveIdentity(identity)
         loadingTrackIdentity = null
         syncMetadata()
         emitProgress(force = true)
@@ -638,6 +743,80 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    private fun mediaSourceType(url: String): String {
+        val scheme = try {
+            Uri.parse(url).scheme?.lowercase()
+        } catch (_: Exception) {
+            null
+        }
+        return when (scheme) {
+            "https" -> "https"
+            "http" -> "http"
+            "content" -> "content"
+            "file" -> "file"
+            null -> "path"
+            else -> "other"
+        }
+    }
+
+    private fun setLoadingIdentity(identity: TrackIdentity) {
+        loadingTrackIdentity = identity
+    }
+
+    private fun clearLoadingIdentity() {
+        loadingTrackIdentity = null
+    }
+
+    private fun replaceActiveIdentity(identity: TrackIdentity) {
+        activeTrackIdentity = identity
+    }
+
+    private fun clearActiveIdentity() {
+        activeTrackIdentity = null
+    }
+
+    private fun releaseMpvResources() {
+        isInitialized.set(false)
+        stopRequested = true
+        pendingPlaylistCompaction = false
+        pendingNaturalEnd = null
+        clearPreparedTrack(removeFromPlaylist = false)
+        hasPlaylistPreparedTrack = false
+        preparedPlaylistIndex = -1
+        clearActiveIdentity()
+        clearLoadingIdentity()
+        loadingGeneration = -1L
+        pendingUnpauseGeneration = -1L
+        MpvServiceBridge.onCommand = null
+        unregisterAndroidAutoConnectionDetector(notifyJs = false)
+        try {
+            reactContext.stopService(
+                Intent(reactContext, MpvPlaybackService::class.java),
+            )
+        } catch (_: Exception) {
+        }
+        try {
+            MPVLib.removeObserver(this@MpvPlayerModule)
+        } catch (_: Throwable) {
+        }
+        if (mpvInstance != null) {
+            try {
+                MPVLib.command(arrayOf("stop"))
+            } catch (_: Throwable) {
+            }
+        }
+        try {
+            MPVLib.destroy()
+        } catch (error: Throwable) {
+            Log.e(TAG, "release failed", error)
+        }
+        currentState = "idle"
+        positionSecs = 0.0
+        durationSecs = 0.0
+        cacheAheadSecs = 0.0
+        MpvServiceBridge.clearPlaybackSession()
+    }
+
     @ReactMethod
     fun initialize(options: ReadableMap, promise: Promise) {
         if (isInitialized.get()) {
@@ -645,7 +824,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
 
-        mainHandler.post {
+        postPromise(promise, "E_MPV_INIT") { operationPromise ->
+            if (isInitialized.get()) {
+                operationPromise.resolve(null)
+                return@postPromise
+            }
             try {
                 MpvServiceBridge.clearPlaybackSession()
                 MPVLib.create(reactContext.applicationContext)
@@ -710,77 +893,71 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 startPlaybackService(foreground = false)
 
                 MpvServiceBridge.onCommand = { command, position, mediaId ->
-                    sendEvent(
-                        ON_MPV_REMOTE_COMMAND,
-                        Arguments.createMap().apply {
-                            putString("command", command)
-                            if (mediaId != null) {
-                                putString("mediaId", mediaId)
-                            }
-                            if (position != null) {
-                                if (command == "duck") {
-                                    putDouble("volume", position)
-                                } else {
-                                    putDouble("position", position)
+                    if (!invalidated.get()) {
+                        sendEvent(
+                            ON_MPV_REMOTE_COMMAND,
+                            Arguments.createMap().apply {
+                                putString("command", command)
+                                if (mediaId != null) {
+                                    putString("mediaId", mediaId)
                                 }
-                            }
-                        },
-                    )
+                                if (position != null) {
+                                    if (command == "duck") {
+                                        putDouble("volume", position)
+                                    } else {
+                                        putDouble("position", position)
+                                    }
+                                }
+                            },
+                        )
+                    }
                 }
 
                 isInitialized.set(true)
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Throwable) {
                 Log.e(TAG, "init failed", e)
-                unregisterAndroidAutoConnectionDetector()
-                try {
-                    MPVLib.destroy()
-                } catch (_: Throwable) {
-                }
-                MpvServiceBridge.onCommand = null
-                MpvServiceBridge.clearPlaybackSession()
-                isInitialized.set(false)
-                promise.reject("E_MPV_INIT", e.message, e)
+                releaseMpvResources()
+                operationPromise.reject("E_MPV_INIT", e.message, e)
             }
         }
     }
 
     @ReactMethod
     fun destroy(promise: Promise) {
-        if (!isInitialized.getAndSet(false)) {
-            MpvServiceBridge.onCommand = null
-            MpvServiceBridge.clearPlaybackSession()
-            promise.resolve(null)
-            return
-        }
-
-        mainHandler.post {
+        isInitialized.set(false)
+        postPromise(promise, "E_MPV_DESTROY") { operationPromise ->
             try {
-                stopRequested = true
-                pendingPlaylistCompaction = false
-                pendingNaturalEnd = null
-                clearPreparedTrack(removeFromPlaylist = false)
-                activeTrackIdentity = null
-                loadingTrackIdentity = null
-                MpvServiceBridge.onCommand = null
-                unregisterAndroidAutoConnectionDetector()
-                try {
-                    reactContext.stopService(
-                        Intent(reactContext, MpvPlaybackService::class.java),
-                    )
-                } catch (_: Exception) {
-                }
-                MPVLib.removeObserver(this@MpvPlayerModule)
-                MPVLib.command(arrayOf("stop"))
-                MPVLib.destroy()
-            } catch (e: Exception) {
+                releaseMpvResources()
+            } catch (e: Throwable) {
                 Log.e(TAG, "destroy failed", e)
             } finally {
-                currentState = "idle"
-                MpvServiceBridge.clearPlaybackSession()
-                promise.resolve(null)
+                operationPromise.resolve(null)
             }
         }
+    }
+
+    override fun invalidate() {
+        if (!invalidated.compareAndSet(false, true)) {
+            return
+        }
+        isInitialized.set(false)
+        MpvServiceBridge.onCommand = null
+        androidAutoConnectionDetector?.onConnectionChanged = null
+        pendingMainTasks.toList().forEach { it.cancel() }
+        activePromises.toList().forEach { it.cancel() }
+        mainHandler.removeCallbacksAndMessages(null)
+
+        val cleanup = Runnable {
+            releaseMpvResources()
+            mainHandler.removeCallbacksAndMessages(null)
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            cleanup.run()
+        } else if (!mainHandler.postAtFrontOfQueue(cleanup)) {
+            cleanup.run()
+        }
+        super.invalidate()
     }
 
     @ReactMethod
@@ -844,7 +1021,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
 
-        mainHandler.post {
+        postPromise(promise, "E_LOAD") { operationPromise ->
             try {
                 val headers =
                     if (payload.hasKey("headers") && !payload.isNull("headers")) {
@@ -852,10 +1029,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     } else {
                         null
                     }
-                MPVLib.setOptionString("http-header-fields", buildHeaderString(headers))
-
                 val trackUserAgent = readString(payload, "userAgent")
                     ?.takeIf { it.isNotBlank() }
+                MPVLib.setOptionString(
+                    "http-header-fields",
+                    buildHeaderString(headers),
+                )
                 (trackUserAgent ?: defaultUserAgent)
                     ?.let { MPVLib.setOptionString("user-agent", it) }
 
@@ -875,13 +1054,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     ?: throw IllegalArgumentException("missing mediaId")
                 val requestedGeneration = readLong(payload, "loadGeneration")
                     ?: throw IllegalArgumentException("missing loadGeneration")
-                loadingTrackIdentity = TrackIdentity(
+                setLoadingIdentity(TrackIdentity(
                     url = url,
                     mediaId = mediaId,
                     loadGeneration = requestedGeneration,
                     prepareToken = readLong(payload, "prepareToken") ?: 0L,
                     queueRevision = readLong(payload, "queueRevision") ?: 0L,
-                )
+                ))
 
                 val generation = markLoading(autoPlay, requestedGeneration)
                 if (autoPlay) {
@@ -894,7 +1073,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 syncMetadata()
                 emitProgress(force = true)
 
-                Log.d(TAG, "loadAndPlay[$generation]: $url")
+                Log.d(
+                    TAG,
+                    "loadAndPlay[$generation]: source=${mediaSourceType(url)}",
+                )
                 MPVLib.command(arrayOf("loadfile", url, "replace"))
                 if (autoPlay) {
                     scheduleUnpauseRetries(generation)
@@ -902,11 +1084,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     MPVLib.setPropertyBoolean("pause", true)
                     emitState("paused", force = true)
                 }
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                loadingTrackIdentity = null
+                clearLoadingIdentity()
                 Log.e(TAG, "loadAndPlay failed", e)
-                promise.reject("E_LOAD", e.message, e)
+                operationPromise.reject("E_LOAD", e.message, e)
             }
         }
     }
@@ -918,14 +1100,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
 
-        mainHandler.post {
+        postPromise(promise, "E_PREPARE_NEXT") { operationPromise ->
             try {
                 clearPreparedTrack(removeFromPlaylist = true)
                 val nextPayload = payload
                 val url = nextPayload?.let { readString(it, "url") }
                 if (nextPayload == null || url.isNullOrBlank()) {
-                    promise.resolve(null)
-                    return@post
+                    operationPromise.resolve(null)
+                    return@postPromise
                 }
 
                 val headers =
@@ -934,10 +1116,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     } else {
                         null
                     }
-                MPVLib.setOptionString("http-header-fields", buildHeaderString(headers))
-
                 val trackUserAgent = readString(nextPayload, "userAgent")
                     ?.takeIf { it.isNotBlank() }
+                MPVLib.setOptionString(
+                    "http-header-fields",
+                    buildHeaderString(headers),
+                )
                 (trackUserAgent ?: defaultUserAgent)
                     ?.let { MPVLib.setOptionString("user-agent", it) }
 
@@ -969,18 +1153,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         "token=${preparedTrack?.prepareToken} " +
                         "queueRevision=${preparedTrack?.queueRevision} index=$appendIndex",
                 )
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
                 Log.w(TAG, "prepareNext failed", e)
                 clearPreparedTrack(removeFromPlaylist = false)
-                promise.reject("E_PREPARE_NEXT", e.message, e)
+                operationPromise.reject("E_PREPARE_NEXT", e.message, e)
             }
         }
     }
 
     @ReactMethod
     fun updateMetadata(payload: ReadableMap, promise: Promise) {
-        mainHandler.post {
+        postPromise(promise, "E_MPV_METADATA") { operationPromise ->
             try {
                 cachedTitle = readString(payload, "title") ?: cachedTitle
                 cachedArtist = readString(payload, "artist") ?: cachedArtist
@@ -994,9 +1178,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 }
                 syncMetadata()
                 emitProgress(force = true)
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("E_MPV_METADATA", e.message, e)
+                operationPromise.reject("E_MPV_METADATA", e.message, e)
             }
         }
     }
@@ -1007,17 +1191,17 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             promise.reject("E_NOT_INIT", "not init")
             return
         }
-        mainHandler.post {
+        postPromise(promise, "E_PAUSE") { operationPromise ->
             if (!isInitialized.get()) {
-                promise.reject("E_NOT_INIT", "not init")
-                return@post
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
             }
             try {
                 MPVLib.setPropertyBoolean("pause", true)
                 emitState("paused")
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("E_PAUSE", e.message, e)
+                operationPromise.reject("E_PAUSE", e.message, e)
             }
         }
     }
@@ -1028,10 +1212,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             promise.reject("E_NOT_INIT", "not init")
             return
         }
-        mainHandler.post {
+        postPromise(promise, "E_RESUME") { operationPromise ->
             if (!isInitialized.get()) {
-                promise.reject("E_NOT_INIT", "not init")
-                return@post
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
             }
             try {
                 startPlaybackService(foreground = true)
@@ -1043,9 +1227,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 pendingUnpauseGeneration = generation
                 scheduleUnpauseRetries(generation)
                 emitState("playing")
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("E_RESUME", e.message, e)
+                operationPromise.reject("E_RESUME", e.message, e)
             }
         }
     }
@@ -1056,18 +1240,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             promise.reject("E_NOT_INIT", "not init")
             return
         }
-        mainHandler.post {
+        postPromise(promise, "E_STOP") { operationPromise ->
             if (!isInitialized.get()) {
-                promise.reject("E_NOT_INIT", "not init")
-                return@post
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
             }
             try {
                 stopRequested = true
                 pendingPlaylistCompaction = false
                 pendingNaturalEnd = null
                 clearPreparedTrack(removeFromPlaylist = true)
-                activeTrackIdentity = null
-                loadingTrackIdentity = null
+                clearActiveIdentity()
+                clearLoadingIdentity()
                 loadingGeneration = -1L
                 pendingUnpauseGeneration = -1L
                 ignoreEndFileUntilMs = System.currentTimeMillis() + END_FILE_SUPPRESS_MS
@@ -1076,9 +1260,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 cacheAheadSecs = 0.0
                 emitProgress(force = true)
                 emitState("idle")
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("E_STOP", e.message, e)
+                operationPromise.reject("E_STOP", e.message, e)
             }
         }
     }
@@ -1089,18 +1273,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             promise.reject("E_NOT_INIT", "not init")
             return
         }
-        mainHandler.post {
+        postPromise(promise, "E_SEEK") { operationPromise ->
             if (!isInitialized.get()) {
-                promise.reject("E_NOT_INIT", "not init")
-                return@post
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
             }
             try {
                 MPVLib.command(arrayOf("seek", seconds.toString(), "absolute"))
                 positionSecs = seconds.coerceAtLeast(0.0)
                 emitProgress(force = true)
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("E_SEEK", e.message, e)
+                operationPromise.reject("E_SEEK", e.message, e)
             }
         }
     }
@@ -1111,16 +1295,16 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             promise.reject("E_NOT_INIT", "not init")
             return
         }
-        mainHandler.post {
+        postPromise(promise, "E_VOLUME") { operationPromise ->
             if (!isInitialized.get()) {
-                promise.reject("E_NOT_INIT", "not init")
-                return@post
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
             }
             try {
                 MPVLib.setPropertyInt("volume", (volume * 100).toInt().coerceIn(0, 100))
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("E_VOLUME", e.message, e)
+                operationPromise.reject("E_VOLUME", e.message, e)
             }
         }
     }
@@ -1131,52 +1315,56 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             promise.reject("E_NOT_INIT", "not init")
             return
         }
-        mainHandler.post {
+        postPromise(promise, "E_RATE") { operationPromise ->
             if (!isInitialized.get()) {
-                promise.reject("E_NOT_INIT", "not init")
-                return@post
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
             }
             try {
                 MPVLib.setPropertyDouble("speed", rate)
-                promise.resolve(null)
+                operationPromise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("E_RATE", e.message, e)
+                operationPromise.reject("E_RATE", e.message, e)
             }
         }
     }
 
     @ReactMethod
     fun getIsPlaying(promise: Promise) {
-        mainHandler.post {
+        postPromise(promise, "E_MPV_QUERY") { operationPromise ->
             try {
                 val paused = MPVLib.getPropertyBoolean("pause") ?: true
                 val idle = MPVLib.getPropertyBoolean("idle-active") ?: true
-                promise.resolve(!paused && !idle)
+                operationPromise.resolve(!paused && !idle)
             } catch (_: Exception) {
-                promise.resolve(currentState == "playing")
+                operationPromise.resolve(currentState == "playing")
             }
         }
     }
 
     @ReactMethod
     fun getPosition(promise: Promise) {
-        mainHandler.post {
+        postPromise(promise, "E_MPV_QUERY") { operationPromise ->
             try {
-                promise.resolve(MPVLib.getPropertyDouble("time-pos") ?: positionSecs)
+                operationPromise.resolve(
+                    MPVLib.getPropertyDouble("time-pos") ?: positionSecs,
+                )
             } catch (_: Exception) {
-                promise.resolve(positionSecs)
+                operationPromise.resolve(positionSecs)
             }
         }
     }
 
     @ReactMethod
     fun getDuration(promise: Promise) {
-        mainHandler.post {
+        postPromise(promise, "E_MPV_QUERY") { operationPromise ->
             try {
                 val nativeDuration = validDuration(MPVLib.getPropertyDouble("duration"))
-                promise.resolve(if (nativeDuration > 0) nativeDuration else durationSecs)
+                operationPromise.resolve(
+                    if (nativeDuration > 0) nativeDuration else durationSecs,
+                )
             } catch (_: Exception) {
-                promise.resolve(durationSecs)
+                operationPromise.resolve(durationSecs)
             }
         }
     }
@@ -1359,7 +1547,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                     updateDurationFromMpv()
                     explicitIdentity?.let { identity ->
-                        activeTrackIdentity = identity
+                        replaceActiveIdentity(identity)
                         loadingTrackIdentity = null
                         emitActiveTrackChanged(identity, "loaded")
                     }

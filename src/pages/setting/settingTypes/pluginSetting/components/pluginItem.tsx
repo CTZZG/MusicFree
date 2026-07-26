@@ -30,7 +30,11 @@ import {
     pluginCapabilityConfigs,
     pluginSupportsCapability,
 } from "../capabilityUtils";
-import { showPluginInstallResults } from "../installPluginUtils";
+import {
+    runPluginInstallWithCapabilityApproval,
+    showPluginInstallResults,
+    updatePluginWithCapabilityApproval,
+} from "../installPluginUtils";
 import { useShortcutCardStyle } from "@/components/base/shortcutPageSurface";
 
 interface IPluginItemProps {
@@ -328,6 +332,13 @@ function PluginItemContent(props: IPluginItemProps) {
                                 searchType,
                             );
                         },
+                        // 测试搜索执行的是第三方插件代码，没有超时保证；没有
+                        // onCancel 时 LoadingDialog 既无按钮也不响应返回键，
+                        // 插件卡住就只能强杀应用。搜索是只读操作，退出不会留下
+                        // 中间状态，迟到结果由 LoadingDialog 的 settled guard 丢弃。
+                        onCancel(hideDialog) {
+                            hideDialog();
+                        },
                         onResolve(result, hideDialog) {
                             hideDialog();
                             showTestSearchResult(
@@ -421,16 +432,21 @@ function PluginItemContent(props: IPluginItemProps) {
                 return;
             }
 
-            const installResult = await pluginManager.installPluginFromLocalFile(
-                asset.uri,
-                {
-                    expectedPluginName: plugin.name,
-                    notCheckVersion: Config.getConfig(
-                        "basic.notCheckPluginVersion",
-                    ),
-                    useExpoFs: true,
-                },
-            );
+            const installResult =
+                await runPluginInstallWithCapabilityApproval(
+                    approvedCapabilities =>
+                        pluginManager.installPluginFromLocalFile(
+                            asset.uri,
+                            {
+                                expectedPluginName: plugin.name,
+                                notCheckVersion: Config.getConfig(
+                                    "basic.notCheckPluginVersion",
+                                ),
+                                useExpoFs: true,
+                                approvedCapabilities,
+                            },
+                        ),
+                );
             const displayResult = {
                 ...installResult,
                 pluginUrl: installResult.pluginUrl ?? asset.name ?? asset.uri,
@@ -523,7 +539,7 @@ function PluginItemContent(props: IPluginItemProps) {
             icon: "arrow-path",
             async onPress() {
                 try {
-                    await pluginManager.updatePlugin(plugin);
+                    await updatePluginWithCapabilityApproval(plugin);
                     Toast.success(t("toast.pluginUpdateSuccess"));
                 } catch (e: any) {
                     Toast.warn(e?.message ?? t("toast.failToUpdatePlugin"));

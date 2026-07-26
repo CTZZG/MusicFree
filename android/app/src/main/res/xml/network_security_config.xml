@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is permitted at the platform level; the real policy is enforced in
+  app code (src/utils/remoteNetworkPolicy.ts) and in the native transport
+  (PublicHttpsNetworkPolicy.kt).
+
+  Why base-config is open: this app ships its own OkHttp stacks for media and
+  downloads, so networkSecurityConfig never governed those paths. Keeping it
+  closed bought no guarantee; it only broke Glide cover-art loading and the
+  plugin APIs that are still HTTP (11 of 12 real-world plugins use cleartext
+  somewhere), while a hostile plugin is unaffected either way because plugin
+  code runs inside the app's own JS realm.
+
+  The protections that actually hold are unchanged and enforced below JS:
+    - PublicHttpsNetworkPolicy installs a Dns implementation that rejects
+      loopback / private / link-local / reserved addresses at connect time.
+    - Plugin install and update stay HTTPS-only unconditionally.
+    - Cleartext for plugin APIs requires an explicit user opt-in
+      (basic.allowPluginInsecureHttp, default off).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

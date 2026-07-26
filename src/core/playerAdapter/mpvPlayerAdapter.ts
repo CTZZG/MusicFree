@@ -126,6 +126,8 @@ function toLoadPayload(
         ...identity,
         headers: track.headers,
         userAgent: track.userAgent,
+        allowInsecureHttpPlayback: track.allowInsecureHttpPlayback === true,
+        trustedLocalMediaProxy: track.trustedLocalMediaProxy === true,
         title: typeof track.title === "string" ? track.title : "",
         artist: normalizeArtist(track.artist),
         album: typeof track.album === "string" ? track.album : "",
@@ -1563,6 +1565,8 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 | "url"
                 | "headers"
                 | "userAgent"
+                | "allowInsecureHttpPlayback"
+                | "trustedLocalMediaProxy"
                 | "duration"
                 | "playbackSource"
                 | "ekey"
@@ -1576,6 +1580,8 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 url: t.url,
                 headers: t.headers,
                 userAgent: t.userAgent,
+                allowInsecureHttpPlayback: t.allowInsecureHttpPlayback,
+                trustedLocalMediaProxy: t.trustedLocalMediaProxy,
                 duration: t.duration,
                 playbackSource: t.playbackSource,
                 ekey: t.ekey,
@@ -1596,6 +1602,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                         url: cached.url,
                         headers: cached.headers,
                         userAgent: cached.userAgent,
+                        allowInsecureHttpPlayback:
+                            cached.allowInsecureHttpPlayback,
+                        trustedLocalMediaProxy:
+                            cached.trustedLocalMediaProxy,
                         playbackSource: cached.playbackSource,
                         ekey: cached.ekey,
                         cek: cached.cek,

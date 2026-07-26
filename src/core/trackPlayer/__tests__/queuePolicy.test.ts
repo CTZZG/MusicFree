@@ -1,6 +1,7 @@
 import { MusicRepeatMode } from "@/constants/trackPlayerConst";
 import {
     findNextPlayableQueueItem,
+    getSafeUnresolvedQueueUrl,
     getWrappedQueueItem,
     replaceQueueItemByIdentity,
     resolvePreviousQueueItem,
@@ -24,6 +25,23 @@ const item = (id: string): TestMusic => ({
 });
 
 describe("track player queue policy", () => {
+    it.each([
+        ["https://cdn.example.test/song.mp3", ""],
+        ["http://media.example.test/song.mp3", ""],
+        [`${"java"}script:alert(1)`, ""],
+        [
+            "file:///storage/emulated/0/Music/song.mp3",
+            "file:///storage/emulated/0/Music/song.mp3",
+        ],
+        [
+            " content://media/external/audio/media/42 ",
+            "content://media/external/audio/media/42",
+        ],
+        ["/storage/emulated/0/Music/song.mp3", ""],
+    ])("keeps unresolved backend queue URLs local: %s", (url, expected) => {
+        expect(getSafeUnresolvedQueueUrl(url)).toBe(expected);
+    });
+
     it("wraps positive and negative queue indices", () => {
         const queue = [item("a"), item("b"), item("c")];
 

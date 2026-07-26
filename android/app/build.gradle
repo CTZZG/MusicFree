@@ -116,7 +116,7 @@ static def getVersion() {
 // }
 
 def appVersion = getVersion()
-def appVersionCode = 400021
+def appVersionCode = 400022
 
 android {
     ndkVersion = rootProject.ext.ndkVersion
@@ -131,6 +131,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersionCode
         versionName appVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17"
@@ -191,6 +192,10 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+
+    sourceSets {
+        androidTest.java.srcDirs += "src/test/java"
+    }
 }
 
 dependencies {
@@ -211,6 +216,12 @@ dependencies {
     implementation 'androidx.core:core-splashscreen:1.0.0'
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.10.0'
+    androidTestImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'com.squareup.okhttp3:mockwebserver:4.10.0'
     if (enableMusicFreeNitroFfmpeg) {
         implementation files("libs/musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar")
     }

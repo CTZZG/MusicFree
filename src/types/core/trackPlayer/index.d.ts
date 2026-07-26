@@ -111,6 +111,7 @@ export interface ITrackPlayer
             [TrackPlayerEvents.CellularPlayForbidden]: () => void;
             [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
             [TrackPlayerEvents.NoPlayableMusic]: () => void;
+            [TrackPlayerEvents.LocalAudioPermissionRequired]: () => void;
         }> {
     /**
      * 上一首歌曲

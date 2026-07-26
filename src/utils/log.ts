@@ -1,49 +1,24 @@
-import { fileAsyncTransport, logger } from "react-native-logs";
 import RNFS, { readDir, readFile } from "react-native-fs";
 import pathConst from "@/constants/pathConst";
 import Config from "../core/appConfig.ts";
 import { addLog } from "@/lib/react-native-vdebug/src/log";
-
-const config = {
-    transport: fileAsyncTransport,
-    transportOptions: {
-        FS: RNFS,
-        filePath: pathConst.logPath,
-        fileName: "error-log-{date-today}.log",
-    },
-    dateFormat: "local",
-};
-
-const traceConfig = {
-    transport: fileAsyncTransport,
-    transportOptions: {
-        FS: RNFS,
-        filePath: pathConst.logPath,
-        fileName: "trace-log.log",
-    },
-    dateFormat: "local",
-};
-
-const log = logger.createLogger(config);
-const traceLogger = logger.createLogger(traceConfig);
-const forceTraceLog =
-    process.env.EXPO_PUBLIC_MUSICFREE_PLAYER_BACKEND === "nitro-player";
+import {
+    emitErrorLog,
+    emitTraceLog,
+    log,
+} from "./logTransport";
 
 export function trace(
     desc: string,
     message?: any,
     level: "info" | "error" = "info",
 ) {
-    if (__DEV__) {
-        console.log(desc, message);
-    }
-    // 特殊情况记录操作路径
-    if (forceTraceLog || Config.getConfig("debug.traceLog")) {
-        traceLogger[level]({
-            desc,
-            message,
-        });
-    }
+    emitTraceLog(
+        desc,
+        message,
+        level,
+        Config.getConfig("debug.traceLog") === true,
+    );
 }
 
 export async function clearLog() {
@@ -98,13 +73,12 @@ export async function getErrorLogContent() {
 }
 
 export function errorLog(desc: string, message: any) {
-    if (Config.getConfig("debug.errorLog")) {
-        log.error({
-            desc,
-            message,
-        });
-        trace(desc, message, "error");
-    }
+    emitErrorLog(
+        desc,
+        message,
+        Config.getConfig("debug.errorLog") === true,
+        Config.getConfig("debug.traceLog") === true,
+    );
 }
 
 export function devLog(

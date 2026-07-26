@@ -24,9 +24,13 @@ import { useI18N } from "@/core/i18n";
 import {
     formatPluginInstallResult,
     installPluginFromUrlText,
+    runPluginInstallWithCapabilityApproval,
     showPluginInstallResults,
 } from "../installPluginUtils";
-import { getAllPluginDiagnosticEvents } from "@/core/pluginManager/diagnostics";
+import {
+    clearPluginDiagnosticEvents,
+    getRecentPluginDiagnosticEvents,
+} from "@/core/pluginManager/diagnostics";
 
 interface IOption {
     icon: IIconName;
@@ -40,25 +44,33 @@ export default function PluginList() {
     const [loading, setLoading] = useState(false);
 
     const navigator = useNavigation<any>();
+    // 诊断事件存在 MMKV 里，不是响应式的；清除后靠这个计数触发重算。
+    const [diagnosticRevision, setDiagnosticRevision] = useState(0);
     const pluginRevision = (plugins ?? [])
         .map(plugin => plugin.hash)
         .join("\u0000");
     const latestDiagnostics = useMemo(() => {
         const byPlugin = new Map<
             string,
-            ReturnType<typeof getAllPluginDiagnosticEvents>[number]
+            ReturnType<typeof getRecentPluginDiagnosticEvents>[number]
         >();
         if (!pluginRevision) {
             return byPlugin;
         }
-        for (const event of getAllPluginDiagnosticEvents()) {
+        // 只看时间窗内的事件：否则安装以来的每一次失败都会永久显示，
+        // 包括早已修复的（例如插件 HTTP 策略调整之前记录的那批）。
+        for (const event of getRecentPluginDiagnosticEvents()) {
             const key = event.pluginHash ?? event.pluginName;
             if (key && !byPlugin.has(key)) {
                 byPlugin.set(key, event);
             }
         }
         return byPlugin;
-    }, [pluginRevision]);
+        // diagnosticRevision looks unused to the lint rule because the events come
+        // from MMKV rather than from props/state. It is the invalidation signal
+        // after "clear diagnostics", so it must stay in the dependency list.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pluginRevision, diagnosticRevision]);
 
     const menuOptions = useMemo<IOption[]>(() => [
         {
@@ -80,6 +92,19 @@ export default function PluginList() {
             title: t("lxSource.title"),
             onPress() {
                 navigator.navigate("/pluginsetting/lx-source");
+            },
+        },
+        {
+            icon: "document-outline",
+            title: t("pluginSetting.menu.clearDiagnostics"),
+            onPress() {
+                const cleared = clearPluginDiagnosticEvents();
+                setDiagnosticRevision(revision => revision + 1);
+                Toast.success(
+                    t("pluginSetting.menu.clearDiagnosticsDone", {
+                        count: String(cleared),
+                    }),
+                );
             },
         },
         {
@@ -142,12 +167,20 @@ export default function PluginList() {
 
             const installResults = await Promise.all(
                 results.assets.map(async it => {
-                    const result = await PluginManager.installPluginFromLocalFile(it.uri, {
-                        notCheckVersion: Config.getConfig(
-                            "basic.notCheckPluginVersion",
-                        ),
-                        useExpoFs: true,
-                    });
+                    const result =
+                        await runPluginInstallWithCapabilityApproval(
+                            approvedCapabilities =>
+                                PluginManager.installPluginFromLocalFile(
+                                    it.uri,
+                                    {
+                                        notCheckVersion: Config.getConfig(
+                                            "basic.notCheckPluginVersion",
+                                        ),
+                                        useExpoFs: true,
+                                        approvedCapabilities,
+                                    },
+                                ),
+                        );
                     return {
                         ...result,
                         pluginUrl: result.pluginUrl ?? it.name ?? it.uri,

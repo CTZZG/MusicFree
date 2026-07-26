@@ -1,6 +1,7 @@
 package `fun`.upup.musicfree.cenc
 
 import fi.iki.elonen.NanoHTTPD
+import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response as OkHttpResponse
@@ -20,12 +21,10 @@ internal object CencProxy {
     private const val MAX_SESSIONS = 256
 
     private val sessions = ConcurrentHashMap<String, StreamSession>()
-    private val client = OkHttpClient.Builder()
+    private val client = PublicHttpsNetworkPolicy.clientBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
         .retryOnConnectionFailure(true)
         .build()
 
@@ -76,9 +75,7 @@ internal object CencProxy {
     }
 
     fun register(src: String, cek: String, headers: Map<String, String>): String {
-        require(src.startsWith("http://") || src.startsWith("https://")) {
-            "CENC source must be an HTTP(S) URL"
-        }
+        PublicHttpsNetworkPolicy.requirePublicRemote(src)
         val normalizedCek = cek.trim()
         require(normalizedCek.matches(Regex("^[0-9a-fA-F]{32}$"))) {
             "invalid cek (expected 32 hexadecimal characters)"

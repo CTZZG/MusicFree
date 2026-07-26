@@ -10,15 +10,13 @@ import { addFileScheme, getFileName } from "@/utils/fileUtils";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
 import { getLocalPath, isSameMediaItem, resetMediaItem } from "@/utils/mediaUtils";
 import {
-    formatAuthUrl,
-    formatPluginErrorMessage,
+    formatAuthUrl, formatPluginErrorMessage,
     getAnonymousStackLocation,
     getRemoteMediaTitle,
     isRemoteMediaUrl,
     normalizeLocalFilePath,
 } from "./plugin.utils";
 import notImplementedFunction from "@/utils/notImplementedFunction.ts";
-import axios from "axios";
 import bigInt from "big-integer";
 import * as cheerio from "cheerio";
 import { satisfies } from "compare-versions";
@@ -43,8 +41,12 @@ import {
     lrcLibLyricPluginDefine,
     neteaseLyricPluginDefine,
 } from "./builtinLyricPlugins";
-import { recordPluginDiagnosticError } from "./diagnostics";
+import {
+    recordPluginDiagnosticError,
+    recordPluginDiagnosticMessage,
+} from "./diagnostics";
 import { resolvePluginLocalMediaSource } from "./localMediaSourcePolicy";
+import { validatePluginMediaSourceUrl } from "./mediaSourcePolicy";
 import _internalPluginMeta from "./meta";
 import { IPluginManager } from "@/types/core/pluginManager";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
@@ -59,22 +61,25 @@ import {
     canWriteResolvedSourceCache,
 } from "@/utils/cacheControlPolicy";
 import { PluginTextDecoder, PluginTextEncoder } from "./pluginTextCodec";
-
-
-axios.defaults.timeout = 15000;
-axios.interceptors.response.use((response) => {
-    // 统一setcookie格式，nodejs环境是数组，移动端环境都放在第一个元素
-    const setCookie = response.headers["set-cookie"];
-    if (setCookie && setCookie.length === 1) {
-        const splitedCookie = setCookie[0].split(",");
-        response.headers["set-cookie"] = splitedCookie;
-        response.headers["x-set-cookie"] = setCookie;
-    }
-
-    return response;
-});
+import {
+    createPluginCapabilityContext,
+    detectPluginCapabilities,
+    type PluginCapability,
+} from "./capabilityFirewall";
+import { clearPluginStorageNamespace } from "./pluginStorage";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
+import Config from "@/core/appConfig";
+import {
+    isMediaHttpAllowed,
+    isPluginInsecureHttpAllowed,
+} from "@/utils/mediaHttpCompatibilityPolicy";
+import { createPluginRuntimeGlobalValues } from "./pluginRuntimeGlobals";
 
 const sha256 = CryptoJs.SHA256;
+const pluginAssetHttpClient = createRestrictedHttpClient({
+    maxResponseBytes: 2 * 1024 * 1024,
+    maxTimeoutMs: 3_000,
+});
 
 const deprecatedCookieManager = {
     get: notImplementedFunction,
@@ -83,56 +88,21 @@ const deprecatedCookieManager = {
 };
 
 const pluginStorageStore = getOrCreateMMKV("plugin-storage");
-const pluginStorage = {
-    async setItem(key: string, value: unknown) {
-        pluginStorageStore.set(
-            key,
-            typeof value === "string" ? value : value == null ? "" : String(value),
-        );
-    },
-    async getItem(key: string) {
-        return pluginStorageStore.getString(key) ?? null;
-    },
-    async removeItem(key: string) {
-        pluginStorageStore.delete(key);
-    },
-};
 
-const packages: Record<string, any> = {
+export function clearInstalledPluginStorage(platform: string) {
+    return clearPluginStorageNamespace(pluginStorageStore, platform);
+}
+const safePackages: Record<string, any> = {
     cheerio,
     "crypto-js": CryptoJs,
-    axios,
     dayjs,
     "big-integer": bigInt,
     qs,
     he,
     "@react-native-cookies/cookies": deprecatedCookieManager,
-    webdav,
-    "musicfree/storage": pluginStorage,
     pako,
     buffer: { Buffer },
     "iconv-lite": iconvLite,
-};
-
-const _require = (packageName: string) => {
-    const pkg = packages[packageName];
-    if (!pkg) {
-        return null;
-    }
-    try {
-        pkg.default = pkg;
-        return pkg;
-    } catch {
-        if (typeof pkg === "function") {
-            const wrapped = (...args: any[]) => pkg(...args);
-            Object.assign(wrapped, pkg, { default: pkg });
-            return wrapped;
-        }
-        return {
-            ...pkg,
-            default: pkg,
-        };
-    }
 };
 
 function ensurePluginRuntimePolyfills() {
@@ -151,6 +121,7 @@ function ensurePluginRuntimePolyfills() {
     }
 
     if (!(Array.prototype as any).flatMap) {
+        // eslint-disable-next-line no-extend-native
         Object.defineProperty(Array.prototype, "flatMap", {
             configurable: true,
             writable: true,
@@ -257,6 +228,12 @@ export interface ILazyProps {
     supportedMethods?: string[];
     loadFuncCode?: () => Promise<string>;
     instance?: IPlugin.IPluginDefine;
+    runtimeCapabilities?: PluginCapability[];
+}
+
+export interface IPluginRuntimeOptions {
+    grantedCapabilities?: Iterable<PluginCapability>;
+    legacyInstalled?: boolean;
 }
 
 class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
@@ -307,6 +284,14 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         if (!result.url) {
             return result;
         }
+
+        const validation = validatePluginMediaSourceUrl(result.url, {
+            allowHttp: isMediaHttpAllowed(Config),
+        });
+        if (!validation.ok) {
+            throw new Error(validation.reason);
+        }
+        result.url = validation.url;
 
         const authFormattedResult = formatAuthUrl(result.url);
         if (authFormattedResult.auth) {
@@ -390,13 +375,17 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         });
 
         if (localSourceResolution.type === "remote") {
-            trace("网络音频播放", localSourceResolution.url);
-            return {
+            trace("网络音频播放");
+            return this.normalizeMediaSourceResult({
                 url: localSourceResolution.url,
-            };
+            });
         }
         if (localSourceResolution.type === "local") {
-            trace("本地播放", localSourceResolution.localPath);
+            trace("本地播放", {
+                sourceType: localSourceResolution.url.startsWith("content://")
+                    ? "content"
+                    : "file",
+            });
             if (localSourceResolution.patchLocalPath !== undefined) {
                 // 修正一下本地数据
                 patchMediaExtra(musicItem, {
@@ -434,7 +423,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             const qualityInfo =
                 mediaCache.source?.[normalizedQuality] ??
                 (legacyQuality ? mediaCache.source?.[legacyQuality] : undefined);
-            return {
+            return this.normalizeMediaSourceResult({
                 url: qualityInfo!.url,
                 headers: qualityInfo?.headers ?? mediaCache.headers,
                 userAgent:
@@ -442,7 +431,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                     mediaCache.userAgent ?? mediaCache.headers?.["user-agent"],
                 ekey: qualityInfo?.ekey ?? mediaCache.ekey,
                 cek: qualityInfo?.cek ?? mediaCache.cek,
-            };
+            });
         }
         // 3. 音源重定向
         const alternativePluginTarget = Plugin.pluginManager?.getAlternativePluginName(this.plugin);
@@ -545,7 +534,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                     userAgent: result.userAgent,
                     ekey: result.ekey,
                     cek: result.cek,
-                    url,
+                    url: result.url!,
                 };
                 let realMusicItem = {
                     ...musicItem,
@@ -832,7 +821,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             if (!(rawLrc || translation || romanization)) {
                 if (deprecatedLrcUrl) {
                     rawLrc = (
-                        await axios
+                        await pluginAssetHttpClient
                             .get(deprecatedLrcUrl, { timeout: 3000 })
                             .catch(() => null)
                     )?.data;
@@ -1271,8 +1260,11 @@ export class Plugin {
     public methods!: IPlugin.IPluginInstanceMethods;
 
     public supportedMethods: Set<keyof IPlugin.IPluginInstanceMethods> = new Set();
+    /** 受限运行时中插件请求的高风险能力。 */
+    public runtimeCapabilities: Set<PluginCapability> = new Set();
 
     private lazyProps: ILazyProps | null = null;
+    private runtimeOptions: IPluginRuntimeOptions;
     private mountingPromise?: Promise<void>;
 
     static pluginManager: IPluginManager;
@@ -1286,9 +1278,11 @@ export class Plugin {
     constructor(
         funcCode: string | (() => IPlugin.IPluginDefine) | null,
         pluginPath: string,
-        lazyProps: ILazyProps | null = null
+        lazyProps: ILazyProps | null = null,
+        runtimeOptions: IPluginRuntimeOptions = {},
     ) {
         this.lazyProps = lazyProps;
+        this.runtimeOptions = runtimeOptions;
         if (!lazyProps) {
             // 如果没有懒加载，直接挂载并初始化
             this.mountPlugin(funcCode!, pluginPath);
@@ -1302,6 +1296,9 @@ export class Plugin {
                 platform: lazyProps.name,
             };
             this.supportedMethods = new Set((lazyProps.supportedMethods ?? []) as any);
+            this.runtimeCapabilities = new Set(
+                lazyProps.runtimeCapabilities ?? [],
+            );
             // 初始化方法，但实际调用时会先挂载插件
             this.methods = new PluginMethodsWrapper(this, this.ensureMounted.bind(this));
         }
@@ -1355,10 +1352,58 @@ export class Plugin {
         pluginPath: string) {
         this.state = PluginState.Loading;
         let _instance: IPlugin.IPluginDefine;
+        let capabilityContext:
+            | ReturnType<typeof createPluginCapabilityContext>
+            | undefined;
+        let sourceHash = "";
 
         const _module: any = { exports: {} };
         try {
             if (typeof funcCode === "string") {
+                sourceHash = sha256(funcCode).toString();
+                const requestedCapabilities =
+                    detectPluginCapabilities(funcCode);
+                this.runtimeCapabilities = new Set(requestedCapabilities);
+                const grantedCapabilities =
+                    this.runtimeOptions.legacyInstalled
+                        ? requestedCapabilities
+                        : this.runtimeOptions.grantedCapabilities;
+                capabilityContext = createPluginCapabilityContext({
+                    provisionalIdentity: sourceHash,
+                    grantedCapabilities,
+                    safePackages,
+                    storageStore: pluginStorageStore,
+                    webdavModule: webdav,
+                    // 绝大多数现存插件的榜单/歌单/封面接口仍是 http://，
+                    // 一律拒绝会直接打断这些功能，而对恶意插件毫无约束
+                    // （插件代码本就在同一 JS realm 内执行）。因此明文由
+                    // 用户显式开关控制；私网/环回/内嵌凭据仍然始终拒绝。
+                    httpOptions: {
+                        allowHttp: () => isPluginInsecureHttpAllowed(Config),
+                    },
+                    onAudit: event => {
+                        recordPluginDiagnosticMessage({
+                            pluginName:
+                                this.name ||
+                                this.instance.platform ||
+                                "unknown",
+                            pluginHash:
+                                this.hash ||
+                                sourceHash,
+                            method: "capability",
+                            message: [
+                                `outcome=${event.outcome}`,
+                                event.capability
+                                    ? `capability=${event.capability}`
+                                    : "",
+                                event.moduleName
+                                    ? `module=${event.moduleName}`
+                                    : "",
+                                `reason=${event.reason}`,
+                            ].filter(Boolean).join("; "),
+                        });
+                    },
+                });
                 // 插件的环境变量
                 const env = {
                     getUserVariables: () => {
@@ -1382,7 +1427,7 @@ export class Plugin {
                 // eslint-disable-next-line no-new-func
                 _instance = Function(`
                     'use strict';
-                    return function(require, __musicfree_require, module, exports, console, env, URL, URLSearchParams, process, TextDecoder, TextEncoder, Buffer) {
+                    return function(require, __musicfree_require, module, exports, console, env, URL, URLSearchParams, process, TextDecoder, TextEncoder, Buffer, fetch, XMLHttpRequest, WebSocket, globalThis, window, self, global) {
                         // 插件代码必须包在内层函数里：很多插件顶层会写
                         // const { Buffer } = require("buffer") 之类的声明，
                         // 若与注入的参数同层会直接 SyntaxError（重复声明）
@@ -1391,8 +1436,8 @@ export class Plugin {
                         })();
                     }
                 `)()(
-                    _require,
-                    _require,
+                    capabilityContext.require,
+                    capabilityContext.require,
                     _module,
                     _module.exports,
                     _console,
@@ -1403,6 +1448,7 @@ export class Plugin {
                     PluginTextDecoder,
                     PluginTextEncoder,
                     Buffer,
+                    ...createPluginRuntimeGlobalValues(),
                 );
                 if (_module.exports.default) {
                     _instance = _module.exports
@@ -1420,6 +1466,20 @@ export class Plugin {
                 );
             }
             this.checkValid(_instance);
+            if (capabilityContext) {
+                const migration = capabilityContext.bindIdentity(
+                    _instance.platform,
+                );
+                if (migration.quarantinedLegacyEntries > 0) {
+                    recordPluginDiagnosticMessage({
+                        pluginName: _instance.platform,
+                        pluginHash: sourceHash,
+                        method: "storage-migration",
+                        message:
+                            `quarantinedLegacyEntries=${migration.quarantinedLegacyEntries}`,
+                    });
+                }
+            }
         } catch (e: any) {
             this.state = PluginState.Error;
             this.errorReason = e?.errorReason ?? PluginErrorReason.CannotParse;

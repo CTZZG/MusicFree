@@ -31,11 +31,14 @@ export function createLocalMusicArtworkResolver(
     const cache = new Map<string, { artwork: string; expiresAt: number }>();
     const inFlight = new Map<string, Promise<string>>();
     const generations = new Map<string, number>();
-    const pending: Array<{
+    interface IArtworkTask {
         localPath: string;
         generation: number;
-        resolve(value: string): void;
-    }> = [];
+        cancelled: boolean;
+        settle(value: string): void;
+    }
+    const pending: IArtworkTask[] = [];
+    const activeTasks = new Set<IArtworkTask>();
     let activeCount = 0;
     let epoch = 0;
 
@@ -54,6 +57,7 @@ export function createLocalMusicArtworkResolver(
             const task = pending.shift()!;
             const taskEpoch = epoch;
             activeCount += 1;
+            activeTasks.add(task);
             Promise.resolve()
                 .then(() => loader(task.localPath))
                 .then(
@@ -63,6 +67,7 @@ export function createLocalMusicArtworkResolver(
                 )
                 .then(artwork => {
                     if (
+                        !task.cancelled &&
                         taskEpoch === epoch &&
                         (generations.get(task.localPath) ?? 0) ===
                             task.generation
@@ -76,9 +81,10 @@ export function createLocalMusicArtworkResolver(
                         });
                         trimCache();
                     }
-                    task.resolve(artwork);
+                    task.settle(task.cancelled ? "" : artwork);
                 })
                 .finally(() => {
+                    activeTasks.delete(task);
                     activeCount -= 1;
                     if (
                         taskEpoch === epoch &&
@@ -113,11 +119,18 @@ export function createLocalMusicArtworkResolver(
             }
 
             const request = new Promise<string>(resolve => {
-                pending.push({
+                const task: IArtworkTask = {
                     localPath: normalizedPath,
                     generation: generations.get(normalizedPath) ?? 0,
-                    resolve,
-                });
+                    cancelled: false,
+                    settle(value) {
+                        if (task.cancelled && value !== "") {
+                            return;
+                        }
+                        resolve(value);
+                    },
+                };
+                pending.push(task);
                 drain();
             });
             inFlight.set(normalizedPath, request);
@@ -128,6 +141,14 @@ export function createLocalMusicArtworkResolver(
             cache.clear();
             inFlight.clear();
             generations.clear();
+            for (const task of pending.splice(0)) {
+                task.cancelled = true;
+                task.settle("");
+            }
+            for (const task of activeTasks) {
+                task.cancelled = true;
+                task.settle("");
+            }
         },
         invalidate(localPath) {
             const normalizedPath = localPath.trim();
@@ -140,6 +161,20 @@ export function createLocalMusicArtworkResolver(
                 normalizedPath,
                 (generations.get(normalizedPath) ?? 0) + 1,
             );
+            for (let index = pending.length - 1; index >= 0; index--) {
+                const task = pending[index];
+                if (task.localPath === normalizedPath) {
+                    pending.splice(index, 1);
+                    task.cancelled = true;
+                    task.settle("");
+                }
+            }
+            for (const task of activeTasks) {
+                if (task.localPath === normalizedPath) {
+                    task.cancelled = true;
+                    task.settle("");
+                }
+            }
         },
     };
 }

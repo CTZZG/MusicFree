@@ -15,7 +15,9 @@ import PanelHeader from "../base/panelHeader";
 interface IUserVariablesProps {
     title?: string;
     onOk: (values: Record<string, string>, closePanel: () => void) => void;
-    variables: IPlugin.IUserVariable[];
+    variables: Array<IPlugin.IUserVariable & {
+        secureTextEntry?: boolean;
+    }>;
     initValues?: Record<string, string>;
     onCancel?: () => void;
 }
@@ -53,6 +55,7 @@ export default function SetUserVariables(props: IUserVariablesProps) {
                             }}>
                             {variables.map(it => (
                                 <ListItem
+                                    key={it.key}
                                     withHorizontalPadding
                                     style={styles.listItem}>
                                     <ThemeText
@@ -62,6 +65,7 @@ export default function SetUserVariables(props: IUserVariablesProps) {
                                         {it.name ?? it.key}
                                     </ThemeText>
                                     <Input
+                                        secureTextEntry={it.secureTextEntry}
                                         defaultValue={initValues[it.key]}
                                         onChangeText={e => {
                                             resultRef.current[it.key] = e;

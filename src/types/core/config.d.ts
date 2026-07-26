@@ -7,6 +7,8 @@ export interface IAppConfigProperties {
     "basic.autoPlayWhenAppStart": boolean;
     "basic.useCelluarNetworkPlay": boolean;
     "basic.useCelluarNetworkDownload": boolean;
+    "basic.allowInsecureMediaPlayback": boolean;
+    "basic.allowPluginInsecureHttp": boolean;
     "basic.maxDownload": number;
     "basic.clickMusicInSearch": "playMusic" | "playMusicAndReplace";
     "basic.clickMusicInAlbum": "playAlbum" | "playMusic";
@@ -99,7 +101,6 @@ export interface IAppConfigProperties {
     // WebDAV
     "webdav.url": string;
     "webdav.username": string;
-    "webdav.password": string;
     "webdav.autoBackupInterval": "off" | "daily" | "weekly";
     "webdav.autoBackupWifiOnly": boolean;
 

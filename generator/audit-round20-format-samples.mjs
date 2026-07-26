@@ -353,7 +353,6 @@ function parseAsfAudioInfo(filePath) {
             }
             fileProperties = parsedFileProperties;
         } else if (objectGuid === asfGuids.streamPropertiesObject && audioInfo == null) {
-            const dataOffset = offset + 24;
             const streamType = readGuid(buffer, dataOffset);
             if (streamType === asfGuids.audioMedia) {
                 const typeSpecificDataLengthOffset = dataOffset + 40;

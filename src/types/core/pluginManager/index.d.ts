@@ -1,11 +1,17 @@
 type Plugin = any; // Placeholder for the actual Plugin type
 
+export type IPluginCapability =
+    | "network.http"
+    | "network.webdav"
+    | "storage.plugin";
+
 /**
  * 插件安装配置接口
  */
 export interface IInstallPluginConfig {
     notCheckVersion?: boolean;
     expectedPluginName?: string;
+    approvedCapabilities?: IPluginCapability[];
 }
 
 export type IInstallPluginSourceType = "network" | "local-file" | "unknown";
@@ -14,6 +20,7 @@ export type IInstallPluginFailureReason =
     | "network"
     | "not-found"
     | "parse"
+    | "capability-approval-required"
     | "newer-version-installed"
     | "unrecognized"
     | "unknown";
@@ -31,6 +38,7 @@ export interface IInstallPluginResult {
     sourceType?: IInstallPluginSourceType;
     failureReason?: IInstallPluginFailureReason;
     retryable?: boolean;
+    requiredCapabilities?: IPluginCapability[];
 }
 
 /**
@@ -88,7 +96,10 @@ export interface IPluginManager {
      * @param plugin - 要更新的插件实例
      * @throws 如果插件没有源URL或更新失败时抛出错误
      */
-    updatePlugin(plugin: Plugin): Promise<void>;
+    updatePlugin(
+        plugin: Plugin,
+        approvedCapabilities?: IPluginCapability[],
+    ): Promise<void>;
 
     /**
      * 通过媒体项的平台信息获取对应的插件

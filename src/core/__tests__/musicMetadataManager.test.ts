@@ -12,6 +12,13 @@ jest.mock("@/native/mp3Util", () => {
     };
 });
 
+jest.mock("@/native/storageUri", () => ({
+    __esModule: true,
+    default: {
+        requestWriteAccess: jest.fn(),
+    },
+}));
+
 jest.mock("@/utils/fileUtils", () => ({
     removeFileScheme: (value: string) => value.replace(/^file:\/\//, ""),
 }));
@@ -29,6 +36,7 @@ jest.mock("@/utils/log", () => ({
 }));
 
 import Mp3Util from "@/native/mp3Util";
+import StorageUri from "@/native/storageUri";
 import { autoDecryptLyric } from "@/utils/musicDecrypter";
 import type { IDownloadMetadataConfig } from "@/types/metadata";
 import { MusicMetadataManager } from "../musicMetadataManager";
@@ -65,6 +73,7 @@ describe("MusicMetadataManager", () => {
         jest.useRealTimers();
         jest.mocked(Mp3Util.setMediaTag).mockResolvedValue(true);
         jest.mocked(Mp3Util.setMediaTagWithCover!).mockResolvedValue(true);
+        jest.mocked(StorageUri.requestWriteAccess).mockResolvedValue(true);
         jest.mocked(autoDecryptLyric).mockImplementation(async value => value);
         jest.mocked(Mp3Util.getMediaTag).mockResolvedValue({
             title: musicItem.title,
@@ -284,5 +293,47 @@ describe("MusicMetadataManager", () => {
         );
 
         expect(success).toBe(false);
+    });
+
+    it("requests platform consent before writing a content URI", async () => {
+        const manager = new MusicMetadataManager({
+            nativeMetadataTimeoutMs: 100,
+        });
+        manager.injectPluginManager(createPluginManager(undefined));
+        const contentUri = "content://media/external/audio/media/42";
+
+        await expect(
+            manager.writeMetadataForDownloadTask(
+                { musicItem, filePath: contentUri },
+                { ...config, writeCover: false, writeLyric: false },
+                {},
+            ),
+        ).resolves.toBe(true);
+
+        expect(StorageUri.requestWriteAccess).toHaveBeenCalledWith(contentUri);
+        expect(Mp3Util.setMediaTag).toHaveBeenCalledWith(
+            contentUri,
+            expect.objectContaining({ title: musicItem.title }),
+        );
+    });
+
+    it("does not touch a content URI when write consent is denied", async () => {
+        jest.mocked(StorageUri.requestWriteAccess).mockResolvedValue(false);
+        const manager = new MusicMetadataManager({
+            nativeMetadataTimeoutMs: 100,
+        });
+        manager.injectPluginManager(createPluginManager(undefined));
+
+        await expect(
+            manager.writeMetadataForDownloadTask(
+                {
+                    musicItem,
+                    filePath: "content://media/external/audio/media/42",
+                },
+                { ...config, writeCover: false, writeLyric: false },
+                {},
+            ),
+        ).resolves.toBe(false);
+        expect(Mp3Util.setMediaTag).not.toHaveBeenCalled();
     });
 });

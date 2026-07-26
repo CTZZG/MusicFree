@@ -167,6 +167,37 @@ describe("MpvPlayerAdapter identity state machine", () => {
         expect(mockNativeMpvPlayer.loadAndPlay).toHaveBeenCalledTimes(1);
     });
 
+    it("passes native media transport trust flags for explicit and prepared loads", async () => {
+        const adapter = await createAdapter();
+        const cleartextTrack: MpvTrack = {
+            ...track("a"),
+            url: "http://media.example.test/a.mp3",
+            allowInsecureHttpPlayback: true,
+        };
+        const loopbackTrack: MpvTrack = {
+            ...track("b"),
+            url: "http://127.0.0.1:1234/l/b.m4a",
+            trustedLocalMediaProxy: true,
+        };
+
+        await adapter.loadQueue([cleartextTrack, loopbackTrack], 0);
+
+        expect(lastLoadPayload()).toMatchObject({
+            url: "http://media.example.test/a.mp3",
+            allowInsecureHttpPlayback: true,
+            trustedLocalMediaProxy: false,
+        });
+
+        await confirmLastExplicitLoad();
+        await adapter.prepareNextTrack(loopbackTrack);
+
+        expect(lastPreparePayload()).toMatchObject({
+            url: "http://127.0.0.1:1234/l/b.m4a",
+            allowInsecureHttpPlayback: false,
+            trustedLocalMediaProxy: true,
+        });
+    });
+
     it("keeps an accepted promotion when the next prepare starts before ended arrives", async () => {
         const adapter = await createAdapter();
         await adapter.loadQueue(

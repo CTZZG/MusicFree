@@ -86,6 +86,8 @@ import {
 import { runDownloadFinalizationTransaction } from "./downloadFinalizationRunner";
 import { withTimeout } from "@/utils/promiseTimeout";
 import DownloadPathReservation from "./downloadPathReservation";
+import { Platform } from "react-native";
+import { resolveDownloadDirectory } from "@/utils/downloadStoragePolicy";
 
 type IWriteResult = DownloadWriteResult;
 
@@ -857,9 +859,13 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
     /** 获取下载路径 */
     private getDownloadPath(fileName: string) {
-        const dlPath =
-            this.configService.getConfig("basic.downloadPath") ??
-            pathConst.downloadMusicPath;
+        const dlPath = resolveDownloadDirectory({
+            platform: Platform.OS,
+            configuredPath:
+                this.configService.getConfig("basic.downloadPath"),
+            appScopedRoot: pathConst.basePath,
+            fallbackPath: pathConst.downloadMusicPath,
+        });
         if (!dlPath.endsWith("/")) {
             return `${dlPath}/${fileName ?? ""}`;
         }

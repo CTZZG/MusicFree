@@ -7,6 +7,12 @@ import { IAppConfig } from "@/types/core/config";
 import delay from "@/utils/delay";
 import DeviceInfo from "react-native-device-info";
 import { isTelemetryOptedIn } from "./telemetryPolicy";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
+
+const telemetryConfigHttpClient = createRestrictedHttpClient({
+    maxResponseBytes: 64 * 1024,
+    maxTimeoutMs: 8_000,
+});
 
 class Telemetry implements IInjectable {
     private appInsights: ApplicationInsights | null = null;
@@ -76,8 +82,10 @@ class Telemetry implements IInjectable {
             if (now - telemetryCheckTimestamp > 24 * 60 * 60 * 1000) {
                 for (let i = 0; i < Telemetry.configList.length; ++i) {
                     try {
-                        const response = await fetch(Telemetry.configList[i]);
-                        const config = await response.json() as {
+                        const response = await telemetryConfigHttpClient.get(
+                            Telemetry.configList[i],
+                        );
+                        const config = response.data as {
                             disableTelemetry?: boolean;
                         };
                         if (config.disableTelemetry !== true) {

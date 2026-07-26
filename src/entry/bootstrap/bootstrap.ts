@@ -19,16 +19,13 @@ import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import { maybeRunAutoWebdavBackup } from "@/core/webdavBackup";
-import NativeUtils from "@/native/utils";
-import { checkAndCreateDir } from "@/utils/fileUtils";
 import { errorLog, trace } from "@/utils/log";
 import PersistStatus from "@/utils/persistStatus";
 import Toast from "@/utils/toast";
 import { getAppUserAgent } from "@/utils/userAgentHelper";
 import * as SplashScreen from "expo-splash-screen";
 import { getDefaultStore } from "jotai";
-import { Linking, Platform } from "react-native";
-import { PERMISSIONS, check, request } from "react-native-permissions";
+import { Linking } from "react-native";
 import bootstrapAtom from "./bootstrap.atom";
 import playbackServiceObserver from "@/core/trackPlayer/playbackServiceObserver";
 import telemetry from "@/core/telemetry";
@@ -37,6 +34,14 @@ import type {
     PlayerAdapterRemoteCapability,
 } from "@/core/playerAdapter";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
+import Equalizer from "@/core/equalizer";
+import {
+    installNitroEqualizerController,
+    isEqualizerSupported,
+} from "@/core/equalizer/nitroController";
+import { setupAppFolders } from "./setupFolders";
+import StorageUri from "@/native/storageUri";
+import { addFileScheme, escapeCharacter } from "@/utils/fileUtils";
 
 let linkingUrlSubscription: ReturnType<typeof Linking.addEventListener> | null =
     null;
@@ -65,32 +70,8 @@ async function bootstrapImpl() {
 
     bootstrapTimestamp.Start = Date.now();
     
-    // 1. 检查权限
-    if (Platform.OS === "android" && Platform.Version >= 30) {
-        const hasPermission = await NativeUtils.checkStoragePermission();
-        if (
-            !hasPermission &&
-            !PersistStatus.get("app.skipBootstrapStorageDialog")
-        ) {
-            showDialog("CheckStorage");
-        }
-    } else {
-        const [readStoragePermission, writeStoragePermission] =
-            await Promise.all([
-                check(PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE),
-                check(PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE),
-            ]);
-        if (
-            !(
-                readStoragePermission === "granted" &&
-                writeStoragePermission === "granted"
-            )
-        ) {
-            await request(PERMISSIONS.ANDROID.READ_EXTERNAL_STORAGE);
-            await request(PERMISSIONS.ANDROID.WRITE_EXTERNAL_STORAGE);
-        }
-    }
-    
+    // Storage access is requested only at the feature entry point. App startup
+    // must remain functional with no shared-storage permission.
     bootstrapTimestamp.PermissionChecked = Date.now();
     bootstrapMetrics.PermissionChecked = bootstrapTimestamp.PermissionChecked - bootstrapTimestamp.Start;
 
@@ -171,18 +152,7 @@ async function bootstrapImpl() {
 
 /** 初始化 */
 async function setupFolder() {
-    await Promise.all([
-        checkAndCreateDir(pathConst.dataPath),
-        checkAndCreateDir(pathConst.logPath),
-        checkAndCreateDir(pathConst.cachePath),
-        checkAndCreateDir(pathConst.pluginPath),
-        checkAndCreateDir(pathConst.lrcCachePath),
-        checkAndCreateDir(pathConst.downloadCachePath),
-        checkAndCreateDir(pathConst.localLrcPath),
-        checkAndCreateDir(pathConst.downloadPath).then(() => {
-            checkAndCreateDir(pathConst.downloadMusicPath);
-        }),
-    ]);
+    await setupAppFolders();
 }
 
 export async function initTrackPlayer() {
@@ -242,6 +212,13 @@ export async function initTrackPlayer() {
     playerTimestamp.PlayerSetup = Date.now();
     playerMetrics.PlayerSetup = playerTimestamp.PlayerSetup - playerTimestamp.OptionsSetup;
 
+    // 均衡器接到真实 DSP。必须在播放器初始化之后：Nitro 在 TrackPlayerSetup
+    // 里把效果器绑到播放器的音频会话，早于此注入会作用在还不存在的会话上。
+    // MPV 有独立音频链路、不经过该会话，因此只在 Nitro 后端注入。
+    if (isEqualizerSupported(Config.getConfig("basic.playerBackend"))) {
+        installNitroEqualizerController(Equalizer.setController);
+    }
+
     await lyricManager.setup();
     trace("歌词模块初始化完成");
     playerTimestamp.LyricManagerSetup = Date.now();
@@ -286,10 +263,39 @@ async function extraMakeup() {
         return supportLocalMediaType.some(it => comparableUrl.endsWith(it));
     }
 
+    function extensionForMimeType(mimeType: string | null) {
+        const extensions: Record<string, string> = {
+            "audio/mpeg": ".mp3",
+            "audio/flac": ".flac",
+            "audio/mp4": ".m4a",
+            "audio/wav": ".wav",
+            "audio/x-wav": ".wav",
+            "audio/ogg": ".ogg",
+            "audio/aac": ".aac",
+        };
+        return mimeType ? extensions[mimeType.toLowerCase()] ?? ".audio" : ".audio";
+    }
+
+    async function materializeExternalMedia(url: string) {
+        if (!url.startsWith("content://")) {
+            return url;
+        }
+        const metadata = await StorageUri.getMetadata(url);
+        const rawName =
+            metadata.displayName ||
+            `external-media${extensionForMimeType(metadata.mimeType)}`;
+        const safeName = escapeCharacter(rawName).slice(-180);
+        const destination =
+            `${pathConst.basePath}/imports/${Date.now()}-${safeName}`;
+        await StorageUri.copyToApp(url, destination);
+        return addFileScheme(destination);
+    }
+
     async function importAndPlayExternalMedia(url: string) {
+        const localUrl = await materializeExternalMedia(url);
         const musicItem = await PluginManager.getByHash(
             localPluginHash,
-        )?.instance?.importMusicItem?.(url);
+        )?.instance?.importMusicItem?.(localUrl);
         if (musicItem) {
             await TrackPlayer.play(musicItem, true);
         }
@@ -543,7 +549,7 @@ async function extraMakeup() {
             }
         } catch (e: any) {
             trace("处理外部链接失败", {
-                url,
+                scheme: /^([a-z][a-z0-9+.-]*):/i.exec(url)?.[1] ?? "unknown",
                 message: e?.message ?? String(e),
             });
         }
@@ -628,6 +634,10 @@ function bindEvents() {
 
     TrackPlayer.on(TrackPlayerEvents.NoPlayableMusic, () => {
         Toast.warn(i18n.t("dislikeMusic.noPlayableMusic"));
+    });
+
+    TrackPlayer.on(TrackPlayerEvents.LocalAudioPermissionRequired, () => {
+        Toast.warn(i18n.t("localMusic.audioPermissionRequiredForPlayback"));
     });
 }
 

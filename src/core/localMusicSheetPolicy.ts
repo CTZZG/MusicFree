@@ -47,6 +47,41 @@ export interface IParsedLocalMusicFilename {
     artist?: string;
 }
 
+export function createLocalMusicFileIdentity(params: {
+    displayName?: string | null;
+    size?: number | null;
+    durationMilliseconds?: number | null;
+    title?: string | null;
+    artist?: string | null;
+    album?: string | null;
+}) {
+    const displayName = params.displayName?.trim().toLowerCase();
+    const size = Number(params.size);
+    const durationMilliseconds = Number(params.durationMilliseconds);
+    if (
+        !displayName ||
+        params.size == null ||
+        !Number.isFinite(size) ||
+        size < 0 ||
+        params.durationMilliseconds == null ||
+        !Number.isFinite(durationMilliseconds) ||
+        durationMilliseconds < 0
+    ) {
+        return null;
+    }
+
+    const normalizeText = (value?: string | null) =>
+        value?.trim().toLowerCase() ?? "";
+    return JSON.stringify([
+        displayName,
+        Math.round(size),
+        Math.round(durationMilliseconds),
+        normalizeText(params.title),
+        normalizeText(params.artist),
+        normalizeText(params.album),
+    ]);
+}
+
 interface IEmbeddedLocalMusicMetadata {
     title?: string | null;
     artist?: string | null;

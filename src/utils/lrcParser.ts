@@ -425,8 +425,6 @@ export default class LyricParser {
 
     private extra: Record<string, any>;
 
-    private lastSearchIndex = 0;
-
     public hasTranslation = false;
     public hasRomanization = false;
     public lyricSource?: ILyric.ILyricSource;
@@ -683,7 +681,6 @@ export default class LyricParser {
         const itemCount = this.lrcItems.length;
 
         if (!itemCount || position < this.lrcItems[0].time) {
-            this.lastSearchIndex = 0;
             return null;
         }
 
@@ -698,7 +695,6 @@ export default class LyricParser {
             }
         }
 
-        this.lastSearchIndex = left;
         return this.lrcItems[left];
     }
 

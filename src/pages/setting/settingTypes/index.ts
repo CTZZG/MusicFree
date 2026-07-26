@@ -38,15 +38,15 @@ const settingTypes: Record<
         i18nKey: "cacheManagement.title",
         component: CacheManagementSetting,
     },
-    theme: {
-        title: "主题设置",
-        i18nKey: "sidebar.themeSettings",
-        component: ThemeSetting,
-    },
     equalizer: {
         title: "均衡器",
         i18nKey: "sidebar.equalizer",
         component: EqualizerSetting,
+    },
+    theme: {
+        title: "主题设置",
+        i18nKey: "sidebar.themeSettings",
+        component: ThemeSetting,
     },
     backup: {
         title: "备份与恢复",

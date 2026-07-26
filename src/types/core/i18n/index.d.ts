@@ -134,6 +134,12 @@ export interface ILanguageData {
     // 本地音乐相关
     "localMusic.title": string; // 本地歌曲页标题
     "localMusic.scanLocalMusic": string; // 扫描本地音乐
+    "localMusic.scanSystemLibrary": string; // 扫描系统音乐库
+    "localMusic.scanFolder": string; // 选择文件夹扫描
+    "localMusic.scanFailed": string; // 扫描本地音乐失败
+    "localMusic.audioPermissionRequired": string; // 需要音频媒体读取权限
+    "localMusic.audioPermissionRequiredForPlayback": string; // 播放本地歌曲需要授权
+    "localMusic.folderPermissionRequired": string; // 文件夹访问权限失效
     "localMusic.beginScan": string; // 开始扫描
     "localMusic.downloadList": string; // 下载列表
     "localMusic.scanResult.summary": string; // 扫描摘要
@@ -485,6 +491,8 @@ export interface ILanguageData {
     "pluginSetting.menu.sort": string; // 排序
     "pluginSetting.menu.uninstallAll": string; // 卸载所有
     "pluginSetting.menu.uninstallAllContent": string; // 确定卸载所有插件吗？
+    "pluginSetting.menu.clearDiagnostics": string; // 清除诊断记录
+    "pluginSetting.menu.clearDiagnosticsDone": string; // 已清除 {count} 条
     "pluginSetting.menu.installPlugin": string; // 安装插件
     "pluginSetting.menu.installPluginDialogPlaceholder": string; // 插件安装对话框占位符
     "pluginSetting.menu.pluginInstallFailedDialogTitle": string; // 插件安装失败对话框标题
@@ -521,9 +529,13 @@ export interface ILanguageData {
     "pluginSetting.installResult.failureReason.network": string; // 网络请求失败
     "pluginSetting.installResult.failureReason.not-found": string; // 插件地址不存在
     "pluginSetting.installResult.failureReason.parse": string; // 插件解析失败
+    "pluginSetting.installResult.failureReason.capability-approval-required": string; // 需要确认新增能力
     "pluginSetting.installResult.failureReason.newer-version-installed": string; // 已安装更新版本
     "pluginSetting.installResult.failureReason.unrecognized": string; // 无法识别插件内容
     "pluginSetting.installResult.failureReason.unknown": string; // 未知错误
+    "pluginSetting.capabilityApproval.title": string; // 确认插件能力
+    "pluginSetting.capabilityApproval.content": string; // 插件能力说明
+    "pluginSetting.capabilityApproval.approve": string; // 确认并继续
     "pluginSetting.pluginInstallFailedDialogContent": string; // 插件安装失败对话框内容
     "pluginSetting.pluginUpdateFailedDialogContent": string; // 插件更新失败对话框内容
 
@@ -617,6 +629,15 @@ export interface ILanguageData {
     "backupAndResume.backupToLocal": string; // 备份到本地
     "backupAndResume.webdavSettings": string; // WebDAV设置
     "backupAndResume.webdavUrl": string; // WebDAV URL
+    "backupAndResume.webdavHttpWarningTitle": string;
+    "backupAndResume.webdavHttpWarningContent": string;
+    "backupAndResume.webdavHttpWarningConfirm": string;
+    "backupAndResume.webdavPasswordStoredHint": string; // 密码已安全保存
+    "backupAndResume.webdavPasswordMissingHint": string; // 请输入密码
+    "backupAndResume.credentialMigrationFailed": string; // 凭据迁移失败
+    "backupAndResume.credentialMigrationFailedDesc": string; // 迁移失败说明
+    "backupAndResume.credentialMigrationRetrySuccess": string; // 重试成功
+    "backupAndResume.credentialMigrationRetryFailed": string; // 重试失败
     "backupAndResume.backupToWebdav": string; // 备份到WebDAV
     "backupAndResume.resumeFromWebdav": string; // 从WebDAV恢复
     "backupAndResume.selectWebdavBackup": string; // 选择 WebDAV 备份
@@ -710,6 +731,7 @@ export interface ILanguageData {
 
     "basicSettings.download": string; // 下载
     "basicSettings.downloadPath": string; // 下载路径
+    "basicSettings.downloadPathAppScoped": string; // Android 应用专属下载路径提示
     "basicSettings.fileSelector.selectFolder": string; // 选择文件夹
     "basicSettings.maxDownload": string; // 最大同时下载数目
     "basicSettings.defaultDownloadQuality": string; // 默认下载音质
@@ -721,6 +743,12 @@ export interface ILanguageData {
     "basicSettings.network": string; // 网络
     "basicSettings.useCelluarNetworkPlay": string; // 使用移动网络播放
     "basicSettings.useCelluarNetworkDownload": string; // 使用移动网络下载
+    "basicSettings.allowInsecureMediaPlayback": string;
+    "basicSettings.allowInsecureMediaPlayback.confirmTitle": string;
+    "basicSettings.allowInsecureMediaPlayback.confirmContent": string;
+    "basicSettings.allowPluginInsecureHttp": string; // 允许插件使用 HTTP
+    "basicSettings.allowPluginInsecureHttp.confirmTitle": string;
+    "basicSettings.allowPluginInsecureHttp.confirmContent": string;
 
     "basicSettings.lyric": string; // 歌词
     "basicSettings.lyric.autoSearchLyric": string; // 歌词缺失时自动搜索歌词

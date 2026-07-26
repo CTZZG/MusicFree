@@ -38,6 +38,7 @@ import {
 } from "react-native";
 import { readdir } from "react-native-fs";
 import { FlatList, ScrollView } from "react-native-gesture-handler";
+import { resolveDownloadDirectory } from "@/utils/downloadStoragePolicy";
 
 async function buildPlaybackDiagnosticReport() {
     const [playback, lyric, download] = await Promise.all([
@@ -156,6 +157,12 @@ export default function BasicSetting() {
     const useCelluarNetworkPlay = useAppConfig("basic.useCelluarNetworkPlay");
     const useCelluarNetworkDownload = useAppConfig(
         "basic.useCelluarNetworkDownload",
+    );
+    const allowInsecureMediaPlayback = useAppConfig(
+        "basic.allowInsecureMediaPlayback",
+    );
+    const allowPluginInsecureHttp = useAppConfig(
+        "basic.allowPluginInsecureHttp",
     );
     const maxDownload = useAppConfig("basic.maxDownload");
     const clickMusicInSearch = useAppConfig("basic.clickMusicInSearch");
@@ -507,10 +514,23 @@ export default function BasicSetting() {
                             fontSize="subTitle"
                             style={styles.centerText}
                             numberOfLines={3}>
-                            {downloadPath ?? pathConst.downloadMusicPath}
+                            {resolveDownloadDirectory({
+                                platform: Platform.OS,
+                                configuredPath: downloadPath,
+                                appScopedRoot: pathConst.basePath,
+                                fallbackPath: pathConst.downloadMusicPath,
+                            })}
                         </ThemeText>
                     ),
                     onPress() {
+                        if (Platform.OS === "android") {
+                            Toast.warn(
+                                t(
+                                    "basicSettings.downloadPathAppScoped",
+                                ),
+                            );
+                            return;
+                        }
                         navigate<"file-selector">(ROUTE_PATH.FILE_SELECTOR, {
                             fileType: "folder",
                             multi: false,
@@ -586,6 +606,66 @@ export default function BasicSetting() {
                     t("basicSettings.useCelluarNetworkDownload"),
                     "basic.useCelluarNetworkDownload",
                     useCelluarNetworkDownload ?? false,
+                ),
+                ...(Platform.OS === "android" && playerBackend === "mpv"
+                    ? [
+                        createSwitch(
+                            t("basicSettings.allowInsecureMediaPlayback"),
+                            "basic.allowInsecureMediaPlayback",
+                            allowInsecureMediaPlayback ?? false,
+                            enabled => {
+                                if (!enabled) {
+                                    Config.setConfig(
+                                        "basic.allowInsecureMediaPlayback",
+                                        false,
+                                    );
+                                    return;
+                                }
+                                showDialog("SimpleDialog", {
+                                    title: t(
+                                        "basicSettings.allowInsecureMediaPlayback.confirmTitle",
+                                    ),
+                                    content: t(
+                                        "basicSettings.allowInsecureMediaPlayback.confirmContent",
+                                    ),
+                                    onOk() {
+                                        Config.setConfig(
+                                            "basic.allowInsecureMediaPlayback",
+                                            true,
+                                        );
+                                    },
+                                });
+                            },
+                        ),
+                    ]
+                    : []),
+                createSwitch(
+                    t("basicSettings.allowPluginInsecureHttp"),
+                    "basic.allowPluginInsecureHttp",
+                    allowPluginInsecureHttp ?? false,
+                    enabled => {
+                        if (!enabled) {
+                            Config.setConfig(
+                                "basic.allowPluginInsecureHttp",
+                                false,
+                            );
+                            return;
+                        }
+                        showDialog("SimpleDialog", {
+                            title: t(
+                                "basicSettings.allowPluginInsecureHttp.confirmTitle",
+                            ),
+                            content: t(
+                                "basicSettings.allowPluginInsecureHttp.confirmContent",
+                            ),
+                            onOk() {
+                                Config.setConfig(
+                                    "basic.allowPluginInsecureHttp",
+                                    true,
+                                );
+                            },
+                        });
+                    },
                 ),
             ],
         },

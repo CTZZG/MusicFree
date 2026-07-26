@@ -2,6 +2,7 @@ import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse, safeStringify } from "@/utils/jsonUtil";
 import { errorLog } from "@/utils/log";
 import { getStorage, removeStorage } from "@/utils/storage";
+import type { IPluginCapability } from "@/types/core/pluginManager";
 
 type IPluginPlatform = string;
 
@@ -11,6 +12,8 @@ interface IPluginMetaStorage {
     disabledPlugins: Array<IPluginPlatform>;
     [key: `${IPluginPlatform}.alternativePlugin`]: IPluginPlatform | null;
     [key: `${IPluginPlatform}.userVariables`]: Record<string, string>;
+    [key: `${IPluginPlatform}.capabilities`]: IPluginCapability[];
+    [key: `${IPluginPlatform}.capabilityPolicyVersion`]: number;
 
 }
 
@@ -129,6 +132,32 @@ class PluginMeta {
             return alternativePlugin;
         }
         return null;
+    }
+
+    getApprovedCapabilities(pluginPlatform: IPluginPlatform) {
+        return this.getMetaStorage(`${pluginPlatform}.capabilities`) ?? [];
+    }
+
+    hasCapabilityDecision(pluginPlatform: IPluginPlatform) {
+        return storage.getNumber(
+            `${pluginPlatform}.capabilityPolicyVersion`,
+        ) === 1;
+    }
+
+    setApprovedCapabilities(
+        pluginPlatform: IPluginPlatform,
+        capabilities: IPluginCapability[],
+    ) {
+        this.setMetaStorage(
+            `${pluginPlatform}.capabilities`,
+            [...new Set(capabilities)].sort(),
+        );
+        storage.set(`${pluginPlatform}.capabilityPolicyVersion`, 1);
+    }
+
+    clearApprovedCapabilities(pluginPlatform: IPluginPlatform) {
+        storage.delete(`${pluginPlatform}.capabilities`);
+        storage.delete(`${pluginPlatform}.capabilityPolicyVersion`);
     }
 }
 

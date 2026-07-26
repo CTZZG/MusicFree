@@ -71,6 +71,34 @@ const lifecycleSources = {
         ),
         'utf8',
     ),
+    storageUri: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/storageuri/StorageUriModule.kt',
+        ),
+        'utf8',
+    ),
+    mp3Util: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/mp3Util/Mp3UtilModule.kt',
+        ),
+        'utf8',
+    ),
+    androidAuto: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/mpvplayer/MpvAndroidAutoConnectionDetector.kt',
+        ),
+        'utf8',
+    ),
+    cancelablePromise: readFileSync(
+        path.join(
+            androidDir,
+            'app/src/main/java/fun/upup/musicfree/bridge/CancelablePromise.kt',
+        ),
+        'utf8',
+    ),
 };
 
 const lifecycleAssertions = [
@@ -95,14 +123,59 @@ const lifecycleAssertions = [
         /@Volatile\s+var onCommand:/,
     ],
     [
-        'queued commands re-check initialization',
+        'queued MPV promises are tracked and cancelled on invalidation',
         lifecycleSources.module,
-        /mainHandler\.post\s*\{\s*if\s*\(!isInitialized\.get\(\)\)/,
+        /PendingMainTask[\s\S]+postPromise[\s\S]+override fun invalidate\(\)[\s\S]+pendingMainTasks\.toList\(\)[\s\S]+activePromises\.toList\(\)/,
+    ],
+    [
+        'MPV invalidation releases native observers and callbacks',
+        lifecycleSources.module,
+        /override fun invalidate\(\)[\s\S]+releaseMpvResources[\s\S]+super\.invalidate\(\)/,
+    ],
+    [
+        'StorageUri queued promises are rejected during teardown',
+        lifecycleSources.storageUri,
+        /PendingIoTask[\s\S]+activePromises\.toList\(\)\.forEach[\s\S]+shutdownNow\(\)\.forEach[\s\S]+rejectCancelled\(\)/,
+    ],
+    [
+        'StorageUri cancellation uses a stable error code',
+        lifecycleSources.storageUri,
+        /E_STORAGE_URI_CANCELLED/,
+    ],
+    [
+        'metadata queued promises are rejected during teardown',
+        lifecycleSources.mp3Util,
+        /PendingMetadataTask[\s\S]+activePromises\.toList\(\)\.forEach[\s\S]+shutdownNow\(\)\.forEach[\s\S]+rejectCancelled\(\)/,
+    ],
+    [
+        'metadata cancellation uses a stable error code',
+        lifecycleSources.mp3Util,
+        /E_METADATA_CANCELLED/,
+    ],
+    [
+        'Android Auto late queries are cancelled',
+        lifecycleSources.androidAuto,
+        /fun unregister\(\)[\s\S]{0,320}cancelOperation\(QUERY_TOKEN\)/,
+    ],
+    [
+        'Android Auto callbacks are detached',
+        lifecycleSources.androidAuto,
+        /fun unregister\(\)[\s\S]{0,320}onConnectionChanged = null/,
     ],
     [
         'native lyric updates follow the active backend',
         lifecycleSources.lyricUtil,
         /routesToMpv[\s\S]+routesToNitro[\s\S]+setActivePlayerBackend/,
+    ],
+    [
+        'native promises settle atomically and expose conditional resolution',
+        lifecycleSources.cancelablePromise,
+        /AtomicBoolean\(false\)[\s\S]+compareAndSet\(false, true\)[\s\S]+resolveIfPending/,
+    ],
+    [
+        'detached descriptors close when teardown wins the resolve race',
+        lifecycleSources.storageUri,
+        /resolveIfPending\(detachedFd\)[\s\S]{0,180}ParcelFileDescriptor\.adoptFd\(detachedFd\)\.close\(\)/,
     ],
 ];
 

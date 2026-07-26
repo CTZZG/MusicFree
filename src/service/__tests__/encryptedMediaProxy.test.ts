@@ -115,6 +115,7 @@ describe("encrypted media proxy", () => {
             url: "http://127.0.0.1:1234/l/a.m4a",
             headers: undefined,
             ekey: undefined,
+            trustedLocalMediaProxy: true,
             cek,
         });
     });
@@ -198,6 +199,7 @@ describe("encrypted media proxy", () => {
             }),
         ).resolves.toMatchObject({
             url: "http://localhost:1234/l/a.m4a",
+            trustedLocalMediaProxy: true,
         });
     });
 });

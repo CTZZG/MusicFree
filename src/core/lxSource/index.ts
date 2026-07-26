@@ -1,4 +1,3 @@
-import axios from "axios";
 import CryptoJs from "crypto-js";
 import EventEmitter from "eventemitter3";
 import { readAsStringAsync } from "expo-file-system/legacy";
@@ -14,7 +13,22 @@ import {
     convertMusicFreeItemToLxMusicInfo,
     mapMusicFreeQualityToLx,
 } from "./platform";
-import { createLxSourceRuntime, requestLxMusicUrl } from "./runtime";
+import {
+    createLxSourceRuntime,
+    requestLxMusicUrl,
+    setLxAllowInsecureHttp,
+} from "./runtime";
+import { validateRemoteMediaUrl } from "./mediaUrl";
+import { downloadRemoteLxSource } from "./remoteSource";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
+import Config from "@/core/appConfig";
+import {
+    isMediaHttpAllowed,
+    isPluginInsecureHttpAllowed,
+} from "@/utils/mediaHttpCompatibilityPolicy";
+
+// runtime.ts 刻意不依赖 appConfig，这里把明文开关注入进去。
+setLxAllowInsecureHttp(() => isPluginInsecureHttpAllowed(Config));
 import {
     ILxSourceInstallResult,
     ILxSourceItem,
@@ -24,6 +38,10 @@ import {
 } from "./types";
 
 const store = getOrCreateMMKV("lx-source");
+const mediaProbeHttpClient = createRestrictedHttpClient({
+    maxResponseBytes: 64 * 1024,
+    maxTimeoutMs: 8_000,
+});
 const storageKey = "sources";
 const redirectTargetPrefix = "lx-source:";
 const lxSourceKeys: ILxSourceKey[] = ["kw", "kg", "tx", "wy", "mg", "local"];
@@ -104,9 +122,8 @@ async function isReachableMediaSource(result: IPlugin.IMediaSourceResult) {
     }
 
     try {
-        const response = await axios.get(result.url, {
+        const response = await mediaProbeHttpClient.get(result.url, {
             headers: createReachableMediaSourceHeaders(result),
-            maxRedirects: 5,
             responseType: "arraybuffer",
             timeout: 8000,
             validateStatus: status => status >= 200 && status < 400,
@@ -187,16 +204,9 @@ class LxSourceManager {
 
     async installFromUrl(url: string): Promise<ILxSourceInstallResult> {
         try {
-            const response = await axios.get(url, {
-                headers: {
-                    "Cache-Control": "no-cache",
-                    Pragma: "no-cache",
-                    Expires: "0",
-                },
-                transformResponse: data => data,
-            });
-            return this.createItem(String(response.data ?? ""), {
-                sourceUrl: url,
+            const remoteSource = await downloadRemoteLxSource(url);
+            return this.createItem(remoteSource.script, {
+                sourceUrl: remoteSource.sourceUrl,
             });
         } catch (e: any) {
             devLog("error", "LX custom source install from URL failed", e?.message ?? e);
@@ -384,18 +394,36 @@ class LxSourceManager {
             },
         });
 
-        if (!result?.url) {
+        const mediaUrl = validateRemoteMediaUrl(result?.url, {
+            allowHttp: isMediaHttpAllowed(Config),
+        });
+        if (!mediaUrl.ok) {
+            trace(
+                "播放",
+                `LX自定义源返回无效链接: ${item.metadata.name}`,
+                "error",
+            );
             return null;
         }
-        if (options?.probeUrl && !await isReachableMediaSource(result)) {
+        const normalizedResult = {
+            ...result,
+            url: mediaUrl.url,
+        };
+        if (
+            options?.probeUrl &&
+            new URL(normalizedResult.url).protocol === "https:" &&
+            !await isReachableMediaSource(normalizedResult)
+        ) {
             trace("播放", `LX自定义源链接不可用: ${item.metadata.name}`, "error");
             return null;
         }
 
         trace("播放", `LX自定义源解析: ${item.metadata.name}`);
         return {
-            ...result,
-            quality: result.quality ?? requestQuality ?? mapMusicFreeQualityToLx(quality),
+            ...normalizedResult,
+            quality: normalizedResult.quality ??
+                requestQuality ??
+                mapMusicFreeQualityToLx(quality),
         };
     }
 

@@ -10,7 +10,8 @@ import { useI18N } from "@/core/i18n";
 
 export default function Setting() {
     const { type } = useParams<"setting">();
-    const settingItem = settingTypes[type];
+    const resolvedType = settingTypes[type] ? type : "basic";
+    const settingItem = settingTypes[resolvedType];
 
     const { t } = useI18N();
 
@@ -23,7 +24,7 @@ export default function Setting() {
                 </AppBar>
             )}
 
-            {type === "plugin" ? (
+            {resolvedType === "plugin" ? (
                 <settingItem.component />
             ) : (
                 <HorizontalSafeAreaView style={style.wrapper}>

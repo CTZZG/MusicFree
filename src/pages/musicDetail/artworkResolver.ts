@@ -1,5 +1,8 @@
 import PluginManager from "@/core/pluginManager";
+import { isUsableArtworkUri } from "@/utils/artworkSourcePolicy";
 import { getMediaUniqueKey } from "@/utils/mediaUtils";
+import { validateRemoteNetworkUrl } from "@/utils/remoteNetworkPolicy";
+import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
 
 const LOOKUP_TIMEOUT_MS = 3_000;
 const SUCCESS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -9,6 +12,10 @@ const MAX_GLOBAL_PLUGIN_LOOKUPS = 4;
 const MAX_CONCURRENT_LOOKUPS = 2;
 const ITUNES_REQUEST_TIMEOUT_MS = 3_200;
 const ITUNES_ARTWORK_SIZE = 1200;
+const itunesHttpClient = createRestrictedHttpClient({
+    maxResponseBytes: 1024 * 1024,
+    maxTimeoutMs: ITUNES_REQUEST_TIMEOUT_MS,
+});
 
 interface IArtworkCacheEntry {
     artwork?: string;
@@ -87,14 +94,7 @@ function releaseLookupSlot() {
 export function isUsableMusicDetailArtwork(
     artwork: unknown,
 ): artwork is string {
-    if (typeof artwork !== "string") {
-        return false;
-    }
-    const uri = artwork.trim();
-    return (
-        uri.length > 0 &&
-        /^(https?:|file:|content:|data:image\/|asset:|ph:)/i.test(uri)
-    );
+    return typeof artwork === "string" && isUsableArtworkUri(artwork);
 }
 
 function normalizeMatchText(value?: string) {
@@ -285,63 +285,56 @@ function upscaleItunesArtwork(artwork?: string) {
     if (!isUsableMusicDetailArtwork(artwork)) {
         return undefined;
     }
-    return artwork
+    const candidate = artwork
         .trim()
         .replace(
             /\/\d+x\d+bb\.(jpg|jpeg|png)$/iu,
             `/${ITUNES_ARTWORK_SIZE}x${ITUNES_ARTWORK_SIZE}bb.$1`,
         );
+    return validateRemoteNetworkUrl(candidate, {
+        subject: "iTunes 封面链接",
+    }).ok
+        ? candidate
+        : undefined;
 }
 
 function createItunesArtworkLookup(): IMusicDetailArtworkLookup {
     return {
         search: async query => {
-            const controller = new AbortController();
-            const timeout = setTimeout(
-                () => controller.abort(),
-                ITUNES_REQUEST_TIMEOUT_MS,
+            const params = [
+                `term=${encodeURIComponent(query)}`,
+                "media=music",
+                "entity=song",
+                "limit=12",
+            ].join("&");
+            const response = await itunesHttpClient.get(
+                `https://itunes.apple.com/search?${params}`,
+                {
+                    headers: { accept: "application/json" },
+                    timeout: ITUNES_REQUEST_TIMEOUT_MS,
+                },
             );
-            try {
-                const params = [
-                    `term=${encodeURIComponent(query)}`,
-                    "media=music",
-                    "entity=song",
-                    "limit=12",
-                ].join("&");
-                const response = await fetch(
-                    `https://itunes.apple.com/search?${params}`,
-                    {
-                        signal: controller.signal,
-                        headers: { accept: "application/json" },
-                    },
-                );
-                if (!response.ok) {
-                    return [];
-                }
-                const payload = (await response.json()) as {
-                    results?: IItunesSearchResult[];
-                };
-                return (payload.results ?? [])
-                    .map((item, index) => {
-                        const artwork = upscaleItunesArtwork(
-                            item.artworkUrl100,
-                        );
-                        if (!artwork) {
-                            return null;
-                        }
-                        return {
-                            id: String(item.trackId ?? `result-${index}`),
-                            platform: "itunes-cover",
-                            title: item.trackName ?? "",
-                            artist: item.artistName ?? "",
-                            album: item.collectionName ?? "",
-                            artwork,
-                        } as IMusic.IMusicItem;
-                    })
-                    .filter((item): item is IMusic.IMusicItem => item !== null);
-            } finally {
-                clearTimeout(timeout);
-            }
+            const payload = response.data as {
+                results?: IItunesSearchResult[];
+            };
+            return (payload.results ?? [])
+                .map((item, index) => {
+                    const artwork = upscaleItunesArtwork(
+                        item.artworkUrl100,
+                    );
+                    if (!artwork) {
+                        return null;
+                    }
+                    return {
+                        id: String(item.trackId ?? `result-${index}`),
+                        platform: "itunes-cover",
+                        title: item.trackName ?? "",
+                        artist: item.artistName ?? "",
+                        album: item.collectionName ?? "",
+                        artwork,
+                    } as IMusic.IMusicItem;
+                })
+                .filter((item): item is IMusic.IMusicItem => item !== null);
         },
     };
 }

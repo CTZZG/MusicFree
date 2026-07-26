@@ -93,6 +93,61 @@ describe("createLocalMusicArtworkResolver", () => {
         await resolver.resolve("a");
         expect(loader).toHaveBeenCalledTimes(5);
     });
+
+    it("settles active and queued requests when the resolver is cleared", async () => {
+        let resolveLoader!: (value: string) => void;
+        const loader = jest.fn(
+            () =>
+                new Promise<string>(resolve => {
+                    resolveLoader = resolve;
+                }),
+        );
+        const resolver = createLocalMusicArtworkResolver(loader, 1);
+        const active = resolver.resolve("active");
+        const queued = resolver.resolve("queued");
+        await flushPromises();
+        expect(loader).toHaveBeenCalledTimes(1);
+
+        resolver.clear();
+        await expect(active).resolves.toBe("");
+        await expect(queued).resolves.toBe("");
+        expect(loader).toHaveBeenCalledTimes(1);
+
+        resolveLoader("file:///stale.jpg");
+        await flushPromises();
+        const next = resolver.resolve("queued");
+        await flushPromises();
+        expect(loader).toHaveBeenCalledTimes(2);
+        resolver.clear();
+        await expect(next).resolves.toBe("");
+    });
+
+    it("does not let an invalidated active result populate the cache", async () => {
+        const loaders: Array<(value: string) => void> = [];
+        const loader = jest.fn(
+            () =>
+                new Promise<string>(resolve => {
+                    loaders.push(resolve);
+                }),
+        );
+        const resolver = createLocalMusicArtworkResolver(loader, 1);
+        const staleRequest = resolver.resolve("song");
+        await flushPromises();
+
+        resolver.invalidate("song");
+        await expect(staleRequest).resolves.toBe("");
+        const freshRequest = resolver.resolve("song");
+        loaders[0]("file:///stale.jpg");
+        await flushPromises();
+        await flushPromises();
+        expect(loader).toHaveBeenCalledTimes(2);
+        loaders[1]("file:///fresh.jpg");
+
+        await expect(freshRequest).resolves.toBe("file:///fresh.jpg");
+        await expect(resolver.resolve("song")).resolves.toBe(
+            "file:///fresh.jpg",
+        );
+    });
 });
 
 describe("local artwork metadata helpers", () => {

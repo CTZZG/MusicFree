@@ -37,6 +37,7 @@ import {
     resolveLyricActiveIndex,
     resolveLyricRestoreIndex,
 } from "./lyricScrollState";
+import createDelayedAction from "./delayedAction";
 import { getLyricSeekTimeSeconds } from "./lyricSeekPolicy";
 
 const ITEM_HEIGHT = rpx(92);
@@ -605,18 +606,14 @@ export default function Lyric(props: IProps) {
         scrollPhaseRef.current = ScrollPhase.Tracking;
     }, [getActiveLyricIndex, layout?.height, lyrics.length, scrollToIndex]);
 
-    const delayedScrollToCurrentLrcItem = useMemo(() => {
-        let sto: ReturnType<typeof setTimeout> | undefined;
-
-        return () => {
-            if (sto) {
-                clearTimeout(sto);
-            }
-            sto = setTimeout(() => {
-                scrollToCurrentLrcItem();
-            }, 200);
-        };
+    const delayedScrollAction = useMemo(() => {
+        return createDelayedAction(scrollToCurrentLrcItem, 200);
     }, [scrollToCurrentLrcItem]);
+    const delayedScrollToCurrentLrcItem = delayedScrollAction.schedule;
+
+    useEffect(() => {
+        return delayedScrollAction.cancel;
+    }, [delayedScrollAction]);
 
     const onContentSizeChange = useCallback(() => {
         if (!listRef.current || !lyrics.length) {

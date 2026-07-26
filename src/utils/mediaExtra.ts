@@ -2,7 +2,7 @@
  * 媒体资源的附加属性
  */
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
-import { getMediaUniqueKey } from "@/utils/mediaUtils";
+import { getMediaUniqueKey } from "@/utils/mediaIdentity";
 import type { DownloadWriteResult } from "@/core/downloadFinalizationPolicy";
 import { useEffect, useState } from "react";
 import { safeParse } from "./jsonUtil";

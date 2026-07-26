@@ -1,31 +1,49 @@
+import { validateRemoteNetworkUrl } from "@/utils/remoteNetworkPolicy";
+
 export type WebdavUrlValidation =
     | { ok: true; url: string }
     | { ok: false; reason: string };
 
 /**
- * WebDAV credentials are configured separately, so the endpoint must use
- * encrypted transport and must not embed another credential pair in the URL.
+ * WebDAV credentials are configured separately and must not be embedded in
+ * the URL. HTTPS is preferred, while an explicitly user-configured HTTP URL
+ * remains available as a compatibility path after the settings UI warns.
  */
 export function validateWebdavUrl(input: string): WebdavUrlValidation {
-    let parsed: URL;
-    try {
-        parsed = new URL(input.trim());
-    } catch {
-        return { ok: false, reason: "WebDAV URL 格式无效" };
-    }
+    const result = validateRemoteNetworkUrl(input, {
+        // This endpoint is explicitly configured by the user. Private and
+        // HTTP NAS endpoints are valid here, unlike URLs supplied by plugins.
+        allowHttp: true,
+        allowPrivateHosts: true,
+        subject: "WebDAV URL",
+    });
+    return result.ok
+        ? {
+            ok: true,
+            url: result.url.replace(/#.*$/, ""),
+        }
+        : result;
+}
 
-    if (parsed.protocol !== "https:") {
-        return { ok: false, reason: "WebDAV 仅允许使用 HTTPS" };
-    }
-    if (parsed.username || parsed.password) {
-        return {
-            ok: false,
-            reason: "WebDAV URL 中不能包含用户名或密码",
-        };
-    }
-    if (!parsed.hostname) {
-        return { ok: false, reason: "WebDAV URL 缺少主机名" };
-    }
+export function isHttpWebdavUrl(input: string) {
+    const validation = validateWebdavUrl(input);
+    return validation.ok && new URL(validation.url).protocol === "http:";
+}
 
-    return { ok: true, url: parsed.toString().replace(/#.*$/, "") };
+export function requiresWebdavHttpConfirmation(
+    currentUrl: string | undefined,
+    nextUrl: string,
+) {
+    const nextValidation = validateWebdavUrl(nextUrl);
+    if (
+        !nextValidation.ok ||
+        new URL(nextValidation.url).protocol !== "http:"
+    ) {
+        return false;
+    }
+    const currentValidation = currentUrl
+        ? validateWebdavUrl(currentUrl)
+        : undefined;
+    return !currentValidation?.ok ||
+        currentValidation.url !== nextValidation.url;
 }

@@ -141,3 +141,11 @@ export function resolvePreparedNextItem<T>(
         ? candidate
         : null;
 }
+
+export function getSafeUnresolvedQueueUrl(url?: string | null) {
+    if (typeof url !== "string") {
+        return "";
+    }
+    const candidate = url.trim();
+    return /^(?:file|content):\/\//i.test(candidate) ? candidate : "";
+}

@@ -8,6 +8,10 @@ import {
     getLocalPath,
     isSameMediaItem,
 } from "@/utils/mediaUtils";
+import {
+    ensureAndroidAudioReadPermission,
+    requiresAudioReadPermission,
+} from "@/utils/androidMediaPermission";
 import Network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
 import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
@@ -32,6 +36,7 @@ import type { IMusicHistory } from "@/types/core/musicHistory";
 import { ITrackPlayer } from "@/types/core/trackPlayer/index";
 import { IPluginManager } from "@/types/core/pluginManager";
 import { getAppUserAgent } from "@/utils/userAgentHelper"; // <--- 新增UA统一导入
+import { getNativeArtworkUri } from "@/utils/artworkSourcePolicy";
 import { ImgAsset } from "@/constants/assetsConst";
 import type {
     PlayerAdapter,
@@ -41,12 +46,14 @@ import type {
     PlayerAdapterTrack,
     PlayerAdapterTrackSourceMeta,
     PlayerAdapterTrackSourceOrigin,
+    PlayerAdapterEvent,
 } from "@/core/playerAdapter";
 import { resolvePlayerAdapter } from "@/core/playerAdapter";
 import { normalizeMusicState } from "@/utils/trackUtils";
 import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
 import {
     findNextPlayableQueueItem,
+    getSafeUnresolvedQueueUrl,
     getWrappedQueueItem,
     replaceQueueItemByIdentity,
     resolvePreviousQueueItem,
@@ -66,6 +73,11 @@ import {
     waitForExpectedActive,
 } from "./manualSkipCoordinator";
 import { shouldHydratePlayerHooks } from "./playerStartupPolicy";
+import BackendListenerLifecycle from "./backendListenerLifecycle";
+import {
+    validateRemoteMediaUrlForPlayback,
+} from "@/utils/remoteMediaUrl";
+import { isMediaHttpAllowed } from "@/utils/mediaHttpCompatibilityPolicy";
 
 type MusicFreePlayerTrack = PlayerAdapterTrack &
     Partial<IMusic.IMusicItem> &
@@ -242,6 +254,7 @@ class TrackPlayer
             duration: number;
         }) => void;
         [TrackPlayerEvents.CellularPlayForbidden]: () => void;
+        [TrackPlayerEvents.LocalAudioPermissionRequired]: () => void;
         [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
         [TrackPlayerEvents.NoPlayableMusic]: () => void;
     }>
@@ -253,8 +266,6 @@ class TrackPlayer
 
     // 当前播放的音乐下标
     private currentIndex = -1;
-    // 音乐播放器服务是否启动
-    private serviceInited = false;
     // 底层播放器桥接由配置选择，默认 Nitro Player，可选 MPV。
     private backend!: PlayerAdapter<any>;
     private nitroPendingSourceRequests = new Set<string>();
@@ -270,7 +281,7 @@ class TrackPlayer
     private lastPlaybackRestoredQueueLength: number | null = null;
     private recentPlaybackErrors: IPlaybackDiagnosticSnapshot["recentErrors"] =
         [];
-    private unsubscribeDislikeMusicUpdated?: () => void;
+    private backendListenerLifecycle = new BackendListenerLifecycle();
     private preparedNextSyncSerial = 0;
     private localArtworkSyncInFlight = new Set<string>();
     private lastMpvActiveTrackSyncAt = 0;
@@ -370,7 +381,24 @@ class TrackPlayer
         const configuredBackend =
             this.configService?.getConfig("basic.playerBackend") ??
             "nitro-player";
-        this.backend = resolvePlayerAdapter(configuredBackend);
+        const nextBackend = resolvePlayerAdapter(configuredBackend);
+        if (this.backend && this.backend !== nextBackend) {
+            this.disposeServiceListeners();
+        }
+        this.backend = nextBackend;
+    }
+
+    private disposeServiceListeners() {
+        this.backendListenerLifecycle.dispose();
+    }
+
+    private addBackendListener(
+        event: PlayerAdapterEvent,
+        listener: (...args: any[]) => void,
+    ) {
+        this.backendListenerLifecycle.add(() =>
+            this.backend.addEventListener(event, listener),
+        );
     }
 
     async setupTrackPlayer() {
@@ -465,11 +493,11 @@ class TrackPlayer
             this.setCurrentMusic(track);
         }
 
-        if (!this.serviceInited) {
+        if (this.backendListenerLifecycle.begin()) {
             /**
              * 此事件可能会被触发多次（比如直接替换queue） 参考代码：https://github.com/doublesymmetry/KotlinAudio
              */
-            this.backend.addEventListener("trackChanged", async evt => {
+            this.addBackendListener("trackChanged", async evt => {
                 if (this.isForceExiting) {
                     return;
                 }
@@ -523,7 +551,7 @@ class TrackPlayer
                 }
             });
 
-            this.backend.addEventListener("playEnd", async evt => {
+            this.addBackendListener("playEnd", async evt => {
                 if (this.isForceExiting || this.backend.name !== "mpv") {
                     return;
                 }
@@ -541,14 +569,14 @@ class TrackPlayer
                 });
             });
 
-            this.backend.addEventListener("tracksNeedUpdate", async evt => {
+            this.addBackendListener("tracksNeedUpdate", async evt => {
                 if (this.isForceExiting) {
                     return;
                 }
                 await this.resolveNitroQueuedTracks(evt?.tracks ?? []);
             });
 
-            this.backend.addEventListener("playbackError", async e => {
+            this.addBackendListener("playbackError", async e => {
                 this.recordPlaybackError(e);
                 errorLog("播放出错", e.message);
                 // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
@@ -591,7 +619,7 @@ class TrackPlayer
                 }
             });
 
-            this.backend.addEventListener("playbackStateChanged", state => {
+            this.addBackendListener("playbackStateChanged", state => {
                 if (this.isForceExiting) {
                     return;
                 }
@@ -625,7 +653,7 @@ class TrackPlayer
                 }
             });
 
-            this.backend.addEventListener("progress", adapterProgress => {
+            this.addBackendListener("progress", adapterProgress => {
                 if (this.isForceExiting) {
                     return;
                 }
@@ -640,7 +668,7 @@ class TrackPlayer
                 this.persistPlaybackProgress(currentProgress.position);
             });
 
-            this.backend.addEventListener("playbackSeeked", adapterProgress => {
+            this.addBackendListener("playbackSeeked", adapterProgress => {
                 if (this.isForceExiting) {
                     return;
                 }
@@ -654,13 +682,14 @@ class TrackPlayer
                 this.persistPlaybackProgress(currentProgress.position, true);
             });
 
-            this.unsubscribeDislikeMusicUpdated?.();
-            this.unsubscribeDislikeMusicUpdated = DislikeMusic.onUpdated(() => {
-                trace("不喜欢歌曲规则更新，重新同步预备下一首");
-                this.syncPreparedNextTrack("dislike-rules");
-            });
+            this.backendListenerLifecycle.addCleanup(() =>
+                DislikeMusic.onUpdated(() => {
+                    trace("不喜欢歌曲规则更新，重新同步预备下一首");
+                    this.syncPreparedNextTrack("dislike-rules");
+                }),
+            );
 
-            this.serviceInited = true;
+            this.backendListenerLifecycle.commit();
         }
     }
 
@@ -1018,6 +1047,23 @@ class TrackPlayer
                 throw new Error(PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY);
             }
 
+            // 1.5 播放本地文件需要音频读取权限。
+            // targetSdk 36 下 READ_MEDIA_AUDIO 是新的运行时权限，不会从旧版的
+            // READ_EXTERNAL_STORAGE 自动继承；此前只有本地音乐页的「扫描」按钮
+            // 申请过，所以从旧版升级的用户点播本地歌曲只会拿到一个没有任何解释的
+            // Source error。这里在真正取源之前补一次授权检查。
+            if (
+                requiresAudioReadPermission(localPath) &&
+                !(await ensureAndroidAudioReadPermission())
+            ) {
+                await this.backend.reset();
+                trace("TrackPlayer.play blocked by missing audio permission", {
+                    musicId: musicItem.id,
+                    platform: musicItem.platform,
+                });
+                throw new Error(PlayFailReason.MISSING_AUDIO_PERMISSION);
+            }
+
             // 2. 如果是当前正在播放的音频
             const isCurrentMusic = this.isCurrentMusic(musicItem);
             const shouldUseCurrentFastPath = isCurrentMusic && !forcePlay;
@@ -1123,7 +1169,6 @@ class TrackPlayer
                         platform: musicItem.platform,
                         quality,
                         hasSource: !!candidate?.url,
-                        sourceUrl: candidate?.url,
                     });
                     // 5.3.1 获取到真实源
                     if (candidate?.url) {
@@ -1271,7 +1316,11 @@ class TrackPlayer
             if (this.backend.name !== "mpv") {
                 this.musicHistoryService.addMusic(musicItem);
             }
-            trace("获取音源成功", track);
+            trace("获取音源成功", {
+                sourceType: this.getDiagnosticUrlType(source.url),
+                encrypted: Boolean(source.ekey && source.cek),
+                backend: this.backend.name,
+            });
             // 9. 设置音源
             await this.setTrackSource(
                 track as MusicFreePlayerTrack,
@@ -1357,6 +1406,10 @@ class TrackPlayer
                 this.play(musicItem, forcePlay);
             } else if (message === PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY) {
                 this.emit(TrackPlayerEvents.CellularPlayForbidden);
+            } else if (message === PlayFailReason.MISSING_AUDIO_PERMISSION) {
+                // 不要走 handlePlayFail：那会自动跳到下一首，而队列里的其他本地
+                // 歌曲同样会因为缺权限失败，结果是把整个队列快速跳完。
+                this.emit(TrackPlayerEvents.LocalAudioPermissionRequired);
             } else if (message === PlayFailReason.INVALID_SOURCE) {
                 trace("音源为空，播放失败");
                 await this.handlePlayFail();
@@ -1436,6 +1489,7 @@ class TrackPlayer
                 this.persistPlaybackProgress(progress.position, true);
             }
         }
+        this.disposeServiceListeners();
     }
 
     toggleRepeatMode(): void {
@@ -3293,7 +3347,7 @@ class TrackPlayer
         origin: PlayerAdapterTrackSourceOrigin,
         recovered = false,
     ): Promise<IPlugin.IMediaSourceResult | null> {
-        const sourceWithMeta = this.withPlaybackSourceMeta(
+        let sourceWithMeta = this.withPlaybackSourceMeta(
             source ?? null,
             mediaItem,
             quality,
@@ -3302,6 +3356,28 @@ class TrackPlayer
         );
         if (!hasPlayableSourceUrl(sourceWithMeta)) {
             return null;
+        }
+        const allowInsecureHttpPlayback = isMediaHttpAllowed(
+            this.configService,
+        );
+        if (/^https?:\/\//i.test(sourceWithMeta.url)) {
+            const validation = await validateRemoteMediaUrlForPlayback(
+                sourceWithMeta.url,
+                {
+                    allowHttp: allowInsecureHttpPlayback,
+                },
+            );
+            if (!validation.ok) {
+                errorLog("远程音源策略拒绝", validation.reason);
+                return null;
+            }
+            sourceWithMeta = {
+                ...sourceWithMeta,
+                url: validation.url,
+                allowInsecureHttpPlayback:
+                    allowInsecureHttpPlayback &&
+                    new URL(validation.url).protocol === "http:",
+            };
         }
         if (this.isUnsupportedEncryptedSource(sourceWithMeta)) {
             return null;
@@ -3357,7 +3433,9 @@ class TrackPlayer
     private createNitroQueuedTrack(musicItem: IMusic.IMusicItem) {
         return this.patchMediaArtwork({
             ...musicItem,
-            url: musicItem.url ?? "",
+            // Remote sources enter the native queue only after createPlayableSource
+            // has completed URL and DNS validation in resolveNitroQueuedTracks.
+            url: getSafeUnresolvedQueueUrl(musicItem.url),
             userAgent: getAppUserAgent(),
             musicItem,
         } as unknown as MusicFreePlayerTrack) as MusicFreePlayerTrack;
@@ -3518,6 +3596,10 @@ class TrackPlayer
                     url: activeTrack.url,
                     headers: activeTrack.headers,
                     userAgent: activeTrack.userAgent,
+                    allowInsecureHttpPlayback:
+                        activeTrack.allowInsecureHttpPlayback,
+                    trustedLocalMediaProxy:
+                        activeTrack.trustedLocalMediaProxy,
                     ekey: activeTrack.ekey,
                     cek: activeTrack.cek,
                     playbackSource: activeTrack.playbackSource,
@@ -3796,7 +3878,6 @@ class TrackPlayer
                 musicId: musicItem.id,
                 platform: musicItem.platform,
                 errorMessage: error?.message,
-                sourceUrl: source.url,
             });
             this.setCurrentMusic(recoveredTrack as IMusic.IMusicItem);
             await this.setTrackSource(recoveredTrack, true, seekTo);
@@ -3947,7 +4028,6 @@ class TrackPlayer
                     trace("预解析音源成功", {
                         musicId: musicItem.id,
                         platform: musicItem.platform,
-                        sourceUrl: source.url,
                     });
                     await this.backend.updateTrack(updatedTrack);
                 }
@@ -3958,23 +4038,6 @@ class TrackPlayer
             }
         }
         this.syncPreparedNextTrack("source-resolved");
-    }
-
-    private async prepareNitroTrackSource(musicItem: IMusic.IMusicItem) {
-        const source = await this.resolveDirectMediaSource(musicItem);
-        if (!source?.url) {
-            return null;
-        }
-        const updatedTrack = this.patchMediaArtwork(
-            this.mergeTrackSource(
-                musicItem,
-                source,
-            ) as unknown as MusicFreePlayerTrack,
-        );
-        if (updatedTrack) {
-            await this.backend.updateTrack(updatedTrack);
-        }
-        return updatedTrack;
     }
 
     private syncNitroCurrentMusic(
@@ -3996,6 +4059,9 @@ class TrackPlayer
                     url: track.url,
                     headers: track.headers,
                     userAgent: track.userAgent,
+                    allowInsecureHttpPlayback:
+                        track.allowInsecureHttpPlayback,
+                    trustedLocalMediaProxy: track.trustedLocalMediaProxy,
                     ekey: track.ekey,
                     cek: track.cek,
                     playbackSource: track.playbackSource,
@@ -4159,16 +4225,7 @@ class TrackPlayer
         if (!track) {
             return null;
         }
-        const rawArtwork = track.artwork as unknown;
-        const artwork =
-            typeof rawArtwork === "string"
-                ? rawArtwork.trim()
-                : rawArtwork &&
-                    typeof rawArtwork === "object" &&
-                    "uri" in rawArtwork &&
-                    typeof rawArtwork.uri === "string"
-                    ? rawArtwork.uri.trim()
-                    : undefined;
+        const artwork = getNativeArtworkUri(track.artwork);
 
         return {
             ...track,
@@ -4247,6 +4304,8 @@ enum PlayFailReason {
     PLAY_LIST_IS_EMPTY = "PLAY_LIST_IS_EMPTY",
     /** 无效源 */
     INVALID_SOURCE = "INVALID_SOURCE",
+    /** 缺少本地音频读取权限 */
+    MISSING_AUDIO_PERMISSION = "MISSING_AUDIO_PERMISSION",
     /** 非当前音乐 */
 }
 

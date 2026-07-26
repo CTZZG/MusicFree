@@ -37,6 +37,10 @@ const sensitivePatterns: Array<{
         pattern: /[a-z]:\\[^\s'",)]+/gi,
         replacement: "<local-path>",
     },
+    {
+        pattern: /https?:\/\/[^\s'",)]+/gi,
+        replacement: "<remote-url>",
+    },
 ];
 
 export interface PluginDiagnosticEvent {
@@ -75,6 +79,7 @@ interface IPluginDiagnosticReportPlugin {
         srcUrl?: string;
     };
     supportedMethods: Set<string>;
+    runtimeCapabilities?: Set<string>;
 }
 
 interface IPluginDiagnosticReportOptions {
@@ -178,6 +183,9 @@ function getPluginReportLines(
                 : event.pluginName === plugin.name,
         ).length;
         const capabilities = [...plugin.supportedMethods].sort();
+        const runtimeCapabilities = [
+            ...(plugin.runtimeCapabilities ?? []),
+        ].sort();
         return [
             `- ${sanitizeReportValue(plugin.name)}`,
             `  version=${sanitizeReportValue(plugin.instance.version)}`,
@@ -185,6 +193,9 @@ function getPluginReportLines(
             `  source=${getPluginSourceType(plugin)}`,
             `  hash=${sanitizeReportValue(plugin.hash ? plugin.hash.slice(0, 12) : "")}`,
             `  capabilities=${capabilities.length ? capabilities.map(sanitizeReportValue).join(",") : "-"}`,
+            `  runtimeCapabilities=${runtimeCapabilities.length
+                ? runtimeCapabilities.map(sanitizeReportValue).join(",")
+                : "-"}`,
             `  recentErrors=${eventCount}`,
         ].join("\n");
     });
@@ -291,6 +302,35 @@ export function getLatestPluginDiagnosticEvent(
 
 export function getAllPluginDiagnosticEvents(limit = maxEventsTotal) {
     return getStoredEvents().slice(0, limit);
+}
+
+/**
+ * 插件列表页上"最近"错误的时间窗。
+ *
+ * 事件此前只按数量截断（每插件 20 条 / 总共 200 条），没有时间概念，所以插件列表
+ * 会把安装以来的任何一次失败永久挂在那里——包括早已被修复的问题。用户看到"每个
+ * 插件都有报错"，实际多半是历史噪音。
+ */
+export const recentPluginDiagnosticWindowMs = 24 * 60 * 60 * 1000;
+
+export function isRecentPluginDiagnosticEvent(
+    event: Pick<PluginDiagnosticEvent, "createdAt">,
+    now = Date.now(),
+    windowMs = recentPluginDiagnosticWindowMs,
+) {
+    const age = now - event.createdAt;
+    // 负数意味着事件时间戳在未来（设备改过时间），当作"最近"处理而不是直接隐藏。
+    return age < windowMs;
+}
+
+/** 只返回时间窗内的事件；完整历史仍可通过诊断报告导出。 */
+export function getRecentPluginDiagnosticEvents(
+    now = Date.now(),
+    windowMs = recentPluginDiagnosticWindowMs,
+) {
+    return getStoredEvents().filter(event =>
+        isRecentPluginDiagnosticEvent(event, now, windowMs),
+    );
 }
 
 export function clearPluginDiagnosticEvents(eventIds?: string[]) {

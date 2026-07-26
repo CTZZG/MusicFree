@@ -76,6 +76,10 @@ docs/*
 !docs/0.6.8-audit-report.md
 !docs/release-notes-v0.6.8.md
 !docs/release-notes-v0.6.9.md
+!docs/release-notes-v0.7.0.md
+!docs/release-notes-v0.7.1.md
+!docs/release-notes-v0.7.2.md
+!docs/release-notes-v0.7.3.md
 !docs/code-audit-remediation-plan-2026-07-19.md
 /1.jpg
 /2.jpg
@@ -104,6 +108,16 @@ scripts/
 .env.local
 
 *.log
+
+# Agent-generated native build-cache snapshots (multi-GB, regenerable)
+.codex/nitro-player-generated-backup-*/
+
+# Device-regression capture artifacts (UIAutomator dumps, screenshots, screen
+# recordings). Useful while testing, not source.
+codex_*.xml
+codex_*.png
+codex_*.mp4
+
 # Expo
 .expo
 dist/
