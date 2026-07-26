@@ -39,6 +39,7 @@ import {
     installNitroEqualizerController,
     isEqualizerSupported,
 } from "@/core/equalizer/nitroController";
+import { isCastSupported, setupCast } from "@/core/cast";
 import { setupAppFolders } from "./setupFolders";
 import StorageUri from "@/native/storageUri";
 import { addFileScheme, escapeCharacter } from "@/utils/fileUtils";
@@ -217,6 +218,12 @@ export async function initTrackPlayer() {
     // MPV 有独立音频链路、不经过该会话，因此只在 Nitro 后端注入。
     if (isEqualizerSupported(Config.getConfig("basic.playerBackend"))) {
         installNitroEqualizerController(Equalizer.setController);
+    }
+
+    // 投屏（Nitro 1.5.0）。同样只在 Nitro 后端有意义，且必须在播放器初始化之后：
+    // Cast 连接后由原生播放核心接管路由。失败不影响其余功能。
+    if (isCastSupported(Config.getConfig("basic.playerBackend"))) {
+        setupCast();
     }
 
     await lyricManager.setup();

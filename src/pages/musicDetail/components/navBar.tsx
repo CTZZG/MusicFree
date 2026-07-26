@@ -8,6 +8,9 @@ import Share from "react-native-share";
 import { B64Asset } from "@/constants/assetsConst";
 import IconButton from "@/components/base/iconButton";
 import { useCurrentMusic } from "@/core/trackPlayer";
+import { CastButton } from "react-native-nitro-player";
+import { useAppConfig } from "@/core/appConfig";
+import { isCastSupported } from "@/core/cast/support";
 
 interface INavBarProps {
     compact?: boolean;
@@ -18,6 +21,9 @@ export default function NavBar(props: INavBarProps) {
     const { compact = false, onTitlePress } = props;
     const navigation = useNavigation();
     const musicItem = useCurrentMusic();
+    const castSupported = isCastSupported(
+        useAppConfig("basic.playerBackend"),
+    );
     // const {showShare} = useShare();
 
     return (
@@ -68,6 +74,15 @@ export default function NavBar(props: INavBarProps) {
                     </View>
                 </Pressable>
             )}
+            {/* 投屏按钮。CastButton 在网络中没有可用设备时自行隐藏，
+                因此这里不需要额外判断，只排除不走 Nitro 播放核心的 MPV 后端。 */}
+            {castSupported ? (
+                <CastButton
+                    size={rpx(44)}
+                    color="white"
+                    style={styles.button}
+                />
+            ) : null}
             <IconButton
                 name="share"
                 color="white"
