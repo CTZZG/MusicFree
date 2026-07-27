@@ -14,3 +14,10 @@
 export function isCastSupported(playerBackend: unknown) {
     return playerBackend !== "mpv";
 }
+
+export function isCastButtonVisible(
+    playerBackend: unknown,
+    castReady: boolean,
+) {
+    return castReady && isCastSupported(playerBackend);
+}

@@ -12,7 +12,11 @@ import {fileURLToPath} from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
-const sampleMatrixPath = path.join(rootDir, 'docs', 'round20-format-sample-matrix.md');
+const sampleMatrixPath = path.join(
+    rootDir,
+    'generator',
+    'round20-format-sample-matrix.txt',
+);
 const commonConstPath = path.join(rootDir, 'src', 'constants', 'commonConst.ts');
 
 const sampleRequirements = [

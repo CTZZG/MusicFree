@@ -124,7 +124,14 @@ expect(
     `unexpected cleartext opt-in: ${explicitHttpOptIns.join(", ")}`,
 );
 
-// --- 3. 构建产物：merged release manifest -----------------------------------
+// --- 3. 源码与构建产物：release manifest ------------------------------------
+const sourceManifest = read("android/app/src/main/AndroidManifest.xml");
+expect(
+    !/<meta-data\b(?=[^>]*android:name="androidx\.work\.WorkManagerInitializer")(?=[^>]*tools:node="remove")[^>]*\/?>/s
+        .test(sourceManifest),
+    "app manifest must not remove WorkManagerInitializer while Nitro eagerly constructs DownloadManagerCore",
+);
+
 const mergedManifestPath = path.join(
     root,
     "android/app/build/intermediates/merged_manifest/release",
@@ -146,6 +153,12 @@ if (fs.existsSync(mergedManifestPath)) {
             mergedManifest,
         ),
         "merged release manifest must reference the network security config",
+    );
+    expect(
+        /android:name="androidx\.work\.WorkManagerInitializer"/.test(
+            mergedManifest,
+        ),
+        "merged release manifest must retain WorkManagerInitializer for Nitro DownloadManagerCore",
     );
 } else {
     console.log(
@@ -194,5 +207,5 @@ if (failures.length) {
     process.exit(1);
 }
 console.log(
-    "Structural invariant audit passed: no restricted-transport bypass, cleartext opt-in confined, release manifest hardened, reverted components stay deleted.",
+    "Structural invariant audit passed: no restricted-transport bypass, cleartext opt-in confined, release manifest hardened with WorkManager initialization, reverted components stay deleted.",
 );

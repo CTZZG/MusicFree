@@ -246,24 +246,5 @@
               <data android:pathPattern=".*\\.JS" />
           </intent-filter>
       </activity>
-        <!-- WorkManager is pulled in only by react-native-nitro-player's
-             DownloadManager, which this app never uses: MusicFree ships its own
-             downloader (src/core/downloader.ts + download/DownloadManager.kt).
-             Left alone, androidx.startup would initialise WorkManager on every
-             cold start - before Application.onCreate - creating a Room database
-             and scheduling ForceStopRunnable for a component nothing invokes.
-             Removing the initializer entry stops that work. If Nitro's
-             DownloadManager is ever adopted, delete this block first. -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
-            android:exported="false"
-            tools:node="merge">
-            <meta-data
-                android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.startup"
-                tools:node="remove" />
-        </provider>
-
     </application>
 </manifest>

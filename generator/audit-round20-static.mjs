@@ -30,6 +30,11 @@ const invariantsAuditPath = path.join(
     'generator',
     'audit-invariants.mjs',
 );
+const dependencyOverridesAuditPath = path.join(
+    rootDir,
+    'generator',
+    'audit-dependency-overrides.mjs',
+);
 const rntpRemovalAuditPath = path.join(
     rootDir,
     'generator',
@@ -68,6 +73,11 @@ const checks = [
         name: 'Structural invariants',
         command: nodeCommand,
         args: [invariantsAuditPath],
+    },
+    {
+        name: 'Dependency security overrides',
+        command: nodeCommand,
+        args: [dependencyOverridesAuditPath],
     },
     {
         name: 'RNTP v4 removal guard',

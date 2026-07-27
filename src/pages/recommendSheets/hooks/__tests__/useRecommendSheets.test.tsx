@@ -26,6 +26,7 @@ jest.mock("@/utils/mediaUtils", () => ({
 import { RequestStateCode } from "@/constants/commonConst";
 import PluginManager from "@/core/pluginManager";
 import useRecommendSheets from "../useRecommendSheets";
+import { createRecommendScopeKey } from "../recommendScope";
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
@@ -120,6 +121,59 @@ describe("useRecommendSheets", () => {
         expect(latestResult[2]).toBe(RequestStateCode.FINISHED);
     });
 
+    it("starts page one again when request fields change under the same id", async () => {
+        const oldOperation = deferred<any>();
+        const nextOperation = deferred<any>();
+        const request = jest
+            .fn()
+            .mockReturnValueOnce(oldOperation.promise)
+            .mockReturnValueOnce(nextOperation.promise);
+        jest.mocked(PluginManager.getByHash).mockReturnValue({
+            instance: { platform: "test" },
+            methods: { getRecommendSheetsByTag: request },
+        } as any);
+        const firstTag = {
+            id: "same",
+            category: "old",
+        } as ICommon.IUnique;
+        const changedTag = {
+            id: "same",
+            category: "new",
+        } as ICommon.IUnique;
+
+        act(() => {
+            renderer = create(
+                <Probe pluginHash="plugin" tag={firstTag} />,
+            );
+        });
+        act(() => {
+            renderer!.update(
+                <Probe pluginHash="plugin" tag={changedTag} />,
+            );
+        });
+
+        expect(request).toHaveBeenNthCalledWith(1, firstTag, 1);
+        expect(request).toHaveBeenNthCalledWith(2, changedTag, 1);
+
+        await act(async () => {
+            oldOperation.resolve({
+                data: [{ id: "stale-sheet" }],
+                isEnd: true,
+            });
+            await Promise.resolve();
+        });
+        expect(latestResult[1]).toEqual([]);
+
+        await act(async () => {
+            nextOperation.resolve({
+                data: [{ id: "fresh-sheet" }],
+                isEnd: true,
+            });
+            await Promise.resolve();
+        });
+        expect(latestResult[1]).toEqual([{ id: "fresh-sheet" }]);
+    });
+
     it("retries the same page after a failure", async () => {
         const request = jest
             .fn()
@@ -146,5 +200,45 @@ describe("useRecommendSheets", () => {
         });
         expect(request.mock.calls.map(call => call[1])).toEqual([1, 1]);
         expect(latestResult[1]).toEqual([{ id: "sheet" }]);
+    });
+
+    it("uses a stable, cycle-safe structural scope fingerprint", () => {
+        const first: any = {
+            id: "same",
+            nested: { b: 2, a: 1 },
+            optional: undefined,
+        };
+        first.self = first;
+        const reordered: any = {
+            optional: undefined,
+            nested: { a: 1, b: 2 },
+            id: "same",
+        };
+        reordered.self = reordered;
+
+        expect(createRecommendScopeKey("plugin", first)).toBe(
+            createRecommendScopeKey("plugin", reordered),
+        );
+        expect(
+            createRecommendScopeKey("plugin", {
+                id: "same",
+                nested: { a: 1, b: 2 },
+            }),
+        ).not.toBe(createRecommendScopeKey("plugin", reordered));
+        expect(
+            createRecommendScopeKey("other-plugin", reordered),
+        ).not.toBe(createRecommendScopeKey("plugin", reordered));
+
+        expect(
+            createRecommendScopeKey("plugin", {
+                id: "same",
+                requestToken: Symbol("request"),
+            }),
+        ).not.toBe(
+            createRecommendScopeKey("plugin", {
+                id: "same",
+                requestToken: Symbol("request"),
+            }),
+        );
     });
 });

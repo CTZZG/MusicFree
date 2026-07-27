@@ -61,8 +61,4 @@ function SheetList(props: ISheetListProps) {
     );
 }
 
-export default memo(
-    SheetList,
-    (prev, curr) =>
-        prev.tag.id === curr.tag.id && prev.pluginHash === curr.pluginHash,
-);
+export default memo(SheetList);

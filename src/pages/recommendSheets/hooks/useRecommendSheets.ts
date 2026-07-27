@@ -1,14 +1,21 @@
 import { RequestStateCode } from "@/constants/commonConst";
 import PluginManager from "@/core/pluginManager";
 import { resetMediaItem } from "@/utils/mediaUtils";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from "react";
+import { createRecommendScopeKey } from "./recommendScope";
 
 export default function (pluginHash: string, tag: ICommon.IUnique) {
     const [sheets, setSheets] = useState<IMusic.IMusicSheetItemBase[]>([]);
     const [requestState, setRequestState] = useState(RequestStateCode.IDLE);
     const tagRef = useRef(tag);
     tagRef.current = tag;
-    const scopeKey = `${pluginHash}\u0000${tag.id ?? ""}`;
+    const scopeKey = createRecommendScopeKey(pluginHash, tag);
     const currentScopeRef = useRef("");
     const generationRef = useRef(0);
     const requestIdRef = useRef(0);
@@ -21,17 +28,20 @@ export default function (pluginHash: string, tag: ICommon.IUnique) {
         requestId: number;
     } | null>(null);
 
-    const query = useCallback(async () => {
-        if (currentScopeRef.current !== scopeKey) {
-            currentScopeRef.current = scopeKey;
-            generationRef.current++;
-            nextPageRef.current = 1;
-            finishedRef.current = false;
-            inFlightRef.current = null;
-            setSheets([]);
-            setRequestState(RequestStateCode.IDLE);
+    useLayoutEffect(() => {
+        if (currentScopeRef.current === scopeKey) {
+            return;
         }
+        currentScopeRef.current = scopeKey;
+        generationRef.current++;
+        nextPageRef.current = 1;
+        finishedRef.current = false;
+        inFlightRef.current = null;
+        setSheets([]);
+        setRequestState(RequestStateCode.IDLE);
+    }, [scopeKey]);
 
+    const query = useCallback(async () => {
         if (finishedRef.current || inFlightRef.current?.scopeKey === scopeKey) {
             return;
         }
@@ -103,10 +113,12 @@ export default function (pluginHash: string, tag: ICommon.IUnique) {
         query();
     }, [query]);
 
-    useEffect(() => () => {
-        mountedRef.current = false;
-        generationRef.current++;
-        inFlightRef.current = null;
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            inFlightRef.current = null;
+        };
     }, []);
 
     return [query, sheets, requestState] as const;

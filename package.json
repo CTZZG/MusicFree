@@ -15,6 +15,7 @@
     "clean": "cd ./android && ./gradlew clean",
     "test": "jest",
     "audit:round20-static": "node ./generator/audit-round20-static.mjs",
+    "audit:dependency-overrides": "node ./generator/audit-dependency-overrides.mjs",
     "audit:invariants": "node ./generator/audit-invariants.mjs",
     "audit:round20-native": "node ./generator/audit-round20-native.mjs",
     "audit:nitro-adapter": "node ./generator/audit-nitro-player-adapter.mjs",
@@ -143,7 +144,9 @@
     "node": ">=22.13.0"
   },
   "overrides": {
-    "brace-expansion": "5.0.8"
+    "brace-expansion": "5.0.8",
+    "file-type": "21.3.4",
+    "uuid": "11.1.1"
   },
   "expo": {
     "install": {

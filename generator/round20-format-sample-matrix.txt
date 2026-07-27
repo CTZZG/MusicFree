@@ -1,4 +1,4 @@
-# Round 20 音频格式样本矩阵
+Round 20 音频格式样本矩阵
 
 该矩阵用于记录 Nitro/Media3 扩展格式的静态门禁与后续真机证据。样本文件不提交到仓库；本地或 CI 可通过 `MUSICFREE_FORMAT_SAMPLE_DIRS` 指定一个或多个样本目录。设置 `MUSICFREE_REQUIRE_FORMAT_SAMPLES=1` 后，缺少 Gate 3 必选样本会使审计失败。
 
