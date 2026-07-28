@@ -1,12 +1,13 @@
-import React, { Fragment } from "react";
+import React from "react";
 import { Pressable, StyleSheet } from "react-native";
 import rpx from "@/utils/rpx";
 import ThemeText from "@/components/base/themeText";
 
 import {
-    getAvailableQualities,
+    getQualityOptions,
     getQualitySize,
     getQualityText,
+    type QualityAvailabilityStatus,
 } from "@/utils/qualities";
 import PluginManager from "@/core/pluginManager";
 import { sizeFormatter } from "@/utils/fileUtils";
@@ -30,6 +31,19 @@ interface IMusicQualityProps {
     ) => void;
 }
 
+const qualityStatusI18nKeys: Record<
+    QualityAvailabilityStatus,
+    | "panel.musicQuality.status.resolved"
+    | "panel.musicQuality.status.metadata"
+    | "panel.musicQuality.status.declared"
+    | "panel.musicQuality.status.unknown"
+> = {
+    resolved: "panel.musicQuality.status.resolved",
+    metadata: "panel.musicQuality.status.metadata",
+    declared: "panel.musicQuality.status.declared",
+    unknown: "panel.musicQuality.status.unknown",
+};
+
 export default function MusicQuality(props: IMusicQualityProps) {
     const safeAreaInsets = useSafeAreaInsets();
     const i18n = useI18N();
@@ -41,7 +55,7 @@ export default function MusicQuality(props: IMusicQualityProps) {
 
     const { musicItem, onQualityPress, type = "play" } = props ?? {};
     const plugin = PluginManager.getByMedia(musicItem);
-    const availableQualities = getAvailableQualities(musicItem, plugin?.instance);
+    const qualityOptions = getQualityOptions(musicItem, plugin?.instance);
 
     return (
         <PanelBase
@@ -66,26 +80,36 @@ export default function MusicQuality(props: IMusicQualityProps) {
                                 marginBottom: safeAreaInsets.bottom,
                             },
                         ]}>
-                        {availableQualities.map(key => {
+                        {qualityOptions.map(option => {
+                            const key = option.key;
+                            const qualityLabel = qualityTextI18n[key] ?? key;
+                            const qualitySize = getQualitySize(
+                                musicItem,
+                                key,
+                            );
+                            const statusText = i18n.t(
+                                qualityStatusI18nKeys[option.status],
+                            );
                             return (
-                                <Fragment key={`frag-${key}`}>
-                                    <Pressable
-                                        key={`btn-${key}`}
-                                        style={style.item}
-                                        onPress={() => {
-                                            onQualityPress(key, musicItem);
-                                            hidePanel();
-                                        }}>
-                                        <ThemeText>
-                                            {qualityTextI18n[key]}{" "}
-                                            {getQualitySize(musicItem, key)
-                                                ? `(${sizeFormatter(
-                                                      getQualitySize(musicItem, key)!,
-                                                )})`
-                                                : ""}
-                                        </ThemeText>
-                                    </Pressable>
-                                </Fragment>
+                                <Pressable
+                                    key={`btn-${key}`}
+                                    style={style.item}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`${qualityLabel}，${statusText}`}
+                                    onPress={() => {
+                                        onQualityPress(key, musicItem);
+                                        hidePanel();
+                                    }}>
+                                    <ThemeText>
+                                        {qualityLabel}{" "}
+                                        {qualitySize
+                                            ? `(${sizeFormatter(qualitySize)})`
+                                            : ""}
+                                    </ThemeText>
+                                    <ThemeText style={style.statusText}>
+                                        {statusText}
+                                    </ThemeText>
+                                </Pressable>
                             );
                         })}
                     </ScrollView>
@@ -106,7 +130,13 @@ const style = StyleSheet.create({
         paddingHorizontal: rpx(24),
     },
     item: {
-        height: rpx(96),
+        minHeight: rpx(96),
         justifyContent: "center",
+        paddingVertical: rpx(12),
+    },
+    statusText: {
+        marginTop: rpx(6),
+        fontSize: rpx(22),
+        opacity: 0.55,
     },
 });

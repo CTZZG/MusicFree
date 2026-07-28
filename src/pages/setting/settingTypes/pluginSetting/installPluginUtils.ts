@@ -5,6 +5,7 @@ import Toast from "@/utils/toast";
 import {
     IInstallPluginFailureReason,
     IInstallPluginResult,
+    IInstallPluginSourceType,
     IPluginCapability,
 } from "@/types/core/pluginManager";
 import type { ILanguageData } from "@/types/core/i18n";
@@ -26,6 +27,26 @@ interface IInstallPluginFromUrlTextOptions {
     requireSupportedExtension?: boolean;
 }
 
+export interface IPluginInstallerContext {
+    pluginUrl?: string;
+    sourceType: IInstallPluginSourceType;
+}
+
+export type PluginInstaller = ((
+    approvedCapabilities: IPluginCapability[],
+) => Promise<IInstallPluginResult>) & {
+    context?: Readonly<IPluginInstallerContext>;
+};
+
+export function createPluginInstaller(
+    context: IPluginInstallerContext,
+    installer: (
+        approvedCapabilities: IPluginCapability[],
+    ) => Promise<IInstallPluginResult>,
+): PluginInstaller {
+    return Object.assign(installer, { context });
+}
+
 const installFailureReasonI18nKeys: Record<
     IInstallPluginFailureReason,
     keyof ILanguageData
@@ -44,8 +65,60 @@ const installFailureReasonI18nKeys: Record<
 
 const remoteHttpClient = createRestrictedHttpClient();
 
+export function sanitizePluginInstallErrorMessage(error: unknown) {
+    const reason =
+        typeof error === "string"
+            ? error
+            : (error as { message?: unknown } | null)?.message;
+    const sanitized = String(reason ?? "")
+        .replace(/([?&](?:access_token|refresh_token|token|auth|authorization|cookie|session|password|passwd|secret|sign)=)[^&\s]+/gi, "$1<redacted>")
+        .replace(/(bearer\s+)[a-z0-9._~+/=-]+/gi, "$1<redacted>")
+        .replace(/(cookie\s*[:=]\s*)[^\s;]+/gi, "$1<redacted>")
+        .replace(/(["'])(?:file:\/\/\/|\/(?:storage|data|sdcard|var|private|Users)\/)[^"'\r\n]*\1/g, "$1<local-path>$1")
+        .replace(/(\(\s*)(?:file:\/\/\/|\/(?:storage|data|sdcard|var|private|Users)\/)(?:[^()\r\n]|\([^()\r\n]*\))*(\s*\))/g, "$1<local-path>$2")
+        .replace(/(?:file:\/\/\/|\/(?:storage|data|sdcard|var|private|Users)\/)[^\s'",);]+/g, "<local-path>")
+        .replace(/[a-z]:\\[^\s'",);]+/gi, "<local-path>")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!sanitized) {
+        return i18n.t(
+            "pluginSetting.installResult.failureReason.unknown",
+        );
+    }
+    return sanitized.length > 240
+        ? `${sanitized.slice(0, 240)}...`
+        : sanitized;
+}
+
+async function runPluginInstallerSafely(
+    installer: PluginInstaller,
+    approvedCapabilities: IPluginCapability[],
+): Promise<IInstallPluginResult> {
+    try {
+        const result = await installer(approvedCapabilities);
+        if (!installer.context) {
+            return result;
+        }
+        return {
+            ...result,
+            pluginUrl: result.pluginUrl ?? installer.context.pluginUrl,
+            sourceType: result.sourceType ?? installer.context.sourceType,
+        };
+    } catch (error) {
+        return recordFailedInstallResult({
+            success: false,
+            message: sanitizePluginInstallErrorMessage(error),
+            pluginUrl: installer.context?.pluginUrl,
+            sourceType: installer.context?.sourceType ?? "unknown",
+            failureReason: "unknown",
+            retryable: true,
+        });
+    }
+}
+
 export function confirmPluginCapabilities(
     capabilities: IPluginCapability[],
+    pluginCount = 1,
 ) {
     return new Promise<boolean>(resolve => {
         let settled = false;
@@ -61,6 +134,7 @@ export function confirmPluginCapabilities(
                 capabilities: capabilities
                     .map(capability => `• ${capability}`)
                     .join("\n"),
+                pluginCount: String(pluginCount),
             }),
             okText: i18n.t("pluginSetting.capabilityApproval.approve"),
             onOk: () => settle(true),
@@ -70,29 +144,75 @@ export function confirmPluginCapabilities(
     });
 }
 
-export async function runPluginInstallWithCapabilityApproval(
-    installer: (
-        approvedCapabilities: IPluginCapability[],
-    ) => Promise<IInstallPluginResult>,
+export async function runPluginInstallBatchWithCapabilityApproval(
+    installers: PluginInstaller[],
 ) {
-    let result = await installer([]);
-    if (
-        result.failureReason !== "capability-approval-required" ||
-        !result.requiredCapabilities?.length
-    ) {
-        return result;
+    const results: IInstallPluginResult[] = [];
+    const pendingApprovals: Array<{
+        index: number;
+        requiredCapabilities: IPluginCapability[];
+    }> = [];
+    const batchCapabilities = new Set<IPluginCapability>();
+
+    for (const installer of installers) {
+        const result = await runPluginInstallerSafely(installer, []);
+        const index = results.push(result) - 1;
+        if (
+            result.failureReason !== "capability-approval-required" ||
+            !result.requiredCapabilities?.length
+        ) {
+            continue;
+        }
+
+        const requiredCapabilities = [
+            ...new Set(result.requiredCapabilities),
+        ].sort();
+        pendingApprovals.push({
+            index,
+            requiredCapabilities,
+        });
+        requiredCapabilities.forEach(capability => {
+            batchCapabilities.add(capability);
+        });
     }
+
+    if (!pendingApprovals.length) {
+        return results;
+    }
+
     const approved = await confirmPluginCapabilities(
-        result.requiredCapabilities,
+        [...batchCapabilities].sort(),
+        pendingApprovals.length,
     );
     if (!approved) {
-        return {
-            ...result,
-            message: "用户未确认插件新增能力",
-            retryable: true,
-        };
+        for (const pending of pendingApprovals) {
+            results[pending.index] = {
+                ...results[pending.index],
+                message:
+                    pendingApprovals.length > 1
+                        ? "用户未确认本批插件新增能力"
+                        : "用户未确认插件新增能力",
+                retryable: true,
+            };
+        }
+        return results;
     }
-    result = await installer(result.requiredCapabilities);
+
+    for (const pending of pendingApprovals) {
+        results[pending.index] = await runPluginInstallerSafely(
+            installers[pending.index],
+            pending.requiredCapabilities,
+        );
+    }
+    return results;
+}
+
+export async function runPluginInstallWithCapabilityApproval(
+    installer: PluginInstaller,
+) {
+    const [result] = await runPluginInstallBatchWithCapabilityApproval([
+        installer,
+    ]);
     return result;
 }
 
@@ -177,20 +297,22 @@ export function formatPluginInstallResult(
     t: PluginInstallTranslate,
 ) {
     const title =
-        result.pluginName ??
-        result.pluginUrl ??
-        t("common.unknownName");
+        result.pluginName ?? result.pluginUrl ?? t("common.unknownName");
     const lines = [
         result.pluginVersion
             ? t("pluginSetting.pluginItem.versionHint", {
                 version: result.pluginVersion,
             })
             : "",
-        `${t("pluginSetting.installResult.source")}: ${getInstallResultSourceLabel(result, t)}`,
+        `${t(
+            "pluginSetting.installResult.source",
+        )}: ${getInstallResultSourceLabel(result, t)}`,
         result.pluginUrl ? `${result.pluginUrl}` : "",
         result.success
             ? ""
-            : `${t("pluginSetting.installResult.failureType")}: ${getInstallFailureReasonLabel(result, t)}`,
+            : `${t(
+                "pluginSetting.installResult.failureType",
+            )}: ${getInstallFailureReasonLabel(result, t)}`,
         result.success
             ? ""
             : `${t("pluginSetting.installResult.retryable")}: ${
@@ -215,12 +337,18 @@ export function showPluginInstallResults(
 ) {
     const content = [
         successResults.length
-            ? `${t("pluginSetting.installResult.success")}\n${successResults.map(it => formatPluginInstallResult(it, t)).join("\n-----\n")}`
+            ? `${t("pluginSetting.installResult.success")}\n${successResults
+                .map(it => formatPluginInstallResult(it, t))
+                .join("\n-----\n")}`
             : "",
         failResults.length
-            ? `${t("pluginSetting.installResult.failed")}\n${failResults.map(it => formatPluginInstallResult(it, t)).join("\n-----\n")}`
+            ? `${t("pluginSetting.installResult.failed")}\n${failResults
+                .map(it => formatPluginInstallResult(it, t))
+                .join("\n-----\n")}`
             : "",
-    ].filter(Boolean).join("\n\n");
+    ]
+        .filter(Boolean)
+        .join("\n\n");
     const showInstallResultDialog = () => {
         showDialog("SimpleDialog", {
             title: t("pluginSetting.installResult.dialogTitle"),
@@ -252,73 +380,137 @@ export async function installPluginFromUrlText(
     text: string,
     options?: IInstallPluginFromUrlTextOptions,
 ): Promise<IInstallPluginResult[]> {
+    return installPluginsFromUrlTexts([text], options);
+}
+
+type PluginInstallPlanEntry =
+    | {
+          kind: "installer";
+          installerIndex: number;
+      }
+    | {
+          kind: "result";
+          result: IInstallPluginResult;
+      };
+
+async function resolvePluginUrls(
+    text: string,
+    options?: IInstallPluginFromUrlTextOptions,
+): Promise<{ urls: string[] } | { failure: IInstallPluginResult }> {
     const inputUrl = text.trim();
     const urlKind = getPluginSubscriptionUrlKind(inputUrl);
     if (urlKind === "invalid" && options?.requireSupportedExtension) {
-        return [recordFailedInstallResult({
-            success: false,
-            message: "订阅地址必须以 .js 或 .json 结尾",
-            pluginUrl: text,
-            sourceType: "network",
-            failureReason: "unrecognized",
-            retryable: false,
-        })];
+        return {
+            failure: recordFailedInstallResult({
+                success: false,
+                message: "订阅地址必须以 .js 或 .json 结尾",
+                pluginUrl: text,
+                sourceType: "network",
+                failureReason: "unrecognized",
+                retryable: false,
+            }),
+        };
+    }
+
+    if (urlKind !== "collection") {
+        return {
+            urls: [inputUrl],
+        };
     }
 
     try {
-        let urls: string[] = [];
-        if (urlKind === "collection") {
-            const jsonFile = (
-                await remoteHttpClient.get(inputUrl, {
-                    headers: {
-                        "Cache-Control": "no-cache",
-                        Pragma: "no-cache",
-                        Expires: "0",
-                    },
-                })
-            ).data;
-            urls = (jsonFile?.plugins ?? [])
-                .map((_: any) =>
-                    typeof _?.url === "string" ? _.url.trim() : "",
-                )
-                .filter((url: string) => Boolean(url));
-            if (!urls.length) {
-                return [recordFailedInstallResult({
-                    success: false,
-                    message: "订阅无效",
-                    pluginUrl: inputUrl,
-                    sourceType: "network",
-                    failureReason: "unrecognized",
-                    retryable: false,
-                })];
-            }
-        } else {
-            urls = [inputUrl];
+        const jsonFile = (
+            await remoteHttpClient.get(inputUrl, {
+                headers: {
+                    "Cache-Control": "no-cache",
+                    Pragma: "no-cache",
+                    Expires: "0",
+                },
+            })
+        ).data;
+        const urls = (jsonFile?.plugins ?? [])
+            .map((_: any) => (typeof _?.url === "string" ? _.url.trim() : ""))
+            .filter((url: string) => Boolean(url));
+        if (urls.length) {
+            return {
+                urls,
+            };
         }
-        const results: IInstallPluginResult[] = [];
-        for (const url of urls) {
-            results.push(await runPluginInstallWithCapabilityApproval(
-                approvedCapabilities =>
-                    PluginManager.installPluginFromUrl(url, {
-                        notCheckVersion: Config.getConfig(
-                            "basic.notCheckPluginVersion",
-                        ),
-                        approvedCapabilities,
-                    }),
-            ));
-        }
-        return results;
+
+        return {
+            failure: recordFailedInstallResult({
+                success: false,
+                message: "订阅无效",
+                pluginUrl: inputUrl,
+                sourceType: "network",
+                failureReason: "unrecognized",
+                retryable: false,
+            }),
+        };
     } catch (e: any) {
         const isNotFound = getHttpStatus(e) === 404;
-        return [recordFailedInstallResult({
-            success: false,
-            message: isNotFound
-                ? "插件不存在，请联系插件作者"
-                : e?.message,
-            pluginUrl: text,
-            sourceType: "network",
-            failureReason: isNotFound ? "not-found" : "network",
-            retryable: !isNotFound,
-        })];
+        return {
+            failure: recordFailedInstallResult({
+                success: false,
+                message: isNotFound
+                    ? "插件不存在，请联系插件作者"
+                    : sanitizePluginInstallErrorMessage(e),
+                pluginUrl: inputUrl,
+                sourceType: "network",
+                failureReason: isNotFound ? "not-found" : "network",
+                retryable: !isNotFound,
+            }),
+        };
     }
+}
+
+export async function installPluginsFromUrlTexts(
+    texts: string[],
+    options?: IInstallPluginFromUrlTextOptions,
+): Promise<IInstallPluginResult[]> {
+    const installers: PluginInstaller[] = [];
+    const plan: PluginInstallPlanEntry[] = [];
+
+    for (const text of texts) {
+        const resolved = await resolvePluginUrls(text, options);
+        if ("failure" in resolved) {
+            plan.push({
+                kind: "result",
+                result: resolved.failure,
+            });
+            continue;
+        }
+
+        for (const url of resolved.urls) {
+            const installerIndex =
+                installers.push(
+                    createPluginInstaller(
+                        {
+                            pluginUrl: url,
+                            sourceType: "network",
+                        },
+                        approvedCapabilities =>
+                            PluginManager.installPluginFromUrl(url, {
+                                notCheckVersion: Config.getConfig(
+                                    "basic.notCheckPluginVersion",
+                                ),
+                                approvedCapabilities,
+                            }),
+                    ),
+                ) - 1;
+            plan.push({
+                kind: "installer",
+                installerIndex,
+            });
+        }
+    }
+
+    const installedResults = await runPluginInstallBatchWithCapabilityApproval(
+        installers,
+    );
+    return plan.map(entry =>
+        entry.kind === "result"
+            ? entry.result
+            : installedResults[entry.installerIndex],
+    );
 }

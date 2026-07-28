@@ -2,6 +2,7 @@ import {
     hasEncryptedMediaSource,
     isCencMediaUrl,
     isEncryptedMediaUrl,
+    isQmcMediaUrl,
     normalizeCek,
     normalizeEkey,
 } from "../mflac";
@@ -17,6 +18,16 @@ describe("encrypted media helpers", () => {
         expect(isEncryptedMediaUrl("https://example.com/song.flac")).toBe(
             false,
         );
+        expect(isEncryptedMediaUrl("https://example.com/song.qmc3")).toBe(true);
+    });
+
+    it("detects QMC formats separately from CENC", () => {
+        expect(isQmcMediaUrl("https://example.com/song.mflac0?token=1")).toBe(
+            true,
+        );
+        expect(isQmcMediaUrl("https://example.com/song.MGG#hash")).toBe(true);
+        expect(isQmcMediaUrl("https://example.com/song.qmcflac")).toBe(true);
+        expect(isQmcMediaUrl("https://example.com/song.mmp4")).toBe(false);
     });
 
     it("detects CENC MMP4 URLs separately", () => {
@@ -28,7 +39,7 @@ describe("encrypted media helpers", () => {
 
     it("normalizes decrypt keys", () => {
         expect(normalizeCek(" 001122 ")).toBe("001122");
-        expect(normalizeEkey(`prefix-${"x".repeat(710)}`)).toHaveLength(704);
+        expect(normalizeEkey(`prefix-${"x".repeat(710)}`)).toHaveLength(717);
     });
 
     it("treats ekey-only sources as encrypted", () => {

@@ -12,10 +12,27 @@ declare namespace IPlugin {
         data?: IPlaybackStateChangeData;
     }
 
+    export type IMediaSourceFailureCode =
+        | "unavailable"
+        | "network-error"
+        | "plugin-error"
+        | "invalid-url"
+        | "policy-blocked"
+        | "encrypted-unsupported"
+        | "source-rejected"
+        | "backend-error";
+
+    export interface IMediaSourceFailure {
+        code: IMediaSourceFailureCode;
+        retryable?: boolean;
+    }
+
     export interface IMediaSourceResult {
         headers?: Record<string, string>;
         /** 兜底播放 */
         url?: string;
+        /** 未返回 URL 时的结构化失败原因；旧插件仍可返回 null 或抛出异常。 */
+        failure?: IMediaSourceFailure;
         /** UA */
         userAgent?: string;
         /** 音质 */

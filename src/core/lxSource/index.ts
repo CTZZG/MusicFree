@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { readFile } from "react-native-fs";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import { safeParse } from "@/utils/jsonUtil";
+import { getMediaUniqueKey } from "@/utils/mediaUtils";
 import { createReachableMediaSourceHeaders } from "./headers";
 import { devLog, errorLog, trace } from "@/utils/log";
 import { parseLxSourceMetadata } from "./metadata";
@@ -26,6 +27,13 @@ import {
     isMediaHttpAllowed,
     isPluginInsecureHttpAllowed,
 } from "@/utils/mediaHttpCompatibilityPolicy";
+import {
+    classifyMediaSourceFailure,
+    createMediaSourceFailureResult,
+    mediaSourceFailureFromPluginResult,
+    preferMediaSourceFailure,
+    type MediaSourceFailure,
+} from "@/core/pluginManager/mediaSourceFailure";
 
 // runtime.ts 刻意不依赖 appConfig，这里把明文开关注入进去。
 setLxAllowInsecureHttp(() => isPluginInsecureHttpAllowed(Config));
@@ -403,7 +411,15 @@ class LxSourceManager {
                 `LX自定义源返回无效链接: ${item.metadata.name}`,
                 "error",
             );
-            return null;
+            return createMediaSourceFailureResult(
+                classifyMediaSourceFailure(
+                    new Error(mediaUrl.reason),
+                    {
+                        pluginName: `LX:${item.metadata.name}`,
+                        quality,
+                    },
+                ),
+            );
         }
         const normalizedResult = {
             ...result,
@@ -457,7 +473,13 @@ class LxSourceManager {
                 source: parsed.sourceKey,
                 message: e?.message ?? String(e),
             });
-            return null;
+            return createMediaSourceFailureResult(
+                classifyMediaSourceFailure(e, {
+                    mediaKey: getMediaUniqueKey(musicItem),
+                    pluginName: `LX:${item.metadata.name}`,
+                    quality,
+                }),
+            );
         }
     }
 
@@ -471,7 +493,13 @@ class LxSourceManager {
         }
 
         const enabledSources = this.getSources().filter(item => item.enabled);
+        let preferredFailure: MediaSourceFailure | null = null;
         for (const item of enabledSources) {
+            const failureContext = {
+                mediaKey: getMediaUniqueKey(musicItem),
+                pluginName: `LX:${item.metadata.name}`,
+                quality,
+            };
             try {
                 const result = await this.requestMediaSourceFromItem(
                     item,
@@ -485,7 +513,20 @@ class LxSourceManager {
                 if (result?.url) {
                     return result;
                 }
+                if (result?.failure) {
+                    preferredFailure = preferMediaSourceFailure(
+                        preferredFailure,
+                        mediaSourceFailureFromPluginResult(
+                            result.failure,
+                            failureContext,
+                        ),
+                    );
+                }
             } catch (e: any) {
+                preferredFailure = preferMediaSourceFailure(
+                    preferredFailure,
+                    classifyMediaSourceFailure(e, failureContext),
+                );
                 errorLog("LX自定义源解析失败", {
                     name: item.metadata.name,
                     message: e?.message ?? String(e),
@@ -493,7 +534,9 @@ class LxSourceManager {
             }
         }
 
-        return null;
+        return preferredFailure
+            ? createMediaSourceFailureResult(preferredFailure)
+            : null;
     }
 }
 

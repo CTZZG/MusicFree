@@ -55,9 +55,13 @@ import Mp3Util, {
     NativeDownloadEmitter,
 } from "@/native/mp3Util";
 import Cenc from "@/native/cenc";
+import Qmc, { type IQmcStreamInfo } from "@/native/qmc";
 import {
     canProxyCencSource,
+    canProxyQmcSource,
     getPlayableCencKey,
+    getPlayableQmcEkey,
+    inspectQmcMediaSource,
 } from "@/service/encryptedMediaProxy";
 import LocalMusicSheet from "./localMusicSheet";
 import { IPluginManager } from "@/types/core/pluginManager";
@@ -88,6 +92,11 @@ import { withTimeout } from "@/utils/promiseTimeout";
 import DownloadPathReservation from "./downloadPathReservation";
 import { Platform } from "react-native";
 import { resolveDownloadDirectory } from "@/utils/downloadStoragePolicy";
+import {
+    assertQmcDecryptionOutput,
+    createDownloadMediaPlan,
+    selectDownloadSourceEncryption,
+} from "./downloadMediaDecryption";
 
 type IWriteResult = DownloadWriteResult;
 
@@ -210,6 +219,7 @@ const NATIVE_DOWNLOAD_STATUS_POLL_MS = 15000;
 const NATIVE_DOWNLOAD_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DOWNLOAD_SOURCE_RESOLUTION_TIMEOUT_MS = 15_000;
 const DOWNLOAD_SOURCE_PLUGIN_CALL_TIMEOUT_MS = 6_000;
+const DOWNLOAD_SOURCE_QMC_PROBE_TIMEOUT_MS = 8_000;
 const NATIVE_DOWNLOAD_PAUSED_ERROR = "Native download paused";
 const DOWNLOAD_TASK_SNAPSHOT_THROTTLE_MS = 500;
 const NATIVE_DOWNLOAD_BRIDGE_TIMEOUT_MS = 5000;
@@ -1218,6 +1228,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         musicItem: IMusic.IMusicItem;
         attemptId: string;
         journal: IDownloadFinalizationJournal;
+        /** @deprecated Only used for an in-memory legacy CENC journal. */
         cencDownloadKey?: string;
     }) {
         const { musicItem, attemptId, cencDownloadKey, journal } = params;
@@ -1245,7 +1256,39 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     await unlink(journal.targetPath);
                 }
                 this.assertFinalizationCanContinue(musicItem, attemptId);
-                if (journal.requiresDecryption) {
+                if (journal.decryption?.scheme === "cenc") {
+                    const decrypted = await Cenc.decryptFile(
+                        journal.cachePath,
+                        journal.targetPath,
+                        journal.decryption.key,
+                    );
+                    if (!decrypted) {
+                        throw new Error("CENC file decryption failed");
+                    }
+                } else if (journal.decryption?.scheme === "qmc") {
+                    const targetExtension = path
+                        .extname(journal.targetPath)
+                        .replace(/^\./, "")
+                        .toLowerCase();
+                    if (
+                        journal.decryption.outputExtension &&
+                        journal.decryption.outputExtension !== targetExtension
+                    ) {
+                        throw new Error(
+                            `QMC finalization target format mismatch: expected .${journal.decryption.outputExtension}, received .${targetExtension || "unknown"}`,
+                        );
+                    }
+                    const decryptedInfo = await Qmc.decryptFile(
+                        journal.cachePath,
+                        journal.targetPath,
+                        journal.decryption.ekey,
+                    );
+                    assertQmcDecryptionOutput(
+                        journal.decryption.outputExtension ??
+                            targetExtension,
+                        decryptedInfo,
+                    );
+                } else if (journal.requiresDecryption) {
                     if (!cencDownloadKey) {
                         throw new Error(
                             "Encrypted finalization cannot resume without its decryption key",
@@ -1860,6 +1903,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         );
         let ekey: string | undefined = musicItem.ekey;
         let cek: string | undefined = musicItem.cek;
+        let qmcStreamInfo: IQmcStreamInfo | undefined;
         let foundEncryptedSource = false;
         let resolvedQuality = taskQuality;
 
@@ -1906,12 +1950,37 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                             continue;
                         }
                         if (
-                            hasEncryptedMediaSource(data.url, data.ekey) &&
-                            !canProxyCencSource(data)
+                            hasEncryptedMediaSource(data.url, data.ekey)
                         ) {
-                            foundEncryptedSource = true;
-                            data = null;
-                            continue;
+                            if (canProxyCencSource(data)) {
+                                qmcStreamInfo = undefined;
+                            } else if (canProxyQmcSource(data)) {
+                                try {
+                                    const remainingQmcProbeMs =
+                                        sourceResolutionDeadline - Date.now();
+                                    if (remainingQmcProbeMs <= 0) {
+                                        throw new Error("QMC 媒体探测超时");
+                                    }
+                                    qmcStreamInfo = await withTimeout(
+                                        inspectQmcMediaSource(data),
+                                        Math.min(
+                                            remainingQmcProbeMs,
+                                            DOWNLOAD_SOURCE_QMC_PROBE_TIMEOUT_MS,
+                                        ),
+                                        "QMC 媒体探测超时",
+                                    );
+                                } catch {
+                                    foundEncryptedSource = true;
+                                    qmcStreamInfo = undefined;
+                                    data = null;
+                                    continue;
+                                }
+                            } else {
+                                foundEncryptedSource = true;
+                                qmcStreamInfo = undefined;
+                                data = null;
+                                continue;
+                            }
                         }
                         resolvedQuality = data.quality ?? quality;
                         break;
@@ -1922,15 +1991,19 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                         DownloadFailReason.EncryptedMediaUnsupported,
                     );
                 }
-                url = data?.url ?? url;
+                const selectedSource = selectDownloadSourceEncryption({
+                    original: { url, ekey, cek },
+                    resolved: data,
+                });
+                url = selectedSource.url;
+                ekey = selectedSource.ekey;
+                cek = selectedSource.cek;
                 if (data?.url) {
                     headers = createDownloadHeaders(
                         data.headers,
                         data.userAgent ?? (musicItem as any).userAgent,
                     );
                 }
-                ekey = data?.ekey;
-                cek = data?.cek;
             }
             if (!url) {
                 throw new Error(
@@ -1942,7 +2015,32 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             const cencDownloadKey = canProxyCencSource({ url, cek })
                 ? getPlayableCencKey({ url, cek })
                 : undefined;
-            if (hasEncryptedMediaSource(url, ekey) && !cencDownloadKey) {
+            if (
+                !cencDownloadKey &&
+                !qmcStreamInfo &&
+                canProxyQmcSource({ url, ekey })
+            ) {
+                try {
+                    qmcStreamInfo = await withTimeout(
+                        inspectQmcMediaSource({
+                            url,
+                            ekey,
+                            headers,
+                        }),
+                        DOWNLOAD_SOURCE_QMC_PROBE_TIMEOUT_MS,
+                        "QMC 媒体探测超时",
+                    );
+                } catch {
+                    throw new Error(
+                        `${DownloadFailReason.EncryptedMediaUnsupported}: QMC key or container validation failed`,
+                    );
+                }
+            }
+            if (
+                hasEncryptedMediaSource(url, ekey) &&
+                !cencDownloadKey &&
+                !qmcStreamInfo
+            ) {
                 const error = new Error(
                     cek
                         ? `${DownloadFailReason.EncryptedMediaUnsupported}: CENC key present but native decrypt proxy is not available`
@@ -2022,16 +2120,20 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         const cencDownloadKey = canProxyCencSource({ url, cek })
             ? getPlayableCencKey({ url, cek })
             : undefined;
-        let extension = cencDownloadKey
-            ? "m4a"
-            : this.getExtensionName(url).toLowerCase();
-        if (
-            !cencDownloadKey &&
-            supportLocalMediaType.every(item => item !== "." + extension)
-        ) {
-            extension = "mp3";
-        }
-        const cacheExtension = cencDownloadKey ? "cenc" : extension;
+        const qmcDownloadEkey = qmcStreamInfo
+            ? getPlayableQmcEkey({ url, ekey })
+            : undefined;
+        const {
+            extension,
+            cacheExtension,
+            decryption,
+        } = createDownloadMediaPlan({
+            sourceExtension: this.getExtensionName(url),
+            cencKey: cencDownloadKey,
+            qmcInfo: qmcStreamInfo,
+            qmcEkey: qmcDownloadEkey,
+            supportedExtensions: supportLocalMediaType,
+        });
 
         // 缓存下载地址
         const rawCacheDownloadPath = this.getCacheDownloadPath(
@@ -2113,7 +2215,8 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 sidecarPaths: this.getFinalizationSidecarPaths(
                     rawTargetDownloadPath,
                 ),
-                requiresDecryption: !!cencDownloadKey,
+                decryption,
+                requiresDecryption: !!decryption,
             };
             this.markTaskAsFinalizing(
                 musicItem,

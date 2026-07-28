@@ -10,6 +10,8 @@ import {
     parseQualityText,
     buildQualitiesFromArray,
     convertApiQualityToQualities,
+    getAvailableQualities,
+    getQualityOptions,
 } from "@/utils/qualities";
 
 describe("quality conversions", () => {
@@ -73,5 +75,139 @@ describe("convertApiQualityToQualities", () => {
         expect(convertApiQualityToQualities({ result: "320K", size: 50 })).toEqual({
             "320k": { url: undefined, size: 50 },
         });
+    });
+});
+
+describe("getQualityOptions", () => {
+    const musicItem = {
+        id: "track-1",
+        platform: "test",
+        artist: "Artist",
+        title: "Title",
+        duration: 180,
+        album: "Album",
+        artwork: "",
+    } as IMusic.IMusicItem;
+
+    it("distinguishes resolved, metadata, and plugin-declared qualities", () => {
+        const result = getQualityOptions(
+            {
+                ...musicItem,
+                qualities: {
+                    "128k": { size: 1024 },
+                },
+                source: {
+                    flac: { url: "https://example.com/track.flac" },
+                },
+            },
+            {
+                supportedQualities: ["128k", "320k", "flac", "hires"],
+            },
+        );
+
+        expect(result).toEqual([
+            { key: "128k", status: "metadata" },
+            { key: "320k", status: "declared" },
+            { key: "flac", status: "resolved" },
+            { key: "hires", status: "declared" },
+        ]);
+    });
+
+    it("does not advertise metadata outside a plugin's declaration", () => {
+        const result = getQualityOptions(
+            {
+                ...musicItem,
+                qualities: {
+                    "128k": { size: 1024 },
+                    master: { size: 4096 },
+                },
+            },
+            {
+                supportedQualities: ["128k", "320k"],
+            },
+        );
+
+        expect(result).toEqual([
+            { key: "128k", status: "metadata" },
+            { key: "320k", status: "declared" },
+        ]);
+    });
+
+    it("does not advertise source metadata outside a plugin's declaration", () => {
+        const result = getQualityOptions(
+            {
+                ...musicItem,
+                source: {
+                    master: { size: 4096 },
+                },
+            },
+            {
+                supportedQualities: ["128k", "320k"],
+            },
+        );
+
+        expect(result).toEqual([
+            { key: "128k", status: "declared" },
+            { key: "320k", status: "declared" },
+        ]);
+    });
+
+    it("keeps a directly resolved source even outside the declaration", () => {
+        const result = getQualityOptions(
+            {
+                ...musicItem,
+                source: {
+                    master: { url: "https://example.com/master.flac" },
+                },
+            },
+            {
+                supportedQualities: ["128k"],
+            },
+        );
+
+        expect(result).toEqual([
+            { key: "128k", status: "declared" },
+            { key: "master", status: "resolved" },
+        ]);
+    });
+
+    it("normalizes legacy quality keys and keeps the compatibility fallback honest", () => {
+        expect(
+            getQualityOptions(musicItem, {
+                supportedQualities: ["low", "high", "super"],
+            }),
+        ).toEqual([
+            { key: "128k", status: "declared" },
+            { key: "320k", status: "declared" },
+            { key: "flac", status: "declared" },
+        ]);
+
+        expect(getQualityOptions(musicItem)).toEqual([
+            { key: "128k", status: "unknown" },
+            { key: "320k", status: "unknown" },
+            { key: "flac", status: "unknown" },
+        ]);
+        expect(getAvailableQualities(musicItem)).toEqual([]);
+    });
+
+    it("returns only resolved qualities for availability badges", () => {
+        expect(
+            getAvailableQualities(
+                {
+                    ...musicItem,
+                    qualities: {
+                        "128k": { size: 1024 },
+                    },
+                    source: {
+                        flac: {
+                            url: "https://example.com/track.flac",
+                        },
+                    },
+                },
+                {
+                    supportedQualities: ["128k", "320k", "flac", "hires"],
+                },
+            ),
+        ).toEqual(["flac"]);
     });
 });

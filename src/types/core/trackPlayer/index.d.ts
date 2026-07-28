@@ -10,6 +10,7 @@ import { IInjectable } from "@/types/infra";
 import type EventEmitter from "eventemitter3";
 import type { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import type { IPlaybackNativeDiagnostics } from "@/native/utils";
+import type { MediaSourceFailure } from "@/core/pluginManager/mediaSourceFailure";
 
 interface IPlaybackDiagnosticMusicIdentity {
     id?: string;
@@ -97,6 +98,15 @@ export interface ITrackPlayerProgressSnapshot extends PlayerAdapterProgress {
     sequence: number;
 }
 
+export interface IQualityChangeResult {
+    success: boolean;
+    requestedQuality: IMusic.IQualityKey;
+    resolvedQuality?: IMusic.IQualityKey;
+    failure?: MediaSourceFailure;
+    /** A newer quality request or track change invalidated this result. */
+    superseded?: boolean;
+}
+
 export interface ITrackPlayer
     extends IInjectable,
         EventEmitter<{
@@ -112,6 +122,9 @@ export interface ITrackPlayer
             [TrackPlayerEvents.AutoSkipDislikedMusic]: () => void;
             [TrackPlayerEvents.NoPlayableMusic]: () => void;
             [TrackPlayerEvents.LocalAudioPermissionRequired]: () => void;
+            [TrackPlayerEvents.MediaSourceFailed]: (
+                failure: MediaSourceFailure,
+            ) => void;
         }> {
     /**
      * 上一首歌曲
@@ -293,6 +306,14 @@ export interface ITrackPlayer
      * @returns 是否切换成功
      */
     changeQuality(newQuality: IMusic.IQualityKey): Promise<boolean>;
+
+    /**
+     * 切换播放音质并返回可诊断的失败原因。
+     * 旧调用方可继续使用 changeQuality 的 boolean 契约。
+     */
+    changeQualityWithResult(
+        newQuality: IMusic.IQualityKey,
+    ): Promise<IQualityChangeResult>;
 
     /**
      * 获取当前播放进度

@@ -1,8 +1,12 @@
 import Cenc from "@/native/cenc";
+import Qmc, { IQmcStreamInfo } from "@/native/qmc";
 import {
+    MAX_QMC_EKEY_LENGTH,
     hasEncryptedMediaSource,
     isCencMediaUrl,
+    isQmcMediaUrl,
     normalizeCek,
+    normalizeEkey,
 } from "@/utils/mflac";
 import { createDownloadHeaders } from "@/utils/downloadHeaders";
 
@@ -43,30 +47,84 @@ export function canProxyCencSource(source?: IEncryptedMediaSource | null) {
     return Cenc.isAvailable() && !!getPlayableCencKey(source);
 }
 
+export function isQmcEncryptedMediaSource(
+    source?: IEncryptedMediaSource | null,
+) {
+    const ekey = normalizeEkey(source?.ekey);
+    return !!source?.url &&
+        isHttpUrl(source.url) &&
+        !isCencMediaUrl(source.url) &&
+        (isQmcMediaUrl(source.url) || !!ekey);
+}
+
+export function getPlayableQmcEkey(source?: IEncryptedMediaSource | null) {
+    if (!isQmcEncryptedMediaSource(source)) {
+        return undefined;
+    }
+    const ekey = normalizeEkey(source?.ekey);
+    return ekey && ekey.length <= MAX_QMC_EKEY_LENGTH ? ekey : undefined;
+}
+
+function hasValidQmcKeyShape(source?: IEncryptedMediaSource | null) {
+    const ekey = normalizeEkey(source?.ekey);
+    return !ekey || ekey.length <= MAX_QMC_EKEY_LENGTH;
+}
+
+export function canProxyQmcSource(source?: IEncryptedMediaSource | null) {
+    return Qmc.isAvailable() &&
+        isQmcEncryptedMediaSource(source) &&
+        hasValidQmcKeyShape(source);
+}
+
+export async function inspectQmcMediaSource(
+    source: IEncryptedMediaSource,
+): Promise<IQmcStreamInfo> {
+    if (!canProxyQmcSource(source) || !source.url) {
+        throw new Error("QMC media source is not decryptable on this platform");
+    }
+    return Qmc.inspectStream(
+        source.url,
+        getPlayableQmcEkey(source),
+        headersWithUserAgent(source),
+    );
+}
+
 export function isUnsupportedEncryptedMediaSource(
     source?: IEncryptedMediaSource | null,
 ) {
     return (
         hasEncryptedMediaSource(source?.url, source?.ekey) &&
-        !canProxyCencSource(source)
+        !canProxyCencSource(source) &&
+        !canProxyQmcSource(source)
     );
 }
 
 export async function resolveEncryptedMediaStreamIfNeeded<
     T extends IEncryptedMediaSource | null | undefined,
 >(source: T): Promise<T> {
-    if (!source?.url || !canProxyCencSource(source)) {
+    if (!source?.url) {
         return source;
     }
 
-    const cek = getPlayableCencKey(source)!;
-    const localUrl = await Cenc.registerStream(
-        source.url,
-        cek,
-        headersWithUserAgent(source),
-    );
+    let localUrl: string;
+    if (canProxyCencSource(source)) {
+        const cek = getPlayableCencKey(source)!;
+        localUrl = await Cenc.registerStream(
+            source.url,
+            cek,
+            headersWithUserAgent(source),
+        );
+    } else if (canProxyQmcSource(source)) {
+        localUrl = await Qmc.registerStream(
+            source.url,
+            getPlayableQmcEkey(source),
+            headersWithUserAgent(source),
+        );
+    } else {
+        return source;
+    }
     if (!isLocalProxyUrl(localUrl)) {
-        throw new Error("CENC native module returned an invalid local stream URL");
+        throw new Error("Encrypted-media native module returned an invalid local stream URL");
     }
 
     return {

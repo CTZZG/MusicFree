@@ -8,7 +8,12 @@ import { resolveLocalMusicArtwork } from "@/core/localMusicArtworkManager";
 import delay from "@/utils/delay";
 import { addFileScheme, getFileName } from "@/utils/fileUtils";
 import { getMediaExtraProperty, patchMediaExtra } from "@/utils/mediaExtra";
-import { getLocalPath, isSameMediaItem, resetMediaItem } from "@/utils/mediaUtils";
+import {
+    getLocalPath,
+    getMediaUniqueKey,
+    isSameMediaItem,
+    resetMediaItem,
+} from "@/utils/mediaUtils";
 import {
     formatAuthUrl, formatPluginErrorMessage,
     getAnonymousStackLocation,
@@ -53,6 +58,7 @@ import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
 import {
     convertLegacyQuality,
     convertToLegacyQuality,
+    isLegacyQuality,
     normalizePluginMusicItem,
 } from "@/utils/qualities";
 import LxSource from "@/core/lxSource";
@@ -74,6 +80,22 @@ import {
     isPluginInsecureHttpAllowed,
 } from "@/utils/mediaHttpCompatibilityPolicy";
 import { createPluginRuntimeGlobalValues } from "./pluginRuntimeGlobals";
+import {
+    classifyMediaSourceFailure,
+    createMediaSourceFailure,
+    createMediaSourceFailureResult,
+    MediaSourceResolutionError,
+    mediaSourceFailureFromPluginResult,
+    type MediaSourceFailureContext,
+} from "./mediaSourceFailure";
+import {
+    callGetMediaSourceWithLegacyFallback,
+    normalizeMediaSourceResultWithFailure,
+} from "./mediaSourceResolution";
+import {
+    createResolvedMediaSourceCacheEntry,
+    readResolvedMediaSourceCache,
+} from "./resolvedMediaSourceCache";
 
 const sha256 = CryptoJs.SHA256;
 const pluginAssetHttpClient = createRestrictedHttpClient({
@@ -163,45 +185,6 @@ function normalizeResultItem<T extends Partial<IMusic.IMusicItem>>(item: T) {
     return item;
 }
 
-async function callGetMediaSourceWithLegacyFallback(
-    getMediaSource: IPlugin.IPluginDefine["getMediaSource"],
-    musicItem: IMusic.IMusicItemBase,
-    quality: IMusic.IQualityKey,
-) {
-    if (!getMediaSource) {
-        return null;
-    }
-
-    const normalizedQuality = convertLegacyQuality(quality);
-    let result: IPlugin.IMediaSourceResult | null = null;
-    let firstError: unknown;
-    try {
-        result = await getMediaSource(musicItem, normalizedQuality);
-    } catch (e) {
-        firstError = e;
-    }
-    if (result?.url) {
-        return result;
-    }
-
-    const legacyQuality = convertToLegacyQuality(normalizedQuality);
-    if (legacyQuality && legacyQuality !== normalizedQuality) {
-        try {
-            return await getMediaSource(musicItem, legacyQuality);
-        } catch (e) {
-            if (!firstError) {
-                throw e;
-            }
-        }
-    }
-
-    if (firstError) {
-        throw firstError;
-    }
-
-    return result;
-}
-
 export enum PluginState {
     // 初始化
     Initializing,
@@ -270,6 +253,19 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         }
     }
 
+    private getMediaSourceFailureContext(
+        musicItem: IMusic.IMusicItemBase,
+        quality: IMusic.IQualityKey,
+        plugin: Plugin = this.plugin,
+    ): MediaSourceFailureContext {
+        return {
+            mediaKey: getMediaUniqueKey(musicItem),
+            pluginName:
+                plugin.name || plugin.instance.platform || "unknown",
+            quality,
+        };
+    }
+
     private normalizeMediaSourceResult(
         mediaSourceResult: IPlugin.IMediaSourceResult,
     ) {
@@ -289,7 +285,15 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             allowHttp: isMediaHttpAllowed(Config),
         });
         if (!validation.ok) {
-            throw new Error(validation.reason);
+            const failure = classifyMediaSourceFailure(
+                new Error(validation.reason),
+            );
+            throw new MediaSourceResolutionError(
+                failure.code,
+                validation.reason,
+                {},
+                failure.retryable,
+            );
         }
         result.url = validation.url;
 
@@ -303,6 +307,17 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         }
 
         return result;
+    }
+
+    private normalizeMediaSourceResultOrFailure(
+        mediaSourceResult: IPlugin.IMediaSourceResult,
+        failureContext: MediaSourceFailureContext,
+    ) {
+        return normalizeMediaSourceResultWithFailure(
+            mediaSourceResult,
+            result => this.normalizeMediaSourceResult(result),
+            failureContext,
+        );
     }
 
 
@@ -350,9 +365,13 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         retryCount = 1,
         notUpdateCache = false,
     ): Promise<IPlugin.IMediaSourceResult | null> {
-        await this.ensurePluginReady("getMediaSource");
         const normalizedQuality = convertLegacyQuality(quality);
         const legacyQuality = convertToLegacyQuality(normalizedQuality);
+        const defaultFailureContext = this.getMediaSourceFailureContext(
+            musicItem,
+            normalizedQuality,
+        );
+        await this.ensurePluginReady("getMediaSource");
         // 1. 本地搜索 其实直接读mediameta就好了
         const localPathInMediaExtra = getMediaExtraProperty(musicItem, "localPath");
         const localPath = getLocalPath(musicItem);
@@ -376,9 +395,12 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
         if (localSourceResolution.type === "remote") {
             trace("网络音频播放");
-            return this.normalizeMediaSourceResult({
-                url: localSourceResolution.url,
-            });
+            return this.normalizeMediaSourceResultOrFailure(
+                {
+                    url: localSourceResolution.url,
+                },
+                defaultFailureContext,
+            );
         }
         if (localSourceResolution.type === "local") {
             trace("本地播放", {
@@ -404,60 +426,96 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
         }
 
         if (localSourceResolution.type === "missing-local") {
-            throw new Error("本地音乐不存在");
+            return createMediaSourceFailureResult(
+                createMediaSourceFailure(
+                    "unavailable",
+                    defaultFailureContext,
+                ),
+            );
         }
         // 2. 缓存播放
         const mediaCache = MediaCache.getMediaCache(
             musicItem,
         ) as IMusic.IMusicItem | null;
         const pluginCacheControl = this.plugin.instance.cacheControl;
+        const cachedMediaSource = mediaCache
+            ? readResolvedMediaSourceCache(
+                mediaCache,
+                normalizedQuality,
+                legacyQuality,
+            )
+            : null;
         if (
-            mediaCache &&
-            (
-                mediaCache?.source?.[normalizedQuality]?.url ||
-                (legacyQuality ? mediaCache?.source?.[legacyQuality]?.url : undefined)
-            ) &&
+            cachedMediaSource?.url &&
             canReadResolvedSourceCache(pluginCacheControl, Network.isOffline)
         ) {
             trace("播放", "缓存播放");
-            const qualityInfo =
-                mediaCache.source?.[normalizedQuality] ??
-                (legacyQuality ? mediaCache.source?.[legacyQuality] : undefined);
-            return this.normalizeMediaSourceResult({
-                url: qualityInfo!.url,
-                headers: qualityInfo?.headers ?? mediaCache.headers,
-                userAgent:
-                    qualityInfo?.userAgent ??
-                    mediaCache.userAgent ?? mediaCache.headers?.["user-agent"],
-                ekey: qualityInfo?.ekey ?? mediaCache.ekey,
-                cek: qualityInfo?.cek ?? mediaCache.cek,
-            });
+            return this.normalizeMediaSourceResultOrFailure(
+                cachedMediaSource,
+                defaultFailureContext,
+            );
         }
         // 3. 音源重定向
         const alternativePluginTarget = Plugin.pluginManager?.getAlternativePluginName(this.plugin);
         if (LxSource.isRedirectTarget(alternativePluginTarget)) {
             devLog("info", "设置了LX自定义源重定向");
-            const lxMediaSourceResult = await LxSource.getMediaSourceByRedirectTarget(
-                alternativePluginTarget!,
-                musicItem,
-                normalizedQuality,
-            );
+            let lxMediaSourceResult: IPlugin.IMediaSourceResult | null;
+            try {
+                lxMediaSourceResult =
+                    await LxSource.getMediaSourceByRedirectTarget(
+                        alternativePluginTarget!,
+                        musicItem,
+                        normalizedQuality,
+                    );
+            } catch (error) {
+                const failure = classifyMediaSourceFailure(
+                    error,
+                    defaultFailureContext,
+                );
+                if (retryCount > 0 && failure.retryable) {
+                    await delay(150);
+                    return this.getMediaSource(
+                        musicItem,
+                        quality,
+                        --retryCount,
+                        notUpdateCache,
+                    );
+                }
+                this.recordError("getMediaSource", error);
+                return createMediaSourceFailureResult(failure);
+            }
             if (!lxMediaSourceResult?.url) {
-                return null;
+                const failure = mediaSourceFailureFromPluginResult(
+                    lxMediaSourceResult?.failure,
+                    defaultFailureContext,
+                );
+                if (retryCount > 0 && failure.retryable) {
+                    await delay(150);
+                    return this.getMediaSource(
+                        musicItem,
+                        quality,
+                        --retryCount,
+                        notUpdateCache,
+                    );
+                }
+                return createMediaSourceFailureResult(failure);
             }
 
-            const result = this.normalizeMediaSourceResult(lxMediaSourceResult);
+            const result = this.normalizeMediaSourceResultOrFailure(
+                lxMediaSourceResult,
+                defaultFailureContext,
+            );
+            if (!result.url) {
+                return result;
+            }
             if (
                 canWriteResolvedSourceCache(pluginCacheControl) &&
                 !notUpdateCache
             ) {
-                const cacheSource = {
-                    headers: result.headers,
-                    userAgent: result.userAgent,
-                    ekey: result.ekey,
-                    cek: result.cek,
-                    url: result.url!,
-                };
+                const cacheSource = createResolvedMediaSourceCacheEntry(
+                    result,
+                    normalizedQuality,
+                );
                 let realMusicItem = {
                     ...musicItem,
                     ...(mediaCache || {}),
@@ -474,6 +532,28 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
         const alternativePlugin = Plugin.pluginManager?.getAlternativePlugin(this.plugin) as Plugin | null;
         const parserPlugin = alternativePlugin?.instance?.getMediaSource ? alternativePlugin : this.plugin;
+        const failureContext = this.getMediaSourceFailureContext(
+            musicItem,
+            normalizedQuality,
+            parserPlugin,
+        );
+        const qualityInfo =
+            musicItem?.qualities?.[normalizedQuality] ??
+            (legacyQuality ? musicItem?.qualities?.[legacyQuality] : undefined);
+        const declaredSupportedQualities =
+            parserPlugin.instance.supportedQualities ?? [];
+        const normalizedSupportedQualities = new Set(
+            declaredSupportedQualities.map(convertLegacyQuality),
+        );
+        if (
+            normalizedSupportedQualities.size > 0 &&
+            !normalizedSupportedQualities.has(normalizedQuality) &&
+            !qualityInfo?.url
+        ) {
+            return createMediaSourceFailureResult(
+                createMediaSourceFailure("unavailable", failureContext),
+            );
+        }
 
         if (alternativePlugin) {
             devLog("info", "设置了替代插件，实际使用的插件为", parserPlugin.name);
@@ -481,29 +561,31 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
 
         // 4. 插件解析
         if (!parserPlugin.instance.getMediaSource) {
-            const qualityInfo =
-                musicItem?.qualities?.[normalizedQuality] ??
-                (legacyQuality ? musicItem?.qualities?.[legacyQuality] : undefined);
             const directUrl = qualityInfo?.url ?? musicItem.url;
             if (!directUrl) {
-                return null;
+                return createMediaSourceFailureResult(
+                    createMediaSourceFailure("unavailable", failureContext),
+                );
             }
-            return this.normalizeMediaSourceResult({
-                url: directUrl,
-                headers: qualityInfo?.headers,
-                userAgent: qualityInfo?.userAgent,
-                ekey: qualityInfo?.ekey ?? musicItem.ekey,
-                cek: qualityInfo?.cek ?? musicItem.cek,
-            });
+            return this.normalizeMediaSourceResultOrFailure(
+                {
+                    url: directUrl,
+                    headers: qualityInfo?.headers,
+                    userAgent: qualityInfo?.userAgent,
+                    ekey: qualityInfo?.ekey ?? musicItem.ekey,
+                    cek: qualityInfo?.cek ?? musicItem.cek,
+                },
+                failureContext,
+            );
         }
         try {
-            const qualityInfo =
-                musicItem?.qualities?.[normalizedQuality] ??
-                (legacyQuality ? musicItem?.qualities?.[legacyQuality] : undefined);
             const mediaSourceResult: IPlugin.IMediaSourceResult = (await callGetMediaSourceWithLegacyFallback(
                 parserPlugin.instance.getMediaSource,
                 musicItem,
                 normalizedQuality,
+                failureContext,
+                declaredSupportedQualities.length === 0 ||
+                    declaredSupportedQualities.some(isLegacyQuality),
             )) ?? {
                 url: qualityInfo?.url,
                 headers: qualityInfo?.headers,
@@ -511,9 +593,25 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 ekey: qualityInfo?.ekey,
                 cek: qualityInfo?.cek,
             };
-            const { url, headers, userAgent, ekey, cek } = mediaSourceResult;
+            const {
+                url,
+                headers,
+                userAgent,
+                ekey,
+                cek,
+                quality: resolvedQuality,
+            } = mediaSourceResult;
             if (!url) {
-                throw new Error("NOT RETRY");
+                const failure = mediaSourceFailureFromPluginResult(
+                    mediaSourceResult.failure,
+                    failureContext,
+                );
+                throw new MediaSourceResolutionError(
+                    failure.code,
+                    "插件未返回播放地址",
+                    failureContext,
+                    failure.retryable,
+                );
             }
             trace("播放", "插件播放");
             const result = this.normalizeMediaSourceResult({
@@ -522,6 +620,7 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 userAgent,
                 ekey,
                 cek,
+                quality: resolvedQuality ?? normalizedQuality,
             } as IPlugin.IMediaSourceResult);
 
             if (
@@ -529,13 +628,10 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
                 !notUpdateCache
             ) {
                 // 更新缓存
-                const cacheSource = {
-                    headers: result.headers,
-                    userAgent: result.userAgent,
-                    ekey: result.ekey,
-                    cek: result.cek,
-                    url: result.url!,
-                };
+                const cacheSource = createResolvedMediaSourceCacheEntry(
+                    result,
+                    normalizedQuality,
+                );
                 let realMusicItem = {
                     ...musicItem,
                     ...(mediaCache || {}),
@@ -549,14 +645,20 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
             }
             return result;
         } catch (e: any) {
-            if (retryCount > 0 && e?.message !== "NOT RETRY") {
+            const failure = classifyMediaSourceFailure(e, failureContext);
+            if (retryCount > 0 && failure.retryable) {
                 await delay(150);
-                return this.getMediaSource(musicItem, quality, --retryCount);
+                return this.getMediaSource(
+                    musicItem,
+                    quality,
+                    --retryCount,
+                    notUpdateCache,
+                );
             }
             this.recordError("getMediaSource", e, parserPlugin);
             errorLog("获取真实源失败", e?.message);
             devLog("error", "获取真实源失败", e, e?.message);
-            return null;
+            return createMediaSourceFailureResult(failure);
         }
     }
 

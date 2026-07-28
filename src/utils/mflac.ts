@@ -1,15 +1,53 @@
 import { getLowerFileExtension } from "./mediaPath";
 
-const encryptedMediaExtensions = new Set([".mflac", ".mflac0", ".mgg", ".mmp4"]);
+const qmcMediaExtensions = new Set([
+    ".mflac",
+    ".mflac0",
+    ".mflac1",
+    ".mflaca",
+    ".mflach",
+    ".mflacl",
+    ".mflacm",
+    ".mgg",
+    ".mgg0",
+    ".mgg1",
+    ".mgga",
+    ".mggh",
+    ".mggl",
+    ".mggm",
+    ".qmc0",
+    ".qmc2",
+    ".qmc3",
+    ".qmc4",
+    ".qmc6",
+    ".qmc8",
+    ".qmcflac",
+    ".qmcogg",
+]);
 const cencMediaExtensions = new Set([".mmp4"]);
+const encryptedMediaExtensions = new Set([
+    ...qmcMediaExtensions,
+    ...cencMediaExtensions,
+]);
+
+export const MAX_QMC_EKEY_LENGTH = 64 * 1024;
 
 export function normalizeEkey(ekey?: string | null) {
-    const value = String(ekey ?? "").trim();
-    return value.length > 704 ? value.slice(-704) : value;
+    return String(ekey ?? "").trim();
 }
 
 export function normalizeCek(cek?: string | null) {
     return String(cek ?? "").trim();
+}
+
+export function isEncryptedMediaExtension(extension?: string | null) {
+    const normalized = String(extension ?? "").trim().toLowerCase();
+    if (!normalized) {
+        return false;
+    }
+    return encryptedMediaExtensions.has(
+        normalized.startsWith(".") ? normalized : `.${normalized}`,
+    );
 }
 
 export function isEncryptedMediaUrl(url?: string | null) {
@@ -17,7 +55,7 @@ export function isEncryptedMediaUrl(url?: string | null) {
         return false;
     }
     try {
-        return encryptedMediaExtensions.has(getLowerFileExtension(url));
+        return isEncryptedMediaExtension(getLowerFileExtension(url));
     } catch {
         return false;
     }
@@ -29,6 +67,17 @@ export function isCencMediaUrl(url?: string | null) {
     }
     try {
         return cencMediaExtensions.has(getLowerFileExtension(url));
+    } catch {
+        return false;
+    }
+}
+
+export function isQmcMediaUrl(url?: string | null) {
+    if (!url) {
+        return false;
+    }
+    try {
+        return qmcMediaExtensions.has(getLowerFileExtension(url));
     } catch {
         return false;
     }

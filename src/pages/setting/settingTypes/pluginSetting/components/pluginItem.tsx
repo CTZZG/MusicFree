@@ -31,6 +31,7 @@ import {
     pluginSupportsCapability,
 } from "../capabilityUtils";
 import {
+    createPluginInstaller,
     runPluginInstallWithCapabilityApproval,
     showPluginInstallResults,
     updatePluginWithCapabilityApproval,
@@ -434,18 +435,24 @@ function PluginItemContent(props: IPluginItemProps) {
 
             const installResult =
                 await runPluginInstallWithCapabilityApproval(
-                    approvedCapabilities =>
-                        pluginManager.installPluginFromLocalFile(
-                            asset.uri,
-                            {
-                                expectedPluginName: plugin.name,
-                                notCheckVersion: Config.getConfig(
-                                    "basic.notCheckPluginVersion",
-                                ),
-                                useExpoFs: true,
-                                approvedCapabilities,
-                            },
-                        ),
+                    createPluginInstaller(
+                        {
+                            pluginUrl: asset.name ?? asset.uri,
+                            sourceType: "local-file",
+                        },
+                        approvedCapabilities =>
+                            pluginManager.installPluginFromLocalFile(
+                                asset.uri,
+                                {
+                                    expectedPluginName: plugin.name,
+                                    notCheckVersion: Config.getConfig(
+                                        "basic.notCheckPluginVersion",
+                                    ),
+                                    useExpoFs: true,
+                                    approvedCapabilities,
+                                },
+                            ),
+                    ),
                 );
             const displayResult = {
                 ...installResult,

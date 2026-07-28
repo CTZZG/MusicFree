@@ -3,9 +3,13 @@ import { getMediaExtraProperty } from "@/utils/mediaExtra";
 import {
     hasEncryptedMediaSource,
     isCencMediaUrl,
+    isEncryptedMediaExtension,
     normalizeCek,
 } from "@/utils/mflac";
-import { canProxyCencSource } from "@/service/encryptedMediaProxy";
+import {
+    canProxyCencSource,
+    canProxyQmcSource,
+} from "@/service/encryptedMediaProxy";
 import { getLowerFileExtension } from "@/utils/mediaPath";
 
 export type MediaFormatSupportLevel =
@@ -30,7 +34,6 @@ const coverWritableFormats = new Set(["mp3", "flac", "ogg", "m4a", "mp4"]);
 const knownPlayableFormats = new Set(
     supportLocalMediaType.map(item => item.replace(/^\./, "").toLowerCase()),
 );
-const encryptedFormats = new Set(["mflac", "mgg", "mmp4", "qmc0", "qmc3"]);
 const experimentalFormatDiagnostics: Record<
     string,
     Pick<
@@ -130,7 +133,7 @@ export function getMediaFormatDiagnostics(
     const url = sourceUrl ?? musicItem.url;
     const cek = normalizeCek((musicItem as any).cek);
     const encrypted =
-        encryptedFormats.has(extension) ||
+        isEncryptedMediaExtension(extension) ||
         hasEncryptedMediaSource(url, musicItem.ekey);
 
     if (encrypted) {
@@ -145,6 +148,18 @@ export function getMediaFormatDiagnostics(
                 coverWritable: true,
                 lyricWritable: true,
                 reason: "CENC MMP4 已接入 Android 原生 AES-CTR 解密：播放走本地 Range 代理，下载会先保存加密缓存再解密为 M4A 后写入标签、封面和歌词。仍建议用更多平台样本继续验证。",
+            };
+        }
+        if (canProxyQmcSource({ url, ekey: musicItem.ekey })) {
+            return {
+                extension: extension || "qmc",
+                level: "partial",
+                playable: true,
+                downloadable: true,
+                taggable: false,
+                coverWritable: false,
+                lyricWritable: false,
+                reason: "QMC 音源已接入 Android 原生解密：播放走本地 Range 代理，下载会先探测并解密为实际音频格式。标签、封面和歌词写入能力取决于解密后的容器格式。",
             };
         }
         return {

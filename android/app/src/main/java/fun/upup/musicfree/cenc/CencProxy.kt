@@ -1,6 +1,7 @@
 package `fun`.upup.musicfree.cenc
 
 import fi.iki.elonen.NanoHTTPD
+import `fun`.upup.musicfree.network.fixedLengthHeadResponse
 import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -280,15 +281,12 @@ internal object CencProxy {
                 val status = if (range == null) Response.Status.OK else Response.Status.PARTIAL_CONTENT
 
                 val response = if (request.method == Method.HEAD) {
-                    newFixedLengthResponse(status, "audio/mp4", "")
+                    fixedLengthHeadResponse(status, "audio/mp4", length)
                 } else {
                     val body = buildResponseStream(stream, start, end)
                     newFixedLengthResponse(status, "audio/mp4", body, length)
                 }
                 response.addHeader("Accept-Ranges", "bytes")
-                if (request.method == Method.HEAD) {
-                    response.addHeader("Content-Length", length.toString())
-                }
                 if (range != null) {
                     response.addHeader("Content-Range", "bytes $start-$end/$total")
                 }

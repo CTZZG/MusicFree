@@ -18,6 +18,7 @@ import { ROUTE_PATH, navigationRef } from "@/core/router";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
+import { getMediaSourceFailureI18nKey } from "@/core/pluginManager/mediaSourceFailure";
 import { maybeRunAutoWebdavBackup } from "@/core/webdavBackup";
 import { errorLog, trace } from "@/utils/log";
 import PersistStatus from "@/utils/persistStatus";
@@ -645,6 +646,10 @@ function bindEvents() {
 
     TrackPlayer.on(TrackPlayerEvents.LocalAudioPermissionRequired, () => {
         Toast.warn(i18n.t("localMusic.audioPermissionRequiredForPlayback"));
+    });
+
+    TrackPlayer.on(TrackPlayerEvents.MediaSourceFailed, failure => {
+        Toast.warn(i18n.t(getMediaSourceFailureI18nKey(failure.code)));
     });
 }
 

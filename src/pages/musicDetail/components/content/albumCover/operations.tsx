@@ -18,6 +18,7 @@ import PluginManager from "@/core/pluginManager";
 import downloader from "@/core/downloader";
 import i18n from "@/core/i18n";
 import { getQualityAbbr } from "@/utils/qualities";
+import { getMediaSourceFailureI18nKey } from "@/core/pluginManager/mediaSourceFailure";
 
 export default function Operations() {
     const musicItem = useCurrentMusic();
@@ -50,9 +51,22 @@ export default function Operations() {
                         musicItem,
                         async onQualityPress(quality) {
                             const changeResult =
-                                await TrackPlayer.changeQuality(quality);
-                            if (!changeResult) {
-                                Toast.warn(i18n.t("toast.currentQualityNotAvailableForCurrentMusic"));
+                                await TrackPlayer.changeQualityWithResult(
+                                    quality,
+                                );
+                            if (
+                                !changeResult.success &&
+                                !changeResult.superseded
+                            ) {
+                                Toast.warn(
+                                    i18n.t(
+                                        changeResult.failure
+                                            ? getMediaSourceFailureI18nKey(
+                                                changeResult.failure.code,
+                                            )
+                                            : "toast.currentQualityNotAvailableForCurrentMusic",
+                                    ),
+                                );
                             }
                         },
                     });

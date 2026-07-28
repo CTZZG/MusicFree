@@ -101,8 +101,8 @@ scripts/
 
 *.log
 
-# Agent-generated native build-cache snapshots (multi-GB, regenerable)
-.codex/nitro-player-generated-backup-*/
+# Local Codex workspace state
+/.codex/
 
 # Device-regression capture artifacts (UIAutomator dumps, screenshots, screen
 # recordings). Useful while testing, not source.

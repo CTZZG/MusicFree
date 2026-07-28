@@ -6,13 +6,30 @@ jest.mock("@/native/cenc", () => ({
     },
 }));
 
+jest.mock("@/native/qmc", () => ({
+    __esModule: true,
+    default: {
+        isAvailable: jest.fn(),
+        registerStream: jest.fn(),
+        inspectStream: jest.fn(),
+    },
+}));
+
 const mockCenc = jest.requireMock("@/native/cenc").default as {
     isAvailable: jest.Mock;
     registerStream: jest.Mock;
 };
+const mockQmc = jest.requireMock("@/native/qmc").default as {
+    isAvailable: jest.Mock;
+    registerStream: jest.Mock;
+    inspectStream: jest.Mock;
+};
 const {
     canProxyCencSource,
+    canProxyQmcSource,
     getPlayableCencKey,
+    getPlayableQmcEkey,
+    inspectQmcMediaSource,
     isUnsupportedEncryptedMediaSource,
     resolveEncryptedMediaStreamIfNeeded,
 } = require("../encryptedMediaProxy") as typeof import("../encryptedMediaProxy");
@@ -23,6 +40,9 @@ describe("encrypted media proxy", () => {
     beforeEach(() => {
         mockCenc.isAvailable.mockReturnValue(false);
         mockCenc.registerStream.mockReset();
+        mockQmc.isAvailable.mockReturnValue(false);
+        mockQmc.registerStream.mockReset();
+        mockQmc.inspectStream.mockReset();
     });
 
     it("accepts only HTTP(S) CENC MMP4 sources with a valid CEK", () => {
@@ -201,5 +221,89 @@ describe("encrypted media proxy", () => {
             url: "http://localhost:1234/l/a.m4a",
             trustedLocalMediaProxy: true,
         });
+    });
+
+    it("recognizes embedded-key QMC URLs and external ekey sources", () => {
+        expect(
+            canProxyQmcSource({
+                url: "https://example.com/song.mflac",
+            }),
+        ).toBe(false);
+
+        mockQmc.isAvailable.mockReturnValue(true);
+
+        expect(
+            canProxyQmcSource({
+                url: "https://example.com/song.mflac",
+            }),
+        ).toBe(true);
+        expect(
+            canProxyQmcSource({
+                url: "https://example.com/opaque-file",
+                ekey: " external-key ",
+            }),
+        ).toBe(true);
+        expect(
+            getPlayableQmcEkey({
+                url: "https://example.com/opaque-file",
+                ekey: " external-key ",
+            }),
+        ).toBe("external-key");
+        expect(
+            canProxyQmcSource({
+                url: "https://example.com/song.mmp4",
+                ekey: "legacy-key",
+            }),
+        ).toBe(false);
+    });
+
+    it("registers QMC sources without routing them through CENC", async () => {
+        mockQmc.isAvailable.mockReturnValue(true);
+        mockQmc.registerStream.mockResolvedValue(
+            "http://127.0.0.1:1234/l/a.flac",
+        );
+
+        const result = await resolveEncryptedMediaStreamIfNeeded({
+            url: "https://example.com/song.mflac",
+            headers: { Referer: "https://example.com/" },
+            ekey: " qmc-ekey ",
+        });
+
+        expect(mockQmc.registerStream).toHaveBeenCalledWith(
+            "https://example.com/song.mflac",
+            "qmc-ekey",
+            { Referer: "https://example.com/" },
+        );
+        expect(mockCenc.registerStream).not.toHaveBeenCalled();
+        expect(result).toMatchObject({
+            url: "http://127.0.0.1:1234/l/a.flac",
+            headers: undefined,
+            ekey: undefined,
+            trustedLocalMediaProxy: true,
+        });
+    });
+
+    it("inspects QMC output metadata for download naming", async () => {
+        mockQmc.isAvailable.mockReturnValue(true);
+        mockQmc.inspectStream.mockResolvedValue({
+            audioSize: 123,
+            extension: "ogg",
+            contentType: "audio/ogg",
+        });
+
+        await expect(
+            inspectQmcMediaSource({
+                url: "https://example.com/song.mgg",
+            }),
+        ).resolves.toEqual({
+            audioSize: 123,
+            extension: "ogg",
+            contentType: "audio/ogg",
+        });
+        expect(mockQmc.inspectStream).toHaveBeenCalledWith(
+            "https://example.com/song.mgg",
+            undefined,
+            undefined,
+        );
     });
 });

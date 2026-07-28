@@ -126,6 +126,14 @@ export interface ILanguageData {
     "toast.syncFail": string; // 同步失败
     "toast.sortHasBeenUpdated": string; // 排序已更新
     "toast.currentQualityNotAvailableForCurrentMusic": string; // 当前音乐的质量在此设备上不可用
+    "toast.mediaSourceUnavailable": string; // 音源不可用
+    "toast.mediaSourceNetworkError": string; // 音源网络请求失败
+    "toast.mediaSourcePluginError": string; // 音源插件错误
+    "toast.mediaSourceInvalidUrl": string; // 音源 URL 无效
+    "toast.mediaSourcePolicyBlocked": string; // 音源被网络策略阻止
+    "toast.mediaSourceEncryptedUnsupported": string; // 加密音源格式不受支持
+    "toast.mediaSourceRejected": string; // 音源未通过校验
+    "toast.mediaSourceBackendError": string; // 播放器无法加载音源
     "toast.commmentNotAvaliableForCurrentMusic": string; // 当前音乐无法进行评论
     "toast.addToNextPlay": string; // 添加到下一曲
     "toast.beginDownload": string; // 开始下载
@@ -874,6 +882,18 @@ export interface ILanguageData {
     "musicQuality.standard": string; // 标准音质
     "musicQuality.high": string; // 高音质
     "musicQuality.super": string; // 超高音质
+    "quality.96k": string; // 96K
+    "quality.128k": string; // 128K
+    "quality.192k": string; // 192K
+    "quality.320k": string; // 320K
+    "quality.flac": string; // FLAC
+    "quality.flac24bit": string; // 24-bit FLAC
+    "quality.hires": string; // Hi-Res
+    "quality.vinyl": string; // 黑胶音质
+    "quality.dolby": string; // 杜比音质
+    "quality.atmos": string; // 沉浸声
+    "quality.atmos_plus": string; // 沉浸声 2.0
+    "quality.master": string; // 母带音质
 
     // 播放全部栏相关
     "playAllBar.title": string; // 播放全部
@@ -994,6 +1014,10 @@ export interface ILanguageData {
 
     // 面板相关 - 音质设置
     "panel.musicQuality.title": string; // 设置音质
+    "panel.musicQuality.status.resolved": string; // 已解析播放地址
+    "panel.musicQuality.status.metadata": string; // 歌曲元数据声明支持
+    "panel.musicQuality.status.declared": string; // 插件声明支持
+    "panel.musicQuality.status.unknown": string; // 兼容模式待验证
 
     // 面板相关 - 音质管理
     "panel.qualityTranslation.title": string; // 音质管理

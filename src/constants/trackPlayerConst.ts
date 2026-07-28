@@ -13,6 +13,8 @@ export enum TrackPlayerEvents {
     NoPlayableMusic = "no-playable-music",
     // 播放本地文件缺少音频读取权限（UI 层应提示用户去授权）
     LocalAudioPermissionRequired = "local-audio-permission-required",
+    // 所有音质和备用音源均解析失败（UI 层应展示结构化原因）
+    MediaSourceFailed = "media-source-failed",
 }
 
 export enum MusicRepeatMode {

@@ -22,9 +22,11 @@ import { IIconName } from "@/components/base/icon.tsx";
 import { IInstallPluginResult } from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
 import {
+    createPluginInstaller,
     formatPluginInstallResult,
     installPluginFromUrlText,
-    runPluginInstallWithCapabilityApproval,
+    installPluginsFromUrlTexts,
+    runPluginInstallBatchWithCapabilityApproval,
     showPluginInstallResults,
 } from "../installPluginUtils";
 import {
@@ -165,10 +167,14 @@ export default function PluginList() {
             }
             setLoading(true);
 
-            const installResults = await Promise.all(
-                results.assets.map(async it => {
-                    const result =
-                        await runPluginInstallWithCapabilityApproval(
+            const installResults =
+                await runPluginInstallBatchWithCapabilityApproval(
+                    results.assets.map(it =>
+                        createPluginInstaller(
+                            {
+                                pluginUrl: it.name ?? it.uri,
+                                sourceType: "local-file",
+                            },
                             approvedCapabilities =>
                                 PluginManager.installPluginFromLocalFile(
                                     it.uri,
@@ -180,14 +186,9 @@ export default function PluginList() {
                                         approvedCapabilities,
                                     },
                                 ),
-                        );
-                    return {
-                        ...result,
-                        pluginUrl: result.pluginUrl ?? it.name ?? it.uri,
-                        sourceType: result.sourceType ?? "local-file",
-                    };
-                }),
-            );
+                        ),
+                    ),
+                );
 
             const successResults = installResults.filter(it => it.success);
             const failResults = installResults.filter(it => !it.success);
@@ -337,43 +338,34 @@ export default function PluginList() {
         }
         setLoading(true);
 
-        const successResults: IInstallPluginResult[] = [];
-        const failResults: IInstallPluginResult[] = [];
-
         try {
-            const urlItems = JSON.parse(urls!);
-            if (Array.isArray(urlItems)) {
-                for (let i = 0; i < urlItems.length; ++i) {
-                    const result = await installPluginFromUrlText(
-                        urlItems[i].url,
-                    );
-                    if (result[0]) {
-                        if (result[0].success) {
-                            successResults.push(result[0]);
-                        } else {
-                            failResults.push(result[0]);
-                        }
-                    }
+            let subscriptionUrls: string[];
+            try {
+                const urlItems = JSON.parse(urls);
+                if (!Array.isArray(urlItems)) {
+                    throw new Error();
                 }
-            } else {
-                throw new Error();
+                subscriptionUrls = urlItems
+                    .map(item =>
+                        typeof item?.url === "string"
+                            ? item.url.trim()
+                            : "",
+                    )
+                    .filter(Boolean);
+            } catch {
+                subscriptionUrls = [urls];
             }
 
+            if (!subscriptionUrls.length) {
+                Toast.warn(t("toast.subscriptionInvalid"));
+                return;
+            }
+
+            const results =
+                await installPluginsFromUrlTexts(subscriptionUrls);
+            const successResults = results.filter(result => result.success);
+            const failResults = results.filter(result => !result.success);
             showPluginInstallResults(successResults, failResults, t);
-
-        } catch {
-            if (urls?.length) {
-                const result = await installPluginFromUrlText(urls);
-                if (result[0]) {
-                    if (result[0].success) {
-                        showPluginInstallResults([result[0]], [], t);
-                    } else {
-                        showPluginInstallResults([], [result[0]], t);
-                    }
-                } else {
-                    Toast.warn(t("toast.subscriptionInvalid"));
-                }
-            }
         } finally {
             setLoading(false);
         }
@@ -387,17 +379,15 @@ export default function PluginList() {
         const failResults: IInstallPluginResult[] = [];
 
         try {
-            for (let i = 0; i < enabledPlugins.length; ++i) {
-                const srcUrl = enabledPlugins[i].instance.srcUrl;
-                if (srcUrl) {
-                    const result = await installPluginFromUrlText(srcUrl);
-                    if (result[0]) {
-                        if (result[0].success) {
-                            successResults.push(result[0]);
-                        } else {
-                            failResults.push(result[0]);
-                        }
-                    }
+            const sourceUrls = enabledPlugins
+                .map(plugin => plugin.instance.srcUrl)
+                .filter((url): url is string => Boolean(url));
+            const results = await installPluginsFromUrlTexts(sourceUrls);
+            for (const result of results) {
+                if (result.success) {
+                    successResults.push(result);
+                } else {
+                    failResults.push(result);
                 }
             }
 

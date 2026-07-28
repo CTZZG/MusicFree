@@ -8,13 +8,19 @@ jest.mock("@/utils/mediaExtra", () => ({
 
 jest.mock("@/service/encryptedMediaProxy", () => ({
     canProxyCencSource: jest.fn(() => false),
+    canProxyQmcSource: jest.fn(() => false),
 }));
 
-import { canProxyCencSource } from "@/service/encryptedMediaProxy";
+import {
+    canProxyCencSource,
+    canProxyQmcSource,
+} from "@/service/encryptedMediaProxy";
 import { getMediaFormatDiagnostics } from "../mediaFormatDiagnostics";
 
 const mockCanProxyCencSource =
     canProxyCencSource as jest.MockedFunction<typeof canProxyCencSource>;
+const mockCanProxyQmcSource =
+    canProxyQmcSource as jest.MockedFunction<typeof canProxyQmcSource>;
 
 function createMusicItem(
     patch: Partial<IMusic.IMusicItem>,
@@ -31,6 +37,7 @@ function createMusicItem(
 describe("media format diagnostics", () => {
     beforeEach(() => {
         mockCanProxyCencSource.mockReturnValue(false);
+        mockCanProxyQmcSource.mockReturnValue(false);
     });
 
     it("reports M4A as playable and metadata-writable", () => {
@@ -111,5 +118,31 @@ describe("media format diagnostics", () => {
             lyricWritable: true,
         });
         expect(diagnostics.reason).toContain("Range 代理");
+    });
+
+    it("reports extended QMC sources as partially supported when the decrypt proxy is available", () => {
+        mockCanProxyQmcSource.mockReturnValue(true);
+
+        const diagnostics = getMediaFormatDiagnostics(
+            createMusicItem({
+                url: "https://example.com/song.mflac1?token=1",
+                ekey: "qmc-key",
+            }),
+        );
+
+        expect(mockCanProxyQmcSource).toHaveBeenCalledWith({
+            url: "https://example.com/song.mflac1?token=1",
+            ekey: "qmc-key",
+        });
+        expect(diagnostics).toMatchObject({
+            extension: "mflac1",
+            level: "partial",
+            playable: true,
+            downloadable: true,
+            taggable: false,
+            coverWritable: false,
+            lyricWritable: false,
+        });
+        expect(diagnostics.reason).toContain("QMC");
     });
 });

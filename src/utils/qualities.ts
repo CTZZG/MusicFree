@@ -353,45 +353,105 @@ export function buildQualitiesFromArray(qualityArray: Array<{
     return qualities;
 }
 
+export type QualityAvailabilityStatus =
+    | "resolved"
+    | "metadata"
+    | "declared"
+    | "unknown";
+
+interface QualityOption {
+    key: IMusic.IQualityKey;
+    status: QualityAvailabilityStatus;
+}
+
+function uniqueQualityKeys(qualities: IMusic.IQualityKey[]) {
+    return [...new Set(qualities.map(convertLegacyQuality))];
+}
+
+/**
+ * Describes why a quality is shown without claiming that metadata alone proves
+ * the plugin can currently resolve a playable URL.
+ */
+export function getQualityOptions(
+    musicItem: IMusic.IMusicItem,
+    plugin?: { supportedQualities?: IMusic.IQualityKey[] },
+): QualityOption[] {
+    const normalizedQualities = normalizePluginQualities(musicItem.qualities);
+    const normalizedSource = normalizeQualityRecord(musicItem.source);
+    const supportedQualities = uniqueQualityKeys(
+        plugin?.supportedQualities ?? [],
+    );
+    const supportedSet = new Set(supportedQualities);
+    const qualityKeysWithEvidence = Object.keys(normalizedQualities ?? {});
+    const sourceKeysWithEvidence = Object.keys(normalizedSource ?? {});
+    const configuredKeys = getQualityKeys();
+    const candidateKeys = uniqueQualityKeys([
+        ...(supportedQualities.length > 0
+            ? supportedQualities
+            : configuredKeys),
+        ...sourceKeysWithEvidence,
+        ...(supportedQualities.length > 0
+            ? []
+            : qualityKeysWithEvidence),
+    ]);
+    const options: QualityOption[] = [];
+
+    for (const key of candidateKeys) {
+        const qualityInfo = normalizedQualities?.[key];
+        const sourceInfo = normalizedSource?.[key];
+        const sourceHasUrl =
+            typeof sourceInfo?.url === "string" &&
+            sourceInfo.url.trim().length > 0;
+        const qualityHasUrl =
+            typeof qualityInfo?.url === "string" &&
+            qualityInfo.url.trim().length > 0;
+        const sourceHasMetadata =
+            sourceInfo !== undefined &&
+            sourceInfo !== null &&
+            sourceInfo.size !== undefined;
+        const qualityHasMetadata =
+            normalizedQualities !== undefined &&
+            Object.prototype.hasOwnProperty.call(normalizedQualities, key);
+        const pluginAllowsMetadata =
+            supportedSet.size === 0 || supportedSet.has(key);
+
+        if (sourceHasUrl || qualityHasUrl) {
+            options.push({
+                key,
+                status: "resolved",
+            });
+        } else if (
+            (sourceHasMetadata || qualityHasMetadata) &&
+            pluginAllowsMetadata
+        ) {
+            options.push({
+                key,
+                status: "metadata",
+            });
+        } else if (supportedSet.has(key)) {
+            options.push({
+                key,
+                status: "declared",
+            });
+        }
+    }
+
+    if (options.length > 0) {
+        return options;
+    }
+    return ["128k", "320k", "flac"].map(key => ({
+        key,
+        status: "unknown",
+    }));
+}
+
 export function getAvailableQualities(
     musicItem: IMusic.IMusicItem,
     plugin?: { supportedQualities?: IMusic.IQualityKey[] },
 ): IMusic.IQualityKey[] {
-    const availableQualities: IMusic.IQualityKey[] = [];
-    const normalizedQualities = normalizePluginQualities(musicItem.qualities);
-    const normalizedSource = normalizeQualityRecord(musicItem.source);
-
-    if (normalizedQualities) {
-        const candidates = plugin?.supportedQualities?.length
-            ? plugin.supportedQualities.map(convertLegacyQuality)
-            : getQualityKeys();
-        for (const quality of candidates) {
-            if (normalizedQualities[quality] !== undefined) {
-                availableQualities.push(quality);
-            }
-        }
-    }
-
-    if (availableQualities.length === 0 && normalizedSource) {
-        for (const quality of getQualityKeys()) {
-            if (
-                normalizedSource[quality] &&
-                (normalizedSource[quality]!.url ||
-                    normalizedSource[quality]!.size !== undefined)
-            ) {
-                availableQualities.push(quality);
-            }
-        }
-    }
-
-    if (availableQualities.length === 0) {
-        if (plugin?.supportedQualities && plugin.supportedQualities.length > 0) {
-            return plugin.supportedQualities.map(convertLegacyQuality);
-        }
-        return ["128k", "320k", "flac"];
-    }
-
-    return availableQualities;
+    return getQualityOptions(musicItem, plugin)
+        .filter(option => option.status === "resolved")
+        .map(option => option.key);
 }
 
 export function getQualitySize(

@@ -124,12 +124,62 @@ describe("download finalization journal", () => {
             "/music/song.txt",
         ]);
     });
+
+    it("rolls back deterministic QMC replacement artifacts", () => {
+        expect(
+            getDownloadFinalizationRollbackPaths(
+                journal({
+                    targetPath: "/music/song.flac",
+                    decryption: {
+                        scheme: "qmc",
+                        outputExtension: "flac",
+                    },
+                }),
+            ),
+        ).toEqual([
+            "/cache/attempt.part",
+            "/music/song.flac",
+            "/music/song.flac.qmc-temp",
+            "/music/song.flac.qmc-backup",
+            "/music/song.lrc",
+            "/music/song.txt",
+        ]);
+    });
 });
 
 
 describe("isDownloadFinalizationJournal", () => {
     it("accepts a complete persisted journal", () => {
         expect(isDownloadFinalizationJournal(journal())).toBe(true);
+        expect(
+            isDownloadFinalizationJournal(
+                journal({
+                    decryption: {
+                        scheme: "cenc",
+                        key: "00112233445566778899aabbccddeeff",
+                    },
+                }),
+            ),
+        ).toBe(true);
+        expect(
+            isDownloadFinalizationJournal(
+                journal({
+                    targetPath: "/music/song.flac",
+                    decryption: {
+                        scheme: "qmc",
+                        ekey: "qmc-key",
+                        outputExtension: "flac",
+                    },
+                }),
+            ),
+        ).toBe(true);
+        // Journals created before output format persistence remain recoverable;
+        // finalization derives the expected extension from targetPath.
+        expect(
+            isDownloadFinalizationJournal(
+                journal({ decryption: { scheme: "qmc" } }),
+            ),
+        ).toBe(true);
     });
 
     it.each([
@@ -139,6 +189,23 @@ describe("isDownloadFinalizationJournal", () => {
         { ...journal(), cachePath: undefined },
         { ...journal(), targetPath: "" },
         { ...journal(), sidecarPaths: [null] },
+        { ...journal(), decryption: { scheme: "cenc", key: "short" } },
+        { ...journal(), decryption: { scheme: "qmc", ekey: "" } },
+        { ...journal(), decryption: { scheme: "qmc", ekey: "   " } },
+        {
+            ...journal(),
+            decryption: { scheme: "qmc", outputExtension: "mflac" },
+        },
+        {
+            ...journal(),
+            decryption: { scheme: "qmc", outputExtension: ".flac" },
+        },
+        {
+            ...journal(),
+            targetPath: "/music/song.ogg",
+            decryption: { scheme: "qmc", outputExtension: "flac" },
+        },
+        { ...journal(), decryption: { scheme: "unknown" } },
     ])("rejects an invalid persisted journal %#", value => {
         expect(isDownloadFinalizationJournal(value)).toBe(false);
     });

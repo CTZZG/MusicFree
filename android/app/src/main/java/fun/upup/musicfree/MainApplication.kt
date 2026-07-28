@@ -18,6 +18,7 @@ import `fun`.upup.musicfree.cenc.CencPackage
 import `fun`.upup.musicfree.lyricUtil.LyricUtilPackage
 import `fun`.upup.musicfree.mp3Util.Mp3UtilPackage
 import `fun`.upup.musicfree.mpvplayer.MpvPlayerPackage
+import `fun`.upup.musicfree.qmc.QmcPackage
 import `fun`.upup.musicfree.securecredential.SecureCredentialPackage
 import `fun`.upup.musicfree.storageuri.StorageUriPackage
 import `fun`.upup.musicfree.utils.UtilsPackage
@@ -32,6 +33,7 @@ class MainApplication : Application(), ReactApplication {
         add(Mp3UtilPackage())
         add(LyricUtilPackage())
         add(CencPackage())
+        add(QmcPackage())
         add(MpvPlayerPackage())
         add(SecureCredentialPackage())
         add(StorageUriPackage())
