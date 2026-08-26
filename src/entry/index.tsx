@@ -123,7 +123,20 @@ export default function Pages() {
                             onReady={commitCurrentRouteName}
                             onStateChange={stageCurrentRouteName}>
                             <ErrorBoundary>
-                                <View style={globalStyle.flex1}>
+                                {/* 这层底色只在转场那几帧可见：旧屏幕已经停止绘制、
+                                    新屏幕还没滑到位时，中间的空隙会穿透到 Android 的
+                                    windowBackground（#27282C，接近黑），看起来就是
+                                    「切页面黑闪一下」。铺上主题页面背景后，空隙的颜色
+                                    与页面一致，正常情况下这层永远被页面盖住。 */}
+                                <View
+                                    style={[
+                                        globalStyle.flex1,
+                                        {
+                                            backgroundColor:
+                                                theme.colors.pageBackground ??
+                                                theme.colors.background,
+                                        },
+                                    ]}>
                                     <Stack.Navigator
                                         initialRouteName={routes[0].path}
                                         screenOptions={{
