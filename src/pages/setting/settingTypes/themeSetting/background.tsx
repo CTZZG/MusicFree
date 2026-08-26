@@ -202,6 +202,9 @@ export default function Background() {
                         />
                         <ThemeSwitch
                             value={frostedCustomBgFrost}
+                            accessibilityLabel={t(
+                                "themeSettings.frostedCustomBgFrost",
+                            )}
                             onValueChange={value => {
                                 Config.setConfig(
                                     "theme.frostedCustomBgFrost",
@@ -219,6 +222,9 @@ export default function Background() {
                         />
                         <ThemeSwitch
                             value={musicBarLiquidGlass}
+                            accessibilityLabel={t(
+                                "themeSettings.musicBarLiquidGlass",
+                            )}
                             onValueChange={value => {
                                 Config.setConfig(
                                     "theme.musicBarLiquidGlass",

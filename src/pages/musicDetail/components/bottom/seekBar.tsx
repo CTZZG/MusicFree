@@ -5,6 +5,7 @@ import Slider from "@react-native-community/slider";
 import timeformat from "@/utils/timeformat";
 import { fontSizeConst } from "@/constants/uiConst";
 import TrackPlayer, { useProgress, useCurrentMusic } from "@/core/trackPlayer";
+import { useI18N } from "@/core/i18n";
 
 interface ITimeLabelProps {
     time: number;
@@ -19,6 +20,7 @@ function TimeLabel(props: ITimeLabelProps) {
 export default function SeekBar() {
     const progress = useProgress(1000);
     const musicItem = useCurrentMusic();
+    const { t } = useI18N();
     const [tmpProgress, setTmpProgress] = useState<number | null>(null);
     const slidingRef = useRef(false);
     const displayDuration = (progress.duration > 0) ? progress.duration : (musicItem?.duration ?? 0);
@@ -28,6 +30,7 @@ export default function SeekBar() {
             <TimeLabel time={tmpProgress ?? progress.position} />
             <Slider
                 style={style.slider}
+                accessibilityLabel={t("musicDetail.seekBar.a11y")}
                 minimumTrackTintColor={"#cccccc"}
                 maximumTrackTintColor={"#999999"}
                 thumbTintColor={"#dddddd"}

@@ -31,6 +31,7 @@ export default function HomeDisplay() {
                 />
                 <ThemeSwitch
                     value={useEnhancedHome}
+                    accessibilityLabel={t("themeSettings.useEnhancedHome")}
                     onValueChange={value => {
                         Config.setConfig("theme.useEnhancedHome", value);
                     }}
@@ -43,6 +44,9 @@ export default function HomeDisplay() {
                     />
                     <ThemeSwitch
                         value={hideHomeDiscovery}
+                        accessibilityLabel={t(
+                            "themeSettings.hideHomeDiscovery",
+                        )}
                         onValueChange={value => {
                             Config.setConfig("theme.hideHomeDiscovery", value);
                         }}
@@ -55,6 +59,7 @@ export default function HomeDisplay() {
                 />
                 <ThemeSwitch
                     value={hideHomeHeroCard}
+                    accessibilityLabel={t("themeSettings.hideHomeHeroCard")}
                     onValueChange={value => {
                         Config.setConfig("theme.hideHomeHeroCard", value);
                     }}
@@ -66,6 +71,9 @@ export default function HomeDisplay() {
                 />
                 <ThemeSwitch
                     value={hideHomeRecentListening}
+                    accessibilityLabel={t(
+                        "themeSettings.hideHomeRecentListening",
+                    )}
                     onValueChange={value => {
                         Config.setConfig(
                             "theme.hideHomeRecentListening",
@@ -80,6 +88,7 @@ export default function HomeDisplay() {
                 />
                 <ThemeSwitch
                     value={hideHomeOperations}
+                    accessibilityLabel={t("themeSettings.hideHomeOperations")}
                     onValueChange={value => {
                         Config.setConfig("theme.hideHomeOperations", value);
                     }}

@@ -152,6 +152,7 @@ export default function LxSourceList() {
                 />
                 <ThemeSwitch
                     value={item.enabled}
+                    accessibilityLabel={item.metadata.name}
                     onValueChange={enabled => {
                         LxSource.setEnabled(item.id, enabled);
                     }}
@@ -194,6 +195,7 @@ export default function LxSourceList() {
             </HorizontalSafeAreaView>
             <Fab
                 icon="plus"
+                accessibilityLabel={t("common.add")}
                 onPress={() => {
                     showPanel("SimpleSelect", {
                         header: t("lxSource.import"),

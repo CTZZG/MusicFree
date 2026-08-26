@@ -748,7 +748,9 @@ export default function BackupSetting() {
                 withHorizontalPadding
                 onPress={() => {
                     setWebdavAutoBackupWifiOnly(!webdavAutoBackupWifiOnly);
-                }}>
+                }}
+                accessibilityLabel={t("backupAndResume.webdavAutoBackupWifiOnly")}
+                accessibilityState={{ checked: webdavAutoBackupWifiOnly }}>
                 <ListItem.Content
                     title={t("backupAndResume.webdavAutoBackupWifiOnly")}
                 />

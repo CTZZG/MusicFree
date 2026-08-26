@@ -22,6 +22,7 @@ import Animated, {
 import Icon from "@/components/base/icon.tsx";
 import { showPanel } from "@/components/panels/usePanel";
 import { timingConfig } from "@/constants/commonConst";
+import { useI18N } from "@/core/i18n";
 import TrackPlayer, { useMusicState, useRepeatMode } from "@/core/trackPlayer";
 import useOrientation from "@/hooks/useOrientation";
 import delay from "@/utils/delay";
@@ -60,6 +61,7 @@ export default function PlayControl(props: IPlayControlProps) {
     const { swipeProgress } = props;
     const repeatMode = useRepeatMode();
     const musicState = useMusicState();
+    const { t } = useI18N();
 
     const orientation = useOrientation();
     const feedbackCompleting = useSharedValue(0);
@@ -205,6 +207,9 @@ export default function PlayControl(props: IPlayControlProps) {
                 color={"white"}
                 name={MusicRepeatModeInfo[repeatMode].icon}
                 size={rpx(56)}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t(`repeatMode.${repeatMode}`)}
                 onPress={async () => {
                     InteractionManager.runAfterInteractions(async () => {
                         await delay(20, false);
@@ -216,6 +221,9 @@ export default function PlayControl(props: IPlayControlProps) {
                 color={"white"}
                 name={"skip-left"}
                 size={rpx(56)}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t("musicDetail.playControl.previous.a11y")}
                 onPress={() => {
                     TrackPlayer.skipToPrevious().catch(() => undefined);
                 }}
@@ -229,6 +237,13 @@ export default function PlayControl(props: IPlayControlProps) {
                     color={"white"}
                     name={musicIsPaused(musicState) ? "play" : "pause"}
                     size={rpx(96)}
+                    accessible
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                        musicIsPaused(musicState)
+                            ? t("common.play")
+                            : t("musicDetail.playControl.pause.a11y")
+                    }
                     onPress={() => {
                         if (musicIsPaused(musicState)) {
                             TrackPlayer.play();
@@ -242,6 +257,9 @@ export default function PlayControl(props: IPlayControlProps) {
                 color={"white"}
                 name={"skip-right"}
                 size={rpx(56)}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t("musicDetail.playControl.next.a11y")}
                 onPress={() => {
                     TrackPlayer.skipToNext().catch(() => undefined);
                 }}
@@ -250,6 +268,9 @@ export default function PlayControl(props: IPlayControlProps) {
                 color={"white"}
                 name={"playlist"}
                 size={rpx(56)}
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t("musicBar.playlist.a11y")}
                 onPress={() => {
                     showPanel("PlayList");
                 }}

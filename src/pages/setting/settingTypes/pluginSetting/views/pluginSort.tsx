@@ -8,7 +8,7 @@ import PluginManager, { Plugin, useSortedPlugins } from "@/core/pluginManager";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 
 const ITEM_HEIGHT = rpx(96);
@@ -20,13 +20,18 @@ export default function PluginSort() {
     const colors = useColors();
     const { t } = useI18N();
 
-    function renderSortingItem({ item }: { item: Plugin }) {
-        return (
-            <View style={style.sortItem}>
-                <ThemeText>{item.name}</ThemeText>
-            </View>
-        );
-    }
+    const renderSortingItem = useCallback(({ item }: { item: Plugin }) => (
+        <View style={style.sortItem}>
+            <ThemeText>{item.name}</ThemeText>
+        </View>
+    ), []);
+    const getItemAccessibilityLabel = useCallback(
+        (item: Plugin) => item.name,
+        [],
+    );
+    const onSortEnd = useCallback((data: Plugin[]) => {
+        setSortingPlugins(data);
+    }, []);
     return (
         <>
             <AppBar backgroundColor="transparent" spacious>
@@ -48,23 +53,10 @@ export default function PluginSort() {
                 <SortableFlashList
                     data={sortingPlugins}
                     activeBackgroundColor={colors.placeholder}
+                    getItemAccessibilityLabel={getItemAccessibilityLabel}
                     renderItem={renderSortingItem}
-                    onSortEnd={data => {
-                        setSortingPlugins(data);
-                    }}
-                
+                    onSortEnd={onSortEnd}
                 />
-                {/* <SortableFlatList
-                    data={sortingPlugins}
-                    activeBackgroundColor={colors.placeholder}
-                    marginTop={marginTop}
-                    renderItem={renderSortingItem}
-                    itemHeight={ITEM_HEIGHT}
-                    itemJustifyContent={"space-between"}
-                    onSortEnd={data => {
-                        setSortingPlugins(data);
-                    }}
-                /> */}
             </HorizontalSafeAreaView>
         </>
     );

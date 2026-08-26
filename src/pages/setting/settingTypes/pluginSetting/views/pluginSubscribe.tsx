@@ -208,6 +208,7 @@ export default function PluginSubscribe() {
             </HorizontalSafeAreaView>
             <Fab
                 icon="plus"
+                accessibilityLabel={t("common.add")}
                 onPress={() => {
                     showDialog("SubscribePluginDialog", {
                         onSubmit,

@@ -46,7 +46,10 @@ export default function DownloadDialog(props: IDownloadDialogProps) {
                 <TouchableOpacity
                     onPress={() => {
                         setSkipState(state => !state);
-                    }}>
+                    }}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={t("dialog.downloadDialog.skipThisVersion")}
+                    accessibilityState={{ checked: skipState }}>
                     <View style={style.checkboxGroup}>
                         <Checkbox checked={skipState} />
                         <ThemeText style={style.checkboxHint}>

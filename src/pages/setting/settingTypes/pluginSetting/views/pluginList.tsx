@@ -442,6 +442,7 @@ export default function PluginList() {
 
                     <Fab
                         icon="plus"
+                        accessibilityLabel={t("common.add")}
                         onPress={() => {
                             showPanel("SimpleSelect", {
                                 header: t("pluginSetting.menu.installPlugin"),

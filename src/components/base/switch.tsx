@@ -19,7 +19,7 @@ interface ISwitchProps extends SwitchProps {}
 const fixedWidth = rpx(40);
 
 export default function ThemeSwitch(props: ISwitchProps) {
-    const { value, onValueChange } = props;
+    const { value, onValueChange, accessibilityLabel } = props;
     const colors = useColors();
 
     const sharedValue = useSharedValue(value ? 1 : 0);
@@ -45,7 +45,10 @@ export default function ThemeSwitch(props: ISwitchProps) {
         <TouchableWithoutFeedback
             onPress={() => {
                 onValueChange?.(!value);
-            }}>
+            }}
+            accessibilityRole="switch"
+            accessibilityLabel={accessibilityLabel}
+            accessibilityState={{ checked: !!value }}>
             <View
                 style={[
                     styles.container,

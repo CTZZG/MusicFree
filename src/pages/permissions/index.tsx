@@ -92,7 +92,9 @@ export default function Permissions() {
                 heightType="big"
                 onPress={() => {
                     LyricUtil.requestSystemAlertPermission();
-                }}>
+                }}
+                accessibilityLabel={t("permissionSetting.floatWindowPermission")}
+                accessibilityState={{ checked: permissions.floatingWindow }}>
                 <ListItem.Content
                     title={t("permissionSetting.floatWindowPermission")}
                     description={t("permissionSetting.floatWindowPermissionDescription")}
@@ -109,7 +111,9 @@ export default function Permissions() {
                 heightType="big"
                 onPress={() => {
                     NativeUtils.requestStoragePermission();
-                }}>
+                }}
+                accessibilityLabel={t("permissionSetting.fileReadWritePermission")}
+                accessibilityState={{ checked: permissions.fileStorage }}>
                 <ListItem.Content
                     title={t("permissionSetting.fileReadWritePermission")}
                     description={t("permissionSetting.fileReadWritePermissionDescription")}
@@ -128,7 +132,9 @@ export default function Permissions() {
                     downloadNotificationManager
                         .requestNotificationPermission()
                         .then(() => checkPermission("notification"));
-                }}>
+                }}
+                accessibilityLabel={t("permissionSetting.notificationPermission")}
+                accessibilityState={{ checked: permissions.notification }}>
                 <ListItem.Content
                     title={t("permissionSetting.notificationPermission")}
                     description={t("permissionSetting.notificationPermissionDescription")}
@@ -145,7 +151,9 @@ export default function Permissions() {
             <ListItem
                 withHorizontalPadding
                 heightType="big"
-                onPress={toggleBatteryOptimization}>
+                onPress={toggleBatteryOptimization}
+                accessibilityLabel={t("permissionSetting.ignoreBatteryOptimization")}
+                accessibilityState={{ checked: permissions.batteryOptimization }}>
                 <ListItem.Content
                     title={t("permissionSetting.ignoreBatteryOptimization")}
                     description={t("permissionSetting.ignoreBatteryOptimizationDescription")}

@@ -9,12 +9,13 @@ interface ICheckboxProps {
     checked?: boolean;
     onPress?: () => void;
     style?: StyleProp<ViewProps>;
+    accessibilityLabel?: string;
 }
 
 const slop = rpx(24);
 
 export default function Checkbox(props: ICheckboxProps) {
-    const { checked, onPress, style } = props;
+    const { checked, onPress, style, accessibilityLabel } = props;
     const colors = useColors();
 
     const innerNode = (
@@ -45,7 +46,10 @@ export default function Checkbox(props: ICheckboxProps) {
                 top: slop,
                 bottom: slop,
             }}
-            onPress={onPress}>
+            onPress={onPress}
+            accessibilityRole="checkbox"
+            accessibilityLabel={accessibilityLabel}
+            accessibilityState={{ checked: !!checked }}>
             {innerNode}
         </Pressable>
     ) : (

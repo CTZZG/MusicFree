@@ -69,6 +69,13 @@ export default function MusicList() {
         (item: IEditorMusicItem) => `${item.musicItem.platform}-${item.musicItem.id}`,
         [],
     );
+    const getItemAccessibilityLabel = useCallback(
+        (item: IEditorMusicItem) =>
+            [item.musicItem.title, item.musicItem.artist]
+                .filter(Boolean)
+                .join(" - "),
+        [],
+    );
     const onSortEnd = useCallback((newData: IEditorMusicItem[]) => {
         setEditingMusicList(newData);
         setMusicListChanged(true);
@@ -76,11 +83,12 @@ export default function MusicList() {
     const colors = useColors();
 
     return editingMusicList?.length ? (
-        <SortableFlashList 
+        <SortableFlashList
             activeBackgroundColor={colors.placeholder}
-            data={editingMusicList} 
+            data={editingMusicList}
             keyExtractor={keyExtractor}
-            renderItem={renderItem} 
+            getItemAccessibilityLabel={getItemAccessibilityLabel}
+            renderItem={renderItem}
             onSortEnd={onSortEnd}
         />
     ) : (

@@ -119,6 +119,11 @@ export default function SheetList() {
             getMediaUniqueKey(item.musicSheetItem),
         [],
     );
+    const getItemAccessibilityLabel = useCallback(
+        (item: IEditorMusicSheetItem) =>
+            item.musicSheetItem.title ?? t("common.unknownName"),
+        [t],
+    );
     const onSortEnd = useCallback((newData: IEditorMusicSheetItem[]) => {
         if (!editorReady) {
             return;
@@ -166,6 +171,7 @@ export default function SheetList() {
                 data={editingSheetList}
                 estimatedItemSize={rpx(132)}
                 keyExtractor={keyExtractor}
+                getItemAccessibilityLabel={getItemAccessibilityLabel}
                 renderItem={renderItem}
                 onSortEnd={onSortEnd}
             />}

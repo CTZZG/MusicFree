@@ -10,14 +10,28 @@ interface IChipProps {
     children?: ReactNode;
     onPress?: () => void;
     onClose?: () => void;
+    accessibilityLabel?: string;
+    closeAccessibilityLabel?: string;
 }
 export default function Chip(props: IChipProps) {
-    const { containerStyle, children, onPress, onClose } = props;
+    const {
+        containerStyle,
+        children,
+        onPress,
+        onClose,
+        accessibilityLabel,
+        closeAccessibilityLabel,
+    } = props;
     const colors = useColors();
 
     return (
         <Pressable
             onPress={onPress}
+            accessibilityRole={onPress ? "button" : undefined}
+            accessibilityLabel={
+                accessibilityLabel ??
+                (typeof children === "string" ? children : undefined)
+            }
             style={[
                 styles.container,
                 {
@@ -36,6 +50,7 @@ export default function Chip(props: IChipProps) {
                 onPress={onClose}
                 name="x-mark"
                 sizeType="small"
+                accessibilityLabel={closeAccessibilityLabel}
                 style={styles.icon}
             />
         </Pressable>

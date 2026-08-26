@@ -489,6 +489,12 @@ export default function MusicList(props: IMusicListProps) {
                         <View style={styles.selectionHeaderActions}>
                             <Pressable
                                 style={styles.selectionTextButton}
+                                accessibilityRole="button"
+                                accessibilityLabel={
+                                    selectedCount === (musicList?.length ?? 0)
+                                        ? t("common.unselectAll")
+                                        : t("common.selectAll")
+                                }
                                 onPress={
                                     selectedCount === (musicList?.length ?? 0)
                                         ? clearSelection
@@ -502,6 +508,8 @@ export default function MusicList(props: IMusicListProps) {
                             </Pressable>
                             <Pressable
                                 style={styles.selectionTextButton}
+                                accessibilityRole="button"
+                                accessibilityLabel={t("common.cancel")}
                                 onPress={clearSelection}>
                                 <ThemeText fontColor="primary">
                                     {t("common.cancel")}
@@ -578,6 +586,8 @@ export default function MusicList(props: IMusicListProps) {
                     pointerEvents="box-none">
                     <Pressable
                         style={[styles.badgeButton, { backgroundColor: colors.notification }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("musicList.locateHighlight.a11y")}
                         onPress={scrollToHighlight}
                     >
                         <Icon
@@ -772,6 +782,7 @@ function MusicListItemImpl(props: IMusicListItemProps) {
             showDuration={showDuration}
             showAddNextIcon={showAddNextIcon && !selectionMode}
             presentation={presentation}
+            selected={selectionMode ? selected : undefined}
         />
     );
 }
@@ -792,6 +803,9 @@ function SelectionAction(props: ISelectionActionProps) {
     return (
         <Pressable
             onPress={disabled ? undefined : onPress}
+            accessibilityRole="button"
+            accessibilityLabel={title}
+            accessibilityState={{ disabled: !!disabled }}
             style={styles.selectionAction}>
             <Icon
                 name={icon}

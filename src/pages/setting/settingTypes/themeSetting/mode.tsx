@@ -26,6 +26,9 @@ export default function Mode() {
                             <ThemeText>{t("themeSettings.followSystemTheme")}</ThemeText>
                             <ThemeSwitch
                                 value={mode}
+                                accessibilityLabel={t(
+                                    "themeSettings.followSystemTheme",
+                                )}
                                 onValueChange={e => {
                                     if (e) {
                                         const colorScheme =

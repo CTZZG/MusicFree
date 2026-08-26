@@ -38,6 +38,13 @@ interface IListItemProps {
     children?: ReactNode;
     onPress?: () => void;
     onLongPress?: () => void;
+    accessibilityLabel?: string;
+    accessibilityHint?: string;
+    accessibilityState?: {
+        selected?: boolean;
+        disabled?: boolean;
+        checked?: boolean;
+    };
 }
 
 const defaultPadding = rpx(24);
@@ -62,6 +69,9 @@ function ListItem(props: IListItemProps) {
         children,
         onPress,
         onLongPress,
+        accessibilityLabel,
+        accessibilityHint,
+        accessibilityState,
     } = props;
 
     const defaultStyle: StyleProp<ViewStyle> = {
@@ -85,7 +95,12 @@ function ListItem(props: IListItemProps) {
             ]}
             disabled={!isPressable}
             onPress={onPress}
-            onLongPress={onLongPress}>
+            onLongPress={onLongPress}
+            accessible={isPressable}
+            accessibilityRole={isPressable ? "button" : undefined}
+            accessibilityLabel={accessibilityLabel}
+            accessibilityHint={accessibilityHint}
+            accessibilityState={accessibilityState}>
             <View style={[styles.container, defaultStyle, style]}>
                 {children}
             </View>
@@ -152,6 +167,7 @@ interface IListItemIconProps {
     onPress?: () => void;
     color?: string;
      hitSlop?: null | Insets | number | undefined;
+    accessibilityLabel?: string;
 }
 
 function ListItemIcon(props: IListItemIconProps) {
@@ -166,6 +182,7 @@ function ListItemIcon(props: IListItemIconProps) {
         onPress,
         color,
         hitSlop,
+        accessibilityLabel,
     } = props;
 
     const colors = useColors();
@@ -189,7 +206,13 @@ function ListItemIcon(props: IListItemIconProps) {
     );
 
     return onPress ? (
-        <TouchableOpacity hitSlop={hitSlop} onPress={onPress}>{innerContent}</TouchableOpacity>
+        <TouchableOpacity
+            hitSlop={hitSlop}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}>
+            {innerContent}
+        </TouchableOpacity>
     ) : (
         innerContent
     );

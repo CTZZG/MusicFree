@@ -44,7 +44,14 @@ export function IconButtonWithGesture(props: IIconButtonProps) {
 }
 
 export default function IconButton(props: IIconButtonProps) {
-    const { sizeType = "normal", fontColor = "normal", style, color } = props;
+    const {
+        sizeType = "normal",
+        fontColor = "normal",
+        style,
+        color,
+        onPress,
+        accessibilityLabel,
+    } = props;
     const colors = useColors();
     const size = iconSizeConst[sizeType];
 
@@ -54,6 +61,9 @@ export default function IconButton(props: IIconButtonProps) {
             color={color ?? colors[colorMap[fontColor]]}
             style={[{ minWidth: size }, styles.textCenter, style]}
             size={size}
+            accessible={!!(onPress || accessibilityLabel)}
+            accessibilityRole={onPress ? "button" : undefined}
+            accessibilityLabel={accessibilityLabel}
         />
     );
 }

@@ -44,7 +44,10 @@ export default function CheckStorage() {
                 style={styles.checkBox}
                 onPress={() => {
                     setSkipState(state => !state);
-                }}>
+                }}
+                accessibilityRole="checkbox"
+                accessibilityLabel={t("dialog.checkStorage.button.doNotShowAgain")}
+                accessibilityState={{ checked: skipState }}>
                 <View style={styles.checkboxGroup}>
                     <Checkbox checked={skipState} />
                     <ThemeText style={styles.checkboxHint}>{t("dialog.checkStorage.button.doNotShowAgain")}</ThemeText>

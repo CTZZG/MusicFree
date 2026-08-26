@@ -23,6 +23,8 @@ export function Button(props: {
         <TouchableOpacity
             activeOpacity={0.6}
             onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={text}
             style={[
                 styles.bottomBtn,
                 {

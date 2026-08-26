@@ -43,6 +43,7 @@ export default function EqualizerSetting() {
                 </View>
                 <ThemeSwitch
                     value={enabled}
+                    accessibilityLabel="均衡器"
                     onValueChange={value => Equalizer.setEnabled(value)}
                 />
             </View>

@@ -8,15 +8,18 @@ import Icon, { IIconName } from "@/components/base/icon.tsx";
 interface IFabProps {
     icon?: IIconName;
     onPress?: () => void;
+    accessibilityLabel?: string;
 }
 export default function Fab(props: IFabProps) {
-    const { icon, onPress } = props;
+    const { icon, onPress, accessibilityLabel } = props;
 
     const colors = useColors();
 
     return (
         <Pressable
             onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}
             style={[
                 styles.container,
                 {

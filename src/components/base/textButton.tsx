@@ -29,6 +29,7 @@ export default function (props: IButtonProps) {
             hitSlop={hitSlop ?? (withHorizontalPadding ? 0 : rpx(28))}
             onPress={onPress}
             accessible
+            accessibilityRole="button"
             accessibilityLabel={children}>
             <ThemeText fontColor={fontColor}>{children}</ThemeText>
         </Pressable>

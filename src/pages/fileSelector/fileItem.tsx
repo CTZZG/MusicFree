@@ -30,7 +30,9 @@ function FileItem(props: IProps) {
 
     const textColor = useTextColor();
 
-    // 返回逻辑
+    const displayName = path.substring(
+        parentPath === "/" ? 1 : parentPath.length + 1,
+    );
 
     return (
         <View style={styles.container}>
@@ -38,6 +40,8 @@ function FileItem(props: IProps) {
                 onPress={() => {
                     onItemPress(checked);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={displayName}
                 style={styles.pathWrapper}>
                 <Icon
                     name={
@@ -53,15 +57,16 @@ function FileItem(props: IProps) {
                     style={styles.path}
                     numberOfLines={1}
                     ellipsizeMode="tail">
-                    {path.substring(
-                        parentPath === "/" ? 1 : parentPath.length + 1,
-                    )}
+                    {displayName}
                 </ThemeText>
             </Pressable>
             <TouchableOpacity
                 onPress={() => {
                     onCheckChange(!checked);
                 }}
+                accessibilityRole="checkbox"
+                accessibilityLabel={displayName}
+                accessibilityState={{ checked: !!checked }}
                 style={styles.checkIcon}>
                 <Checkbox checked={checked} />
             </TouchableOpacity>

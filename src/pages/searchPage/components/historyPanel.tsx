@@ -71,6 +71,10 @@ export default function () {
                                 <Chip
                                     key={`search-history-${_}`}
                                     containerStyle={style.chip}
+                                    closeAccessibilityLabel={t(
+                                        "searchPage.history.removeItem.a11y",
+                                        { keyword: _ },
+                                    )}
                                     onClose={async () => {
                                         await removeHistory(_);
                                         getHistory().then(setHistory);

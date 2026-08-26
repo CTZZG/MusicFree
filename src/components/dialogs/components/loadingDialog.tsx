@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { ReactNode, useCallback, useEffect, useRef } from "react";
 import Loading from "@/components/base/loading";
 import rpx from "@/utils/rpx";
 import { StyleSheet } from "react-native";
@@ -10,7 +10,7 @@ interface ILoadingDialogProps<T extends any = any> {
     promise?: Promise<T>;
     task?: (signal: AbortSignal) => Promise<T>;
     title: string;
-    loadingText?: string;
+    loadingText?: ReactNode;
     onResolve?: (data: T, hideDialog: () => void) => void;
     onReject?: (reason: any, hideDialog: () => void) => void;
     onCancel?: (hideDialog: () => void) => void;
@@ -91,7 +91,7 @@ export default function LoadingDialog(props: ILoadingDialogProps) {
         <Dialog onDismiss={onCancel ? cancel : undefined}>
             <Dialog.Title>{title}</Dialog.Title>
             <Dialog.Content style={style.content}>
-                <Loading text={loadingText || t("common.loading")} />
+                <Loading text={loadingText ?? t("common.loading")} />
             </Dialog.Content>
             <Dialog.Actions
                 actions={onCancel

@@ -18,6 +18,7 @@ import TrackPlayer, { useCurrentMusic, useMusicState } from "@/core/trackPlayer"
 import { musicIsPaused } from "@/utils/trackUtils";
 import DraggingTime from "./draggingTime";
 import LyricItemComponent from "./lyricItem";
+import useAccessibilityPreferences from "@/hooks/useAccessibilityPreferences";
 import PersistStatus from "@/utils/persistStatus";
 import LyricOperations from "./lyricOperations";
 import { IParsedLrcItem } from "@/utils/lrcParser";
@@ -39,6 +40,8 @@ import {
 } from "./lyricScrollState";
 import createDelayedAction from "./delayedAction";
 import { getLyricSeekTimeSeconds } from "./lyricSeekPolicy";
+import { getLyricAccessibilityText } from "./lyricAccessibility";
+import timeformat from "@/utils/timeformat";
 
 const ITEM_HEIGHT = rpx(92);
 const SCROLL_FOLLOW_LEAD_MS = 120;
@@ -263,6 +266,7 @@ function buildDetailLyricLines(
 
 export default function Lyric(props: IProps) {
     const { immersiveMode = false, onTurnPageClick } = props;
+    const { reduceMotionEnabled } = useAccessibilityPreferences();
 
     const {
         loading,
@@ -888,25 +892,61 @@ export default function Lyric(props: IProps) {
                                     lyricOffsetSeconds,
                                 );
                                 const canTapSeek = seekTime !== undefined;
+                                const isCurrentLine =
+                                    currentLyricIndex === index;
+                                const lines = buildDetailLyricLines(
+                                    item,
+                                    lyricOrder,
+                                    !!showTranslation,
+                                    hasTranslation,
+                                    !!showRomanization,
+                                    hasRomanization,
+                                    lyrics[index + 1],
+                                );
+                                const timeText = canTapSeek
+                                    ? timeformat(seekTime)
+                                    : undefined;
+                                const accessibilityLabel = [
+                                    getLyricAccessibilityText(lines) ||
+                                        t("lyric.a11y.emptyLine"),
+                                    t("lyric.a11y.position", {
+                                        position: index + 1,
+                                        total: lyrics.length,
+                                    }),
+                                    isCurrentLine
+                                        ? t("lyric.a11y.current")
+                                        : null,
+                                    timeText
+                                        ? t("lyric.a11y.timestamp", {
+                                            time: timeText,
+                                        })
+                                        : null,
+                                ]
+                                    .filter(Boolean)
+                                    .join(", ");
                                 return (
                                     <LyricItemComponent
                                         index={index}
-                                        lines={buildDetailLyricLines(
-                                            item,
-                                            lyricOrder,
-                                            !!showTranslation,
-                                            hasTranslation,
-                                            !!showRomanization,
-                                            hasRomanization,
-                                            lyrics[index + 1],
-                                        )}
+                                        lines={lines}
                                         fontSize={fontSizeStyle.fontSize}
                                         secondaryFontScale={secondaryFontScale}
                                         textAlign={detailAlign}
                                         onLayout={handleLyricItemLayout}
                                         light={draggingIndex === index}
-                                        highlight={currentLyricIndex === index}
+                                        highlight={isCurrentLine}
                                         amllLiteMode={isAmlLiteMode}
+                                        reduceMotionEnabled={reduceMotionEnabled}
+                                        accessibilityLabel={accessibilityLabel}
+                                        accessibilityHint={
+                                            timeText
+                                                ? t("lyric.a11y.seekHint", {
+                                                    time: timeText,
+                                                })
+                                                : undefined
+                                        }
+                                        accessibilityState={{
+                                            selected: isCurrentLine,
+                                        }}
                                         onPressIn={
                                             canTapSeek
                                                 ? markLyricLineTapHandled

@@ -1,7 +1,8 @@
 import React, { memo, useEffect, useMemo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { TextStyle } from "react-native";
+import type { AccessibilityState, TextStyle } from "react-native";
 import Animated, {
+    cancelAnimation,
     Easing,
     interpolate,
     interpolateColor,
@@ -23,6 +24,7 @@ import {
     LYRIC_TRANSITION_DURATION_MS,
     getFullLyricOpacity,
 } from "@/utils/lyricTransition";
+import { getLyricMotionPolicy } from "./lyricMotionPolicy";
 
 interface ILyricLine {
     key: string;
@@ -57,6 +59,10 @@ interface ILyricItemComponentProps {
     onLayout?: (index: number, height: number) => void;
     onPress?: () => void;
     onPressIn?: () => void;
+    accessibilityLabel?: string;
+    accessibilityHint?: string;
+    accessibilityState?: Pick<AccessibilityState, "selected" | "disabled">;
+    reduceMotionEnabled?: boolean;
 }
 
 const MIN_WORD_DURATION = 50;
@@ -70,11 +76,22 @@ export const BreathingDots = memo(function BreathingDots(props: {
     color: string;
     align?: "left" | "center" | "right";
     highlight?: boolean;
+    animate?: boolean;
 }) {
-    const { color, align = "center", highlight = false } = props;
+    const {
+        color,
+        align = "center",
+        highlight = false,
+        animate = true,
+    } = props;
     const progress = useSharedValue(0);
 
     useEffect(() => {
+        if (!animate) {
+            cancelAnimation(progress);
+            progress.value = 0;
+            return;
+        }
         progress.value = withRepeat(
             withTiming(1, {
                 duration: 1800,
@@ -83,7 +100,8 @@ export const BreathingDots = memo(function BreathingDots(props: {
             -1,
             true,
         );
-    }, [progress]);
+        return () => cancelAnimation(progress);
+    }, [animate, progress]);
 
     const dotStyle0 = useAnimatedStyle(() => ({
         opacity: interpolate(progress.value, [0, 0.5, 1], [0.35, 1, 0.35]),
@@ -505,6 +523,10 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
         amllLiteMode = false,
         onPress,
         onPressIn,
+        accessibilityLabel,
+        accessibilityHint,
+        accessibilityState,
+        reduceMotionEnabled = false,
     } = props;
 
     const colors = useColors();
@@ -514,6 +536,12 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
     const pureWhiteMode = useAppConfig("lyric.pureWhiteMode") ?? true;
     const enableBreathingDots =
         useAppConfig("lyric.enableBreathingDots") ?? true;
+    const motionPolicy = getLyricMotionPolicy({
+        reduceMotionEnabled,
+        enableWordByWord,
+        enableWordByWordFloat,
+        enableBreathingDots,
+    });
     const activeColor = pureWhiteMode ? "white" : colors.primary;
     const displayLines = lines?.length
         ? lines
@@ -538,6 +566,19 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
     const transitionY = useSharedValue(0);
 
     useEffect(() => {
+        const targetOpacity = getFullLyricOpacity({
+            highlight,
+            light,
+            amllLiteMode,
+        });
+        if (!motionPolicy.animateLineTransition) {
+            cancelAnimation(transitionOpacity);
+            cancelAnimation(transitionY);
+            transitionY.value = 0;
+            transitionOpacity.value = targetOpacity;
+            wasHighlightedRef.current = !!highlight;
+            return;
+        }
         const wasHighlighted = wasHighlightedRef.current;
         const timing = {
             duration: LYRIC_TRANSITION_DURATION_MS,
@@ -553,15 +594,13 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
             transitionY.value = withTiming(0, timing);
         }
 
-        transitionOpacity.value = withTiming(
-            getFullLyricOpacity({ highlight, light, amllLiteMode }),
-            timing,
-        );
+        transitionOpacity.value = withTiming(targetOpacity, timing);
         wasHighlightedRef.current = !!highlight;
     }, [
         amllLiteMode,
         highlight,
         light,
+        motionPolicy.animateLineTransition,
         transitionOpacity,
         transitionY,
     ]);
@@ -616,7 +655,7 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
                                 : 1.28),
                 );
                 const canUseWordByWord =
-                    enableWordByWord &&
+                    motionPolicy.animateWordByWord &&
                     canAnimateLyricWords({
                         hasWordByWord: line.hasWordByWord,
                         words: line.words,
@@ -637,6 +676,7 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
                                 color={activeColor}
                                 align={normalizeTextAlign(textAlign)}
                                 highlight
+                                animate={motionPolicy.animateBreathingDots}
                             />
                         ) : canUseWordByWord ? (
                             <WordByWordLine
@@ -648,7 +688,7 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
                                 lineHeight={lineHeight}
                                 textAlign={textAlign}
                                 highlight={highlight}
-                                enableFloat={enableWordByWordFloat}
+                                enableFloat={motionPolicy.animateWordFloat}
                             />
                         ) : (
                             <Text
@@ -679,6 +719,11 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
     if (onPress) {
         return (
             <AnimatedPressable
+                accessible={!!accessibilityLabel}
+                accessibilityRole="button"
+                accessibilityLabel={accessibilityLabel}
+                accessibilityHint={accessibilityHint}
+                accessibilityState={accessibilityState}
                 onLayout={handleLayout}
                 onPress={onPress}
                 onPressIn={onPressIn}
@@ -690,6 +735,10 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
 
     return (
         <Animated.View
+            accessible={!!accessibilityLabel}
+            accessibilityRole="text"
+            accessibilityLabel={accessibilityLabel}
+            accessibilityState={accessibilityState}
             onLayout={handleLayout}
             style={[itemStyle, transitionStyle]}>
             {content}
@@ -710,8 +759,15 @@ const LyricItemComponent = memo(
         prev.secondaryFontScale === curr.secondaryFontScale &&
         prev.textAlign === curr.textAlign &&
         prev.amllLiteMode === curr.amllLiteMode &&
+        prev.reduceMotionEnabled === curr.reduceMotionEnabled &&
         prev.onPress === curr.onPress &&
-        prev.onPressIn === curr.onPressIn,
+        prev.onPressIn === curr.onPressIn &&
+        prev.accessibilityLabel === curr.accessibilityLabel &&
+        prev.accessibilityHint === curr.accessibilityHint &&
+        prev.accessibilityState?.selected ===
+            curr.accessibilityState?.selected &&
+        prev.accessibilityState?.disabled ===
+            curr.accessibilityState?.disabled,
 );
 
 export default LyricItemComponent;

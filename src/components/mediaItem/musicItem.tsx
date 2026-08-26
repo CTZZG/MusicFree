@@ -29,6 +29,10 @@ import useColors from "@/hooks/useColors";
 import useLocalMusicArtwork from "@/hooks/useLocalMusicArtwork";
 import Tag from "../base/tag";
 import { useShortcutCardStyle } from "../base/shortcutPageSurface";
+import {
+    getMusicItemAccessibilityLabel,
+    withAccessibilitySuffixes,
+} from "@/utils/a11yLabels";
 
 type DownloadWriteStatus = DownloadWriteResult;
 
@@ -49,6 +53,7 @@ interface IMusicItemProps {
     showAddNextIcon?: boolean;
     presentation?: "plain" | "cards";
     cardIndex?: string | number;
+    selected?: boolean;
 }
 
 function getMusicItemQualityBadge(musicItem: IMusic.IMusicItem) {
@@ -112,6 +117,7 @@ function MusicItem(props: IMusicItemProps) {
         showAddNextIcon = false,
         presentation = "plain",
         cardIndex,
+        selected,
     } = props;
     const colors = useColors();
     const qualityBadge = useMemo(
@@ -186,6 +192,17 @@ function MusicItem(props: IMusicItemProps) {
     );
     const cardStyle = useShortcutCardStyle({ highlighted: highlight });
     const isCard = presentation === "cards";
+    const accessibilityLabel = useMemo(
+        () =>
+            withAccessibilitySuffixes(
+                getMusicItemAccessibilityLabel(
+                    musicItem,
+                    t("common.unknownName"),
+                ),
+                [localFileExists === false ? t("localMusic.fileMissing") : null],
+            ),
+        [musicItem, localFileExists, t],
+    );
 
     return (
         <ListItem
@@ -199,6 +216,15 @@ function MusicItem(props: IMusicItemProps) {
             leftPadding={isCard ? rpx(14) : index !== undefined ? 0 : undefined}
             rightPadding={isCard ? rpx(6) : itemPaddingRight}
             onLongPress={onItemLongPress}
+            accessibilityLabel={accessibilityLabel}
+            accessibilityHint={
+                localFileExists === false
+                    ? t("localMusic.fileMissingTapHint")
+                    : undefined
+            }
+            accessibilityState={
+                selected !== undefined ? { selected } : undefined
+            }
             onPress={() => {
                 if (localMusicItem && localFileExists === false) {
                     Toast.warn(t("localMusic.fileMissingTapHint"));
@@ -384,6 +410,9 @@ function MusicItem(props: IMusicItemProps) {
                         styles.addNextIconContainer,
                         { backgroundColor: colors.placeholder },
                     ]}
+                    accessibilityLabel={t("musicList.item.addNext.a11y", {
+                        title: musicItem.title,
+                    })}
                     onPress={() => {
                         if (localMusicItem && localFileExists === false) {
                             Toast.warn(t("localMusic.fileMissingTapHint"));
@@ -403,6 +432,9 @@ function MusicItem(props: IMusicItemProps) {
                     }}
                     position="none"
                     icon="ellipsis-vertical"
+                    accessibilityLabel={t("musicList.item.moreOptions.a11y", {
+                        title: musicItem.title,
+                    })}
                     onPress={() => {
                         showPanel("MusicItemOptions", {
                             musicItem,

@@ -743,6 +743,7 @@ function PluginItemContent(props: IPluginItemProps) {
                 </View>
                 <ThemeSwitch
                     value={enabled}
+                    accessibilityLabel={plugin.name}
                     onValueChange={val => {
                         pluginManager.setPluginEnabled(plugin, val);
                         onPluginEnabledChanged?.();

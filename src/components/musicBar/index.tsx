@@ -33,12 +33,14 @@ import {
     MUSIC_BAR_HORIZONTAL_MARGIN,
 } from "./layout";
 import { useMusicBarLayoutState } from "./layoutState";
+import { useI18N } from "@/core/i18n";
 
 function CircularPlayBtn() {
     const progress = useProgress();
     const musicState = useMusicState();
     const colors = useColors();
     const musicItem = useCurrentMusic();
+    const { t } = useI18N();
 
     const isPaused = musicIsPaused(musicState);
     const isBuffering = musicIsBuffering(musicState);
@@ -95,7 +97,7 @@ function CircularPlayBtn() {
                 />
             </Svg>
             <Pressable
-                accessibilityLabel={"播放或暂停歌曲"}
+                accessibilityLabel={t("musicBar.playPause.a11y")}
                 hitSlop={{
                     top: 10,
                     left: 10,
@@ -129,6 +131,7 @@ function CircularPlayBtn() {
 }
 function MusicBar() {
     const musicItem = useCurrentMusic();
+    const { t } = useI18N();
     const [liquidSurfaceRefreshToken, setLiquidSurfaceRefreshToken] =
         useState(0);
     const { layout, routeName, transitionInProgress } = useMusicBarLayoutState();
@@ -210,7 +213,7 @@ function MusicBar() {
                 <CircularPlayBtn />
                 <Icon
                     accessible
-                    accessibilityLabel="播放列表"
+                    accessibilityLabel={t("musicBar.playlist.a11y")}
                     name="playlist"
                     size={rpx(56)}
                     onPress={() => {
@@ -241,7 +244,7 @@ function MusicBar() {
                     },
                 ]}
                 accessible
-                accessibilityLabel={`歌曲: ${musicItem.title} 歌手: ${musicItem.artist}`}>
+                accessibilityLabel={t("musicBar.nowPlaying.a11y", { title: musicItem.title, artist: musicItem.artist })}>
                 <LiquidGlassBackdrop
                     radius={rpx(66)}
                     refreshToken={liquidSurfaceRefreshToken}
@@ -274,7 +277,7 @@ function MusicBar() {
                         },
                     ]}
                     accessible
-                    accessibilityLabel={`歌曲: ${musicItem.title} 歌手: ${musicItem.artist}`}
+                    accessibilityLabel={t("musicBar.nowPlaying.a11y", { title: musicItem.title, artist: musicItem.artist })}
                     // onPress={() => {
                     //     navigate(ROUTE_PATH.MUSIC_DETAIL);
                     // }}
