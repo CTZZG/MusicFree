@@ -7,7 +7,12 @@ function Panels() {
 
     const Component = panelInfoState.name ? panels[panelInfoState.name] : null;
 
-    return Component ? <Component {...(panelInfoState.payload ?? {})} /> : null;
+    return Component ? (
+        <Component
+            key={panelInfoState.seq}
+            {...(panelInfoState.payload ?? {})}
+        />
+    ) : null;
 }
 
 export default React.memo(Panels, () => true);

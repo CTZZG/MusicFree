@@ -129,10 +129,11 @@ export default function (props: IPanelFullScreenProps) {
     });
 
     const unmountPanel = useCallback(() => {
-        panelInfoStore.setValue({
+        panelInfoStore.setValue(prev => ({
             name: null,
             payload: null,
-        });
+            seq: prev.seq,
+        }));
         hideCallbackRef.current.forEach(cb => cb?.());
     }, []);
 

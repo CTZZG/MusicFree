@@ -140,7 +140,9 @@ export default function MusicMetadataSettings() {
         <ListItem
             withHorizontalPadding
             heightType="small"
-            onPress={() => onValueChange(!value)}>
+            onPress={() => onValueChange(!value)}
+            accessibilityLabel={title}
+            accessibilityState={{ checked: value }}>
             <ListItem.Content title={title} />
             <ThemeSwitch value={value} onValueChange={onValueChange} />
         </ListItem>
@@ -175,7 +177,9 @@ export default function MusicMetadataSettings() {
                 key={item}
                 withHorizontalPadding
                 heightType="small"
-                onPress={() => toggleLyricOrderItem(item)}>
+                onPress={() => toggleLyricOrderItem(item)}
+                accessibilityLabel={lyricLabelMap[item]}
+                accessibilityState={{ checked }}>
                 <View style={styles.checkboxWrapper}>
                     <Checkbox
                         checked={checked}

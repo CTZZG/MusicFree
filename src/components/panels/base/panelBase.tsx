@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     BackHandler,
     DeviceEventEmitter,
-    KeyboardAvoidingView,
+    Keyboard,
     NativeEventSubscription,
     Pressable,
     StyleSheet,
@@ -22,6 +22,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { panelInfoStore } from "../usePanel";
 import NativeUtils from "@/native/utils";
+import { resolvePanelKeyboardOffset } from "./panelKeyboardPolicy";
 
 const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);
 const ANIMATION_DURATION = 250;
@@ -47,6 +48,8 @@ export default function (props: IPanelBaseProps) {
         positionMethod = "bottom",
     } = props;
     const snapPoint = useSharedValue(0);
+    const keyboardOffset = useSharedValue(0);
+    const panelLayoutBottomRef = useRef(0);
 
     const colors = useColors();
     const [loading, setLoading] = useState(true); // 是否处于弹出状态
@@ -110,6 +113,46 @@ export default function (props: IPanelBaseProps) {
         };
     }, []);
 
+    // 面板绝对定位在根视图底部，`KeyboardAvoidingView` 量不到它的真实高度
+    // （height 行为下 frame 高度为 0），所以这里按面板底边与键盘顶边的重叠量
+    // 直接抬升面板，避免输入框被输入法盖住。onLayout 不受 transform 影响，
+    // 因此弹出动画进行中拿到的也是最终位置。
+    useEffect(() => {
+        if (keyboardAvoidBehavior === "none" || orientation !== "vertical") {
+            keyboardOffset.value = 0;
+            return;
+        }
+
+        const applyKeyboardScreenY = (keyboardScreenY?: number | null) => {
+            keyboardOffset.value = withTiming(
+                resolvePanelKeyboardOffset({
+                    panelBottomY: panelLayoutBottomRef.current,
+                    keyboardScreenY: keyboardScreenY ?? 0,
+                }),
+                timingConfig,
+            );
+        };
+
+        if (Keyboard.isVisible()) {
+            applyKeyboardScreenY(Keyboard.metrics()?.screenY);
+        }
+        const showSubscription = Keyboard.addListener(
+            "keyboardDidShow",
+            event => {
+                applyKeyboardScreenY(event?.endCoordinates?.screenY);
+            },
+        );
+        const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+            keyboardOffset.value = withTiming(0, timingConfig);
+        });
+
+        return () => {
+            showSubscription.remove();
+            hideSubscription.remove();
+            keyboardOffset.value = 0;
+        };
+    }, [keyboardAvoidBehavior, keyboardOffset, orientation]);
+
     const maskAnimated = useAnimatedStyle(() => {
         return {
             opacity: snapPoint.value * 0.5,
@@ -121,7 +164,9 @@ export default function (props: IPanelBaseProps) {
             transform: [
                 orientation === "vertical"
                     ? {
-                        translateY: (1 - snapPoint.value) * useAnimatedBase,
+                        translateY:
+                            (1 - snapPoint.value) * useAnimatedBase -
+                            keyboardOffset.value,
                     }
                     : {
                         translateX: (1 - snapPoint.value) * useAnimatedBase,
@@ -135,10 +180,11 @@ export default function (props: IPanelBaseProps) {
     }, []);
 
     const unmountPanel = useCallback(() => {
-        panelInfoStore.setValue({
+        panelInfoStore.setValue(prev => ({
             name: null,
             payload: null,
-        });
+            seq: prev.seq,
+        }));
         hideCallbackRef.current.forEach(cb => cb?.());
     }, []);
 
@@ -162,6 +208,10 @@ export default function (props: IPanelBaseProps) {
 
     const panelBody = (
         <Animated.View
+            onLayout={event => {
+                const layout = event.nativeEvent.layout;
+                panelLayoutBottomRef.current = layout.y + layout.height;
+            }}
             style={[
                 style.wrapper,
                 orientation === "horizontal" ? {
@@ -192,15 +242,7 @@ export default function (props: IPanelBaseProps) {
                     style={[style.maskWrapper, style.mask, maskAnimated]}
                 />
             </Pressable>
-            {keyboardAvoidBehavior === "none" ? (
-                panelBody
-            ) : (
-                <KeyboardAvoidingView
-                    style={style.kbContainer}
-                    behavior={keyboardAvoidBehavior || "position"}>
-                    {panelBody}
-                </KeyboardAvoidingView>
-            )}
+            {panelBody}
         </>
     );
 }
@@ -226,9 +268,6 @@ const style = StyleSheet.create({
         right: 0,
         borderTopLeftRadius: rpx(28),
         borderTopRightRadius: rpx(28),
-        zIndex: 15010,
-    },
-    kbContainer: {
         zIndex: 15010,
     },
 });

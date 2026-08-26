@@ -71,9 +71,14 @@ export default function TimingClose() {
                         </TouchableOpacity>
                     </View>
                     <View style={styles.bottomLine}>
-                        <Pressable style={styles.closeAfterPlayContainer} onPress={() => {
-                            setCloseAfterPlayEnd(!closeAfterPlay);
-                        }}>
+                        <Pressable
+                            style={styles.closeAfterPlayContainer}
+                            onPress={() => {
+                                setCloseAfterPlayEnd(!closeAfterPlay);
+                            }}
+                            accessibilityRole="checkbox"
+                            accessibilityLabel={t("panel.timingClose.closeAfterPlay")}
+                            accessibilityState={{ checked: closeAfterPlay }}>
                             <Checkbox checked={closeAfterPlay} />
                             <ThemeText style={styles.bottomLineText}>{t("panel.timingClose.closeAfterPlay")}</ThemeText>
                         </Pressable>
