@@ -103,9 +103,13 @@ const lifecycleSources = {
 
 const lifecycleAssertions = [
     [
+        // 窗口放宽到 800：null-intent 分支里现在还要清理幽灵通知（进程被杀后
+        // 系统重建服务，但 bridge 已随旧进程消失，通知按钮全是 no-op）。
+        // 注意这类断言只是「字符串出现在附近」，并不校验控制流——它能发现
+        // 整段代码被删掉，但挡不住逻辑写错。
         'null service restart is non-sticky',
         lifecycleSources.service,
-        /intent\s*==\s*null[\s\S]{0,120}START_NOT_STICKY/,
+        /intent\s*==\s*null[\s\S]{0,800}START_NOT_STICKY/,
     ],
     [
         'service handler callbacks are cleared',

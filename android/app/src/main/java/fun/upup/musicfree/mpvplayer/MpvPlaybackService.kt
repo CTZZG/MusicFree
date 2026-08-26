@@ -23,6 +23,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
+import android.util.Log
 import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
@@ -31,6 +33,7 @@ import androidx.core.app.NotificationCompat
 import `fun`.upup.musicfree.R
 import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy
 import java.io.ByteArrayOutputStream
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -46,6 +49,7 @@ import kotlin.math.max
 class MpvPlaybackService : Service() {
 
     companion object {
+        private const val TAG = "MpvPlaybackService"
         private const val CHANNEL_ID = "musicfree_mpv_playback"
         private const val NOTIFICATION_ID = 3001
         private const val NOTIFICATION_PROGRESS_UPDATE_MS = 1000L
@@ -56,6 +60,16 @@ class MpvPlaybackService : Service() {
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
         private const val MAX_ARTWORK_DECODE_SIZE = 512
         private const val MAX_ARTWORK_DOWNLOAD_BYTES = 8 * 1024 * 1024
+        private const val WAKE_LOCK_TAG = "MusicFree:MpvPlayback"
+
+        /**
+         * 曲目切换要走「原生 END_FILE → JS 决策 → 解析音源 → 重新 loadfile」一整圈，
+         * 这段时间音频输出是空的，AudioFlinger 的 AudioMix wake lock 会释放，
+         * CPU 可能直接休眠，切歌就永远停在这里。所以非播放态不立刻放锁，
+         * 而是留一段宽限期覆盖整个切歌窗口（Nitro 走的 ExoPlayer 是用
+         * setWakeMode(WAKE_MODE_NETWORK) 达到同样效果）。
+         */
+        private const val WAKE_LOCK_GRACE_MS = 45_000L
 
         private const val ACTION_PLAY_PAUSE = "mpv_play_pause"
         private const val ACTION_NEXT = "mpv_next"
@@ -87,6 +101,8 @@ class MpvPlaybackService : Service() {
     private var audioManager: AudioManager? = null
     private var audioFocusListener: AudioManager.OnAudioFocusChangeListener? = null
     private var isForeground = false
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockReleaseScheduled = false
     private var noisyReceiverRegistered = false
     private var pausedForTransientFocusLoss = false
     private var duckedForFocusLoss = false
@@ -149,6 +165,19 @@ class MpvPlaybackService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
+            // 进程崩溃后系统会按 START_STICKY 用 null intent 重建本服务，但 RN
+            // module 和 MpvServiceBridge 都随旧进程一起没了。此时通知还挂着、
+            // 按钮却全是 no-op（onCommand 为 null），用户看到的就是「上一首/
+            // 下一首/暂停全都点不动」。恢复不了就不要留下幽灵通知。
+            if (MpvServiceBridge.onCommand == null) {
+                Log.w(
+                    TAG,
+                    "service recreated without a live player bridge; " +
+                        "clearing stale notification",
+                )
+                stopForegroundSafely()
+                stopSelf()
+            }
             return START_NOT_STICKY
         }
         when (intent.action) {
@@ -186,6 +215,7 @@ class MpvPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        releaseWakeLock()
         mainHandler.removeCallbacksAndMessages(null)
         MpvServiceBridge.service = null
         cancelLiveUpdateProgressTicker()
@@ -235,6 +265,7 @@ class MpvPlaybackService : Service() {
     fun onPlaybackStateChanged(state: String) {
         when (state) {
             "playing" -> {
+                acquireWakeLock()
                 requestAudioFocus()
                 startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_PLAYING
@@ -242,6 +273,7 @@ class MpvPlaybackService : Service() {
                 updateAll()
             }
             "buffering" -> {
+                acquireWakeLock()
                 requestAudioFocus()
                 startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_BUFFERING
@@ -249,18 +281,24 @@ class MpvPlaybackService : Service() {
                 updateAll()
             }
             "paused" -> {
+                // 手动切歌也会先经过一次 paused，所以这里同样走宽限期释放。
+                scheduleWakeLockRelease()
                 cachedPosition = currentNotificationPosition()
                 cachedPositionUpdatedAtMs = System.currentTimeMillis()
                 cachedState = PlaybackStateCompat.STATE_PAUSED
                 updateAll()
             }
             "ended" -> {
+                // 自然结束后 JS 还要决策下一首，锁必须继续持有到宽限期结束。
+                acquireWakeLock()
+                scheduleWakeLockRelease()
                 cachedPosition = currentNotificationPosition()
                 cachedPositionUpdatedAtMs = System.currentTimeMillis()
                 cachedState = PlaybackStateCompat.STATE_PAUSED
                 updateAll()
             }
             "error", "idle" -> {
+                releaseWakeLock()
                 abandonAudioFocus()
                 cachedState = PlaybackStateCompat.STATE_STOPPED
                 updatePlaybackState()
@@ -714,7 +752,16 @@ class MpvPlaybackService : Service() {
             .setShowWhen(false)
             .setColor(Color.TRANSPARENT)
             .setStyle(style)
-            .setProgress(100, progressPercent, cachedDuration <= 0)
+            // 不再叠加 Builder 的旧式进度。官方文档明确 ProgressStyle 会覆盖
+            // Builder.setProgress() 写入的 extras，两者不应同时使用；进度已由上面的
+            // style.setProgress / setProgressIndeterminate 表达。
+            //
+            // 相关（非确证）：2026-08-19 22:26 真机上本通知 inflate 失败，系统抛
+            // BadForegroundServiceNotificationException 直接杀掉进程：
+            //   Couldn't inflate contentViews
+            //   ArrayIndexOutOfBoundsException: src.length=44 srcPos=0 dst.length=44 dstPos=2 length=44
+            // 该数组形状只是线索，尚不能排除 artwork 小图标 / promoted ongoing /
+            // shortCriticalText 等其它组合在特定 ROM 上的缺陷。
             .setContentIntent(contentIntent)
             .addAction(Notification.Action.Builder(R.drawable.ic_notification_skip_previous, "上一首", prevIntent).build())
             .addAction(Notification.Action.Builder(playIcon, playLabel, playIntent).build())
@@ -809,6 +856,52 @@ class MpvPlaybackService : Service() {
         updateLiveUpdateProgressTicker()
     }
 
+    private val wakeLockReleaseRunnable = Runnable {
+        wakeLockReleaseScheduled = false
+        releaseWakeLock()
+    }
+
+    private fun acquireWakeLock() {
+        mainHandler.removeCallbacks(wakeLockReleaseRunnable)
+        wakeLockReleaseScheduled = false
+        val lock = wakeLock ?: try {
+            val powerManager =
+                getSystemService(Context.POWER_SERVICE) as? PowerManager
+            powerManager
+                ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
+                ?.apply { setReferenceCounted(false) }
+                ?.also { wakeLock = it }
+        } catch (_: Exception) {
+            null
+        } ?: return
+        if (!lock.isHeld) {
+            try {
+                lock.acquire()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun scheduleWakeLockRelease() {
+        if (wakeLock?.isHeld != true || wakeLockReleaseScheduled) {
+            return
+        }
+        wakeLockReleaseScheduled = true
+        mainHandler.postDelayed(wakeLockReleaseRunnable, WAKE_LOCK_GRACE_MS)
+    }
+
+    private fun releaseWakeLock() {
+        mainHandler.removeCallbacks(wakeLockReleaseRunnable)
+        wakeLockReleaseScheduled = false
+        val lock = wakeLock ?: return
+        if (lock.isHeld) {
+            try {
+                lock.release()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     private fun startForegroundSafely() {
         if (isForeground) {
             updateNotification()
@@ -843,6 +936,26 @@ class MpvPlaybackService : Service() {
     private fun requestAudioFocus() {
         if (audioFocusListener == null) {
             audioFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
+                // 外部 App 抢焦点导致的暂停，和我们自己的 bug 造成的暂停，在用户
+                // 看来都是「突然不放了」。之前唯一的分辨手段是 dumpsys audio 的
+                // 焦点历史，而那个缓冲区会滚动——晚查一会儿证据就没了。
+                // 这里留一条自带上下文的记录，事后可直接定性。
+                val focusName = when (change) {
+                    AudioManager.AUDIOFOCUS_LOSS -> "LOSS"
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> "LOSS_TRANSIENT"
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK ->
+                        "LOSS_TRANSIENT_CAN_DUCK"
+                    AudioManager.AUDIOFOCUS_GAIN -> "GAIN"
+                    else -> "OTHER($change)"
+                }
+                Log.w(
+                    TAG,
+                    "audio focus $focusName: state=$cachedState " +
+                        "playing=${cachedState == PlaybackStateCompat.STATE_PLAYING} " +
+                        "pausedForTransient=$pausedForTransientFocusLoss " +
+                        "ducked=$duckedForFocusLoss " +
+                        "duckMode=${MpvServiceBridge.remoteDuckMode}",
+                )
                 when (change) {
                     AudioManager.AUDIOFOCUS_LOSS -> {
                         pausedForTransientFocusLoss = false
@@ -930,7 +1043,14 @@ class MpvPlaybackService : Service() {
 
     private fun loadArtworkAsync(url: String) {
         artworkExecutor.execute artwork@{
-            val bitmap = fetchBitmap(url) ?: return@artwork
+            val bitmap = fetchBitmap(url)
+            if (bitmap == null) {
+                // 封面失败会让灵动岛/锁屏退回默认小图标，和「JS 没给 artwork」
+                // 在界面上完全一样。这条路径以前全程无日志，三种成因（策略拒绝、
+                // 网络失败、解码失败）事后无法区分，所以失败必须留痕。
+                Log.w(TAG, "artwork load failed: ${describeArtworkUrl(url)}")
+                return@artwork
+            }
             mainHandler.post {
                 if (url != cachedArtwork) {
                     return@post
@@ -940,6 +1060,19 @@ class MpvPlaybackService : Service() {
                 updateNotification()
             }
         }
+    }
+
+    /** 只暴露形状（scheme/host/长度），不打完整 URL——里面常带签名票据。 */
+    private fun describeArtworkUrl(url: String): String {
+        val scheme = url.substringBefore("://", "").ifEmpty { "path" }
+        val host = runCatching {
+            if (scheme == "http" || scheme == "https") {
+                url.toHttpUrlOrNull()?.host ?: "?"
+            } else {
+                "-"
+            }
+        }.getOrDefault("?")
+        return "scheme=$scheme host=$host len=${url.length}"
     }
 
     private fun fetchBitmap(url: String): Bitmap? {
@@ -952,6 +1085,11 @@ class MpvPlaybackService : Service() {
                         .build()
                     artworkHttpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
+                            Log.w(
+                                TAG,
+                                "artwork http ${response.code}: " +
+                                    describeArtworkUrl(url),
+                            )
                             null
                         } else {
                             val input = response.body?.byteStream()
@@ -959,7 +1097,15 @@ class MpvPlaybackService : Service() {
                             val bytes = input.use {
                                 readBoundedBytes(it, MAX_ARTWORK_DOWNLOAD_BYTES)
                             }
-                            decodeSampledBitmap(bytes)
+                            decodeSampledBitmap(bytes).also {
+                                if (it == null) {
+                                    Log.w(
+                                        TAG,
+                                        "artwork decode failed: bytes=${bytes.size} " +
+                                            describeArtworkUrl(url),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -970,7 +1116,10 @@ class MpvPlaybackService : Service() {
                 }
                 else -> decodeSampledFile(url)
             }
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            // 包含 PublicHttpsNetworkPolicy 的 IllegalArgumentException（私有地址/
+            // 带凭据的 URL）和跨域重定向被拒——这些都只在这里才能看出来。
+            Log.w(TAG, "artwork fetch threw: ${describeArtworkUrl(url)}", e)
             null
         }
     }
