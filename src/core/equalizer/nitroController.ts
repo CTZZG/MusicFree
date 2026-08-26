@@ -1,4 +1,3 @@
-import { Equalizer as NitroEqualizer } from "react-native-nitro-player";
 import { devLog, errorLog } from "@/utils/log";
 
 export { isEqualizerSupported } from "./bands";
@@ -15,6 +14,16 @@ import { EQUALIZER_BANDS, type IEqualizerController } from "./bands";
  * 音频链路，不经过该会话。因此注入这个控制器的地方必须先判断当前后端，
  * 见 `src/entry/bootstrap/bootstrap.ts`。
  */
+
+/**
+ * 延迟 require：`react-native-nitro-player` 的入口一被求值就会把 Nitro 的
+ * 播放服务（ExoPlayer + Media3 会话）建起来。这个控制器只在 Nitro 后端安装，
+ * 因此把 require 推迟到真正使用时，MPV 后端就完全不会碰到 Nitro 那套栈。
+ */
+function getNitroEqualizer() {
+    return (require("react-native-nitro-player") as
+        typeof import("react-native-nitro-player")).Equalizer;
+}
 
 /** 十段增益必须与 EQUALIZER_BANDS 数量一致，否则原生侧会拒绝。 */
 const BAND_COUNT = EQUALIZER_BANDS.length;
@@ -45,12 +54,12 @@ function fireAndForget(label: string, run: () => Promise<unknown>) {
 
 export const nitroEqualizerController: IEqualizerController = {
     setEnabled(enabled) {
-        fireAndForget("setEnabled", () => NitroEqualizer.setEnabled(enabled));
+        fireAndForget("setEnabled", () => getNitroEqualizer().setEnabled(enabled));
     },
     setGains(gains) {
         fireAndForget(
             "setAllBandGains",
-            () => NitroEqualizer.setAllBandGains(toNativeGains(gains)),
+            () => getNitroEqualizer().setAllBandGains(toNativeGains(gains)),
         );
     },
 };

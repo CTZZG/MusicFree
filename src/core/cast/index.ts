@@ -1,4 +1,3 @@
-import { Cast } from "react-native-nitro-player";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { devLog, errorLog } from "@/utils/log";
 
@@ -44,6 +43,18 @@ export function useCastReady() {
  * 不传 receiverApplicationId 时使用平台默认接收器（CC1AD845），它原生支持音频
  * 播放、元数据与队列——对 MusicFree 足够，无需在 Google Cast 控制台注册应用。
  */
+/**
+ * `react-native-nitro-player` 的入口在模块作用域就 createHybridObject，而
+ * HybridTrackPlayer / HybridCast 的 init 会立刻 startService + bind
+ * NitroPlayerPlaybackService，把 ExoPlayer 和 Media3 MediaSession 建出来。
+ * 所以 MPV 后端下绝不能在模块顶层 import 它，否则会白白多一套播放栈常驻，
+ * 而且系统媒体键会被那个空的 media3 会话接管。
+ */
+function getNitroCast() {
+    return (require("react-native-nitro-player") as
+        typeof import("react-native-nitro-player")).Cast;
+}
+
 export function setupCast(): Promise<boolean> {
     if (configured) {
         getDefaultStore().set(castSetupStatusAtom, "ready");
@@ -56,7 +67,7 @@ export function setupCast(): Promise<boolean> {
     getDefaultStore().set(castSetupStatusAtom, "configuring");
     const generation = setupGeneration;
     const attempt = Promise.resolve()
-        .then(() => Cast.configure())
+        .then(() => getNitroCast().configure())
         .then(() => {
             if (generation !== setupGeneration) {
                 return false;
@@ -95,4 +106,5 @@ export function resetCastStateForTests() {
     getDefaultStore().set(castSetupStatusAtom, "idle");
 }
 
-export { Cast };
+/** 仅供需要直接操作 Cast 会话的调用方使用；调用时才会真正加载 Nitro 模块。 */
+export { getNitroCast };

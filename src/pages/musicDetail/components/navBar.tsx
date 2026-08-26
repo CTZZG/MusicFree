@@ -8,9 +8,9 @@ import Share from "react-native-share";
 import { B64Asset } from "@/constants/assetsConst";
 import IconButton from "@/components/base/iconButton";
 import { useCurrentMusic } from "@/core/trackPlayer";
-import { CastButton } from "react-native-nitro-player";
 import { useAppConfig } from "@/core/appConfig";
 import { isCastButtonVisible, useCastReady } from "@/core/cast";
+import LazyCastButton from "@/core/cast/castButton";
 
 interface INavBarProps {
     compact?: boolean;
@@ -80,7 +80,7 @@ export default function NavBar(props: INavBarProps) {
             {/* Cast 初始化失败或当前使用 MPV 后端时不展示入口；初始化成功后，
                 CastButton 仍会在网络中没有可用设备时自行隐藏。 */}
             {showCastButton ? (
-                <CastButton
+                <LazyCastButton
                     size={rpx(44)}
                     color="white"
                     style={styles.button}
