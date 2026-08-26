@@ -23,6 +23,7 @@ import { FlatList } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import PanelBase from "../base/panelBase";
 import { useI18N } from "@/core/i18n";
+import { ROUTE_PATH, useNavigate } from "@/core/router";
 
 interface IMusicItemLyricOptionsProps {
     /** 歌曲信息 */
@@ -45,6 +46,7 @@ export default function MusicItemLyricOptions(
 
     const safeAreaInsets = useSafeAreaInsets();
     const { t } = useI18N();
+    const navigate = useNavigate();
 
     const pickAndUploadLocalLyric = async (
         type: "raw" | "translation" | "romanization" = "raw",
@@ -159,6 +161,14 @@ export default function MusicItemLyricOptions(
             title: t("panel.musicItemLyricOptions.uploadLocalLyric"),
             async onPress() {
                 await pickAndUploadLocalLyric();
+            },
+        },
+        {
+            icon: "pencil-square",
+            title: t("lyricEditor.title"),
+            onPress() {
+                hidePanel();
+                navigate(ROUTE_PATH.LYRIC_EDITOR, { musicItem });
             },
         },
         {

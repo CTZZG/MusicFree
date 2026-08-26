@@ -23,7 +23,7 @@ import {
     type LyricWordLineType,
 } from "@/utils/lyricWordByWord";
 import CryptoJs from "crypto-js";
-import { unlink, writeFile } from "react-native-fs";
+import { exists, readFile, unlink, writeFile } from "react-native-fs";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import { IPluginManager } from "@/types/core/pluginManager";
 import PersistStatus from "@/utils/persistStatus";
@@ -186,6 +186,27 @@ export function getCurrentPositionMsShared() {
         currentPositionMsShared = makeMutable(0);
     }
     return currentPositionMsShared;
+}
+
+/**
+ * 读取本地手动上传/编辑的原文歌词，路径规则与 uploadLocalLyric/removeLocalLyric
+ * 保持一致。不存在时返回空字符串，供歌词编辑器等场景按需加载。
+ */
+export async function readLocalLyricRawText(musicItem: IMusic.IMusicItem) {
+    if (!musicItem) {
+        return "";
+    }
+
+    const platformHash = CryptoJs.MD5(musicItem.platform).toString(
+        CryptoJs.enc.Hex,
+    );
+    const idHash = CryptoJs.MD5(musicItem.id).toString(CryptoJs.enc.Hex);
+    const filePath = pathConst.localLrcPath + platformHash + "/" + idHash + ".lrc";
+
+    if (!(await exists(filePath))) {
+        return "";
+    }
+    return (await readFile(filePath, "utf8")) || "";
 }
 
 function withTimeout<T>(
