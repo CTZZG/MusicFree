@@ -8,7 +8,10 @@ import {
 } from "react-native";
 
 import NavBar from "./components/navBar";
-import { createDrawerNavigator } from "@react-navigation/drawer";
+import {
+    createDrawerNavigator,
+    useDrawerStatus,
+} from "@react-navigation/drawer";
 import HomeDrawer from "./components/drawer";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import StatusBar from "@/components/base/statusBar";
@@ -31,6 +34,14 @@ function Home() {
         safeAreaInsets.top,
         NativeStatusBar.currentHeight ?? 0,
     );
+    // 抽屉导航器没有 drawerOpen/drawerClose 事件，只能从 drawer status 同步，
+    // 否则底部播放条在侧边栏打开时不会收起。
+    const drawerStatus = useDrawerStatus();
+    const { setDrawerOpen } = useMusicBarLayoutState();
+
+    useEffect(() => {
+        setDrawerOpen(drawerStatus === "open");
+    }, [drawerStatus, setDrawerOpen]);
 
     return (
         <SafeAreaView
@@ -129,11 +140,19 @@ export default function App() {
             screenListeners={({ navigation }) => {
                 drawerNavigationRef.current = navigation;
                 return {
-                    drawerOpen: () => {
-                        setDrawerOpen(true);
+                    // 手势拖开抽屉时导航状态要等手势结束才更新，这里在动画一开始
+                    // 就先收起播放条，避免播放条压在抽屉上。
+                    transitionStart: (event: {
+                        data: { closing: boolean };
+                    }) => {
+                        if (!event.data.closing) {
+                            setDrawerOpen(true);
+                        }
                     },
-                    drawerClose: () => {
-                        setDrawerOpen(false);
+                    transitionEnd: (event: {
+                        data: { closing: boolean };
+                    }) => {
+                        setDrawerOpen(!event.data.closing);
                     },
                     blur: () => {
                         // The navigator event can outlive the render that

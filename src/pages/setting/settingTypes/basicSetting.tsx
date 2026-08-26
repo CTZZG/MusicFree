@@ -14,6 +14,7 @@ import lyricManager from "@/core/lyricManager";
 import PluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import trackPlayer from "@/core/trackPlayer";
+import { DEFAULT_CROSSFADE_SECONDS } from "@/core/trackPlayer/crossfadePolicy";
 import useColors from "@/hooks/useColors";
 import LyricUtil, { NativeTextAlignment } from "@/native/lyricUtil";
 import { buildInfo } from "@/constants/buildInfo.generated";
@@ -76,6 +77,7 @@ function createSwitch(
     return {
         title,
         onPress,
+        checked: value,
         right: <ThemeSwitch value={value} onValueChange={onPress} />,
     };
 }
@@ -91,6 +93,7 @@ function createPersistSwitch(
     return {
         title,
         onPress,
+        checked: value,
         right: <ThemeSwitch value={value} onValueChange={onPress} />,
     };
 }
@@ -172,6 +175,8 @@ export default function BasicSetting() {
     const tempRemoteDuck = useAppConfig("basic.tempRemoteDuck");
     const tempRemoteDuckVolume = useAppConfig("basic.tempRemoteDuckVolume");
     const autoStopWhenError = useAppConfig("basic.autoStopWhenError");
+    const crossfadeEnabled = useAppConfig("basic.crossfadeEnabled");
+    const crossfadeSeconds = useAppConfig("basic.crossfadeSeconds");
     const maxCacheSize = useAppConfig("basic.maxCacheSize");
     const defaultPlayQuality = useAppConfig("basic.defaultPlayQuality");
     const playerBackend = useAppConfig("basic.playerBackend");
@@ -405,6 +410,44 @@ export default function BasicSetting() {
                     "basic.autoStopWhenError",
                     autoStopWhenError ?? false,
                 ),
+                createSwitch(
+                    t("basicSettings.crossfadeEnabled"),
+                    "basic.crossfadeEnabled",
+                    crossfadeEnabled ?? false,
+                ),
+                ...(crossfadeEnabled
+                    ? [
+                        createRadio(
+                            t("basicSettings.crossfadeSeconds"),
+                            "basic.crossfadeSeconds",
+                            [2, 3, 5, 8, 12],
+                            crossfadeSeconds ?? DEFAULT_CROSSFADE_SECONDS,
+                            Object.fromEntries(
+                                [2, 3, 5, 8, 12].map(seconds => [
+                                    seconds,
+                                    t("basicSettings.crossfadeSeconds.unit", {
+                                        seconds,
+                                    }),
+                                ]),
+                            ),
+                        ),
+                    ]
+                    : []),
+                {
+                    title: t("basicSettings.lastfm"),
+                    right: (
+                        <ThemeText
+                            fontSize="subTitle"
+                            style={styles.centerText}>
+                            {t("common.setting")}
+                        </ThemeText>
+                    ),
+                    onPress() {
+                        navigate(ROUTE_PATH.SETTING, {
+                            type: "lastfm",
+                        });
+                    },
+                },
                 {
                     title: t("dislikeMusic.manage"),
                     right: (
@@ -904,6 +947,8 @@ export default function BasicSetting() {
                             });
                         }}
                         activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={item}
                         style={styles.headerItemStyle}>
                         <ThemeText fontWeight="bold">{item}</ThemeText>
                     </TouchableOpacity>
@@ -927,12 +972,20 @@ export default function BasicSetting() {
                 }}
                 renderItem={({ item }) => {
                     const Right = item.right;
+                    const checked =
+                        "checked" in item
+                            ? (item as { checked?: boolean }).checked
+                            : undefined;
 
                     return (
                         <ListItem
                             withHorizontalPadding
                             heightType="small"
-                            onPress={item.onPress}>
+                            onPress={item.onPress}
+                            accessibilityLabel={item.title}
+                            accessibilityState={
+                                checked !== undefined ? { checked } : undefined
+                            }>
                             <ListItem.Content title={item.title} />
                             {Right}
                         </ListItem>

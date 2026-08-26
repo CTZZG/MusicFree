@@ -1,3 +1,4 @@
+import { AppState, AppStateStatus } from "react-native";
 import { sortIndexSymbol, timeStampSymbol } from "@/constants/commonConst";
 import delay from "@/utils/delay";
 import getUrlExt from "@/utils/getUrlExt";
@@ -55,12 +56,17 @@ import { resolvePlayerAdapter } from "@/core/playerAdapter";
 import { normalizeMusicState } from "@/utils/trackUtils";
 import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
 import {
+    isStaleManualSkipIntent,
+    withMediaSourceTimeout,
+} from "./mediaSourceTimeoutPolicy";
+import {
     findNextPlayableQueueItem,
     getSafeUnresolvedQueueUrl,
     getWrappedQueueItem,
     replaceQueueItemByIdentity,
     resolvePreviousQueueItem,
     resolvePreparedNextItem,
+    resolvePreparedNextItems,
 } from "./queuePolicy";
 import {
     isUnsupportedEncryptedMediaSource,
@@ -80,6 +86,8 @@ import QualityChangeCoordinator, {
 } from "./qualityChangeCoordinator";
 import { shouldHydratePlayerHooks } from "./playerStartupPolicy";
 import BackendListenerLifecycle from "./backendListenerLifecycle";
+import CrossfadeController from "./crossfadeController";
+import LastfmScrobbler from "@/core/lastfm";
 import {
     validateRemoteMediaUrlForPlayback,
 } from "@/utils/remoteMediaUrl";
@@ -132,6 +140,7 @@ export interface IPlaybackDiagnosticSnapshot {
     backendCapabilities: {
         getNextTracks: boolean;
         prepareNextTrack: boolean;
+        prepareNextTracks: boolean;
         syncQueueOrder: boolean;
         queueInfo: boolean;
         temporaryQueue: boolean;
@@ -173,6 +182,11 @@ export interface IPlaybackDiagnosticSnapshot {
         sourceResolvedAt?: number;
     } | null;
     backendDiagnostics?: Record<string, unknown>;
+    /** 淡入淡出的当前增益与是否正在跑坡道，用来区分「音量被谁压下去的」。 */
+    crossfade: {
+        gain: number;
+        fading: boolean;
+    };
     recentErrors: Array<{
         message: string;
         code?: string;
@@ -313,12 +327,37 @@ class TrackPlayer
     private recentPlaybackErrors: IPlaybackDiagnosticSnapshot["recentErrors"] =
         [];
     private backendListenerLifecycle = new BackendListenerLifecycle();
+    /**
+     * 淡入淡出执行器。音量是全局属性，除了启动时的归一没有别人写，所以直接
+     * 让它独占；关掉设置时它会自己把音量平滑收回 1。
+     */
+    private crossfade = new CrossfadeController({
+        applyGain: gain => {
+            this.backend?.setVolume(gain).catch(() => undefined);
+        },
+        readSettings: () => ({
+            enabled:
+                this.configService?.getConfig("basic.crossfadeEnabled") === true,
+            seconds:
+                this.configService?.getConfig("basic.crossfadeSeconds") ?? 5,
+        }),
+    });
     private preparedNextSyncSerial = 0;
+    private lastPlaybackTrackKey: string | null = null;
     private localArtworkSyncInFlight = new Set<string>();
     private lastMpvActiveTrackSyncAt = 0;
     private mpvActiveTrackSyncSerial = 0;
     private lastMpvHistoryGeneration: number | null = null;
     private handlingMpvNaturalEnd = false;
+    /**
+     * 自然结束处理的归属令牌。看门狗超时会放开重入锁让后续曲尾能进来，此时旧的
+     * 处理器仍在跑——它的 finally 绝不能再去清新处理器的定时器或释放新处理器的
+     * 锁（ABA），否则会出现两个处理器并发推进队列。只有仍持有令牌的一方有权释放。
+     */
+    private mpvNaturalEndOwner = 0;
+    private mpvNaturalEndSequence = 0;
+    /** 最近一次因为取不到音源而失败的歌曲，用于自然结束时的有界续播 */
+    private lastInvalidSourceKey: string | null = null;
     private manualSkipGate = new ManualSkipOperationGate();
     private qualityChangeCoordinator = new QualityChangeCoordinator();
     private mpvTrackTransitionGate = new MpvTrackTransitionGate();
@@ -329,6 +368,12 @@ class TrackPlayer
     private static maxMusicQueueLength = 10000;
     private static halfMaxMusicQueueLength = 5000;
     private static progressPersistIntervalMs = 1000;
+    /** mpv 自然结束处理的兜底超时，防止取源挂起后永远不再切歌 */
+    private static mpvNaturalEndTimeoutMs = 30000;
+    /** 自然结束续播时，最多连续跳过几首取不到音源的歌 */
+    private static mpvNaturalEndMaxSourceRetries = 3;
+    /** 原生自动切歌后向前补充多少首已解析音源，维持 prepared-next runway */
+    private static mpvSourceLookaheadSize = 3;
     private static sourceRecoveryCooldownMs = 30000;
     private static sourceRecoveryAttemptRetentionMs = 10 * 60 * 1000;
     private static sourceRecoveryAttemptMaxEntries = 256;
@@ -448,6 +493,9 @@ class TrackPlayer
             "standard";
 
         await this.backend.setVolume(1);
+        this.crossfade.reset();
+        // 离线期间攒下的 scrobble 在这里补交一次。
+        LastfmScrobbler.flush().catch(() => undefined);
         // 状态恢复
         if (rate) {
             await this.backend.setRate(+rate / 100);
@@ -657,6 +705,17 @@ class TrackPlayer
                 }
                 const normalizedState = normalizeMusicState(state);
                 getDefaultStore().set(musicStateAtom, normalizedState);
+                // 淡化坡道和收听计时都必须以后端的真实播放状态为准：通知栏、
+                // 耳机线控、音频焦点丢失这些暂停根本不经过 TrackPlayer.pause()，
+                // 只盯着那个方法会让淡出在暂停期间继续跑到 0，恢复播放后音量
+                // 卡在静音上。
+                if (normalizedState === "playing") {
+                    this.crossfade.onPlay();
+                    LastfmScrobbler.onResumed();
+                } else {
+                    this.crossfade.onPause();
+                    LastfmScrobbler.onPaused();
+                }
                 if (
                     normalizedState === "paused" &&
                     !this.shouldSuppressMpvProgressDuringManualSkip()
@@ -698,6 +757,8 @@ class TrackPlayer
                     this.currentMusic?.duration ?? 0,
                 );
                 this.persistPlaybackProgress(currentProgress.position);
+                this.crossfade.onProgress(currentProgress);
+                LastfmScrobbler.onProgressTick();
             });
 
             this.addBackendListener("playbackSeeked", adapterProgress => {
@@ -712,6 +773,7 @@ class TrackPlayer
                     this.currentMusic?.duration ?? 0,
                 );
                 this.persistPlaybackProgress(currentProgress.position, true);
+                this.crossfade.onSeeked(currentProgress);
             });
 
             this.backendListenerLifecycle.addCleanup(() =>
@@ -720,6 +782,28 @@ class TrackPlayer
                     this.syncPreparedNextTrack("dislike-rules");
                 }),
             );
+
+            // mpv 的批量 runway 只在 JS 活着的时候才能补充；进入后台前主动补一次，
+            // 尽量让 URL 在冻结前是新鲜的，缩小「后台连播撑不到下次自然切歌」的窗口。
+            this.backendListenerLifecycle.addCleanup(() => {
+                let lastAppState = AppState.currentState;
+                const subscription = AppState.addEventListener(
+                    "change",
+                    (nextAppState: AppStateStatus) => {
+                        if (
+                            lastAppState === "active" &&
+                            nextAppState.match(/inactive|background/)
+                        ) {
+                            trace("应用进入后台，补充一次预备下一首", {
+                                nextAppState,
+                            });
+                            this.syncPreparedNextTrack("app-background");
+                        }
+                        lastAppState = nextAppState;
+                    },
+                );
+                return () => subscription.remove();
+            });
 
             this.backendListenerLifecycle.commit();
         }
@@ -961,6 +1045,8 @@ class TrackPlayer
     ): Promise<void> {
         let ownedMpvTransition: IMpvManualSkipTransition | null = null;
         let sourceResolutionFailure: MediaSourceFailure | null = null;
+        this.crossfade.onPlay();
+        LastfmScrobbler.onResumed();
         try {
             trace("TrackPlayer.play start", {
                 backend: this.backend.name,
@@ -1226,11 +1312,19 @@ class TrackPlayer
                     });
                     let candidate: IPlugin.IMediaSourceResult | null = null;
                     try {
-                        candidate =
-                            (await plugin?.methods?.getMediaSource(
-                                musicItem,
-                                quality,
-                            )) ?? null;
+                        // 硬超时：插件 Promise 永不 settle 时，这次切歌会一直挂着，
+                        // 并占住手动切歌的串行队列，用户点通知栏就像没反应。
+                        // 超时后走下面的失败分支继续推进；迟到的结果由
+                        // isPlayRequestActive() 挡住，不会回写状态。
+                        const sourceTask = plugin?.methods?.getMediaSource(
+                            musicItem,
+                            quality,
+                        );
+                        candidate = sourceTask
+                            ? (await withMediaSourceTimeout(
+                                Promise.resolve(sourceTask),
+                            )) ?? null
+                            : null;
                     } catch (error) {
                         rememberSourceFailure(
                             classifyMediaSourceFailure(error, {
@@ -1670,6 +1764,9 @@ class TrackPlayer
                 this.emit(TrackPlayerEvents.LocalAudioPermissionRequired);
             } else if (message === PlayFailReason.INVALID_SOURCE) {
                 trace("音源为空，播放失败");
+                this.lastInvalidSourceKey = musicItem
+                    ? getMediaUniqueKey(musicItem)
+                    : null;
                 this.emit(
                     TrackPlayerEvents.MediaSourceFailed,
                     classifyMediaSourceFailure(e, {
@@ -1724,6 +1821,8 @@ class TrackPlayer
     }
 
     async pause(): Promise<void> {
+        this.crossfade.onPause();
+        LastfmScrobbler.onPaused();
         await this.backend.pause();
     }
 
@@ -1732,6 +1831,9 @@ class TrackPlayer
             return;
         }
         this.isForceExiting = true;
+        this.crossfade.dispose();
+        // 退出前把当前这首结算掉，够阈值的话至少能进离线队列，下次启动补交。
+        LastfmScrobbler.onPlaybackStopped();
 
         const currentMusic = this.currentMusic;
         if (currentMusic) {
@@ -1775,10 +1877,38 @@ class TrackPlayer
         this.setPersistedPlaybackProgress(0);
     }
 
-    async skipToNext(): Promise<void> {
-        return this.manualSkipGate.run(token =>
-            this.skipToNextInternal(token),
-        );
+    async skipToNext(intentEnqueuedAt?: number): Promise<void> {
+        return this.manualSkipGate.run(token => {
+            if (this.shouldDropStaleSkipIntent(intentEnqueuedAt, "next")) {
+                return Promise.resolve();
+            }
+            return this.skipToNextInternal(token);
+        });
+    }
+
+    /**
+     * 操作在串行队列里等太久就作废。远程命令送达时那一层拦的是「JS 被冻结、
+     * 事件堆在桥上」；这一层拦的是「事件及时送到了，但操作排在一次挂死的取源
+     * 后面」——真机上后者才是「点了没反应、回前台连跳好几首」的成因。
+     */
+    private shouldDropStaleSkipIntent(
+        intentEnqueuedAt: number | undefined,
+        label: string,
+    ) {
+        if (
+            !isStaleManualSkipIntent({
+                enqueuedAt: intentEnqueuedAt,
+                now: Date.now(),
+            })
+        ) {
+            return false;
+        }
+        trace("丢弃排队过久的手动切歌意图", {
+            label,
+            intentEnqueuedAt,
+            waitedMs: Date.now() - (intentEnqueuedAt ?? 0),
+        });
+        return true;
     }
 
     private async skipToNextInternal(
@@ -2114,10 +2244,13 @@ class TrackPlayer
         }
     }
 
-    async skipToPrevious(): Promise<void> {
-        return this.manualSkipGate.run(token =>
-            this.skipToPreviousInternal(token),
-        );
+    async skipToPrevious(intentEnqueuedAt?: number): Promise<void> {
+        return this.manualSkipGate.run(token => {
+            if (this.shouldDropStaleSkipIntent(intentEnqueuedAt, "previous")) {
+                return Promise.resolve();
+            }
+            return this.skipToPreviousInternal(token);
+        });
     }
 
     private async skipToPreviousInternal(
@@ -3059,6 +3192,10 @@ class TrackPlayer
                     }
                     : null,
             backendDiagnostics,
+            crossfade: {
+                gain: this.crossfade.getGain(),
+                fading: this.crossfade.isFading(),
+            },
             recentErrors: [...this.recentPlaybackErrors],
             recovery: {
                 persistedMusic: this.getDiagnosticMusicIdentity(
@@ -3087,6 +3224,23 @@ class TrackPlayer
 
     /**************** 辅助函数 -- 设置内部状态 ****************/
 
+    /**
+     * 通知淡入淡出与 scrobble：当前曲目换人了。
+     *
+     * setCurrentMusic 会被乐观预切、原生确认、恢复播放等多条路径重复调到同一
+     * 首歌上，所以这里按媒体唯一键去重——否则同一首歌会被反复「重新开始」，
+     * scrobble 的收听计时永远归零，一条都攒不出来。
+     */
+    private notifyPlaybackTrackChanged(musicItem?: IMusic.IMusicItem | null) {
+        const nextKey = musicItem ? getMediaUniqueKey(musicItem) : null;
+        if (nextKey === this.lastPlaybackTrackKey) {
+            return;
+        }
+        this.lastPlaybackTrackKey = nextKey;
+        this.crossfade.onTrackStarted();
+        LastfmScrobbler.onTrackStarted(musicItem ?? null);
+    }
+
     private setCurrentMusic(musicItem?: IMusic.IMusicItem | null) {
         // 设置UI内部状态的musicitem
         if (!musicItem) {
@@ -3095,6 +3249,7 @@ class TrackPlayer
             PersistStatus.set("music.musicItem", undefined);
             this.setPersistedPlaybackProgress(0);
 
+            this.notifyPlaybackTrackChanged(null);
             this.emit(TrackPlayerEvents.CurrentMusicChanged, null);
             return;
         }
@@ -3112,6 +3267,7 @@ class TrackPlayer
             stripEphemeralLocalArtwork(normalizedMusicItem),
         );
 
+        this.notifyPlaybackTrackChanged(normalizedMusicItem);
         this.emit(TrackPlayerEvents.CurrentMusicChanged, normalizedMusicItem);
         this.syncLocalMusicArtwork(normalizedMusicItem).catch(error => {
             errorLog("同步本地音乐封面失败", error?.message ?? error);
@@ -3284,6 +3440,7 @@ class TrackPlayer
         return {
             getNextTracks: !!this.backend.getNextTracks,
             prepareNextTrack: !!this.backend.prepareNextTrack,
+            prepareNextTracks: !!this.backend.prepareNextTracks,
             syncQueueOrder: !!this.backend.syncQueueOrder,
             queueInfo: !!(
                 this.backend.getCurrentQueueId ||
@@ -3467,7 +3624,25 @@ class TrackPlayer
         });
     }
 
+    /** resolvePreparedNextMusic 的多首版本，供支持批量预备的后端（如 mpv）使用。 */
+    private resolvePreparedNextMusicItems(count: number) {
+        return resolvePreparedNextItems({
+            currentItem: this.currentMusic,
+            queue: this.playList,
+            currentIndex: this.currentIndex,
+            repeatMode: this.repeatMode,
+            playLaterQueueLength: this.playLaterQueue.length,
+            isSameItem: isSameMediaItem,
+            isSkipped: item => DislikeMusic.isDisliked(item),
+            count,
+        });
+    }
+
     private syncPreparedNextTrack(reason: string) {
+        if (this.backend.prepareNextTracks) {
+            this.syncPreparedNextTrackBatch(reason);
+            return;
+        }
         if (!this.backend.prepareNextTrack) {
             return;
         }
@@ -3477,6 +3652,18 @@ class TrackPlayer
         const nextTrack = nextMusic
             ? this.createNitroQueuedTrack(nextMusic)
             : null;
+        // 空 URL 会让 adapter 下发 prepareNext(null)，而原生的 prepareNext 在判空
+        // 之前就已经 clearPreparedTrack(removeFromPlaylist=true)，且判空分支不打
+        // 任何日志——于是唯一的 runway 被静默清掉，完全不可观测。这条 trace 就是
+        // 为了让这种情况留下痕迹。
+        if (nextMusic && !nextTrack?.url) {
+            trace("预备下一首缺少音源，原生 runway 将被清空", {
+                reason,
+                serial,
+                musicId: nextMusic.id,
+                platform: nextMusic.platform,
+            });
+        }
 
         this.backend
             .prepareNextTrack(nextTrack as any)
@@ -3493,6 +3680,49 @@ class TrackPlayer
                     return;
                 }
                 errorLog("同步预备下一首失败", error?.message ?? error);
+            });
+    }
+
+    /**
+     * prepareNextTracks 支持的后端（目前只有 mpv）专用：一次性把接下来
+     * TrackPlayer.mpvSourceLookaheadSize 首依次交给原生，让原生自动接续
+     * 播完这一批，不需要每首之间都等 JS 醒着再补一次 prepareNext。深度沿用
+     * 现有的 JS 侧音源预解析窗口——超出这个窗口的曲目本来就还没解析出 URL，
+     * adapter 自己会在 resolveNextCandidate 遇到未解析 URL 时提前截断。
+     */
+    private syncPreparedNextTrackBatch(reason: string) {
+        const serial = ++this.preparedNextSyncSerial;
+        const nextMusicItems = this.resolvePreparedNextMusicItems(
+            TrackPlayer.mpvSourceLookaheadSize,
+        );
+        const nextTracks = nextMusicItems.map(item =>
+            this.createNitroQueuedTrack(item),
+        );
+
+        if (nextMusicItems.length && !nextTracks[0]?.url) {
+            trace("批量预备下一首缺少音源，原生 runway 将被清空", {
+                reason,
+                serial,
+                musicId: nextMusicItems[0].id,
+                platform: nextMusicItems[0].platform,
+            });
+        }
+
+        this.backend
+            .prepareNextTracks!(nextTracks.length ? nextTracks : [null as any])
+            .then(() => {
+                trace("批量同步预备下一首完成", {
+                    reason,
+                    serial,
+                    count: nextTracks.length,
+                    musicIds: nextMusicItems.map(item => item.id),
+                });
+            })
+            .catch(error => {
+                if (serial !== this.preparedNextSyncSerial) {
+                    return;
+                }
+                errorLog("批量同步预备下一首失败", error?.message ?? error);
             });
     }
 
@@ -3566,6 +3796,23 @@ class TrackPlayer
             return;
         }
         this.handlingMpvNaturalEnd = true;
+        const owner = ++this.mpvNaturalEndSequence;
+        this.mpvNaturalEndOwner = owner;
+        // play() 里的插件取源和原生 loadQueue 都没有超时，一旦挂起，这个重入标志
+        // 就会永久为 true，之后所有自然结束都被静默丢弃、再也不会自动切歌。
+        // 看门狗保证标志一定会被放开。
+        // 定时器句柄用局部常量持有，不再放进实例字段：否则旧处理器的 finally
+        // 会把新处理器刚装上的看门狗一起清掉。
+        const watchdog = setTimeout(() => {
+            if (this.mpvNaturalEndOwner === owner) {
+                errorLog(
+                    "mpv 自然结束处理超时，强制解除重入锁",
+                    `${TrackPlayer.mpvNaturalEndTimeoutMs}ms`,
+                );
+                this.mpvNaturalEndOwner = 0;
+                this.handlingMpvNaturalEnd = false;
+            }
+        }, TrackPlayer.mpvNaturalEndTimeoutMs);
         try {
             this.emit(TrackPlayerEvents.PlayEnd);
             trace("统一处理 mpv 自然结束", {
@@ -3598,6 +3845,26 @@ class TrackPlayer
                         "error",
                     );
                 }
+                // 原生已经自己进了下一首，但「再下一首」的预载必须在这里无条件补。
+                // 以前只靠 syncNitroCurrentMusic 顺带补（它末尾会调
+                // syncPreparedNextTrack("current-music")）：如果 trackChanged 先到
+                // 并更新了 currentMusic，上面的 sync 就会在 isSameMediaItem 处直接
+                // early-return，两条路都不补，原生手里就没有下一首了。
+                // 后果是下一个曲尾只能靠 JS 实时响应；App 在后台时 JS 不一定跑得动，
+                // 播放就卡死在曲尾（真机日志：14:09:58 和 14:19:17 两次切歌后都没有
+                // prepareNext，随后 14:14 和 14:24 各出现一次 autoAdvanced=false，
+                // 后者 JS 没响应，播放停止）。
+                this.syncPreparedNextTrack("mpv-auto-advanced");
+                // 不 await：取源要走网络，占住 handlingMpvNaturalEnd 重入锁会挡住
+                // 后续的自然结束处理。
+                this.replenishMpvSourceLookahead("mpv-auto-advanced").catch(
+                    error => {
+                        errorLog(
+                            "补充 mpv 预载音源窗口失败",
+                            error?.message ?? error,
+                        );
+                    },
+                );
                 return;
             }
 
@@ -3637,7 +3904,40 @@ class TrackPlayer
                 if (DislikeMusic.isDisliked(this.nextMusic)) {
                     this.emit(TrackPlayerEvents.AutoSkipDislikedMusic);
                 }
-                await this.play(candidate, true);
+                // play() 会吞掉取源失败，只发事件不再推进。以前一次网络抖动就
+                // 让整个后台播放彻底停住，这里对「取不到音源」做有界续播。
+                // 只处理 INVALID_SOURCE：缺权限/禁蜂窝仍然必须停下来提示用户，
+                // 否则会把整条队列快速跳完。
+                let nextCandidate: IMusic.IMusicItem | null = candidate;
+                for (
+                    let attempt = 0;
+                    attempt < TrackPlayer.mpvNaturalEndMaxSourceRetries &&
+                        nextCandidate;
+                    attempt += 1
+                ) {
+                    const attemptKey = getMediaUniqueKey(nextCandidate);
+                    this.lastInvalidSourceKey = null;
+                    await this.play(nextCandidate, true);
+                    if (this.lastInvalidSourceKey !== attemptKey) {
+                        return;
+                    }
+                    const failedItem = nextCandidate;
+                    nextCandidate = findNextPlayableQueueItem(
+                        this.playList,
+                        this.getMusicIndexInPlayList(failedItem),
+                        failedItem,
+                        {
+                            isSameItem: isSameMediaItem,
+                            isSkipped: item => DislikeMusic.isDisliked(item),
+                        },
+                    );
+                    trace("自然结束续播取源失败，尝试下一首", {
+                        failedMusicId: failedItem.id,
+                        failedPlatform: failedItem.platform,
+                        nextMusicId: nextCandidate?.id,
+                        attempt: attempt + 1,
+                    });
+                }
                 return;
             }
 
@@ -3645,7 +3945,13 @@ class TrackPlayer
             await this.backend.stop().catch(() => undefined);
             this.emit(TrackPlayerEvents.NoPlayableMusic);
         } finally {
-            this.handlingMpvNaturalEnd = false;
+            clearTimeout(watchdog);
+            // 只有仍然持有令牌的处理器才有权释放重入锁；被看门狗放开过的旧处理器
+            // 到这里已经不是 owner，必须什么都不做。
+            if (this.mpvNaturalEndOwner === owner) {
+                this.mpvNaturalEndOwner = 0;
+                this.handlingMpvNaturalEnd = false;
+            }
         }
     }
 
@@ -3915,10 +4221,21 @@ class TrackPlayer
             };
         }
 
-        const startIndex = Math.max(
-            0,
-            this.getMusicIndexInPlayList(currentTrack),
-        );
+        const currentIndex = this.getMusicIndexInPlayList(currentTrack);
+        if (currentIndex < 0) {
+            // 以前这里回落成 0，等于「让后端从队列第一首开始播」，
+            // 重启恢复时身份对不上就会播成第一首。只加载这一首更符合调用语义。
+            trace("当前歌曲不在播放列表中，仅加载单曲队列", {
+                musicId: currentTrack.id,
+                platform: currentTrack.platform,
+                queueLength: this.playList.length,
+            });
+            return {
+                tracks: [fallbackTrack],
+                startIndex: 0,
+            };
+        }
+        const startIndex = currentIndex;
         const currentKey = getMediaUniqueKey(currentTrack);
         const tracks = this.playList.map(musicItem => {
             if (getMediaUniqueKey(musicItem) === currentKey) {
@@ -4524,6 +4841,66 @@ class TrackPlayer
         }
         this.syncPreparedNextTrack("current-music");
         return syncedMusic;
+    }
+
+    /**
+     * 原生 prepared-next 只能预载「已经解析出 URL」的曲目：URL 为空时 adapter 会
+     * 下发 prepareNext(null)，原生随即清空 runway。而音源预解析窗口原先只在显式
+     * 加载（setTrackSource）时铺一次、覆盖之后 5 首，原生自动切歌会消耗窗口却不会
+     * 补充。真机日志两轮都精确复现：显式加载后正好 5 次 autoAdvanced=true，第 6 个
+     * 曲尾就变成 autoAdvanced=false，此后每个曲尾都要靠 JS 实时取源；App 在后台时
+     * JS 迟到一次，播放就停在曲尾。所以每次自动切歌后都要把窗口向前补齐。
+     */
+    private async replenishMpvSourceLookahead(reason: string) {
+        if (this.backend.name !== "mpv" || !this.backend.getTracksNeedingUrls) {
+            return;
+        }
+        const startIndex = this.currentIndex;
+        if (startIndex < 0) {
+            return;
+        }
+        // 窗口必须和推进逻辑一样回绕：列表循环走到队尾时，下一首就是队首，
+        // 而队首的 URL 可能是很久以前解析的。以前这里用 slice 不回绕，队尾时
+        // 窗口为空直接 return，首曲的音源永远得不到刷新——回绕预载就会拿到
+        // 一个过期 URL。offset 上限取 length-1，保证不会把当前曲自己算进来。
+        const lookahead = Math.min(
+            TrackPlayer.mpvSourceLookaheadSize,
+            Math.max(this.playList.length - 1, 0),
+        );
+        const window: IMusic.IMusicItem[] = [];
+        for (let offset = 1; offset <= lookahead; offset += 1) {
+            const item = getWrappedQueueItem(this.playList, startIndex + offset);
+            if (item) {
+                window.push(item);
+            }
+        }
+        if (!window.length) {
+            return;
+        }
+        const needingUrls = await this.backend
+            .getTracksNeedingUrls()
+            .catch(() => [] as Array<Partial<IMusic.IMusicItem> | null | undefined>);
+        const needingKeys = new Set(
+            needingUrls
+                .filter(Boolean)
+                .map(track =>
+                    getMediaUniqueKey(track as IMusic.IMusicItem),
+                ),
+        );
+        const pending = window.filter(item =>
+            needingKeys.has(getMediaUniqueKey(item)),
+        );
+        if (!pending.length) {
+            return;
+        }
+        trace("补充 mpv 预载音源窗口", {
+            reason,
+            count: pending.length,
+            startIndex,
+        });
+        // resolveNitroQueuedTracks 末尾会调 syncPreparedNextTrack("source-resolved")，
+        // URL 落地后 runway 会自动重新武装。
+        await this.resolveNitroQueuedTracks(pending);
     }
 
     private getBackendRepeatMode(

@@ -14,6 +14,7 @@ export interface ILanguageData {
     "common.save": string; // 保存
     "common.notSave": string; // 不保存
     "common.download": string; // 下载
+    "common.add": string; // 添加
     "common.play": string; // 播放
     "common.delete": string; // 删除
     "common.unknownName": string; // 未知名称
@@ -36,6 +37,13 @@ export interface ILanguageData {
     "common.cover": string; // 封面
     "common.name": string; // 名称
     "common.comment": string; // 评论
+    "common.sortableItem": string; // 可排序项位置
+    "common.sortableItemHint": string; // 可排序项操作提示
+    "common.sortableMoveUp": string; // 上移排序项
+    "common.sortableMoveDown": string; // 下移排序项
+    "common.sortableMoveToTop": string; // 排序项移到顶部
+    "common.sortableMoveToBottom": string; // 排序项移到底部
+    "common.sortableItemMoved": string; // 排序项移动结果
     "common.emptyList": string; // 空列表
     "common.loading": string; // 加载中
     "common.error": string; // 出错
@@ -150,7 +158,33 @@ export interface ILanguageData {
     "localMusic.folderPermissionRequired": string; // 文件夹访问权限失效
     "localMusic.beginScan": string; // 开始扫描
     "localMusic.downloadList": string; // 下载列表
+    "localMusic.scanSettings.title": string; // 扫描设置
+    "localMusic.scanSettings.affectsFutureScans": string; // 扫描设置生效范围
+    "localMusic.scanSettings.minDuration": string; // 最短音频时长
+    "localMusic.scanSettings.minFileSize": string; // 最小文件大小
+    "localMusic.scanSettings.filterSystemSounds": string; // 过滤系统提示音
+    "localMusic.scanSettings.filterSystemSoundsDescription": string; // 系统提示音过滤说明
+    "localMusic.scanSettings.noLimit": string; // 不限制
+    "localMusic.scanSettings.seconds": string; // 秒数
+    "localMusic.scanSettings.kilobytes": string; // KB
+    "localMusic.scanSettings.megabytes": string; // MB
     "localMusic.scanResult.summary": string; // 扫描摘要
+    "localMusic.scanProgress.discovering": string; // 发现扫描文件
+    "localMusic.scanProgress.filtering": string; // 应用扫描策略
+    "localMusic.scanProgress.reading-metadata": string; // 读取元数据
+    "localMusic.scanProgress.merging": string; // 合并本地音乐
+    "localMusic.scanProgress.complete": string; // 扫描完成
+    "localMusic.scanResult.title": string; // 扫描结果页标题
+    "localMusic.scanResult.metrics": string; // 扫描性能与缓存摘要
+    "localMusic.scanResult.reason.fileSize": string; // 文件体积过滤原因
+    "localMusic.scanResult.reason.duration": string; // 时长过滤原因
+    "localMusic.scanResult.reason.systemSound": string; // 系统提示音过滤原因
+    "localMusic.scanResult.filtered": string; // 被过滤文件标题
+    "localMusic.scanResult.importFiltered": string; // 恢复导入过滤项
+    "localMusic.scanResult.warnings": string; // 元数据警告标题
+    "localMusic.scanResult.warningExplanation": string; // 元数据警告说明
+    "localMusic.scanResult.retryWarnings": string; // 重试元数据警告项
+    "localMusic.scanResult.noIssues": string; // 扫描结果无问题
     "localMusic.sourceFilter.all": string; // 全部来源
     "localMusic.view.songs": string; // 全部歌曲
     "localMusic.view.artists": string; // 歌手
@@ -206,6 +240,11 @@ export interface ILanguageData {
     "lyric.lyricLinkedFrom": string; // 歌词来自
     "lyric.unlinkLyric": string; // 取消链接歌词
     "lyric.noLyric": string; // 暂无歌词
+    "lyric.a11y.position": string; // 歌词行位置
+    "lyric.a11y.current": string; // 当前歌词
+    "lyric.a11y.emptyLine": string; // 空歌词行
+    "lyric.a11y.timestamp": string; // 歌词时间
+    "lyric.a11y.seekHint": string; // 歌词跳转提示
     "lyric.noTranslation": string; // 当前歌曲无翻译
     "lyric.noRomanization": string; // 当前歌曲无音译
     "lyric.searchLyric": string; // 搜索歌词
@@ -223,6 +262,39 @@ export interface ILanguageData {
     "lyric.noLyricReason.unknown": string; // 未知无歌词原因
 
     // 不喜欢歌曲与稍后播放
+    "lastfm.title": string; // Last.fm
+    "lastfm.account": string; // 账号
+    "lastfm.status": string; // 当前状态
+    "lastfm.status.notConfigured": string; // 尚未填写 API Key / Secret
+    "lastfm.status.notAuthorized": string; // 已配置，但还没有授权账号
+    "lastfm.status.authorized": string; // 已授权：{{username}}
+    "lastfm.credentials": string; // API Key / Secret
+    "lastfm.credentialsDesc": string; // 申请提示
+    "lastfm.credentialsHint": string; // API key 输入提示
+    "lastfm.secretStoredHint": string; // 留空保持不变
+    "lastfm.secretMissingHint": string; // 尚未保存 Secret
+    "lastfm.apiKeyRequired": string; // API Key 不能为空
+    "lastfm.saveFailed": string; // 保存失败
+    "lastfm.authorizeStep1": string; // 第一步
+    "lastfm.authorizeStep1Desc": string; // 第一步说明
+    "lastfm.authorizeStep2": string; // 第二步
+    "lastfm.authorizeStep2Desc": string; // 第二步说明
+    "lastfm.authorizeOpened": string; // 已打开授权页面
+    "lastfm.authorizeSuccess": string; // 授权成功：{{username}}
+    "lastfm.authorizeFailed": string; // 授权失败
+    "lastfm.signOut": string; // 注销 Last.fm 账号
+    "lastfm.signOutConfirm": string; // 注销确认
+    "lastfm.signOutDone": string; // 已注销
+    "lastfm.scrobbling": string; // 听歌记录
+    "lastfm.enabled": string; // 启用 Last.fm 听歌记录
+    "lastfm.enabledDesc": string; // 判定规则说明
+    "lastfm.nowPlaying": string; // 上报「正在播放」
+    "lastfm.pending": string; // 待上传记录
+    "lastfm.pendingDesc": string; // {{count}} 条待上传
+    "lastfm.flushDone": string; // 上传完成
+    "lastfm.flushFailed": string; // 上传失败
+    "lastfm.clearPending": string; // 清空待上传记录
+    "lastfm.clearPendingConfirm": string; // 清空确认
     "dislikeMusic.title": string; // 不喜欢歌曲
     "dislikeMusic.manage": string; // 不喜欢歌曲管理
     "dislikeMusic.empty": string; // 无不喜欢规则
@@ -249,6 +321,30 @@ export interface ILanguageData {
     "musicListEditor.addToNextPlay": string; // 添加到下一曲
     "musicListEditor.addToSheet": string; // 添加到歌单
     "musicList.selection.selectedCount": string; // 通用音乐列表选择数量
+    "musicList.item.addNext.a11y": string; // 下一首播放 {title}
+    "musicList.item.moreOptions.a11y": string; // {title} 更多操作
+    "musicList.locateHighlight.a11y": string; // 定位到当前播放
+    "musicBar.playPause.a11y": string; // 播放或暂停歌曲
+    "musicBar.playlist.a11y": string; // 播放列表
+    "musicBar.nowPlaying.a11y": string; // 歌曲: {title} 歌手: {artist}
+    "musicDetail.playControl.pause.a11y": string; // 暂停
+    "musicDetail.playControl.previous.a11y": string; // 上一首
+    "musicDetail.playControl.next.a11y": string; // 下一首
+    "musicDetail.seekBar.a11y": string; // 播放进度
+    "lyricEditor.title": string; // 编辑歌词
+    "lyricEditor.addLine": string; // 插入歌词行
+    "lyricEditor.stamp": string; // 打点
+    "lyricEditor.stamp.a11y": string; // 把当前行的时间设为播放进度，并跳到下一行
+    "lyricEditor.stamp.disabledHint.a11y": string; // 需要先播放这首歌才能打点
+    "lyricEditor.deleteLine.a11y": string; // 删除歌词行：{text}
+    "lyricEditor.editTime.a11y": string; // 编辑时间：{time}
+    "lyricEditor.textInputPlaceholder": string; // 输入歌词
+    "lyricEditor.textInput.a11y": string; // 第 {index} 行歌词内容
+    "lyricEditor.timeInputTitle": string; // 编辑时间（mm:ss.xxx）
+    "lyricEditor.timeInputInvalid": string; // 时间格式应为 mm:ss.xxx，例如 01:23.456
+    "lyricEditor.emptyHint": string; // 暂无歌词，点击下方按钮添加一行
+    "lyricEditor.progress.a11y": string; // 第 {current} 行，共 {total} 行
+    "lyricEditor.play.a11y": string; // 播放这首歌以便打点
     "musicSheetEditor.selectSheetCount": string; // 选择的歌单数量
 
     // 权限设置相关
@@ -283,6 +379,7 @@ export interface ILanguageData {
     "searchPage.searchPlaceHolder": string; // 搜索
     "searchPage.searchLabel.a11y": string; // 搜索标签
     "searchPage.history": string; // 历史记录
+    "searchPage.history.removeItem.a11y": string; // 删除搜索记录 {keyword}
     "searchPage.artistResultWorksNum": string; // 艺术家作品数量
     "searchPage.comingSoon": string; // 敬请期待
     "searchPage.albumDetailFallback": string; // 专辑详情不可用时回退搜索
@@ -722,6 +819,11 @@ export interface ILanguageData {
     "basicSettings.autoPlayWhenAppStart": string; // 软件启动时自动播放歌曲
     "basicSettings.tryChangeSourceWhenPlayFail": string; // 播放失败时尝试更换音源
     "basicSettings.autoStopWhenError": string; // 播放失败时自动暂停
+    "basicSettings.crossfadeEnabled": string; // 切歌淡入淡出
+    "basicSettings.crossfadeEnabled.desc": string; // 上一首末尾淡出、下一首开头淡入
+    "basicSettings.crossfadeSeconds": string; // 淡化时长
+    "basicSettings.crossfadeSeconds.unit": string; // {{seconds}} 秒
+    "basicSettings.lastfm": string; // Last.fm 听歌记录
     "basicSettings.tempRemoteDuck": string; // 播放被暂时打断时
     "basicSettings.tempRemoteDuck.pause": string; // 暂停播放
     "basicSettings.tempRemoteDuck.lowerVolume": string; // 降低音量

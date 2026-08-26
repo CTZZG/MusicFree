@@ -131,15 +131,86 @@ export function resolvePreparedNextItem<T>(
         return null;
     }
 
-    if (currentIndex < 0 || currentIndex + 1 >= queue.length) {
+    if (currentIndex < 0) {
         return null;
     }
-    const candidate = queue[currentIndex + 1];
-    return candidate &&
-        !isSameItem(candidate, currentItem) &&
-        !isSkipped(candidate)
-        ? candidate
-        : null;
+    // 预载的职责是「预测自然结束时实际会播哪一首」，所以必须复用同一份推进逻辑。
+    // 以前这里是另写的一段、且在队尾直接返回 null，于是列表循环每绕一圈，在
+    // 末曲→首曲那个边界上原生 runway 必定为空，只能等 JS 实时响应；App 在后台
+    // 时这一步不一定跑得动，播放就停在曲尾。
+    // 三种模式（QUEUE / SHUFFLE / SINGLE）在队尾都会回绕（SHUFFLE 是预先打乱
+    // playList，推进方式与 QUEUE 相同），不存在「到队尾就该停」的模式；SINGLE
+    // 已在上面单独返回 null——它必须由 JS 重新加载，不能让 mpv 无缝重复同一首。
+    return findNextPlayableQueueItem(queue, currentIndex, currentItem, {
+        isSameItem,
+        isSkipped,
+    });
+}
+
+/**
+ * resolvePreparedNextItem 的多首版本：预测「如果从这里连续自然结束 count
+ * 次，会依次播放哪些曲目」，用于给 mpv 一次性批量预备多首、原生自动接续。
+ * 每一步都用上一步选中的曲目/下标作为新的“当前项”继续向后找——这与真实
+ * 播放推进完全一致，因此同一首歌在队列里出现多次时，后面还能再次被选中
+ * （不是一次性排除整份队列里同名的曲目，那样会把正常的循环/重复队列
+ * 也当成断档处理）。
+ */
+export function resolvePreparedNextItems<T>(
+    options: ResolvePreparedNextItemOptions<T> & { count: number },
+): T[] {
+    const {
+        currentItem,
+        queue,
+        currentIndex,
+        repeatMode,
+        playLaterQueueLength,
+        isSameItem,
+        isSkipped,
+        count,
+    } = options;
+
+    if (!currentItem || queue.length === 0 || count <= 0) {
+        return [];
+    }
+    if (repeatMode === MusicRepeatMode.SINGLE) {
+        return [];
+    }
+    if (playLaterQueueLength > 0) {
+        return [];
+    }
+    if (currentIndex < 0) {
+        return [];
+    }
+
+    const results: T[] = [];
+    let anchorIndex = currentIndex;
+    let anchorItem: T = currentItem;
+    for (let picked = 0; picked < count; picked += 1) {
+        let foundIndex = -1;
+        let foundItem: T | null = null;
+        for (let offset = 1; offset <= queue.length; offset += 1) {
+            const index =
+                ((anchorIndex + offset) % queue.length + queue.length) %
+                queue.length;
+            const candidate = queue[index];
+            if (
+                candidate !== undefined &&
+                !isSameItem(candidate, anchorItem) &&
+                !isSkipped(candidate)
+            ) {
+                foundIndex = index;
+                foundItem = candidate;
+                break;
+            }
+        }
+        if (foundItem === null) {
+            break;
+        }
+        results.push(foundItem);
+        anchorIndex = foundIndex;
+        anchorItem = foundItem;
+    }
+    return results;
 }
 
 export function getSafeUnresolvedQueueUrl(url?: string | null) {

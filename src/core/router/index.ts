@@ -32,6 +32,10 @@ export const ROUTE_PATH = {
     SETTING: "setting",
     /** 本地音乐 */
     LOCAL: "local",
+    /** 本地音乐扫描设置 */
+    LOCAL_SCAN_SETTINGS: "local-scan-settings",
+    /** 本地音乐扫描结果 */
+    LOCAL_SCAN_RESULT: "local-scan-result",
     /** 正在下载 */
     DOWNLOADING: "downloading",
     /** 从歌曲列表中搜索 */
@@ -60,6 +64,8 @@ export const ROUTE_PATH = {
     SMART_SHEET_DETAIL: "smart-sheet-detail",
     /** 编辑歌单详情 */
     EDIT_MUSIC_SHEET_INFO: "edit-music-sheet-info",
+    /** 歌词逐行编辑 */
+    LYRIC_EDITOR: "lyric-editor",
 } as const;
 
 type ValueOf<T> = T[keyof T];
@@ -102,6 +108,11 @@ interface RouterParams extends RouterParamsBase {
         // anchor?: string | number;
     };
     local: undefined;
+    "local-scan-settings": undefined;
+    "local-scan-result": {
+        // 只传 id，报告本体放在 localMusicScanReportStore 里，避免整份候选列表常驻导航栈
+        reportId: string;
+    };
     downloading: undefined;
     "search-music-list": {
         musicList: IMusic.IMusicItem[] | null;
@@ -161,6 +172,9 @@ interface RouterParams extends RouterParamsBase {
     };
     "edit-music-sheet-info": {
         musicSheet: IMusic.IMusicSheetItem;
+    };
+    "lyric-editor": {
+        musicItem: IMusic.IMusicItem;
     };
 }
 

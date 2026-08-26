@@ -8,6 +8,8 @@ import AlbumDetail from "@/pages/albumDetail";
 import ArtistDetail from "@/pages/artistDetail";
 import Setting from "@/pages/setting";
 import LocalMusic from "@/pages/localMusic";
+import LocalMusicScanSettings from "@/pages/localMusic/scanSettings";
+import LocalMusicScanResult from "@/pages/localMusic/scanResult";
 import Downloading from "@/pages/downloading";
 import SearchMusicList from "@/pages/searchMusicList";
 import MusicListEditor from "@/pages/musicListEditor";
@@ -24,6 +26,7 @@ import SmartSheetDetail from "@/pages/smartSheetDetail";
 
 import { ROUTE_PATH } from "@/core/router/index.ts";
 import EditMusicSheetInfo from "@/pages/editMusicSheetInfo";
+import LyricEditor from "@/pages/lyricEditor";
 
 type ValueOf<T> = T[keyof T];
 export type RoutePaths = ValueOf<typeof ROUTE_PATH>;
@@ -74,6 +77,14 @@ export const routes: Array<IRoutes> = [
     {
         path: ROUTE_PATH.LOCAL,
         component: LocalMusic,
+    },
+    {
+        path: ROUTE_PATH.LOCAL_SCAN_SETTINGS,
+        component: LocalMusicScanSettings,
+    },
+    {
+        path: ROUTE_PATH.LOCAL_SCAN_RESULT,
+        component: LocalMusicScanResult,
     },
     {
         path: ROUTE_PATH.DOWNLOADING,
@@ -130,5 +141,9 @@ export const routes: Array<IRoutes> = [
     {
         path: ROUTE_PATH.EDIT_MUSIC_SHEET_INFO,
         component: EditMusicSheetInfo,
+    },
+    {
+        path: ROUTE_PATH.LYRIC_EDITOR,
+        component: LyricEditor,
     },
 ];

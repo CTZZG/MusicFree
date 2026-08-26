@@ -6,6 +6,7 @@ import {
     replaceQueueItemByIdentity,
     resolvePreviousQueueItem,
     resolvePreparedNextItem,
+    resolvePreparedNextItems,
 } from "../queuePolicy";
 
 interface TestMusic {
@@ -82,7 +83,9 @@ describe("track player queue policy", () => {
         ).toBeNull();
     });
 
-    it("does not prepare a wrapped queue item at the end", () => {
+    it("prepares the wrapped first item at the end of a looping queue", () => {
+        // 预载必须和 findNextPlayableQueueItem 的推进结果一致：列表循环在队尾
+        // 会绕回队首，如果这里不预载，原生 runway 每绕一圈就空一次。
         const queue = [item("a"), item("b"), item("c")];
 
         expect(
@@ -91,6 +94,23 @@ describe("track player queue policy", () => {
                 queue,
                 currentIndex: 2,
                 repeatMode: MusicRepeatMode.QUEUE,
+                playLaterQueueLength: 0,
+                isSameItem: sameItem,
+                isSkipped: () => false,
+            }),
+        ).toBe(queue[0]);
+    });
+
+    it("still refuses to prepare anything in single repeat mode", () => {
+        // 单曲循环必须由 JS 重新加载，不能让 mpv 无缝重复同一首。
+        const queue = [item("a"), item("b")];
+
+        expect(
+            resolvePreparedNextItem({
+                currentItem: queue[1],
+                queue,
+                currentIndex: 1,
+                repeatMode: MusicRepeatMode.SINGLE,
                 playLaterQueueLength: 0,
                 isSameItem: sameItem,
                 isSkipped: () => false,
@@ -128,6 +148,112 @@ describe("track player queue policy", () => {
                 isSkipped: candidate => candidate.id === "b",
             }),
         ).toBeNull();
+    });
+
+    it("resolves several upcoming items in playback order, chaining off each pick", () => {
+        const queue = [item("a"), item("b"), item("c"), item("d")];
+
+        expect(
+            resolvePreparedNextItems({
+                currentItem: queue[0],
+                queue,
+                currentIndex: 0,
+                repeatMode: MusicRepeatMode.QUEUE,
+                playLaterQueueLength: 0,
+                isSameItem: sameItem,
+                isSkipped: () => false,
+                count: 3,
+            }),
+        ).toEqual([queue[1], queue[2], queue[3]]);
+    });
+
+    it("wraps around the loop and can pick the same track again as a later item", () => {
+        // 循环队列里，A 播完 B 之后，B 播完理应再绕回 A——不能因为 A 曾经是
+        // 起点就被永久排除在后续预备之外。
+        const queue = [item("a"), item("b")];
+
+        expect(
+            resolvePreparedNextItems({
+                currentItem: queue[0],
+                queue,
+                currentIndex: 0,
+                repeatMode: MusicRepeatMode.QUEUE,
+                playLaterQueueLength: 0,
+                isSameItem: sameItem,
+                isSkipped: () => false,
+                count: 3,
+            }),
+        ).toEqual([queue[1], queue[0], queue[1]]);
+    });
+
+    it("stops early when fewer playable items remain than requested", () => {
+        const disliked = item("b");
+        const queue = [item("a"), disliked];
+
+        expect(
+            resolvePreparedNextItems({
+                currentItem: queue[0],
+                queue,
+                currentIndex: 0,
+                repeatMode: MusicRepeatMode.QUEUE,
+                playLaterQueueLength: 0,
+                isSameItem: sameItem,
+                isSkipped: candidate => candidate.id === disliked.id,
+                count: 5,
+            }),
+        ).toEqual([]);
+    });
+
+    it("returns nothing for single-repeat, play-later priority, or a non-positive count", () => {
+        const current = item("a");
+        const queue = [current, item("b")];
+        const base = {
+            currentItem: current,
+            queue,
+            currentIndex: 0,
+            playLaterQueueLength: 0,
+            isSameItem: sameItem,
+            isSkipped: () => false,
+            count: 2,
+        };
+
+        expect(
+            resolvePreparedNextItems({
+                ...base,
+                repeatMode: MusicRepeatMode.SINGLE,
+            }),
+        ).toEqual([]);
+        expect(
+            resolvePreparedNextItems({
+                ...base,
+                repeatMode: MusicRepeatMode.QUEUE,
+                playLaterQueueLength: 1,
+            }),
+        ).toEqual([]);
+        expect(
+            resolvePreparedNextItems({
+                ...base,
+                repeatMode: MusicRepeatMode.QUEUE,
+                count: 0,
+            }),
+        ).toEqual([]);
+    });
+
+    it("agrees with the single-item resolver on the first pick", () => {
+        const queue = [item("a"), item("b"), item("c")];
+        const options = {
+            currentItem: queue[2],
+            queue,
+            currentIndex: 2,
+            repeatMode: MusicRepeatMode.QUEUE,
+            playLaterQueueLength: 0,
+            isSameItem: sameItem,
+            isSkipped: () => false,
+        };
+
+        expect(resolvePreparedNextItems({ ...options, count: 1 })).toEqual([
+            resolvePreparedNextItem(options),
+        ]);
     });
 
     it("resolves the previous queue item with wrapping", () => {

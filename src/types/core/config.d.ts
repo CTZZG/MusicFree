@@ -1,5 +1,6 @@
 import type { ResumeMode, SortType } from "@/constants/commonConst.ts";
 import type { CustomizedColors } from "@/hooks/useColors";
+import type { ILocalMusicScanPolicy } from "@/core/localMusicScanPolicy";
 
 export interface IAppConfigProperties {
     $schema: "2";
@@ -36,6 +37,9 @@ export interface IAppConfigProperties {
     "basic.showExitOnNotification": boolean;
     "basic.musicOrderInLocalSheet": SortType;
     "basic.tryChangeSourceWhenPlayFail": boolean;
+    // 切歌淡入淡出：上一首末尾淡出、下一首开头淡入（不是真正的重叠交叉淡化）
+    "basic.crossfadeEnabled": boolean;
+    "basic.crossfadeSeconds": number;
     "basic.qualityKeysList": string[];
     "basic.qualityTranslations": Record<string, string>;
     "basic.qualityAbbreviations": Record<string, string>;
@@ -52,6 +56,9 @@ export interface IAppConfigProperties {
     "basic.enableWordByWordLyric": boolean;
     "basic.downloadLyricFile": boolean;
     "basic.lyricFileFormat": "lrc" | "txt";
+
+    // Local music
+    "localMusic.scanPolicy": ILocalMusicScanPolicy;
 
     // Lyric
     "lyric.showStatusBarLyric": boolean;
@@ -91,6 +98,12 @@ export interface IAppConfigProperties {
     "theme.hideHomeHeroCard": boolean;
     "theme.hideHomeRecentListening": boolean;
     "theme.hideHomeOperations": boolean;
+
+    // Last.fm scrobbling（api_secret 与 session key 存在系统安全存储里，不落这里）
+    "lastfm.enabled": boolean;
+    "lastfm.apiKey": string;
+    "lastfm.username": string;
+    "lastfm.nowPlaying": boolean;
 
     // Backup
     "backup.resumeMode": ResumeMode;
