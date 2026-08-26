@@ -110,8 +110,14 @@ expect(
     ]),
     `raw webdav imports escaped their adapters: ${rawWebdavImports.join(", ")}`,
 );
-// 明文只应由这三处显式开启：用户 WebDAV 门面、WebDAV 备份、URL 校验默认值。
-// 插件/LX 的明文走 basic.allowPluginInsecureHttp 开关（运行期求值），不在此列。
+// 明文只应由这四处显式开启：用户 WebDAV 门面、WebDAV 备份、URL 校验默认值、
+// 封面地址策略。插件/LX 的明文走 basic.allowPluginInsecureHttp 开关（运行期
+// 求值），不在此列。
+//
+// artworkSourcePolicy 放行明文是刻意的：封面是纯展示图片、不带凭据，而大量
+// 音源只提供 http 封面，拒绝会让锁屏/通知/灵动岛退化成默认图标。真正的地址
+// 风险（私有网段、回环、URL 内嵌凭据）仍由 validateRemoteNetworkUrl 拦住，
+// 原生取图侧的 PublicHttpsNetworkPolicy 同样刻意不限制 scheme。
 expect(
     JSON.stringify(
         [...new Set(explicitHttpOptIns.map(item => item.replace(/:\d+$/, "")))]
@@ -120,6 +126,7 @@ expect(
         "src/core/pluginManager/restrictedWebdav.ts",
         "src/core/webdavBackup.ts",
         "src/core/webdavUrl.ts",
+        "src/utils/artworkSourcePolicy.ts",
     ]),
     `unexpected cleartext opt-in: ${explicitHttpOptIns.join(", ")}`,
 );

@@ -66,9 +66,7 @@ describe("music detail artwork resolver", () => {
         expect(getMusicInfo).toHaveBeenCalledTimes(1);
     });
 
-    it("rejects cleartext, credentialed, and private remote artwork", () => {
-        expect(isUsableMusicDetailArtwork("http://images.example/cover.jpg"))
-            .toBe(false);
+    it("rejects credentialed and private remote artwork", () => {
         expect(
             isUsableMusicDetailArtwork(
                 "https://user:secret@images.example/cover.jpg",
@@ -76,7 +74,16 @@ describe("music detail artwork resolver", () => {
         ).toBe(false);
         expect(isUsableMusicDetailArtwork("https://127.0.0.1/cover.jpg"))
             .toBe(false);
+        expect(isUsableMusicDetailArtwork("http://10.1.2.3/cover.jpg"))
+            .toBe(false);
         expect(isUsableMusicDetailArtwork("content://media/cover/1"))
+            .toBe(true);
+    });
+
+    // 明文 http 封面来源很常见（酷我等），拒绝它只会让详情页退回占位图。
+    // 详见 utils/artworkSourcePolicy.ts 里的说明。
+    it("accepts public cleartext remote artwork", () => {
+        expect(isUsableMusicDetailArtwork("http://images.example/cover.jpg"))
             .toBe(true);
     });
 
