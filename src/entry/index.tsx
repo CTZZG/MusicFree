@@ -67,6 +67,13 @@ export default function Pages() {
     const [currentRouteName, setCurrentRouteName] = useState<string>(
         routes[0].path,
     );
+    // 导航一开始就更新的路由名。currentRouteName 要等 transitionEnd 才提交，
+    // 那是为了让液态玻璃背板在转场结束后才采样（否则会抓到中间帧位图）；但
+    // 播放条的显隐不能跟着一起等——否则进入播放详情页时，播放条会在整个转场
+    // 动画期间继续压在底部，直到动画结束才消失。两个诉求分开各用一个状态。
+    const [stagedRouteName, setStagedRouteName] = useState<string>(
+        routes[0].path,
+    );
     const [transitionInProgress, setTransitionInProgress] = useState(false);
     const pendingRouteNameRef = useRef(currentRouteName);
     const transitionFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -79,6 +86,7 @@ export default function Pages() {
     const commitCurrentRouteName = useCallback(() => {
         const routeName = readCurrentRouteName();
         pendingRouteNameRef.current = routeName;
+        setStagedRouteName(routeName);
         setCurrentRouteName(routeName);
         setTransitionInProgress(false);
         if (transitionFallbackRef.current) {
@@ -92,6 +100,8 @@ export default function Pages() {
             return;
         }
         pendingRouteNameRef.current = routeName;
+        // 立刻生效，播放条在导航一开始就按目标路由决定显隐。
+        setStagedRouteName(routeName);
         setTransitionInProgress(true);
         if (transitionFallbackRef.current) {
             clearTimeout(transitionFallbackRef.current);
@@ -116,6 +126,7 @@ export default function Pages() {
                 <SafeAreaProvider>
                     <MusicBarLayoutProvider
                         routeName={currentRouteName}
+                        visibilityRouteName={stagedRouteName}
                         transitionInProgress={transitionInProgress}>
                         <NavigationContainer
                             ref={navigationRef}

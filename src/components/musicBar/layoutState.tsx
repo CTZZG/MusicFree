@@ -68,14 +68,30 @@ const MusicBarLayoutContext = createContext<IMusicBarLayoutContextValue>({
 });
 
 interface IMusicBarLayoutProviderProps extends PropsWithChildren {
+    /**
+     * 已提交的路由名（转场结束后才更新）。液态玻璃背板靠它决定何时采样，
+     * 转场中途采样会抓到中间帧位图。
+     */
     routeName: string;
+    /**
+     * 决定播放条显隐的路由名，导航一开始就更新。不能复用 routeName——那样
+     * 播放条会在整个转场动画期间滞留在底部（进播放详情页时尤其明显）。
+     * 缺省时退回 routeName，保持旧行为。
+     */
+    visibilityRouteName?: string;
     transitionInProgress: boolean;
 }
 
 export function MusicBarLayoutProvider(
     props: IMusicBarLayoutProviderProps,
 ) {
-    const { routeName, transitionInProgress, children } = props;
+    const {
+        routeName,
+        visibilityRouteName,
+        transitionInProgress,
+        children,
+    } = props;
+    const effectiveVisibilityRoute = visibilityRouteName ?? routeName;
     const musicItem = useCurrentMusic();
     const floatingTheme = Theme.useTheme().id === "p-frosted-glass";
     const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -119,7 +135,9 @@ export function MusicBarLayoutProvider(
     const layout = useMemo(
         () =>
             resolveMusicBarLayout({
-                routeSupportsMusicBar: musicBarRouteNames.has(routeName),
+                routeSupportsMusicBar: musicBarRouteNames.has(
+                    effectiveVisibilityRoute,
+                ),
                 hasCurrentMusic: !!musicItem,
                 keyboardVisible,
                 drawerOpen,
@@ -129,10 +147,10 @@ export function MusicBarLayoutProvider(
             }),
         [
             drawerOpen,
+            effectiveVisibilityRoute,
             floatingTheme,
             keyboardVisible,
             musicItem,
-            routeName,
         ],
     );
     const value = useMemo<IMusicBarLayoutContextValue>(
