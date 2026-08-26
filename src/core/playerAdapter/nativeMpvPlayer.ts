@@ -48,6 +48,25 @@ export interface MpvInitializeOptions {
 }
 
 /** 加载并播放一首音乐时传给原生的载荷（含 MediaSession 展示用元数据） */
+/**
+ * prepareNext 无法预载时提交的诊断载荷。原生只看 url 是否为空来判定「跳过」，
+ * 这里额外带上原因和位置信息，让「runway 被静默清空」在 release 包的 native
+ * logcat 里可见——这正是之前定位后台停播时最缺的一环。
+ */
+export interface MpvPrepareSkipPayload {
+    /** 空 url 让原生走跳过分支 */
+    url?: "";
+    /** 为什么没有可预载的下一首 */
+    skipReason: string;
+    /** JS 认为的下一首身份 */
+    mediaId?: string;
+    /** JS 认为的下一首在 adapter 队列中的位置 */
+    index?: number;
+    /** 当前活动曲在 adapter 队列中的位置；与 index 不相邻即为身份错位 */
+    activeIndex?: number;
+    queueRevision?: number;
+}
+
 export interface MpvLoadPayload {
     url: string;
     /** JS 队列中的稳定媒体身份，不使用 URL 作为身份。 */
@@ -103,7 +122,15 @@ interface MpvPlayerNativeModule {
     initialize(options: MpvInitializeOptions): Promise<void>;
     destroy(): Promise<void>;
     loadAndPlay(payload: MpvLoadPayload): Promise<void>;
-    prepareNext(payload?: MpvLoadPayload | null): Promise<void>;
+    prepareNext(
+        payload?: MpvLoadPayload | MpvPrepareSkipPayload | null,
+    ): Promise<void>;
+    /**
+     * 批量预备：第一首走与 prepareNext 相同的立即追加路径，其余曲目由原生在
+     * 每次成功提升后自动接续追加，不需要 JS 醒着再调用一次。用于把后台/JS
+     * 冻结场景下的可连续播放窗口从「1 首」延长到「调用时给出的深度」。
+     */
+    prepareNextBatch(payloads: MpvLoadPayload[]): Promise<void>;
     pause(): Promise<void>;
     resume(): Promise<void>;
     stop(): Promise<void>;
@@ -167,6 +194,8 @@ export interface MpvRemoteCommandEvent {
     volume?: number;
     /** playFromId 命令携带媒体 ID */
     mediaId?: string;
+    /** 原生入队时间戳（ms），用于丢弃 JS 被冻结期间堆积的过期命令 */
+    enqueuedAt?: number;
 }
 export interface MpvAndroidAutoConnectionChangedEvent {
     connected: boolean;
@@ -214,8 +243,11 @@ const NativeMpvPlayer = {
     destroy: () => assertAvailable().destroy(),
     loadAndPlay: (payload: MpvLoadPayload) =>
         assertAvailable().loadAndPlay(payload),
-    prepareNext: (payload?: MpvLoadPayload | null) =>
-        assertAvailable().prepareNext(payload),
+    prepareNext: (
+        payload?: MpvLoadPayload | MpvPrepareSkipPayload | null,
+    ) => assertAvailable().prepareNext(payload),
+    prepareNextBatch: (payloads: MpvLoadPayload[]) =>
+        assertAvailable().prepareNextBatch(payloads),
     pause: () => assertAvailable().pause(),
     resume: () => assertAvailable().resume(),
     stop: () => assertAvailable().stop(),

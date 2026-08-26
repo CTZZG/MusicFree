@@ -202,6 +202,19 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         val duration: Double,
     )
 
+    /**
+     * 批量预备时，除「即将提升的下一首」外的后续曲目。它们不会立即进入 mpv
+     * playlist——只有在前一首成功提升后，才会被原生自动接续追加，复用与单曲
+     * prepareNext 完全相同的追加/校验路径。这样任意时刻 mpv playlist 里最多
+     * 只有一个「已追加但未提升」的曲目，promotePreparedTrack/END_FILE/START_FILE
+     * 那套单槽状态机不需要改动。
+     */
+    private data class QueuedPrepareEntry(
+        val prepared: PreparedTrack,
+        val headerString: String,
+        val userAgent: String?,
+    )
+
     private data class TrackIdentity(
         val url: String,
         val mediaId: String,
@@ -239,6 +252,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var preparedTrack: PreparedTrack? = null
     private var hasPlaylistPreparedTrack = false
     private var preparedPlaylistIndex = -1
+    /** prepareNextBatch 里排在第二首之后、还没被追加进 mpv playlist 的预备曲目。 */
+    private var pendingPreparedQueue: MutableList<QueuedPrepareEntry> = mutableListOf()
     private var pendingPlaylistCompaction = false
     private var pendingNaturalEnd: PendingNaturalEnd? = null
     private var naturalEndSerial = 0L
@@ -255,6 +270,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private const val ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand"
         private const val ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
             "onMpvAndroidAutoConnectionChanged"
+        /** mpv 解复用缓存的内存上限（纯音频足够用，且与磁盘缓存设置无关） */
+        private const val MAX_DEMUXER_BYTES = 32L * 1024 * 1024
+        /** 已播放部分的回看缓存上限，避免长曲目把内存堆起来 */
+        private const val MAX_DEMUXER_BACK_BYTES = 8L * 1024 * 1024
         private const val END_FILE_SUPPRESS_MS = 1200L
         private const val NATURAL_END_DEDUP_MS = 350L
         private val PLAYLIST_COMPACT_DELAYS_MS = longArrayOf(0L, 120L, 500L)
@@ -607,6 +626,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
         hasPlaylistPreparedTrack = false
         preparedPlaylistIndex = -1
+        // 队列里的曲目从未追加进 mpv playlist，直接丢弃即可，不需要 removePlaylistIndex。
+        pendingPreparedQueue.clear()
     }
 
     private fun promotePreparedTrack(requireCurrentPath: Boolean = false): PreparedTrack? {
@@ -656,8 +677,33 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 "generation=${prepared.loadGeneration} token=${prepared.prepareToken} " +
                 "queueRevision=${prepared.queueRevision}",
         )
+        chainNextQueuedPrepareEntry()
         schedulePlaylistCompaction()
         return prepared
+    }
+
+    /**
+     * 一首预备曲目提升后，如果批量预备时还留了后续曲目在 pendingPreparedQueue，
+     * 就原生接续把下一条追加进 mpv playlist——不依赖 JS 再次调用，后台/JS 冻结
+     * 时也能继续往下顶 runway。任何一步失败都只清空自己这条链路，退回到「靠
+     * JS 下次 prepareNext 补齐」的既有兜底路径，不影响已经提升成功的当前曲目。
+     */
+    private fun chainNextQueuedPrepareEntry() {
+        if (pendingPreparedQueue.isEmpty()) {
+            return
+        }
+        val entry = pendingPreparedQueue.removeAt(0)
+        try {
+            appendPreparedTrackToMpv(entry.prepared, entry.headerString, entry.userAgent)
+            Log.d(
+                TAG,
+                "chained queued prepare: mediaId=${entry.prepared.mediaId} " +
+                    "remainingQueue=${pendingPreparedQueue.size}",
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "chained queued prepare failed", e)
+            clearPreparedTrack(removeFromPlaylist = false)
+        }
     }
 
     private fun completeNaturalEnd(
@@ -837,12 +883,20 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MPVLib.setOptionString("vid", "no")
                 MPVLib.setOptionString("cache", "yes")
                 MPVLib.setOptionString("cache-secs", "2")
+                // demuxer-max-bytes 是「内存里」的解复用缓存上限，绝不能接
+                // basic.maxCacheSize——那是音乐【磁盘】缓存上限（默认 512MB，
+                // 用户最大可设到 8GB）。而且 demuxer-readahead-secs 是「至少
+                // 预读这么多」，开了 cache=yes 之后网络流会一直预读到字节上限
+                // 为止，于是 mpv 常驻占掉几百 MB 原生堆，切歌瞬间两个 demuxer
+                // 叠加会把进程推到 1GB 以上，播几首就被系统杀掉。
+                // 纯音频按压缩码率算，32MB 已经相当于 320kbps 十几分钟的缓冲。
                 MPVLib.setOptionString(
                     "demuxer-max-bytes",
-                    ((readDouble(options, "maxCacheSize") ?: (32.0 * 1024 * 1024))
-                        .toLong())
-                        .coerceAtLeast(8L * 1024 * 1024)
-                        .toString(),
+                    MAX_DEMUXER_BYTES.toString(),
+                )
+                MPVLib.setOptionString(
+                    "demuxer-max-back-bytes",
+                    MAX_DEMUXER_BACK_BYTES.toString(),
                 )
                 MPVLib.setOptionString("demuxer-readahead-secs", "2")
                 MPVLib.setOptionString("network-timeout", "15")
@@ -898,6 +952,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                             ON_MPV_REMOTE_COMMAND,
                             Arguments.createMap().apply {
                                 putString("command", command)
+                                // JS 线程被冻结时事件会在桥上堆积，回到前台后一次性
+                                // 重放会连跳好几首。带上入队时间，让 JS 丢弃过期命令。
+                                putDouble(
+                                    "enqueuedAt",
+                                    System.currentTimeMillis().toDouble(),
+                                )
                                 if (mediaId != null) {
                                     putString("mediaId", mediaId)
                                 }
@@ -1093,6 +1153,54 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /** 从 payload 解析出一个 PreparedTrack；url 已经在调用方校验过非空。 */
+    private fun parsePreparedTrack(map: ReadableMap, url: String): PreparedTrack =
+        PreparedTrack(
+            url = url,
+            mediaId = readString(map, "mediaId")
+                ?.takeIf { it.isNotBlank() }
+                ?: throw IllegalArgumentException("missing mediaId"),
+            loadGeneration = readLong(map, "loadGeneration")
+                ?: throw IllegalArgumentException("missing loadGeneration"),
+            prepareToken = readLong(map, "prepareToken")
+                ?: throw IllegalArgumentException("missing prepareToken"),
+            queueRevision = readLong(map, "queueRevision")
+                ?: throw IllegalArgumentException("missing queueRevision"),
+            title = readString(map, "title") ?: "",
+            artist = readString(map, "artist") ?: "",
+            album = readString(map, "album") ?: "",
+            artwork = readString(map, "artwork"),
+            duration = validDuration(readDouble(map, "duration")),
+        )
+
+    /**
+     * prepareNext 与批量预备/原生自动接续共用的核心：把一首曲目追加进 mpv
+     * playlist，并把它设为唯一的「已追加待提升」曲目。调用前 preparedTrack
+     * 必须已经是空的——批量预备的后续曲目在这之前会先进 pendingPreparedQueue，
+     * 不会并发调用到这里。
+     */
+    private fun appendPreparedTrackToMpv(
+        prepared: PreparedTrack,
+        headerString: String,
+        userAgent: String?,
+    ) {
+        MPVLib.setOptionString("http-header-fields", headerString)
+        (userAgent ?: defaultUserAgent)?.let { MPVLib.setOptionString("user-agent", it) }
+
+        val appendIndex = readPlaylistCount()
+        MPVLib.command(arrayOf("loadfile", prepared.url, "append"))
+        preparedTrack = prepared
+        hasPlaylistPreparedTrack = true
+        preparedPlaylistIndex = appendIndex
+        Log.d(
+            TAG,
+            "prepareNext: mediaId=${prepared.mediaId} " +
+                "generation=${prepared.loadGeneration} " +
+                "token=${prepared.prepareToken} " +
+                "queueRevision=${prepared.queueRevision} index=$appendIndex",
+        )
+    }
+
     @ReactMethod
     fun prepareNext(payload: ReadableMap?, promise: Promise) {
         if (!isInitialized.get()) {
@@ -1102,10 +1210,33 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
         postPromise(promise, "E_PREPARE_NEXT") { operationPromise ->
             try {
+                // 清空前先记下是否真的存在 runway：JS 提交空 url 时这里会把唯一的
+                // 预载项摘掉，而这条路径以前完全不打日志，导致「后台播到曲尾就停」
+                // 长期不可观测。
+                val hadPrepared = hasPlaylistPreparedTrack
+                val previousPreparedMediaId = preparedTrack?.mediaId
                 clearPreparedTrack(removeFromPlaylist = true)
                 val nextPayload = payload
                 val url = nextPayload?.let { readString(it, "url") }
                 if (nextPayload == null || url.isNullOrBlank()) {
+                    val skipReason = nextPayload
+                        ?.let { readString(it, "skipReason") }
+                        ?: "null-payload"
+                    val skipMediaId = nextPayload?.let { readString(it, "mediaId") }
+                    val skipIndex = nextPayload?.let { readDouble(it, "index") }
+                    val skipActiveIndex =
+                        nextPayload?.let { readDouble(it, "activeIndex") }
+                    val skipQueueRevision =
+                        nextPayload?.let { readDouble(it, "queueRevision") }
+                    Log.w(
+                        TAG,
+                        "prepareNext skipped: reason=$skipReason " +
+                            "mediaId=$skipMediaId index=${skipIndex?.toInt()} " +
+                            "activeIndex=${skipActiveIndex?.toInt()} " +
+                            "queueRevision=${skipQueueRevision?.toInt()} " +
+                            "clearedRunway=$hadPrepared " +
+                            "previousPreparedMediaId=$previousPreparedMediaId",
+                    )
                     operationPromise.resolve(null)
                     return@postPromise
                 }
@@ -1118,46 +1249,103 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                 val trackUserAgent = readString(nextPayload, "userAgent")
                     ?.takeIf { it.isNotBlank() }
-                MPVLib.setOptionString(
-                    "http-header-fields",
-                    buildHeaderString(headers),
-                )
-                (trackUserAgent ?: defaultUserAgent)
-                    ?.let { MPVLib.setOptionString("user-agent", it) }
-
-                preparedTrack = PreparedTrack(
-                    url = url,
-                    mediaId = readString(nextPayload, "mediaId")
-                        ?.takeIf { it.isNotBlank() }
-                        ?: throw IllegalArgumentException("missing mediaId"),
-                    loadGeneration = readLong(nextPayload, "loadGeneration")
-                        ?: throw IllegalArgumentException("missing loadGeneration"),
-                    prepareToken = readLong(nextPayload, "prepareToken")
-                        ?: throw IllegalArgumentException("missing prepareToken"),
-                    queueRevision = readLong(nextPayload, "queueRevision")
-                        ?: throw IllegalArgumentException("missing queueRevision"),
-                    title = readString(nextPayload, "title") ?: "",
-                    artist = readString(nextPayload, "artist") ?: "",
-                    album = readString(nextPayload, "album") ?: "",
-                    artwork = readString(nextPayload, "artwork"),
-                    duration = validDuration(readDouble(nextPayload, "duration")),
-                )
-                val appendIndex = readPlaylistCount()
-                MPVLib.command(arrayOf("loadfile", url, "append"))
-                hasPlaylistPreparedTrack = true
-                preparedPlaylistIndex = appendIndex
-                Log.d(
-                    TAG,
-                    "prepareNext: mediaId=${preparedTrack?.mediaId} " +
-                        "generation=${preparedTrack?.loadGeneration} " +
-                        "token=${preparedTrack?.prepareToken} " +
-                        "queueRevision=${preparedTrack?.queueRevision} index=$appendIndex",
-                )
+                val prepared = parsePreparedTrack(nextPayload, url)
+                appendPreparedTrackToMpv(prepared, buildHeaderString(headers), trackUserAgent)
                 operationPromise.resolve(null)
             } catch (e: Exception) {
                 Log.w(TAG, "prepareNext failed", e)
                 clearPreparedTrack(removeFromPlaylist = false)
                 operationPromise.reject("E_PREPARE_NEXT", e.message, e)
+            }
+        }
+    }
+
+    /**
+     * 批量预备：第一首走与 prepareNext 完全相同的「立即追加」路径；第二首起
+     * 存进 pendingPreparedQueue，由 promotePreparedTrack 在每次成功提升后原生
+     * 接续追加。目的是把 runway 从「1 首」延长到「JS 一次性给出的深度」，
+     * 让 mpv 在 JS 冻结的后台窗口内也能连续跨多首曲目，而不需要每首都等 JS
+     * 醒来再调用一次 prepareNext。
+     */
+    @ReactMethod
+    fun prepareNextBatch(payloads: ReadableArray?, promise: Promise) {
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+
+        postPromise(promise, "E_PREPARE_NEXT_BATCH") { operationPromise ->
+            try {
+                val hadPrepared = hasPlaylistPreparedTrack
+                val previousPreparedMediaId = preparedTrack?.mediaId
+                clearPreparedTrack(removeFromPlaylist = true)
+
+                val count = payloads?.size() ?: 0
+                if (count == 0) {
+                    Log.w(
+                        TAG,
+                        "prepareNextBatch skipped: reason=empty-batch " +
+                            "clearedRunway=$hadPrepared " +
+                            "previousPreparedMediaId=$previousPreparedMediaId",
+                    )
+                    operationPromise.resolve(null)
+                    return@postPromise
+                }
+
+                var appended = 0
+                for (index in 0 until count) {
+                    val entryMap = payloads?.getMap(index) ?: continue
+                    val url = readString(entryMap, "url")
+                    if (url.isNullOrBlank()) {
+                        Log.w(
+                            TAG,
+                            "prepareNextBatch entry skipped: index=$index reason=blank-url",
+                        )
+                        continue
+                    }
+                    val prepared = try {
+                        parsePreparedTrack(entryMap, url)
+                    } catch (e: Exception) {
+                        Log.w(
+                            TAG,
+                            "prepareNextBatch entry skipped: index=$index " +
+                                "reason=${e.message}",
+                        )
+                        continue
+                    }
+                    val headers =
+                        if (entryMap.hasKey("headers") && !entryMap.isNull("headers")) {
+                            entryMap.getMap("headers")
+                        } else {
+                            null
+                        }
+                    val trackUserAgent = readString(entryMap, "userAgent")
+                        ?.takeIf { it.isNotBlank() }
+                    val headerString = buildHeaderString(headers)
+                    if (appended == 0) {
+                        appendPreparedTrackToMpv(prepared, headerString, trackUserAgent)
+                    } else {
+                        pendingPreparedQueue.add(
+                            QueuedPrepareEntry(prepared, headerString, trackUserAgent),
+                        )
+                    }
+                    appended += 1
+                }
+
+                if (appended == 0) {
+                    Log.w(TAG, "prepareNextBatch skipped: reason=no-valid-entries")
+                } else {
+                    Log.d(
+                        TAG,
+                        "prepareNextBatch: appended=$appended " +
+                            "queued=${pendingPreparedQueue.size}",
+                    )
+                }
+                operationPromise.resolve(null)
+            } catch (e: Exception) {
+                Log.w(TAG, "prepareNextBatch failed", e)
+                clearPreparedTrack(removeFromPlaylist = false)
+                operationPromise.reject("E_PREPARE_NEXT_BATCH", e.message, e)
             }
         }
     }
@@ -1172,6 +1360,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 if (payload.hasKey("artwork")) {
                     cachedArtwork = readString(payload, "artwork")
                 }
+                // 「JS 压根没传封面」和「传了但没抓下来」在界面上都是默认图标，
+                // 必须能分辨；只记有无与长度，不打 URL 本身。
+                Log.d(
+                    TAG,
+                    "updateMetadata: title=${cachedTitle.take(24)} " +
+                        "hasArtworkKey=${payload.hasKey("artwork")} " +
+                        "artworkLen=${cachedArtwork?.length ?: -1}",
+                )
                 val duration = validDuration(readDouble(payload, "duration"))
                 if (duration > 0) {
                     durationSecs = duration

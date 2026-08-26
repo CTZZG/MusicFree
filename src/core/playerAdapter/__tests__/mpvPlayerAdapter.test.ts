@@ -6,6 +6,7 @@ const mockNativeMpvPlayer = {
     destroy: jest.fn(async () => undefined),
     loadAndPlay: jest.fn(async () => undefined),
     prepareNext: jest.fn(async () => undefined),
+    prepareNextBatch: jest.fn(async () => undefined),
     pause: jest.fn(async () => undefined),
     resume: jest.fn(async () => undefined),
     stop: jest.fn(async () => undefined),
@@ -88,6 +89,10 @@ function lastPreparePayload() {
     return (mockNativeMpvPlayer.prepareNext.mock.calls as any[]).at(-1)?.[0] as any;
 }
 
+function lastBatchPayload() {
+    return (mockNativeMpvPlayer.prepareNextBatch.mock.calls as any[]).at(-1)?.[0] as any[];
+}
+
 async function confirmLastExplicitLoad() {
     const payload = lastLoadPayload();
     expect(payload).toBeTruthy();
@@ -113,6 +118,7 @@ describe("MpvPlayerAdapter identity state machine", () => {
         }
         mockNativeMpvPlayer.loadAndPlay.mockResolvedValue(undefined);
         mockNativeMpvPlayer.prepareNext.mockResolvedValue(undefined);
+        mockNativeMpvPlayer.prepareNextBatch.mockResolvedValue(undefined);
     });
 
     it("commits B and prepared C only after native identity confirmation", async () => {
@@ -297,7 +303,10 @@ describe("MpvPlayerAdapter identity state machine", () => {
         await confirmLastExplicitLoad();
 
         await adapter.prepareNextTrack(track("a"));
-        expect(lastPreparePayload()).toBeNull();
+        // 没有可预载项时提交的是「带原因的空 url 载荷」，原生据此走跳过分支并
+        // 打结构化日志；断言语义（没建立 runway）而不是线格式。
+        expect(lastPreparePayload()?.url).toBeFalsy();
+        expect(lastPreparePayload()?.skipReason).toBe("index-not-adjacent");
 
         mockListeners.ended?.({
             reason: "end",
@@ -337,7 +346,8 @@ describe("MpvPlayerAdapter identity state machine", () => {
         await confirmLastExplicitLoad();
         await adapter.setRepeatMode("track");
         await adapter.prepareNextTrack(track("b"));
-        expect(lastPreparePayload()).toBeNull();
+        expect(lastPreparePayload()?.url).toBeFalsy();
+        expect(lastPreparePayload()?.skipReason).toBe("repeat-track");
     });
 
     it("does not silently play item zero for an invalid start index", async () => {
@@ -544,5 +554,165 @@ describe("MpvPlayerAdapter identity state machine", () => {
         expect(mockNativeMpvPlayer.updateMetadata).toHaveBeenLastCalledWith(
             expect.objectContaining({ artwork: null }),
         );
+    });
+});
+
+describe("MpvPlayerAdapter batch runway (prepareNextTracks)", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        for (const key of Object.keys(mockListeners)) {
+            delete mockListeners[key];
+        }
+        mockNativeMpvPlayer.loadAndPlay.mockResolvedValue(undefined);
+        mockNativeMpvPlayer.prepareNext.mockResolvedValue(undefined);
+        mockNativeMpvPlayer.prepareNextBatch.mockResolvedValue(undefined);
+    });
+
+    /**
+     * 模拟原生「自动接续」为某一条 batch 里的曲目发出的事件顺序：先
+     * active(prepared)，再 ended(autoAdvanced)。曲目本身由调用方从
+     * lastBatchPayload() 里按顺序取出——原生自动接续时 JS 不会再收到新的
+     * prepareNextBatch 调用，所以不能反复读 lastBatchPayload()[0]。
+     */
+    async function promoteEntry(promoted: any, endedMediaId: string) {
+        mockListeners.active?.({
+            mediaId: promoted.mediaId,
+            loadGeneration: promoted.loadGeneration,
+            prepareToken: promoted.prepareToken,
+            queueRevision: promoted.queueRevision,
+            source: "prepared",
+        });
+        await Promise.resolve();
+        mockListeners.ended?.({
+            reason: "end",
+            autoAdvanced: true,
+            endedMediaId,
+            promotedMediaId: promoted.mediaId,
+            loadGeneration: promoted.loadGeneration,
+            prepareToken: promoted.prepareToken,
+            queueRevision: promoted.queueRevision,
+        });
+        await Promise.resolve();
+    }
+
+    it("chains consecutive resolvable tracks into one prepareNextBatch call with linked sourceMediaId", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue(
+            [track("a"), track("b"), track("c"), track("d")],
+            0,
+        );
+        await confirmLastExplicitLoad();
+
+        await adapter.prepareNextTracks([
+            track("b"),
+            track("c"),
+            track("d"),
+        ]);
+
+        expect(mockNativeMpvPlayer.prepareNext).not.toHaveBeenCalled();
+        const batch = lastBatchPayload();
+        expect(batch).toHaveLength(3);
+        expect(batch.map((p: any) => p.mediaId)).toEqual(["b", "c", "d"]);
+        // token/generation 必须逐条递增且互不相同，否则原生身份匹配会串号。
+        expect(new Set(batch.map((p: any) => p.prepareToken)).size).toBe(3);
+        expect(new Set(batch.map((p: any) => p.loadGeneration)).size).toBe(3);
+    });
+
+    it("stops collecting at the first non-adjacent or unresolved track", async () => {
+        const adapter = await createAdapter();
+        // c 在队列和候选参数里都还没解析出播放地址（音源尚未 resolve）；
+        // resolveNextCandidate 在队列没有可用 URL 时会退回候选参数本身，
+        // 所以两处都要是未解析状态，测试才能真正命中「断档」分支。
+        const unresolvedC = { ...track("c"), url: "" };
+        await adapter.loadQueue(
+            [track("a"), track("b"), unresolvedC, track("d")],
+            0,
+        );
+        await confirmLastExplicitLoad();
+
+        await adapter.prepareNextTracks([track("b"), unresolvedC, track("d")]);
+
+        // c 断档：只有 b 可以链上，批量退化为单曲路径。
+        expect(mockNativeMpvPlayer.prepareNextBatch).not.toHaveBeenCalled();
+        expect(mockNativeMpvPlayer.prepareNext).toHaveBeenCalledTimes(1);
+        expect(lastPreparePayload().mediaId).toBe("b");
+    });
+
+    it("falls back to the single-track path when only one track is given", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a"), track("b")], 0);
+        await confirmLastExplicitLoad();
+
+        await adapter.prepareNextTracks([track("b")]);
+
+        expect(mockNativeMpvPlayer.prepareNextBatch).not.toHaveBeenCalled();
+        expect(lastPreparePayload().mediaId).toBe("b");
+    });
+
+    it("delegates to the single-track path (with its diagnostics) when the first track cannot be prepared", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a"), track("b"), track("c")], 0);
+        await confirmLastExplicitLoad();
+
+        // c is not adjacent to the active index (a=0), so batching is pointless.
+        await adapter.prepareNextTracks([track("c"), track("b")]);
+
+        expect(mockNativeMpvPlayer.prepareNextBatch).not.toHaveBeenCalled();
+        expect(mockNativeMpvPlayer.prepareNext).toHaveBeenCalledTimes(1);
+        const skipped = lastPreparePayload();
+        expect(skipped.skipReason).toBe("index-not-adjacent");
+    });
+
+    it("promotes every batched track in turn without triggering identity-mismatch recovery", async () => {
+        const adapter = await createAdapter();
+        const changes: any[] = [];
+        adapter.addEventListener("trackChanged", event => changes.push(event));
+        await adapter.loadQueue(
+            [track("a"), track("b"), track("c"), track("d")],
+            0,
+        );
+        await confirmLastExplicitLoad();
+        mockNativeMpvPlayer.stop.mockClear();
+
+        await adapter.prepareNextTracks([
+            track("b"),
+            track("c"),
+            track("d"),
+        ]);
+        const [preparedB, preparedC, preparedD] = lastBatchPayload();
+
+        await promoteEntry(preparedB, "a");
+        expect((await adapter.getActiveTrack())?.id).toBe("b");
+
+        await promoteEntry(preparedC, "b");
+        expect((await adapter.getActiveTrack())?.id).toBe("c");
+
+        await promoteEntry(preparedD, "c");
+        expect((await adapter.getActiveTrack())?.id).toBe("d");
+
+        // 三次自动接续全程不需要 JS 再调一次 prepareNext，也不应该触发任何
+        // 因为身份对不上而 stop() 重载的恢复路径。
+        expect(mockNativeMpvPlayer.stop).not.toHaveBeenCalled();
+        expect(mockNativeMpvPlayer.prepareNext).not.toHaveBeenCalled();
+        expect(changes.map(item => item.track.id)).toEqual(["a", "b", "c", "d"]);
+    });
+
+    it("clears the whole runway when a reorder breaks the adjacency chain", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue(
+            [track("a"), track("b"), track("c"), track("d")],
+            0,
+        );
+        await confirmLastExplicitLoad();
+        await adapter.prepareNextTracks([track("b"), track("c")]);
+        expect(lastBatchPayload()).toHaveLength(2);
+        mockNativeMpvPlayer.prepareNext.mockClear();
+
+        // 把 c 挪到 b 前面：b 不再紧邻 active(a)，整条链失效。
+        await adapter.syncQueueOrder(
+            [track("a"), track("c"), track("b"), track("d")],
+        );
+
+        expect(mockNativeMpvPlayer.prepareNext).toHaveBeenCalledWith(null);
     });
 });

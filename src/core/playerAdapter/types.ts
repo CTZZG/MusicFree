@@ -235,6 +235,17 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
      */
     prepareNextTrack?(track?: TTrack | null): Promise<void>;
 
+    /**
+     * 批量版 prepareNextTrack：一次性把「未来会依次自然播放的几首」都交给
+     * 后端，让后端在每首成功切换后自己往下接续，不需要应用层在每首之间
+     * 都醒着再调用一次。仅 mpv 这类「后端自己维护有限 runway」的后端需要
+     * 实现；以原生队列为准的后端（如 nitro）不需要，也不应该实现——它们
+     * 的「下一首」概念本就不是由这里的单槽预备机制决定的。
+     * 数组顺序即为预期的自然播放顺序；后端可以在任意一项失败校验时提前
+     * 截断，只预备它能确认连续的那一段前缀。
+     */
+    prepareNextTracks?(tracks: ReadonlyArray<TTrack | null | undefined>): Promise<void>;
+
     /** 消费后端自己的 play-next/up-next 临时队列，不触碰主队列。 */
     consumeTemporaryNextTrack?(): Promise<boolean>;
 

@@ -9,6 +9,7 @@ import NativeMpvPlayer, {
     MpvRemoteCommand,
 } from "./nativeMpvPlayer";
 import { encodeMpvMediaId, matchesMpvMediaId } from "./mpvMediaId";
+import { isStaleMpvRemoteCommand } from "./mpvRemoteCommandPolicy";
 import {
     collectMpvNextIndices,
     computeMpvNextIndex,
@@ -177,7 +178,23 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     private suppressNativeEndedStateUntil = 0;
     private playNextQueue: MpvTrack[] = [];
     private upNextQueue: MpvTrack[] = [];
-    private preparedNextTrack: PreparedNextTrack | null = null;
+    /**
+     * 预备曲目 runway：下标 0 是「即将提升的下一首」，与今天单曲预备语义
+     * 完全一致；后面的下标是 prepareNextTracks 批量预备时排队的后续曲目，
+     * 由原生在每首成功提升后自动接续追加，不需要 JS 醒着再调用一次。
+     * preparedNextTrack getter/setter 是兼容层：读取/清空/整体替换都按
+     * 「只有队首一首」的旧语义工作，让本文件里其余~25 处既有调用点不用改。
+     */
+    private preparedNextRunway: PreparedNextTrack[] = [];
+
+    private get preparedNextTrack(): PreparedNextTrack | null {
+        return this.preparedNextRunway[0] ?? null;
+    }
+
+    private set preparedNextTrack(value: PreparedNextTrack | null) {
+        this.preparedNextRunway = value ? [value] : [];
+    }
+
     private confirmedPromotion: PreparedNextTrack | null = null;
     /** 是否已向原生加载过音轨（决定 play() 是 resume 还是首次加载） */
     private hasLoaded = false;
@@ -301,8 +318,27 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         });
 
         NativeMpvPlayer.addRemoteCommandListener(
-            ({ command, position, volume, mediaId }) => {
-                this.handleRemoteCommand(command, position, volume, mediaId);
+            ({ command, position, volume, mediaId, enqueuedAt }) => {
+                if (
+                    isStaleMpvRemoteCommand({
+                        command,
+                        enqueuedAt,
+                        now: Date.now(),
+                    })
+                ) {
+                    errorLog(
+                        "MpvPlayer 丢弃过期远程命令",
+                        `${command} enqueuedAt=${enqueuedAt}`,
+                    );
+                    return;
+                }
+                this.handleRemoteCommand(
+                    command,
+                    position,
+                    volume,
+                    mediaId,
+                    enqueuedAt,
+                );
             },
         );
 
@@ -461,14 +497,12 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         }
     }
 
-    async prepareNextTrack(track?: MpvTrack | null) {
-        if (!track) {
-            this.preparedNextTrack = null;
-            this.nextPrepareToken();
-            await NativeMpvPlayer.prepareNext(null).catch(() => undefined);
-            return;
-        }
-
+    /**
+     * 把某个候选下一首解析成「队列里最新的那份数据 + 是否有可播放 URL + 队列
+     * 下标」，不做相邻性判断、不产生任何副作用。prepareNextTrack（单曲）和
+     * prepareNextTracks（批量）共用这一步，避免两条路径的解析逻辑跑偏。
+     */
+    private resolveNextCandidate(track: MpvTrack) {
         const key = keyOf(track);
         const queueTrack =
             this.queue.find(item => keyOf(item) === key) ?? track;
@@ -477,6 +511,22 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             : track;
         const nativePrepared = isPlayableUrl(resolvedTrack.url);
         const index = this.indexOfRef(resolvedTrack);
+        return { key, resolvedTrack, nativePrepared, index };
+    }
+
+    async prepareNextTrack(track?: MpvTrack | null) {
+        if (!track) {
+            this.preparedNextTrack = null;
+            this.nextPrepareToken();
+            await NativeMpvPlayer.prepareNext({
+                skipReason: "no-next-track",
+                queueRevision: this.queueRevision,
+            }).catch(() => undefined);
+            return;
+        }
+
+        const { key, resolvedTrack, nativePrepared, index } =
+            this.resolveNextCandidate(track);
         const canPrepare =
             nativePrepared &&
             this.repeatMode !== "track" &&
@@ -521,7 +571,27 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
         if (!canPrepare) {
             this.preparedNextTrack = null;
-            await NativeMpvPlayer.prepareNext(null).catch(() => undefined);
+            // 把「为什么没能预载」带给原生，让 runway 被清空这件事在 release
+            // logcat 里留痕。index / activeIndex 不相邻是队列身份错位的签名
+            // （同一首歌在队列里出现多次时，JS 侧索引与 adapter 侧索引方向相反）。
+            const skipReason = !nativePrepared
+                ? "unresolved-url"
+                : this.repeatMode === "track"
+                    ? "repeat-track"
+                    : this.playNextQueue.length > 0
+                        ? "play-next-queue"
+                        : this.upNextQueue.length > 0
+                            ? "up-next-queue"
+                            : this.activeIndex < 0
+                                ? "no-active-index"
+                                : "index-not-adjacent";
+            await NativeMpvPlayer.prepareNext({
+                skipReason,
+                mediaId: key,
+                index,
+                activeIndex: this.activeIndex,
+                queueRevision: this.queueRevision,
+            }).catch(() => undefined);
             return;
         }
 
@@ -538,6 +608,124 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             if (this.preparedNextTrack?.prepareToken === prepareToken) {
                 this.preparedNextTrack = null;
             }
+            throw error;
+        }
+    }
+
+    /**
+     * 批量预备：第一首的可预备判定与 prepareNextTrack 完全一致（同一个
+     * resolveNextCandidate + 同一套 canPrepare 条件）；一旦它判定不可预备，
+     * 批量预备就没有意义，直接退化成单曲路径（连同它的诊断日志一起复用）。
+     * 后续曲目必须与前一首在队列里连续相邻、且 URL 已解析，一旦断档就停止
+     * 往后收集——mpv 只能按 playlist 顺序播放，断档之后的曲目原生够不着。
+     *
+     * 注意：这里只会调用一次原生方法（prepareNext 或 prepareNextBatch 二选
+     * 一），不会先单独 prepare 队首再整体重发一遍——那样会对同一首歌重复
+     * remove/append，正是单曲路径里那条幂等注释专门要避免的事。
+     */
+    async prepareNextTracks(tracks: ReadonlyArray<MpvTrack | null | undefined>) {
+        const [first, ...rest] = tracks;
+        if (!first) {
+            await this.prepareNextTrack(null);
+            return;
+        }
+
+        const firstCandidate = this.resolveNextCandidate(first);
+        const canPrepareFirst =
+            firstCandidate.nativePrepared &&
+            this.repeatMode !== "track" &&
+            this.playNextQueue.length === 0 &&
+            this.upNextQueue.length === 0 &&
+            this.activeIndex >= 0 &&
+            firstCandidate.index === this.activeIndex + 1;
+
+        if (!canPrepareFirst) {
+            await this.prepareNextTrack(first);
+            return;
+        }
+
+        const candidates = [
+            {
+                key: firstCandidate.key,
+                resolvedTrack: firstCandidate.resolvedTrack,
+                index: firstCandidate.index,
+            },
+        ];
+        let previousIndex = firstCandidate.index;
+        for (const candidate of rest) {
+            if (!candidate) {
+                break;
+            }
+            const resolved = this.resolveNextCandidate(candidate);
+            if (!resolved.nativePrepared || resolved.index !== previousIndex + 1) {
+                break;
+            }
+            candidates.push({
+                key: resolved.key,
+                resolvedTrack: resolved.resolvedTrack,
+                index: resolved.index,
+            });
+            previousIndex = resolved.index;
+        }
+
+        if (candidates.length === 1) {
+            // 没有能接续的后续曲目，走单曲路径即可（含它自己的幂等检查）。
+            await this.prepareNextTrack(first);
+            return;
+        }
+
+        // 幂等短路：新算出的 runway 与现有的完全一致（身份、顺序、URL、
+        // queueRevision 都没变）时不重新 remove/append，避免正在原生切换中
+        // 的 token 失效——这是单曲路径那条幂等分支在批量场景下的等价物。
+        const existingRunway = this.preparedNextRunway;
+        const sameAsExisting =
+            existingRunway.length === candidates.length &&
+            existingRunway[0]?.sourceMediaId === this.activeMediaId &&
+            existingRunway.every(
+                (entry, i) =>
+                    entry.mediaId === candidates[i].key &&
+                    entry.index === candidates[i].index &&
+                    entry.queueRevision === this.queueRevision &&
+                    entry.track.url === candidates[i].resolvedTrack.url,
+            );
+        if (sameAsExisting) {
+            this.preparedNextRunway = existingRunway.map((entry, i) => ({
+                ...entry,
+                track: candidates[i].resolvedTrack,
+            }));
+            return;
+        }
+
+        const runway: PreparedNextTrack[] = candidates.map((candidate, i) => ({
+            key: candidate.key,
+            track: candidate.resolvedTrack,
+            nativePrepared: true,
+            index: candidate.index,
+            // 链式接续：这一条被提升之前，实际会成为"当前曲目"的必然是它在
+            // runway 里的前一条，不是批量预备发生时的 activeMediaId。
+            sourceMediaId: i === 0 ? this.activeMediaId : candidates[i - 1].key,
+            mediaId: candidate.key,
+            loadGeneration: this.nextLoadGeneration(),
+            prepareToken: this.nextPrepareToken(),
+            queueRevision: this.queueRevision,
+        }));
+
+        this.preparedNextRunway = runway;
+        try {
+            await NativeMpvPlayer.prepareNextBatch(
+                runway.map(entry =>
+                    toLoadPayload(entry.track, {
+                        mediaId: entry.mediaId,
+                        loadGeneration: entry.loadGeneration,
+                        prepareToken: entry.prepareToken,
+                        queueRevision: entry.queueRevision,
+                    }),
+                ),
+            );
+        } catch (error) {
+            // 批量调用失败：这次调用还没有任何一首真正进过原生 prepareNext，
+            // 整条 runway 都不可信，清空后交给下次 replenish 重建。
+            this.preparedNextRunway = [];
             throw error;
         }
     }
@@ -718,17 +906,25 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     private async handleNativeActiveTrackChanged(
         event: MpvActiveTrackChangedEvent,
     ) {
-        if (event.source === "prepared" && this.matchesPreparedIdentity(event)) {
-            const prepared = this.preparedNextTrack!;
-            this.confirmedPromotion = prepared;
-            this.preparedNextTrack = null;
-            this.commitActiveTrack(
-                prepared.index,
-                prepared.mediaId,
-                prepared.loadGeneration,
-                "end",
+        if (event.source === "prepared") {
+            // 批量预备时，队首之后还可能排着后续曲目；原生每提升一首就发一次
+            // 这个事件，不一定总是命中当前队首（正常顺序推进时会是），所以在
+            // 整条 runway 里按身份查找，只摘除命中的那一条，其余留给它们自己
+            // 之后的提升事件处理。
+            const matchedIndex = this.preparedNextRunway.findIndex(entry =>
+                this.matchesPreparedIdentity(event, entry),
             );
-            return;
+            if (matchedIndex >= 0) {
+                const [prepared] = this.preparedNextRunway.splice(matchedIndex, 1);
+                this.confirmedPromotion = prepared;
+                this.commitActiveTrack(
+                    prepared.index,
+                    prepared.mediaId,
+                    prepared.loadGeneration,
+                    "end",
+                );
+                return;
+            }
         }
 
         const pending = this.pendingActivation;
@@ -1134,6 +1330,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     async getPlaybackDiagnostics() {
         return {
+            // 淡入淡出直接改这个音量。「切歌后没声音」这类故障单看队列状态
+            // 完全看不出来，必须把它暴露在诊断里才有得查。
+            volume: this.volume,
+            duckRatio: this.duckRatio,
             queueRevision: this.queueRevision,
             desiredIndex: this.desiredIndex,
             pendingIndex: this.pendingIndex,
@@ -1252,7 +1452,18 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.preparedNextTrack?.key === keyOf(merged) &&
             isPlayableUrl(merged.url)
         ) {
+            // 命中队首：走单曲重新预备，行为和批量化之前完全一样。
             await this.prepareNextTrack(merged).catch(() => undefined);
+        } else if (
+            this.preparedNextRunway
+                .slice(1)
+                .some(entry => entry.key === keyOf(merged)) &&
+            isPlayableUrl(merged.url)
+        ) {
+            // 命中队首之后的排队曲目：这类曲目原生还没追加过，没有对应的单曲
+            // 重新预备路径可以安全复用。直接清空整条 runway，交给后续的
+            // replenish 重新按最新 URL 建一批，比原地更新 headers/UA 更稳妥。
+            this.preparedNextTrack = null;
         } else if (target === this.activeIndex) {
             // 当前曲目元数据变化，刷新锁屏/通知展示
             await NativeMpvPlayer.updateMetadata({
@@ -1635,16 +1846,30 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.bumpQueueRevision();
             await this.clearPreparedNextTrack();
         }
-        if (this.preparedNextTrack) {
-            const preparedIndex = this.queue.findIndex(
-                t => keyOf(t) === this.preparedNextTrack?.key,
-            );
-            if (preparedIndex >= 0) {
-                this.preparedNextTrack = {
-                    ...this.preparedNextTrack,
+        if (this.preparedNextRunway.length) {
+            // runway 里每一条都必须仍然紧邻着它的前一条（队首紧邻当前曲目），
+            // 才能保持「mpv playlist 按顺序自动接续」这条假设；任何一环对不上
+            // 就整条清空，交给 replenish 按最新队列重新建一批，不做部分保留。
+            const relocated: PreparedNextTrack[] = [];
+            let expectedIndex = this.activeIndex + 1;
+            let valid = this.activeIndex >= 0;
+            for (const entry of this.preparedNextRunway) {
+                const preparedIndex = valid
+                    ? this.queue.findIndex(t => keyOf(t) === entry.key)
+                    : -1;
+                if (preparedIndex !== expectedIndex) {
+                    valid = false;
+                    break;
+                }
+                relocated.push({
+                    ...entry,
                     track: this.queue[preparedIndex],
                     index: preparedIndex,
-                };
+                });
+                expectedIndex += 1;
+            }
+            if (valid) {
+                this.preparedNextRunway = relocated;
             } else {
                 await this.clearPreparedNextTrack();
             }
@@ -1659,6 +1884,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         position?: number,
         volume?: number,
         mediaId?: string,
+        enqueuedAt?: number,
     ) {
         const runRemoteTask = (
             task: Promise<unknown> | void,
@@ -1701,6 +1927,8 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     const result = l({
                         position,
                         volume,
+                        // 原生入队时间：上层据此判断这条意图在队列里等太久后是否作废
+                        enqueuedAt,
                         ducking: command === "duck",
                     });
                     Promise.resolve(result).catch(error => {
