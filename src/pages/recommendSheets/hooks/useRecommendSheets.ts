@@ -68,8 +68,7 @@ export default function (pluginHash: string, tag: ICommon.IUnique) {
 
         try {
             const plugin = PluginManager.getByHash(pluginHash);
-            const request = plugin?.methods?.getRecommendSheetsByTag;
-            if (!plugin || !request) {
+            if (!plugin?.methods?.getRecommendSheetsByTag) {
                 if (!isCurrentRequest()) {
                     return;
                 }
@@ -79,7 +78,10 @@ export default function (pluginHash: string, tag: ICommon.IUnique) {
                 return;
             }
 
-            const result = await request(tagRef.current, page);
+            const result = await plugin.methods.getRecommendSheetsByTag(
+                tagRef.current,
+                page,
+            );
             if (!isCurrentRequest()) {
                 return;
             }
