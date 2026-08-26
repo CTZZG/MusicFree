@@ -40,6 +40,11 @@ export function mergeEditedListWithConcurrentChanges<T>(params: {
     return merged;
 }
 
+export function normalizeLocalMusicDurationMilliseconds(value: unknown) {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : 0;
+}
+
 export interface IParsedLocalMusicFilename {
     platform?: string;
     id?: string;

@@ -1,6 +1,7 @@
 import {
     createLocalMusicFileIdentity,
     mergeEditedListWithConcurrentChanges,
+    normalizeLocalMusicDurationMilliseconds,
     resolveLocalMusicImportFields,
 } from "../localMusicSheetPolicy";
 
@@ -127,6 +128,16 @@ describe("resolveLocalMusicImportFields", () => {
             title: "标签标题",
             artist: "标签歌手",
         });
+    });
+});
+
+describe("normalizeLocalMusicDurationMilliseconds", () => {
+    it("keeps finite numeric metadata and rejects invalid duration values", () => {
+        expect(normalizeLocalMusicDurationMilliseconds(12_345.9)).toBe(12_345);
+        expect(normalizeLocalMusicDurationMilliseconds("12000")).toBe(12_000);
+        expect(normalizeLocalMusicDurationMilliseconds("not-a-duration")).toBe(0);
+        expect(normalizeLocalMusicDurationMilliseconds(Number.NaN)).toBe(0);
+        expect(normalizeLocalMusicDurationMilliseconds(-1)).toBe(0);
     });
 });
 

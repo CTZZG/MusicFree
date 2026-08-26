@@ -4,71 +4,21 @@ import { ROUTE_PATH, useNavigate } from "@/core/router";
 import LocalMusicList from "./localMusicList";
 import { localMusicSheetId } from "@/constants/commonConst";
 import Toast from "@/utils/toast";
-import { showDialog } from "@/components/dialogs/useDialog";
 import AppBar from "@/components/base/appBar";
 import { useI18N } from "@/core/i18n";
 import { ensureAndroidAudioReadPermission } from "@/utils/androidMediaPermission";
 import StorageUri from "@/native/storageUri";
 import { Platform } from "react-native";
+import { useAppConfig } from "@/core/appConfig";
+import { normalizeLocalMusicScanPolicy } from "@/core/localMusicScanPolicy";
+import useLocalMusicScanFlow from "../scanFlow";
 
 export default function MainPage() {
     const navigate = useNavigate();
     const { t } = useI18N();
-
-    function showScanResultToast(
-        report: Awaited<ReturnType<typeof LocalMusicSheet.importLocal>>,
-    ) {
-        const repairedCount =
-            report.exactMatchedCount + report.weakMatchedCount;
-
-        Toast.success(t("localMusic.scanResult.summary", {
-            scanned: report.scannedCount,
-            added: report.addedCount,
-            repaired: repairedCount,
-            filtered: report.filteredCount,
-        }));
-    }
-
-    function showScanProgress(
-        promise: ReturnType<typeof LocalMusicSheet.importLocal>,
-    ) {
-        return new Promise<boolean>(resolve => {
-            let settled = false;
-            const settle = (result: boolean) => {
-                if (!settled) {
-                    settled = true;
-                    resolve(result);
-                }
-            };
-            showDialog("LoadingDialog", {
-                title: t("localMusic.scanLocalMusic"),
-                promise,
-                onResolve(data, hideDialog) {
-                    Toast.success(t("toast.importSuccess"));
-                    hideDialog();
-                    showScanResultToast(data);
-                    settle(true);
-                },
-                onReject(reason, hideDialog) {
-                    if (reason?.message !== "Import Broken") {
-                        Toast.warn(
-                            reason?.code === "E_URI_PERMISSION_REVOKED"
-                                ? t("localMusic.folderPermissionRequired")
-                                : reason?.message ??
-                                      t("localMusic.scanFailed"),
-                        );
-                    }
-                    hideDialog();
-                    settle(false);
-                },
-                onCancel(hideDialog) {
-                    LocalMusicSheet.cancelImportLocal();
-                    hideDialog();
-                    settle(false);
-                },
-            });
-        });
-    }
+    const storedScanPolicy = useAppConfig("localMusic.scanPolicy");
+    const scanPolicy = normalizeLocalMusicScanPolicy(storedScanPolicy);
+    const showScanProgress = useLocalMusicScanFlow();
 
     return (
         <>
@@ -90,6 +40,13 @@ export default function MainPage() {
                 ]}
                 menu={[
                     {
+                        icon: "cog-8-tooth",
+                        title: t("localMusic.scanSettings.title"),
+                        onPress() {
+                            navigate(ROUTE_PATH.LOCAL_SCAN_SETTINGS);
+                        },
+                    },
+                    {
                         icon: "magnifying-glass",
                         title:
                             Platform.OS === "android"
@@ -108,7 +65,11 @@ export default function MainPage() {
                                     return;
                                 }
                                 showScanProgress(
-                                    LocalMusicSheet.importAndroidMediaStore(),
+                                    onProgress =>
+                                        LocalMusicSheet.importAndroidMediaStore(
+                                            scanPolicy,
+                                            onProgress,
+                                        ),
                                 );
                                 return;
                             }
@@ -118,8 +79,10 @@ export default function MainPage() {
                                 actionText: t("localMusic.beginScan"),
                                 async onAction(selectedFiles) {
                                     return showScanProgress(
-                                        LocalMusicSheet.importLocal(
+                                        onProgress => LocalMusicSheet.importLocal(
                                             selectedFiles.map(_ => _.path),
+                                            scanPolicy,
+                                            onProgress,
                                         ),
                                     );
                                 },
@@ -146,9 +109,12 @@ export default function MainPage() {
                                     return;
                                 }
                                 showScanProgress(
-                                    LocalMusicSheet.importAndroidDirectory(
-                                        directory.uri,
-                                    ),
+                                    onProgress =>
+                                        LocalMusicSheet.importAndroidDirectory(
+                                            directory.uri,
+                                            scanPolicy,
+                                            onProgress,
+                                        ),
                                 );
                             } catch (reason: any) {
                                 Toast.warn(

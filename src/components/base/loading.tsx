@@ -1,4 +1,4 @@
-import React from "react";
+import React, { ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ThemeText from "./themeText";
@@ -6,7 +6,7 @@ import useColors from "@/hooks/useColors";
 import { useI18N } from "@/core/i18n";
 
 interface ILoadingProps {
-    text?: string;
+    text?: ReactNode;
     showText?: boolean;
     height?: number;
     color?: string;

@@ -7,6 +7,7 @@ export interface IStorageUriMetadata {
     displayName: string | null;
     mimeType: string | null;
     size: number | null;
+    modifiedAt: number | null;
 }
 
 export interface IMediaStoreAudioItem extends IStorageUriMetadata {

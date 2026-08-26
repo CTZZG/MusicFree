@@ -312,6 +312,7 @@ class StorageUriModule(
             putNullableString("displayName", displayName)
             putNullableString("mimeType", resolver.getType(uri))
             putNullableDouble("size", size)
+            putNull("modifiedAt")
         }
     }
 
@@ -319,7 +320,8 @@ class StorageUriModule(
         val uri: Uri,
         val displayName: String,
         val mimeType: String?,
-        val size: Long?
+        val size: Long?,
+        val modifiedAt: Long?
     )
 
     private data class DirectoryNode(
@@ -338,6 +340,10 @@ class StorageUriModule(
             putNullableString("displayName", file.name.takeIf { it.isNotBlank() })
             putNullableString("mimeType", null)
             putNullableDouble("size", file.takeIf { it.exists() }?.length())
+            putNullableDouble(
+                "modifiedAt",
+                file.takeIf { it.exists() }?.lastModified()
+            )
         }
     }
 
@@ -804,7 +810,8 @@ class StorageUriModule(
                             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                             DocumentsContract.Document.COLUMN_MIME_TYPE,
-                            DocumentsContract.Document.COLUMN_SIZE
+                            DocumentsContract.Document.COLUMN_SIZE,
+                            DocumentsContract.Document.COLUMN_LAST_MODIFIED
                         ),
                         null,
                         null,
@@ -857,6 +864,9 @@ class StorageUriModule(
                                     mimeType = mimeType,
                                     size = cursor.optionalLong(
                                         DocumentsContract.Document.COLUMN_SIZE
+                                    ),
+                                    modifiedAt = cursor.optionalLong(
+                                        DocumentsContract.Document.COLUMN_LAST_MODIFIED
                                     )
                                 )
                             )
@@ -883,6 +893,10 @@ class StorageUriModule(
                                     document.mimeType
                                 )
                                 putNullableDouble("size", document.size)
+                                putNullableDouble(
+                                    "modifiedAt",
+                                    document.modifiedAt
+                                )
                                 putBoolean("persisted", true)
                             }
                         )
@@ -1122,6 +1136,7 @@ class StorageUriModule(
                     MediaStore.Audio.Media.DISPLAY_NAME,
                     MediaStore.Audio.Media.MIME_TYPE,
                     MediaStore.Audio.Media.SIZE,
+                    MediaStore.Audio.Media.DATE_MODIFIED,
                     MediaStore.Audio.Media.DURATION,
                     MediaStore.Audio.Media.TITLE,
                     MediaStore.Audio.Media.ARTIST,
@@ -1170,6 +1185,12 @@ class StorageUriModule(
                                 cursor.optionalLong(
                                     MediaStore.Audio.Media.DURATION
                                 )
+                            )
+                            putNullableDouble(
+                                "modifiedAt",
+                                cursor.optionalLong(
+                                    MediaStore.Audio.Media.DATE_MODIFIED
+                                )?.times(1000)
                             )
                             putNullableString(
                                 "title",
