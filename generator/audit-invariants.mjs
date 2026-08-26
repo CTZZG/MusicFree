@@ -161,11 +161,12 @@ if (fs.existsSync(mergedManifestPath)) {
         ),
         "merged release manifest must reference the network security config",
     );
+    // 反向断言：应用不该再拖进 WorkManager。它此前唯一的来源是 Nitro。
     expect(
-        /android:name="androidx\.work\.WorkManagerInitializer"/.test(
+        !/android:name="androidx\.work\.WorkManagerInitializer"/.test(
             mergedManifest,
         ),
-        "merged release manifest must retain WorkManagerInitializer for Nitro DownloadManagerCore",
+        "merged release manifest must not pull in WorkManagerInitializer anymore",
     );
 } else {
     console.log(
@@ -200,12 +201,7 @@ expect(
     !/WebdavHttpTransportPackage|RemoteHostResolverPackage/.test(mainApplication),
     "reverted native packages must not be re-registered in MainApplication",
 );
-expect(
-    !/MusicFreePublicHttpDataSource\.kt/.test(
-        read("patches/react-native-nitro-player+1.5.0.patch"),
-    ),
-    "the reverted Nitro data source must not reappear in the patch",
-);
+// Nitro 播放后端已整体移除，其 patch 与相关断言随之退役。
 
 // --- 结果 --------------------------------------------------------------------
 if (failures.length) {

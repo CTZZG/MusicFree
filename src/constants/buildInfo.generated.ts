@@ -5,18 +5,18 @@ export const buildInfo = {
     "appVersion": "0.7.3",
     "packageVersion": "0.7.3",
     "versionCode": "400022",
-    "gitSha": "c35e6bab80f6b82c1ae82af398871a6994d48603",
-    "shortSha": "c35e6ba",
-    "gitRef": "feat/mpv-player",
+    "gitSha": "d9b8f42604084edc98e3a0921665caca99776243",
+    "shortSha": "d9b8f42",
+    "gitRef": "feat/mpv-only",
     "gitRefType": "branch",
     "buildRunUrl": "",
-    "buildDate": "2026-08-26T05:39:35.807Z",
+    "buildDate": "2026-08-26T08:14:11.693Z",
     "signing": "configured",
     "node": "v24.15.0",
     "react": "19.2.3",
     "reactNative": "0.85.3",
     "expo": "56.0.8",
-    "nitroPlayer": "1.5.0",
+    "nitroPlayer": "unknown",
 } as const;
 
 export type BuildInfo = typeof buildInfo;

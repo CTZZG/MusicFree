@@ -76,12 +76,16 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
         }
     }
 
-    private fun getPlaybackServiceDefinitions(): List<Pair<String, String>> = listOf(
-        Pair(
-            "com.margelo.nitro.nitroplayer.media.NitroPlayerPlaybackService",
-            "com.margelo.nitro.nitroplayer.SHUTDOWN"
-        )
-    )
+    /**
+     * 退出时需要额外广播关闭的播放服务（类名, 关闭 action）。
+     *
+     * Nitro 播放后端移除后这里为空：mpv 的前台服务由
+     * stopMusicFreePlaybackServices 之外的路径直接 stopService，不需要反射。
+     * 保留这个结构是因为退出流程的其余部分依赖它遍历，且未来若再引入
+     * 第三方播放服务可直接登记。
+     */
+    private fun getPlaybackServiceDefinitions(): List<Pair<String, String>> =
+        emptyList()
 
     private fun killCurrentProcess() {
         android.os.Process.killProcess(android.os.Process.myPid())

@@ -5,15 +5,11 @@ import {
 } from "../mediaHttpCompatibilityPolicy";
 
 function createConfig(
-    backend: "nitro-player" | "mpv",
     enabled: boolean,
     pluginHttp = false,
 ) {
     return {
         getConfig(key: string) {
-            if (key === "basic.playerBackend") {
-                return backend;
-            }
             if (key === "basic.allowInsecureMediaPlayback") {
                 return enabled;
             }
@@ -26,31 +22,29 @@ function createConfig(
 }
 
 describe("media HTTP compatibility policy", () => {
-    it("requires Android, MPV, and explicit user opt-in", () => {
+    // 后端条件已随 Nitro 移除而消失（只剩 MPV 一个后端）；剩下的两个
+    // 前置条件仍必须成立：Android 平台 + 用户显式开启。
+    it("requires Android and explicit user opt-in", () => {
         expect(isInsecureMediaPlaybackAllowed(
-            createConfig("mpv", true),
+            createConfig(true),
             "android",
         )).toBe(true);
         expect(isInsecureMediaPlaybackAllowed(
-            createConfig("nitro-player", true),
+            createConfig(false),
             "android",
         )).toBe(false);
         expect(isInsecureMediaPlaybackAllowed(
-            createConfig("mpv", false),
-            "android",
-        )).toBe(false);
-        expect(isInsecureMediaPlaybackAllowed(
-            createConfig("mpv", true),
+            createConfig(true),
             "ios",
         )).toBe(false);
     });
 
     it("gates the plugin cleartext switch on nothing but the switch", () => {
         expect(isPluginInsecureHttpAllowed(
-            createConfig("nitro-player", false, true),
+            createConfig(false, true),
         )).toBe(true);
         expect(isPluginInsecureHttpAllowed(
-            createConfig("nitro-player", false, false),
+            createConfig(false, false),
         )).toBe(false);
     });
 
@@ -62,25 +56,25 @@ describe("media HTTP compatibility policy", () => {
     describe("isMediaHttpAllowed", () => {
         it("allows media HTTP on the default backend once the plugin switch is on", () => {
             expect(isMediaHttpAllowed(
-                createConfig("nitro-player", false, true),
+                createConfig(false, true),
                 "android",
             )).toBe(true);
         });
 
         it("still honours the legacy MPV-only switch", () => {
             expect(isMediaHttpAllowed(
-                createConfig("mpv", true, false),
+                createConfig(true, false),
                 "android",
             )).toBe(true);
         });
 
         it("refuses when neither switch is on", () => {
             expect(isMediaHttpAllowed(
-                createConfig("nitro-player", false, false),
+                createConfig(false, false),
                 "android",
             )).toBe(false);
             expect(isMediaHttpAllowed(
-                createConfig("mpv", false, false),
+                createConfig(false, false),
                 "android",
             )).toBe(false);
         });
@@ -90,11 +84,11 @@ describe("media HTTP compatibility policy", () => {
             // loopback proxy. The plugin cleartext opt-in is a policy decision
             // and is not platform specific.
             expect(isMediaHttpAllowed(
-                createConfig("mpv", true, false),
+                createConfig(true, false),
                 "ios",
             )).toBe(false);
             expect(isMediaHttpAllowed(
-                createConfig("nitro-player", false, true),
+                createConfig(false, true),
                 "ios",
             )).toBe(true);
         });

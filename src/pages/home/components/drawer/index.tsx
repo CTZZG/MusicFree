@@ -17,8 +17,6 @@ import React, { memo, ReactNode } from "react";
 import { BackHandler, Platform, StyleSheet, View } from "react-native";
 import deviceInfoModule from "react-native-device-info";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
-import { useAppConfig } from "@/core/appConfig";
-import { isEqualizerSupported } from "@/core/equalizer/nitroController";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface ISettingOptions {
@@ -100,10 +98,6 @@ function HomeDrawer(props: any) {
     const applicationName = deviceInfoModule.getApplicationName();
     const currentVersion = `${t("sidebar.currentVersion")}${deviceInfoModule.getVersion()}`;
 
-    const equalizerSupported = isEqualizerSupported(
-        useAppConfig("basic.playerBackend"),
-    );
-
     const basicSetting: ISettingOptions[] = [
         {
             key: "basic",
@@ -121,21 +115,6 @@ function HomeDrawer(props: any) {
                 navigateToSetting("plugin");
             },
         },
-        // 均衡器只在 Nitro 后端可用：效果器挂在播放器音频会话上，
-        // MPV 有独立音频链路不经过该会话。入口随后端出现/消失，
-        // 而不是给一个点进去没效果的页面（那正是它此前被隐藏的原因）。
-        ...(equalizerSupported
-            ? [
-                {
-                    key: "equalizer",
-                    icon: "bars-3",
-                    title: t("sidebar.equalizer"),
-                    onPress: () => {
-                        navigateToSetting("equalizer");
-                    },
-                } as ISettingOptions,
-            ]
-            : []),
         {
             key: "theme",
             icon: "t-shirt-outline",

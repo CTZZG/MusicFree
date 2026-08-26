@@ -6,7 +6,6 @@ export function isInsecureMediaPlaybackAllowed(
     platform = Platform.OS,
 ) {
     return platform === "android" &&
-        config.getConfig("basic.playerBackend") === "mpv" &&
         config.getConfig("basic.allowInsecureMediaPlayback") === true;
 }
 

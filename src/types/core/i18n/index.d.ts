@@ -55,7 +55,6 @@ export interface ILanguageData {
     "sidebar.basicSettings": string; // 基本设置
     "sidebar.pluginManagement": string; // 插件管理
     "sidebar.themeSettings": string; // 主题设置
-    "sidebar.equalizer": string; // 均衡器
     "sidebar.scheduleClose": string; // 定时关闭
     "sidebar.backupAndResume": string; // 备份与恢复
     "sidebar.permissionManagement": string; // 权限管理
@@ -831,10 +830,6 @@ export interface ILanguageData {
     "basicSettings.qualityManagement": string; // 音质管理
     "basicSettings.qualityManagement.custom": string; // 自定义
     "basicSettings.defaultPlayQuality": string; // 默认播放音质
-    "basicSettings.playerBackend": string; // 播放内核
-    "basicSettings.playerBackend.nitro": string;
-    "basicSettings.playerBackend.mpv": string;
-    "basicSettings.playerBackend.restartHint": string;
     "basicSettings.playQualityOrder": string; // 默认播放音质缺失时
     "basicSettings.playQualityOrder.asc": string; // 播放更高音质
     "basicSettings.playQualityOrder.desc": string; // 播放更低音质

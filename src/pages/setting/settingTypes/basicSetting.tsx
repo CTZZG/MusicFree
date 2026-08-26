@@ -179,7 +179,6 @@ export default function BasicSetting() {
     const crossfadeSeconds = useAppConfig("basic.crossfadeSeconds");
     const maxCacheSize = useAppConfig("basic.maxCacheSize");
     const defaultPlayQuality = useAppConfig("basic.defaultPlayQuality");
-    const playerBackend = useAppConfig("basic.playerBackend");
     const playQualityOrder = useAppConfig("basic.playQualityOrder");
     const defaultDownloadQuality = useAppConfig("basic.defaultDownloadQuality");
     const downloadQualityOrder = useAppConfig("basic.downloadQualityOrder");
@@ -522,29 +521,6 @@ export default function BasicSetting() {
                         desc: t("basicSettings.playQualityOrder.desc"),
                     },
                 ),
-                // mpv 播放内核为实验性，仅 Android 8.0+（libmpv 要求 API≥26）提供选项
-                ...(Platform.OS === "android" && Number(Platform.Version) >= 26
-                    ? [
-                        createRadio(
-                            t("basicSettings.playerBackend"),
-                            "basic.playerBackend",
-                            ["nitro-player", "mpv"],
-                            playerBackend ?? "nitro-player",
-                            {
-                                "nitro-player": t(
-                                    "basicSettings.playerBackend.nitro",
-                                ),
-                                mpv: t("basicSettings.playerBackend.mpv"),
-                            },
-                            () =>
-                                Toast.warn(
-                                    t(
-                                        "basicSettings.playerBackend.restartHint",
-                                    ),
-                                ),
-                        ),
-                    ]
-                    : []),
             ],
         },
         {
@@ -650,7 +626,7 @@ export default function BasicSetting() {
                     "basic.useCelluarNetworkDownload",
                     useCelluarNetworkDownload ?? false,
                 ),
-                ...(Platform.OS === "android" && playerBackend === "mpv"
+                ...(Platform.OS === "android"
                     ? [
                         createSwitch(
                             t("basicSettings.allowInsecureMediaPlayback"),

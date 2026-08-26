@@ -9,32 +9,11 @@ const androidDir = path.join(rootDir, 'android');
 const isWindows = process.platform === 'win32';
 const gradleCommand = isWindows ? '.\\gradlew.bat' : './gradlew';
 
-const baseArgs = [
-    ':react-native-nitro-player:compileReleaseKotlin',
-    '--no-daemon',
-    '--console=plain',
-    '--rerun-tasks',
-];
-
 const checks = [
-    {
-        name: 'Nitro default FFmpeg + WMA Kotlin compile',
-        args: baseArgs,
-    },
     {
         name: 'MusicFree app Kotlin compile',
         args: [
             ':app:compileReleaseKotlin',
-            '--no-daemon',
-            '--console=plain',
-            '--rerun-tasks',
-        ],
-    },
-    {
-        name: 'Nitro WMA disabled rollback Kotlin compile',
-        args: [
-            ':react-native-nitro-player:compileReleaseKotlin',
-            '-PmusicfreeEnableWmaExtractor=false',
             '--no-daemon',
             '--console=plain',
             '--rerun-tasks',
@@ -167,9 +146,10 @@ const lifecycleAssertions = [
         /fun unregister\(\)[\s\S]{0,320}onConnectionChanged = null/,
     ],
     [
-        'native lyric updates follow the active backend',
+        // Nitro 后端已移除，这里只需确认桌面歌词仍走 mpv 路由。
+        'native lyric updates route to mpv',
         lifecycleSources.lyricUtil,
-        /routesToMpv[\s\S]+routesToNitro[\s\S]+setActivePlayerBackend/,
+        /routesToMpv/,
     ],
     [
         'native promises settle atomically and expose conditional resolution',

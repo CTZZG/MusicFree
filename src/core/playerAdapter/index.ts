@@ -1,31 +1,23 @@
-import type { PlayerAdapter, PlayerBackendName } from "./types";
+import type { PlayerAdapter } from "./types";
 
 export * from "./types";
 
-let nitroAdapterSingleton: PlayerAdapter<any> | null = null;
 let mpvAdapterSingleton: PlayerAdapter<any> | null = null;
 
-function getNitroPlayerAdapter(): PlayerAdapter<any> {
-    if (!nitroAdapterSingleton) {
-        nitroAdapterSingleton = require("./nitroPlayerAdapter")
+/**
+ * 解析播放内核适配器。
+ *
+ * 本分支只有 mpv 一个后端。Nitro（ExoPlayer）已整体移除：两套播放栈共存让
+ * 每个播放相关改动都要在两条路径上验证，而 Nitro 的入口一被求值就会
+ * startService + bind 播放服务，把 ExoPlayer 与 Media3 会话建出来，即便用户
+ * 选的是 mpv 也白白常驻一套。
+ *
+ * 仍然延迟 require：mpv 适配器加载即触碰原生模块，交给调用方决定时机。
+ */
+export function resolvePlayerAdapter(): PlayerAdapter<any> {
+    if (!mpvAdapterSingleton) {
+        mpvAdapterSingleton = require("./mpvPlayerAdapter")
             .default as PlayerAdapter<any>;
     }
-    return nitroAdapterSingleton;
-}
-
-/**
- * 按配置解析播放内核适配器。
- * 默认 nitro-player；两个后端都延迟 require，避免未选用的原生模块抢先创建 MediaSession。
- */
-export function resolvePlayerAdapter(
-    backend?: PlayerBackendName | null,
-): PlayerAdapter<any> {
-    if (backend === "mpv") {
-        if (!mpvAdapterSingleton) {
-            mpvAdapterSingleton = require("./mpvPlayerAdapter")
-                .default as PlayerAdapter<any>;
-        }
-        return mpvAdapterSingleton;
-    }
-    return getNitroPlayerAdapter();
+    return mpvAdapterSingleton;
 }

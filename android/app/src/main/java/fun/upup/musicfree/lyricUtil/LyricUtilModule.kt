@@ -8,7 +8,6 @@ import android.provider.Settings
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.facebook.react.bridge.*
-import com.margelo.nitro.nitroplayer.media.NitroPlayerPlaybackService
 import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
@@ -28,24 +27,19 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
 
     override fun getName() = "LyricUtil"
     private var lyricView: LyricView? = null
-    @Volatile
-    private var activePlayerBackend: String? = null
     private val liveUpdateLyricNotifier by lazy {
         LiveUpdateLyricNotifier(reactContext.applicationContext)
     }
 
-    private fun routesToMpv() = activePlayerBackend == null || activePlayerBackend == "mpv"
+    // 只有 mpv 一个后端，歌词更新无条件走它。
+    private fun routesToMpv() = true
 
-    private fun routesToNitro() =
-        activePlayerBackend == null || activePlayerBackend == "nitro-player"
-
+    /**
+     * 保留这个方法只为兼容旧 JS 调用（升级过程中可能还有在途调用）。
+     * 后端已固定为 mpv，参数被忽略。
+     */
     @ReactMethod
     fun setActivePlayerBackend(backend: String, promise: Promise) {
-        if (backend != "mpv" && backend != "nitro-player") {
-            promise.reject("InvalidBackend", "Unsupported player backend: $backend")
-            return
-        }
-        activePlayerBackend = backend
         promise.resolve(true)
     }
 
@@ -255,9 +249,6 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
             if (routesToMpv()) {
                 MpvServiceBridge.service?.onMediaNotificationLyricChanged(lyric)
             }
-            if (routesToNitro()) {
-                NitroPlayerPlaybackService.setMediaNotificationLyricText(lyric)
-            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("Exception", e.message)
@@ -270,9 +261,6 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
             if (routesToMpv()) {
                 MpvServiceBridge.service?.onMediaNotificationLyricChanged(null)
             }
-            if (routesToNitro()) {
-                NitroPlayerPlaybackService.setMediaNotificationLyricText(null)
-            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("Exception", e.message)
@@ -283,12 +271,8 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     fun setLiveUpdateLyricText(lyric: String, promise: Promise) {
         try {
             val handledByMpv =
-                routesToMpv() &&
-                    MpvServiceBridge.service?.onLiveUpdateLyricChanged(lyric) == true
-            val handledByNitro =
-                routesToNitro() &&
-                    NitroPlayerPlaybackService.setLiveUpdateLyricText(lyric)
-            if (handledByMpv || handledByNitro) {
+                MpvServiceBridge.service?.onLiveUpdateLyricChanged(lyric) == true
+            if (handledByMpv) {
                 liveUpdateLyricNotifier.clear()
             } else {
                 liveUpdateLyricNotifier.show(lyric)
@@ -304,9 +288,6 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
         try {
             if (routesToMpv()) {
                 MpvServiceBridge.service?.onLiveUpdateLyricChanged(null)
-            }
-            if (routesToNitro()) {
-                NitroPlayerPlaybackService.setLiveUpdateLyricText(null)
             }
             liveUpdateLyricNotifier.clear()
             promise.resolve(true)
@@ -328,10 +309,8 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     fun setLiveUpdateLyricEnabled(enabled: Boolean, promise: Promise) {
         try {
             MpvServiceBridge.service?.onLiveUpdateLyricEnabledChanged(enabled)
-            NitroPlayerPlaybackService.setSuppressMediaFloatingWindowForLiveUpdate(enabled)
             if (enabled) {
                 MpvServiceBridge.service?.onMediaNotificationLyricChanged(null)
-                NitroPlayerPlaybackService.setMediaNotificationLyricText(null)
             } else {
                 liveUpdateLyricNotifier.clear()
             }

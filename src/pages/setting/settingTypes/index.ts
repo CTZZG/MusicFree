@@ -4,7 +4,6 @@ import BackupSetting from "./backupSetting";
 import BasicSetting from "./basicSetting";
 import CacheManagementSetting from "./cacheManagementSetting";
 import DislikeMusicSetting from "./dislikeMusicSetting";
-import EqualizerSetting from "./equalizerSetting";
 import LastfmSetting from "./lastfmSetting";
 import PluginSetting from "./pluginSetting";
 import ThemeSetting from "./themeSetting";
@@ -43,11 +42,6 @@ const settingTypes: Record<
         title: "Last.fm",
         i18nKey: "lastfm.title",
         component: LastfmSetting,
-    },
-    equalizer: {
-        title: "均衡器",
-        i18nKey: "sidebar.equalizer",
-        component: EqualizerSetting,
     },
     theme: {
         title: "主题设置",

@@ -35,12 +35,6 @@ import type {
     PlayerAdapterRemoteCapability,
 } from "@/core/playerAdapter";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
-import Equalizer from "@/core/equalizer";
-import {
-    installNitroEqualizerController,
-    isEqualizerSupported,
-} from "@/core/equalizer/nitroController";
-import { isCastSupported, setupCast } from "@/core/cast";
 import { setupAppFolders } from "./setupFolders";
 import StorageUri from "@/native/storageUri";
 import { addFileScheme, escapeCharacter } from "@/utils/fileUtils";
@@ -214,19 +208,9 @@ export async function initTrackPlayer() {
     playerTimestamp.PlayerSetup = Date.now();
     playerMetrics.PlayerSetup = playerTimestamp.PlayerSetup - playerTimestamp.OptionsSetup;
 
-    // 均衡器接到真实 DSP。必须在播放器初始化之后：Nitro 在 TrackPlayerSetup
-    // 里把效果器绑到播放器的音频会话，早于此注入会作用在还不存在的会话上。
-    // MPV 有独立音频链路、不经过该会话，因此只在 Nitro 后端注入。
-    if (isEqualizerSupported(Config.getConfig("basic.playerBackend"))) {
-        installNitroEqualizerController(Equalizer.setController);
-    }
-
-    // 投屏（Nitro 1.5.0）。同样只在 Nitro 后端有意义，且必须在播放器初始化之后：
-    // Cast 连接后由原生播放核心接管路由。失败不影响其余功能。
-    if (isCastSupported(Config.getConfig("basic.playerBackend"))) {
-        setupCast();
-    }
-
+    // 均衡器与投屏随 Nitro 一并移除：两者都挂在 Nitro 播放核心的音频会话上，
+    // MPV 有独立音频链路、不经过那套机制。均衡器要在 MPV 上重建需要
+    // libavfilter 的音频滤镜，而当前 libmpv 预编译产物是 --disable-filters。
     await lyricManager.setup();
     trace("歌词模块初始化完成");
     playerTimestamp.LyricManagerSetup = Date.now();

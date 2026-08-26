@@ -5,21 +5,6 @@ import {fileURLToPath} from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const nodeCommand = process.execPath;
-const nitroAdapterAuditPath = path.join(
-    rootDir,
-    'generator',
-    'audit-nitro-player-adapter.mjs',
-);
-const nitroFormatAuditPath = path.join(
-    rootDir,
-    'generator',
-    'audit-nitro-format-extension.mjs',
-);
-const upgradeBoundaryAuditPath = path.join(
-    rootDir,
-    'generator',
-    'audit-round20-upgrade-boundary.mjs',
-);
 const formatSamplesAuditPath = path.join(
     rootDir,
     'generator',
@@ -35,11 +20,6 @@ const dependencyOverridesAuditPath = path.join(
     'generator',
     'audit-dependency-overrides.mjs',
 );
-const rntpRemovalAuditPath = path.join(
-    rootDir,
-    'generator',
-    'audit-round20-rntp-removal.mjs',
-);
 const tscPath = path.join(
     rootDir,
     'node_modules',
@@ -49,21 +29,6 @@ const tscPath = path.join(
 );
 
 const checks = [
-    {
-        name: 'Nitro operation mapping and scope',
-        command: nodeCommand,
-        args: [nitroAdapterAuditPath],
-    },
-    {
-        name: 'Nitro Media3/FFmpeg format extension',
-        command: nodeCommand,
-        args: [nitroFormatAuditPath],
-    },
-    {
-        name: 'Round 20 upgrade boundary',
-        command: nodeCommand,
-        args: [upgradeBoundaryAuditPath],
-    },
     {
         name: 'Round 20 format sample matrix',
         command: nodeCommand,
@@ -78,11 +43,6 @@ const checks = [
         name: 'Dependency security overrides',
         command: nodeCommand,
         args: [dependencyOverridesAuditPath],
-    },
-    {
-        name: 'RNTP v4 removal guard',
-        command: nodeCommand,
-        args: [rntpRemovalAuditPath],
     },
     {
         name: 'TypeScript',
