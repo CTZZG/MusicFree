@@ -1,15 +1,31 @@
 /**
  * 媒体资源的附加属性
  */
-import getOrCreateMMKV from "@/utils/getOrCreateMMKV";
+import getOrCreateMMKV, { hydrateKeyValueStore } from "@/utils/getOrCreateMMKV";
 import { getMediaUniqueKey } from "@/utils/mediaIdentity";
 import type { DownloadWriteResult } from "@/core/downloadFinalizationPolicy";
 import { useEffect, useState } from "react";
 import { safeParse } from "./jsonUtil";
 
+/**
+ * 已触发过 hydrate 的插件 store，避免重复挂 then。
+ *
+ * 附加属性 store 按插件动态创建，不在启动预载列表里。文件存储的读取需要先
+ * 异步读盘，所以首次同步读会拿到空值——对本模块而言那只是降级（歌曲显示为
+ * 未下载、歌词偏移为 0），不是丢数据。读盘完成后通知观察者重渲染即可自愈。
+ */
+const hydratedPluginStores = new Set<string>();
+
 // Internal Method
 const getPluginStore = (pluginName: string) => {
-    return getOrCreateMMKV(`MediaExtra.${pluginName}`);
+    const store = getOrCreateMMKV(`MediaExtra.${pluginName}`);
+    if (!hydratedPluginStores.has(pluginName)) {
+        hydratedPluginStores.add(pluginName);
+        void hydrateKeyValueStore(`MediaExtra.${pluginName}`)
+            .then(emitMediaExtraChanged)
+            .catch(() => undefined);
+    }
+    return store;
 };
 
 /** 音乐的附加属性 */

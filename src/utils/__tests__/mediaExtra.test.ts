@@ -2,6 +2,7 @@ const mockStores = new Map<string, Map<string, string>>();
 
 jest.mock("@/utils/getOrCreateMMKV", () => ({
     __esModule: true,
+    hydrateKeyValueStore: jest.fn(async () => undefined),
     default: jest.fn((namespace: string) => {
         if (!mockStores.has(namespace)) {
             mockStores.set(namespace, new Map());

@@ -41,6 +41,16 @@ export function getKeyValueStore(storeId: string): KeyValueStore {
     return store;
 }
 
+/**
+ * 确保单个 store 已从磁盘载入。
+ *
+ * 动态 store（LocalSheet.<id>、MediaExtra.<plugin>）不在启动预载列表里，
+ * 首次同步读取之前必须调用这个，否则会读到空表。
+ */
+export async function hydrateKeyValueStore(storeId: string) {
+    await getKeyValueStore(storeId).hydrate();
+}
+
 /** 等待已创建的 store 全部从磁盘载入。 */
 export async function hydrateKeyValueStores() {
     await Promise.all([...stores.values()].map(store => store.hydrate()));

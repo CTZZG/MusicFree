@@ -1,7 +1,18 @@
-import getOrCreateMMKV from "@/utils/getOrCreateMMKV.ts";
+import getOrCreateMMKV, { hydrateKeyValueStore } from "@/utils/getOrCreateMMKV.ts";
 import { InteractionManager } from "react-native";
 import { SortType } from "@/constants/commonConst.ts";
 import { safeParse, safeStringify } from "@/utils/jsonUtil";
+
+/**
+ * 确保某个歌单 store 已从磁盘载入。
+ *
+ * 键值存储改为文件支撑后，读取不再像 MMKV 那样构造即可用（mmap 是同步的）。
+ * 歌单 store 是按 id 动态创建的，不在启动预载列表里，因此**首次**读取前必须
+ * 显式 hydrate——否则会读到空表，表现为歌单凭空消失。
+ */
+export async function ensureSheetStorageReady(key: string) {
+    await hydrateKeyValueStore(`LocalSheet.${key}`);
+}
 
 function getStorageData(key: string) {
     const mmkv = getOrCreateMMKV(`LocalSheet.${key}`);
@@ -98,7 +109,25 @@ function getSheetMeta<K extends keyof IMusicSheetMeta>(
     return mmkv.getString("meta." + key) || null;
 }
 
+/**
+ * 载入歌单索引所需的两个固定 store。必须在 getSheets/getStarredSheets 之前
+ * 调用——它们是同步读，而文件存储需要先异步读盘。
+ */
+async function hydrateSheetIndex() {
+    await Promise.all([
+        ensureSheetStorageReady("music-sheets"),
+        ensureSheetStorageReady("starred-sheets"),
+    ]);
+}
+
+/** 载入某个歌单自己的曲目列表与元数据 store。 */
+async function hydrateSheet(sheetId: string) {
+    await ensureSheetStorageReady(sheetId);
+}
+
 const storage = {
+    hydrateSheetIndex,
+    hydrateSheet,
     setSheets,
     getSheets,
     setMusicList,

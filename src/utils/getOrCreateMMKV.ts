@@ -1,5 +1,5 @@
 import pathConst from "@/constants/pathConst";
-import { getKeyValueStore } from "./keyValueStore";
+import { getKeyValueStore, hydrateKeyValueStore } from "./keyValueStore";
 import type { IKeyValueStore } from "./keyValueStore";
 import { migrateEntries, shouldMigrate } from "./keyValueStore/mmkvMigration";
 
@@ -70,5 +70,12 @@ export async function migrateLegacyMMKVStore(
         return { migrated: false, keys: 0 };
     }
 };
+
+/**
+ * 从此模块再导出，而不是让调用方直接 import keyValueStore：动态 store 的
+ * 调用点（歌单、插件附加属性）在测试里 mock 的是本模块，从这里导出可以让
+ * 同一份 mock 一并覆盖 hydrate，不必每个测试都额外 mock 文件系统。
+ */
+export { hydrateKeyValueStore };
 
 export default getOrCreateMMKV;

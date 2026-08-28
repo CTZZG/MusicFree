@@ -38,6 +38,9 @@ jest.mock("../migrate.ts", () => ({
 jest.mock("../storage.ts", () => ({
     __esModule: true,
     default: {
+        // 文件存储需要先异步读盘，setup 会在读取歌单前调用这两个。
+        hydrateSheetIndex: jest.fn(async () => undefined),
+        hydrateSheet: jest.fn(async () => undefined),
         getSheets: jest.fn(),
         setSheets: jest.fn(),
         getMusicList: jest.fn(),

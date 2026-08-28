@@ -98,6 +98,10 @@ class MusicSheetClazz implements IInjectable {
     async setup() {
         // 升级逻辑 - 从 AsyncStorage 升级到 MMKV
         await migrate();
+        // 歌单 store 是按 id 动态创建的，不在启动预载列表里。文件存储的读取
+        // 需要先异步读盘（不像 MMKV 那样 mmap 即可用），漏掉这一步会读到空表，
+        // 表现为歌单凭空消失。
+        await storage.hydrateSheetIndex();
         try {
             const allSheets: IMusic.IMusicSheetItemBase[] = storage.getSheets();
 
@@ -131,6 +135,13 @@ class MusicSheetClazz implements IInjectable {
             if (needRestore) {
                 await storage.setSheets(allSheets);
             }
+
+            // 每个歌单的曲目列表存在各自的 store 里，同样需要先读盘。
+            // 并发 hydrate 而不是在循环里逐个 await：歌单数量可能上百，
+            // 串行会明显拖慢启动。
+            await Promise.all(
+                allSheets.map(sheet => storage.hydrateSheet(sheet.id)),
+            );
 
             for (let sheet of allSheets) {
                 const musicList = storage.getMusicList(sheet.id);
