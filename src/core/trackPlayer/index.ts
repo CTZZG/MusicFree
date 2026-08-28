@@ -79,6 +79,7 @@ import {
     IMpvTrackTransitionToken,
     ManualSkipOperationGate,
     MpvTrackTransitionGate,
+    shouldIgnoreDuringTransition,
     waitForExpectedActive,
 } from "./manualSkipCoordinator";
 import QualityChangeCoordinator, {
@@ -2668,67 +2669,65 @@ class TrackPlayer
         return true;
     }
 
+    /**
+     * 手动切歌事务期间，判断某个后端事件是否是「上一首的迟到事件」。
+     *
+     * 三类事件（trackChanged / playbackError / active-track 同步）适用同一条
+     * 规则，因此共用一个入口；规则本身在 manualSkipCoordinator 里，可单测。
+     */
+    private shouldIgnoreStaleMpvEvent(
+        eventKey: string | null,
+        logLabel: string,
+        extra?: Record<string, unknown>,
+    ) {
+        const expectedKey =
+            this.mpvManualSkipTransition?.token.expectedKey ?? null;
+        const ignore = shouldIgnoreDuringTransition({
+            transitionActive: this.hasActiveMpvManualSkipTransition(),
+            eventKey,
+            expectedKey,
+        });
+        if (ignore) {
+            trace(logLabel, { ...extra, activeKey: eventKey, expectedKey });
+        }
+        return ignore;
+    }
+
     private shouldIgnoreMpvTrackChangeDuringManualSkip(evt: {
         track?: Partial<IMusic.IMusicItem> | null;
         index?: number;
         reason?: unknown;
     }) {
-        if (!this.hasActiveMpvManualSkipTransition()) {
-            return false;
-        }
         const musicItem = this.resolveMusicFromAdapterTrack(
             evt.track,
             evt.index,
         );
-        const activeKey = musicItem ? getMediaUniqueKey(musicItem) : null;
-        if (this.mpvTrackTransitionGate.acceptsActiveKey(activeKey)) {
-            return false;
-        }
-        trace("MPV 手动切歌期间忽略旧 trackChanged", {
-            reason: evt.reason,
-            activeKey,
-            expectedKey: this.mpvManualSkipTransition?.token.expectedKey,
-        });
-        return true;
+        return this.shouldIgnoreStaleMpvEvent(
+            musicItem ? getMediaUniqueKey(musicItem) : null,
+            "MPV 手动切歌期间忽略旧 trackChanged",
+            { reason: evt.reason },
+        );
     }
 
     private shouldIgnoreMpvPlaybackErrorDuringManualSkip(
         track?: Partial<IMusic.IMusicItem> | null,
     ) {
-        if (!this.hasActiveMpvManualSkipTransition()) {
-            return false;
-        }
         const musicItem = this.resolveMusicFromAdapterTrack(track);
-        const activeKey = musicItem ? getMediaUniqueKey(musicItem) : null;
-        const shouldIgnore =
-            !this.mpvTrackTransitionGate.acceptsActiveKey(activeKey);
-        if (shouldIgnore) {
-            trace("MPV 手动切歌期间忽略旧 playbackError", {
-                activeKey,
-                expectedKey:
-                    this.mpvManualSkipTransition?.token.expectedKey,
-            });
-        }
-        return shouldIgnore;
+        return this.shouldIgnoreStaleMpvEvent(
+            musicItem ? getMediaUniqueKey(musicItem) : null,
+            "MPV 手动切歌期间忽略旧 playbackError",
+        );
     }
 
     private shouldIgnoreMpvActiveMusicDuringManualSkip(
         activeMusic: IMusic.IMusicItem,
         reason?: unknown,
     ) {
-        if (!this.hasActiveMpvManualSkipTransition()) {
-            return false;
-        }
-        const activeKey = getMediaUniqueKey(activeMusic);
-        if (this.mpvTrackTransitionGate.acceptsActiveKey(activeKey)) {
-            return false;
-        }
-        trace("MPV 手动切歌期间忽略旧 active track 同步", {
-            reason,
-            activeKey,
-            expectedKey: this.mpvManualSkipTransition?.token.expectedKey,
-        });
-        return true;
+        return this.shouldIgnoreStaleMpvEvent(
+            getMediaUniqueKey(activeMusic),
+            "MPV 手动切歌期间忽略旧 active track 同步",
+            { reason },
+        );
     }
 
     async changeQualityWithResult(

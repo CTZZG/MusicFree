@@ -91,6 +91,35 @@ export class MpvTrackTransitionGate {
     }
 }
 
+/**
+ * 手动切歌事务期间，后端事件是否应当被忽略。
+ *
+ * 背景：用户点「下一首」之后，mpv 仍会为**上一首**发出 trackChanged /
+ * playbackError / active-track 同步事件。这些迟到事件如果被当成真实状态处理，
+ * 就会把刚切过去的曲目又拽回旧的那首。原先这个判定在 TrackPlayer 里重复了
+ * 四遍（每类事件一份），每份都夹着自己的 trace 调用，导致规则本身看不清、
+ * 也无法单测。
+ *
+ * 规则只有一条：事务活跃时，只接受身份与预期一致的事件。
+ */
+export function shouldIgnoreDuringTransition(input: {
+    /** 事务是否活跃。 */
+    transitionActive: boolean;
+    /** 事件所指向的曲目 key；无法解析时为 null。 */
+    eventKey?: string | null;
+    /** 事务期待的曲目 key。 */
+    expectedKey?: string | null;
+}): boolean {
+    if (!input.transitionActive) {
+        return false;
+    }
+    // 没有预期身份时不过滤：那说明事务状态本身不完整，宁可放过也不要卡死。
+    if (!input.expectedKey) {
+        return false;
+    }
+    return input.eventKey !== input.expectedKey;
+}
+
 interface IWaitForExpectedActiveOptions {
     timeoutMs: number;
     pollIntervalMs?: number;

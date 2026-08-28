@@ -1,6 +1,7 @@
 import {
     ManualSkipOperationGate,
     MpvTrackTransitionGate,
+    shouldIgnoreDuringTransition,
     waitForExpectedActive,
 } from "../manualSkipCoordinator";
 
@@ -224,5 +225,53 @@ describe("manual skip coordinator", () => {
 
         expect(active).toBeNull();
         expect(clock).toBe(10);
+    });
+});
+
+describe("stale event filtering during a manual skip", () => {
+    // 这条规则此前在 TrackPlayer 里为 trackChanged / playbackError /
+    // active-track 同步各写了一遍，夹在 trace 调用中间，既看不清也测不到。
+    it("passes everything through when no transition is active", () => {
+        expect(shouldIgnoreDuringTransition({
+            transitionActive: false,
+            eventKey: "anything",
+            expectedKey: "expected",
+        })).toBe(false);
+    });
+
+    it("accepts the event that matches what the transition expects", () => {
+        expect(shouldIgnoreDuringTransition({
+            transitionActive: true,
+            eventKey: "target",
+            expectedKey: "target",
+        })).toBe(false);
+    });
+
+    // 核心场景：点了下一首之后，mpv 还在为上一首发事件。把它们当真会把
+    // 刚切过去的曲目又拽回旧的那首。
+    it("drops late events that still refer to the previous track", () => {
+        expect(shouldIgnoreDuringTransition({
+            transitionActive: true,
+            eventKey: "previous",
+            expectedKey: "target",
+        })).toBe(true);
+    });
+
+    it("drops events whose track cannot be identified", () => {
+        expect(shouldIgnoreDuringTransition({
+            transitionActive: true,
+            eventKey: null,
+            expectedKey: "target",
+        })).toBe(true);
+    });
+
+    // 事务状态不完整时宁可放过：过滤掉一切会让播放彻底卡死，
+    // 而放过最多是一次状态抖动。
+    it("does not filter when the transition has no expected key", () => {
+        expect(shouldIgnoreDuringTransition({
+            transitionActive: true,
+            eventKey: "whatever",
+            expectedKey: null,
+        })).toBe(false);
     });
 });
