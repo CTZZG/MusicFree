@@ -78,22 +78,28 @@ describe("plugin capability firewall", () => {
         expect(context.require("storage")).toBeNull();
     });
 
-    it("requires explicit grants for webdav and storage capabilities", () => {
+    /**
+     * 能力审批已取消：插件与应用同处一个 JS realm，一行代码即可绕过任何
+     * 这一层的限制，而它实际造成的后果是上游可用的插件装不上。
+     *
+     * 能力**记录**保留下来——它让「这个插件用了网络/存储」出现在诊断报告里。
+     */
+    it("records capability use without gating it", () => {
         const events: PluginCapabilityAuditEvent[] = [];
         const context = createContext({ onAudit: event => events.push(event) });
 
-        expect(() => context.require("webdav")).toThrow("not approved");
-        expect(() => context.require("musicfree/storage")).toThrow(
-            "not approved",
-        );
+        // 没有任何 grantedCapabilities，也应当直接拿到模块。
+        expect(context.require("webdav")).toBeDefined();
+        expect(context.require("musicfree/storage")).toBeDefined();
+
         expect(events).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 capability: "network.webdav",
-                outcome: "denied",
+                outcome: "allowed",
             }),
             expect.objectContaining({
                 capability: "storage.plugin",
-                outcome: "denied",
+                outcome: "allowed",
             }),
         ]));
     });
@@ -242,18 +248,21 @@ describe("plugin capability firewall", () => {
         expect(CryptoJs.AES).not.toBeNull();
     });
 
-    // WebDAV 仍走受限门面：它涉及用户自己的服务器凭据，且插件对它的需求
-    // 远比 HTTP 少，收紧的兼容性代价小得多。customRequest 这类逃逸口必须
-    // 挡住，否则受限门面形同虚设。
-    it("never exposes a raw WebDAV client", async () => {
-        const context = createContext({
-            grantedCapabilities: ["network.webdav"],
-        });
+    /**
+     * 插件拿到的是真实 webdav 模块。受限门面随沙箱一并退役——它同样拦不住
+     * 同 realm 的代码，却限制了插件的正常用法。
+     *
+     * 注意：应用**自己**的 WebDAV 备份（core/webdavBackup.ts）仍走受限门面，
+     * 那条路径处理用户凭据且完全由我们控制，收紧没有兼容性代价。
+     */
+    it("hands the real webdav module to plugins", () => {
+        const context = createContext();
         const webdav = context.require("webdav") as any;
 
         const client = webdav.createClient("https://example.com");
-        expect(client).not.toHaveProperty("customRequest");
-        await expect(client.exists("/music")).resolves.toBe(true);
+        // 真实模块的能力原样可用，包括此前被门面挡掉的 customRequest。
+        expect(client.customRequest).toBeDefined();
+        return expect(client.exists("/music")).resolves.toBe(true);
     });
 
     /**

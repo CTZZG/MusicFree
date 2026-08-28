@@ -36,7 +36,6 @@ import { IAppConfig } from "@/types/core/config";
 import delay from "@/utils/delay";
 import { recordPluginInstallFailure } from "./diagnostics";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
-import { detectPluginCapabilities } from "./capabilityFirewall";
 import type { IPluginCapability } from "@/types/core/pluginManager";
 import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
 
@@ -65,38 +64,28 @@ function recordFailedInstallResult(result: IInstallPluginResult) {
     return result;
 }
 
-function getMissingPluginCapabilities(
-    funcCode: string,
-    approvedCapabilities: Iterable<IPluginCapability> = [],
-) {
-    const approved = new Set(approvedCapabilities);
-    return detectPluginCapabilities(funcCode).filter(
-        capability => !approved.has(capability),
-    );
-}
-
+/**
+ * 安装时的能力审批已取消，此函数恒返回 null（即「不拦截」）。
+ *
+ * 审批的前提是「未批准的能力可以被有效拒绝」，而插件与应用同处一个 JS
+ * realm，任何这一层的限制都能被一行代码绕过。真机上的实际后果是：三个上游
+ * 官方可用的插件全部卡在这道弹窗后面装不上，而恶意插件完全不受影响。
+ *
+ * 保留函数与调用点、而不是逐处删除判断：`detectPluginCapabilities` 的结果
+ * 仍然写入插件元数据供诊断使用，且若日后把 JS 执行挪到真正隔离的环境
+ * （例如原生侧独立引擎 + 宿主代发请求），审批才重新具备意义，届时只需改这里。
+ */
 function getCapabilityApprovalResult(
     funcCode: string,
     approvedCapabilities: Iterable<IPluginCapability> | undefined,
     sourceType: IInstallPluginResult["sourceType"],
     pluginUrl: string,
 ): IInstallPluginResult | null {
-    const missing = getMissingPluginCapabilities(
-        funcCode,
-        approvedCapabilities,
-    );
-    if (!missing.length) {
-        return null;
-    }
-    return recordFailedInstallResult({
-        success: false,
-        message: `插件请求新增能力：${missing.join(", ")}`,
-        pluginUrl,
-        sourceType,
-        failureReason: "capability-approval-required",
-        retryable: true,
-        requiredCapabilities: missing,
-    });
+    void funcCode;
+    void approvedCapabilities;
+    void sourceType;
+    void pluginUrl;
+    return null;
 }
 
 const ee = new EventEmitter<{

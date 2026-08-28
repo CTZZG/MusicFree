@@ -23,7 +23,6 @@ import {
     createPluginStorageFacade,
     type PluginStorageBackingStore,
 } from "./pluginStorage";
-import { createRestrictedWebdavFacade } from "./restrictedWebdav";
 import type { IPluginCapability } from "@/types/core/pluginManager";
 
 export const pluginCapabilities = [
@@ -319,7 +318,6 @@ export function detectPluginCapabilities(source: string) {
 export function createPluginCapabilityContext(
     options: PluginCapabilityContextOptions,
 ) {
-    const granted = new Set(options.grantedCapabilities ?? []);
     const used = new Set<PluginCapability>();
     const allowedAuditRecorded = new Set<PluginCapability>();
     // 不再给模块套只读代理。上游官方直接把真实库对象交给插件，还额外做
@@ -358,39 +356,23 @@ export function createPluginCapabilityContext(
             });
         }
     };
+    /**
+     * 记录插件用到了哪些能力，但**不再据此拦截**。
+     *
+     * 插件是受信任代码：它与应用同处一个 JS realm，
+     * `[].constructor.constructor('return globalThis')()` 一行就能拿到真实
+     * 全局对象，任何在这一层做的限制都绕得过去。继续维持审批只会让上游可用
+     * 的插件在这里装不上（真机上三个插件全部因此失败），却换不到任何实际防护。
+     *
+     * 保留记录本身是有价值的：它让「这个插件用了网络/存储」出现在诊断报告里。
+     */
     const requireCapability = (
         capability: PluginCapability,
         moduleName: string,
     ) => {
-        if (!granted.has(capability)) {
-            audit({
-                capability,
-                moduleName,
-                outcome: "denied",
-                reason: "capability-not-approved",
-            });
-            throw new PluginCapabilityError(
-                `Plugin capability "${capability}" is not approved`,
-                capability,
-                moduleName,
-            );
-        }
+        void moduleName;
         recordAllowed(capability);
     };
-
-    const webdavFacade = createRestrictedWebdavFacade(
-        options.webdavModule,
-        {
-            onPolicyViolation(reason) {
-                audit({
-                    capability: "network.webdav",
-                    moduleName: "webdav",
-                    outcome: "denied",
-                    reason,
-                });
-            },
-        },
-    );
 
     const requireModule = (moduleName: string) => {
         if (typeof moduleName !== "string" || !moduleName) {
@@ -398,6 +380,8 @@ export function createPluginCapabilityContext(
                 outcome: "denied",
                 reason: "invalid-module-name",
             });
+            // 这一条不是策略拦截，而是调用方传了非法参数——原版同样会因
+            // `packages[undefined]` 取不到而失败，只是失败得更隐晦。
             throw new PluginCapabilityError(
                 "Plugin module name must be a non-empty string",
             );
@@ -407,8 +391,12 @@ export function createPluginCapabilityContext(
         if (capability) {
             requireCapability(capability, moduleName);
             if (moduleName === "webdav") {
-                return webdavFacade;
+                // 真实 webdav 模块。受限门面（restrictedWebdav）随沙箱一起
+                // 退役：它拦不住同 realm 的代码，却限制了插件的正常用法。
+                return options.webdavModule;
             }
+            // storage 门面保留：它做的是**按插件身份隔离命名空间**，防止插件
+            // 互相读写数据，那是功能性隔离而非安全沙箱。
             return storage.facade;
         }
 
