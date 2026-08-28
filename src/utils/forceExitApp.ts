@@ -20,6 +20,23 @@ function preparePlayerForExitBestEffort() {
     }
 }
 
+/**
+ * 退出前把待写的键值变更落盘。
+ *
+ * 写入是合并延迟的（见 keyValueStore/writeScheduler），最后几百毫秒内的
+ * 变更可能还在内存里。硬上限保证了不会丢太多，但退出这条路径值得显式
+ * flush 一次——用户点了「退出」之后设置没保存是很难解释的。
+ */
+function flushStoresBestEffort() {
+    try {
+        return require("@/utils/keyValueStore/bootstrapStores")
+            .shutdownKeyValueStores()
+            .catch(() => undefined);
+    } catch {
+        return Promise.resolve();
+    }
+}
+
 function exitNativeProcess() {
     try {
         NativeUtils?.exitApp?.();
@@ -35,7 +52,10 @@ export default function forceExitApp() {
     isExiting = true;
 
     const exitAfterPrepareOrTimeout = Promise.race([
-        preparePlayerForExitBestEffort(),
+        Promise.all([
+            preparePlayerForExitBestEffort(),
+            flushStoresBestEffort(),
+        ]),
         wait(EXIT_PREPARE_GRACE_MS),
     ]);
 

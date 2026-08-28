@@ -36,6 +36,7 @@ import type {
 } from "@/core/playerAdapter";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
 import { setupAppFolders } from "./setupFolders";
+import { setupKeyValueStores } from "@/utils/keyValueStore/bootstrapStores";
 import StorageUri from "@/native/storageUri";
 import { addFileScheme, escapeCharacter } from "@/utils/fileUtils";
 
@@ -77,6 +78,15 @@ async function bootstrapImpl() {
     trace("文件夹初始化完成");
     bootstrapTimestamp.FolderSetup = Date.now();
     bootstrapMetrics.FolderSetup = bootstrapTimestamp.FolderSetup - bootstrapTimestamp.PermissionChecked;
+
+    // 键值存储必须先从磁盘载入，再读任何配置。文件存储不像 MMKV 那样
+    // 构造即同步 mmap 完成；顺序颠倒会读到空值并把默认值写回，等于每次
+    // 启动重置用户设置。
+    await setupKeyValueStores();
+    bootstrapTimestamp.StorageSetup = Date.now();
+    bootstrapMetrics.StorageSetup =
+        bootstrapTimestamp.StorageSetup - bootstrapTimestamp.FolderSetup;
+    trace("键值存储初始化完成");
 
     // 加载配置
     await Promise.all([

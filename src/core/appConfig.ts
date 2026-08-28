@@ -1,7 +1,6 @@
-import { useMMKVObject } from "react-native-mmkv";
-
 import { getStorage, removeStorage } from "@/utils/storage";
 import getOrCreateMMKV from "@/utils/getOrCreateMMKV.ts";
+import useStoredJson from "@/utils/keyValueStore/useStoredJson";
 
 import type { AppConfigPropertyKey, IAppConfig, IAppConfigProperties } from "@/types/core/config";
 import { safeStringify } from "@/utils/jsonUtil";
@@ -259,5 +258,5 @@ export async function retryLegacyCredentialMigration() {
 
 /***** hooks *****/
 export function useAppConfig<K extends keyof IAppConfigProperties>(key: K): IAppConfigProperties[K] | undefined {
-    return useMMKVObject<IAppConfigProperties[K]>(key, configStore)[0];
+    return useStoredJson<IAppConfigProperties[K]>(key, configStore);
 }
