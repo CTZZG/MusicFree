@@ -57,38 +57,36 @@ function createContext(
 }
 
 describe("plugin capability firewall", () => {
+    // axios 已不再是受管能力：受限 HTTP 客户端（强制 HTTPS、超时/体积/并发
+    // 上限）让大量上游可用的插件直接失效，而插件的价值就在兼容性。传输层的
+    // SSRF 防护下移到原生 PublicHttpsNetworkPolicy 的 Dns 过滤器。
     it("detects only literal high-risk module requests", () => {
         expect(detectPluginCapabilities(`
             const axios = require("axios");
             const storage = __musicfree_require('musicfree/storage');
             const safe = require("cheerio");
-        `)).toEqual(["network.http", "storage.plugin"]);
+        `)).toEqual(["storage.plugin"]);
     });
 
-    it("throws for unknown modules rather than returning null", () => {
+    // 与上游官方一致：未知模块返回 null 而不是抛异常。插件里
+    // `require("x") || fallback` 是常见写法，抛异常会让整个挂载崩掉。
+    it("returns null for unknown modules instead of throwing", () => {
         const context = createContext();
 
-        expect(() => context.require("fs")).toThrow(
-            "module \"fs\" is not available",
-        );
-        expect(() => context.require("react-native")).toThrow();
-        expect(() => context.require("storage")).toThrow();
+        expect(context.require("fs")).toBeNull();
+        expect(context.require("react-native")).toBeNull();
+        expect(context.require("storage")).toBeNull();
     });
 
-    it("requires explicit grants for network and storage capabilities", () => {
+    it("requires explicit grants for webdav and storage capabilities", () => {
         const events: PluginCapabilityAuditEvent[] = [];
         const context = createContext({ onAudit: event => events.push(event) });
 
-        expect(() => context.require("axios")).toThrow("not approved");
         expect(() => context.require("webdav")).toThrow("not approved");
         expect(() => context.require("musicfree/storage")).toThrow(
             "not approved",
         );
         expect(events).toEqual(expect.arrayContaining([
-            expect.objectContaining({
-                capability: "network.http",
-                outcome: "denied",
-            }),
             expect.objectContaining({
                 capability: "network.webdav",
                 outcome: "denied",
@@ -100,43 +98,27 @@ describe("plugin capability firewall", () => {
         ]));
     });
 
-    it("returns isolated immutable facades for safe packages", () => {
-        const first = createContext();
-        const second = createContext();
-        const firstSafe = first.require("safe") as any;
-        const secondSafe = second.require("safe") as any;
+    /**
+     * 只读代理（Proxy + deepFreeze）已停用，模块原样交给插件。
+     *
+     * 它拦不住真正的威胁——插件本来就能用
+     * `[].constructor.constructor('return globalThis')()` 拿到真实全局——却
+     * 持续制造兼容性事故：crypto-js 的 AES/DES 曾因它报
+     * "Cannot read properties of undefined (reading 'call')"。上游官方同样
+     * 直接给真实对象。
+     */
+    it("hands real module objects to plugins with CJS interop", () => {
+        const context = createContext();
+        const safe = context.require("safe") as any;
 
-        expect(firstSafe.default).toBe(firstSafe);
-        try {
-            firstSafe.version = 2;
-        } catch {}
-        expect(firstSafe.version).toBe(1);
-        expect(secondSafe.version).toBe(1);
-
-        try {
-            firstSafe.nested.mode = "mutated";
-            firstSafe.nested.entries[0].value = 2;
-            firstSafe.nested.entries.push({ value: 3 });
-        } catch {}
-        expect(firstSafe.nested).toEqual({
-            mode: "safe",
-            entries: [{ value: 1 }],
-        });
-        expect(secondSafe.nested).toEqual({
-            mode: "safe",
-            entries: [{ value: 1 }],
-        });
-        expect(Object.isFrozen(firstSafe.nested)).toBe(true);
-        expect(Object.isFrozen(firstSafe.nested.entries)).toBe(true);
-        expect(Object.isFrozen(firstSafe.nested.entries[0])).toBe(true);
-
-        const callable = first.require("callable") as any;
+        // default 自引用：插件常写 require("x").default，与上游一致地补上。
+        expect(safe.default).toBe(safe);
+        // 可调用模块保持可调用。
+        const callable = context.require("callable") as any;
         expect(callable(1)).toBe(2);
-        expect(callable.default).toBe(callable);
     });
 
-    it("preserves constructor, descriptor, and symbol semantics", () => {
-        const symbolKey = Symbol("metadata");
+    it("keeps class semantics intact for module exports", () => {
         class Constructable {
             static metadata = { mode: "safe" };
 
@@ -146,30 +128,17 @@ describe("plugin capability firewall", () => {
                 return this.value;
             }
         }
-        Object.defineProperty(Constructable, "hidden", {
-            enumerable: false,
-            value: { enabled: true },
-        });
-        Object.defineProperty(Constructable, symbolKey, {
-            enumerable: false,
-            value: { version: 1 },
-        });
         const context = createContext({
             safePackages: { constructable: Constructable },
         });
-        const Facade = context.require("constructable") as any;
-        const instance = new Facade(7);
+        const Exported = context.require("constructable") as any;
+        const instance = new Exported(7);
 
+        // 构造、原型方法、instanceof 都必须照常工作——正是这些在只读代理下
+        // 会以各种隐晦方式失效。
         expect(instance.read()).toBe(7);
-        expect(instance).toBeInstanceOf(Facade);
-        expect(Facade.hidden).toEqual({ enabled: true });
-        expect(Facade[symbolKey]).toEqual({ version: 1 });
-        expect(Object.getOwnPropertyDescriptor(Facade, "hidden")?.enumerable)
-            .toBe(false);
-        expect(Object.isFrozen(Facade.prototype)).toBe(true);
-        expect(Object.isFrozen(Facade.metadata)).toBe(true);
-        expect(Object.isFrozen(Facade.hidden)).toBe(true);
-        expect(Object.isFrozen(Facade[symbolKey])).toBe(true);
+        expect(instance).toBeInstanceOf(Constructable);
+        expect(Exported.metadata).toEqual({ mode: "safe" });
     });
 
     it("keeps every supported production package operational", () => {
@@ -267,64 +236,40 @@ describe("plugin capability firewall", () => {
         expect(facade.enc.Base64.stringify(parsedKey))
             .toBe(CryptoJs.enc.Base64.stringify(parsedKey));
 
-        // The isolation property the facade exists for must still hold.
-        expect(Object.isFrozen(facade)).toBe(true);
-        expect(() => {
-            "use strict";
-            facade.AES = null;
-        }).toThrow();
+        // 不再断言冻结：只读代理已停用（它正是当初让 AES/DES 挂掉的原因）。
+        // 这个用例保留的价值在于「密码学 API 必须真的能用」——那才是插件
+        // 依赖的东西，也是最容易被沙箱悄悄弄坏的部分。
         expect(CryptoJs.AES).not.toBeNull();
     });
 
-    it("never exposes a raw axios adapter or raw WebDAV client", async () => {
-        const requester = jest.fn(async (
-            _url: string,
-            _config: unknown,
-        ) => ({
-            data: "ok",
-            status: 200,
-            statusText: "OK",
-            headers: {},
-            config: {},
-            request: { responseURL: "https://example.com/data" },
-        }) as any);
+    // WebDAV 仍走受限门面：它涉及用户自己的服务器凭据，且插件对它的需求
+    // 远比 HTTP 少，收紧的兼容性代价小得多。customRequest 这类逃逸口必须
+    // 挡住，否则受限门面形同虚设。
+    it("never exposes a raw WebDAV client", async () => {
         const context = createContext({
-            grantedCapabilities: ["network.http", "network.webdav"],
-            httpOptions: { requester },
+            grantedCapabilities: ["network.webdav"],
         });
-        const axios = context.require("axios") as any;
         const webdav = context.require("webdav") as any;
-
-        expect(axios).not.toHaveProperty("adapter");
-        expect(axios.defaults).not.toHaveProperty("adapter");
-        await expect(
-            axios.get("https://example.com/data"),
-        ).resolves.toMatchObject({ data: "ok" });
 
         const client = webdav.createClient("https://example.com");
         expect(client).not.toHaveProperty("customRequest");
         await expect(client.exists("/music")).resolves.toBe(true);
     });
 
-    it("audits policy denials without including the attempted URL", async () => {
-        const events: PluginCapabilityAuditEvent[] = [];
-        const requester = jest.fn();
+    /**
+     * axios 现在是普通 safePackage（生产代码在 plugin.ts 里注入真实模块），
+     * 不再是需要审批的受管能力、也不再被受限客户端替换。
+     *
+     * 这条断言的意义：一旦有人把 axios 重新加回 capabilityByModule，
+     * require 就会因未授权而抛异常，这里会失败并指回这个决定。
+     */
+    it("treats axios as an ordinary module, not a gated capability", () => {
+        const realAxios = { interceptors: {}, get: () => undefined };
         const context = createContext({
-            grantedCapabilities: ["network.http"],
-            httpOptions: { requester },
-            onAudit: event => events.push(event),
+            safePackages: { axios: realAxios },
         });
-        const axios = context.require("axios") as any;
 
-        await expect(axios.get("https://127.0.0.1/private"))
-            .rejects.toThrow();
-        expect(requester).not.toHaveBeenCalled();
-        expect(events.at(-1)).toEqual({
-            capability: "network.http",
-            moduleName: "axios",
-            outcome: "denied",
-            reason: "url-policy",
-        });
-        expect(JSON.stringify(events)).not.toContain("127.0.0.1");
+        // 没有任何 grantedCapabilities，却应当直接拿到模块本身。
+        expect(context.require("axios")).toBe(realAxios);
     });
 });

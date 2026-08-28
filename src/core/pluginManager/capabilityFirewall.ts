@@ -18,7 +18,6 @@
  * crypto-js AES、拦掉 11/12 个真实插件，而对恶意插件毫无约束。用户侧的真实
  * 保护是「只安装可信来源的插件」，能力审批弹窗现在如实这么说。
  */
-import { createRestrictedHttpClient } from "@/utils/restrictedHttpClient";
 import type { RestrictedHttpClientOptions } from "@/utils/restrictedHttpClient";
 import {
     createPluginStorageFacade,
@@ -64,8 +63,15 @@ interface PluginCapabilityContextOptions {
     onAudit?: (event: PluginCapabilityAuditEvent) => void;
 }
 
+/**
+ * axios 已不在此列：受限 HTTP 客户端与上游官方的行为差异太大（强制 HTTPS、
+ * 超时/体积/并发上限、同源重定向校验），导致大量官方能用的插件在这里直接
+ * 失效——而插件的价值就在于兼容性。改为在 safePackages 里提供真实 axios。
+ *
+ * 传输层的 SSRF 防护仍然存在，只是下移到原生：PublicHttpsNetworkPolicy 的
+ * Dns 过滤器拒绝回环/私网/链路本地/保留地址，那才是有真实价值的那一层。
+ */
 const capabilityByModule: Record<string, PluginCapability | undefined> = {
-    axios: "network.http",
     webdav: "network.webdav",
     "musicfree/storage": "storage.plugin",
 };
@@ -81,6 +87,19 @@ export class PluginCapabilityError extends Error {
     }
 }
 
+/**
+ * 只读模块门面（Proxy + deepFreeze）。**当前未启用**。
+ *
+ * 它曾包裹每个交给插件的库对象，但会破坏任何依赖原型链或在 `this` 上写入
+ * 的库——crypto-js 的 AES/DES 就因此报过
+ * "Cannot read properties of undefined (reading 'call')"。而它拦不住真正的
+ * 威胁：插件本来就能通过 `[].constructor.constructor('return globalThis')()`
+ * 拿到真实全局对象。收益与它造成的兼容性事故不成比例，因此改为像上游官方
+ * 那样直接把真实库对象交给插件。
+ *
+ * 保留实现而非删除，是为了在需要重新评估插件隔离方案时有现成参考。
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function createReadonlyPackageFacade(pkg: unknown): unknown {
     const wrappedValues = new WeakMap<object, any>();
     // Reverse of wrappedValues. When plugin code invokes a facade method the
@@ -303,11 +322,23 @@ export function createPluginCapabilityContext(
     const granted = new Set(options.grantedCapabilities ?? []);
     const used = new Set<PluginCapability>();
     const allowedAuditRecorded = new Set<PluginCapability>();
+    // 不再给模块套只读代理。上游官方直接把真实库对象交给插件，还额外做
+    // `pkg.default = pkg` 的 CJS/ESM 互操作补丁。只读代理（Proxy + deepFreeze）
+    // 会破坏任何依赖原型链或在 `this` 上做写入的库——crypto-js 的 AES/DES 就
+    // 曾因此报 "Cannot read properties of undefined (reading 'call')"。
+    // 它拦不住真正的威胁（插件本来就能拿到 globalThis），却持续制造兼容性事故。
     const safePackages = new Map(
-        Object.entries(options.safePackages).map(([name, pkg]) => [
-            name,
-            createReadonlyPackageFacade(pkg),
-        ]),
+        Object.entries(options.safePackages).map(([name, pkg]) => {
+            // CJS 插件常写 `require("x").default`，与上游保持一致地补上。
+            if (pkg && typeof pkg === "object" && !("default" in pkg)) {
+                try {
+                    (pkg as any).default = pkg;
+                } catch {
+                    // 冻结过的库忽略即可，插件按 CJS 用法仍能工作。
+                }
+            }
+            return [name, pkg];
+        }),
     );
     const storage = createPluginStorageFacade(
         options.storageStore,
@@ -347,18 +378,6 @@ export function createPluginCapabilityContext(
         recordAllowed(capability);
     };
 
-    const httpClient = createRestrictedHttpClient({
-        ...options.httpOptions,
-        onPolicyViolation(reason) {
-            options.httpOptions?.onPolicyViolation?.(reason);
-            audit({
-                capability: "network.http",
-                moduleName: "axios",
-                outcome: "denied",
-                reason,
-            });
-        },
-    });
     const webdavFacade = createRestrictedWebdavFacade(
         options.webdavModule,
         {
@@ -387,9 +406,6 @@ export function createPluginCapabilityContext(
         const capability = capabilityByModule[moduleName];
         if (capability) {
             requireCapability(capability, moduleName);
-            if (moduleName === "axios") {
-                return httpClient;
-            }
             if (moduleName === "webdav") {
                 return webdavFacade;
             }
@@ -402,11 +418,10 @@ export function createPluginCapabilityContext(
                 outcome: "denied",
                 reason: "module-not-available",
             });
-            throw new PluginCapabilityError(
-                `Plugin module "${moduleName}" is not available`,
-                undefined,
-                moduleName,
-            );
+            // 与上游官方一致：未知模块返回 null，不抛异常。插件里
+            // `const x = require("foo") || fallback` 是常见写法，抛异常会让
+            // 整个插件在挂载阶段就崩掉，而官方下它只是静默降级。
+            return null;
         }
         return safePackages.get(moduleName);
     };

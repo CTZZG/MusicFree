@@ -30,9 +30,13 @@ import {
     showPluginInstallResults,
 } from "../installPluginUtils";
 import {
+    buildPluginDiagnosticReport,
     clearPluginDiagnosticEvents,
     getRecentPluginDiagnosticEvents,
 } from "@/core/pluginManager/diagnostics";
+import Clipboard from "@react-native-clipboard/clipboard";
+import { ScrollView } from "react-native-gesture-handler";
+import Paragraph from "@/components/base/paragraph";
 
 interface IOption {
     icon: IIconName;
@@ -94,6 +98,30 @@ export default function PluginList() {
             title: t("lxSource.title"),
             onPress() {
                 navigator.navigate("/pluginsetting/lx-source");
+            },
+        },
+        {
+            // 诊断数据一直在写 MMKV，但此前没有任何界面能读出来——
+            // buildPluginDiagnosticReport 写好却从未被调用。结果插件安装/挂载
+            // 失败时只能看到一句被截断的 message，真实异常与堆栈位置无从获取。
+            icon: "document-outline",
+            title: t("pluginSetting.menu.copyDiagnostics"),
+            onPress() {
+                const report = buildPluginDiagnosticReport(plugins ?? []);
+                showDialog("SimpleDialog", {
+                    title: t("pluginSetting.menu.copyDiagnostics"),
+                    content: (
+                        <ScrollView>
+                            <Paragraph>{report}</Paragraph>
+                        </ScrollView>
+                    ),
+                    cancelText: t("dialog.errorLogKnow"),
+                    okText: t("dialog.errorLogCopy"),
+                    onOk() {
+                        Clipboard.setString(report);
+                        Toast.success(t("toast.copiedToClipboard"));
+                    },
+                });
             },
         },
         {

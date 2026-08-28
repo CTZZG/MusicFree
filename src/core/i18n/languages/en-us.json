@@ -543,6 +543,7 @@
     "pluginSetting.menu.sort": "Plugin Sort",
     "pluginSetting.menu.uninstallAll": "Uninstall All Plugins",
     "pluginSetting.menu.uninstallAllContent": "Are you sure to uninstall all plugins? This action cannot be undone!",
+    "pluginSetting.menu.copyDiagnostics": "Copy Diagnostics",
     "pluginSetting.menu.clearDiagnostics": "Clear diagnostics",
     "pluginSetting.menu.clearDiagnosticsDone": "Cleared {count} diagnostic entries",
     "pluginSetting.menu.installPlugin": "Install Plugin",

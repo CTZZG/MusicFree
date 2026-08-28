@@ -543,6 +543,7 @@
     "pluginSetting.menu.sort": "插件排序",
     "pluginSetting.menu.uninstallAll": "卸载全部插件",
     "pluginSetting.menu.uninstallAllContent": "确认卸载全部插件吗？此操作不可恢复！",
+    "pluginSetting.menu.copyDiagnostics": "复制诊断记录",
     "pluginSetting.menu.clearDiagnostics": "清除诊断记录",
     "pluginSetting.menu.clearDiagnosticsDone": "已清除 {count} 条诊断记录",
     "pluginSetting.menu.installPlugin": "安装插件",

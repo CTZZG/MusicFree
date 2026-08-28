@@ -69,10 +69,23 @@ for (const absolute of walk(path.join(root, "src"))) {
             ts.isStringLiteral(node.moduleSpecifier)
         ) {
             const moduleName = node.moduleSpecifier.text;
+            // 只有两处允许直接导入 axios：
+            //   - restrictedHttpClient 本身（应用自己的请求仍走受限客户端）
+            //   - 插件运行时（plugin.ts），它必须把真实 axios 交给插件
+            //
+            // 后者是刻意的：受限客户端强制 HTTPS、限制超时/体积/并发、校验
+            // 同源重定向，导致大量上游官方可用的插件在这里直接失效，而插件的
+            // 全部价值就在兼容性。传输层的 SSRF 防护并未消失——原生
+            // PublicHttpsNetworkPolicy 的 Dns 过滤器仍然拒绝回环、私网、
+            // 链路本地与保留地址。
+            const rawAxiosAllowlist = new Set([
+                "src/utils/restrictedHttpClient.ts",
+                "src/core/pluginManager/plugin.ts",
+            ]);
             if (
                 moduleName === "axios" &&
                 node.importClause?.isTypeOnly !== true &&
-                relative !== "src/utils/restrictedHttpClient.ts"
+                !rawAxiosAllowlist.has(relative)
             ) {
                 rawAxiosImports.push(relative);
             }

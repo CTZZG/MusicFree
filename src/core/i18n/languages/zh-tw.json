@@ -543,6 +543,7 @@
     "pluginSetting.menu.sort": "外掛排序",
     "pluginSetting.menu.uninstallAll": "卸載全部外掛",
     "pluginSetting.menu.uninstallAllContent": "確認卸載全部外掛嗎？此操作不可恢復！",
+    "pluginSetting.menu.copyDiagnostics": "複製診斷記錄",
     "pluginSetting.menu.clearDiagnostics": "清除診斷記錄",
     "pluginSetting.menu.clearDiagnosticsDone": "已清除 {count} 筆診斷記錄",
     "pluginSetting.menu.installPlugin": "安裝外掛",

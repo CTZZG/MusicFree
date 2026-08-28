@@ -22,6 +22,7 @@ import {
     normalizeLocalFilePath,
 } from "./plugin.utils";
 import notImplementedFunction from "@/utils/notImplementedFunction.ts";
+import axios from "axios";
 import bigInt from "big-integer";
 import * as cheerio from "cheerio";
 import { satisfies } from "compare-versions";
@@ -115,6 +116,10 @@ export function clearInstalledPluginStorage(platform: string) {
     return clearPluginStorageNamespace(pluginStorageStore, platform);
 }
 const safePackages: Record<string, any> = {
+    // 真实 axios，与上游官方一致。受限 HTTP 客户端的强制 HTTPS 等约束会让
+    // 大量官方可用的插件直接失效，而插件的价值就在兼容性；传输层的 SSRF
+    // 防护由原生 PublicHttpsNetworkPolicy 的 Dns 过滤器兜底。
+    axios,
     cheerio,
     "crypto-js": CryptoJs,
     dayjs,
