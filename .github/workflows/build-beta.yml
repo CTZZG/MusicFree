@@ -66,29 +66,23 @@ jobs:
                   distribution: 'temurin'
                   cache: 'gradle'
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v6
+            # 与稳定版共用同一个质量门：安装依赖并通过检查后才进入 Android 构建
+            - name: Quality gate
+              uses: ./.github/actions/quality-gate
               with:
                   node-version: ${{ env.NODE_VERSION }}
-                  cache: 'npm'
 
-            - name: Cache React Native dependencies
+            # npm ci 会先删除已有的 node_modules，因此这里只缓存 Gradle
+            - name: Cache Gradle dependencies
               uses: actions/cache@v5
               with:
                   path: |
-                      node_modules
                       ~/.gradle/caches
                       ~/.gradle/wrapper
                       android/.gradle
                   key: ${{ runner.os }}-rn-${{ hashFiles('package-lock.json', 'android/gradle/wrapper/gradle-wrapper.properties') }}
                   restore-keys: |
                       ${{ runner.os }}-rn-
-
-            - name: Install Dependencies
-              env:
-                  NODE_ENV: development
-                  HUSKY: 0
-              run: npm ci --prefer-offline --no-audit
 
             - name: Setup Keystore (if secrets available)
               if: env.RELEASE_KEYSTORE_BASE64 != ''

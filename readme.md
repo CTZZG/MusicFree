@@ -19,16 +19,14 @@
 
 ## 本分支说明
 
-这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.7.2`，不代表上游官方发布。本分支主要增强 Android 播放体验：默认使用 Nitro 播放内核，同时提供可选的 mpv 播放内核，用来覆盖更多音频格式和更复杂的本地播放场景。
+这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.8.0`，不代表上游官方发布。本分支主要增强 Android 播放体验，播放内核为 mpv（libmpv），用来覆盖更多音频格式和更复杂的本地播放场景。
 
-默认情况下不需要额外设置，直接使用 Nitro 即可；如果遇到 Nitro/系统解码不支持的格式，可以在 `设置 -> 基础设置 -> 播放内核` 中切换到 mpv。播放内核切换后需要重启 App 生效。
+当前架构、支持范围、质量门和核心行为的验证状态见 [docs/architecture.md](./docs/architecture.md)。历史版本的说明以对应 tag 下的文件为准。
 
 ### 分支特性
 
-- 支持 Nitro / mpv 双播放内核，Nitro 为默认后端，mpv 为实验后端。
-- mpv 后端已接入通知栏、锁屏、蓝牙/耳机键、音频焦点、自动下一曲、列表循环和歌词展示，目标是与 Nitro 的日常体验保持一致。
-- Nitro 后端保留 MusicFree 专用补丁，补强 ALAC/M4A、WMA/ASF、DSF 等格式支持。
-- mpv 后端集成 libmpv，适合尝试播放 Nitro 或 Android 系统播放器不容易覆盖的格式。
+- 播放内核只有 mpv（libmpv）。早期版本中的 Nitro 内核，以及随它提供的投屏和均衡器，已经移除。
+- mpv 后端已接入通知栏、锁屏、蓝牙/耳机键、音频焦点、自动下一曲、列表循环和歌词展示。
 - 支持媒体通知歌词，以及 Android 16 Live Update 歌词。Live Update 使用 Android 标准通知接口，不是 Honor 私有接口；已在 Honor 灵动胶囊上验证，其他支持类似 promoted ongoing 通知的 Android 16+ 设备也有机会使用。
 - Live Update 通知支持歌曲封面、播放按钮、进度和时间显示；播放中进度会按秒刷新，不只跟随歌词换句刷新。
 
@@ -36,21 +34,17 @@
 
 上游 MusicFree 仍是插件化、无广告、无内置音源的播放器，本分支不改变这些基本设计。本分支的差异主要集中在 Android 播放层：
 
-- 增加播放器适配层，让业务逻辑可以在 Nitro 和 mpv 之间切换。
-- 增加 mpv 原生模块和 mpv 播放服务。
-- 对齐两套后端的通知栏、锁屏控制、歌词通知和播放队列行为。
-- 保留 Nitro 的 MusicFree 格式补丁，方便在默认后端下继续支持更多格式。
-- 调整 Android release 构建与版本信息，当前使用 `0.6.5-rebuild.*` 版本线。
+- 增加播放器适配层，业务层通过 `TrackPlayer` 门面驱动 mpv 后端。
+- 增加 mpv 原生模块和 mpv 播放服务，负责通知栏、锁屏控制、歌词通知和播放队列。
+- 调整 Android release 构建与版本信息。
 
 ### Android 支持
 
-- App 基础安装要求：Android 7.0 / API 24 及以上。
-- Nitro 默认后端：Android 7.0 / API 24 及以上。
-- mpv 实验后端：Android 8.0 / API 26 及以上。
-- 普通媒体通知歌词：Android 7.0 及以上可用，具体显示效果由系统通知样式决定。
-- Live Update 歌词：Android 16 / API 36 及以上可用，最优体验也是 Android 16 及以上。
+- 播放内核 mpv 需要 Android 8.0 / API 26 及以上。安装包目前仍声明最低 API 24：Android 7.x 设备可以安装，但不在播放支持范围内。
+- 普通媒体通知歌词：随播放内核要求 Android 8.0 及以上，具体显示效果由系统通知样式决定。
+- Live Update 歌词：Android 16 / API 36 及以上可用。
 
-如果只是日常听歌，推荐 Android 8.0 及以上使用 Nitro；如果想要灵动胶囊/小窗歌词，推荐 Android 16 及以上。长歌词在小胶囊中可能显示不全，这是系统展示空间限制，展开通知卡片和应用内歌词会显示更完整内容。
+如果想要灵动胶囊/小窗歌词，推荐 Android 16 及以上。长歌词在小胶囊中可能显示不全，这是系统展示空间限制，展开通知卡片和应用内歌词会显示更完整内容。
 
 ### 参考与致谢
 
@@ -59,7 +53,7 @@
 - [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree)：本项目上游，提供插件化播放器主体设计。
 - [Toskysun/MusicFree](https://github.com/Toskysun/MusicFree)：参考其新版首页、搜索结果、歌单页、主题设置和播放页交互。
 - [hanklzl/MusicFreeAndroid](https://github.com/hanklzl/MusicFreeAndroid)：参考其原生 Android 工程化、播放恢复、歌词解析、下载和缓存治理思路。
-- [riteshshukla04/react-native-nitro-player](https://github.com/riteshshukla04/react-native-nitro-player)：Nitro 播放后端来源，本分支保留 MusicFree 所需的 Android 格式补丁。
+- [riteshshukla04/react-native-nitro-player](https://github.com/riteshshukla04/react-native-nitro-player)：早期版本的 Nitro 播放后端来源，当前分支已移除该后端。
 - [CTZZG/libmpv-android](https://github.com/CTZZG/libmpv-android)：当前 mpv Android AAR 构建来源。
 - [jarnedemeulemeester/libmpv-android](https://github.com/jarnedemeulemeester/libmpv-android)：libmpv Android 集成差异分析参考。
 - [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)：参考 Apple Music 风格歌词展示、逐词/逐音节歌词解析和动态背景体验。

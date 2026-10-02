@@ -252,15 +252,15 @@ export default function QualityTranslation() {
                                     {BUILTIN_QUALITY_KEYS.includes(
                                         qualityKey,
                                     ) ? (
-                                        <ThemeText
-                                            fontSize="description"
-                                            fontColor="textSecondary"
-                                            style={styles.builtinTag}>
-                                            {t(
-                                                "panel.qualityTranslation.builtin",
-                                            )}
-                                        </ThemeText>
-                                    ) : null}
+                                            <ThemeText
+                                                fontSize="description"
+                                                fontColor="textSecondary"
+                                                style={styles.builtinTag}>
+                                                {t(
+                                                    "panel.qualityTranslation.builtin",
+                                                )}
+                                            </ThemeText>
+                                        ) : null}
                                     <View style={styles.itemActions}>
                                         <Pressable
                                             onPress={() =>

@@ -1,39 +1,6 @@
-import { RequestStateCode } from "@/constants/commonConst";
 import { atom } from "jotai";
 
-/** 搜索状态 */
-
-export interface ISearchResult<T extends ICommon.SupportMediaType> {
-    /** 当前页码 */
-    page?: number;
-    /** 搜索词 */
-    query?: string;
-    /** 搜索失败原因 */
-    errorMessage?: string;
-    /** 搜索状态 */
-    state: RequestStateCode;
-    /** 数据 */
-    data: ICommon.SupportMediaItemBase[T][];
-}
-
-type ISearchResults<
-    T extends keyof ICommon.SupportMediaItemBase = ICommon.SupportMediaType,
-> = {
-    [K in T]: Record<string, ISearchResult<K>>;
-};
-
-/** 初始值 */
-export const initSearchResults: ISearchResults = {
-    music: {},
-    album: {},
-    artist: {},
-    sheet: {},
-    lyric: {},
-};
-
-/** key: pluginhash value: searchResult */
-const searchResultsAtom = atom(initSearchResults);
-
+/** 搜索页展示的面板；搜索结果本身由 @/core/search 的搜索会话维护 */
 export enum PageStatus {
     /** 编辑中 */
     EDITING = "EDITING",
@@ -45,9 +12,10 @@ export enum PageStatus {
     NO_PLUGIN = "NO_PLUGIN",
 }
 
-/** 当前正在搜索的 */
-const pageStatusAtom = atom<PageStatus>(PageStatus.EDITING);
+/** 是否正在编辑搜索词（展示搜索历史） */
+const editingAtom = atom(true);
 
+/** 输入框中的搜索词 */
 const queryAtom = atom<string>("");
 
-export { pageStatusAtom, searchResultsAtom, queryAtom };
+export { editingAtom, queryAtom };

@@ -3,21 +3,13 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import Loading from "@/components/base/loading";
 import Chip from "@/components/base/chip";
-import useSearch from "../hooks/useSearch";
+import { useSubmitSearch } from "../hooks/useSearchSession";
 import {
     addHistory,
     getHistory,
     removeAllHistory,
     removeHistory,
 } from "../common/historySearch";
-import { useSetAtom } from "jotai";
-import {
-    PageStatus,
-    initSearchResults,
-    pageStatusAtom,
-    queryAtom,
-    searchResultsAtom,
-} from "../store/atoms";
 import ThemeText from "@/components/base/themeText";
 import Button from "@/components/base/textButton.tsx";
 import Empty from "@/components/base/empty";
@@ -26,11 +18,7 @@ import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloating
 
 export default function () {
     const [history, setHistory] = useState<string[] | null>(null);
-    const search = useSearch();
-
-    const setQuery = useSetAtom(queryAtom);
-    const setPageStatus = useSetAtom(pageStatusAtom);
-    const setSearchResultsState = useSetAtom(searchResultsAtom);
+    const submitSearch = useSubmitSearch();
     const { t } = useI18N();
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
 
@@ -80,13 +68,8 @@ export default function () {
                                         getHistory().then(setHistory);
                                     }}
                                     onPress={() => {
-                                        setSearchResultsState(
-                                            initSearchResults,
-                                        );
-                                        setPageStatus(PageStatus.SEARCHING);
-                                        search(_, 1);
+                                        submitSearch(_);
                                         addHistory(_);
-                                        setQuery(_);
                                     }}>
                                     {_}
                                 </Chip>

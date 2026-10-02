@@ -170,7 +170,7 @@ export default function ColorPicker(props: IColorPickerProps) {
             setCurrentSaturation(hsl.saturationl());
             setCurrentLightness(hsl.lightness());
             setCurrentAlpha(color.alpha());
-        } catch (error) {
+        } catch {
             // 如果输入的颜色无效，恢复到当前颜色
             setInputValue(colorHexString);
         }
@@ -203,7 +203,7 @@ export default function ColorPicker(props: IColorPickerProps) {
                                     
                                     // 使用输入的颜色进行提交
                                     onSelected?.(color);
-                                } catch (error) {
+                                } catch {
                                     // 如果输入的颜色无效，使用当前颜色
                                     onSelected?.(currentColorWithAlpha);
                                 }

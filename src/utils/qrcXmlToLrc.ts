@@ -90,7 +90,7 @@ function extractLyricContent(xmlString: string): string | null {
         content = content.replace(/<\/?LyricInfo[^>]*>/g, '');
 
         return content.trim();
-    } catch (error) {
+    } catch {
         return null;
     }
 }

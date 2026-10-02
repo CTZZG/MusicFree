@@ -13,23 +13,23 @@ export function normalizeMusicState(state: MusicStateLike): PlayerBackendState {
             : state;
 
     switch (rawState) {
-        case "playing":
-            return "playing";
-        case "paused":
-            return "paused";
-        case "buffering":
-            return "buffering";
-        case "stopped":
-            return "stopped";
-        case "ended":
-            return "ended";
-        case "ready":
-            return "ready";
-        case "error":
-            return "error";
-        case "idle":
-        default:
-            return "idle";
+    case "playing":
+        return "playing";
+    case "paused":
+        return "paused";
+    case "buffering":
+        return "buffering";
+    case "stopped":
+        return "stopped";
+    case "ended":
+        return "ended";
+    case "ready":
+        return "ready";
+    case "error":
+        return "error";
+    case "idle":
+    default:
+        return "idle";
     }
 }
 

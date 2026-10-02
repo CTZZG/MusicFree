@@ -11,10 +11,9 @@ import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
 import { useI18N } from "@/core/i18n";
 import { useParams } from "@/core/router";
-import { RequestStateCode } from "@/constants/commonConst";
-import { useAtomValue } from "jotai";
-import { searchResultsAtom } from "../../store/atoms";
 import Color from "color";
+import { getCategoryTabMeta, type ITabMeta } from "../../common/searchResultMeta";
+import { useSearchResults } from "../../hooks/useSearchSession";
 
 const routes = results;
 
@@ -31,70 +30,6 @@ const getRouterScene = (
 const renderScene = getRouterScene(routes);
 const ERROR_COLOR = "#FC5F5F";
 
-function getCategoryTabMeta(
-    searchResultMap:
-        | Record<
-              string,
-              {
-                  state?: RequestStateCode;
-                  data?: unknown[];
-              }
-          >
-        | undefined,
-    loadingText: string,
-    failedText: string,
-) {
-    const resultsByPlugin = Object.values(searchResultMap ?? {});
-    if (!resultsByPlugin.length) {
-        return {
-            text: "",
-            isError: false,
-        };
-    }
-
-    const resultCount = resultsByPlugin.reduce(
-        (sum, item) => sum + (item?.data?.length ?? 0),
-        0,
-    );
-    const isLoading = resultsByPlugin.some(
-        item =>
-            item?.state === RequestStateCode.PENDING_FIRST_PAGE ||
-            item?.state === RequestStateCode.PENDING_REST_PAGE,
-    );
-    const isError = resultsByPlugin.some(
-        item => item?.state === RequestStateCode.ERROR,
-    );
-    const hasDoneResult = resultsByPlugin.some(
-        item =>
-            item?.state === RequestStateCode.FINISHED ||
-            item?.state === RequestStateCode.PARTLY_DONE,
-    );
-
-    if (isLoading) {
-        return {
-            text: resultCount ? `${resultCount}...` : loadingText,
-            isError: false,
-        };
-    }
-    if (resultCount || hasDoneResult) {
-        return {
-            text: `${resultCount}`,
-            isError: false,
-        };
-    }
-    if (isError) {
-        return {
-            text: failedText,
-            isError: true,
-        };
-    }
-
-    return {
-        text: "",
-        isError: false,
-    };
-}
-
 function ResultPanel() {
     const params = useParams<"search-page">();
     const initialIndex = Math.max(
@@ -104,7 +39,7 @@ function ResultPanel() {
     const [index, setIndex] = useState(initialIndex);
     const colors = useColors();
     const { t } = useI18N();
-    const searchResults = useAtomValue(searchResultsAtom);
+    const searchResults = useSearchResults();
 
     useEffect(() => {
         setIndex(initialIndex);
@@ -131,8 +66,7 @@ function ResultPanel() {
                                     focused={focused}
                                     meta={getCategoryTabMeta(
                                         searchResults[route.key],
-                                        t("common.loading"),
-                                        t("common.failToLoad"),
+                                        t,
                                     )}
                                 />
                             ),
@@ -172,10 +106,7 @@ function ResultPanel() {
 function CategoryTabLabel(props: {
     title: string;
     focused: boolean;
-    meta: {
-        text: string;
-        isError: boolean;
-    };
+    meta: ITabMeta;
 }) {
     const { title, focused, meta } = props;
     const colors = useColors();

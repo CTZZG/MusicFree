@@ -52,6 +52,30 @@ describe("SearchRequestGuard", () => {
 
         expect(guard.isInFlight("music:plugin-a:2:hello")).toBe(false);
     });
+
+    it("never treats a request from before reset as current again", () => {
+        const guard = new SearchRequestGuard();
+        const stale = guard.begin("music:plugin-a");
+
+        guard.reset();
+        const fresh = guard.begin("music:plugin-a");
+
+        expect(fresh.id).not.toBe(stale.id);
+        expect(guard.isCurrent(stale)).toBe(false);
+        expect(guard.isCurrent(fresh)).toBe(true);
+    });
+
+    it("keeps a newer in-flight signature when a stale request finishes", () => {
+        const guard = new SearchRequestGuard();
+        const signature = "music:plugin-a:1:hello";
+        const stale = guard.begin("music:plugin-a", signature);
+
+        guard.reset();
+        guard.begin("music:plugin-a", signature);
+        guard.finish(stale);
+
+        expect(guard.isInFlight(signature)).toBe(true);
+    });
 });
 
 describe("getSearchRequestKey", () => {

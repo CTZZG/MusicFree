@@ -94,7 +94,7 @@ export default function useComments(mediaItem: ICommon.IMediaBase) {
                     state: result.isEnd === false ? RequestStateCode.PARTLY_DONE : RequestStateCode.FINISHED,
                 });
             }
-        } catch (error) {
+        } catch {
             if (mountedRef.current && isSameMediaItem(mediaItem, getDefaultStore().get(commentsAtom).mediaItem)) {
                 getDefaultStore().set(commentsAtom, {
                     mediaItem,
