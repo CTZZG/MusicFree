@@ -11,7 +11,7 @@ import {
     getSearchRequestKey,
     getSearchRequestSignature,
     searchRequestGuard,
-} from "./searchRequestGuard";
+} from "@/core/search/searchRequestGuard";
 
 const PLUGIN_SEARCH_TIMEOUT_MS = 15_000;
 
