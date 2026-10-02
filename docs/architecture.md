@@ -61,7 +61,8 @@
   一旦依赖方接受的版本范围内出现了不受影响的新版本，审计就会失败，提醒升级并删除例外。已不再匹配任何公告的例外只给出警告。
 - 2026-10-02 已把有修复版本的高危依赖全部升级（axios、nanoid、brace-expansion、@xmldom/xmldom、browserslist、joi、js-yaml、undici），
   生产依赖的中危条目也已清零（qs 升到 6.16.0；@react-navigation/core 升到 7.23.0，不再依赖 query-string 和 decode-uri-component）。
-  开发依赖中另有 fast-uri、svgo 的高危公告，不在发布审计范围内，尚未处理。
+  开发依赖中 fast-uri、svgo 的公告也已修复（fast-uri 3.1.8、svgo 3.3.5）。发布审计只检查生产依赖；
+  目前完整的 `npm audit`（含开发依赖）也只剩下面登记的例外。
   当前登记的例外：
   - node-forge（GHSA-86w9-cpqp-85rv）：最新 1.4.0 仍受影响，经 `expo` → `@expo/cli` 引入，只用于 Expo 更新包签名，本项目构建不使用，也不打进 APK。
   - image-size（GHSA-5p2g-fcmc-qvqq、GHSA-w3rx-r6r6-pgpr）：只在 2.x 修复，而 metro 各版本都依赖 `^1.0.2`；metro 只在打包时读取仓库自带的图片，不打进 APK。
