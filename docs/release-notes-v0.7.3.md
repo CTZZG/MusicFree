@@ -1,3 +1,8 @@
+<!--
+历史发布记录：对应 tag v0.7.3（提交 fe9c5fd0）。其中 Nitro 播放内核、Google Cast、
+Nitro 均衡器与 WorkManager 的内容只适用于该版本，当前分支已移除 Nitro（提交 793aa1ad）。
+当前架构与支持范围以 docs/architecture.md 为准。
+-->
 # 🎵 MusicFree v0.7.3
 
 ## 📱 下载选项
