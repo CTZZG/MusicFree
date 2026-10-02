@@ -59,7 +59,9 @@
 - 稳定版构建另外运行 `npm run audit:production-deps`（`generator/audit-production-deps.mjs`），有高危漏洞时不发布。
   阻断标准与 `npm audit --omit=dev --audit-level=high` 相同，只放行脚本中登记的例外。例外只能是上游暂无修复版本的公告，并写明原因；
   一旦依赖方接受的版本范围内出现了不受影响的新版本，审计就会失败，提醒升级并删除例外。已不再匹配任何公告的例外只给出警告。
-- 2026-10-02 已把有修复版本的高危依赖全部升级（axios、nanoid、brace-expansion、@xmldom/xmldom、browserslist、joi、js-yaml、undici）。
+- 2026-10-02 已把有修复版本的高危依赖全部升级（axios、nanoid、brace-expansion、@xmldom/xmldom、browserslist、joi、js-yaml、undici），
+  生产依赖的中危条目也已清零（qs 升到 6.16.0；@react-navigation/core 升到 7.23.0，不再依赖 query-string 和 decode-uri-component）。
+  开发依赖中另有 fast-uri、svgo 的高危公告，不在发布审计范围内，尚未处理。
   当前登记的例外：
   - node-forge（GHSA-86w9-cpqp-85rv）：最新 1.4.0 仍受影响，经 `expo` → `@expo/cli` 引入，只用于 Expo 更新包签名，本项目构建不使用，也不打进 APK。
   - image-size（GHSA-5p2g-fcmc-qvqq、GHSA-w3rx-r6r6-pgpr）：只在 2.x 修复，而 metro 各版本都依赖 `^1.0.2`；metro 只在打包时读取仓库自带的图片，不打进 APK。
