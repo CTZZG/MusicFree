@@ -19,6 +19,7 @@
 | --- | --- | --- |
 | 播放 | `src/core/trackPlayer/index.ts`（`TrackPlayer` 门面）→ `src/core/playerAdapter/mpvPlayerAdapter.ts` → `android/app/src/main/java/fun/upup/musicfree/mpvplayer/` | JS 负责用户意图、队列与播放规则；native 负责实际加载与播放、进度、通知、锁屏和媒体键 |
 | 插件与音源 | `src/core/pluginManager` | 插件按可信代码对待（提交 `c46675b0`）；插件方法经 `PluginMethodsWrapper` 包装，取源走统一的音质兼容层 |
+| 搜索 | `src/core/search`（`SearchSession`）← `src/pages/searchPage/hooks/useSearchSession.ts` | 会话负责请求编排与各来源状态；页面只订阅快照、调用会话操作，见下文 |
 | 下载 | `src/core/downloader.ts`、`src/core/downloadFinalizationRunner.ts`、`src/core/downloadFinalizationJournal.ts` | 任务调度与传输；最终化按日志阶段推进（产物就绪含解密、写标签、写歌词、加入音乐库、提交附加信息），中断后从记录的阶段继续 |
 | 本地音乐 | `src/core/localMusicSheet.ts` | 扫描、元数据缓存、匹配与提交 |
 | 存储 | `src/utils/keyValueStore` | 原子写入的文件键值存储（提交 `9bfccd41` 起替代 MMKV） |
@@ -30,6 +31,17 @@
 - 纯规则（各模块的 `*Policy.ts` 与状态转换函数）不依赖 React、原生模块或文件系统，可以直接单元测试。
 - 跨模块只调用明确的入口，不新增全局事件总线，也不直接修改其他模块内部的 atom。
 - 保留 Jotai 与现有 external store；先明确状态归属，不同时迁移状态库。
+
+## 搜索
+
+- `SearchSession`（`src/core/search/searchSession.ts`）负责一次搜索的关键词、参与的来源，以及每个来源每种类型的页码与状态（加载中、有结果、无结果、失败）。
+- 开始新的搜索时，之前的请求全部失效，迟到的结果和错误都被丢弃。离开搜索页时会话被重置。
+- 每个来源独立加载、独立失败：任意一个来源返回后就展示结果，其余来源在各自的标签里继续加载。
+- 单个来源单次请求最多等待 15 秒。失败按原因区分为 `timeout`、`error`、`invalid-result`、`source-unavailable`，页面据此给出不同提示。
+- 重试只重新请求失败的那个来源的失败那一页，已加载的页保留；“加载更多”不会跳过失败的页。
+- 取消语义：插件的 `search` 没有取消接口。超时或被取代的请求只是不再等待，插件内部的网络请求仍会继续，结果被丢弃。
+- 页面通过 `hooks/useSearchSession.ts` 按来源订阅快照：一个来源的结果变化不会让其他来源的列表重新渲染。
+- 歌词搜索面板（`src/components/panels/types/searchLrc`）仍使用自己的请求编排，尚未接入会话。
 
 ## 依赖安装
 
@@ -54,8 +66,8 @@
 
 | # | 场景 | 自动化覆盖 | 设备验证 |
 | --- | --- | --- | --- |
-| 1 | 搜索：两个来源一快一超时，先看到成功结果，只重试失败来源 | 待补（首个切片） | 未验证 |
-| 2 | 搜索：连续搜索 A、B 且 A 最后完成，B 不混入 A 的结果或错误；分页失败后重试同一页 | 待补（首个切片） | 未验证 |
+| 1 | 搜索：两个来源一快一超时，先看到成功结果，只重试失败来源 | `src/core/search/__tests__/searchSession.test.ts`、`src/pages/searchPage/hooks/__tests__/useSearchSession.test.tsx` | 未验证 |
+| 2 | 搜索：连续搜索 A、B 且 A 最后完成，B 不混入 A 的结果或错误；分页失败后重试同一页 | `src/core/search/__tests__/searchSession.test.ts` | 未验证 |
 | 3 | 播放：连续下一首、指定播放、切音质与暂停，旧 START/END/error 事件不覆盖最终意图 | 相关单元测试：`src/core/trackPlayer/__tests__/manualSkipCoordinator.test.ts`、`qualityChangeCoordinator.test.ts`、`src/core/playerAdapter/__tests__/mpvPlayerAdapter.test.ts`（未逐条核对是否覆盖本场景） | 未验证 |
 | 4 | 播放：冷启动恢复某曲后立即修改同一曲的音质或进度，旧恢复不覆盖新意图 | 相关单元测试：`src/core/trackPlayer/__tests__/sourceRecoveryPolicy.test.ts`（未逐条核对） | 未验证 |
 | 5 | 播放：JS 暂时不活跃时 native 连续切到已准备的曲目，恢复后界面、通知与队列一致 | 相关单元测试：`src/core/playerAdapter/__tests__/mpvQueue.test.ts`（只覆盖 JS 侧） | 未验证 |

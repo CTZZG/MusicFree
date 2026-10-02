@@ -4,20 +4,13 @@ import Loading from "@/components/base/loading";
 import MusicList from "@/components/musicList";
 import { RequestStateCode } from "@/constants/commonConst";
 import Config from "@/core/appConfig";
+import searchSession, { type ISearchSourceResult } from "@/core/search";
 import TrackPlayer from "@/core/trackPlayer";
 import useOrientation from "@/hooks/useOrientation";
 import { FlashList } from "@shopify/flash-list";
-import { useAtomValue } from "jotai";
-import React, {
-    memo,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from "react";
-import useSearch from "../../hooks/useSearch";
-import { ISearchResult, queryAtom } from "../../store/atoms";
+import React, { memo, useCallback, useEffect, useMemo } from "react";
+import { getSourceEmptyState } from "../../common/searchResultMeta";
+import { useSearchSessionId } from "../../hooks/useSearchSession";
 import { renderMap } from "./results";
 import { useI18N } from "@/core/i18n";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
@@ -30,8 +23,10 @@ interface IResultWrapperProps<
     tab: T;
     pluginHash: string;
     pluginName: string;
-    searchResult: ISearchResult<T>;
-    pluginSearchResultRef: React.MutableRefObject<ISearchResult<T>>;
+    searchResult?: ISearchSourceResult<T>;
+    pluginSearchResultRef: React.MutableRefObject<
+        ISearchSourceResult<T> | undefined
+    >;
 }
 function ResultWrapper(props: IResultWrapperProps) {
     const {
@@ -41,15 +36,13 @@ function ResultWrapper(props: IResultWrapperProps) {
         searchResult,
         pluginSearchResultRef,
     } = props;
-    const search = useSearch();
-    const [searchState, setSearchState] = useState<RequestStateCode>(
-        searchResult?.state ?? RequestStateCode.IDLE,
-    );
+    const sessionId = useSearchSessionId();
+    // 结果面板只在搜索进行中出现，尚无记录说明首个请求马上就会发出
+    const searchState =
+        searchResult?.state ?? RequestStateCode.PENDING_FIRST_PAGE;
     const orientation = useOrientation();
-    const query = useAtomValue(queryAtom);
     const { t } = useI18N();
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(24));
-    const didRequestFirstSearchRef = useRef(false);
 
     const ResultComponent = renderMap[tab]!;
     const data: any = searchResult?.data ?? [];
@@ -59,19 +52,10 @@ function ResultWrapper(props: IResultWrapperProps) {
         [],
     );
 
+    // 展示到这个来源时请求第一页；每次新的搜索开始后重新请求
     useEffect(() => {
-        if (
-            searchState === RequestStateCode.IDLE &&
-            !didRequestFirstSearchRef.current
-        ) {
-            didRequestFirstSearchRef.current = true;
-            search(query, 1, tab, pluginHash);
-        }
-    }, [pluginHash, query, search, searchState, tab]);
-
-    useEffect(() => {
-        setSearchState(searchResult?.state ?? RequestStateCode.IDLE);
-    }, [searchResult]);
+        searchSession.ensureLoaded(tab, pluginHash);
+    }, [pluginHash, sessionId, tab]);
 
     const renderItem = ({ item, index }: any) => (
         <ResultComponent
@@ -81,36 +65,23 @@ function ResultWrapper(props: IResultWrapperProps) {
             pluginSearchResultRef={pluginSearchResultRef}
         />
     );
-    const emptyStateText = useMemo(() => {
-        if (
-            searchState === RequestStateCode.FINISHED ||
-            searchState === RequestStateCode.PARTLY_DONE
-        ) {
-            return {
-                title: t("searchPage.sourceEmptyResult", {
-                    source: pluginName,
-                }),
-            };
-        }
-        if (searchState === RequestStateCode.ERROR) {
-            return {
-                title: t("searchPage.sourceLoadFailed", {
-                    source: pluginName,
-                }),
-                description: searchResult?.errorMessage,
-            };
-        }
+    const emptyState = useMemo(
+        () => getSourceEmptyState(searchResult, pluginName, t),
+        [pluginName, searchResult, t],
+    );
 
-        return {};
-    }, [pluginName, searchResult?.errorMessage, searchState, t]);
-
+    // 重试失败的那一页：首页失败重新加载，翻页失败只补那一页，已加载的结果保留
     const retry = useCallback(() => {
-        search(query, 1, tab, pluginHash);
-    }, [pluginHash, query, search, tab]);
+        searchSession.retry(tab, pluginHash);
+    }, [pluginHash, tab]);
+
+    const refresh = useCallback(() => {
+        searchSession.refresh(tab, pluginHash);
+    }, [pluginHash, tab]);
 
     const loadMore = useCallback(() => {
-        search(undefined, undefined, tab, pluginHash);
-    }, [pluginHash, search, tab]);
+        searchSession.loadMore(tab, pluginHash);
+    }, [pluginHash, tab]);
 
     const onMusicItemPress = useCallback(
         (musicItem: IMusic.IMusicItem, musicList?: IMusic.IMusicItem[]) => {
@@ -133,13 +104,9 @@ function ResultWrapper(props: IResultWrapperProps) {
                 musicList={data as IMusic.IMusicItem[]}
                 state={searchState}
                 onRetry={retry}
-                emptyTitle={emptyStateText.title}
-                emptyDescription={emptyStateText.description}
-                onLoadMore={() => {
-                    (searchState === RequestStateCode.PARTLY_DONE ||
-                        searchState === RequestStateCode.IDLE) &&
-                        loadMore();
-                }}
+                emptyTitle={emptyState.title}
+                emptyDescription={emptyState.description}
+                onLoadMore={loadMore}
                 onItemPress={onMusicItemPress}
                 showArtwork
             />
@@ -154,20 +121,15 @@ function ResultWrapper(props: IResultWrapperProps) {
             ListEmptyComponent={
                 <ListEmpty
                     state={searchState}
-                    title={emptyStateText.title}
-                    description={emptyStateText.description}
+                    title={emptyState.title}
+                    description={emptyState.description}
                     onRetry={retry}
                 />
             }
             ListFooterComponent={
                 <>
                     {data?.length ? (
-                        <ListFooter
-                            state={searchState}
-                            onRetry={() => {
-                                search(query, undefined, tab, pluginHash);
-                            }}
-                        />
+                        <ListFooter state={searchState} onRetry={retry} />
                     ) : null}
                     {musicBarBottomInset ? (
                         <View style={{ height: musicBarBottomInset }} />
@@ -176,14 +138,8 @@ function ResultWrapper(props: IResultWrapperProps) {
             }
             data={data}
             refreshing={false}
-            onRefresh={() => {
-                retry();
-            }}
-            onEndReached={() => {
-                (searchState === RequestStateCode.PARTLY_DONE ||
-                    searchState === RequestStateCode.IDLE) &&
-                    loadMore();
-            }}
+            onRefresh={refresh}
+            onEndReached={loadMore}
             numColumns={
                 tab === "sheet" ? (orientation === "vertical" ? 3 : 4) : 1
             }

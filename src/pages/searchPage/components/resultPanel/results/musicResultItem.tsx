@@ -1,14 +1,16 @@
 import React from "react";
 import MusicItem from "@/components/mediaItem/musicItem";
 import Config from "@/core/appConfig";
-import { ISearchResult } from "@/pages/searchPage/store/atoms";
+import type { ISearchSourceResult } from "@/core/search";
 import TrackPlayer from "@/core/trackPlayer";
 import { trace } from "@/utils/log";
 
 interface IMusicResultsProps {
     item: IMusic.IMusicItem;
     index: number;
-    pluginSearchResultRef: React.MutableRefObject<ISearchResult<"music">>;
+    pluginSearchResultRef: React.MutableRefObject<
+        ISearchSourceResult<"music"> | undefined
+    >;
 }
 
 export default function MusicResultItem(props: IMusicResultsProps) {

@@ -65,5 +65,3 @@ export function getSearchRequestSignature(
 ) {
     return `${getSearchRequestKey(type, pluginHash)}:${page}:${query}`;
 }
-
-export const searchRequestGuard = new SearchRequestGuard();

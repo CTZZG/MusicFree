@@ -12,36 +12,25 @@ import { useAtom, useSetAtom } from "jotai";
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import { addHistory } from "../common/historySearch";
-import useSearch from "../hooks/useSearch";
-import {
-    PageStatus,
-    initSearchResults,
-    pageStatusAtom,
-    queryAtom,
-    searchResultsAtom,
-} from "../store/atoms";
+import { useSubmitSearch } from "../hooks/useSearchSession";
+import { editingAtom, queryAtom } from "../store/atoms";
 
 interface INavBarProps {
     autoFocus?: boolean;
 }
 
 export default function NavBar(props: INavBarProps) {
-    const search = useSearch();
+    const submitSearch = useSubmitSearch();
     const [query, setQuery] = useAtom(queryAtom);
-    const setPageStatus = useSetAtom(pageStatusAtom);
+    const setEditing = useSetAtom(editingAtom);
     const colors = useColors();
-    const setSearchResultsState = useSetAtom(searchResultsAtom);
     const { t } = useI18N();
 
     const onSearchSubmit = async () => {
         if (query === "") {
             return;
         }
-        setSearchResultsState(initSearchResults);
-        setPageStatus(prev =>
-            prev === PageStatus.EDITING ? PageStatus.SEARCHING : prev,
-        );
-        await search(query, 1);
+        submitSearch(query);
         await addHistory(query);
     };
 
@@ -69,14 +58,14 @@ export default function NavBar(props: INavBarProps) {
                     accessibilityLabel={t("searchPage.searchLabel.a11y")}
                     accessibilityHint={t("searchPage.searchPlaceHolder")}
                     onFocus={() => {
-                        setPageStatus(PageStatus.EDITING);
+                        setEditing(true);
                     }}
                     placeholderTextColor={hintTextColor}
                     placeholder={t("searchPage.searchPlaceHolder")}
                     onSubmitEditing={onSearchSubmit}
                     onChangeText={_ => {
                         if (_ === "") {
-                            setPageStatus(PageStatus.EDITING);
+                            setEditing(true);
                         }
                         setQuery(_);
                     }}
@@ -88,7 +77,7 @@ export default function NavBar(props: INavBarProps) {
                         sizeType="light"
                         onPress={() => {
                             setQuery("");
-                            setPageStatus(PageStatus.EDITING);
+                            setEditing(true);
                         }}
                         color={hintTextColor}
                         name="x-mark"

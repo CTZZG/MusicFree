@@ -384,6 +384,12 @@ export interface ILanguageData {
     "searchPage.albumDetailFallback": string; // 专辑详情不可用时回退搜索
     "searchPage.sourceEmptyResult": string; // 某来源无搜索结果
     "searchPage.sourceLoadFailed": string; // 某来源加载失败
+    "searchPage.sourceTimeoutShort": string; // 来源标签上的超时提示
+    "searchPage.sourceTimeout": string; // 某来源响应超时
+    "searchPage.sourceTimeoutDescription": string; // 超时说明
+    "searchPage.sourceUnavailable": string; // 某来源已不可用
+    "searchPage.sourceUnavailableDescription": string; // 来源不可用的说明
+    "searchPage.sourceInvalidResult": string; // 来源返回无法识别的结果
     // 榜单相关
     "topList.title": string; // 榜单
 

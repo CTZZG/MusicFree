@@ -1,15 +1,17 @@
 import Empty from "@/components/base/empty";
-import { RequestStateCode } from "@/constants/commonConst";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import PluginManager from "@/core/pluginManager";
 import useColors from "@/hooks/useColors";
 import rpx, { vw } from "@/utils/rpx";
-import { useAtomValue } from "jotai";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
-import { searchResultsAtom } from "../../store/atoms";
+import { getSourceTabMeta } from "../../common/searchResultMeta";
+import {
+    useSearchSourceResult,
+    useSearchTypeResults,
+} from "../../hooks/useSearchSession";
 import { renderMap } from "./results";
 import DefaultResults from "./results/defaultResults";
 import ResultWrapper from "./resultWrapper";
@@ -22,39 +24,6 @@ interface IResultSubPanelProps {
 
 const ERROR_COLOR = "#FC5F5F";
 
-function getPluginTabMeta(
-    searchResult:
-        | {
-              state?: RequestStateCode;
-              data?: unknown[];
-          }
-        | undefined,
-    loadingText: string,
-    failedText: string,
-) {
-    const resultCount = searchResult?.data?.length ?? 0;
-
-    if (
-        searchResult?.state === RequestStateCode.PENDING_FIRST_PAGE ||
-        searchResult?.state === RequestStateCode.PENDING_REST_PAGE
-    ) {
-        return resultCount ? `${resultCount}...` : loadingText;
-    }
-
-    if (searchResult?.state === RequestStateCode.ERROR) {
-        return failedText;
-    }
-
-    if (
-        searchResult?.state === RequestStateCode.FINISHED ||
-        searchResult?.state === RequestStateCode.PARTLY_DONE
-    ) {
-        return `${resultCount}`;
-    }
-
-    return "";
-}
-
 // 展示结果的视图
 function getResultComponent(
     tab: ICommon.SupportMediaType,
@@ -64,8 +33,10 @@ function getResultComponent(
     return tab in renderMap
         ? memo(
             () => {
-                const searchResults = useAtomValue(searchResultsAtom);
-                const pluginSearchResult = searchResults[tab][pluginHash];
+                const pluginSearchResult = useSearchSourceResult(
+                    tab,
+                    pluginHash,
+                );
                 const pluginSearchResultRef = useRef(pluginSearchResult);
 
                 useEffect(() => {
@@ -104,7 +75,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
     const params = useParams<"search-page">();
     const colors = useColors();
     const { t } = useI18N();
-    const searchResults = useAtomValue(searchResultsAtom);
+    const typeResults = useSearchTypeResults(props.tab);
 
     const routes = useMemo(
         () =>
@@ -148,16 +119,11 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                     (acc: Record<string, any>, route: { key: string; title?: string }) => {
                         acc[route.key] = {
                             label: ({ focused }: any) => {
-                                const pluginSearchResult =
-                                    searchResults[props.tab][route.key];
-                                const meta = getPluginTabMeta(
-                                    pluginSearchResult,
-                                    t("common.loading"),
-                                    t("common.failToLoad"),
+                                const meta = getSourceTabMeta(
+                                    typeResults[route.key],
+                                    t,
                                 );
-                                const isError =
-                                    pluginSearchResult?.state ===
-                                    RequestStateCode.ERROR;
+                                const isError = meta.isError;
                                 const metaColor = isError
                                     ? ERROR_COLOR
                                     : focused
@@ -206,7 +172,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                                             {route.title ??
                                                 `(${t("common.unknownName")})`}
                                         </Text>
-                                        {meta ? (
+                                        {meta.text ? (
                                             <Text
                                                 numberOfLines={1}
                                                 style={[
@@ -215,7 +181,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                                                         color: metaColor,
                                                     },
                                                 ]}>
-                                                {meta}
+                                                {meta.text}
                                             </Text>
                                         ) : null}
                                     </View>
