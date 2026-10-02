@@ -57,7 +57,11 @@
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。
 - 稳定版构建另外运行 `npm audit --omit=dev --audit-level=high`，有高危漏洞时不发布。
-  2026-10-02 核对时该审计未通过（axios、@xmldom/xmldom、brace-expansion 等有新公告），需要单独升级依赖。
+  2026-10-02 已把有修复版本的高危依赖全部升级（axios、nanoid、brace-expansion、@xmldom/xmldom、browserslist、joi、js-yaml、undici）。
+  仍有两项上游没有修复版本，审计因此仍未通过：
+  - node-forge（GHSA-86w9-cpqp-85rv）：最新 1.4.0 仍受影响，经 `expo` → `@expo/cli` 引入，只用于 Expo 更新包签名，本项目构建不使用。
+  - image-size（GHSA-5p2g-fcmc-qvqq、GHSA-w3rx-r6r6-pgpr）：只在 2.x 修复，而 metro 各版本都依赖 `^1.0.2`；只在打包时读取仓库自带的图片。
+- `brace-expansion` 通过 `overrides` 固定为 5.0.12，`patches/brace-expansion+5.0.12.patch` 让旧版 minimatch 仍能把它当函数调用；升级版本时需要同时重新生成补丁。
 - 原生代码由两套构建中的 `assembleRelease` 编译；`npm run audit:round20-native` 需要本地 Android 环境，不在 CI 质量门中。
 
 ## 核心行为清单
