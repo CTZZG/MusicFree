@@ -9,10 +9,10 @@ import RNFS, {
     unlink,
     writeFile,
 } from 'react-native-fs';
-import {errorLog} from './log';
+import { errorLog } from './log';
 import path from 'path-browserify';
 import resolveAssetSource from 'react-native/Libraries/Image/resolveAssetSource';
-import {Image} from 'expo-image';
+import { Image } from 'expo-image';
 
 const galleryBasePath = `${PicturesDirectoryPath}/MusicFree/`;
 
@@ -34,7 +34,7 @@ export async function saveToGallery(src: string) {
         }
     }
     if (src.startsWith('http')) {
-        const {promise} = downloadFile({
+        const { promise } = downloadFile({
             fromUrl: src,
             toFile: fileName,
             background: true,
@@ -68,7 +68,7 @@ export async function checkAndCreateDir(dirPath: string) {
             await mkdir(filePath);
         }
     } catch (e) {
-        errorLog('无法初始化目录', {path: dirPath, e});
+        errorLog('无法初始化目录', { path: dirPath, e });
     }
 }
 
@@ -230,8 +230,8 @@ export function resolveImportedAssetOrPath(
     return pathOrAsset === undefined
         ? undefined
         : typeof pathOrAsset === 'string'
-        ? pathOrAsset
-        : resolveImportedAsset(pathOrAsset);
+            ? pathOrAsset
+            : resolveImportedAsset(pathOrAsset);
 }
 
 function resolveImportedAsset(id?: number) {

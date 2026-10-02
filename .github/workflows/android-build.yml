@@ -47,12 +47,14 @@ jobs:
                   git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "ssh://git@github.com/"
                   git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "git@github.com:"
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v6
+            - name: Quality gate
+              uses: ./.github/actions/quality-gate
               with:
                   node-version: ${{ env.NODE_VERSION }}
-                  cache: npm
-                  cache-dependency-path: package-lock.json
+
+            # 正式发布额外要求生产依赖没有高危漏洞
+            - name: Production dependency audit
+              run: npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org
 
             - name: Setup Java
               uses: actions/setup-java@v5
@@ -60,23 +62,6 @@ jobs:
                   distribution: temurin
                   java-version: ${{ env.JAVA_VERSION }}
                   cache: gradle
-
-            - name: Install dependencies
-              env:
-                  NODE_ENV: development
-                  HUSKY: 0
-              run: npm ci
-
-            - name: Static and regression gates
-              env:
-                  NODE_ENV: test
-              run: |
-                  npx tsc --noEmit --pretty false
-                  npm run audit:round20-static
-                  npm test -- --runInBand
-                  node ./node_modules/patch-package/index.js --check
-                  npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org
-                  git diff --check
 
             - name: Generate build metadata
               run: |

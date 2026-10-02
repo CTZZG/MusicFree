@@ -1,0 +1,29 @@
+name: CI
+
+# 合并前运行与发布构建相同的基础质量门（不构建 APK）
+on:
+    pull_request:
+    push:
+        branches:
+            - main
+            - dev
+            - 'feat/**'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ci-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    quality-gate:
+        name: Quality gate
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Quality gate
+              uses: ./.github/actions/quality-gate
