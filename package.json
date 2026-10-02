@@ -19,6 +19,7 @@
         "test": "jest",
         "audit:round20-static": "node ./generator/audit-round20-static.mjs",
         "audit:dependency-overrides": "node ./generator/audit-dependency-overrides.mjs",
+        "audit:production-deps": "node ./generator/audit-production-deps.mjs",
         "audit:invariants": "node ./generator/audit-invariants.mjs",
         "audit:round20-native": "node ./generator/audit-round20-native.mjs",
         "audit:round20-format-samples": "node ./generator/audit-round20-format-samples.mjs",

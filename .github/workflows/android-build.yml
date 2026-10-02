@@ -52,9 +52,10 @@ jobs:
               with:
                   node-version: ${{ env.NODE_VERSION }}
 
-            # 正式发布额外要求生产依赖没有高危漏洞
+            # 正式发布额外要求生产依赖没有高危漏洞；只放行
+            # generator/audit-production-deps.mjs 中登记过、上游暂无修复的公告
             - name: Production dependency audit
-              run: npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org
+              run: npm run audit:production-deps
 
             - name: Setup Java
               uses: actions/setup-java@v5
