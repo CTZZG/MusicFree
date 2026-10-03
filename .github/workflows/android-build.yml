@@ -203,6 +203,31 @@ jobs:
                   restore-keys: |
                       ${{ runner.os }}-metro-
 
+            # 原生单元测试先跑：失败就不再打包，也不会创建 Release
+            - name: Android unit tests
+              working-directory: ./android
+              run: |
+                  if ! ./gradlew testReleaseUnitTest \
+                    --no-daemon \
+                    --stacktrace \
+                    --max-workers=2 \
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"; then
+                    echo "::error title=Android unit tests failed::testReleaseUnitTest failed. The test report is attached as an artifact of this run."
+                    exit 1
+                  fi
+
+            # 测试失败时也上传报告，方便直接看是哪个用例
+            - name: Upload Android unit test reports
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: android-unit-tests-release-${{ github.run_id }}
+                  path: |
+                      android/app/build/reports/tests/
+                      android/app/build/test-results/
+                  if-no-files-found: ignore
+                  retention-days: 14
+
             - name: Build release APKs
               working-directory: ./android
               run: |

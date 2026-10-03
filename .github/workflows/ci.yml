@@ -27,3 +27,76 @@ jobs:
 
             - name: Quality gate
               uses: ./.github/actions/quality-gate
+
+    # 原生单元测试：只在改到原生代码、原生依赖或这项检查本身时跑 Gradle。
+    # 没改到时这个任务照样以成功结束，不会让必需检查一直挂着。
+    android-unit-tests:
+        name: Android unit tests
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+              with:
+                  # PR 要和合并提交的第一个父提交比较，push 要和推送前的提交比较
+                  fetch-depth: 0
+
+            - name: Detect native changes
+              id: changes
+              env:
+                  BEFORE_SHA: ${{ github.event.before }}
+              run: node generator/detect-native-changes.mjs
+
+            - name: Setup Node.js
+              if: steps.changes.outputs.native == 'true'
+              uses: actions/setup-node@v6
+              with:
+                  node-version: '22'
+                  cache: npm
+                  cache-dependency-path: package-lock.json
+
+            # Gradle 的自动链接和 codegen 要读 node_modules；postinstall 会打上补丁
+            - name: Install dependencies
+              if: steps.changes.outputs.native == 'true'
+              env:
+                  NODE_ENV: development
+                  HUSKY: '0'
+              run: npm ci --no-audit --no-fund
+
+            - name: Setup Java
+              if: steps.changes.outputs.native == 'true'
+              uses: actions/setup-java@v5
+              with:
+                  java-version: '17'
+                  distribution: 'temurin'
+                  cache: 'gradle'
+
+            - name: Run Android unit tests
+              if: steps.changes.outputs.native == 'true'
+              working-directory: ./android
+              run: |
+                  chmod +x ./gradlew
+                  ./gradlew testDebugUnitTest \
+                    --no-daemon \
+                    --stacktrace \
+                    --max-workers=2 \
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+
+            - name: Upload Android unit test reports
+              if: always() && steps.changes.outputs.native == 'true'
+              uses: actions/upload-artifact@v7
+              with:
+                  name: android-unit-tests-debug-${{ github.run_id }}
+                  path: |
+                      android/app/build/reports/tests/
+                      android/app/build/test-results/
+                  if-no-files-found: ignore
+                  retention-days: 14
+
+            - name: Summary
+              if: always()
+              run: |
+                  if [ "${{ steps.changes.outputs.native }}" = "true" ]; then
+                    echo "Android unit tests ran (testDebugUnitTest)." >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "No native-related changes; Android unit tests skipped." >> "$GITHUB_STEP_SUMMARY"
+                  fi

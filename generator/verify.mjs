@@ -1,4 +1,5 @@
 import {spawnSync} from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -11,6 +12,14 @@ const nodeCommand = process.execPath;
 function nodeModule(...segments) {
     return path.join(rootDir, 'node_modules', ...segments);
 }
+
+// 构建脚本自己的 node:test 用例：generator/lib 下所有 *.test.mjs，新加的自动纳入
+const generatorTestDir = path.join(rootDir, 'generator', 'lib');
+const generatorTests = fs
+    .readdirSync(generatorTestDir)
+    .filter(name => name.endsWith('.test.mjs'))
+    .sort()
+    .map(name => path.join(generatorTestDir, name));
 
 const checks = [
     {
@@ -35,9 +44,10 @@ const checks = [
         env: {NODE_ENV: 'test'},
     },
     {
-        // 构建脚本自己的单元测试（node:test），例如审计里 npm view 结果的判定
+        // 构建脚本自己的单元测试（node:test），例如审计里 npm view 结果的判定、
+        // CI 是否需要跑原生测试的判定
         name: 'Generator unit tests',
-        args: ['--test', path.join(rootDir, 'generator', 'lib', 'npmView.test.mjs')],
+        args: ['--test', ...generatorTests],
     },
     {
         name: 'patch-package replay',
