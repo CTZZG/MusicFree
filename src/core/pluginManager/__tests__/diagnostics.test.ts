@@ -154,6 +154,43 @@ describe("plugin diagnostic severity", () => {
         );
     });
 
+    it("counts only recent errors in a plugin's report summary", () => {
+        const plugin = {
+            name: "p",
+            hash: "h",
+            supportedMethods: new Set<string>(),
+            instance: { version: "1.0.0", author: "a" },
+        } as any;
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "capability",
+            message: "outcome=allowed; capability=network",
+            severity: "info",
+        });
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "storage-migration",
+            message: "legacyEntries=1",
+            severity: "info",
+        });
+
+        const infoOnly = buildPluginDiagnosticReport([plugin]);
+        expect(infoOnly).toContain("recentErrors=0");
+        expect(infoOnly).toContain("events=2");
+
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "search",
+            message: "network failed",
+        });
+        expect(buildPluginDiagnosticReport([plugin])).toContain(
+            "recentErrors=1",
+        );
+    });
+
     it("labels each event's severity in the diagnostic report", () => {
         recordPluginDiagnosticMessage({
             pluginName: "p",

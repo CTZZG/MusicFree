@@ -186,11 +186,18 @@ function getPluginReportLines(
     if (!plugins.length) {
         return ["-"];
     }
+    const now = Date.now();
     return plugins.map(plugin => {
-        const eventCount = events.filter(event =>
+        const pluginEvents = events.filter(event =>
             plugin.hash
                 ? event.pluginHash === plugin.hash
                 : event.pluginName === plugin.name,
+        );
+        // 和插件卡片的「最近错误」同一口径：时间窗内、严重程度为 error
+        const recentErrorCount = pluginEvents.filter(
+            event =>
+                getPluginDiagnosticSeverity(event) === "error" &&
+                isRecentPluginDiagnosticEvent(event, now),
         ).length;
         const capabilities = [...plugin.supportedMethods].sort();
         const runtimeCapabilities = [
@@ -206,7 +213,8 @@ function getPluginReportLines(
             `  runtimeCapabilities=${runtimeCapabilities.length
                 ? runtimeCapabilities.map(sanitizeReportValue).join(",")
                 : "-"}`,
-            `  recentErrors=${eventCount}`,
+            `  recentErrors=${recentErrorCount}`,
+            `  events=${pluginEvents.length}`,
         ].join("\n");
     });
 }
