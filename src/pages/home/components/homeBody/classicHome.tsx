@@ -34,7 +34,7 @@ export default function ClassicHomeBody() {
             ) : null}
             {!hideHomeOperations ? <Operations /> : null}
             {!hideHomeRecentListening ? (
-                <ClassicRecentListening musics={data.recentMusics} />
+                <ClassicRecentListening musics={data.recentMusics.slice(0, 3)} />
             ) : null}
             <Sheets variant="classic" />
         </ScrollView>

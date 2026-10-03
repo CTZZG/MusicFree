@@ -80,11 +80,7 @@ function ResultPanel() {
                     <TabBar
                         {...props}
                         scrollEnabled
-                        style={{
-                            backgroundColor: colors.tabBar,
-                            shadowColor: "transparent",
-                            borderColor: "transparent",
-                        }}
+                        style={styles.tabBar}
                         inactiveColor={colors.text}
                         activeColor={colors.primary}
                         tabStyle={{
@@ -164,6 +160,13 @@ function CategoryTabLabel(props: {
 export default memo(ResultPanel);
 
 const styles = StyleSheet.create({
+    // 类型切换栏直接铺在页面底色上
+    tabBar: {
+        backgroundColor: "transparent",
+        shadowColor: "transparent",
+        borderColor: "transparent",
+        elevation: 0,
+    },
     categoryTabLabel: {
         width: rpx(156),
         minHeight: rpx(72),

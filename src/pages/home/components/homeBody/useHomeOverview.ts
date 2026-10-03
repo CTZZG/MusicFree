@@ -5,6 +5,9 @@ import { useCurrentMusic } from "@/core/trackPlayer";
 import { isSameMediaItem } from "@/utils/mediaUtils";
 import { useMemo } from "react";
 
+/** 首页“最近播放”横排最多展示的歌曲数 */
+const RECENT_MUSIC_LIMIT = 12;
+
 export default function useHomeOverview() {
     const sortedPlugins = useSortedPlugins();
     const currentMusic = useCurrentMusic();
@@ -36,7 +39,7 @@ export default function useHomeOverview() {
                 .filter(item =>
                     currentMusic ? !isSameMediaItem(item, currentMusic) : true,
                 )
-                .slice(0, 3),
+                .slice(0, RECENT_MUSIC_LIMIT),
         [currentMusic, history],
     );
 

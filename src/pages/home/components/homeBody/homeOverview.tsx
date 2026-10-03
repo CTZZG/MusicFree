@@ -1,111 +1,44 @@
 import FastImage from "@/components/base/fastImage";
 import Icon, { IIconName } from "@/components/base/icon.tsx";
+import LargeTitleScrollView from "@/components/base/largeTitleScrollView";
 import ThemeText from "@/components/base/themeText";
-import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import { ImgAsset } from "@/constants/assetsConst";
-import i18n, { useI18N } from "@/core/i18n";
-import { useAppConfig } from "@/core/appConfig";
+import Config, { useAppConfig } from "@/core/appConfig";
+import { useI18N } from "@/core/i18n";
+import type { Plugin } from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import TrackPlayer, {
-    useMusicQuality,
-    useMusicState,
-    useProgress,
-} from "@/core/trackPlayer";
-import Theme from "@/core/theme";
+import TrackPlayer, { useMusicState, useProgress } from "@/core/trackPlayer";
 import useColors from "@/hooks/useColors";
 import useResolvedMusicArtwork from "@/hooks/useResolvedMusicArtwork";
-import rpx from "@/utils/rpx";
+import useRecommendSheets from "@/pages/recommendSheets/hooks/useRecommendSheets";
+import { RequestStateCode } from "@/constants/commonConst";
 import { musicIsPaused } from "@/utils/trackUtils";
-import {
-    getAvailableQualities,
-    getQualityAbbr,
-    TRY_QUALITYS_LIST,
-} from "@/utils/qualities";
-import Color from "color";
 import React, { ReactNode, useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import type { DimensionValue } from "react-native";
-import pluginManager, { type Plugin } from "@/core/pluginManager";
-import useHomeDiscovery, {
-    IHomeDiscoveryPreview,
-} from "./useHomeDiscovery";
+import useHomeDiscovery from "./useHomeDiscovery";
+import useHomeDiscoverySource from "./useHomeDiscoverySource";
 import useHomeOverview from "./useHomeOverview";
 
+const PAGE_PADDING = 20;
+const RECOMMEND_LIMIT = 10;
+
 function formatTime(value?: number) {
-    const seconds = Math.max(0, Math.floor(value ?? 0));
-    const minute = Math.floor(seconds / 60);
-    const second = seconds % 60;
-    return `${minute}:${String(second).padStart(2, "0")}`;
-}
-
-function getProgressPercent(
-    position?: number,
-    duration?: number,
-): DimensionValue {
-    if (!position || !duration || duration <= 0) {
-        return "0%";
+    if (!value || !Number.isFinite(value) || value < 0) {
+        return "0:00";
     }
-    return `${Math.min(
-        100,
-        Math.max(0, (position / duration) * 100),
-    )}%` as DimensionValue;
+    const totalSeconds = Math.floor(value);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = `${totalSeconds % 60}`.padStart(2, "0");
+    return `${minutes}:${seconds}`;
 }
 
-function getMusicDescription(musicItem?: IMusic.IMusicItem | null) {
-    if (!musicItem) {
-        return "";
-    }
-    return [musicItem.artist, musicItem.platform].filter(Boolean).join(" · ");
-}
-
-function getMusicSubtitle(musicItem?: IMusic.IMusicItem | null) {
-    if (!musicItem) {
-        return "";
-    }
-    return [musicItem.artist, musicItem.album]
-        .map(item =>
-            item === undefined || item === null ? "" : String(item).trim(),
-        )
-        .filter(Boolean)
-        .join(" · ");
-}
-
-function getBestQualityBadge(musicItem: IMusic.IMusicItem) {
-    const plugin = pluginManager.getByMedia(musicItem);
-    const availableQualities = getAvailableQualities(musicItem, {
-        supportedQualities: plugin?.instance?.supportedQualities,
-    });
-    const bestQuality =
-        TRY_QUALITYS_LIST.find(quality =>
-            availableQualities.includes(quality),
-        ) ?? availableQualities[0];
-
-    return bestQuality ? getQualityAbbr(bestQuality) : "";
-}
-
-function useIsFrostedGlass() {
-    return Theme.useTheme().id === "p-frosted-glass";
-}
-
-function getSurfaceBorderColor(colors: ReturnType<typeof useColors>, isGlass: boolean, alpha = 0.06) {
-    // 静态背景上的磨砂卡片用发丝白描边勾勒玻璃边缘
-    return isGlass
-        ? "rgba(255, 255, 255, 0.6)"
-        : Color(colors.text).alpha(alpha).toString();
-}
-
-function getSurfaceBackground(colors: ReturnType<typeof useColors>, _isGlass: boolean) {
-    // 首页卡片铺在静态渐变背景上，实时模糊平滑背景既看不出效果又会在部分
-    // 设备（HarmonyOS dimezisBlurView）产生错位条带，直接用半透明磨砂白即可。
-    // colors.card 在液态硅胶主题下是 rgba(255,255,255,0.55)。
-    return colors.card;
-}
-
+/** 首页 iOS 风格：大标题、继续听、推荐歌单、榜单、最近播放 */
 export default function HomeOverview() {
+    const { t } = useI18N();
     const data = useHomeOverview();
-    const discoveryPreview = useHomeDiscovery(data.topListPlugins);
-    const musicBarFloatingOffset = useMusicBarFloatingOffset(rpx(12));
+    const { plugin, candidates } = useHomeDiscoverySource();
     const hideHomeDiscovery = useAppConfig("theme.hideHomeDiscovery") ?? false;
     const hideHomeHeroCard = useAppConfig("theme.hideHomeHeroCard") ?? false;
     const hideHomeRecentListening =
@@ -113,35 +46,144 @@ export default function HomeOverview() {
     const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
 
     return (
-        <ScrollView
-            style={styles.wrapper}
-            contentContainerStyle={styles.contentContainer}
-            showsVerticalScrollIndicator={false}>
-            {!hideHomeDiscovery ? (
-                <Discovery
-                    topListPlugins={data.topListPlugins}
-                    preview={discoveryPreview}
-                />
-            ) : null}
+        <LargeTitleScrollView
+            translucentChrome
+            title={t("tabs.home")}
+            subtitle={t("home.subtitle")}
+            actions={
+                !hideHomeDiscovery && plugin ? (
+                    <SourcePill plugin={plugin} candidates={candidates} />
+                ) : null
+            }>
             {!hideHomeHeroCard ? (
                 <ContinueListening
                     currentMusic={data.currentMusic}
                     featuredMusic={data.featuredMusic}
                 />
             ) : null}
+            {!hideHomeDiscovery && plugin ? (
+                <>
+                    <RecommendSheets plugin={plugin} />
+                    <TopLists plugin={plugin} />
+                </>
+            ) : null}
             {!hideHomeRecentListening ? (
                 <RecentListening musics={data.recentMusics} />
             ) : null}
             {!hideHomeOperations ? <QuickAccess /> : null}
-            <MyMusic
-                favoriteSheet={data.favoriteSheet}
-                userSheets={data.userSheets}
-                starredSheets={data.starredSheets}
-            />
-            {musicBarFloatingOffset ? (
-                <View style={{ height: musicBarFloatingOffset }} />
+        </LargeTitleScrollView>
+    );
+}
+
+/** 大标题右侧的音源切换：推荐歌单和榜单都取自这个插件 */
+function SourcePill(props: { plugin: Plugin; candidates: Plugin[] }) {
+    const { plugin, candidates } = props;
+    const colors = useColors();
+    const { t } = useI18N();
+
+    return (
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("home.discoverySource.a11y", {
+                name: plugin.name,
+            })}
+            disabled={candidates.length < 2}
+            onPress={() => {
+                showDialog("RadioDialog", {
+                    title: t("home.discoverySource"),
+                    content: candidates.map(item => ({
+                        title: item.name,
+                        value: item.name,
+                        label: item.name,
+                    })),
+                    defaultSelected: plugin.name,
+                    onOk(value) {
+                        Config.setConfig(
+                            "theme.homeDiscoverySource",
+                            value as string,
+                        );
+                    },
+                });
+            }}
+            style={({ pressed }) => [
+                styles.sourcePill,
+                { backgroundColor: colors.placeholder },
+                pressed ? styles.pressed : null,
+            ]}>
+            <ThemeText
+                numberOfLines={1}
+                fontSize="subTitle"
+                fontWeight="semibold"
+                fontColor="primary"
+                style={styles.sourceName}>
+                {plugin.name}
+            </ThemeText>
+            {candidates.length > 1 ? (
+                <Icon name="chevron-down" size={15} color={colors.primary} />
             ) : null}
+        </Pressable>
+    );
+}
+
+/** 分区标题：22pt 粗体，右侧“全部” */
+function SectionHeader(props: { title: string; onSeeAll?: () => void }) {
+    const { t } = useI18N();
+
+    return (
+        <View style={styles.sectionHeader}>
+            <ThemeText
+                accessibilityRole="header"
+                fontWeight="bold"
+                style={styles.sectionTitle}>
+                {props.title}
+            </ThemeText>
+            {props.onSeeAll ? (
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${props.title}，${t("home.seeAll")}`}
+                    hitSlop={10}
+                    onPress={props.onSeeAll}
+                    style={({ pressed }) => (pressed ? styles.pressed : null)}>
+                    <ThemeText fontSize="title" fontColor="primary">
+                        {t("home.seeAll")}
+                    </ThemeText>
+                </Pressable>
+            ) : null}
+        </View>
+    );
+}
+
+function Carousel(props: { children: ReactNode; gap?: number }) {
+    return (
+        <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[
+                styles.carousel,
+                { gap: props.gap ?? 14 },
+            ]}>
+            {props.children}
         </ScrollView>
+    );
+}
+
+/** 加载中的占位块 */
+function Placeholders(props: { count: number; width: number; height: number; radius: number }) {
+    const colors = useColors();
+    return (
+        <>
+            {Array.from({ length: props.count }, (_, index) => (
+                <View
+                    key={index}
+                    style={{
+                        width: props.width,
+                        height: props.height,
+                        borderRadius: props.radius,
+                        backgroundColor: colors.placeholder,
+                    }}
+                />
+            ))}
+        </>
     );
 }
 
@@ -150,1232 +192,621 @@ function ContinueListening(props: {
     featuredMusic: IMusic.IMusicItem | null;
 }) {
     const { currentMusic, featuredMusic } = props;
-    // 进度/播放态是高频更新源，仅在本子组件内订阅，避免整个首页随进度每秒重渲染。
+    // 进度/播放态是高频更新源，只在这个卡片里订阅，免得整个首页每秒重渲染
     const musicState = useMusicState();
-    const currentQuality = useMusicQuality();
     const { position, duration } = useProgress();
     const colors = useColors();
-    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
     const navigate = useNavigate();
     const resolvedArtwork = useResolvedMusicArtwork(featuredMusic);
 
-    const isCurrent =
-        !!currentMusic &&
-        !!featuredMusic &&
-        currentMusic.platform === featuredMusic.platform &&
-        currentMusic.id === featuredMusic.id;
-    const progressDuration = isCurrent
-        ? duration || featuredMusic?.duration
-        : featuredMusic?.duration;
-    const progressPosition = isCurrent ? position : 0;
-    const qualityBadge = useMemo(() => {
-        if (!featuredMusic) {
-            return "";
-        }
-        return isCurrent
-            ? getQualityAbbr(currentQuality)
-            : getBestQualityBadge(featuredMusic);
-    }, [currentQuality, featuredMusic, isCurrent]);
-    const subtitle = useMemo(
-        () => getMusicSubtitle(featuredMusic),
-        [featuredMusic],
-    );
-
     if (!featuredMusic) {
         return (
-            <Section title={t("home.continueListening")}>
-                <View
-                    style={[
-                        styles.emptyStart,
-                        isFrostedGlass ? styles.glassSurface : null,
-                        {
-                            backgroundColor: getSurfaceBackground(
-                                colors,
-                                isFrostedGlass,
-                            ),
-                            borderColor: getSurfaceBorderColor(
-                                colors,
-                                isFrostedGlass,
-                            ),
-                        },
-                    ]}>
-                    <QuickPill
-                        icon="inbox-arrow-down"
-                        title={t("home.importPlaylist.a11y")}
-                        onPress={() => showPanel("ImportMusicSheet")}
-                    />
-                    <QuickPill
-                        icon="folder-music-outline"
-                        title={t("home.scanLocal")}
-                        onPress={() => navigate(ROUTE_PATH.LOCAL)}
-                    />
-                </View>
-            </Section>
+            <View
+                style={[
+                    styles.card,
+                    styles.emptyCard,
+                    { backgroundColor: colors.card },
+                ]}>
+                <EmptyAction
+                    icon="inbox-arrow-down"
+                    title={t("home.importPlaylist.a11y")}
+                    onPress={() => showPanel("ImportMusicSheet")}
+                />
+                <EmptyAction
+                    icon="folder-music-outline"
+                    title={t("home.scanLocal")}
+                    onPress={() => navigate(ROUTE_PATH.LOCAL)}
+                />
+            </View>
         );
     }
 
+    const isCurrent =
+        !!currentMusic &&
+        currentMusic.platform === featuredMusic.platform &&
+        currentMusic.id === featuredMusic.id;
+    const isPlaying = isCurrent && !musicIsPaused(musicState);
+    const total = isCurrent
+        ? duration || featuredMusic.duration
+        : featuredMusic.duration;
+    const elapsed = isCurrent ? position : 0;
+    const ratio = total ? Math.min(1, Math.max(0, elapsed / total)) : 0;
+
     return (
-        <Section title={t("home.continueListening")}>
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${t("home.continueListening")}，${featuredMusic.title}，${featuredMusic.artist ?? ""}`}
+            onPress={() => {
+                if (isCurrent) {
+                    navigate(ROUTE_PATH.MUSIC_DETAIL);
+                } else {
+                    TrackPlayer.play(featuredMusic);
+                }
+            }}
+            style={({ pressed }) => [
+                styles.card,
+                styles.continueCard,
+                { backgroundColor: pressed ? colors.listActive : colors.card },
+            ]}>
+            <FastImage
+                source={resolvedArtwork ?? featuredMusic.artwork}
+                placeholderSource={ImgAsset.albumDefault}
+                style={styles.continueCover}
+            />
+            <View style={styles.continueTexts}>
+                <ThemeText
+                    fontSize="tag"
+                    fontWeight="semibold"
+                    fontColor="textSecondary">
+                    {t("home.continueListening")}
+                </ThemeText>
+                <ThemeText
+                    numberOfLines={1}
+                    fontSize="title"
+                    fontWeight="semibold"
+                    style={styles.continueTitle}>
+                    {featuredMusic.title}
+                </ThemeText>
+                {featuredMusic.artist ? (
+                    <ThemeText
+                        numberOfLines={1}
+                        fontColor="textSecondary"
+                        style={styles.continueArtist}>
+                        {featuredMusic.artist}
+                    </ThemeText>
+                ) : null}
+                <View style={styles.progressRow}>
+                    <View
+                        style={[
+                            styles.progressTrack,
+                            { backgroundColor: colors.placeholder },
+                        ]}>
+                        <View
+                            style={[
+                                styles.progressFill,
+                                {
+                                    width: `${ratio * 100}%`,
+                                    backgroundColor: colors.primary,
+                                },
+                            ]}
+                        />
+                    </View>
+                    <ThemeText
+                        fontSize="tag"
+                        fontColor="textSecondary"
+                        style={styles.tabular}>
+                        {`${formatTime(elapsed)} / ${formatTime(total)}`}
+                    </ThemeText>
+                </View>
+            </View>
             <Pressable
-                style={[
-                    styles.continueCard,
-                    isFrostedGlass ? styles.glassSurfaceStrong : null,
-                    {
-                        backgroundColor: getSurfaceBackground(
-                            colors,
-                            isFrostedGlass,
-                        ),
-                        borderColor: getSurfaceBorderColor(
-                            colors,
-                            isFrostedGlass,
-                        ),
-                    },
-                ]}
+                accessibilityRole="button"
+                accessibilityLabel={t("musicBar.playPause.a11y")}
                 onPress={() => {
-                    if (isCurrent) {
-                        navigate(ROUTE_PATH.MUSIC_DETAIL);
+                    if (isPlaying) {
+                        TrackPlayer.pause();
                     } else {
                         TrackPlayer.play(featuredMusic);
                     }
-                }}>
-                <FastImage
-                    source={resolvedArtwork ?? featuredMusic.artwork}
-                    placeholderSource={ImgAsset.albumDefault}
-                    style={styles.continueCover}
+                }}
+                style={({ pressed }) => [
+                    styles.playButton,
+                    { backgroundColor: colors.primary },
+                    pressed ? styles.pressed : null,
+                ]}>
+                <Icon
+                    name={isPlaying ? "pause" : "play"}
+                    size={22}
+                    color="#FFFFFF"
                 />
-                <View style={styles.continueContent}>
-                    <View style={styles.continueTopLine}>
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="title"
-                            fontWeight="bold"
-                            style={styles.continueTitle}>
-                            {featuredMusic.title}
-                        </ThemeText>
-                    </View>
-                    <View style={styles.continueMetaRow}>
-                        {featuredMusic.platform ? (
-                            <View
-                                style={[
-                                    styles.continueSourceBadge,
-                                    {
-                                        backgroundColor: Color(colors.primary)
-                                            .alpha(0.14)
-                                            .toString(),
-                                    },
-                                ]}>
-                                <ThemeText
-                                    numberOfLines={1}
-                                    fontSize="tag"
-                                    color={colors.primary}>
-                                    {featuredMusic.platform}
-                                </ThemeText>
-                            </View>
-                        ) : null}
-                        {qualityBadge ? (
-                            <View
-                                style={[
-                                    styles.continueQualityBadge,
-                                    {
-                                        backgroundColor: Color(colors.primary)
-                                            .alpha(0.08)
-                                            .toString(),
-                                        borderColor: Color(colors.primary)
-                                            .alpha(0.32)
-                                            .toString(),
-                                    },
-                                ]}>
-                                <ThemeText
-                                    numberOfLines={1}
-                                    fontSize="tag"
-                                    color={colors.primary}>
-                                    {qualityBadge}
-                                </ThemeText>
-                            </View>
-                        ) : null}
-                        {subtitle ? (
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="description"
-                                fontColor="textSecondary"
-                                style={styles.continueMetaText}>
-                                {subtitle}
-                            </ThemeText>
-                        ) : null}
-                    </View>
-                    <View style={styles.progressRow}>
-                        <ThemeText fontSize="tag" fontColor="textSecondary">
-                            {formatTime(progressPosition)}
-                        </ThemeText>
-                        <View
-                            style={[
-                                styles.progressTrack,
-                                {
-                                    backgroundColor: Color(colors.text)
-                                        .alpha(0.1)
-                                        .toString(),
-                                },
-                            ]}>
-                            <View
-                                style={[
-                                    styles.progressFill,
-                                    {
-                                        backgroundColor: colors.primary,
-                                        width: getProgressPercent(
-                                            progressPosition,
-                                            progressDuration,
-                                        ),
-                                    },
-                                ]}
-                            />
-                        </View>
-                        <ThemeText fontSize="tag" fontColor="textSecondary">
-                            {formatTime(progressDuration)}
-                        </ThemeText>
-                    </View>
-                </View>
-                <Pressable
-                    style={[
-                        styles.playButton,
-                        {
-                            backgroundColor: Color(colors.primary)
-                                .alpha(0.2)
-                                .toString(),
-                        },
-                    ]}
-                    onPress={() => {
-                        if (isCurrent && !musicIsPaused(musicState)) {
-                            TrackPlayer.pause();
-                        } else {
-                            TrackPlayer.play(featuredMusic);
-                        }
-                    }}>
-                    <Icon
-                        name={
-                            isCurrent && !musicIsPaused(musicState)
-                                ? "pause"
-                                : "play"
-                        }
-                        size={rpx(36)}
-                        color={colors.primary}
-                    />
-                </Pressable>
             </Pressable>
-        </Section>
+        </Pressable>
+    );
+}
+
+function EmptyAction(props: {
+    icon: IIconName;
+    title: string;
+    onPress: () => void;
+}) {
+    const colors = useColors();
+    return (
+        <Pressable
+            accessibilityRole="button"
+            onPress={props.onPress}
+            style={({ pressed }) => [
+                styles.emptyAction,
+                { backgroundColor: colors.placeholder },
+                pressed ? styles.pressed : null,
+            ]}>
+            <Icon name={props.icon} size={20} color={colors.primary} />
+            <ThemeText
+                numberOfLines={1}
+                fontSize="subTitle"
+                fontWeight="semibold"
+                fontColor="primary">
+                {props.title}
+            </ThemeText>
+        </Pressable>
+    );
+}
+
+const DEFAULT_RECOMMEND_TAG = { id: "", title: "" };
+
+function RecommendSheets(props: { plugin: Plugin }) {
+    const { plugin } = props;
+    const { t } = useI18N();
+    const navigate = useNavigate();
+    const supported = plugin.supportedMethods.has("getRecommendSheetsByTag");
+    const [query, sheets, requestState] = useRecommendSheets(
+        supported ? plugin.hash : "",
+        DEFAULT_RECOMMEND_TAG,
+    );
+    const items = useMemo(() => sheets.slice(0, RECOMMEND_LIMIT), [sheets]);
+
+    if (!supported) {
+        return null;
+    }
+    const loading =
+        requestState === RequestStateCode.IDLE ||
+        requestState === RequestStateCode.PENDING_FIRST_PAGE;
+    const failed = requestState === RequestStateCode.ERROR && !items.length;
+    if (!loading && !failed && !items.length) {
+        return null;
+    }
+
+    return (
+        <View style={styles.section}>
+            <SectionHeader
+                title={t("home.recommendSheet")}
+                onSeeAll={() => navigate(ROUTE_PATH.RECOMMEND_SHEETS)}
+            />
+            {failed ? (
+                <RetryLine onRetry={query} />
+            ) : (
+                <Carousel>
+                    {items.length ? (
+                        items.map((sheet, index) => (
+                            <Pressable
+                                key={`${sheet.id ?? index}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={sheet.title}
+                                onPress={() =>
+                                    navigate(ROUTE_PATH.PLUGIN_SHEET_DETAIL, {
+                                        pluginHash: plugin.hash,
+                                        sheetInfo: sheet,
+                                    })
+                                }
+                                style={({ pressed }) => [
+                                    styles.sheetTile,
+                                    pressed ? styles.pressed : null,
+                                ]}>
+                                <FastImage
+                                    source={sheet.coverImg ?? sheet.artwork}
+                                    placeholderSource={ImgAsset.albumDefault}
+                                    style={styles.sheetCover}
+                                />
+                                <ThemeText
+                                    numberOfLines={2}
+                                    fontSize="subTitle"
+                                    fontWeight="medium"
+                                    style={styles.tileTitle}>
+                                    {sheet.title ?? t("common.unknownName")}
+                                </ThemeText>
+                            </Pressable>
+                        ))
+                    ) : (
+                        <Placeholders
+                            count={3}
+                            width={156}
+                            height={156}
+                            radius={14}
+                        />
+                    )}
+                </Carousel>
+            )}
+        </View>
+    );
+}
+
+function TopLists(props: { plugin: Plugin }) {
+    const { plugin } = props;
+    const { t } = useI18N();
+    const colors = useColors();
+    const navigate = useNavigate();
+    const preview = useHomeDiscovery(plugin);
+
+    if (!plugin.supportedMethods.has("getTopLists")) {
+        return null;
+    }
+    if (!preview.loading && !preview.topLists.length && !preview.hasError) {
+        return null;
+    }
+
+    return (
+        <View style={styles.section}>
+            <SectionHeader
+                title={t("home.topList")}
+                onSeeAll={() =>
+                    navigate(ROUTE_PATH.TOP_LIST, {
+                        initialPluginHash: plugin.hash,
+                    })
+                }
+            />
+            {preview.hasError && !preview.topLists.length ? (
+                <ThemeText
+                    fontSize="subTitle"
+                    fontColor="textSecondary"
+                    style={styles.inlineMessage}>
+                    {t("common.failToLoad")}
+                </ThemeText>
+            ) : (
+                <Carousel gap={12}>
+                    {preview.topLists.length ? (
+                        preview.topLists.map((topList, index) => (
+                            <Pressable
+                                key={`${topList.id ?? index}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={topList.title}
+                                onPress={() =>
+                                    navigate(ROUTE_PATH.TOP_LIST_DETAIL, {
+                                        pluginHash: plugin.hash,
+                                        topList,
+                                    })
+                                }
+                                style={({ pressed }) => [
+                                    styles.chartCard,
+                                    {
+                                        backgroundColor: pressed
+                                            ? colors.listActive
+                                            : colors.card,
+                                    },
+                                ]}>
+                                <FastImage
+                                    source={topList.coverImg ?? topList.artwork}
+                                    placeholderSource={ImgAsset.albumDefault}
+                                    style={styles.chartCover}
+                                />
+                                <View style={styles.chartTexts}>
+                                    <ThemeText
+                                        numberOfLines={1}
+                                        fontSize="title"
+                                        fontWeight="bold">
+                                        {topList.title ??
+                                            t("common.unknownName")}
+                                    </ThemeText>
+                                    <ThemeText
+                                        numberOfLines={2}
+                                        fontSize="description"
+                                        fontColor="textSecondary">
+                                        {topList.description || plugin.name}
+                                    </ThemeText>
+                                </View>
+                                <Icon
+                                    name="chevron-right"
+                                    size={16}
+                                    color={colors.textSecondary}
+                                />
+                            </Pressable>
+                        ))
+                    ) : (
+                        <Placeholders
+                            count={2}
+                            width={280}
+                            height={84}
+                            radius={20}
+                        />
+                    )}
+                </Carousel>
+            )}
+        </View>
+    );
+}
+
+function RetryLine(props: { onRetry: () => void }) {
+    const { t } = useI18N();
+    return (
+        <Pressable
+            accessibilityRole="button"
+            onPress={props.onRetry}
+            style={styles.inlineMessage}>
+            <ThemeText fontSize="subTitle" fontColor="textSecondary">
+                {`${t("common.failToLoad")} · `}
+                <ThemeText fontSize="subTitle" fontColor="primary">
+                    {t("common.retry")}
+                </ThemeText>
+            </ThemeText>
+        </Pressable>
     );
 }
 
 function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
     const { musics } = props;
-    const colors = useColors();
-    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
+    const navigate = useNavigate();
 
     if (!musics.length) {
         return null;
     }
 
     return (
-        <Section title={t("home.recentListening")} compact>
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.recentContainer}>
+        <View style={styles.section}>
+            <SectionHeader
+                title={t("home.recentListening")}
+                onSeeAll={() => navigate(ROUTE_PATH.HISTORY)}
+            />
+            <Carousel gap={12}>
                 {musics.map(musicItem => (
                     <Pressable
                         key={`${musicItem.platform}-${musicItem.id}`}
-                        style={[
-                            styles.recentItem,
-                            isFrostedGlass ? styles.glassSurface : null,
-                            {
-                                backgroundColor: getSurfaceBackground(
-                                    colors,
-                                    isFrostedGlass,
-                                ),
-                                borderColor: getSurfaceBorderColor(
-                                    colors,
-                                    isFrostedGlass,
-                                ),
-                            },
-                        ]}
-                        onPress={() => TrackPlayer.play(musicItem)}>
+                        accessibilityRole="button"
+                        accessibilityLabel={`${musicItem.title}，${musicItem.artist ?? ""}`}
+                        onPress={() => TrackPlayer.play(musicItem)}
+                        style={({ pressed }) => [
+                            styles.recentTile,
+                            pressed ? styles.pressed : null,
+                        ]}>
                         <FastImage
                             source={musicItem.artwork}
                             placeholderSource={ImgAsset.albumDefault}
                             style={styles.recentCover}
                         />
-                        <View style={styles.recentText}>
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="description"
-                                fontWeight="semibold">
-                                {musicItem.title}
-                            </ThemeText>
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="tag"
-                                fontColor="textSecondary"
-                                style={styles.smallTextMargin}>
-                                {getMusicDescription(musicItem)}
-                            </ThemeText>
-                        </View>
+                        <ThemeText
+                            numberOfLines={1}
+                            fontSize="description"
+                            fontWeight="medium"
+                            style={styles.tileTitle}>
+                            {musicItem.title}
+                        </ThemeText>
+                        <ThemeText
+                            numberOfLines={1}
+                            fontSize="tag"
+                            fontColor="textSecondary">
+                            {musicItem.artist}
+                        </ThemeText>
                     </Pressable>
                 ))}
-            </ScrollView>
-        </Section>
+            </Carousel>
+        </View>
     );
 }
 
+/** 快捷入口：资料库、设置里没有的几个常用动作 */
 function QuickAccess() {
     const colors = useColors();
-    const isFrostedGlass = useIsFrostedGlass();
     const { t } = useI18N();
     const navigate = useNavigate();
 
-    const quickItems: {
-        key: string;
-        icon: IIconName;
-        title: string;
-        accent: string;
-        action: () => void;
-    }[] = [
-        {
-            key: "history",
-            icon: "clock-outline",
-            title: t("home.playHistory"),
-            accent: "#64A7FF",
-            action: () => navigate(ROUTE_PATH.HISTORY),
-        },
-        {
-            key: "local",
-            icon: "folder-music-outline",
-            title: t("home.localMusic"),
-            accent: "#8EDB7C",
-            action: () => navigate(ROUTE_PATH.LOCAL),
-        },
-        {
-            key: "download",
-            icon: "arrow-down-tray",
-            title: t("localMusic.downloadList"),
-            accent: "#70D7D7",
-            action: () => navigate(ROUTE_PATH.DOWNLOADING),
-        },
-        {
-            key: "smartSheets",
-            icon: "strategy",
-            title: t("home.smartSheets"),
-            accent: "#E5A1C6",
-            action: () => navigate(ROUTE_PATH.SMART_SHEETS),
-        },
+    const items: { key: string; icon: IIconName; title: string; action: () => void }[] = [
         {
             key: "recommend",
             icon: "fire-outline",
             title: t("home.recommendSheet"),
-            accent: "#FF8E7D",
             action: () => navigate(ROUTE_PATH.RECOMMEND_SHEETS),
         },
         {
+            key: "topList",
+            icon: "trophy",
+            title: t("home.topList"),
+            action: () => navigate(ROUTE_PATH.TOP_LIST),
+        },
+        {
             key: "sheetManage",
-            icon: "playlist",
+            icon: "pencil-square",
             title: t("home.managePlaylists.short"),
-            accent: "#A88BFF",
             action: () =>
-                navigate(ROUTE_PATH.SHEET_EDITOR, {
-                    sheetType: "local",
-                }),
+                navigate(ROUTE_PATH.SHEET_EDITOR, { sheetType: "local" }),
         },
         {
             key: "sourceManage",
-            icon: "cog-8-tooth",
+            icon: "javascript",
             title: t("home.manageSources.short"),
-            accent: "#F4B85F",
-            action: () =>
-                navigate(ROUTE_PATH.SETTING, {
-                    type: "plugin",
-                }),
+            action: () => navigate(ROUTE_PATH.SETTING, { type: "plugin" }),
         },
         {
             key: "playById",
             icon: "identification",
             title: t("home.playById.short"),
-            accent: "#A2B3C7",
             action: () => showPanel("PlayById"),
         },
     ];
 
     return (
-        <Section title={t("home.quickAccess")}>
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.quickContainer}>
-                {quickItems.map(item => (
+        <View style={styles.section}>
+            <SectionHeader title={t("home.quickAccess")} />
+            <Carousel gap={10}>
+                {items.map(item => (
                     <Pressable
                         key={item.key}
-                        style={[
-                            styles.quickItem,
-                            isFrostedGlass ? styles.quickItemGlass : null,
-                            isFrostedGlass ? styles.glassSurface : null,
-                            {
-                                backgroundColor: getSurfaceBackground(
-                                    colors,
-                                    isFrostedGlass,
-                                ),
-                                borderColor: getSurfaceBorderColor(
-                                    colors,
-                                    isFrostedGlass,
-                                ),
-                            },
-                        ]}
-                        onPress={item.action}>
-                        <View
-                            style={[
-                                styles.quickIconBox,
-                                isFrostedGlass ? styles.quickIconBoxGlass : null,
-                                {
-                                    backgroundColor: Color(item.accent)
-                                        .alpha(isFrostedGlass ? 0.22 : 0.16)
-                                        .toString(),
-                                },
-                            ]}>
-                            <Icon
-                                name={item.icon}
-                                color={item.accent}
-                                size={rpx(32)}
-                            />
-                        </View>
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="description"
-                            fontWeight="semibold"
-                            style={[
-                                styles.quickText,
-                                isFrostedGlass ? styles.quickTextGlass : null,
-                            ]}>
+                        accessibilityRole="button"
+                        onPress={item.action}
+                        style={({ pressed }) => [
+                            styles.quickChip,
+                            { backgroundColor: colors.card },
+                            pressed ? styles.pressed : null,
+                        ]}>
+                        <Icon name={item.icon} size={18} color={colors.primary} />
+                        <ThemeText numberOfLines={1} fontSize="subTitle">
                             {item.title}
                         </ThemeText>
                     </Pressable>
                 ))}
-            </ScrollView>
-        </Section>
-    );
-}
-
-function Discovery(props: {
-    topListPlugins: Plugin[];
-    preview: IHomeDiscoveryPreview;
-}) {
-    const { topListPlugins, preview } = props;
-    const colors = useColors();
-    const isFrostedGlass = useIsFrostedGlass();
-    const { t } = useI18N();
-    const navigate = useNavigate();
-
-    const previewItems = useMemo(
-        () =>
-            preview.topLists.map((item, index) => ({
-                key: `top-${preview.topListPluginHash}-${item.id ?? index}`,
-                type: t("home.topList"),
-                pluginHash: preview.topListPluginHash,
-                pluginName: preview.topListPluginName,
-                title: item.title ?? i18n.t("common.unknownName"),
-                desc: item.description ?? preview.topListPluginName ?? "",
-                cover: item.coverImg ?? item.artwork,
-                action: () => {
-                    if (preview.topListPluginHash) {
-                        navigate(ROUTE_PATH.TOP_LIST_DETAIL, {
-                            pluginHash: preview.topListPluginHash,
-                            topList: item,
-                        });
-                    }
-                },
-            })),
-        [navigate, preview, t],
-    );
-    const fallbackPluginName =
-        preview.topListPluginName ?? topListPlugins[0]?.name ?? t("home.topList");
-    const fallbackDescription = preview.hasError
-        ? `${t("home.topList")} · ${t("common.failToLoad")}`
-        : `${t("home.topList")} · ${t("common.emptyList")}`;
-
-    if (!topListPlugins.length && !previewItems.length && !preview.loading) {
-        return null;
-    }
-
-    return (
-        <Section
-            title={t("home.discovery")}
-            right={
-                <Pressable
-                    style={styles.sectionTextButton}
-                    onPress={() =>
-                        navigate(ROUTE_PATH.TOP_LIST, {
-                            initialPluginHash: preview.topListPluginHash,
-                        })
-                    }>
-                    <ThemeText
-                        fontSize="description"
-                        fontWeight="semibold"
-                        color={colors.primary}>
-                        {t("common.view")}
-                    </ThemeText>
-                    <Icon
-                        name="chevron-right"
-                        size={rpx(26)}
-                        color={colors.primary}
-                    />
-                </Pressable>
-            }>
-            {previewItems.length || preview.loading ? (
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.discoveryPreviewContainer}>
-                    {previewItems.map(item => (
-                        <Pressable
-                            key={item.key}
-                            style={[
-                                styles.discoveryPreviewCard,
-                                isFrostedGlass ? styles.glassSurface : null,
-                                {
-                                    backgroundColor: getSurfaceBackground(
-                                        colors,
-                                        isFrostedGlass,
-                                    ),
-                                    borderColor: getSurfaceBorderColor(
-                                        colors,
-                                        isFrostedGlass,
-                                    ),
-                                },
-                            ]}
-                            onPress={item.action}>
-                            <FastImage
-                                source={item.cover}
-                                placeholderSource={ImgAsset.albumDefault}
-                                style={styles.discoveryPreviewCover}
-                            />
-                            <View style={styles.discoveryPreviewMeta}>
-                                <View
-                                    style={[
-                                        styles.platformBadge,
-                                        {
-                                            backgroundColor: Color(
-                                                colors.primary,
-                                            )
-                                                .alpha(0.14)
-                                                .toString(),
-                                        },
-                                    ]}>
-                                    <ThemeText
-                                        numberOfLines={1}
-                                        fontSize="tag"
-                                        color={colors.primary}>
-                                        {item.type}
-                                    </ThemeText>
-                                </View>
-                                <ThemeText
-                                    numberOfLines={1}
-                                    fontSize="tag"
-                                    fontColor="textSecondary"
-                                    style={styles.discoverySourceName}>
-                                    {item.pluginName}
-                                </ThemeText>
-                            </View>
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="subTitle"
-                                fontWeight="bold"
-                                style={styles.discoveryPreviewTitle}>
-                                {item.title}
-                            </ThemeText>
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="tag"
-                                fontColor="textSecondary">
-                                {item.desc}
-                            </ThemeText>
-                        </Pressable>
-                    ))}
-                    {preview.loading && !previewItems.length ? (
-                        <View
-                            style={[
-                                styles.discoveryPreviewCard,
-                                styles.discoveryLoadingCard,
-                                isFrostedGlass ? styles.glassSurface : null,
-                                {
-                                    backgroundColor: getSurfaceBackground(
-                                        colors,
-                                        isFrostedGlass,
-                                    ),
-                                    borderColor: getSurfaceBorderColor(
-                                        colors,
-                                        isFrostedGlass,
-                                    ),
-                                },
-                            ]}>
-                            <ThemeText fontSize="description">
-                                {t("common.loading")}
-                            </ThemeText>
-                        </View>
-                    ) : null}
-                </ScrollView>
-            ) : null}
-            {!previewItems.length && !preview.loading && topListPlugins.length ? (
-                <Pressable
-                    style={[
-                        styles.discoveryFallback,
-                        isFrostedGlass ? styles.glassSurface : null,
-                        {
-                            backgroundColor: getSurfaceBackground(
-                                colors,
-                                isFrostedGlass,
-                            ),
-                            borderColor: getSurfaceBorderColor(
-                                colors,
-                                isFrostedGlass,
-                            ),
-                        },
-                    ]}
-                    onPress={() =>
-                        navigate(ROUTE_PATH.TOP_LIST, {
-                            initialPluginHash: topListPlugins[0]?.hash,
-                        })
-                    }>
-                    <View
-                        style={[
-                            styles.discoveryIcon,
-                            {
-                                backgroundColor: Color(colors.primary)
-                                    .alpha(0.13)
-                                    .toString(),
-                            },
-                        ]}>
-                        <Icon
-                            name="trophy"
-                            size={rpx(34)}
-                            color={colors.primary}
-                        />
-                    </View>
-                    <View style={styles.discoveryText}>
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="subTitle"
-                            fontWeight="bold">
-                            {fallbackPluginName}
-                        </ThemeText>
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="tag"
-                            fontColor="textSecondary"
-                            style={styles.smallTextMargin}>
-                            {fallbackDescription}
-                        </ThemeText>
-                    </View>
-                    <Icon
-                        name="chevron-right"
-                        size={rpx(30)}
-                        color={colors.textSecondary}
-                    />
-                </Pressable>
-            ) : null}
-        </Section>
-    );
-}
-
-function MyMusic(props: {
-    favoriteSheet: IMusic.IMusicSheetItemBase | null;
-    userSheets: IMusic.IMusicSheetItemBase[];
-    starredSheets: IMusic.IMusicSheetItem[];
-}) {
-    const { favoriteSheet, userSheets, starredSheets } = props;
-    const colors = useColors();
-    const isFrostedGlass = useIsFrostedGlass();
-    const { t } = useI18N();
-    const navigate = useNavigate();
-
-    const rows: {
-        key: string;
-        icon: IIconName;
-        title: string;
-        desc: string;
-        accent: string;
-        action: () => void;
-    }[] = [
-        {
-            key: "favorite",
-            icon: "heart",
-            title: t("home.favoriteSheet"),
-            desc: t("home.songCount", {
-                count: favoriteSheet?.worksNum ?? 0,
-            }),
-            accent: "#FF8FA3",
-            action: () => {
-                if (favoriteSheet) {
-                    navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, {
-                        id: favoriteSheet.id,
-                    });
-                }
-            },
-        },
-        {
-            key: "localSheets",
-            icon: "playlist",
-            title: t("home.myPlaylists"),
-            desc: t("home.playlistCount", {
-                count: userSheets.length,
-            }),
-            accent: "#A88BFF",
-            action: () =>
-                navigate(ROUTE_PATH.SHEET_BROWSER, {
-                    sheetType: "local",
-                }),
-        },
-        {
-            key: "starredSheets",
-            icon: "bookmark-square",
-            title: t("home.starredPlaylists"),
-            desc: t("home.playlistCount", {
-                count: starredSheets.length,
-            }),
-            accent: "#7DD3B8",
-            action: () =>
-                navigate(ROUTE_PATH.SHEET_BROWSER, {
-                    sheetType: "starred",
-                }),
-        },
-    ];
-
-    return (
-        <Section
-            title={t("home.myMusic")}
-            right={
-                <View style={styles.myMusicActions}>
-                    <Pressable
-                        style={[
-                            styles.headerIconAction,
-                            {
-                                backgroundColor: Color(colors.text)
-                                    .alpha(0.07)
-                                    .toString(),
-                            },
-                        ]}
-                        onPress={() => showPanel("CreateMusicSheet")}
-                        accessibilityLabel={t("home.newPlaylist.a11y")}>
-                        <Icon
-                            name="plus"
-                            size={rpx(28)}
-                            color={colors.text}
-                        />
-                    </Pressable>
-                    <Pressable
-                        style={[
-                            styles.headerTextAction,
-                            {
-                                backgroundColor: Color(colors.primary)
-                                    .alpha(0.16)
-                                    .toString(),
-                            },
-                        ]}
-                        onPress={() => showPanel("ImportMusicSheet")}
-                        accessibilityLabel={t("home.importPlaylist.a11y")}>
-                        <Icon
-                            name="inbox-arrow-down"
-                            size={rpx(26)}
-                            color={colors.primary}
-                        />
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="description"
-                            fontWeight="semibold"
-                            color={colors.primary}
-                            style={styles.headerTextActionLabel}>
-                            {t("home.import.short")}
-                        </ThemeText>
-                    </Pressable>
-                </View>
-            }>
-            <View
-                style={[
-                    styles.myMusicList,
-                    isFrostedGlass ? styles.glassSurface : null,
-                    {
-                        backgroundColor: getSurfaceBackground(
-                            colors,
-                            isFrostedGlass,
-                        ),
-                        borderColor: getSurfaceBorderColor(
-                            colors,
-                            isFrostedGlass,
-                        ),
-                    },
-                ]}>
-                {rows.map((row, index) => (
-                    <Pressable
-                        key={row.key}
-                        style={[
-                            styles.myMusicRow,
-                            isFrostedGlass ? styles.myMusicRowGlass : null,
-                            index < rows.length - 1
-                                ? {
-                                    borderBottomColor: isFrostedGlass
-                                        ? "rgba(23, 34, 53, 0.08)"
-                                        : Color(colors.text)
-                                            .alpha(0.06)
-                                            .toString(),
-                                    borderBottomWidth: StyleSheet.hairlineWidth,
-                                }
-                                : null,
-                        ]}
-                        onPress={row.action}>
-                        <View
-                            style={[
-                                styles.myMusicRowIcon,
-                                isFrostedGlass
-                                    ? styles.myMusicRowIconGlass
-                                    : null,
-                                {
-                                    backgroundColor: Color(row.accent)
-                                        .alpha(0.18)
-                                        .toString(),
-                                },
-                            ]}>
-                            <Icon
-                                name={row.icon}
-                                size={rpx(30)}
-                                color={row.accent}
-                            />
-                        </View>
-                        <View style={styles.myMusicRowText}>
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="subTitle"
-                                fontWeight="semibold">
-                                {row.title}
-                            </ThemeText>
-                            <ThemeText
-                                numberOfLines={1}
-                                fontSize="description"
-                                fontColor="textSecondary"
-                                style={[
-                                    styles.smallTextMargin,
-                                    isFrostedGlass
-                                        ? styles.smallTextMarginGlass
-                                        : null,
-                                ]}>
-                                {row.desc}
-                            </ThemeText>
-                        </View>
-                        <Icon
-                            name="chevron-right"
-                            size={rpx(30)}
-                            color={colors.textSecondary}
-                        />
-                    </Pressable>
-                ))}
-            </View>
-        </Section>
-    );
-}
-
-function QuickPill(props: {
-    icon: IIconName;
-    title: string;
-    onPress: () => void;
-}) {
-    const { icon, title, onPress } = props;
-    const colors = useColors();
-
-    return (
-        <Pressable
-            style={[
-                styles.quickPill,
-                { backgroundColor: Color(colors.text).alpha(0.07).toString() },
-            ]}
-            onPress={onPress}>
-            <Icon name={icon} size={rpx(30)} color={colors.text} />
-            <ThemeText
-                numberOfLines={1}
-                fontSize="description"
-                fontWeight="semibold"
-                style={styles.quickPillText}>
-                {title}
-            </ThemeText>
-        </Pressable>
-    );
-}
-
-function Section(props: {
-    title: string;
-    subtitle?: string;
-    right?: ReactNode;
-    compact?: boolean;
-    children: ReactNode;
-}) {
-    const { title, subtitle, right, compact, children } = props;
-
-    return (
-        <View style={[styles.section, compact ? styles.compactSection : null]}>
-            <View style={styles.sectionHeader}>
-                <View style={styles.sectionTitleBlock}>
-                    <ThemeText fontSize="title" fontWeight="bold">
-                        {title}
-                    </ThemeText>
-                    {subtitle ? (
-                        <ThemeText
-                            numberOfLines={1}
-                            fontSize="description"
-                            fontColor="textSecondary"
-                            style={styles.sectionSubtitle}>
-                            {subtitle}
-                        </ThemeText>
-                    ) : null}
-                </View>
-                {right}
-            </View>
-            {children}
+            </Carousel>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    wrapper: {
-        width: "100%",
-        flex: 1,
+    pressed: {
+        opacity: 0.6,
     },
-    contentContainer: {
-        paddingBottom: rpx(36),
+    sourcePill: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 4,
+        height: 34,
+        maxWidth: 160,
+        paddingLeft: 14,
+        paddingRight: 11,
+        borderRadius: 17,
+    },
+    sourceName: {
+        flexShrink: 1,
     },
     section: {
-        marginTop: rpx(20),
-    },
-    compactSection: {
-        marginTop: rpx(14),
+        marginTop: 30,
     },
     sectionHeader: {
-        minHeight: rpx(52),
-        paddingHorizontal: rpx(24),
-        marginBottom: rpx(14),
         flexDirection: "row",
-        alignItems: "center",
+        alignItems: "baseline",
         justifyContent: "space-between",
+        paddingHorizontal: PAGE_PADDING,
+        paddingBottom: 12,
     },
-    sectionTitleBlock: {
+    sectionTitle: {
+        fontSize: 22,
+        lineHeight: 28,
+    },
+    carousel: {
+        paddingHorizontal: PAGE_PADDING,
+    },
+    card: {
+        marginTop: 20,
+        marginHorizontal: PAGE_PADDING,
+        borderRadius: 20,
+    },
+    emptyCard: {
+        flexDirection: "row",
+        gap: 10,
+        padding: 12,
+    },
+    emptyAction: {
         flex: 1,
-        paddingRight: rpx(12),
-    },
-    sectionSubtitle: {
-        marginTop: rpx(8),
-    },
-    sectionTextButton: {
-        minHeight: rpx(48),
+        height: 48,
+        borderRadius: 14,
         flexDirection: "row",
         alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        paddingHorizontal: 10,
     },
     continueCard: {
-        marginHorizontal: rpx(24),
-        minHeight: rpx(156),
-        borderRadius: rpx(18),
-        borderWidth: StyleSheet.hairlineWidth,
-        padding: rpx(18),
         flexDirection: "row",
         alignItems: "center",
+        gap: 14,
+        padding: 12,
     },
     continueCover: {
-        width: rpx(116),
-        height: rpx(116),
-        borderRadius: rpx(14),
+        width: 76,
+        height: 76,
+        borderRadius: 12,
     },
-    continueContent: {
+    continueTexts: {
         flex: 1,
-        minWidth: 0,
-        marginLeft: rpx(18),
-    },
-    continueTopLine: {
-        flexDirection: "row",
-        alignItems: "center",
         minWidth: 0,
     },
     continueTitle: {
-        flex: 1,
-        minWidth: 0,
+        marginTop: 2,
     },
-    platformBadge: {
-        maxWidth: rpx(132),
-        minHeight: rpx(34),
-        paddingHorizontal: rpx(12),
-        borderRadius: rpx(17),
-        alignItems: "center",
-        justifyContent: "center",
-        marginLeft: rpx(10),
-    },
-    continueMetaRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        marginTop: rpx(12),
-        minWidth: 0,
-        overflow: "hidden",
-    },
-    continueSourceBadge: {
-        maxWidth: rpx(124),
-        minHeight: rpx(32),
-        paddingHorizontal: rpx(10),
-        borderRadius: rpx(16),
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: rpx(8),
-        flexShrink: 0,
-    },
-    continueQualityBadge: {
-        maxWidth: rpx(74),
-        minHeight: rpx(32),
-        paddingHorizontal: rpx(9),
-        borderRadius: rpx(16),
-        borderWidth: StyleSheet.hairlineWidth,
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: rpx(8),
-        flexShrink: 0,
-    },
-    continueMetaText: {
-        flex: 1,
-        minWidth: 0,
+    continueArtist: {
+        fontSize: 14,
+        lineHeight: 19,
     },
     progressRow: {
         flexDirection: "row",
         alignItems: "center",
-        marginTop: rpx(20),
+        gap: 8,
+        marginTop: 8,
     },
     progressTrack: {
         flex: 1,
-        height: rpx(6),
-        borderRadius: rpx(3),
-        marginHorizontal: rpx(12),
+        height: 4,
+        borderRadius: 2,
         overflow: "hidden",
     },
     progressFill: {
         height: "100%",
-        borderRadius: rpx(3),
+        borderRadius: 2,
+    },
+    tabular: {
+        fontVariant: ["tabular-nums"],
     },
     playButton: {
-        width: rpx(70),
-        height: rpx(70),
-        borderRadius: rpx(35),
-        marginLeft: rpx(14),
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         alignItems: "center",
         justifyContent: "center",
     },
-    emptyStart: {
-        marginHorizontal: rpx(24),
-        minHeight: rpx(108),
-        borderRadius: rpx(18),
-        padding: rpx(14),
+    sheetTile: {
+        width: 156,
+    },
+    sheetCover: {
+        width: 156,
+        height: 156,
+        borderRadius: 14,
+    },
+    tileTitle: {
+        marginTop: 8,
+    },
+    chartCard: {
+        width: 280,
         flexDirection: "row",
         alignItems: "center",
+        gap: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderRadius: 20,
     },
-    quickPill: {
+    chartCover: {
+        width: 56,
+        height: 56,
+        borderRadius: 12,
+    },
+    chartTexts: {
         flex: 1,
         minWidth: 0,
-        height: rpx(76),
-        borderRadius: rpx(16),
-        marginHorizontal: rpx(4),
-        alignItems: "center",
-        justifyContent: "center",
-        flexDirection: "row",
-        paddingHorizontal: rpx(10),
+        gap: 2,
     },
-    quickPillText: {
-        marginLeft: rpx(8),
-        flexShrink: 1,
-    },
-    recentContainer: {
-        paddingHorizontal: rpx(24),
-    },
-    recentItem: {
-        width: rpx(260),
-        height: rpx(88),
-        borderRadius: rpx(16),
-        flexDirection: "row",
-        alignItems: "center",
-        padding: rpx(12),
-        marginRight: rpx(14),
+    recentTile: {
+        width: 108,
     },
     recentCover: {
-        width: rpx(64),
-        height: rpx(64),
-        borderRadius: rpx(12),
+        width: 108,
+        height: 108,
+        borderRadius: 12,
     },
-    recentText: {
-        flex: 1,
-        minWidth: 0,
-        marginLeft: rpx(12),
-    },
-    smallTextMargin: {
-        marginTop: rpx(8),
-    },
-    smallTextMarginGlass: {
-        marginTop: rpx(10),
-    },
-    quickContainer: {
-        paddingHorizontal: rpx(24),
-    },
-    quickItem: {
-        width: rpx(136),
-        height: rpx(112),
-        borderRadius: rpx(18),
-        borderWidth: StyleSheet.hairlineWidth,
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: rpx(14),
-    },
-    quickItemGlass: {
-        width: rpx(190),
-        height: rpx(78),
-        borderRadius: rpx(20),
-        flexDirection: "row",
-        justifyContent: "flex-start",
-        paddingHorizontal: rpx(16),
-    },
-    quickIconBox: {
-        width: rpx(52),
-        height: rpx(52),
-        borderRadius: rpx(16),
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    quickIconBoxGlass: {
-        width: rpx(46),
-        height: rpx(46),
-        borderRadius: rpx(23),
-    },
-    quickText: {
-        marginTop: rpx(12),
-        maxWidth: rpx(112),
-    },
-    quickTextGlass: {
-        flex: 1,
-        minWidth: 0,
-        maxWidth: undefined,
-        marginTop: 0,
-        marginLeft: rpx(12),
-    },
-    discoveryPreviewContainer: {
-        paddingHorizontal: rpx(24),
-    },
-    discoveryPreviewCard: {
-        width: rpx(232),
-        minHeight: rpx(318),
-        borderRadius: rpx(18),
-        padding: rpx(14),
-        marginRight: rpx(14),
-    },
-    discoveryPreviewCover: {
-        width: rpx(204),
-        height: rpx(204),
-        borderRadius: rpx(14),
-    },
-    discoveryPreviewMeta: {
-        marginTop: rpx(14),
+    quickChip: {
         flexDirection: "row",
         alignItems: "center",
+        gap: 8,
+        height: 40,
+        paddingHorizontal: 14,
+        borderRadius: 20,
     },
-    discoverySourceName: {
-        flex: 1,
-        minWidth: 0,
-        marginLeft: rpx(8),
-    },
-    discoveryPreviewTitle: {
-        marginTop: rpx(12),
-        marginBottom: rpx(8),
-    },
-    discoveryLoadingCard: {
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    discoveryFallback: {
-        marginHorizontal: rpx(24),
-        minHeight: rpx(116),
-        borderRadius: rpx(18),
-        borderWidth: StyleSheet.hairlineWidth,
-        padding: rpx(18),
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    discoveryIcon: {
-        width: rpx(58),
-        height: rpx(58),
-        borderRadius: rpx(16),
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    discoveryText: {
-        flex: 1,
-        minWidth: 0,
-        marginLeft: rpx(14),
-    },
-    myMusicActions: {
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    headerIconAction: {
-        width: rpx(52),
-        height: rpx(52),
-        borderRadius: rpx(26),
-        alignItems: "center",
-        justifyContent: "center",
-        marginRight: rpx(10),
-    },
-    headerTextAction: {
-        height: rpx(52),
-        borderRadius: rpx(26),
-        paddingHorizontal: rpx(16),
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    headerTextActionLabel: {
-        marginLeft: rpx(8),
-    },
-    myMusicList: {
-        marginHorizontal: rpx(24),
-        borderRadius: rpx(18),
-        overflow: "hidden",
-    },
-    myMusicRow: {
-        minHeight: rpx(104),
-        paddingHorizontal: rpx(16),
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    myMusicRowGlass: {
-        minHeight: rpx(108),
-        paddingVertical: rpx(14),
-    },
-    myMusicRowIcon: {
-        width: rpx(54),
-        height: rpx(54),
-        borderRadius: rpx(16),
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    myMusicRowIconGlass: {
-        width: rpx(50),
-        height: rpx(50),
-        borderRadius: rpx(15),
-    },
-    myMusicRowText: {
-        flex: 1,
-        minWidth: 0,
-        marginLeft: rpx(14),
-        marginRight: rpx(10),
-    },
-    // 玻璃卡片背景是 55% 半透明白，Android 的 elevation 阴影会透过卡片本体
-    // 显示出来，形成一个向左上偏移的"重影矩形"。玻璃质感靠发丝白描边 + 半透明
-    // 填充区分层次即可，这里不再叠原生阴影/elevation。
-    glassSurface: {
-        elevation: 0,
-    },
-    glassSurfaceStrong: {
-        elevation: 0,
+    inlineMessage: {
+        paddingHorizontal: PAGE_PADDING,
+        paddingVertical: 8,
     },
 });

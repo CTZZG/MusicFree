@@ -1,5 +1,13 @@
 import React, { ReactNode, useRef } from "react";
-import { ScrollView, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import {
+    RefreshControlProps,
+    ScrollView,
+    StyleProp,
+    StyleSheet,
+    View,
+    ViewStyle,
+} from "react-native";
+import Color from "color";
 import Animated, {
     Extrapolation,
     interpolate,
@@ -19,8 +27,16 @@ import ThemeText from "./themeText";
 
 interface ILargeTitleScrollViewProps {
     title: string;
+    /** 大标题下面的一行灰色说明 */
+    subtitle?: string;
     /** 大标题右侧的按钮 */
     actions?: ReactNode;
+    /**
+     * 页面底下铺了背景图（首页）：状态栏不画底色，滚动后出现的小标题栏
+     * 用半透明底，背景图能透出来
+     */
+    translucentChrome?: boolean;
+    refreshControl?: React.ReactElement<RefreshControlProps>;
     children?: ReactNode;
     contentContainerStyle?: StyleProp<ViewStyle>;
 }
@@ -35,7 +51,15 @@ const COMPACT_TITLE_FADE = [28, 44];
 export default function LargeTitleScrollView(
     props: ILargeTitleScrollViewProps,
 ) {
-    const { title, actions, children, contentContainerStyle } = props;
+    const {
+        title,
+        subtitle,
+        actions,
+        translucentChrome = false,
+        refreshControl,
+        children,
+        contentContainerStyle,
+    } = props;
     const colors = useColors();
     const safeAreaInsets = useSafeAreaInsets();
     // 悬浮的标签栏、迷你播放器从安全区底部算起，滚动内容铺到屏幕底，要再加上安全区
@@ -60,24 +84,38 @@ export default function LargeTitleScrollView(
     return (
         // 状态栏底色是绝对定位的，顶部留白要靠安全区
         <SafeAreaView edges={["top", "left", "right"]} style={styles.root}>
-            <StatusBar />
+            <StatusBar
+                backgroundColor={translucentChrome ? "transparent" : undefined}
+            />
             <View style={styles.root}>
                 <Animated.ScrollView
                     ref={scrollRef as any}
                     onScroll={onScroll}
                     scrollEventThrottle={16}
+                    refreshControl={refreshControl}
                     contentContainerStyle={[
                         { paddingBottom: bottomInset },
                         contentContainerStyle,
                     ]}>
                     <View style={styles.largeHeader}>
-                        <ThemeText
-                            accessibilityRole="header"
-                            numberOfLines={1}
-                            fontWeight="bold"
-                            style={styles.largeTitle}>
-                            {title}
-                        </ThemeText>
+                        <View style={styles.titles}>
+                            <ThemeText
+                                accessibilityRole="header"
+                                numberOfLines={1}
+                                fontWeight="bold"
+                                style={styles.largeTitle}>
+                                {title}
+                            </ThemeText>
+                            {subtitle ? (
+                                <ThemeText
+                                    numberOfLines={1}
+                                    fontSize="subTitle"
+                                    fontColor="textSecondary"
+                                    style={styles.subtitle}>
+                                    {subtitle}
+                                </ThemeText>
+                            ) : null}
+                        </View>
                         {actions ? (
                             <View style={styles.actions}>{actions}</View>
                         ) : null}
@@ -91,7 +129,11 @@ export default function LargeTitleScrollView(
                     style={[
                         styles.compactBar,
                         {
-                            backgroundColor: colors.pageBackground,
+                            backgroundColor: translucentChrome
+                                ? Color(colors.pageBackground)
+                                    .alpha(0.92)
+                                    .toString()
+                                : colors.pageBackground,
                             borderBottomColor: colors.divider,
                         },
                         compactStyle,
@@ -120,8 +162,14 @@ const styles = StyleSheet.create({
         paddingTop: 12,
         gap: 12,
     },
-    largeTitle: {
+    titles: {
         flexShrink: 1,
+        minWidth: 0,
+    },
+    subtitle: {
+        marginTop: 2,
+    },
+    largeTitle: {
         fontSize: 34,
         lineHeight: 41,
         letterSpacing: 0.4,
