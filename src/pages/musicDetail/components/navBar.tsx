@@ -1,78 +1,98 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import rpx from "@/utils/rpx";
 import { useNavigation } from "@react-navigation/native";
-import Tag from "@/components/base/tag";
-import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import Share from "react-native-share";
-import { B64Asset } from "@/constants/assetsConst";
-import IconButton from "@/components/base/iconButton";
+import FastImage from "@/components/base/fastImage";
+import Icon from "@/components/base/icon.tsx";
+import { ImgAsset, B64Asset } from "@/constants/assetsConst";
+import { fontWeightConst } from "@/constants/uiConst";
+import { useI18N } from "@/core/i18n";
 import { useCurrentMusic } from "@/core/trackPlayer";
+import { useMusicDetailVisuals } from "../artworkContext";
 
 interface INavBarProps {
+    /** 封面页：只显示“正在播放”；歌词页显示小封面和歌名 */
     compact?: boolean;
     onTitlePress?: () => void;
+}
+
+function BarButton(props: {
+    icon: "chevron-down" | "share";
+    accessibilityLabel: string;
+    onPress: () => void;
+}) {
+    return (
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={props.accessibilityLabel}
+            onPress={props.onPress}
+            style={({ pressed }) => [
+                styles.button,
+                pressed ? styles.pressed : null,
+            ]}>
+            <Icon
+                name={props.icon}
+                size={props.icon === "chevron-down" ? 26 : 22}
+                color="rgba(255, 255, 255, 0.9)"
+            />
+        </Pressable>
+    );
 }
 
 export default function NavBar(props: INavBarProps) {
     const { compact = false, onTitlePress } = props;
     const navigation = useNavigation();
     const musicItem = useCurrentMusic();
-    // const {showShare} = useShare();
+    const { displayArtwork } = useMusicDetailVisuals();
+    const { t } = useI18N();
 
     return (
-        <View
-            style={[
-                styles.container,
-                compact ? styles.compactContainer : null,
-            ]}>
-            <IconButton
-                name="arrow-left"
-                sizeType={"normal"}
-                color="white"
-                style={styles.button}
+        <View style={styles.container}>
+            <BarButton
+                icon="chevron-down"
+                accessibilityLabel={t("musicDetail.collapse.a11y")}
                 onPress={() => {
                     navigation.goBack();
                 }}
             />
             {compact ? (
-                <View style={styles.headerContent} />
+                <View style={styles.center}>
+                    <Text style={styles.nowPlaying}>
+                        {t("musicDetail.nowPlaying")}
+                    </Text>
+                </View>
             ) : (
                 <Pressable
-                    accessibilityHint={
-                        onTitlePress ? "返回沉浸式封面页" : undefined
-                    }
-                    accessibilityLabel={
-                        onTitlePress
-                            ? `${musicItem?.title ?? "当前歌曲"}，返回封面页`
-                            : undefined
-                    }
                     accessibilityRole={onTitlePress ? "button" : undefined}
+                    accessibilityLabel={`${musicItem?.title ?? "--"}，${
+                        musicItem?.artist ?? ""
+                    }`}
+                    accessibilityHint={
+                        onTitlePress ? t("musicDetail.showCover.a11y") : undefined
+                    }
                     disabled={!onTitlePress}
                     onPress={onTitlePress}
-                    style={styles.headerContent}>
-                    <Text numberOfLines={1} style={styles.headerTitleText}>
-                        {musicItem?.title ?? "--"}
-                    </Text>
-                    <View style={styles.headerDesc}>
-                        <Text style={styles.headerArtistText} numberOfLines={1}>
-                            {musicItem?.artist}
+                    style={styles.titleArea}>
+                    <FastImage
+                        style={styles.artwork}
+                        source={displayArtwork}
+                        placeholderSource={ImgAsset.albumDefault}
+                    />
+                    <View style={styles.titleTexts}>
+                        <Text numberOfLines={1} style={styles.title}>
+                            {musicItem?.title ?? "--"}
                         </Text>
-                        {musicItem?.platform ? (
-                            <Tag
-                                tagName={musicItem.platform}
-                                containerStyle={styles.tagBg}
-                                style={styles.tagText}
-                            />
+                        {musicItem?.artist ? (
+                            <Text numberOfLines={1} style={styles.artist}>
+                                {musicItem.artist}
+                            </Text>
                         ) : null}
                     </View>
                 </Pressable>
             )}
-            <IconButton
-                name="share"
-                color="white"
-                sizeType="normal"
-                style={styles.button}
+            <BarButton
+                icon="share"
+                accessibilityLabel={t("musicDetail.shareApp.a11y")}
                 onPress={async () => {
                     try {
                         await Share.open({
@@ -92,45 +112,60 @@ export default function NavBar(props: INavBarProps) {
 const styles = StyleSheet.create({
     container: {
         width: "100%",
-        height: rpx(150),
+        height: 64,
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "space-between",
-    },
-    compactContainer: {
-        height: rpx(112),
+        paddingHorizontal: 12,
     },
     button: {
-        marginHorizontal: rpx(20),
-    },
-    headerContent: {
-        flex: 1,
-        height: rpx(150),
-        justifyContent: "center",
+        width: 44,
+        height: 44,
         alignItems: "center",
+        justifyContent: "center",
     },
-    headerTitleText: {
-        color: "white",
+    pressed: {
+        opacity: 0.5,
+    },
+    center: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    nowPlaying: {
+        color: "rgba(255, 255, 255, 0.78)",
+        fontSize: 13,
+        lineHeight: 18,
         fontWeight: fontWeightConst.semibold,
-        fontSize: fontSizeConst.title,
-        marginBottom: rpx(12),
         includeFontPadding: false,
     },
-    headerDesc: {
-        height: rpx(32),
+    titleArea: {
+        flex: 1,
+        minWidth: 0,
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: rpx(40),
+        gap: 12,
+        paddingHorizontal: 4,
     },
-    headerArtistText: {
+    artwork: {
+        width: 44,
+        height: 44,
+        borderRadius: 8,
+    },
+    titleTexts: {
+        flex: 1,
+        minWidth: 0,
+    },
+    title: {
         color: "white",
-        fontSize: fontSizeConst.subTitle,
+        fontSize: 17,
+        lineHeight: 22,
+        fontWeight: fontWeightConst.semibold,
         includeFontPadding: false,
     },
-    tagBg: {
-        backgroundColor: "rgba(255, 255, 255, 0.2)",
-    },
-    tagText: {
-        color: "white",
+    artist: {
+        color: "rgba(255, 255, 255, 0.72)",
+        fontSize: 15,
+        lineHeight: 20,
+        includeFontPadding: false,
     },
 });

@@ -14,8 +14,9 @@ describe("getMusicDetailHeroLayout", () => {
             safeAreaBottom: 0,
         });
 
-        expect(layout.focusHeight).toBe(720);
-        expect(layout.tapHeight).toBe(832);
+        // 1600 - 440（下半部分）- 112（导航）- 350（歌词与歌名）= 698，比宽度上的 720 小
+        expect(layout.focusHeight).toBe(698);
+        expect(layout.tapHeight).toBe(810);
     });
 
     it("keeps the minimum artwork focus height on short screens", () => {

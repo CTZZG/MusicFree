@@ -26,9 +26,8 @@ export default function MusicDetail() {
     const [tab, setTab] = useState<"album" | "lyric">(
         Config.getConfig("basic.musicDetailDefault") || "album",
     );
-    const useHeroLayout = orientation === "vertical" && coverStyle !== "circle";
-    const isCircleAlbumLayout =
-        orientation === "vertical" && coverStyle === "circle" && tab === "album";
+    // 默认是 iOS 的圆角卡片封面；“沉浸大图”才把封面铺满顶部
+    const useHeroLayout = orientation === "vertical" && coverStyle === "hero";
     const showOverlayNav =
         immersiveMode ||
         (orientation === "vertical" && tab === "album");
@@ -106,9 +105,8 @@ export default function MusicDetail() {
                             />
                             <Bottom
                                 swipeProgress={swipeProgress}
-                                layoutMode={
-                                    isCircleAlbumLayout ? "circle" : "default"
-                                }
+                                tab={tab}
+                                onTabChange={setTab}
                             />
                             {showOverlayNav ? (
                                 <View
