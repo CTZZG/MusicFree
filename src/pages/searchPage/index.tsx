@@ -1,5 +1,6 @@
-import React, { useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { StyleSheet, TextInput, View } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import NavBar from "./components/navBar";
 import { useSetAtom } from "jotai";
 import { PageStatus, editingAtom, queryAtom } from "./store/atoms";
@@ -22,6 +23,17 @@ export default function () {
     const { t } = useI18N();
     const params = useParams<"search-page">();
     const initialQuery = params?.initialQuery?.trim();
+    const navigation = useNavigation<any>();
+    const inputRef = useRef<TextInput>(null);
+
+    useEffect(() => {
+        // 已经在搜索标签时再点一次标签，聚焦搜索框（iOS 的习惯）
+        return navigation.addListener("tabPress", () => {
+            if (navigation.isFocused()) {
+                inputRef.current?.focus();
+            }
+        });
+    }, [navigation]);
 
     useEffect(() => {
         if (initialQuery) {
@@ -50,7 +62,7 @@ export default function () {
     return (
         <SafeAreaView edges={["bottom", "top"]} style={style.wrapper}>
             <StatusBar />
-            <NavBar autoFocus={!initialQuery} />
+            <NavBar autoFocus={!initialQuery} inputRef={inputRef} />
             <SafeAreaView edges={["left", "right"]} style={style.wrapper}>
                 <View style={style.flex1}>
                     {pageStatus === PageStatus.EDITING && <HistoryPanel />}

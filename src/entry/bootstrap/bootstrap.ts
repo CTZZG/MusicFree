@@ -14,7 +14,7 @@ import MusicSheet from "@/core/musicSheet";
 import downloadNotificationManager from "@/core/downloadNotificationManager";
 import LxSource from "@/core/lxSource";
 import PluginManager from "@/core/pluginManager";
-import { ROUTE_PATH, navigationRef } from "@/core/router";
+import { navigateToSearch, navigationRef } from "@/core/router";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
@@ -362,7 +362,7 @@ async function extraMakeup() {
             }
             return;
         }
-        navigationRef.navigate(ROUTE_PATH.SEARCH_PAGE, {
+        navigateToSearch({
             initialQuery: trimmedKeyword,
             initialSearchType: "music",
             initialSearchToken: Date.now(),

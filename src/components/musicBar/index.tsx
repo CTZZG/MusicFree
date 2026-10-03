@@ -6,17 +6,17 @@ import {
     StyleSheet,
     View,
 } from "react-native";
-import rpx from "@/utils/rpx";
-import Svg, { Circle } from "react-native-svg";
+import Animated, {
+    Easing,
+    useAnimatedStyle,
+    useSharedValue,
+    withTiming,
+} from "react-native-reanimated";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { showPanel } from "../panels/usePanel";
 import useColors from "@/hooks/useColors";
-import TrackPlayer, {
-    useCurrentMusic,
-    useMusicState,
-    useProgress,
-} from "@/core/trackPlayer";
+import TrackPlayer, { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
 import Theme from "@/core/theme";
 import { useAppConfig } from "@/core/appConfig";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
@@ -26,115 +26,62 @@ import LiquidGlassBackdrop, {
 } from "@/components/base/liquidGlassBackdrop";
 import MusicInfo from "./musicInfo";
 import Icon from "@/components/base/icon.tsx";
-import PlayingIndicator from "@/components/base/playingIndicator";
-import {
-    MUSIC_BAR_FLOATING_BOTTOM,
-    MUSIC_BAR_HEIGHT,
-    MUSIC_BAR_HORIZONTAL_MARGIN,
-} from "./layout";
+import { MUSIC_BAR_HEIGHT, MUSIC_BAR_HORIZONTAL_MARGIN } from "./layout";
 import { useMusicBarLayoutState } from "./layoutState";
 import { useI18N } from "@/core/i18n";
 
-function CircularPlayBtn() {
-    const progress = useProgress();
+const BAR_RADIUS = MUSIC_BAR_HEIGHT / 2;
+// 从标签页进入二级页面时，迷你播放器从标签栏上方滑到底部
+const MOVE_TIMING = {
+    duration: 220,
+    easing: Easing.out(Easing.cubic),
+};
+
+function MiniPlayButton() {
     const musicState = useMusicState();
     const colors = useColors();
-    const musicItem = useCurrentMusic();
     const { t } = useI18N();
 
-    const isPaused = musicIsPaused(musicState);
-    const isBuffering = musicIsBuffering(musicState);
-    const indicatorColor = colors.musicBarText ?? colors.text ?? "#ffffff";
-
-    if (isBuffering) {
+    if (musicIsBuffering(musicState)) {
         return (
-            <View style={styles.bufferingContainer}>
-                <ActivityIndicator size={rpx(52)} color={colors.musicBarText} />
+            <View style={styles.barButton}>
+                <ActivityIndicator size="small" color={colors.musicBarText} />
             </View>
         );
     }
 
-    const displayDuration =
-        progress.duration > 0 ? progress.duration : musicItem?.duration ?? 0;
-    const playProgress = displayDuration
-        ? Math.min(1, Math.max(0, progress.position / displayDuration))
-        : 0;
-    const ringSize = rpx(72);
-    const strokeWidth = rpx(4);
-    const inactiveStrokeWidth = rpx(2);
-    const radius = (ringSize - strokeWidth) / 2;
-    const center = ringSize / 2;
-    const circumference = 2 * Math.PI * radius;
-
+    const isPaused = musicIsPaused(musicState);
     return (
-        <View style={styles.playButtonContainer}>
-            <Svg
-                width={ringSize}
-                height={ringSize}
-                viewBox={`0 0 ${ringSize} ${ringSize}`}
-                style={styles.playProgressRing}
-                pointerEvents="none">
-                <Circle
-                    cx={center}
-                    cy={center}
-                    r={radius}
-                    stroke={colors.textSecondary}
-                    strokeWidth={inactiveStrokeWidth}
-                    strokeOpacity={0.2}
-                    fill="none"
-                />
-                <Circle
-                    cx={center}
-                    cy={center}
-                    r={radius}
-                    stroke={colors.musicBarText}
-                    strokeWidth={strokeWidth}
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeDasharray={`${circumference} ${circumference}`}
-                    strokeDashoffset={circumference * (1 - playProgress)}
-                    transform={`rotate(-90 ${center} ${center})`}
-                />
-            </Svg>
-            <Pressable
-                accessibilityLabel={t("musicBar.playPause.a11y")}
-                hitSlop={{
-                    top: 10,
-                    left: 10,
-                    right: 10,
-                    bottom: 10,
-                }}
-                style={styles.playButtonPressable}
-                onPress={async () => {
-                    if (isPaused) {
-                        await TrackPlayer.play();
-                    } else {
-                        await TrackPlayer.pause();
-                    }
-                }}>
-                {isPaused ? (
-                    <Icon
-                        name="play"
-                        size={rpx(34)}
-                        color={colors.musicBarText}
-                    />
-                ) : (
-                    <PlayingIndicator
-                        active
-                        size={rpx(34)}
-                        color={indicatorColor}
-                    />
-                )}
-            </Pressable>
-        </View>
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("musicBar.playPause.a11y")}
+            style={({ pressed }) => [
+                styles.barButton,
+                pressed ? styles.pressed : null,
+            ]}
+            onPress={async () => {
+                if (isPaused) {
+                    await TrackPlayer.play();
+                } else {
+                    await TrackPlayer.pause();
+                }
+            }}>
+            <Icon
+                name={isPaused ? "play" : "pause"}
+                size={24}
+                color={colors.musicBarText}
+            />
+        </Pressable>
     );
 }
+
 function MusicBar() {
     const musicItem = useCurrentMusic();
     const { t } = useI18N();
     const [liquidSurfaceRefreshToken, setLiquidSurfaceRefreshToken] =
         useState(0);
-    const { layout, routeName, transitionInProgress } = useMusicBarLayoutState();
+    const { layout, routeName, activeTab, transitionInProgress } =
+        useMusicBarLayoutState();
 
     const colors = useColors();
     const dark = Theme.useTheme().dark;
@@ -149,6 +96,15 @@ function MusicBar() {
     const safeAreaInsets = useSafeAreaInsets();
     const hasMusicItem = layout.visible && !!musicItem;
 
+    // 底边位置用位移动画，标签栏出现/消失时迷你播放器平滑上下移动
+    const barLift = useSharedValue(layout.barBottom);
+    useEffect(() => {
+        barLift.value = withTiming(layout.barBottom, MOVE_TIMING);
+    }, [barLift, layout.barBottom]);
+    const liftStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: -barLift.value }],
+    }));
+
     const refreshLiquidSurface = useCallback(() => {
         setLiquidSurfaceRefreshToken(value => value + 1);
     }, []);
@@ -160,8 +116,9 @@ function MusicBar() {
 
         // A native-stack transition animates surfaces with transforms, which
         // does not guarantee another layout/scroll callback after the final
-        // frame. Capture immediately when the committed route changes, then
-        // take two settled samples so a mid-transition bitmap cannot linger.
+        // frame. Capture immediately when the committed route or home tab
+        // changes, then take two settled samples (after the lift animation)
+        // so a mid-transition bitmap cannot linger.
         refreshLiquidSurface();
         const timers = [120, 320].map(delay =>
             setTimeout(refreshLiquidSurface, delay),
@@ -171,7 +128,9 @@ function MusicBar() {
             timers.forEach(clearTimeout);
         };
     }, [
+        activeTab,
         hasMusicItem,
+        layout.barBottom,
         refreshLiquidSurface,
         routeName,
         transitionInProgress,
@@ -207,69 +166,44 @@ function MusicBar() {
         };
     }, [refreshLiquidSurface, transitionInProgress, useLiquidGlass]);
 
-    const barContent = musicItem ? (
-        <>
-            <MusicInfo musicItem={musicItem} />
-            <View style={styles.actionGroup}>
-                <CircularPlayBtn />
-                <Icon
-                    accessible
-                    accessibilityLabel={t("musicBar.playlist.a11y")}
-                    name="playlist"
-                    size={rpx(56)}
-                    onPress={() => {
-                        showPanel("PlayList");
-                    }}
-                    color={colors.musicBarText}
-                    style={[styles.actionIcon]}
-                />
-            </View>
-        </>
-    ) : null;
-
     if (!layout.visible || !musicItem) {
         return null;
     }
 
-    if (useLiquidGlass) {
-        return (
-            <View
-                style={[
-                    styles.wrapper,
-                    styles.glassWrapper,
-                    styles.liquidWrapper,
-                    {
-                        bottom:
-                            safeAreaInsets.bottom + MUSIC_BAR_FLOATING_BOTTOM,
-                        paddingRight: safeAreaInsets.right + rpx(24),
-                    },
-                ]}
-                accessible
-                accessibilityLabel={t("musicBar.nowPlaying.a11y", { title: musicItem.title, artist: musicItem.artist })}>
-                <LiquidGlassBackdrop
-                    radius={rpx(66)}
-                    refreshToken={liquidSurfaceRefreshToken}
-                />
-                {barContent}
-            </View>
-        );
-    }
-
     return (
-        <View
+        <Animated.View
             style={[
                 styles.wrapper,
-                styles.glassWrapper,
                 {
-                    bottom: safeAreaInsets.bottom + MUSIC_BAR_FLOATING_BOTTOM,
-                    paddingRight: safeAreaInsets.right + rpx(24),
+                    bottom: safeAreaInsets.bottom,
+                    left: MUSIC_BAR_HORIZONTAL_MARGIN + safeAreaInsets.left,
+                    right: MUSIC_BAR_HORIZONTAL_MARGIN + safeAreaInsets.right,
                 },
-            ]}
-            accessible
-            accessibilityLabel={t("musicBar.nowPlaying.a11y", { title: musicItem.title, artist: musicItem.artist })}>
-            <GlassBackdrop radius={rpx(66)} intensity={60} />
-            {barContent}
-        </View>
+                liftStyle,
+            ]}>
+            {useLiquidGlass ? (
+                <LiquidGlassBackdrop
+                    radius={BAR_RADIUS}
+                    refreshToken={liquidSurfaceRefreshToken}
+                />
+            ) : (
+                <GlassBackdrop radius={BAR_RADIUS} intensity={60} />
+            )}
+            <MusicInfo musicItem={musicItem} />
+            <MiniPlayButton />
+            <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("musicBar.playlist.a11y")}
+                style={({ pressed }) => [
+                    styles.barButton,
+                    pressed ? styles.pressed : null,
+                ]}
+                onPress={() => {
+                    showPanel("PlayList");
+                }}>
+                <Icon name="playlist" size={24} color={colors.musicBarText} />
+            </Pressable>
+        </Animated.View>
     );
 }
 
@@ -277,62 +211,23 @@ export default memo(MusicBar);
 
 const styles = StyleSheet.create({
     wrapper: {
-        width: "100%",
+        position: "absolute",
         height: MUSIC_BAR_HEIGHT,
-        flexDirection: "row",
-        alignItems: "center",
-        paddingRight: rpx(24),
-        borderTopWidth: StyleSheet.hairlineWidth,
-    },
-    glassWrapper: {
-        position: "absolute",
-        left: MUSIC_BAR_HORIZONTAL_MARGIN,
-        right: MUSIC_BAR_HORIZONTAL_MARGIN,
-        width: "auto",
-        borderRadius: rpx(66),
+        borderRadius: BAR_RADIUS,
         overflow: "hidden",
-        // 底色交给 GlassBackdrop，容器本身保持透明
-        backgroundColor: "transparent",
-        borderTopColor: "transparent",
-    },
-    liquidWrapper: {
-        backgroundColor: "transparent",
-        borderTopWidth: 0,
-        borderTopColor: "transparent",
-    },
-    bufferingContainer: {
-        width: rpx(72),
-        height: rpx(72),
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    playButtonContainer: {
-        width: rpx(72),
-        height: rpx(72),
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    playProgressRing: {
-        position: "absolute",
-        left: 0,
-        top: 0,
-    },
-    playButtonPressable: {
-        position: "absolute",
-        left: 0,
-        right: 0,
-        top: 0,
-        bottom: 0,
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    actionGroup: {
-        width: rpx(200),
-        justifyContent: "flex-end",
         flexDirection: "row",
         alignItems: "center",
+        paddingRight: 6,
+        // 底色交给玻璃背板，容器本身保持透明
+        backgroundColor: "transparent",
     },
-    actionIcon: {
-        marginLeft: rpx(36),
+    barButton: {
+        width: 44,
+        height: 44,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    pressed: {
+        opacity: 0.5,
     },
 });

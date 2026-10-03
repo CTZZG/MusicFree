@@ -50,6 +50,8 @@ interface IAppBarProps {
     contentStyle?: StyleProp<ViewStyle>;
     actionComponent?: ReactNode;
     onBackPress?: () => void;
+    /** 标签页的根页面没有返回按钮 */
+    hideBackButton?: boolean;
     backgroundColor?: string;
     spacious?: boolean;
 }
@@ -87,6 +89,7 @@ export default function AppBar(props: IAppBarProps) {
         children,
         actionComponent,
         onBackPress,
+        hideBackButton = false,
         backgroundColor,
         spacious = false,
     } = props;
@@ -102,7 +105,9 @@ export default function AppBar(props: IAppBarProps) {
     const [showMenu, setShowMenu] = useState(false);
     const [menuIconLayout, setMenuIconLayout] =
         useState<LayoutRectangle | null>(null);
-    const [leftWidth, setLeftWidth] = useState(BAR_BUTTON_SIZE);
+    const [leftWidth, setLeftWidth] = useState(
+        hideBackButton ? 0 : BAR_BUTTON_SIZE,
+    );
     const [rightWidth, setRightWidth] = useState(0);
     const scaleRate = useSharedValue(0);
     const menuActionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -218,7 +223,7 @@ export default function AppBar(props: IAppBarProps) {
                                 }}
                                 accessibilityLabel={menuIcon}
                             />
-                        ) : (
+                        ) : hideBackButton ? null : (
                             <IconButton
                                 name="chevron-left"
                                 sizeType="big"

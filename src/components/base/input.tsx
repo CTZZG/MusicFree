@@ -7,6 +7,8 @@ import { StyleSheet, TextInput, TextInputProps } from "react-native";
 interface IInputProps extends TextInputProps {
     fontColor?: string;
     hasHorizontalPadding?: boolean;
+    /** React 19 里 ref 是普通 prop，随 props 一起传给 TextInput */
+    ref?: React.Ref<TextInput>;
 }
 
 export default function Input(props: IInputProps) {

@@ -1,5 +1,6 @@
 import {
     createNavigationContainerRef,
+    StackActions,
     useNavigation,
     useRoute,
 } from "@react-navigation/native";
@@ -12,11 +13,11 @@ LogBox.ignoreLogs([
 
 /** 路由key */
 export const ROUTE_PATH = {
-    /** 主页 */
+    /** 主页：底部标签导航，标签见 HOME_TAB */
     HOME: "home",
     /** 音乐播放页 */
     MUSIC_DETAIL: "music-detail",
-    /** 搜索页 */
+    /** 搜索页：是主页的一个底部标签，不在根栈里，用 navigateToSearch 跳转 */
     SEARCH_PAGE: "search-page",
     /** 本地歌单页 */
     LOCAL_SHEET_DETAIL: "local-sheet-detail",
@@ -67,6 +68,16 @@ export const ROUTE_PATH = {
     /** 歌词逐行编辑 */
     LYRIC_EDITOR: "lyric-editor",
 } as const;
+
+/** 主页的底部标签。搜索标签沿用搜索页的路由名，useParams<"search-page"> 照常可用 */
+export const HOME_TAB = {
+    HOME: "home-tab",
+    SEARCH: ROUTE_PATH.SEARCH_PAGE,
+    LIBRARY: "library-tab",
+    SETTINGS: "settings-tab",
+} as const;
+
+export type HomeTabName = (typeof HOME_TAB)[keyof typeof HOME_TAB];
 
 type ValueOf<T> = T[keyof T];
 type RoutePaths = ValueOf<typeof ROUTE_PATH>;
@@ -186,6 +197,36 @@ export function useParams<T extends RoutePaths>(): RouterParams[T] {
     return routeParams;
 }
 
+/**
+ * 切到主页的某个底部标签。先回到主页（关掉上面叠着的页面），再由标签导航
+ * 处理 screen 参数；直接 navigate 会在根栈里再压一个主页。
+ */
+export function navigateToHomeTab<T extends HomeTabName>(
+    tab: T,
+    params?: T extends typeof HOME_TAB.SEARCH ? RouterParams["search-page"] : undefined,
+) {
+    if (!navigationRef.isReady()) {
+        return;
+    }
+    navigationRef.dispatch(
+        StackActions.popTo(ROUTE_PATH.HOME, { screen: tab, params }),
+    );
+}
+
+/** 打开搜索标签；带 initialQuery 时直接搜索 */
+export function navigateToSearch(params?: RouterParams["search-page"]) {
+    // 搜索标签常驻不卸载：同一个关键词再搜一次时参数没变，靠新的 token 触发
+    navigateToHomeTab(
+        HOME_TAB.SEARCH,
+        params?.initialQuery
+            ? {
+                ...params,
+                initialSearchToken: params.initialSearchToken ?? Date.now(),
+            }
+            : params,
+    );
+}
+
 /** 导航 */
 export function useNavigate() {
     const navigation = useNavigation<any>();
@@ -194,6 +235,11 @@ export function useNavigate() {
         route: T,
         params?: RouterParams[T],
     ) {
+        if (route === ROUTE_PATH.SEARCH_PAGE) {
+            // 搜索页在底部标签里，根栈里没有这个路由
+            navigateToSearch(params as RouterParams["search-page"]);
+            return;
+        }
         navigation.navigate(route, params);
     },
     [navigation]);

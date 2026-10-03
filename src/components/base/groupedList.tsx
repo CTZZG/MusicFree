@@ -79,6 +79,8 @@ interface IGroupedRowProps {
     icon?: IIconName;
     /** 图标块底色 */
     iconTint?: string;
+    /** 图标不放色块，直接用强调色画（资料库这类导航列表） */
+    plainIcon?: boolean;
     /** 右侧附件：箭头、勾选、或自定义节点（比如开关） */
     accessory?: "chevron" | "check" | "none" | ReactNode;
     /** 危险操作：标题用红色 */
@@ -96,6 +98,7 @@ export function GroupedRow(props: IGroupedRowProps) {
         value,
         icon,
         iconTint,
+        plainIcon = false,
         accessory = "none",
         destructive,
         onPress,
@@ -141,7 +144,15 @@ export function GroupedRow(props: IGroupedRowProps) {
                     ? { backgroundColor: colors.listActive }
                     : null,
             ]}>
-            {icon ? (
+            {icon && plainIcon ? (
+                <Icon
+                    name={icon}
+                    size={24}
+                    color={iconTint ?? colors.primary}
+                    style={styles.plainIcon}
+                />
+            ) : null}
+            {icon && !plainIcon ? (
                 <View
                     style={[
                         styles.iconTile,
@@ -207,6 +218,9 @@ const styles = StyleSheet.create({
     },
     rowWithSubtitle: {
         paddingVertical: 10,
+    },
+    plainIcon: {
+        marginHorizontal: 3,
     },
     iconTile: {
         width: 30,

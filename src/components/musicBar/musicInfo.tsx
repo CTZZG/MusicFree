@@ -1,15 +1,17 @@
 import React, { memo, useLayoutEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import rpx from "@/utils/rpx";
+import { StyleSheet, View } from "react-native";
 import FastImage from "../base/fastImage";
 import { ImgAsset } from "@/constants/assetsConst";
-import Color from "color";
 import ThemeText from "../base/themeText";
 import useColors from "@/hooks/useColors";
 import useResolvedMusicArtwork from "@/hooks/useResolvedMusicArtwork";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import TrackPlayer, { usePlayList } from "@/core/trackPlayer";
+import TrackPlayer, {
+    useCurrentMusic,
+    usePlayList,
+    useProgress,
+} from "@/core/trackPlayer";
 import Animated, {
     SharedValue,
     runOnJS,
@@ -17,8 +19,35 @@ import Animated, {
     useSharedValue,
     withTiming,
 } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { timingConfig } from "@/constants/commonConst";
+import { useI18N } from "@/core/i18n";
+
+/** 迷你播放器里的细进度条，只跟着当前歌曲走 */
+function MiniProgress() {
+    const colors = useColors();
+    const progress = useProgress();
+    const musicItem = useCurrentMusic();
+    const duration =
+        progress.duration > 0 ? progress.duration : musicItem?.duration ?? 0;
+    const ratio = duration
+        ? Math.min(1, Math.max(0, progress.position / duration))
+        : 0;
+
+    return (
+        <View
+            style={[styles.progressTrack, { backgroundColor: colors.placeholder }]}>
+            <View
+                style={[
+                    styles.progressFill,
+                    {
+                        width: `${ratio * 100}%`,
+                        backgroundColor: colors.primary,
+                    },
+                ]}
+            />
+        </View>
+    );
+}
 
 interface IBarMusicItemProps {
     musicItem: IMusic.IMusicItem | null;
@@ -28,7 +57,6 @@ interface IBarMusicItemProps {
 function BarMusicItemInner(props: IBarMusicItemProps) {
     const { musicItem, activeIndex, transformSharedValue } = props;
     const colors = useColors();
-    const safeAreaInsets = useSafeAreaInsets();
     const resolvedArtwork = useResolvedMusicArtwork(
         activeIndex === 0 ? musicItem : null,
     );
@@ -49,13 +77,7 @@ function BarMusicItemInner(props: IBarMusicItemProps) {
             importantForAccessibility={
                 activeIndex === 0 ? "auto" : "no-hide-descendants"
             }
-            style={[
-                styles.container,
-                {
-                    paddingLeft: rpx(24) + safeAreaInsets.left,
-                },
-                animatedStyles,
-            ]}>
+            style={[styles.container, animatedStyles]}>
             <View style={styles.artworkWrapper}>
                 <FastImage
                     style={styles.artworkImg}
@@ -63,25 +85,25 @@ function BarMusicItemInner(props: IBarMusicItemProps) {
                     placeholderSource={ImgAsset.albumDefault}
                 />
             </View>
-            <Text
-                ellipsizeMode="tail"
-                accessible={false}
-                style={styles.textWrapper}
-                numberOfLines={1}>
-                <ThemeText fontSize="content" fontColor="musicBarText">
-                    {musicItem?.title}
+            <View style={styles.texts} accessible={false}>
+                <ThemeText
+                    numberOfLines={1}
+                    fontSize="subTitle"
+                    fontWeight="semibold"
+                    color={colors.musicBarText}>
+                    {musicItem.title}
                 </ThemeText>
-                {musicItem?.artist && (
+                {musicItem.artist ? (
                     <ThemeText
+                        numberOfLines={1}
                         fontSize="description"
-                        color={Color(colors.musicBarText)
-                            .alpha(0.6)
-                            .toString()}>
-                        {" "}
-                        -{musicItem.artist}
+                        fontColor="textSecondary"
+                        style={styles.artist}>
+                        {musicItem.artist}
                     </ThemeText>
-                )}
-            </Text>
+                ) : null}
+                {activeIndex === 0 ? <MiniProgress /> : null}
+            </View>
         </Animated.View>
     );
 }
@@ -97,22 +119,37 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: "row",
         width: "100%",
+        height: "100%",
         alignItems: "center",
         position: "absolute",
-    },
-    textWrapper: {
-        flexGrow: 1,
-        flexShrink: 1,
+        paddingLeft: 8,
     },
     artworkWrapper: {
-        width: rpx(96),
-        height: rpx(96),
-        borderRadius: rpx(48),
-        marginRight: rpx(24),
+        width: 46,
+        height: 46,
+        borderRadius: 23,
+        marginRight: 12,
         overflow: "hidden",
     },
     artworkImg: {
         width: "100%",
+        height: "100%",
+    },
+    texts: {
+        flex: 1,
+        minWidth: 0,
+        justifyContent: "center",
+    },
+    artist: {
+        marginTop: 1,
+    },
+    progressTrack: {
+        marginTop: 5,
+        height: 3,
+        borderRadius: 2,
+        overflow: "hidden",
+    },
+    progressFill: {
         height: "100%",
     },
 });
@@ -145,6 +182,7 @@ async function skipMusicItem(direction: number) {
 export default function MusicInfo(props: IMusicInfoProps) {
     const { musicItem } = props;
     const navigate = useNavigate();
+    const { t } = useI18N();
     usePlayList();
     const siblingMusicItems = musicItem
         ? {
@@ -233,6 +271,23 @@ export default function MusicInfo(props: IMusicInfoProps) {
                 style={musicInfoStyles.infoContainer}
                 onLayout={e => {
                     musicItemWidthValue.value = e.nativeEvent.layout.width;
+                }}
+                // 只把歌曲信息合成一个读屏节点，右侧的播放、列表按钮仍可单独聚焦
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={
+                    musicItem
+                        ? t("musicBar.nowPlaying.a11y", {
+                            title: musicItem.title,
+                            artist: musicItem.artist,
+                        })
+                        : undefined
+                }
+                accessibilityActions={[{ name: "activate" }]}
+                onAccessibilityAction={event => {
+                    if (event.nativeEvent.actionName === "activate") {
+                        navigate(ROUTE_PATH.MUSIC_DETAIL);
+                    }
                 }}>
                 <BarMusicItem
                     transformSharedValue={transformSharedValue}

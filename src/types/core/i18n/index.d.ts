@@ -2,10 +2,8 @@
 export interface ILanguageData {
     // 通用词汇
     "common.setting": string; // 设置
-    "common.software": string; // 软件
     "common.language": string; // 语言
     "common.theme": string; // 主题
-    "common.other": string; // 其他
     "common.cancel": string; // 取消
     "common.about": string; // 关于
     "common.batchEdit": string; // 批量编辑
@@ -59,10 +57,18 @@ export interface ILanguageData {
     "sidebar.backupAndResume": string; // 备份与恢复
     "sidebar.permissionManagement": string; // 权限管理
     "sidebar.checkUpdate": string; // 检查更新
-    "sidebar.currentVersion": string; // 当前版本
     "sidebar.backToDesktop": string; // 返回桌面
     "sidebar.exitApp": string; // 退出应用
     "sidebar.languageSettings": string; // 语言设置
+    "tabs.home": string; // 底部标签：首页
+    "tabs.library": string; // 底部标签：资料库
+    "library.downloadingCount": string; // 资料库：正在下载的数量
+    "settingsHome.versionLine": string; // 设置页应用卡片：版本与检查更新
+    "settingsHome.section.common": string; // 设置页分组：常用
+    "settingsHome.section.general": string; // 设置页分组：通用
+    "settingsHome.section.pluginsAndData": string; // 设置页分组：插件与数据
+    "settingsHome.pluginCount": string; // 设置页：已安装插件数量
+    "settingsHome.scheduleClose.off": string; // 设置页：定时关闭未开启
 
     // 检查更新相关
     "checkUpdate.error.latestVersion": string; // 当前已是最新版本
@@ -72,7 +78,6 @@ export interface ILanguageData {
     "home.topList": string; // 榜单
     "home.playHistory": string; // 播放历史
     "home.localMusic": string; // 本地音乐
-    "home.openSidebar.a11y": string; // 打开侧边栏
     "home.myPlaylists": string; // 我的歌单
     "home.starredPlaylists": string; // 我喜欢的歌单
     "home.newPlaylist.a11y": string; // 新建歌单
