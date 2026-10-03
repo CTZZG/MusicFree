@@ -8,6 +8,7 @@ import {
     getMusicDetailCardLayout,
     getMusicDetailCircleLayout,
     getMusicDetailCircleLyricLayout,
+    getMusicDetailLandscapeLayout,
 } from "../circleLayout";
 
 describe("getMusicDetailCircleLayout", () => {
@@ -198,5 +199,56 @@ describe("fitMusicDetailCardCover", () => {
         });
 
         expect(fit).toEqual({ coverSize: 64, showMiniLyric: false });
+    });
+});
+
+/**
+ * 外部复审：横屏播放页封面盖住导航栏和歌名。横屏左半边只剩导航栏（64）和
+ * 控制区（约 170）之间很矮的一条，原来封面固定为可用高度的 40% 再叠上歌名，
+ * 放不下就上下溢出。
+ */
+describe("getMusicDetailLandscapeLayout", () => {
+    it("fits the cover into the short strip of a phone in landscape", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 440,
+            height: 124,
+            showSongInfo: true,
+        });
+
+        expect(layout.coverSize).toBe(100);
+        expect(layout.coverSize).toBeLessThanOrEqual(124);
+        expect(layout.infoWidth).toBe(440 - 16 * 3 - 100);
+    });
+
+    it("caps the cover and keeps room for the song info on a tablet", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 640,
+            height: 540,
+            showSongInfo: true,
+        });
+
+        expect(layout.coverSize).toBe(320);
+        expect(layout.infoWidth).toBeGreaterThanOrEqual(160);
+    });
+
+    it("lets the cover use the width in immersive mode", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 440,
+            height: 300,
+            showSongInfo: false,
+        });
+
+        expect(layout.coverSize).toBe(300 - 24);
+    });
+
+    it("drops the cover rather than overflowing a very short strip", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 440,
+            height: 60,
+            showSongInfo: true,
+        });
+
+        expect(layout.coverSize).toBe(0);
+        expect(layout.infoWidth).toBe(440 - 16 * 2);
     });
 });

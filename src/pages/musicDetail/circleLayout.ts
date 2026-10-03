@@ -159,3 +159,39 @@ export function getMusicDetailCircleLyricLayout(
             fadeHeight: rpx(28),
         };
 }
+
+// 横屏：左半边只剩导航栏和控制区之间很矮的一条，封面和歌名改为并排
+const LANDSCAPE_GAP = 16;
+const LANDSCAPE_VERTICAL_PADDING = 12;
+const LANDSCAPE_MIN_INFO_WIDTH = 160;
+const LANDSCAPE_MAX_COVER = 320;
+const LANDSCAPE_MIN_COVER = 48;
+
+interface IMusicDetailLandscapeLayoutOptions {
+    /** 左半边内容区（导航栏和控制区之间）实际的宽高 */
+    width: number;
+    height: number;
+    /** 沉浸模式不显示歌名，封面独占 */
+    showSongInfo: boolean;
+}
+
+/**
+ * 横屏封面：边长取决于内容区实际的高和宽，放不下就不放（导航栏已经有小封面
+ * 和歌名），绝不超出内容区去盖住导航栏或歌名。歌名在封面右边，宽度是剩下的。
+ */
+export function getMusicDetailLandscapeLayout(
+    options: IMusicDetailLandscapeLayoutOptions,
+) {
+    const { width, height, showSongInfo } = options;
+    const byHeight = height - LANDSCAPE_VERTICAL_PADDING * 2;
+    const byWidth = showSongInfo
+        ? width - LANDSCAPE_GAP * 3 - LANDSCAPE_MIN_INFO_WIDTH
+        : width - LANDSCAPE_GAP * 2;
+    const fitted = Math.min(LANDSCAPE_MAX_COVER, byHeight, byWidth);
+    const coverSize = fitted >= LANDSCAPE_MIN_COVER ? fitted : 0;
+    const infoWidth = Math.max(
+        0,
+        width - LANDSCAPE_GAP * (coverSize > 0 ? 3 : 2) - coverSize,
+    );
+    return { coverSize, infoWidth, gap: LANDSCAPE_GAP };
+}

@@ -1,10 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import rpx from "@/utils/rpx";
 import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
 import useOrientation from "@/hooks/useOrientation";
 import { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
-import globalStyle from "@/constants/globalStyle";
 import {
     LayoutChangeEvent,
     Pressable,
@@ -32,6 +37,7 @@ import {
     fitMusicDetailCardCover,
     getMusicDetailCardLayout,
     getMusicDetailCircleLyricLayout,
+    getMusicDetailLandscapeLayout,
 } from "../../../circleLayout";
 import { useMusicDetailLayout } from "../../../layoutContext";
 import { useI18N } from "@/core/i18n";
@@ -61,8 +67,11 @@ export default function AlbumCover(props: IProps) {
     const safeAreaInsets = useSafeAreaInsets();
     const longPressTriggeredRef = useRef(false);
     const { t } = useI18N();
-    // 横屏时左半边放封面和歌名，右半边是歌词
-    const horizontalInfoWidth = Math.max(rpx(280), windowWidth / 2 - 48);
+    // 横屏时左半边放封面和歌名（并排），右半边是歌词；尺寸按实际量到的区域定
+    const [landscapeArea, setLandscapeArea] = useState<{
+        width: number;
+        height: number;
+    } | null>(null);
 
     const usableWindowHeight =
         windowHeight - safeAreaInsets.top - safeAreaInsets.bottom;
@@ -133,6 +142,27 @@ export default function AlbumCover(props: IProps) {
         windowWidth,
     ]);
 
+    const landscapeLayout = useMemo(
+        () =>
+            getMusicDetailLandscapeLayout({
+                // 量到之前按左半边、可用高度的三分之一估一个，第一帧之后就换成实测
+                width: landscapeArea?.width ?? windowWidth / 2,
+                height: landscapeArea?.height ?? usableWindowHeight / 3,
+                showSongInfo: !immersiveMode,
+            }),
+        [immersiveMode, landscapeArea, usableWindowHeight, windowWidth],
+    );
+    const onLandscapeLayout = useCallback((event: LayoutChangeEvent) => {
+        const { width, height } = event.nativeEvent.layout;
+        setLandscapeArea(previous =>
+            previous &&
+            Math.abs(previous.width - width) < 0.5 &&
+            Math.abs(previous.height - height) < 0.5
+                ? previous
+                : { width, height },
+        );
+    }, []);
+
     const onContentLayout = useCallback(
         (event: LayoutChangeEvent) => {
             reportContentHeight(event.nativeEvent.layout.height);
@@ -160,9 +190,14 @@ export default function AlbumCover(props: IProps) {
         const coverSize =
             orientation === "vertical"
                 ? cardFit.coverSize
-                : Math.min(rpx(300), usableWindowHeight * 0.4);
+                : landscapeLayout.coverSize;
         return [shapeStyle, { width: coverSize, height: coverSize }];
-    }, [cardFit.coverSize, isCircleCover, orientation, usableWindowHeight]);
+    }, [
+        cardFit.coverSize,
+        isCircleCover,
+        landscapeLayout.coverSize,
+        orientation,
+    ]);
 
     useEffect(() => {
         if (shouldRotateCover) {
@@ -214,13 +249,21 @@ export default function AlbumCover(props: IProps) {
 
     if (orientation === "horizontal") {
         return (
-            <View style={styles.horizontalRoot}>
-                <Pressable
-                    delayLongPress={500}
-                    onPress={handlePress}
-                    onLongPress={handleLongPress}
-                    style={styles.horizontalCoverArea}>
-                    <View style={globalStyle.fullCenter}>
+            <View
+                style={[
+                    styles.horizontalRoot,
+                    {
+                        paddingHorizontal: landscapeLayout.gap,
+                        gap: landscapeLayout.gap,
+                    },
+                ]}
+                onLayout={onLandscapeLayout}>
+                {landscapeLayout.coverSize > 0 ? (
+                    <Pressable
+                        delayLongPress={500}
+                        onPress={handlePress}
+                        onLongPress={handleLongPress}
+                        style={styles.horizontalCoverArea}>
                         <Animated.View
                             style={[artworkStyle, coverAnimatedStyle]}>
                             <FastImage
@@ -230,9 +273,11 @@ export default function AlbumCover(props: IProps) {
                                 transition={260}
                             />
                         </Animated.View>
-                    </View>
-                </Pressable>
-                {immersiveMode ? null : <SongInfo width={horizontalInfoWidth} />}
+                    </Pressable>
+                ) : null}
+                {immersiveMode ? null : (
+                    <SongInfo width={landscapeLayout.infoWidth} />
+                )}
             </View>
         );
     }
@@ -356,11 +401,11 @@ const styles = StyleSheet.create({
     horizontalRoot: {
         width: "100%",
         flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
         justifyContent: "center",
     },
     horizontalCoverArea: {
-        width: "100%",
-        flex: 1,
-        justifyContent: "center",
+        flexShrink: 0,
     },
 });
