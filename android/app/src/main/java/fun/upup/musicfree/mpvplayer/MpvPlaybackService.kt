@@ -108,9 +108,11 @@ class MpvPlaybackService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val artworkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val artworkLoads = ArtworkLoadTracker()
-    private val artworkRetryRunnable = Runnable {
-        artworkLoads.nextAttempt()?.let(::loadArtworkAsync)
-    }
+    private val artworkRetries = ArtworkRetryScheduler(
+        post = { runnable, delayMs -> mainHandler.postDelayed(runnable, delayMs) },
+        cancel = { runnable -> mainHandler.removeCallbacks(runnable) },
+        retry = { artworkLoads.nextAttempt()?.let(::loadArtworkAsync) },
+    )
     private var destroyed = false
     private var notificationManager: NotificationManager? = null
     private var audioManager: AudioManager? = null
@@ -273,7 +275,7 @@ class MpvPlaybackService : Service() {
 
         updateMediaSessionMetadata()
         if (isNewTrack) {
-            mainHandler.removeCallbacks(artworkRetryRunnable)
+            artworkRetries.reset()
             val attempt = artworkLoads.begin(artwork)
             recordArtworkStatus(if (attempt == null) "none" else "loading", attempt, null)
             attempt?.let(::loadArtworkAsync)
@@ -289,6 +291,7 @@ class MpvPlaybackService : Service() {
                 startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_PLAYING
                 cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                artworkRetries.onPlaybackStarted()
                 updateAll()
             }
             "buffering" -> {
@@ -320,6 +323,7 @@ class MpvPlaybackService : Service() {
                 releaseWakeLock()
                 abandonAudioFocus()
                 cachedState = PlaybackStateCompat.STATE_STOPPED
+                artworkRetries.onPlaybackStopped()
                 updatePlaybackState()
                 stopForegroundSafely()
             }
@@ -870,6 +874,10 @@ class MpvPlaybackService : Service() {
     }
 
     private fun updateNotification() {
+        // 停止播放（关闭通知、出错）后不再发通知。迟到的封面、歌词、元数据只更新
+        // 缓存，否则会把用户刚关掉的通知重新弹出来；下次开始播放时由
+        // startForegroundSafely 带着最新内容一起发。
+        if (cachedState == PlaybackStateCompat.STATE_STOPPED) return
         lastNotificationUpdateMs = System.currentTimeMillis()
         notificationManager?.notify(NOTIFICATION_ID, buildNotification())
         updateLiveUpdateProgressTicker()
@@ -1110,8 +1118,10 @@ class MpvPlaybackService : Service() {
                     "artwork load failed (attempt ${attempt.number}), retry in " +
                         "${outcome.delayMs}ms: ${describeArtworkUrl(attempt.url)}",
                 )
-                mainHandler.removeCallbacks(artworkRetryRunnable)
-                mainHandler.postDelayed(artworkRetryRunnable, outcome.delayMs)
+                artworkRetries.schedule(
+                    outcome.delayMs,
+                    playbackStopped = cachedState == PlaybackStateCompat.STATE_STOPPED,
+                )
             }
             ArtworkLoadTracker.Outcome.GiveUp -> {
                 recordArtworkStatus("failed", attempt, failureReason)
