@@ -6,16 +6,15 @@ import { ImgAsset } from "@/constants/assetsConst";
 import { useI18N } from "@/core/i18n";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import useColors from "@/hooks/useColors";
+import { PAGE_MARGIN, TILE_GAP } from "@/utils/tileLayout";
 
 interface ISheetItemProps {
     pluginHash: string;
     sheetInfo: IMusic.IMusicSheetItemBase;
 }
 
-// 相邻两格封面之间的距离。每格左右各让一半，列表两侧再补到 16，
-// 与首页「推荐歌单」横排的页边距一致
-const GRID_GUTTER = 12;
-const PAGE_MARGIN = 16;
+// 相邻两格封面之间的距离：每格左右各让一半，列表两侧再补到页边距
+const GRID_GUTTER = TILE_GAP;
 
 /** 歌单网格（推荐歌单、搜索结果的歌单页）列表两侧的内边距 */
 export const SHEET_GRID_SIDE_PADDING = PAGE_MARGIN - GRID_GUTTER / 2;

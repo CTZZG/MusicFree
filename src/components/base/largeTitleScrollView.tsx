@@ -24,6 +24,7 @@ import useColors from "@/hooks/useColors";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import StatusBar from "./statusBar";
 import ThemeText from "./themeText";
+import { PAGE_MARGIN } from "@/utils/tileLayout";
 
 interface ILargeTitleScrollViewProps {
     title: string;
@@ -158,7 +159,8 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "flex-end",
         justifyContent: "space-between",
-        paddingHorizontal: 20,
+        // 与页面内容（分组卡片、封面网格）同一条边
+        paddingHorizontal: PAGE_MARGIN,
         paddingTop: 12,
         gap: 12,
     },

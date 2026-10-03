@@ -18,10 +18,10 @@ import MusicSheet, { useSheetsBase, useStarredSheets } from "@/core/musicSheet";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import Toast from "@/utils/toast";
+import { getTileGrid, PAGE_MARGIN, TILE_GAP } from "@/utils/tileLayout";
 
-const GRID_PADDING = 20;
-const GRID_GAP = 16;
-const MIN_TILE_WIDTH = 150;
+// 歌单网格：手机上排三列（以前最窄 150，调大显示大小的手机上只排得下两列）
+const MIN_TILE_WIDTH = 100;
 
 function HeaderButton(props: {
     icon: IIconName;
@@ -138,16 +138,9 @@ export default function Library() {
         ...sheets.filter(sheet => sheet.id === MusicSheet.defaultSheet.id),
         ...sheets.filter(sheet => sheet.id !== MusicSheet.defaultSheet.id),
     ];
-    const columns = Math.max(
-        2,
-        Math.floor(
-            (windowWidth - GRID_PADDING * 2 + GRID_GAP) /
-                (MIN_TILE_WIDTH + GRID_GAP),
-        ),
-    );
-    const tileWidth = Math.floor(
-        (windowWidth - GRID_PADDING * 2 - GRID_GAP * (columns - 1)) / columns,
-    );
+    const { tileWidth } = getTileGrid(windowWidth, {
+        minTileWidth: MIN_TILE_WIDTH,
+    });
 
     return (
         <LargeTitleScrollView
@@ -262,23 +255,23 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        paddingHorizontal: GRID_PADDING,
-        marginTop: 28,
-        marginBottom: 12,
+        paddingHorizontal: PAGE_MARGIN,
+        marginTop: 24,
+        marginBottom: 10,
     },
     sectionTitle: {
-        fontSize: 22,
-        lineHeight: 28,
+        fontSize: 20,
+        lineHeight: 25,
     },
     grid: {
         flexDirection: "row",
         flexWrap: "wrap",
-        paddingHorizontal: GRID_PADDING,
-        columnGap: GRID_GAP,
-        rowGap: 18,
+        paddingHorizontal: PAGE_MARGIN,
+        columnGap: TILE_GAP,
+        rowGap: 16,
     },
     cover: {
-        borderRadius: 12,
+        borderRadius: 10,
         overflow: "hidden",
         alignItems: "center",
         justifyContent: "center",
@@ -288,6 +281,6 @@ const styles = StyleSheet.create({
         backgroundColor: "#F2456B",
     },
     tileTitle: {
-        marginTop: 8,
+        marginTop: 6,
     },
 });
