@@ -1,66 +1,57 @@
 import React from "react";
-import { Appearance, StyleSheet, View } from "react-native";
-import rpx from "@/utils/rpx";
-import ThemeText from "@/components/base/themeText";
-import ListItem from "@/components/base/listItem";
-import ThemeSwitch from "@/components/base/switch";
+import { Appearance } from "react-native";
+import { GroupedRow, GroupedSection } from "@/components/base/groupedList";
 import Config, { useAppConfig } from "@/core/appConfig";
 import Theme from "@/core/theme";
+import { themeIdForColorScheme } from "@/core/themeAppearance";
 import { useI18N } from "@/core/i18n";
 
+type AppearanceOption = "system" | "light" | "dark";
+
+/** 外观：跟随系统、浅色、深色三选一 */
 export default function Mode() {
     const { t } = useI18N();
-    const mode = useAppConfig("theme.followSystem") ?? false;
+    const followSystem = useAppConfig("theme.followSystem") ?? true;
+    const theme = Theme.useTheme();
+
+    const selected: AppearanceOption = followSystem
+        ? "system"
+        : theme.dark
+            ? "dark"
+            : "light";
+
+    const select = (option: AppearanceOption) => {
+        if (option === "system") {
+            Config.setConfig("theme.followSystem", true);
+            Theme.setTheme(
+                themeIdForColorScheme(
+                    Appearance.getColorScheme(),
+                    theme.dark ? "p-dark" : "p-light",
+                ),
+            );
+            return;
+        }
+        Config.setConfig("theme.followSystem", false);
+        Theme.setTheme(option === "dark" ? "p-dark" : "p-light");
+    };
+
     return (
-        <View>
-            <ThemeText
-                fontSize="subTitle"
-                fontWeight="bold"
-                style={styles.header}>
-                {t("themeSettings.displayStyle")}
-            </ThemeText>
-            <View style={styles.sectionWrapper}>
-                <ListItem withHorizontalPadding>
-                    <ListItem.Content>
-                        <View style={styles.itemRow}>
-                            <ThemeText>{t("themeSettings.followSystemTheme")}</ThemeText>
-                            <ThemeSwitch
-                                value={mode}
-                                accessibilityLabel={t(
-                                    "themeSettings.followSystemTheme",
-                                )}
-                                onValueChange={e => {
-                                    if (e) {
-                                        const colorScheme =
-                                            Appearance.getColorScheme();
-                                        if (colorScheme === "dark") {
-                                            Theme.setTheme("p-dark");
-                                        } else if (colorScheme === "light") {
-                                            Theme.setTheme("p-light");
-                                        }
-                                    }
-                                    Config.setConfig("theme.followSystem", e);
-                                }}
-                            />
-                        </View>
-                    </ListItem.Content>
-                </ListItem>
-            </View>
-        </View>
+        <GroupedSection title={t("themeSettings.appearance")}>
+            <GroupedRow
+                title={t("themeSettings.appearance.system")}
+                accessory={selected === "system" ? "check" : "none"}
+                onPress={() => select("system")}
+            />
+            <GroupedRow
+                title={t("themeSettings.lightMode")}
+                accessory={selected === "light" ? "check" : "none"}
+                onPress={() => select("light")}
+            />
+            <GroupedRow
+                title={t("themeSettings.darkMode")}
+                accessory={selected === "dark" ? "check" : "none"}
+                onPress={() => select("dark")}
+            />
+        </GroupedSection>
     );
 }
-
-const styles = StyleSheet.create({
-    header: {
-        paddingLeft: rpx(24),
-        marginTop: rpx(36),
-    },
-    sectionWrapper: {
-        marginTop: rpx(24),
-    },
-    itemRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-    },
-});

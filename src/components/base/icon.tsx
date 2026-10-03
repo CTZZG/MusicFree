@@ -18,6 +18,7 @@ import ChatBubbleOvalLeftEllipsisIcon from "@/assets/icons/chat-bubble-oval-left
 import CheckCircleOutlineIcon from "@/assets/icons/check-circle-outline.svg";
 import CheckCircleIcon from "@/assets/icons/check-circle.svg";
 import CheckIcon from "@/assets/icons/check.svg";
+import ChevronLeftIcon from "@/assets/icons/chevron-left.svg";
 import ChevronRightIcon from "@/assets/icons/chevron-right.svg";
 import CircleStackIcon from "@/assets/icons/circle-stack.svg";
 import ClockOutlineIcon from "@/assets/icons/clock-outline.svg";
@@ -79,7 +80,7 @@ import TrophyIcon from "@/assets/icons/trophy.svg";
 import UserIcon from "@/assets/icons/user.svg";
 import XMarkIcon from "@/assets/icons/x-mark.svg";
 
-export type IIconName = "alarm-outline" | "album-outline" | "archive-box-x-mark" | "arrow-down-tray" | "arrow-left" | "arrow-long-left" | "arrow-path" | "arrow-right-end-on-rectangle" | "arrow-up-tray" | "arrow-uturn-left" | "arrows-left-right" | "bars-3" | "bookmark-square" | "chat-bubble-oval-left-ellipsis" | "check-circle-outline" | "check-circle" | "check" | "chevron-right" | "circle-stack" | "clock-outline" | "code-bracket-square" | "cog-8-tooth" | "crosshair" | "document-outline" | "ellipsis-vertical" | "exclamation-circle" | "fire-outline" | "fire" | "folder-music-outline" | "folder-outline" | "folder-plus" | "font-size" | "hand-thumb-up" | "heart-outline" | "heart" | "home-outline" | "identification" | "inbox-arrow-down" | "information-circle" | "javascript" | "language" | "link-slash" | "link" | "lyric" | "magnifying-glass" | "minus" | "motion-play" | "musical-note" | "pause-circle-outline" | "pause" | "pencil-outline" | "pencil-square" | "photo" | "play-circle-outline" | "play-circle" | "play" | "playlist" | "plus" | "power-outline" | "question-mark-circle" | "repeat-song-1" | "repeat-song" | "reset-left-line" | "save-outline" | "share" | "shield-keyhole-outline" | "shuffle" | "skip-left" | "skip-right" | "sort-outline" | "strategy" | "t-shirt-outline" | "translation" | "trash-outline" | "trophy" | "user" | "x-mark";
+export type IIconName = "alarm-outline" | "album-outline" | "archive-box-x-mark" | "arrow-down-tray" | "arrow-left" | "arrow-long-left" | "arrow-path" | "arrow-right-end-on-rectangle" | "arrow-up-tray" | "arrow-uturn-left" | "arrows-left-right" | "bars-3" | "bookmark-square" | "chat-bubble-oval-left-ellipsis" | "check-circle-outline" | "check-circle" | "check" | "chevron-left" | "chevron-right" | "circle-stack" | "clock-outline" | "code-bracket-square" | "cog-8-tooth" | "crosshair" | "document-outline" | "ellipsis-vertical" | "exclamation-circle" | "fire-outline" | "fire" | "folder-music-outline" | "folder-outline" | "folder-plus" | "font-size" | "hand-thumb-up" | "heart-outline" | "heart" | "home-outline" | "identification" | "inbox-arrow-down" | "information-circle" | "javascript" | "language" | "link-slash" | "link" | "lyric" | "magnifying-glass" | "minus" | "motion-play" | "musical-note" | "pause-circle-outline" | "pause" | "pencil-outline" | "pencil-square" | "photo" | "play-circle-outline" | "play-circle" | "play" | "playlist" | "plus" | "power-outline" | "question-mark-circle" | "repeat-song-1" | "repeat-song" | "reset-left-line" | "save-outline" | "share" | "shield-keyhole-outline" | "shuffle" | "skip-left" | "skip-right" | "sort-outline" | "strategy" | "t-shirt-outline" | "translation" | "trash-outline" | "trophy" | "user" | "x-mark";
 
 interface IProps extends SvgProps {
     /** 图标名称 */
@@ -106,6 +107,7 @@ const iconMap = {
     "check-circle-outline": CheckCircleOutlineIcon,
     "check-circle": CheckCircleIcon,
     "check": CheckIcon,
+    "chevron-left": ChevronLeftIcon,
     "chevron-right": ChevronRightIcon,
     "circle-stack": CircleStackIcon,
     "clock-outline": ClockOutlineIcon,

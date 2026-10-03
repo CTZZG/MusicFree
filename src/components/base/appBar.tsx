@@ -8,7 +8,6 @@ import {
     View,
     ViewStyle,
 } from "react-native";
-import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import StatusBar from "./statusBar";
 import color from "color";
@@ -63,6 +62,16 @@ const timingConfig = {
     easing: ANIMATION_EASING,
 };
 
+// iOS 导航栏：标准高度、图标按钮的点击区域与标题两侧的最小留白
+const BAR_HEIGHT = 48;
+const SPACIOUS_BAR_HEIGHT = 56;
+const BAR_BUTTON_SIZE = 44;
+const MIN_TITLE_INSET = 52;
+
+/**
+ * iOS 风格导航栏：底色与页面一致，返回与操作按钮用强调色，
+ * 字符串标题居中显示，两侧留白取左右按钮组中较宽的一侧，标题不会压到按钮。
+ */
 export default function AppBar(props: IAppBarProps) {
     const {
         titleTextOpacity = 1,
@@ -86,13 +95,15 @@ export default function AppBar(props: IAppBarProps) {
     const navigation = useNavigation();
     const theme = useTheme();
 
-    const bgColor = backgroundColor ?? color(colors.appBar ?? colors.primary).toString();
-    const contentColor =
-        _color ?? (bgColor === "transparent" ? colors.text : colors.appBarText);
+    const bgColor = backgroundColor ?? colors.appBar ?? colors.pageBackground ?? "transparent";
+    const titleColor = _color ?? colors.appBarText ?? colors.text;
+    const tintColor = _color ?? colors.primary;
 
     const [showMenu, setShowMenu] = useState(false);
     const [menuIconLayout, setMenuIconLayout] =
         useState<LayoutRectangle | null>(null);
+    const [leftWidth, setLeftWidth] = useState(BAR_BUTTON_SIZE);
+    const [rightWidth, setRightWidth] = useState(0);
     const scaleRate = useSharedValue(0);
     const menuActionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
         null,
@@ -101,6 +112,8 @@ export default function AppBar(props: IAppBarProps) {
     const hasMenu = menu?.length > 0;
     const menuOnLeft = hasMenu && menuPosition === "left";
     const transparentSurface = spacious && bgColor === "transparent";
+    const centeredTitle = typeof children === "string";
+    const titleInset = Math.max(MIN_TITLE_INSET, leftWidth, rightWidth);
 
     useEffect(() => {
         if (showMenu) {
@@ -122,8 +135,47 @@ export default function AppBar(props: IAppBarProps) {
     const transformStyle = useAnimatedStyle(() => {
         return {
             opacity: scaleRate.value,
+            transform: [{ scale: 0.92 + scaleRate.value * 0.08 }],
         };
     });
+
+    const rightGroup = (
+        <View
+            style={styles.buttonGroup}
+            onLayout={evt => {
+                setRightWidth(evt.nativeEvent.layout.width);
+            }}>
+            {actions.map((action, index) => (
+                <IconButton
+                    key={index}
+                    name={action.icon}
+                    sizeType="normal"
+                    color={tintColor}
+                    style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                    onPress={action.onPress}
+                    accessibilityLabel={
+                        action.accessibilityLabel ?? action.icon
+                    }
+                />
+            ))}
+            {actionComponent ?? null}
+            {hasMenu && !menuOnLeft ? (
+                <IconButton
+                    name={menuIcon}
+                    sizeType="normal"
+                    onLayout={evt => {
+                        setMenuIconLayout(evt.nativeEvent.layout);
+                    }}
+                    color={tintColor}
+                    style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                    onPress={() => {
+                        setShowMenu(true);
+                    }}
+                    accessibilityLabel={menuIcon}
+                />
+            ) : null}
+        </View>
+    );
 
     return (
         <>
@@ -147,88 +199,82 @@ export default function AppBar(props: IAppBarProps) {
                         containerStyle,
                         { backgroundColor: bgColor },
                     ]}>
-                    {menuOnLeft ? (
-                        <IconButton
-                            name={menuIcon}
-                            sizeType="normal"
-                            onLayout={evt => {
-                                setMenuIconLayout(evt.nativeEvent.layout);
-                            }}
-                            color={contentColor}
-                            style={globalStyle.noShrinkNoGrow}
-                            onPress={() => {
-                                setShowMenu(true);
-                            }}
-                            accessibilityLabel={menuIcon}
-                        />
-                    ) : (
-                        <IconButton
-                            name="arrow-left"
-                            sizeType="normal"
-                            color={contentColor}
-                            style={globalStyle.noShrinkNoGrow}
-                            onPress={
-                                onBackPress ||
-                            (() => {
-                                navigation.goBack();
-                            })
-                            }
-                            accessibilityLabel="back"
-                        />
-                    )}
-                    <View style={[
-                        globalStyle.grow,
-                        styles.content,
-                        spacious ? styles.spaciousContent : null,
-                        contentStyle,
-                    ]}>
-                        {typeof children === "string" ? (
-                            <ThemeText
-                                fontSize="title"
-                                fontWeight="bold"
-                                numberOfLines={1}
-                                color={
-                                    titleTextOpacity !== 1
-                                        ? color(contentColor)
-                                            .alpha(titleTextOpacity)
-                                            .toString()
-                                        : contentColor
-                                }>
-                                {children}
-                            </ThemeText>
+                    <View
+                        style={styles.buttonGroup}
+                        onLayout={evt => {
+                            setLeftWidth(evt.nativeEvent.layout.width);
+                        }}>
+                        {menuOnLeft ? (
+                            <IconButton
+                                name={menuIcon}
+                                sizeType="normal"
+                                onLayout={evt => {
+                                    setMenuIconLayout(evt.nativeEvent.layout);
+                                }}
+                                color={tintColor}
+                                style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                                onPress={() => {
+                                    setShowMenu(true);
+                                }}
+                                accessibilityLabel={menuIcon}
+                            />
                         ) : (
-                            children
+                            <IconButton
+                                name="chevron-left"
+                                sizeType="big"
+                                color={tintColor}
+                                style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                                onPress={
+                                    onBackPress ||
+                                    (() => {
+                                        navigation.goBack();
+                                    })
+                                }
+                                accessibilityLabel="back"
+                            />
                         )}
                     </View>
-                    {actions.map((action, index) => (
-                        <IconButton
-                            key={index}
-                            name={action.icon}
-                            sizeType="normal"
-                            color={contentColor}
-                            style={[globalStyle.noShrinkNoGrow, styles.rightButton]}
-                            onPress={action.onPress}
-                            accessibilityLabel={
-                                action.accessibilityLabel ?? action.icon
-                            }
-                        />
-                    ))}
-                    {actionComponent ?? null}
-                    {hasMenu && !menuOnLeft ? (
-                        <IconButton
-                            name={menuIcon}
-                            sizeType="normal"
-                            onLayout={evt => {
-                                setMenuIconLayout(evt.nativeEvent.layout);
-                            }}
-                            color={contentColor}
-                            style={[globalStyle.noShrinkNoGrow, styles.rightButton]}
-                            onPress={() => {
-                                setShowMenu(true);
-                            }}
-                            accessibilityLabel={menuIcon}
-                        />
-                    ) : null}
+                    {centeredTitle ? (
+                        <>
+                            <View style={globalStyle.grow} />
+                            <View
+                                pointerEvents="none"
+                                style={[
+                                    styles.centeredTitle,
+                                    {
+                                        left: titleInset,
+                                        right: titleInset,
+                                    },
+                                    contentStyle,
+                                ]}>
+                                <ThemeText
+                                    fontSize="appbar"
+                                    fontWeight="semibold"
+                                    numberOfLines={1}
+                                    style={styles.centeredTitleText}
+                                    color={
+                                        titleTextOpacity !== 1
+                                            ? color(titleColor)
+                                                .alpha(titleTextOpacity)
+                                                .toString()
+                                            : titleColor
+                                    }>
+                                    {children}
+                                </ThemeText>
+                            </View>
+                        </>
+                    ) : (
+                        <View
+                            style={[
+                                globalStyle.grow,
+                                styles.content,
+                                spacious ? styles.spaciousContent : null,
+                                contentStyle,
+                            ]}>
+                            {children}
+                        </View>
+                    )}
+                    {rightGroup}
                 </View>
             </View>
             <Portal>
@@ -240,52 +286,42 @@ export default function AppBar(props: IAppBarProps) {
                         <View style={styles.blocker} />
                     </TouchableWithoutFeedback>
                 ) : null}
-                <>
-                    <Animated.View
-                        pointerEvents={showMenu ? "auto" : "none"}
-                        style={[
-                            {
-                                borderBottomColor: colors.background,
-                                left:
-                                    (menuIconLayout?.x ?? 0) +
-                                    (menuIconLayout?.width ?? 0) / 2 -
-                                    rpx(10),
-                                top:
-                                    (menuIconLayout?.y ?? 0) +
-                                    (menuIconLayout?.height ?? 0) +
-                                    (menuWithStatusBar
-                                        ? OriginalStatusBar.currentHeight ?? 0
-                                        : 0),
-                            },
-                            transformStyle,
-                            styles.bubbleCorner,
-                        ]}
-                    />
-                    <Animated.View
-                        pointerEvents={showMenu ? "auto" : "none"}
-                        style={[
-                            {
-                                backgroundColor: colors.background,
-                                left: menuOnLeft ? rpx(24) : undefined,
-                                right: menuOnLeft ? undefined : rpx(24),
-                                top:
-                                    (menuIconLayout?.y ?? 0) +
-                                    (menuIconLayout?.height ?? 0) +
-                                    rpx(20) +
-                                    (menuWithStatusBar
-                                        ? OriginalStatusBar.currentHeight ?? 0
-                                        : 0),
-                                shadowColor: colors.shadow,
-                            },
-                            transformStyle,
-                            styles.menu,
-                        ]}>
-                        {menu.map(it =>
-                            it.show !== false ? (
+                <Animated.View
+                    pointerEvents={showMenu ? "auto" : "none"}
+                    style={[
+                        menuOnLeft ? styles.menuLeft : styles.menuRight,
+                        {
+                            backgroundColor: colors.backdrop,
+                            top:
+                                (menuIconLayout?.y ?? 0) +
+                                (menuIconLayout?.height ?? 0) +
+                                6 +
+                                (menuWithStatusBar
+                                    ? OriginalStatusBar.currentHeight ?? 0
+                                    : 0),
+                            shadowColor: colors.shadow,
+                        },
+                        transformStyle,
+                        styles.menu,
+                    ]}>
+                    {menu
+                        .filter(it => it.show !== false)
+                        .map((it, index) => (
+                            <View key={it.title}>
+                                {index > 0 ? (
+                                    <View
+                                        style={[
+                                            styles.menuDivider,
+                                            { backgroundColor: colors.divider },
+                                        ]}
+                                    />
+                                ) : null}
                                 <ListItem
-                                    key={it.title}
                                     withHorizontalPadding
                                     heightType="small"
+                                    accessibilityLabel={
+                                        it.accessibilityLabel ?? it.title
+                                    }
                                     onPress={() => {
                                         setShowMenu(false);
                                         // async
@@ -297,13 +333,16 @@ export default function AppBar(props: IAppBarProps) {
                                             it.onPress?.();
                                         }, 20);
                                     }}>
-                                    <ListItem.ListItemIcon icon={it.icon} />
                                     <ListItem.Content title={it.title} />
+                                    <ListItem.ListItemIcon
+                                        icon={it.icon}
+                                        position="right"
+                                        iconSize={20}
+                                    />
                                 </ListItem>
-                            ) : null,
-                        )}
-                    </Animated.View>
-                </>
+                            </View>
+                        ))}
+                </Animated.View>
             </Portal>
         </>
     );
@@ -313,31 +352,46 @@ const styles = StyleSheet.create({
     container: {
         width: "100%",
         zIndex: 10000,
-        height: rpx(88),
+        height: BAR_HEIGHT,
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: rpx(24),
+        paddingHorizontal: 4,
+    },
+    buttonGroup: {
+        height: "100%",
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    barButton: {
+        width: BAR_BUTTON_SIZE,
+        textAlign: "center",
     },
     content: {
         flexDirection: "row",
         flexBasis: 0,
         alignItems: "center",
-        paddingHorizontal: rpx(24),
+        paddingHorizontal: 8,
+    },
+    centeredTitle: {
+        position: "absolute",
+        top: 0,
+        bottom: 0,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    centeredTitleText: {
+        textAlign: "center",
     },
     spaciousContainer: {
-        height: rpx(116),
-        paddingHorizontal: rpx(30),
-        paddingVertical: rpx(12),
+        height: SPACIOUS_BAR_HEIGHT,
+        paddingHorizontal: 8,
     },
     spaciousContent: {
-        paddingHorizontal: rpx(28),
+        paddingHorizontal: 12,
     },
     surfaceHeader: {
         width: "100%",
         overflow: "hidden",
-    },
-    rightButton: {
-        marginLeft: rpx(28),
     },
     blocker: {
         position: "absolute",
@@ -347,27 +401,33 @@ const styles = StyleSheet.create({
         height: "100%",
         zIndex: 10010,
     },
-    bubbleCorner: {
-        position: "absolute",
-        borderColor: "transparent",
-        borderWidth: rpx(10),
-        zIndex: 10012,
+    // 菜单从按钮所在的角缩放出来
+    menuLeft: {
+        left: 12,
+        transformOrigin: "left top",
+    },
+    menuRight: {
+        right: 12,
         transformOrigin: "right top",
-        opacity: 0,
     },
     menu: {
-        width: rpx(340),
-        maxHeight: rpx(600),
-        borderRadius: rpx(8),
+        width: 240,
+        maxHeight: 420,
+        borderRadius: 14,
+        overflow: "hidden",
         zIndex: 10011,
         position: "absolute",
         opacity: 0,
         shadowOffset: {
             width: 0,
-            height: 2,
+            height: 8,
         },
-        shadowOpacity: 0.23,
-        shadowRadius: 2.62,
-        elevation: 4,
+        shadowOpacity: 0.18,
+        shadowRadius: 24,
+        elevation: 12,
+    },
+    menuDivider: {
+        height: StyleSheet.hairlineWidth,
+        marginLeft: 16,
     },
 });

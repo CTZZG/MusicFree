@@ -1,6 +1,5 @@
 import React from "react";
 import { StyleProp, StyleSheet, View, ViewProps } from "react-native";
-import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { Pressable } from "react-native-gesture-handler";
 import Icon from "@/components/base/icon.tsx";
@@ -12,8 +11,9 @@ interface ICheckboxProps {
     accessibilityLabel?: string;
 }
 
-const slop = rpx(24);
+const slop = 12;
 
+/** iOS 列表编辑态的圆形勾选框 */
 export default function Checkbox(props: ICheckboxProps) {
     const { checked, onPress, style, accessibilityLabel } = props;
     const colors = useColors();
@@ -28,13 +28,11 @@ export default function Checkbox(props: ICheckboxProps) {
                         borderColor: colors.primary,
                     }
                     : {
-                        borderColor: colors.text,
+                        borderColor: colors.textSecondary,
                     },
                 style,
             ]}>
-            {checked ? (
-                <Icon name="check" color={colors.appBarText} size={rpx(34)} />
-            ) : null}
+            {checked ? <Icon name="check" color="#FFFFFF" size={15} /> : null}
         </View>
     );
 
@@ -59,10 +57,10 @@ export default function Checkbox(props: ICheckboxProps) {
 
 const styles = StyleSheet.create({
     container: {
-        width: rpx(36),
-        height: rpx(36),
-        borderRadius: rpx(2),
-        borderWidth: rpx(1),
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        borderWidth: 1.5,
         alignItems: "center",
         justifyContent: "center",
     },

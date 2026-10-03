@@ -4,7 +4,6 @@ import Color from "color";
 
 import Theme from "@/core/theme";
 import useColors from "@/hooks/useColors";
-import rpx from "@/utils/rpx";
 import ThemeText from "./themeText";
 import VerticalSafeAreaView from "./verticalSafeAreaView";
 import StatusBar from "./statusBar";
@@ -17,38 +16,29 @@ export function useShortcutCardStyle(
     } = {},
 ) {
     const colors = useColors();
-    const theme = Theme.useTheme();
 
     return useMemo<StyleProp<ViewStyle>>(() => {
-        const isGlass = theme.id === "p-frosted-glass";
         const highlighted = options.highlighted === true;
         const backgroundColor = highlighted
-            ? Color(colors.primary).alpha(isGlass ? 0.16 : 0.1).toString()
+            ? Color(colors.primary).alpha(0.12).toString()
             : colors.card;
 
+        // iOS 分组卡片：实色表面靠与页面底色的反差区分，不加阴影；
+        // 只有选中态用一圈强调色描边。
         return {
             alignSelf: "stretch",
             width: "auto",
-            marginHorizontal: rpx(16),
-            marginVertical: options.compact ? rpx(6) : rpx(8),
-            borderRadius: rpx(20),
-            borderWidth: 1,
+            marginHorizontal: 16,
+            marginVertical: options.compact ? 4 : 6,
+            borderRadius: 14,
+            borderWidth: highlighted ? 1 : 0,
             borderColor: highlighted
                 ? Color(colors.primary).alpha(0.5).toString()
-                : isGlass
-                    ? "rgba(255,255,255,0.58)"
-                    : Color(colors.text).alpha(0.07).toString(),
+                : "transparent",
             backgroundColor,
-            // Android 会把半透明背景与 elevation 阴影渲染成两层实体色块。
-            // 快捷页统一采用单层描边表面，避免“外灰内白/外灰内黑”。
             overflow: "hidden",
         };
-    }, [
-        colors,
-        options.compact,
-        options.highlighted,
-        theme.id,
-    ]);
+    }, [colors, options.compact, options.highlighted]);
 }
 
 export function ShortcutPageSurface({ children }: PropsWithChildren) {
@@ -69,6 +59,7 @@ export function ShortcutStatusBar() {
     );
 }
 
+/** iOS 分组标题：灰色小字，右侧可放一个操作 */
 export function ShortcutSectionTitle(props: {
     children: ReactNode;
     action?: ReactNode;
@@ -76,7 +67,7 @@ export function ShortcutSectionTitle(props: {
 }) {
     return (
         <View style={[styles.sectionTitle, props.style]}>
-            <ThemeText fontSize="subTitle" fontWeight="bold">
+            <ThemeText fontSize="description" fontColor="textSecondary">
                 {props.children}
             </ThemeText>
             {props.action}
@@ -90,12 +81,12 @@ const styles = StyleSheet.create({
         backgroundColor: "transparent",
     },
     sectionTitle: {
-        minHeight: rpx(82),
-        paddingHorizontal: rpx(30),
-        paddingTop: rpx(24),
-        paddingBottom: rpx(14),
+        minHeight: 38,
+        paddingHorizontal: 32,
+        paddingTop: 18,
+        paddingBottom: 6,
         flexDirection: "row",
-        alignItems: "center",
+        alignItems: "flex-end",
         justifyContent: "space-between",
     },
 });

@@ -18,18 +18,13 @@ export function BootstrapComponent() {
     useAppLifecycleNotifications();
     useCheckUpdate();
 
-    const followSystem = useAppConfig("theme.followSystem");
-    const selectedTheme = useAppConfig("theme.selectedTheme");
+    // Theme.setup 已把旧主题迁移完，这里只负责跟随系统的实时切换
+    const followSystem = useAppConfig("theme.followSystem") ?? true;
 
     const colorScheme = useColorScheme();
 
     useEffect(() => {
-        if (
-            !followSystem ||
-            (selectedTheme &&
-                selectedTheme !== "p-dark" &&
-                selectedTheme !== "p-light")
-        ) {
+        if (!followSystem) {
             return;
         }
 
@@ -38,7 +33,7 @@ export function BootstrapComponent() {
         } else if (colorScheme === "light") {
             Theme.setTheme("p-light");
         }
-    }, [colorScheme, followSystem, selectedTheme]);
+    }, [colorScheme, followSystem]);
 
     useEffect(() => {
         let appStateEventSubscription: NativeEventSubscription | null = null;

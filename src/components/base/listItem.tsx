@@ -47,14 +47,15 @@ interface IListItemProps {
     };
 }
 
-const defaultPadding = rpx(24);
+// iOS 列表：16 的左右边距，固定行高
+const defaultPadding = 16;
 const defaultActionWidth = rpx(80);
 
 const Size = {
-    big: rpx(120),
-    normal: rpx(108),
-    small: rpx(96),
-    smallest: rpx(72),
+    big: 64,
+    normal: 58,
+    small: 50,
+    smallest: 38,
     none: undefined,
 };
 
@@ -315,6 +316,7 @@ function Content(props: IContentProps) {
     );
 }
 
+/** iOS 分组列表的小标题：灰色小字 */
 export function ListItemHeader(props: { children?: ReactNode }) {
     const { children } = props;
     return (
@@ -323,10 +325,7 @@ export function ListItemHeader(props: { children?: ReactNode }) {
             heightType="smallest"
             style={styles.listItemHeader}>
             {typeof children === "string" ? (
-                <ThemeText
-                    fontSize="subTitle"
-                    fontColor="textSecondary"
-                    fontWeight="bold">
+                <ThemeText fontSize="description" fontColor="textSecondary">
                     {children}
                 </ThemeText>
             ) : (
@@ -357,7 +356,7 @@ const styles = StyleSheet.create({
     leftImage: {
         width: rpx(80),
         height: rpx(80),
-        borderRadius: rpx(16),
+        borderRadius: 8,
     },
     imageMask: {
         position: "absolute",
@@ -372,11 +371,13 @@ const styles = StyleSheet.create({
         justifyContent: "center",
     },
     contentDesc: {
-        marginTop: rpx(16),
+        marginTop: 3,
     },
 
     listItemHeader: {
-        marginTop: rpx(20),
+        marginTop: 20,
+        alignItems: "flex-end",
+        paddingBottom: 6,
     },
 });
 
