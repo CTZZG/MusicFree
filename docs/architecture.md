@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `feat/mpv-only` 分支（`package.json` 版本 0.8.0），最后核对日期 2026-10-02。
+> 适用于 `feat/mpv-only` 分支（`package.json` 版本 0.9.0），最后核对日期 2026-10-03。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -23,6 +23,8 @@
 | 下载 | `src/core/downloader.ts`、`src/core/downloadFinalizationRunner.ts`、`src/core/downloadFinalizationJournal.ts` | 任务调度与传输；最终化按日志阶段推进（产物就绪含解密、写标签、写歌词、加入音乐库、提交附加信息），中断后从记录的阶段继续 |
 | 本地音乐 | `src/core/localMusicSheet.ts` | 扫描、元数据缓存、匹配与提交 |
 | 存储 | `src/utils/keyValueStore` | 原子写入的文件键值存储（提交 `9bfccd41` 起替代 MMKV） |
+| 导航 | `src/core/router`、`src/pages/home/index.tsx` | 根栈加主页的底部标签（首页、搜索、资料库、设置）；搜索标签沿用 `search-page` 路由名，从其他页面跳搜索用 `navigateToSearch`，先回到主页再切标签 |
+| 外观 | `src/core/theme.ts`、`src/core/themeAppearance.ts` | 只有 iOS 风格的浅色、深色两套配色，默认跟随系统；旧主题（液态硅胶、自定义配色）在启动时迁移为跟随系统 |
 
 依赖规则：
 
@@ -35,7 +37,8 @@
 ## 搜索
 
 - `SearchSession`（`src/core/search/searchSession.ts`）负责一次搜索的关键词、参与的来源，以及每个来源每种类型的页码与状态（加载中、有结果、无结果、失败）。
-- 开始新的搜索时，之前的请求全部失效，迟到的结果和错误都被丢弃。离开搜索页时会话被重置。
+- 开始新的搜索时，之前的请求全部失效，迟到的结果和错误都被丢弃。搜索页是常驻的底部标签，点“取消”时会话被重置；
+  其他页面带关键词跳转时（`navigateToSearch`）开始新的一次搜索。
 - 每个来源独立加载、独立失败：任意一个来源返回后就展示结果，其余来源在各自的标签里继续加载。
 - 单个来源单次请求最多等待 15 秒。失败按原因区分为 `timeout`、`error`、`invalid-result`、`source-unavailable`，页面据此给出不同提示。
 - 重试只重新请求失败的那个来源的失败那一页，已加载的页保留；“加载更多”不会跳过失败的页。
@@ -66,6 +69,8 @@
   当前登记的例外：
   - node-forge（GHSA-86w9-cpqp-85rv）：最新 1.4.0 仍受影响，经 `expo` → `@expo/cli` 引入，只用于 Expo 更新包签名，本项目构建不使用，也不打进 APK。
   - image-size（GHSA-5p2g-fcmc-qvqq、GHSA-w3rx-r6r6-pgpr）：只在 2.x 修复，而 metro 各版本都依赖 `^1.0.2`；metro 只在打包时读取仓库自带的图片，不打进 APK。
+  - braces（GHSA-vfj7-8cjw-p6xm，2026-10-03 登记）：最新 3.0.3 仍受影响，经 `expo` → `@expo/cli` → `@expo/metro-file-map` → `micromatch` 引入，只在打包时匹配仓库自己的路径规则，不处理外部输入，也不打进 APK。
+    `npm audit` 建议的“降级 expo 到 44”只是绕开这条依赖链，不能采用。
 - `brace-expansion` 通过 `overrides` 固定为 5.0.12，`patches/brace-expansion+5.0.12.patch` 让旧版 minimatch 仍能把它当函数调用；升级版本时需要同时重新生成补丁。
 - 原生代码由两套构建中的 `assembleRelease` 编译；`npm run audit:round20-native` 需要本地 Android 环境，不在 CI 质量门中。
 
