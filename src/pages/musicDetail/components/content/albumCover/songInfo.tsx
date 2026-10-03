@@ -6,14 +6,11 @@ import {
     useWindowDimensions,
     View,
 } from "react-native";
-import Icon from "@/components/base/icon.tsx";
+import Icon, { IIconName } from "@/components/base/icon.tsx";
 import Tag from "@/components/base/tag";
 import { showPanel } from "@/components/panels/usePanel";
-import {
-    fontSizeConst,
-    fontWeightConst,
-    iconSizeConst,
-} from "@/constants/uiConst";
+import { fontWeightConst } from "@/constants/uiConst";
+import { useI18N } from "@/core/i18n";
 import MusicSheet, { useFavorite } from "@/core/musicSheet";
 import pluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
@@ -22,9 +19,14 @@ import { parseArtists } from "@/utils/artistParser";
 import rpx from "@/utils/rpx";
 
 interface ISongInfoProps {
-    showHeart?: boolean;
-    variant?: "default" | "hero";
+    /** card：卡片封面下的标题区；hero：沉浸大图上的标题区 */
+    variant?: "card" | "hero";
+    /** 卡片式布局里与封面同宽，文字和封面两边对齐 */
+    width?: number;
 }
+
+// iOS 系统粉，收藏后的爱心
+const FAVORITE_COLOR = "#FF375F";
 
 interface ISingerInfo {
     id?: number | string;
@@ -119,19 +121,20 @@ function canOpenArtistDetail(
 }
 
 export default function SongInfo(props: ISongInfoProps) {
-    const { showHeart = false, variant = "default" } = props;
+    const { variant = "card", width } = props;
+    const isHero = variant === "hero";
     const musicItem = useCurrentMusic();
-    const isFavorite = useFavorite(musicItem);
     const navigate = useNavigate();
+    const { t } = useI18N();
     const { width: windowWidth } = useWindowDimensions();
 
     const singerList = useMemo(() => getSingerList(musicItem), [musicItem]);
     const infoWidth = useMemo(
         () =>
-            variant === "hero"
+            isHero
                 ? Math.max(rpx(280), windowWidth - rpx(72))
-                : getSongInfoWidth(windowWidth),
-        [variant, windowWidth],
+                : width ?? getSongInfoWidth(windowWidth),
+        [isHero, width, windowWidth],
     );
 
     const handleArtistPress = useCallback(() => {
@@ -227,117 +230,152 @@ export default function SongInfo(props: ISongInfoProps) {
         <View
             style={[
                 styles.container,
-                variant === "hero" ? styles.heroContainer : null,
+                isHero ? styles.heroContainer : null,
                 { width: infoWidth },
             ]}>
-            <View
-                style={[
-                    styles.titleRow,
-                    variant === "hero" ? styles.heroTitleRow : null,
-                ]}>
-                <Text
-                    numberOfLines={variant === "hero" ? 1 : 2}
-                    style={[
-                        styles.title,
-                        variant === "hero" ? styles.heroTitle : null,
-                    ]}>
-                    {musicItem.title || "--"}
-                </Text>
-                {showHeart ? (
-                    <Icon
-                        name={isFavorite ? "heart" : "heart-outline"}
-                        size={iconSizeConst.normal}
-                        color={isFavorite ? "red" : "white"}
-                        onPress={() => {
-                            if (isFavorite) {
-                                MusicSheet.removeMusic(
-                                    MusicSheet.defaultSheet.id,
-                                    musicItem,
-                                );
-                            } else {
-                                MusicSheet.addMusic(
-                                    MusicSheet.defaultSheet.id,
-                                    musicItem,
-                                );
-                            }
-                        }}
-                    />
-                ) : null}
-            </View>
-            <View style={styles.artistRow}>
-                <Pressable
-                    disabled={singerList.length === 0}
-                    onPress={handleArtistPress}
-                    style={({ pressed }) => [
-                        styles.clickableContainer,
-                        pressed ? styles.pressed : null,
-                    ]}>
+            <View style={styles.row}>
+                <View style={styles.texts}>
                     <Text
                         numberOfLines={1}
-                        style={[
-                            styles.artist,
-                            variant === "hero" ? styles.heroArtist : null,
-                        ]}>
-                        {musicItem.artist || "--"}
+                        style={[styles.title, isHero ? styles.heroTitle : null]}>
+                        {musicItem.title || "--"}
                     </Text>
-                </Pressable>
-                {musicItem.platform ? (
-                    <Tag
-                        tagName={musicItem.platform}
-                        containerStyle={styles.tagBg}
-                        style={styles.tagText}
-                    />
-                ) : null}
+                    <View style={styles.artistRow}>
+                        <Pressable
+                            disabled={singerList.length === 0}
+                            onPress={handleArtistPress}
+                            style={({ pressed }) => [
+                                styles.clickableContainer,
+                                pressed ? styles.pressed : null,
+                            ]}>
+                            <Text
+                                numberOfLines={1}
+                                style={[
+                                    styles.artist,
+                                    isHero ? styles.heroArtist : null,
+                                ]}>
+                                {musicItem.artist || "--"}
+                            </Text>
+                        </Pressable>
+                        {musicItem.platform ? (
+                            <Tag
+                                tagName={musicItem.platform}
+                                containerStyle={styles.tagBg}
+                                style={styles.tagText}
+                            />
+                        ) : null}
+                    </View>
+                    {musicItem.album && !isHero ? (
+                        <Pressable
+                            onPress={handleAlbumPress}
+                            style={({ pressed }) => [
+                                styles.clickableContainer,
+                                pressed ? styles.pressed : null,
+                            ]}>
+                            <Text numberOfLines={1} style={styles.album}>
+                                {musicItem.album}
+                            </Text>
+                        </Pressable>
+                    ) : null}
+                </View>
+                <FavoriteButton musicItem={musicItem} />
+                <RoundButton
+                    icon="ellipsis-vertical"
+                    accessibilityLabel={t("musicDetail.more.a11y")}
+                    onPress={() => {
+                        showPanel("MusicItemOptions", {
+                            musicItem,
+                            from: ROUTE_PATH.MUSIC_DETAIL,
+                        });
+                    }}
+                />
             </View>
-            {musicItem.album && variant !== "hero" ? (
-                <Pressable
-                    onPress={handleAlbumPress}
-                    style={({ pressed }) => [
-                        styles.clickableContainer,
-                        pressed ? styles.pressed : null,
-                    ]}>
-                    <Text numberOfLines={1} style={styles.album}>
-                        {musicItem.album}
-                    </Text>
-                </Pressable>
-            ) : null}
         </View>
+    );
+}
+
+/** 标题右侧的圆形按钮（收藏、更多） */
+function RoundButton(props: {
+    icon: IIconName;
+    color?: string;
+    accessibilityLabel: string;
+    accessibilityState?: { selected?: boolean };
+    onPress: () => void;
+}) {
+    return (
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={props.accessibilityLabel}
+            accessibilityState={props.accessibilityState}
+            hitSlop={4}
+            onPress={props.onPress}
+            style={({ pressed }) => [
+                styles.roundButton,
+                pressed ? styles.pressed : null,
+            ]}>
+            <Icon name={props.icon} size={20} color={props.color ?? "white"} />
+        </Pressable>
+    );
+}
+
+function FavoriteButton(props: { musicItem: IMusic.IMusicItem }) {
+    const { musicItem } = props;
+    const isFavorite = useFavorite(musicItem);
+    const { t } = useI18N();
+
+    return (
+        <RoundButton
+            icon={isFavorite ? "heart" : "heart-outline"}
+            color={isFavorite ? FAVORITE_COLOR : "white"}
+            accessibilityLabel={t(
+                isFavorite
+                    ? "musicDetail.unfavorite.a11y"
+                    : "musicDetail.favorite.a11y",
+            )}
+            accessibilityState={{ selected: isFavorite }}
+            onPress={() => {
+                if (isFavorite) {
+                    MusicSheet.removeMusic(
+                        MusicSheet.defaultSheet.id,
+                        musicItem,
+                    );
+                } else {
+                    MusicSheet.addMusic(MusicSheet.defaultSheet.id, musicItem);
+                }
+            }}
+        />
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         alignSelf: "center",
-        paddingVertical: rpx(18),
-        alignItems: "flex-start",
+        paddingTop: 22,
+        paddingBottom: 6,
     },
     heroContainer: {
         paddingTop: rpx(12),
         paddingBottom: rpx(8),
     },
-    titleRow: {
+    row: {
         flexDirection: "row",
-        alignItems: "flex-start",
-        justifyContent: "space-between",
-        width: "100%",
-        marginBottom: rpx(16),
+        alignItems: "center",
+        gap: 10,
     },
-    heroTitleRow: {
-        marginBottom: rpx(10),
+    texts: {
+        flex: 1,
+        minWidth: 0,
     },
     title: {
         color: "white",
-        fontSize: fontSizeConst.title,
-        fontWeight: fontWeightConst.semibold,
+        fontSize: 24,
+        lineHeight: 30,
+        fontWeight: fontWeightConst.bold,
         includeFontPadding: false,
-        textAlign: "left",
-        flex: 1,
-        marginRight: rpx(16),
     },
     heroTitle: {
         fontSize: rpx(40),
         lineHeight: rpx(48),
-        fontWeight: fontWeightConst.bold,
         textShadowColor: "rgba(0,0,0,0.22)",
         textShadowOffset: { width: 0, height: rpx(2) },
         textShadowRadius: rpx(6),
@@ -345,18 +383,18 @@ const styles = StyleSheet.create({
     artistRow: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: rpx(8),
         maxWidth: "100%",
     },
     artist: {
-        color: "white",
-        fontSize: fontSizeConst.subTitle,
+        color: "rgba(255, 255, 255, 0.72)",
+        fontSize: 20,
+        lineHeight: 26,
         includeFontPadding: false,
-        opacity: 0.9,
     },
     heroArtist: {
         fontSize: rpx(24),
-        opacity: 0.86,
+        lineHeight: rpx(34),
+        color: "rgba(255, 255, 255, 0.86)",
     },
     clickableContainer: {
         maxWidth: "100%",
@@ -367,16 +405,23 @@ const styles = StyleSheet.create({
     },
     tagBg: {
         backgroundColor: "rgba(255, 255, 255, 0.2)",
-        marginLeft: rpx(12),
+        marginLeft: 8,
     },
     tagText: {
         color: "white",
     },
     album: {
-        width: "100%",
-        color: "white",
-        fontSize: fontSizeConst.content,
+        color: "rgba(255, 255, 255, 0.56)",
+        fontSize: 15,
+        lineHeight: 20,
         includeFontPadding: false,
-        opacity: 0.7,
+    },
+    roundButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(255, 255, 255, 0.16)",
     },
 });

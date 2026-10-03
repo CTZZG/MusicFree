@@ -336,6 +336,16 @@ export interface ILanguageData {
     "musicDetail.playControl.previous.a11y": string; // 上一首
     "musicDetail.playControl.next.a11y": string; // 下一首
     "musicDetail.seekBar.a11y": string; // 播放进度
+    "musicDetail.nowPlaying": string; // 播放页顶部标题
+    "musicDetail.collapse.a11y": string; // 收起播放页按钮
+    "musicDetail.shareApp.a11y": string; // 分享应用按钮
+    "musicDetail.favorite.a11y": string; // 收藏按钮
+    "musicDetail.unfavorite.a11y": string; // 取消收藏按钮
+    "musicDetail.more.a11y": string; // 更多操作按钮
+    "musicDetail.showLyric.a11y": string; // 切到歌词
+    "musicDetail.showCover.a11y": string; // 切回封面
+    "musicDetail.quality.a11y": string; // 音质标签
+    "musicDetail.rate.a11y": string; // 倍速标签
     "lyricEditor.title": string; // 编辑歌词
     "lyricEditor.addLine": string; // 插入歌词行
     "lyricEditor.stamp": string; // 打点
@@ -700,6 +710,7 @@ export interface ILanguageData {
     "themeSettings.coverStyle": string; // 封面样式
     "themeSettings.coverStyleSquare": string; // 方形
     "themeSettings.coverStyleCircle": string; // 圆形
+    "themeSettings.coverStyleHero": string; // 沉浸大图
     "themeSettings.homeDisplay": string; // 首页显示
     "themeSettings.useEnhancedHome": string; // 使用信息流首页
     "themeSettings.useEnhancedHome.desc": string; // 信息流首页开关说明

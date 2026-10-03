@@ -13,12 +13,19 @@ interface IMusicDetailCircleLayoutOptions {
     safeAreaBottom: number;
 }
 
+// iOS 卡片封面：左右各留 30 左右，比圆形唱片大，但给下面的歌名、进度条和
+// 控制按钮留足高度
+const SQUARE_ARTWORK_WIDTH_RATIO = 0.84;
+const SQUARE_ARTWORK_HEIGHT_RATIO = 0.4;
+const SQUARE_ARTWORK_MAX_SIZE = 640;
+
 /**
- * The circle cover is a normal-flow layout. Keep its geometry in one place so
- * the cover never grows into the song information or the bottom player.
+ * 卡片式封面（方形圆角卡片或圆形唱片）都是普通文档流布局。几何尺寸集中在这里，
+ * 封面不会挤到歌名或下面的播放控制里。
  */
-export function getMusicDetailCircleLayout(
+export function getMusicDetailCardLayout(
     options: IMusicDetailCircleLayoutOptions,
+    shape: "square" | "circle",
 ) {
     const { windowWidth, windowHeight, safeAreaTop, safeAreaBottom } = options;
     const width = Math.max(1, windowWidth);
@@ -26,12 +33,19 @@ export function getMusicDetailCircleLayout(
         1,
         windowHeight - safeAreaTop - safeAreaBottom,
     );
+    const isSquare = shape === "square";
     const coverSize = Math.max(
         rpx(280),
         Math.min(
-            width * CIRCLE_ARTWORK_WIDTH_RATIO,
-            usableHeight * CIRCLE_ARTWORK_HEIGHT_RATIO,
-            rpx(CIRCLE_ARTWORK_MAX_SIZE),
+            width *
+                (isSquare
+                    ? SQUARE_ARTWORK_WIDTH_RATIO
+                    : CIRCLE_ARTWORK_WIDTH_RATIO),
+            usableHeight *
+                (isSquare
+                    ? SQUARE_ARTWORK_HEIGHT_RATIO
+                    : CIRCLE_ARTWORK_HEIGHT_RATIO),
+            rpx(isSquare ? SQUARE_ARTWORK_MAX_SIZE : CIRCLE_ARTWORK_MAX_SIZE),
         ),
     );
 
@@ -40,6 +54,12 @@ export function getMusicDetailCircleLayout(
         coverSize,
         topGap: rpx(24),
     };
+}
+
+export function getMusicDetailCircleLayout(
+    options: IMusicDetailCircleLayoutOptions,
+) {
+    return getMusicDetailCardLayout(options, "circle");
 }
 
 export function getMusicDetailCircleLyricLayout(

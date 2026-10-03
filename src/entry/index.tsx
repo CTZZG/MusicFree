@@ -170,6 +170,10 @@ export default function Pages() {
                                                                   "transparent",
                                                             statusBarTranslucent:
                                                                   true,
+                                                            // 和 iOS 一样从底部升起
+                                                            animation:
+                                                                  "slide_from_bottom",
+                                                            animationDuration: 280,
                                                         }
                                                         : undefined
                                                 }

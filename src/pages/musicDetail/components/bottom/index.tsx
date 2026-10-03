@@ -1,56 +1,54 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
-import rpx from "@/utils/rpx";
 import SeekBar from "./seekBar";
 import PlayControl from "./playControl";
+import PlayerActions from "./actions";
 import useOrientation from "@/hooks/useOrientation";
 import { SharedValue } from "react-native-reanimated";
-import { PORTRAIT_GESTURE_EXTENSION } from "./layout";
 
 interface IBottomProps {
     swipeProgress: SharedValue<number>;
-    layoutMode?: "default" | "circle";
+    tab: "album" | "lyric";
+    onTabChange(tab: "album" | "lyric"): void;
 }
 
+/** 播放页下半部分：进度条、播放控制、操作栏 */
 export default function Bottom(props: IBottomProps) {
-    const { swipeProgress, layoutMode = "default" } = props;
+    const { swipeProgress, tab, onTabChange } = props;
     const orientation = useOrientation();
+
     if (orientation === "horizontal") {
         return (
-            <View style={[style.wrapper, style.horizontalWrapper]}>
+            <View style={styles.horizontalWrapper}>
                 <SeekBar />
                 <PlayControl swipeProgress={swipeProgress} />
+                <PlayerActions />
             </View>
         );
     }
 
     return (
-        <View
-            style={[
-                style.wrapper,
-                layoutMode === "circle"
-                    ? style.circlePortraitWrapper
-                    : style.portraitWrapper,
-            ]}>
+        <View style={styles.portraitWrapper}>
             <SeekBar />
             <PlayControl swipeProgress={swipeProgress} />
+            <PlayerActions
+                lyricTab={{
+                    showingLyric: tab === "lyric",
+                    toggle: () =>
+                        onTabChange(tab === "lyric" ? "album" : "lyric"),
+                }}
+            />
         </View>
     );
 }
 
-const style = StyleSheet.create({
-    wrapper: {
+const styles = StyleSheet.create({
+    portraitWrapper: {
         width: "100%",
+        paddingBottom: 12,
     },
     horizontalWrapper: {
-        height: rpx(156),
-    },
-    portraitWrapper: {
-        height: rpx(240 + PORTRAIT_GESTURE_EXTENSION),
-        marginBottom: rpx(-PORTRAIT_GESTURE_EXTENSION),
-        transform: [{ translateY: rpx(-PORTRAIT_GESTURE_EXTENSION) }],
-    },
-    circlePortraitWrapper: {
-        height: rpx(240 + PORTRAIT_GESTURE_EXTENSION),
+        width: "100%",
+        paddingBottom: 8,
     },
 });

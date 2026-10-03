@@ -43,6 +43,8 @@ interface IMiniLyricProps {
     compact?: boolean;
     onPress?: () => void;
     variant?: "default" | "hero" | "circle";
+    /** 卡片式封面下与封面同宽，左右和歌名对齐 */
+    width?: number;
 }
 
 type MiniLyricLineType = LyricWordLineType;
@@ -343,7 +345,7 @@ function MiniLyricGroup(props: {
 }
 
 export default function MiniLyric(props: IMiniLyricProps) {
-    const { compact = false, onPress, variant = "default" } = props;
+    const { compact = false, onPress, variant = "default", width } = props;
     const isHero = variant === "hero";
     const isCircle = variant === "circle";
     const lyricState = useLyricState();
@@ -361,8 +363,8 @@ export default function MiniLyric(props: IMiniLyricProps) {
         () =>
             isHero
                 ? Math.max(rpx(320), windowWidth - rpx(88))
-                : getSongInfoWidth(windowWidth),
-        [isHero, windowWidth],
+                : width ?? getSongInfoWidth(windowWidth),
+        [isHero, width, windowWidth],
     );
     const translateY = useSharedValue(0);
     const lastIndexRef = useRef(-1);

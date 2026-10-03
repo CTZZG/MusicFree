@@ -1,8 +1,10 @@
 import rpx from "@/utils/rpx";
 
 const HERO_NAV_HEIGHT = 112;
-const PLAYER_BOTTOM_HEIGHT = 240;
-const CONTENT_BELOW_ARTWORK_RESERVE = 454;
+// 下半部分：进度条（带音质、倍速标签）、播放控制、操作栏
+const PLAYER_BOTTOM_HEIGHT = 440;
+// 封面下方的歌词与歌名；收藏、更多已并进歌名一行
+const CONTENT_BELOW_ARTWORK_RESERVE = 350;
 const HERO_FOCUS_HEIGHT_RATIO = 0.96;
 const HERO_IMAGE_HEIGHT_RATIO = 1.18;
 

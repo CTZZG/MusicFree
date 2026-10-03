@@ -6,7 +6,6 @@ import useOrientation from "@/hooks/useOrientation";
 import { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
 import globalStyle from "@/constants/globalStyle";
 import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
-import Operations from "./operations";
 import { showPanel } from "@/components/panels/usePanel.ts";
 import SongInfo from "./songInfo";
 import MiniLyric from "./miniLyric";
@@ -23,7 +22,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useMusicDetailVisuals } from "../../../artworkContext";
 import { getMusicDetailHeroLayout } from "../../../heroLayout";
-import { getMusicDetailCircleLayout } from "../../../circleLayout";
+import { getMusicDetailCardLayout } from "../../../circleLayout";
+import { useI18N } from "@/core/i18n";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -49,11 +49,15 @@ export default function AlbumCover(props: IProps) {
     const { height: windowHeight, width: windowWidth } = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
     const longPressTriggeredRef = useRef(false);
+    const { t } = useI18N();
+    // 横屏时左半边放封面和歌名，右半边是歌词
+    const horizontalInfoWidth = Math.max(rpx(280), windowWidth / 2 - 48);
 
     const usableWindowHeight =
         windowHeight - safeAreaInsets.top - safeAreaInsets.bottom;
     const rotation = useSharedValue(0);
     const isCircleCover = coverStyle === "circle";
+    const isHeroCover = coverStyle === "hero";
     const shouldRotateCover = isCircleCover && !musicIsPaused(musicState);
     const heroLayout = useMemo(
         () =>
@@ -65,58 +69,37 @@ export default function AlbumCover(props: IProps) {
             }),
         [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
     );
-    const circleLayout = useMemo(
+    const cardLayout = useMemo(
         () =>
-            getMusicDetailCircleLayout({
-                windowWidth,
-                windowHeight,
-                safeAreaTop: safeAreaInsets.top,
-                safeAreaBottom: safeAreaInsets.bottom,
-            }),
-        [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
+            getMusicDetailCardLayout(
+                {
+                    windowWidth,
+                    windowHeight,
+                    safeAreaTop: safeAreaInsets.top,
+                    safeAreaBottom: safeAreaInsets.bottom,
+                },
+                isCircleCover ? "circle" : "square",
+            ),
+        [
+            isCircleCover,
+            safeAreaInsets.bottom,
+            safeAreaInsets.top,
+            windowHeight,
+            windowWidth,
+        ],
     );
 
     const artworkStyle = useMemo(() => {
-        const circleStyle = isCircleCover
-            ? {
-                borderRadius: rpx(999),
-                overflow: "hidden" as const,
-            }
-            : {
-                borderRadius: orientation === "vertical" ? rpx(6) : rpx(4),
-                overflow: "hidden" as const,
-            };
-        if (orientation === "vertical") {
-            const availableWidth = Math.max(rpx(360), windowWidth - rpx(24));
-            const comfortableHeight = Math.max(
-                rpx(420),
-                usableWindowHeight * 0.43,
-            );
-            const coverSize = isCircleCover
-                ? circleLayout.coverSize
-                : Math.min(availableWidth, comfortableHeight);
-            return {
-                width: coverSize,
-                height: coverSize,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: "rgba(255,255,255,0.28)",
-                elevation: 12,
-                ...circleStyle,
-            };
-        } else {
-            return {
-                width: rpx(260),
-                height: rpx(260),
-                ...circleStyle,
-            };
-        }
-    }, [
-        circleLayout.coverSize,
-        isCircleCover,
-        orientation,
-        usableWindowHeight,
-        windowWidth,
-    ]);
+        // 圆形唱片；方形用 iOS 的圆角卡片，带一点投影
+        const shapeStyle = isCircleCover
+            ? styles.circleArtwork
+            : styles.squareArtwork;
+        const coverSize =
+            orientation === "vertical"
+                ? cardLayout.coverSize
+                : Math.min(rpx(300), usableWindowHeight * 0.4);
+        return [shapeStyle, { width: coverSize, height: coverSize }];
+    }, [cardLayout.coverSize, isCircleCover, orientation, usableWindowHeight]);
 
     useEffect(() => {
         if (shouldRotateCover) {
@@ -186,12 +169,12 @@ export default function AlbumCover(props: IProps) {
                         </Animated.View>
                     </View>
                 </Pressable>
-                {immersiveMode ? null : <Operations />}
+                {immersiveMode ? null : <SongInfo width={horizontalInfoWidth} />}
             </View>
         );
     }
 
-    if (!isCircleCover) {
+    if (isHeroCover) {
         return (
             <View style={[styles.verticalRoot, styles.heroVerticalRoot]}>
                 <Pressable
@@ -202,7 +185,6 @@ export default function AlbumCover(props: IProps) {
                 />
                 <MiniLyric variant="hero" onPress={onTurnPageClick} />
                 <SongInfo variant="hero" />
-                {immersiveMode ? null : <Operations />}
             </View>
         );
     }
@@ -210,18 +192,20 @@ export default function AlbumCover(props: IProps) {
     return (
         <View
             style={[
-                styles.circleVerticalRoot,
+                styles.cardVerticalRoot,
                 {
-                    paddingTop: circleLayout.navHeight + circleLayout.topGap,
+                    paddingTop: cardLayout.navHeight + cardLayout.topGap,
                 },
             ]}>
             <Pressable
                 delayLongPress={500}
                 onPress={handlePress}
                 onLongPress={handleLongPress}
+                accessibilityRole="button"
+                accessibilityHint={t("musicDetail.showLyric.a11y")}
                 style={[
                     styles.coverArea,
-                    { height: circleLayout.coverSize + rpx(24) },
+                    { height: cardLayout.coverSize + rpx(24) },
                 ]}>
                 <View style={styles.coverCenter}>
                     <Animated.View style={[artworkStyle, coverAnimatedStyle]}>
@@ -234,62 +218,77 @@ export default function AlbumCover(props: IProps) {
                     </Animated.View>
                 </View>
             </Pressable>
-            <View style={styles.circleSongInfo}>
-                <SongInfo />
+            <View style={styles.cardSongInfo}>
+                <SongInfo
+                    width={isCircleCover ? undefined : cardLayout.coverSize}
+                />
             </View>
-            <MiniLyric variant="circle" onPress={onTurnPageClick} />
-            <View style={globalStyle.flex1} />
-            <View style={styles.circleOperationsArea}>
-                {immersiveMode ? null : <Operations />}
-            </View>
+            <MiniLyric
+                variant="circle"
+                width={isCircleCover ? undefined : cardLayout.coverSize}
+                onPress={onTurnPageClick}
+            />
         </View>
     );
 }
 
-const styles = {
+const styles = StyleSheet.create({
     verticalRoot: {
-        width: "100%" as const,
+        width: "100%",
         flex: 1,
     },
     heroVerticalRoot: {
         paddingBottom: rpx(64),
     },
-    circleVerticalRoot: {
-        width: "100%" as const,
+    cardVerticalRoot: {
+        width: "100%",
         flex: 1,
     },
     coverArea: {
-        width: "100%" as const,
+        width: "100%",
         flexShrink: 0,
-        justifyContent: "center" as const,
+        justifyContent: "center",
     },
     coverCenter: {
-        width: "100%" as const,
-        justifyContent: "center" as const,
-        alignItems: "center" as const,
+        width: "100%",
+        justifyContent: "center",
+        alignItems: "center",
     },
     heroTapArea: {
-        width: "100%" as const,
+        width: "100%",
         flexShrink: 0,
     },
-    circleSongInfo: {
-        flexShrink: 0,
-    },
-    circleOperationsArea: {
+    cardSongInfo: {
         flexShrink: 0,
     },
     coverImage: {
-        width: "100%" as const,
-        height: "100%" as const,
+        width: "100%",
+        height: "100%",
+    },
+    circleArtwork: {
+        borderRadius: 9999,
+        overflow: "hidden",
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: "rgba(255, 255, 255, 0.28)",
+    },
+    squareArtwork: {
+        borderRadius: 14,
+        overflow: "hidden",
+        backgroundColor: "rgba(255, 255, 255, 0.08)",
+        elevation: 16,
+        shadowColor: "#000000",
+        shadowOpacity: 0.45,
+        shadowRadius: 30,
+        shadowOffset: { width: 0, height: 24 },
     },
     horizontalRoot: {
-        width: "100%" as const,
+        width: "100%",
         flex: 1,
-        justifyContent: "center" as const,
+        justifyContent: "center",
     },
     horizontalCoverArea: {
-        width: "100%" as const,
+        width: "100%",
         flex: 1,
-        justifyContent: "center" as const,
+        justifyContent: "center",
     },
-};
+});

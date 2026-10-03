@@ -1,1 +1,0 @@
-export const PORTRAIT_GESTURE_EXTENSION = 64;

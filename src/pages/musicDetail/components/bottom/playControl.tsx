@@ -1,11 +1,6 @@
 import rpx from "@/utils/rpx";
 import React, { useEffect } from "react";
-import {
-    ActivityIndicator,
-    InteractionManager,
-    StyleSheet,
-    View,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
     cancelAnimation,
@@ -20,14 +15,11 @@ import Animated, {
 } from "react-native-reanimated";
 
 import Icon from "@/components/base/icon.tsx";
-import { showPanel } from "@/components/panels/usePanel";
 import { timingConfig } from "@/constants/commonConst";
 import { useI18N } from "@/core/i18n";
-import TrackPlayer, { useMusicState, useRepeatMode } from "@/core/trackPlayer";
+import TrackPlayer, { useMusicState } from "@/core/trackPlayer";
 import useOrientation from "@/hooks/useOrientation";
-import delay from "@/utils/delay";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
-import { MusicRepeatModeInfo } from "@/constants/trackPlayerConst";
 import {
     getSwipeUpFeedbackProgress,
     shouldTriggerSwipeUpNext,
@@ -59,7 +51,6 @@ function skipToNextFromSwipe() {
 
 export default function PlayControl(props: IPlayControlProps) {
     const { swipeProgress } = props;
-    const repeatMode = useRepeatMode();
     const musicState = useMusicState();
     const { t } = useI18N();
 
@@ -197,84 +188,68 @@ export default function PlayControl(props: IPlayControlProps) {
             }
         });
 
+    const paused = musicIsPaused(musicState);
+    // 上一首、播放/暂停、下一首居中排开；播放模式和播放列表在下面的操作栏
     const controls = (
         <View
             style={[
                 styles.wrapper,
-                orientation === "horizontal" ? styles.marginTop0 : null,
+                orientation === "horizontal" ? styles.horizontalWrapper : null,
             ]}>
-            <Icon
-                color={"white"}
-                name={MusicRepeatModeInfo[repeatMode].icon}
-                size={rpx(56)}
-                accessible
-                accessibilityRole="button"
-                accessibilityLabel={t(`repeatMode.${repeatMode}`)}
-                onPress={async () => {
-                    InteractionManager.runAfterInteractions(async () => {
-                        await delay(20, false);
-                        TrackPlayer.toggleRepeatMode();
-                    });
-                }}
-            />
-            <Icon
-                color={"white"}
-                name={"skip-left"}
-                size={rpx(56)}
-                accessible
+            <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={t("musicDetail.playControl.previous.a11y")}
                 onPress={() => {
                     TrackPlayer.skipToPrevious().catch(() => undefined);
                 }}
-            />
+                style={({ pressed }) => [
+                    styles.sideButton,
+                    pressed ? styles.pressed : null,
+                ]}>
+                <Icon color="white" name="skip-left" size={36} />
+            </Pressable>
             {musicIsBuffering(musicState) ? (
-                <View style={styles.indicatorContainer}>
-                    <ActivityIndicator size={rpx(72)} color={"white"} />
+                <View style={styles.mainButton}>
+                    <ActivityIndicator size="large" color="white" />
                 </View>
             ) : (
-                <Icon
-                    color={"white"}
-                    name={musicIsPaused(musicState) ? "play" : "pause"}
-                    size={rpx(96)}
-                    accessible
+                <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={
-                        musicIsPaused(musicState)
+                        paused
                             ? t("common.play")
                             : t("musicDetail.playControl.pause.a11y")
                     }
                     onPress={() => {
-                        if (musicIsPaused(musicState)) {
+                        if (paused) {
                             TrackPlayer.play();
                         } else {
                             TrackPlayer.pause();
                         }
                     }}
-                />
+                    style={({ pressed }) => [
+                        styles.mainButton,
+                        pressed ? styles.pressed : null,
+                    ]}>
+                    <Icon
+                        color="white"
+                        name={paused ? "play" : "pause"}
+                        size={52}
+                    />
+                </Pressable>
             )}
-            <Icon
-                color={"white"}
-                name={"skip-right"}
-                size={rpx(56)}
-                accessible
+            <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={t("musicDetail.playControl.next.a11y")}
                 onPress={() => {
                     TrackPlayer.skipToNext().catch(() => undefined);
                 }}
-            />
-            <Icon
-                color={"white"}
-                name={"playlist"}
-                size={rpx(56)}
-                accessible
-                accessibilityRole="button"
-                accessibilityLabel={t("musicBar.playlist.a11y")}
-                onPress={() => {
-                    showPanel("PlayList");
-                }}
-            />
+                style={({ pressed }) => [
+                    styles.sideButton,
+                    pressed ? styles.pressed : null,
+                ]}>
+                <Icon color="white" name="skip-right" size={36} />
+            </Pressable>
         </View>
     );
 
@@ -330,23 +305,34 @@ export default function PlayControl(props: IPlayControlProps) {
 const styles = StyleSheet.create({
     wrapper: {
         width: "100%",
-        height: rpx(100),
+        height: 84,
         flexDirection: "row",
-        justifyContent: "space-around",
+        justifyContent: "space-between",
         alignItems: "center",
+        paddingHorizontal: 40,
     },
+    horizontalWrapper: {
+        height: 64,
+        paddingHorizontal: 24,
+    },
+    sideButton: {
+        width: 64,
+        height: 64,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    mainButton: {
+        width: 80,
+        height: 80,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    pressed: {
+        opacity: 0.5,
+    },
+    // 父容器高度随内容走，这里不能用 flex: 1，否则会被压成 0 高
     gestureArea: {
         width: "100%",
-        flex: 1,
-    },
-    indicatorContainer: {
-        width: rpx(96),
-        height: rpx(96),
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    marginTop0: {
-        marginTop: 0,
     },
     swipeHint: {
         minHeight: rpx(68),

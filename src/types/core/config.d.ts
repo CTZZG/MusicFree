@@ -90,7 +90,7 @@ export interface IAppConfigProperties {
     "theme.followSystem": boolean;
     "theme.selectedTheme": string;
     "theme.musicBarLiquidGlass": boolean;
-    "theme.coverStyle": "square" | "circle";
+    "theme.coverStyle": "square" | "circle" | "hero";
     "theme.useEnhancedHome": boolean;
     "theme.hideHomeDiscovery": boolean;
     "theme.hideHomeHeroCard": boolean;
