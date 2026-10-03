@@ -10,13 +10,14 @@ import rpx from "@/utils/rpx";
 import Color from "color";
 import { useAtom, useSetAtom } from "jotai";
 import React from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, TextInput, View } from "react-native";
 import { addHistory } from "../common/historySearch";
 import { useSubmitSearch } from "../hooks/useSearchSession";
 import { editingAtom, queryAtom } from "../store/atoms";
 
 interface INavBarProps {
     autoFocus?: boolean;
+    inputRef?: React.Ref<TextInput>;
 }
 
 export default function NavBar(props: INavBarProps) {
@@ -37,7 +38,11 @@ export default function NavBar(props: INavBarProps) {
     const hintTextColor = Color(colors.text).alpha(0.6).toString();
 
     return (
-        <AppBar containerStyle={style.appbar} contentStyle={style.appbar}>
+        // 搜索是底部标签的根页面，不需要返回按钮
+        <AppBar
+            hideBackButton
+            containerStyle={style.appbar}
+            contentStyle={[style.appbar, style.content]}>
             <View style={style.searchBarContainer}>
                 <Icon
                     name="magnifying-glass"
@@ -46,6 +51,7 @@ export default function NavBar(props: INavBarProps) {
                     style={style.magnify}
                 />
                 <Input
+                    ref={props.inputRef}
                     autoFocus={props.autoFocus}
                     style={[
                         style.searchBar,
@@ -98,6 +104,9 @@ export default function NavBar(props: INavBarProps) {
 const style = StyleSheet.create({
     appbar: {
         paddingRight: 0,
+    },
+    content: {
+        paddingLeft: 12,
     },
     button: {
         paddingHorizontal: rpx(24),

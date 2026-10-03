@@ -35,16 +35,12 @@ bootstrap();
 const Stack = createNativeStackNavigator<any>();
 
 function MusicBarOverlay() {
-    const { drawerOpen, layout } = useMusicBarLayoutState();
-    const interactive = layout.visible && !drawerOpen;
+    const { layout } = useMusicBarLayoutState();
     return (
         <View
             collapsable={false}
-            pointerEvents={interactive ? "box-none" : "none"}
-            style={[
-                styles.musicBarOverlay,
-                drawerOpen ? styles.musicBarOverlayBehindDrawer : null,
-            ]}>
+            pointerEvents={layout.visible ? "box-none" : "none"}
+            style={styles.musicBarOverlay}>
             <MusicBar />
         </View>
     );
@@ -205,10 +201,5 @@ const styles = StyleSheet.create({
         left: 0,
         zIndex: 100,
         elevation: 8,
-    },
-    musicBarOverlayBehindDrawer: {
-        opacity: 0,
-        zIndex: -1,
-        elevation: 0,
     },
 });

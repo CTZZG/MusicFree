@@ -13,6 +13,8 @@ import { useCurrentMusic } from "@/core/trackPlayer";
 import {
     MUSIC_BAR_FLOATING_BOTTOM,
     MUSIC_BAR_HEIGHT,
+    MUSIC_BAR_TAB_BAR_GAP,
+    TAB_BAR_HEIGHT,
 } from "./layout";
 import {
     IMusicBarLayoutPolicyResult,
@@ -21,7 +23,6 @@ import {
 
 const musicBarRouteNames = new Set<string>([
     ROUTE_PATH.HOME,
-    ROUTE_PATH.SEARCH_PAGE,
     ROUTE_PATH.LOCAL_SHEET_DETAIL,
     ROUTE_PATH.ALBUM_DETAIL,
     ROUTE_PATH.ARTIST_DETAIL,
@@ -40,30 +41,36 @@ const musicBarRouteNames = new Set<string>([
 
 interface IMusicBarLayoutContextValue {
     routeName: string;
+    /** 主页当前的底部标签；不在主页时保留最后一次的值 */
+    activeTab: string;
     transitionInProgress: boolean;
     keyboardVisible: boolean;
-    drawerOpen: boolean;
     layout: IMusicBarLayoutPolicyResult;
-    setDrawerOpen(open: boolean): void;
+    setActiveTab(tab: string): void;
 }
+
+const layoutMetrics = {
+    barHeight: MUSIC_BAR_HEIGHT,
+    floatingBottom: MUSIC_BAR_FLOATING_BOTTOM,
+    tabBarHeight: TAB_BAR_HEIGHT,
+    tabBarGap: MUSIC_BAR_TAB_BAR_GAP,
+};
 
 const defaultLayout = resolveMusicBarLayout({
     routeSupportsMusicBar: false,
+    routeHasTabBar: false,
     hasCurrentMusic: false,
     keyboardVisible: false,
-    drawerOpen: false,
-    floatingTheme: false,
-    barHeight: MUSIC_BAR_HEIGHT,
-    floatingBottom: MUSIC_BAR_FLOATING_BOTTOM,
+    ...layoutMetrics,
 });
 
 const MusicBarLayoutContext = createContext<IMusicBarLayoutContextValue>({
     routeName: "",
+    activeTab: "",
     transitionInProgress: false,
     keyboardVisible: false,
-    drawerOpen: false,
     layout: defaultLayout,
-    setDrawerOpen: () => undefined,
+    setActiveTab: () => undefined,
 });
 
 interface IMusicBarLayoutProviderProps extends PropsWithChildren {
@@ -92,10 +99,8 @@ export function MusicBarLayoutProvider(
     } = props;
     const effectiveVisibilityRoute = visibilityRouteName ?? routeName;
     const musicItem = useCurrentMusic();
-    // iOS 风格下播放条始终是悬浮的玻璃胶囊，浅色和深色都一样
-    const floatingTheme = true;
     const [keyboardVisible, setKeyboardVisible] = useState(false);
-    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState("");
 
     useEffect(() => {
         let keyboardResetTimer: ReturnType<typeof setTimeout> | null = null;
@@ -138,37 +143,23 @@ export function MusicBarLayoutProvider(
                 routeSupportsMusicBar: musicBarRouteNames.has(
                     effectiveVisibilityRoute,
                 ),
+                routeHasTabBar: effectiveVisibilityRoute === ROUTE_PATH.HOME,
                 hasCurrentMusic: !!musicItem,
                 keyboardVisible,
-                drawerOpen,
-                floatingTheme,
-                barHeight: MUSIC_BAR_HEIGHT,
-                floatingBottom: MUSIC_BAR_FLOATING_BOTTOM,
+                ...layoutMetrics,
             }),
-        [
-            drawerOpen,
-            effectiveVisibilityRoute,
-            floatingTheme,
-            keyboardVisible,
-            musicItem,
-        ],
+        [effectiveVisibilityRoute, keyboardVisible, musicItem],
     );
     const value = useMemo<IMusicBarLayoutContextValue>(
         () => ({
             routeName,
+            activeTab,
             transitionInProgress,
             keyboardVisible,
-            drawerOpen,
             layout,
-            setDrawerOpen,
+            setActiveTab,
         }),
-        [
-            drawerOpen,
-            keyboardVisible,
-            layout,
-            routeName,
-            transitionInProgress,
-        ],
+        [activeTab, keyboardVisible, layout, routeName, transitionInProgress],
     );
 
     return (

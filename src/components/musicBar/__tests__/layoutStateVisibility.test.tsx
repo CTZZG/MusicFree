@@ -52,10 +52,12 @@ import {
 } from "../layoutState";
 
 let observed: { visible: boolean; committedRoute: string } | null = null;
+let observedTabBar: boolean | null = null;
 
 function Probe() {
     const { layout, routeName } = useMusicBarLayoutState();
     observed = { visible: layout.visible, committedRoute: routeName };
+    observedTabBar = layout.tabBarVisible;
     return null;
 }
 
@@ -100,6 +102,20 @@ describe("music bar visibility route", () => {
         });
         expect(observed).toEqual({ visible: true, committedRoute: "home" });
         act(() => tree.unmount());
+    });
+
+    it("shows the tab bar only while the target is the home tabs", () => {
+        // 从主页进二级页面：转场一开始标签栏就让位，迷你播放器同时往下移
+        const leaving = renderWith({
+            routeName: "home",
+            visibilityRouteName: "history",
+        });
+        expect(observedTabBar).toBe(false);
+        act(() => leaving.unmount());
+
+        const home = renderWith({ routeName: "home" });
+        expect(observedTabBar).toBe(true);
+        act(() => home.unmount());
     });
 
     it("falls back to the committed route when no staged route is given", () => {

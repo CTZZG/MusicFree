@@ -1,47 +1,33 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React from "react";
+import { StatusBar as NativeStatusBar, StyleSheet } from "react-native";
 import {
-    BackHandler,
-    Platform,
-    StatusBar as NativeStatusBar,
-    StyleSheet,
-    useWindowDimensions,
-} from "react-native";
+    BottomTabBarProps,
+    createBottomTabNavigator,
+} from "@react-navigation/bottom-tabs";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import NavBar from "./components/navBar";
-import {
-    createDrawerNavigator,
-    useDrawerStatus,
-} from "@react-navigation/drawer";
-import HomeDrawer from "./components/drawer";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import HomeTabBar from "./components/tabBar";
 import StatusBar from "@/components/base/statusBar";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import globalStyle from "@/constants/globalStyle";
 import Theme from "@/core/theme";
+import { HOME_TAB } from "@/core/router";
 import HomeBody from "./components/homeBody";
 import HomeBodyHorizontal from "./components/homeBodyHorizontal";
 import useOrientation from "@/hooks/useOrientation";
 import { useMusicBarLayoutState } from "@/components/musicBar/layoutState";
+import SearchPage from "@/pages/searchPage";
+import Library from "@/pages/library";
+import SettingsHome from "@/pages/settingsHome";
 
-const PORTRAIT_DRAWER_MAX_WIDTH = 420;
-const LANDSCAPE_DRAWER_MAX_WIDTH = 440;
-const DRAWER_MIN_WIDTH = 320;
-
-function Home() {
+function HomeFeed() {
     const orientation = useOrientation();
     const safeAreaInsets = useSafeAreaInsets();
     const topInset = Math.max(
         safeAreaInsets.top,
         NativeStatusBar.currentHeight ?? 0,
     );
-    // 抽屉导航器没有 drawerOpen/drawerClose 事件，只能从 drawer status 同步，
-    // 否则底部播放条在侧边栏打开时不会收起。
-    const drawerStatus = useDrawerStatus();
-    const { setDrawerOpen } = useMusicBarLayoutState();
-
-    useEffect(() => {
-        setDrawerOpen(drawerStatus === "open");
-    }, [drawerStatus, setDrawerOpen]);
 
     return (
         <SafeAreaView
@@ -73,119 +59,47 @@ function HomeStatusBar() {
     );
 }
 
-// function Body() {
-//     const orientation = useOrientation();
-//     return (
-//         <ScrollView
-//             style={[
-//                 styles.appWrapper,
-//                 orientation === 'horizontal' ? styles.flexRow : null,
-//             ]}>
-//             <Operations orientation={orientation} />
-//         </ScrollView>
-//     );
-// }
+const Tab = createBottomTabNavigator();
 
-const LeftDrawer = createDrawerNavigator();
-export default function App() {
-    const orientation = useOrientation();
+function renderTabBar(props: BottomTabBarProps) {
+    return <HomeTabBar {...props} />;
+}
+
+/**
+ * 主页：底部四个标签（首页、搜索、资料库、设置）。标签栏和迷你播放器都悬浮在
+ * 内容上面，各标签页自己用 useMusicBarFloatingOffset 给底部留出空间。
+ */
+export default function Home() {
     const theme = Theme.useTheme();
-    const { width } = useWindowDimensions();
-    const { drawerOpen, setDrawerOpen } = useMusicBarLayoutState();
-    const drawerNavigationRef = useRef<any>(null);
-    const drawerWidth = useMemo(() => {
-        const safeWindowWidth = Math.max(0, width);
-        if (orientation === "horizontal") {
-            const targetWidth = Math.max(
-                DRAWER_MIN_WIDTH,
-                Math.min(safeWindowWidth * 0.56, LANDSCAPE_DRAWER_MAX_WIDTH),
-            );
-            return Math.min(safeWindowWidth, targetWidth);
-        }
-
-        const targetWidth = Math.max(
-            DRAWER_MIN_WIDTH,
-            Math.min(safeWindowWidth * 0.82, PORTRAIT_DRAWER_MAX_WIDTH),
-        );
-        return Math.min(safeWindowWidth, targetWidth);
-    }, [orientation, width]);
-
-    useEffect(
-        () => () => {
-            setDrawerOpen(false);
-        },
-        [setDrawerOpen],
-    );
-
-    useEffect(() => {
-        if (Platform.OS !== "android") {
-            return;
-        }
-        const subscription = BackHandler.addEventListener(
-            "hardwareBackPress",
-            () => {
-                if (!drawerOpen) {
-                    return false;
-                }
-                drawerNavigationRef.current?.closeDrawer?.();
-                setDrawerOpen(false);
-                return true;
-            },
-        );
-        return () => subscription.remove();
-    }, [drawerOpen, setDrawerOpen]);
+    const { setActiveTab } = useMusicBarLayoutState();
+    // 首页可以铺自定义背景图，其他标签用纯色底盖住它
+    const opaqueScene = {
+        backgroundColor: theme.colors.pageBackground,
+    };
 
     return (
-        <LeftDrawer.Navigator
-            screenListeners={({ navigation }) => {
-                drawerNavigationRef.current = navigation;
-                return {
-                    // 手势拖开抽屉时导航状态要等手势结束才更新，这里在动画一开始
-                    // 就先收起播放条，避免播放条压在抽屉上。
-                    transitionStart: (event: {
-                        data: { closing: boolean };
-                    }) => {
-                        if (!event.data.closing) {
-                            setDrawerOpen(true);
-                        }
-                    },
-                    transitionEnd: (event: {
-                        data: { closing: boolean };
-                    }) => {
-                        setDrawerOpen(!event.data.closing);
-                    },
-                    blur: () => {
-                        // The navigator event can outlive the render that
-                        // created this listener. Always close the native
-                        // drawer instead of trusting a potentially stale
-                        // React state snapshot.
-                        navigation.closeDrawer();
-                        setDrawerOpen(false);
-                    },
-                };
-            }}
+        <Tab.Navigator
+            initialRouteName={HOME_TAB.HOME}
+            backBehavior="firstRoute"
+            tabBar={renderTabBar}
+            screenListeners={({ route }) => ({
+                focus: () => {
+                    setActiveTab(route.name);
+                },
+            })}
             screenOptions={{
                 headerShown: false,
-                sceneStyle: {
-                    backgroundColor: "transparent",
-                },
-                overlayStyle: {
-                    backgroundColor: theme.colors.mask,
-                },
-                drawerStyle: {
-                    width: drawerWidth,
-                    backgroundColor: theme.colors.backdrop,
-                    borderTopRightRadius: 0,
-                    borderBottomRightRadius: 0,
-                    elevation: 0,
-                    shadowOpacity: 0,
-                    shadowRadius: 0,
-                },
-            }}
-            initialRouteName="HOME-MAIN"
-            drawerContent={props => <HomeDrawer {...props} />}>
-            <LeftDrawer.Screen name="HOME-MAIN" component={Home} />
-        </LeftDrawer.Navigator>
+                sceneStyle: opaqueScene,
+            }}>
+            <Tab.Screen
+                name={HOME_TAB.HOME}
+                component={HomeFeed}
+                options={{ sceneStyle: styles.transparentScene }}
+            />
+            <Tab.Screen name={HOME_TAB.SEARCH} component={SearchPage} />
+            <Tab.Screen name={HOME_TAB.LIBRARY} component={Library} />
+            <Tab.Screen name={HOME_TAB.SETTINGS} component={SettingsHome} />
+        </Tab.Navigator>
     );
 }
 
@@ -194,7 +108,7 @@ const styles = StyleSheet.create({
         flexDirection: "column",
         flex: 1,
     },
-    flexRow: {
-        flexDirection: "row",
+    transparentScene: {
+        backgroundColor: "transparent",
     },
 });

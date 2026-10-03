@@ -2,7 +2,6 @@ import Home from "@/pages/home";
 import MusicDetail from "@/pages/musicDetail";
 import TopList from "@/pages/topList";
 import TopListDetail from "@/pages/topListDetail";
-import SearchPage from "@/pages/searchPage";
 import SheetDetail from "@/pages/sheetDetail";
 import AlbumDetail from "@/pages/albumDetail";
 import ArtistDetail from "@/pages/artistDetail";
@@ -53,10 +52,6 @@ export const routes: Array<IRoutes> = [
     {
         path: ROUTE_PATH.TOP_LIST_DETAIL,
         component: TopListDetail,
-    },
-    {
-        path: ROUTE_PATH.SEARCH_PAGE,
-        component: SearchPage,
     },
     {
         path: ROUTE_PATH.LOCAL_SHEET_DETAIL,
