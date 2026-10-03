@@ -4,6 +4,7 @@ jest.mock("@/utils/rpx", () => ({
 }));
 
 import {
+    fitMusicDetailCardCover,
     getMusicDetailCardLayout,
     getMusicDetailCircleLayout,
     getMusicDetailCircleLyricLayout,
@@ -114,5 +115,88 @@ describe("getMusicDetailCircleLyricLayout", () => {
             contextLineHeight: 34,
             fadeHeight: 28,
         });
+    });
+});
+
+/**
+ * 回归背景：0.9.0 方形封面在一台 2.2:1 的手机上，三行迷你歌词压到了进度条上。
+ * 封面只按屏幕比例估算，没算歌名随系统字体变高、底部控制区比预想的高。
+ * 下面的数字按那台手机（约 400dp 宽、内容区约 588dp）换算。
+ */
+describe("fitMusicDetailCardCover", () => {
+    const base = {
+        windowWidth: 400,
+        preferredCoverSize: 328,
+        topSpace: 72.5,
+        coverAreaExtra: 12.8,
+        miniLyricHeight: 96,
+    };
+
+    function stackHeight(
+        fit: { coverSize: number; showMiniLyric: boolean },
+        songInfoHeight: number,
+    ) {
+        return (
+            base.topSpace +
+            fit.coverSize +
+            base.coverAreaExtra +
+            songInfoHeight +
+            (fit.showMiniLyric ? base.miniLyricHeight : 0)
+        );
+    }
+
+    it("keeps the estimate until the heights are measured", () => {
+        expect(
+            fitMusicDetailCardCover({
+                ...base,
+                contentHeight: null,
+                songInfoHeight: null,
+            }),
+        ).toEqual({ coverSize: 328, showMiniLyric: true });
+    });
+
+    it("never grows the cover when there is spare room", () => {
+        expect(
+            fitMusicDetailCardCover({
+                ...base,
+                contentHeight: 900,
+                songInfoHeight: 84,
+            }),
+        ).toEqual({ coverSize: 328, showMiniLyric: true });
+    });
+
+    it("shrinks the cover so the mini lyric stays above the seek bar", () => {
+        for (const songInfoHeight of [84, 110]) {
+            const fit = fitMusicDetailCardCover({
+                ...base,
+                contentHeight: 588,
+                songInfoHeight,
+            });
+            expect(fit.showMiniLyric).toBe(true);
+            expect(fit.coverSize).toBeLessThan(328);
+            expect(stackHeight(fit, songInfoHeight)).toBeLessThanOrEqual(588);
+        }
+    });
+
+    it("drops the mini lyric before the cover gets too small", () => {
+        const fit = fitMusicDetailCardCover({
+            ...base,
+            contentHeight: 360,
+            songInfoHeight: 110,
+        });
+
+        expect(fit.showMiniLyric).toBe(false);
+        expect(fit.coverSize).toBeCloseTo(360 - 72.5 - 12.8 - 110, 5);
+        expect(stackHeight(fit, 110)).toBeLessThanOrEqual(360);
+    });
+
+    it("keeps a visible cover even when nothing fits", () => {
+        const fit = fitMusicDetailCardCover({
+            ...base,
+            contentHeight: 120,
+            songInfoHeight: 110,
+        });
+
+        expect(fit).toEqual({ coverSize: 64, showMiniLyric: false });
     });
 });

@@ -5,7 +5,13 @@ import FastImage from "@/components/base/fastImage";
 import useOrientation from "@/hooks/useOrientation";
 import { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
 import globalStyle from "@/constants/globalStyle";
-import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import {
+    LayoutChangeEvent,
+    Pressable,
+    StyleSheet,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import { showPanel } from "@/components/panels/usePanel.ts";
 import SongInfo from "./songInfo";
 import MiniLyric from "./miniLyric";
@@ -22,7 +28,12 @@ import Animated, {
 } from "react-native-reanimated";
 import { useMusicDetailVisuals } from "../../../artworkContext";
 import { getMusicDetailHeroLayout } from "../../../heroLayout";
-import { getMusicDetailCardLayout } from "../../../circleLayout";
+import {
+    fitMusicDetailCardCover,
+    getMusicDetailCardLayout,
+    getMusicDetailCircleLyricLayout,
+} from "../../../circleLayout";
+import { useMusicDetailLayout } from "../../../layoutContext";
 import { useI18N } from "@/core/i18n";
 
 export const COVER_SIZE = rpx(500);
@@ -55,6 +66,9 @@ export default function AlbumCover(props: IProps) {
 
     const usableWindowHeight =
         windowHeight - safeAreaInsets.top - safeAreaInsets.bottom;
+    // 封面按实际量到的空间收紧，歌名、迷你歌词才不会压到下面的进度条
+    const { measured, reportContentHeight, reportSongInfoHeight } =
+        useMusicDetailLayout();
     const rotation = useSharedValue(0);
     const isCircleCover = coverStyle === "circle";
     const isHeroCover = coverStyle === "hero";
@@ -66,8 +80,17 @@ export default function AlbumCover(props: IProps) {
                 windowHeight,
                 safeAreaTop: safeAreaInsets.top,
                 safeAreaBottom: safeAreaInsets.bottom,
+                contentHeight: measured.contentHeight,
+                songInfoHeight: measured.songInfoHeight.hero,
             }),
-        [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
+        [
+            measured.contentHeight,
+            measured.songInfoHeight.hero,
+            safeAreaInsets.bottom,
+            safeAreaInsets.top,
+            windowHeight,
+            windowWidth,
+        ],
     );
     const cardLayout = useMemo(
         () =>
@@ -88,6 +111,46 @@ export default function AlbumCover(props: IProps) {
             windowWidth,
         ],
     );
+    const cardFit = useMemo(() => {
+        const lyricLayout = getMusicDetailCircleLyricLayout({
+            windowWidth,
+            windowHeight,
+        });
+        return fitMusicDetailCardCover({
+            windowWidth,
+            preferredCoverSize: cardLayout.coverSize,
+            topSpace: cardLayout.navHeight + cardLayout.topGap,
+            coverAreaExtra: cardLayout.coverAreaExtra,
+            miniLyricHeight: lyricLayout.containerHeight + lyricLayout.marginTop,
+            contentHeight: measured.contentHeight,
+            songInfoHeight: measured.songInfoHeight.card,
+        });
+    }, [
+        cardLayout,
+        measured.contentHeight,
+        measured.songInfoHeight.card,
+        windowHeight,
+        windowWidth,
+    ]);
+
+    const onContentLayout = useCallback(
+        (event: LayoutChangeEvent) => {
+            reportContentHeight(event.nativeEvent.layout.height);
+        },
+        [reportContentHeight],
+    );
+    const onCardSongInfoLayout = useCallback(
+        (event: LayoutChangeEvent) => {
+            reportSongInfoHeight("card", event.nativeEvent.layout.height);
+        },
+        [reportSongInfoHeight],
+    );
+    const onHeroSongInfoLayout = useCallback(
+        (event: LayoutChangeEvent) => {
+            reportSongInfoHeight("hero", event.nativeEvent.layout.height);
+        },
+        [reportSongInfoHeight],
+    );
 
     const artworkStyle = useMemo(() => {
         // 圆形唱片；方形用 iOS 的圆角卡片，带一点投影
@@ -96,10 +159,10 @@ export default function AlbumCover(props: IProps) {
             : styles.squareArtwork;
         const coverSize =
             orientation === "vertical"
-                ? cardLayout.coverSize
+                ? cardFit.coverSize
                 : Math.min(rpx(300), usableWindowHeight * 0.4);
         return [shapeStyle, { width: coverSize, height: coverSize }];
-    }, [cardLayout.coverSize, isCircleCover, orientation, usableWindowHeight]);
+    }, [cardFit.coverSize, isCircleCover, orientation, usableWindowHeight]);
 
     useEffect(() => {
         if (shouldRotateCover) {
@@ -176,21 +239,28 @@ export default function AlbumCover(props: IProps) {
 
     if (isHeroCover) {
         return (
-            <View style={[styles.verticalRoot, styles.heroVerticalRoot]}>
+            <View
+                style={[styles.verticalRoot, styles.heroVerticalRoot]}
+                onLayout={onContentLayout}>
                 <Pressable
                     delayLongPress={500}
                     onPress={handlePress}
                     onLongPress={handleLongPress}
                     style={[styles.heroTapArea, { height: heroLayout.tapHeight }]}
                 />
-                <MiniLyric variant="hero" onPress={onTurnPageClick} />
-                <SongInfo variant="hero" />
+                {heroLayout.showMiniLyric ? (
+                    <MiniLyric variant="hero" onPress={onTurnPageClick} />
+                ) : null}
+                <View onLayout={onHeroSongInfoLayout}>
+                    <SongInfo variant="hero" />
+                </View>
             </View>
         );
     }
 
     return (
         <View
+            onLayout={onContentLayout}
             style={[
                 styles.cardVerticalRoot,
                 {
@@ -205,7 +275,7 @@ export default function AlbumCover(props: IProps) {
                 accessibilityHint={t("musicDetail.showLyric.a11y")}
                 style={[
                     styles.coverArea,
-                    { height: cardLayout.coverSize + rpx(24) },
+                    { height: cardFit.coverSize + cardLayout.coverAreaExtra },
                 ]}>
                 <View style={styles.coverCenter}>
                     <Animated.View style={[artworkStyle, coverAnimatedStyle]}>
@@ -218,16 +288,18 @@ export default function AlbumCover(props: IProps) {
                     </Animated.View>
                 </View>
             </Pressable>
-            <View style={styles.cardSongInfo}>
+            <View style={styles.cardSongInfo} onLayout={onCardSongInfoLayout}>
                 <SongInfo
-                    width={isCircleCover ? undefined : cardLayout.coverSize}
+                    width={isCircleCover ? undefined : cardFit.coverSize}
                 />
             </View>
-            <MiniLyric
-                variant="circle"
-                width={isCircleCover ? undefined : cardLayout.coverSize}
-                onPress={onTurnPageClick}
-            />
+            {cardFit.showMiniLyric ? (
+                <MiniLyric
+                    variant="circle"
+                    width={isCircleCover ? undefined : cardFit.coverSize}
+                    onPress={onTurnPageClick}
+                />
+            ) : null}
         </View>
     );
 }

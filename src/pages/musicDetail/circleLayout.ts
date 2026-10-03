@@ -53,6 +53,71 @@ export function getMusicDetailCardLayout(
         navHeight: rpx(CIRCLE_NAV_HEIGHT),
         coverSize,
         topGap: rpx(24),
+        /** 封面所在区域比封面本身高出的部分（投影留白） */
+        coverAreaExtra: rpx(24),
+    };
+}
+
+// 封面再小于屏宽的这个比例就不好看了，宁可不放迷你歌词
+const CARD_MIN_COVER_WIDTH_RATIO = 0.42;
+// 极端情况（分屏）下封面也不缩到看不见
+const CARD_ABSOLUTE_MIN_COVER = 64;
+
+interface IMusicDetailCardFitOptions {
+    windowWidth: number;
+    /** 按屏幕宽高估出来的封面边长（getMusicDetailCardLayout） */
+    preferredCoverSize: number;
+    /** 封面上方的固定留白：导航栏 + 间距 */
+    topSpace: number;
+    coverAreaExtra: number;
+    /** 迷你歌词连同上边距的高度 */
+    miniLyricHeight: number;
+    /** 实际量到的内容区高度：导航栏所在的顶部到进度条上沿 */
+    contentHeight: number | null;
+    /** 实际量到的歌名区域高度（随系统字体大小变化） */
+    songInfoHeight: number | null;
+}
+
+/**
+ * 按实际量到的高度收紧卡片封面，保证封面、歌名、迷你歌词不压到下面的进度条。
+ *
+ * 只按屏幕比例估算时，歌名随系统字体变大、底部控制区比预想的高，内容就会
+ * 溢出到进度条上。量到高度之前沿用估算值；空间够时也不放大，只在放不下时缩小，
+ * 缩到最小尺寸仍放不下才去掉迷你歌词（点封面仍可看完整歌词）。
+ */
+export function fitMusicDetailCardCover(options: IMusicDetailCardFitOptions) {
+    const {
+        windowWidth,
+        preferredCoverSize,
+        topSpace,
+        coverAreaExtra,
+        miniLyricHeight,
+        contentHeight,
+        songInfoHeight,
+    } = options;
+    if (!contentHeight || songInfoHeight === null) {
+        return { coverSize: preferredCoverSize, showMiniLyric: true };
+    }
+
+    const spaceForCover =
+        contentHeight - topSpace - coverAreaExtra - songInfoHeight;
+    const minCoverSize = Math.min(
+        preferredCoverSize,
+        windowWidth * CARD_MIN_COVER_WIDTH_RATIO,
+    );
+    const coverWithLyric = spaceForCover - miniLyricHeight;
+    if (coverWithLyric >= minCoverSize) {
+        return {
+            coverSize: Math.min(preferredCoverSize, coverWithLyric),
+            showMiniLyric: true,
+        };
+    }
+    return {
+        coverSize: Math.max(
+            Math.min(preferredCoverSize, CARD_ABSOLUTE_MIN_COVER),
+            Math.min(preferredCoverSize, spaceForCover),
+        ),
+        showMiniLyric: false,
     };
 }
 

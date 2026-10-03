@@ -10,6 +10,7 @@ import { useCurrentMusic } from "@/core/trackPlayer";
 import rpx from "@/utils/rpx";
 import { useMusicDetailVisuals } from "../artworkContext";
 import { getMusicDetailHeroLayout } from "../heroLayout";
+import { useMusicDetailLayout } from "../layoutContext";
 import {
     ambientColorWithAlpha,
     createArtworkColorCacheKey,
@@ -151,6 +152,8 @@ export default function Background(props: IBackgroundProps) {
         synchronizedArtwork;
     const { height: windowHeight, width: windowWidth } = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
+    // 和封面那边用同一份量到的高度，大图的焦点区才和歌词、歌名对得上
+    const { measured } = useMusicDetailLayout();
     const showHero = tab === "album" && useHeroLayout;
     const heroLayout = useMemo(
         () =>
@@ -159,8 +162,17 @@ export default function Background(props: IBackgroundProps) {
                 windowHeight,
                 safeAreaTop: safeAreaInsets.top,
                 safeAreaBottom: safeAreaInsets.bottom,
+                contentHeight: measured.contentHeight,
+                songInfoHeight: measured.songInfoHeight.hero,
             }),
-        [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
+        [
+            measured.contentHeight,
+            measured.songInfoHeight.hero,
+            safeAreaInsets.bottom,
+            safeAreaInsets.top,
+            windowHeight,
+            windowWidth,
+        ],
     );
     const ambientSource = useMemo(
         () => (ambientArtwork ? { uri: ambientArtwork } : undefined),
