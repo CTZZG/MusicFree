@@ -52,9 +52,11 @@ function MusicBarOverlay() {
 
 const surfacedRoutes = routes.map(route => {
     const RouteComponent = route.component;
+    // 自定义背景图只铺在首页，其余页面保持 iOS 的纯色底
+    const showCustomBackground = route.path === ROUTE_PATH.HOME;
     function SurfacedRoute(screenProps: any) {
         return (
-            <ScreenSurface>
+            <ScreenSurface showCustomBackground={showCustomBackground}>
                 <RouteComponent {...screenProps} />
             </ScreenSurface>
         );

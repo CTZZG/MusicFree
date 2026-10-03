@@ -677,21 +677,20 @@ export interface ILanguageData {
     "toast.unknownError": string; // 未知错误
 
     // 主题设置相关
-    "themeSettings.displayStyle": string; // 显示风格
-    "themeSettings.followSystemTheme": string; // 跟随系统主题
-    "themeSettings.setTheme": string; // 设置主题
+    "themeSettings.appearance": string; // 外观
+    "themeSettings.appearance.system": string; // 外观跟随系统深浅色
     "themeSettings.lightMode": string; // 明亮模式
     "themeSettings.darkMode": string; // 黑暗模式
-    "themeSettings.frostedGlassMode": string; // 液态硅胶模式
-    "themeSettings.frostedCustomBgFrost": string; // 自定义背景附加磨砂
-    "themeSettings.frostedCustomBgFrost.desc": string; // 磨砂开关说明
+    "themeSettings.homeBackground": string; // 首页背景图片
+    "themeSettings.homeBackground.on": string; // 首页背景图片：已设置
+    "themeSettings.homeBackground.off": string; // 首页背景图片：未设置
+    "themeSettings.homeBackground.choose": string; // 从相册选择背景图片
+    "themeSettings.homeBackground.footer": string; // 首页背景图片说明
     "themeSettings.musicBarLiquidGlass": string; // 播放条液态玻璃
     "themeSettings.musicBarLiquidGlass.desc": string; // 液态玻璃开关说明
-    "themeSettings.customMode": string; // 自定义模式
-    "themeSettings.removeCustomBackground": string; // 移除自定义背景
-    "themeSettings.removeCustomBackground.desc": string; // 移除自定义背景说明
-    "themeSettings.removeCustomBackground.confirm": string; // 移除自定义背景确认
-    "themeSettings.removeCustomBackground.success": string; // 移除自定义背景成功
+    "themeSettings.removeCustomBackground": string; // 移除背景图片
+    "themeSettings.removeCustomBackground.confirm": string; // 移除背景图片确认
+    "themeSettings.removeCustomBackground.success": string; // 移除背景图片成功
     "themeSettings.coverStyle": string; // 封面样式
     "themeSettings.coverStyleSquare": string; // 方形
     "themeSettings.coverStyleCircle": string; // 圆形
@@ -703,22 +702,9 @@ export interface ILanguageData {
     "themeSettings.hideHomeRecentListening": string; // 隐藏首页最近播放
     "themeSettings.hideHomeOperations": string; // 隐藏首页快捷入口
 
-    // 自定义主题相关
-    "setCustomTheme.customizeBackground": string; // 自定义背景
+    // 首页背景图片相关
     "setCustomTheme.blur": string; // 模糊
     "setCustomTheme.opacity": string; // 不透明度
-    "setCustomTheme.primaryColor": string; // 主题色
-    "setCustomTheme.textColor": string; // 文字颜色
-    "setCustomTheme.appBarColor": string; // 应用栏颜色
-    "setCustomTheme.appBarTextColor": string; // 应用栏文字色
-    "setCustomTheme.musicBarColor": string; // 音乐栏颜色
-    "setCustomTheme.musicBarTextColor": string; // 音乐栏文字色
-    "setCustomTheme.pageBackgroundColor": string; // 页面背景色
-    "setCustomTheme.backdropColor": string; // 背景色
-    "setCustomTheme.cardColor": string; // 卡片背景色
-    "setCustomTheme.placeholderColor": string; // 输入框背景色
-    "setCustomTheme.tabBarColor": string; // 导航栏背景色
-    "setCustomTheme.notificationColor": string; // 提示、tips背景色
 
     // 备份与恢复相关
     "backupAndResume.beginBackup": string; // 开始备份

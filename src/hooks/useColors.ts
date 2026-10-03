@@ -35,15 +35,20 @@ export interface CustomizedColors extends IColors {
     card: string;
     /** paneltabbar 背景色 */
     tabBar?: string;
+    /** 危险操作（删除、移除）的文字颜色 */
+    danger?: string;
 }
 
 export default function useColors() {
     const { colors } = useTheme();
 
     const cColors: CustomizedColors = useMemo(() => {
+        const themeColors = colors as Partial<CustomizedColors>;
         return {
             ...colors,
-            textSecondary: Color(colors.text).alpha(0.7).toString(),
+            textSecondary:
+                themeColors.textSecondary ??
+                Color(colors.text).alpha(0.7).toString(),
             // @ts-ignore
             background: colors.pageBackground ?? colors.background,
         };

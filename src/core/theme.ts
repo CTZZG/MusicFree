@@ -1,98 +1,85 @@
 import Config from "@/core/appConfig";
 
 import { DarkTheme as _DarkTheme, DefaultTheme as _DefaultTheme } from "@react-navigation/native";
+import { Appearance } from "react-native";
 import { GlobalState } from "@/utils/stateMapper";
-import { CustomizedColors } from "@/hooks/useColors";
-import Color from "color";
+import {
+    AppearanceThemeId,
+    resolveStoredAppearance,
+    themeIdForColorScheme,
+} from "./themeAppearance";
 
+/**
+ * iOS 系统配色（浅色）。页面用分组灰底，卡片与弹层用白色。
+ * 辅助文字和强调色比 iOS 默认值略深，保证小字号在白底和灰底上
+ * 都有 4.5:1 的对比度。
+ */
 export const lightTheme = {
+    ..._DefaultTheme,
     id: "p-light",
-    ..._DefaultTheme,
-    colors: {
-        ..._DefaultTheme.colors,
-        background: "transparent",
-        text: "#333333",
-        textSecondary: Color("#333333").alpha(0.7).toString(),
-        primary: "#f17d34",
-        pageBackground: "#fafafa",
-        shadow: "#000",
-        appBar: "#f17d34",
-        appBarText: "#fefefe",
-        musicBar: "#f2f2f2",
-        musicBarText: "#333333",
-        divider: "rgba(0,0,0,0.1)",
-        listActive: "rgba(0,0,0,0.1)", // 在手机上表现是ripple
-        mask: "rgba(51,51,51,0.2)",
-        backdrop: "#f0f0f0",
-        tabBar: "#f0f0f0",
-        placeholder: "#eaeaea",
-        success: "#08A34C",
-        danger: "#FC5F5F",
-        info: "#0A95C8",
-        card: "#e2e2e288",
-        notification: "#f0f0f0",
-    },
-};
-
-export const darkTheme = {
-    id: "p-dark",
-    ..._DarkTheme,
-    colors: {
-        ..._DarkTheme.colors,
-        background: "transparent",
-        text: "#fcfcfc",
-        textSecondary: Color("#fcfcfc").alpha(0.7).toString(),
-        primary: "#3FA3B5",
-        pageBackground: "#202020",
-        shadow: "#999",
-        appBar: "#262626",
-        appBarText: "#fcfcfc",
-        musicBar: "#262626",
-        musicBarText: "#fcfcfc",
-        divider: "rgba(255,255,255,0.1)",
-        listActive: "rgba(255,255,255,0.1)", // 在手机上表现是ripple
-        mask: "rgba(33,33,33,0.8)",
-        backdrop: "#303030",
-        tabBar: "#303030",
-        placeholder: "#424242",
-        success: "#08A34C",
-        danger: "#FC5F5F",
-        info: "#0A95C8",
-        card: "#33333388",
-        notification: "#303030",
-    },
-};
-
-export const frostedGlassTheme = {
-    id: "p-frosted-glass",
-    ..._DefaultTheme,
     dark: false,
     colors: {
         ..._DefaultTheme.colors,
         background: "transparent",
-        text: "#172235",
-        textSecondary: Color("#172235").alpha(0.66).toString(),
-        primary: "#0A84FF",
-        pageBackground: "#dfe6f2",
-        shadow: "#26405e",
-        appBar: "rgba(255, 255, 255, 0.62)",
-        appBarText: "#172235",
-        musicBar: "rgba(255, 255, 255, 0.4)",
-        musicBarText: "#172235",
-        divider: "rgba(23, 34, 53, 0.08)",
-        listActive: "rgba(10, 132, 255, 0.12)",
-        mask: "rgba(20, 34, 48, 0.32)",
-        backdrop: "rgba(246, 250, 255, 0.92)",
-        tabBar: "rgba(255, 255, 255, 0.52)",
-        placeholder: "rgba(255, 255, 255, 0.6)",
-        success: "#0A9F58",
-        danger: "#E84D5B",
-        info: "#0A84FF",
-        // 没有模糊底层的普通表面仍用半透明白，玻璃卡片自身背景保持透明
-        card: "rgba(255, 255, 255, 0.55)",
-        notification: "rgba(255, 255, 255, 0.92)",
+        text: "#000000",
+        textSecondary: "rgba(60, 60, 67, 0.78)",
+        textHighlight: "#0066D6",
+        primary: "#0066D6",
+        pageBackground: "#F2F2F7",
+        shadow: "#000000",
+        appBar: "#F2F2F7",
+        appBarText: "#000000",
+        musicBar: "rgba(249, 249, 251, 0.78)",
+        musicBarText: "#000000",
+        divider: "rgba(60, 60, 67, 0.2)",
+        border: "rgba(60, 60, 67, 0.2)",
+        listActive: "rgba(0, 0, 0, 0.06)",
+        mask: "rgba(0, 0, 0, 0.3)",
+        backdrop: "#FFFFFF",
+        tabBar: "rgba(249, 249, 251, 0.78)",
+        placeholder: "rgba(118, 118, 128, 0.12)",
+        success: "#248A3D",
+        danger: "#D70015",
+        info: "#0066D6",
+        card: "#FFFFFF",
+        notification: "#FFFFFF",
     },
 };
+
+/** iOS 系统配色（深色）：纯黑页面，抬高一级的表面用 #1C1C1E */
+export const darkTheme = {
+    ..._DarkTheme,
+    id: "p-dark",
+    dark: true,
+    colors: {
+        ..._DarkTheme.colors,
+        background: "transparent",
+        text: "#FFFFFF",
+        textSecondary: "rgba(235, 235, 245, 0.72)",
+        textHighlight: "#0A84FF",
+        primary: "#0A84FF",
+        pageBackground: "#000000",
+        shadow: "#000000",
+        appBar: "#000000",
+        appBarText: "#FFFFFF",
+        musicBar: "rgba(36, 36, 38, 0.78)",
+        musicBarText: "#FFFFFF",
+        divider: "rgba(84, 84, 88, 0.65)",
+        border: "rgba(84, 84, 88, 0.65)",
+        listActive: "rgba(255, 255, 255, 0.08)",
+        mask: "rgba(0, 0, 0, 0.5)",
+        backdrop: "#1C1C1E",
+        tabBar: "rgba(36, 36, 38, 0.78)",
+        placeholder: "rgba(118, 118, 128, 0.24)",
+        success: "#30D158",
+        danger: "#FF453A",
+        info: "#0A84FF",
+        card: "#1C1C1E",
+        notification: "#1C1C1E",
+    },
+};
+
+type IAppTheme = typeof lightTheme | typeof darkTheme;
 
 interface IBackgroundInfo {
     url?: string;
@@ -100,35 +87,27 @@ interface IBackgroundInfo {
     opacity?: number;
 }
 
-const themeStore = new GlobalState(darkTheme);
+const themeStore = new GlobalState<IAppTheme>(lightTheme);
 const backgroundStore = new GlobalState<IBackgroundInfo | null>(null);
 
+function themeById(themeId: AppearanceThemeId): IAppTheme {
+    return themeId === "p-dark" ? darkTheme : lightTheme;
+}
+
 function setup() {
-    let currentTheme = Config.getConfig("theme.selectedTheme") ?? "p-dark";
-
-    // 旧版本的"液体玻璃"主题已改为毛玻璃
-    if (currentTheme === "p-liquid-glass") {
-        currentTheme = "p-frosted-glass";
-        Config.setConfig("theme.selectedTheme", currentTheme);
+    const resolved = resolveStoredAppearance(
+        Config.getConfig("theme.selectedTheme"),
+        Config.getConfig("theme.followSystem"),
+    );
+    if (resolved.needsPersist) {
+        Config.setConfig("theme.selectedTheme", resolved.themeId);
+        Config.setConfig("theme.followSystem", resolved.followSystem);
     }
-
-    if (currentTheme === "p-dark") {
-        themeStore.setValue(darkTheme);
-    } else if (currentTheme === "p-light") {
-        themeStore.setValue(lightTheme);
-    } else if (currentTheme === "p-frosted-glass") {
-        themeStore.setValue(frostedGlassTheme);
-    } else {
-        themeStore.setValue({
-            ...darkTheme,
-            id: currentTheme,
-            dark: true,
-            colors: {
-                ...darkTheme.colors,
-                ...((Config.getConfig("theme.colors") as Partial<CustomizedColors>) ?? {}),
-            },
-        });
-    }
+    // 跟随系统时首帧就用系统配色，不等 BootstrapComponent 挂载后再切换
+    const themeId = resolved.followSystem
+        ? themeIdForColorScheme(Appearance.getColorScheme(), resolved.themeId)
+        : resolved.themeId;
+    themeStore.setValue(themeById(themeId));
 
     const bgUrl = Config.getConfig("theme.background");
     const bgBlur = Config.getConfig("theme.backgroundBlur");
@@ -141,78 +120,9 @@ function setup() {
     });
 }
 
-function setTheme(
-    themeName: string,
-    extra?: {
-        colors?: Partial<CustomizedColors>;
-        background?: IBackgroundInfo;
-    },
-) {
-    if (themeName === "p-liquid-glass") {
-        // 旧版本的"液体玻璃"主题已改为毛玻璃
-        themeName = "p-frosted-glass";
-    }
-
-    if (themeName === "p-light") {
-        themeStore.setValue(lightTheme);
-    } else if (themeName === "p-dark") {
-        themeStore.setValue(darkTheme);
-    } else if (themeName === "p-frosted-glass") {
-        themeStore.setValue(frostedGlassTheme);
-    } else {
-        themeStore.setValue({
-            ...darkTheme,
-            id: themeName,
-            dark: true,
-            colors: {
-                ...darkTheme.colors,
-                ...(extra?.colors ?? {}),
-            },
-        });
-    }
-
-    Config.setConfig("theme.selectedTheme", themeName);
-    Config.setConfig("theme.colors", themeStore.getValue().colors);
-
-    if (extra?.background) {
-        const currentBg = backgroundStore.getValue();
-        let newBg: IBackgroundInfo = {
-            blur: 20,
-            opacity: 0.6,
-            ...(currentBg ?? {}),
-        };
-        if (typeof extra.background.blur === "number") {
-            newBg.blur = extra.background.blur;
-        }
-        if (typeof extra.background.opacity === "number") {
-            newBg.opacity = extra.background.opacity;
-        }
-        if (extra.background.url !== undefined) {
-            newBg.url = extra.background.url;
-        }
-
-        Config.setConfig("theme.background", newBg.url);
-        Config.setConfig("theme.backgroundBlur", newBg.blur);
-        Config.setConfig("theme.backgroundOpacity", newBg.opacity);
-
-        backgroundStore.setValue(newBg);
-    }
-}
-
-function setColors(colors: Partial<CustomizedColors>) {
-    const currentTheme = themeStore.getValue();
-    if (currentTheme.id !== "p-light" && currentTheme.id !== "p-dark") {
-        const newTheme = {
-            ...currentTheme,
-            colors: {
-                ...currentTheme.colors,
-                ...colors,
-            },
-        };
-        Config.setConfig("theme.customColors", newTheme.colors);
-        Config.setConfig("theme.colors", newTheme.colors);
-        themeStore.setValue(newTheme);
-    }
+function setTheme(themeId: AppearanceThemeId) {
+    themeStore.setValue(themeById(themeId));
+    Config.setConfig("theme.selectedTheme", themeId);
 }
 
 function setBackground(backgroundInfo: Partial<IBackgroundInfo>) {
@@ -247,32 +157,14 @@ function clearBackground() {
     });
 }
 
-const configableColorKey: Array<keyof CustomizedColors> = [
-    "primary",
-    "text",
-    "appBar",
-    "appBarText",
-    "musicBar",
-    "musicBarText",
-    "pageBackground",
-    "backdrop",
-    "card",
-    "placeholder",
-    "tabBar",
-    "notification",
-];
-
-
 const Theme = {
     setup,
     setTheme,
     setBackground,
     clearBackground,
-    setColors,
     useTheme: themeStore.useValue,
     getTheme: themeStore.getValue,
     useBackground: backgroundStore.useValue,
-    configableColorKey,
 };
 
 export default Theme;

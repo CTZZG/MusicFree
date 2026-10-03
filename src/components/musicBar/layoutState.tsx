@@ -8,7 +8,6 @@ import React, {
 } from "react";
 import { AppState, Keyboard } from "react-native";
 
-import Theme from "@/core/theme";
 import { ROUTE_PATH } from "@/core/router";
 import { useCurrentMusic } from "@/core/trackPlayer";
 import {
@@ -93,7 +92,8 @@ export function MusicBarLayoutProvider(
     } = props;
     const effectiveVisibilityRoute = visibilityRouteName ?? routeName;
     const musicItem = useCurrentMusic();
-    const floatingTheme = Theme.useTheme().id === "p-frosted-glass";
+    // iOS 风格下播放条始终是悬浮的玻璃胶囊，浅色和深色都一样
+    const floatingTheme = true;
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
 

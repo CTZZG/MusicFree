@@ -8,8 +8,10 @@ import {
 import useColors from "@/hooks/useColors.ts";
 import ThemeText from "@/components/base/themeText.tsx";
 import React from "react";
-import rpx from "@/utils/rpx.ts";
 
+/**
+ * iOS 按钮：primary 是强调色填充的主按钮，normal 是灰色填充、强调色文字的次按钮。
+ */
 export function Button(props: {
     type?: "normal" | "primary";
     text: string;
@@ -33,7 +35,9 @@ export function Button(props: {
                 },
                 style,
             ]}>
-            <ThemeText color={type === "normal" ? undefined : "white"}>
+            <ThemeText
+                fontWeight="semibold"
+                color={type === "normal" ? colors.primary : "white"}>
                 {text}
             </ThemeText>
         </TouchableOpacity>
@@ -42,10 +46,11 @@ export function Button(props: {
 
 const styles = StyleSheet.create({
     bottomBtn: {
-        borderRadius: rpx(8),
+        borderRadius: 12,
         flexShrink: 0,
         justifyContent: "center",
         alignItems: "center",
-        height: rpx(72),
+        height: 46,
+        paddingHorizontal: 16,
     },
 });

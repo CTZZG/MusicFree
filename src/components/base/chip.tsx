@@ -1,6 +1,5 @@
 import React, { ReactNode } from "react";
 import { Pressable, StyleProp, StyleSheet, ViewStyle } from "react-native";
-import rpx from "@/utils/rpx";
 import ThemeText from "./themeText";
 import useColors from "@/hooks/useColors";
 import IconButton from "./iconButton";
@@ -57,16 +56,18 @@ export default function Chip(props: IChipProps) {
     );
 }
 
+// iOS 胶囊标签
 const styles = StyleSheet.create({
     container: {
-        height: rpx(56),
-        paddingHorizontal: rpx(18),
-        borderRadius: rpx(28),
+        height: 32,
+        paddingLeft: 12,
+        paddingRight: 8,
+        borderRadius: 16,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
     },
     icon: {
-        marginLeft: rpx(8),
+        marginLeft: 4,
     },
 });

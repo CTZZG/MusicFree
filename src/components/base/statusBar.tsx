@@ -1,11 +1,13 @@
 import React from "react";
 import { StatusBar, StatusBarProps, StyleSheet, View } from "react-native";
 import useColors from "@/hooks/useColors";
+import Theme from "@/core/theme";
 
 interface IStatusBarProps extends StatusBarProps {}
 
 export default function (props: IStatusBarProps) {
     const colors = useColors();
+    const theme = Theme.useTheme();
     const { backgroundColor, barStyle, hidden } = props;
 
     return (
@@ -13,7 +15,9 @@ export default function (props: IStatusBarProps) {
             <StatusBar
                 {...props}
                 backgroundColor={"rgba(0,0,0,0)"}
-                barStyle={barStyle ?? "light-content"}
+                barStyle={
+                    barStyle ?? (theme.dark ? "light-content" : "dark-content")
+                }
             />
             {hidden ? null : (
                 <View
@@ -24,7 +28,7 @@ export default function (props: IStatusBarProps) {
                             backgroundColor:
                                 backgroundColor ??
                                 colors.appBar ??
-                                colors.primary,
+                                colors.pageBackground,
                             height: StatusBar.currentHeight,
                         },
                     ]}

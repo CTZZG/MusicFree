@@ -1,19 +1,22 @@
 import { CustomizedColors } from "@/hooks/useColors";
-import rpx from "@/utils/rpx";
 
+/**
+ * iOS 字号层级（固定 dp，不随屏宽缩放）。正文比 iOS 的 17 小一号，
+ * 兼顾歌曲列表的信息密度。
+ */
 const fontSizeConst = {
-    /** 标签 */
-    tag: rpx(20),
-    /** 描述文本等字体 */
-    description: rpx(22),
-    /** 副标题 */
-    subTitle: rpx(26),
-    /** 正文字体 */
-    content: rpx(28),
-    /** 标题字体 */
-    title: rpx(32),
-    /** appbar的字体 */
-    appbar: rpx(36),
+    /** 标签（iOS caption 2） */
+    tag: 11,
+    /** 描述文本（iOS footnote） */
+    description: 13,
+    /** 副标题（iOS subheadline） */
+    subTitle: 15,
+    /** 正文（iOS callout） */
+    content: 16,
+    /** 标题（iOS headline） */
+    title: 17,
+    /** 导航栏标题（iOS 标准导航栏） */
+    appbar: 17,
 };
 
 const fontWeightConst = {
@@ -25,11 +28,11 @@ const fontWeightConst = {
 } as const;
 
 const iconSizeConst = {
-    small: rpx(30),
-    light: rpx(36),
-    normal: rpx(42),
-    big: rpx(60),
-    large: rpx(72),
+    small: 16,
+    light: 19,
+    normal: 22,
+    big: 31,
+    large: 37,
 };
 
 type ColorKey = "normal" | "secondary" | "highlight" | "primary";

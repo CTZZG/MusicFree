@@ -1,6 +1,4 @@
 import React from "react";
-import { StyleSheet } from "react-native";
-import rpx from "@/utils/rpx";
 import AppBar from "@/components/base/appBar";
 import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
 import globalStyle from "@/constants/globalStyle";
@@ -19,26 +17,16 @@ export default function SetCustomTheme() {
                 withStatusBar
                 actionComponent={
                     <Button
-                        style={styles.submit}
+                        fontWeight="semibold"
                         onPress={() => {
                             navigation.goBack();
-                        }}
-                        fontColor="appBarText">
+                        }}>
                         {t("common.done")}
                     </Button>
                 }>
-                {t("setCustomTheme.customizeBackground")}
+                {t("themeSettings.homeBackground")}
             </AppBar>
             <Body />
         </VerticalSafeAreaView>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        width: rpx(750),
-    },
-    submit: {
-        justifyContent: "center",
-    },
-});

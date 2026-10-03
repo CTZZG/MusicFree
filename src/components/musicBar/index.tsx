@@ -137,12 +137,13 @@ function MusicBar() {
     const { layout, routeName, transitionInProgress } = useMusicBarLayoutState();
 
     const colors = useColors();
-    const isFrostedGlass = Theme.useTheme().id === "p-frosted-glass";
+    const dark = Theme.useTheme().dark;
     const musicBarLiquidGlass =
         useAppConfig("theme.musicBarLiquidGlass") ?? false;
+    // 原生液态玻璃的色调与折射只调过浅色，深色下用普通毛玻璃
     const useLiquidGlass =
         layout.visible &&
-        isFrostedGlass &&
+        !dark &&
         musicBarLiquidGlass &&
         isLiquidGlassAvailable();
     const safeAreaInsets = useSafeAreaInsets();
@@ -255,40 +256,20 @@ function MusicBar() {
     }
 
     return (
-        <>
-            {
-                <View
-                    style={[
-                        styles.wrapper,
-                        isFrostedGlass
-                            ? styles.glassWrapper
-                            : styles.dockedWrapper,
-                        {
-                            backgroundColor: isFrostedGlass
-                                ? "transparent"
-                                : colors.musicBar,
-                            bottom:
-                                safeAreaInsets.bottom +
-                                (isFrostedGlass
-                                    ? MUSIC_BAR_FLOATING_BOTTOM
-                                    : 0),
-                            borderTopColor: "transparent",
-                            paddingRight: safeAreaInsets.right + rpx(24),
-                        },
-                    ]}
-                    accessible
-                    accessibilityLabel={t("musicBar.nowPlaying.a11y", { title: musicItem.title, artist: musicItem.artist })}
-                    // onPress={() => {
-                    //     navigate(ROUTE_PATH.MUSIC_DETAIL);
-                    // }}
-                >
-                    {isFrostedGlass ? (
-                        <GlassBackdrop radius={rpx(66)} intensity={60} />
-                    ) : null}
-                    {barContent}
-                </View>
-            }
-        </>
+        <View
+            style={[
+                styles.wrapper,
+                styles.glassWrapper,
+                {
+                    bottom: safeAreaInsets.bottom + MUSIC_BAR_FLOATING_BOTTOM,
+                    paddingRight: safeAreaInsets.right + rpx(24),
+                },
+            ]}
+            accessible
+            accessibilityLabel={t("musicBar.nowPlaying.a11y", { title: musicItem.title, artist: musicItem.artist })}>
+            <GlassBackdrop radius={rpx(66)} intensity={60} />
+            {barContent}
+        </View>
     );
 }
 
@@ -310,11 +291,9 @@ const styles = StyleSheet.create({
         width: "auto",
         borderRadius: rpx(66),
         overflow: "hidden",
-    },
-    dockedWrapper: {
-        position: "absolute",
-        left: 0,
-        right: 0,
+        // 底色交给 GlassBackdrop，容器本身保持透明
+        backgroundColor: "transparent",
+        borderTopColor: "transparent",
     },
     liquidWrapper: {
         backgroundColor: "transparent",

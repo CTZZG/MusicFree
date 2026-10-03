@@ -1,11 +1,8 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
-import ListItem from "@/components/base/listItem";
 import ThemeSwitch from "@/components/base/switch";
-import ThemeText from "@/components/base/themeText";
+import { GroupedRow, GroupedSection } from "@/components/base/groupedList";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { useI18N } from "@/core/i18n";
-import rpx from "@/utils/rpx";
 
 export default function HomeDisplay() {
     const { t } = useI18N();
@@ -16,92 +13,57 @@ export default function HomeDisplay() {
         useAppConfig("theme.hideHomeRecentListening") ?? false;
     const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
 
+    const switchRow = (
+        title: string,
+        value: boolean,
+        onValueChange: (value: boolean) => void,
+        subtitle?: string,
+    ) => (
+        <GroupedRow
+            title={title}
+            subtitle={subtitle}
+            accessory={
+                <ThemeSwitch
+                    value={value}
+                    accessibilityLabel={title}
+                    onValueChange={onValueChange}
+                />
+            }
+        />
+    );
+
     return (
-        <View>
-            <ThemeText
-                fontSize="subTitle"
-                fontWeight="bold"
-                style={styles.header}>
-                {t("themeSettings.homeDisplay")}
-            </ThemeText>
-            <ListItem withHorizontalPadding>
-                <ListItem.Content
-                    title={t("themeSettings.useEnhancedHome")}
-                    description={t("themeSettings.useEnhancedHome.desc")}
-                />
-                <ThemeSwitch
-                    value={useEnhancedHome}
-                    accessibilityLabel={t("themeSettings.useEnhancedHome")}
-                    onValueChange={value => {
-                        Config.setConfig("theme.useEnhancedHome", value);
-                    }}
-                />
-            </ListItem>
-            {useEnhancedHome ? (
-                <ListItem withHorizontalPadding>
-                    <ListItem.Content
-                        title={t("themeSettings.hideHomeDiscovery")}
-                    />
-                    <ThemeSwitch
-                        value={hideHomeDiscovery}
-                        accessibilityLabel={t(
-                            "themeSettings.hideHomeDiscovery",
-                        )}
-                        onValueChange={value => {
-                            Config.setConfig("theme.hideHomeDiscovery", value);
-                        }}
-                    />
-                </ListItem>
-            ) : null}
-            <ListItem withHorizontalPadding>
-                <ListItem.Content
-                    title={t("themeSettings.hideHomeHeroCard")}
-                />
-                <ThemeSwitch
-                    value={hideHomeHeroCard}
-                    accessibilityLabel={t("themeSettings.hideHomeHeroCard")}
-                    onValueChange={value => {
-                        Config.setConfig("theme.hideHomeHeroCard", value);
-                    }}
-                />
-            </ListItem>
-            <ListItem withHorizontalPadding>
-                <ListItem.Content
-                    title={t("themeSettings.hideHomeRecentListening")}
-                />
-                <ThemeSwitch
-                    value={hideHomeRecentListening}
-                    accessibilityLabel={t(
-                        "themeSettings.hideHomeRecentListening",
-                    )}
-                    onValueChange={value => {
-                        Config.setConfig(
-                            "theme.hideHomeRecentListening",
-                            value,
-                        );
-                    }}
-                />
-            </ListItem>
-            <ListItem withHorizontalPadding>
-                <ListItem.Content
-                    title={t("themeSettings.hideHomeOperations")}
-                />
-                <ThemeSwitch
-                    value={hideHomeOperations}
-                    accessibilityLabel={t("themeSettings.hideHomeOperations")}
-                    onValueChange={value => {
-                        Config.setConfig("theme.hideHomeOperations", value);
-                    }}
-                />
-            </ListItem>
-        </View>
+        <GroupedSection title={t("themeSettings.homeDisplay")}>
+            {switchRow(
+                t("themeSettings.useEnhancedHome"),
+                useEnhancedHome,
+                value => Config.setConfig("theme.useEnhancedHome", value),
+                t("themeSettings.useEnhancedHome.desc"),
+            )}
+            {useEnhancedHome
+                ? switchRow(
+                    t("themeSettings.hideHomeDiscovery"),
+                    hideHomeDiscovery,
+                    value =>
+                        Config.setConfig("theme.hideHomeDiscovery", value),
+                )
+                : null}
+            {switchRow(
+                t("themeSettings.hideHomeHeroCard"),
+                hideHomeHeroCard,
+                value => Config.setConfig("theme.hideHomeHeroCard", value),
+            )}
+            {switchRow(
+                t("themeSettings.hideHomeRecentListening"),
+                hideHomeRecentListening,
+                value =>
+                    Config.setConfig("theme.hideHomeRecentListening", value),
+            )}
+            {switchRow(
+                t("themeSettings.hideHomeOperations"),
+                hideHomeOperations,
+                value => Config.setConfig("theme.hideHomeOperations", value),
+            )}
+        </GroupedSection>
     );
 }
-
-const styles = StyleSheet.create({
-    header: {
-        paddingLeft: rpx(24),
-        marginTop: rpx(36),
-        marginBottom: rpx(12),
-    },
-});

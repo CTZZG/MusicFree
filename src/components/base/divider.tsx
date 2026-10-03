@@ -6,6 +6,8 @@ interface IDividerProps {
     vertical?: boolean;
     style?: StyleProp<ViewStyle>;
 }
+
+/** iOS 分隔线：一个物理像素粗 */
 export default function Divider(props: IDividerProps) {
     const { vertical, style } = props;
     const colors = useColors();
@@ -26,10 +28,10 @@ export default function Divider(props: IDividerProps) {
 const css = StyleSheet.create({
     divider: {
         width: "100%",
-        height: 1,
+        height: StyleSheet.hairlineWidth,
     },
     dividerVertical: {
         height: "100%",
-        width: 1,
+        width: StyleSheet.hairlineWidth,
     },
 });
