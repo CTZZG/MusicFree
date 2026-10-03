@@ -9,7 +9,7 @@ import {
     View,
     ViewStyle,
 } from "react-native";
-import rpx, { vh, vw } from "@/utils/rpx";
+import { vh, vw } from "@/utils/rpx";
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -38,14 +38,14 @@ function Dialog(props: IDialogProps) {
     );
     const orientation = useOrientation();
 
-    // 对话框宽度
+    // 对话框宽度：iOS 提示框偏窄，安卓上内容常有列表，取屏宽减边距与 340 中较小的
     const dialogContainerStyle: ViewStyle =
         orientation === "vertical"
             ? {
-                width: vw(100) - rpx(72),
+                width: Math.min(vw(100) - 64, 340),
             }
             : {
-                width: "80%",
+                width: "60%",
             };
 
     useEffect(() => {
@@ -133,8 +133,9 @@ function Title(props: IDialogTitleProps) {
                 {typeof children === "string" || stringContent ? (
                     <ThemeText
                         fontSize="title"
-                        fontWeight="bold"
-                        numberOfLines={1}>
+                        fontWeight="semibold"
+                        numberOfLines={2}
+                        style={styles.titleText}>
                         {children}
                     </ThemeText>
                 ) : (
@@ -155,9 +156,17 @@ interface IDialogContentProps {
 function Content(props: IDialogContentProps) {
     const { children, style, needScroll } = props;
 
+    // 短提示像 iOS 一样居中，长文字左对齐便于阅读
     const content =
         typeof children === "string" ? (
-            <ThemeText fontSize="content" style={styles.defaultFontStyle}>
+            <ThemeText
+                fontSize="subTitle"
+                style={[
+                    styles.defaultFontStyle,
+                    children.length <= SHORT_MESSAGE_LENGTH
+                        ? styles.centeredText
+                        : null,
+                ]}>
                 {children}
             </ThemeText>
         ) : (
@@ -197,13 +206,27 @@ function Actions(props: IDialogActionsProps) {
         [actions],
     );
 
+    const colors = useColors();
+    // iOS 提示框：两个以内的按钮并排，更多时竖排，按钮之间是发丝分隔线
+    const stacked = (validActions?.length ?? 0) > 2;
+
     const _children = validActions?.length ? (
         <>
             {validActions.map((it, index) =>
                 it.show === false ? null : (
                     <BottomButton
                         key={index}
-                        style={index === 0 ? null : styles.actionButton}
+                        style={
+                            index === 0
+                                ? null
+                                : [
+                                    stacked
+                                        ? styles.stackedSeparator
+                                        : styles.inlineSeparator,
+                                    { borderColor: colors.divider },
+                                ]
+                        }
+                        stacked={stacked}
                         onPress={it.onPress}
                         text={it.title}
                         type={it.type}
@@ -216,7 +239,17 @@ function Actions(props: IDialogActionsProps) {
     );
 
     return (
-        <View style={[styles.actionsContainer, style]}>
+        <View
+            style={[
+                validActions?.length
+                    ? [
+                        styles.iosActions,
+                        stacked ? styles.iosActionsStacked : null,
+                        { borderTopColor: colors.divider },
+                    ]
+                    : styles.actionsContainer,
+                style,
+            ]}>
             {typeof children === "string" ? (
                 <ThemeText fontSize="content" numberOfLines={1}>
                     {children}
@@ -231,39 +264,47 @@ function Actions(props: IDialogActionsProps) {
 function BottomButton(props: {
     type?: "normal" | "primary";
     text: string;
+    stacked?: boolean;
     style?: StyleProp<ViewStyle>;
     onPress?: () => void;
 }) {
-    const { type = "normal", text, style, onPress } = props;
-    const colors = useColors();
+    const { type = "normal", text, stacked, style, onPress } = props;
 
     return (
         <TouchableOpacity
-            activeOpacity={0.6}
+            activeOpacity={0.5}
+            accessibilityRole="button"
             onPress={onPress}
             style={[
                 styles.bottomBtn,
-                {
-                    backgroundColor:
-                        type === "normal" ? colors.placeholder : colors.primary,
-                },
+                stacked ? styles.bottomBtnStacked : null,
                 style,
             ]}>
-            <ThemeText color={type === "normal" ? undefined : "white"}>
+            <ThemeText
+                fontSize="title"
+                fontColor="primary"
+                numberOfLines={1}
+                fontWeight={type === "primary" ? "semibold" : "regular"}>
                 {text}
             </ThemeText>
         </TouchableOpacity>
     );
 }
 
+const SHORT_MESSAGE_LENGTH = 80;
+
 const styles = StyleSheet.create({
     bottomBtn: {
-        borderRadius: rpx(8),
         flex: 1,
         flexShrink: 0,
         justifyContent: "center",
         alignItems: "center",
-        height: rpx(72),
+        height: 46,
+        paddingHorizontal: 8,
+    },
+    bottomBtnStacked: {
+        flex: 0,
+        width: "100%",
     },
     backContainer: {
         position: "absolute",
@@ -282,57 +323,74 @@ const styles = StyleSheet.create({
         height: "100%",
         left: 0,
         top: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        backgroundColor: "rgba(0, 0, 0, 0.4)",
     },
     dialogContainer: {
         position: "absolute",
-        width: "80%",
         zIndex: 16310,
-        borderRadius: rpx(16),
-        backgroundColor: "red",
+        borderRadius: 14,
+        overflow: "hidden",
         shadowOffset: {
             width: 0,
-            height: 2,
+            height: 8,
         },
-        shadowOpacity: 0.5,
-        shadowRadius: 4,
-
-        elevation: 5,
+        shadowOpacity: 0.2,
+        shadowRadius: 24,
+        elevation: 8,
     },
 
     defaultFontStyle: {
-        lineHeight: fontSizeConst.content * 1.5,
+        lineHeight: fontSizeConst.subTitle * 1.45,
+    },
+    centeredText: {
+        textAlign: "center",
     },
 
     /**** title */
     titleContainer: {
-        height: rpx(88),
+        minHeight: 44,
         width: "100%",
         alignItems: "center",
         justifyContent: "center",
         flexDirection: "row",
-        paddingHorizontal: rpx(24),
+        paddingHorizontal: 16,
+        paddingTop: 18,
+    },
+    titleText: {
+        textAlign: "center",
     },
     /** content */
     contentContainer: {
         width: "100%",
-        paddingHorizontal: rpx(24),
-        paddingVertical: rpx(36),
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 18,
     },
-    /** actions */
+    /** 自定义按钮区（children） */
     actionsContainer: {
         width: "100%",
-        height: rpx(88),
+        minHeight: 46,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "flex-end",
-        paddingHorizontal: rpx(24),
-        marginTop: rpx(8),
-        marginBottom: rpx(16),
+        paddingHorizontal: 16,
+        marginBottom: 8,
         flexWrap: "nowrap",
     },
-    actionButton: {
-        marginLeft: rpx(24),
+    /** iOS 按钮区 */
+    iosActions: {
+        width: "100%",
+        flexDirection: "row",
+        borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    iosActionsStacked: {
+        flexDirection: "column",
+    },
+    inlineSeparator: {
+        borderLeftWidth: StyleSheet.hairlineWidth,
+    },
+    stackedSeparator: {
+        borderTopWidth: StyleSheet.hairlineWidth,
     },
 });
 

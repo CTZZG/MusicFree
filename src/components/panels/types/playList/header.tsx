@@ -21,11 +21,11 @@ export default function Header() {
     return (
         <View style={style.wrapper}>
             <ThemeText
+                accessibilityRole="header"
                 style={style.headerText}
-                fontSize="title"
                 fontWeight="bold">
                 {t("panel.playList.title")}
-                <ThemeText fontColor="textSecondary">
+                <ThemeText fontSize="subTitle" fontColor="textSecondary">
                     {t("panel.playList.count", {
                         count: playList.length + playLaterQueue.length,
                     })}
@@ -55,15 +55,18 @@ export default function Header() {
 const style = StyleSheet.create({
     wrapper: {
         width: rpx(750),
-        height: rpx(80),
-        paddingHorizontal: rpx(24),
-        marginTop: rpx(18),
-        marginBottom: rpx(12),
+        height: 48,
+        paddingLeft: 20,
+        paddingRight: 12,
+        marginTop: 18,
+        marginBottom: 6,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
     },
     headerText: {
         flex: 1,
+        fontSize: 20,
+        lineHeight: 25,
     },
 });

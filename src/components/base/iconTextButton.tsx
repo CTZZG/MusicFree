@@ -1,6 +1,5 @@
 import React from "react";
 import { StyleProp, StyleSheet, ViewStyle } from "react-native";
-import rpx from "@/utils/rpx";
 import ThemeText from "./themeText";
 import { iconSizeConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
@@ -21,32 +20,45 @@ export default function (props: IProps) {
     return (
         <TouchableOpacity
             activeOpacity={0.7}
-            style={[styles.container, withBorder ? styles.borderContainer : null, withBorder ? {
-                borderColor: colors.text,
-            } : null, containerStyle]}
+            accessibilityRole="button"
+            accessibilityLabel={children}
+            style={[
+                styles.container,
+                withBorder ? styles.borderContainer : null,
+                withBorder ? { borderColor: colors.primary } : null,
+                containerStyle,
+            ]}
             onPress={onPress}>
-            <Icon name={icon} size={iconSizeConst.light} color={colors.text} />
-            <ThemeText style={styles.text} fontSize={"content"}>
+            <Icon
+                name={icon}
+                size={iconSizeConst.light}
+                color={colors.primary}
+            />
+            <ThemeText
+                style={styles.text}
+                fontSize="subTitle"
+                fontColor="primary">
                 {children}
             </ThemeText>
         </TouchableOpacity>
     );
 }
 
+// iOS 文字按钮：图标和文字都用强调色
 const styles = StyleSheet.create({
     container: {
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: rpx(16),
-        paddingVertical: rpx(8),
+        paddingHorizontal: 8,
+        paddingVertical: 6,
     },
     text: {
-        marginLeft: rpx(8),
+        marginLeft: 5,
     },
     borderContainer: {
-        borderWidth: rpx(1),
+        borderWidth: StyleSheet.hairlineWidth,
         borderRadius: 999,
-        paddingHorizontal: rpx(24),
-        paddingVertical: rpx(12),
+        paddingHorizontal: 12,
+        paddingVertical: 6,
     },
 });

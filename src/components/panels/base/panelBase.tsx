@@ -9,6 +9,7 @@ import {
     NativeEventSubscription,
     Pressable,
     StyleSheet,
+    View,
 } from "react-native";
 import Animated, {
     Easing,
@@ -228,6 +229,10 @@ export default function (props: IPanelBaseProps) {
                 panelAnimated,
             ]}>
             {renderBody(loading)}
+            {orientation === "vertical" ? (
+                // iOS 底部弹层顶上的小横条，只做装饰
+                <View pointerEvents="none" style={style.grabber} />
+            ) : null}
         </Animated.View>
     );
 
@@ -266,8 +271,17 @@ const style = StyleSheet.create({
         position: "absolute",
         width: rpx(750),
         right: 0,
-        borderTopLeftRadius: rpx(28),
-        borderTopRightRadius: rpx(28),
+        borderTopLeftRadius: 14,
+        borderTopRightRadius: 14,
         zIndex: 15010,
+    },
+    grabber: {
+        position: "absolute",
+        top: 6,
+        alignSelf: "center",
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: "rgba(120, 120, 128, 0.4)",
     },
 });
