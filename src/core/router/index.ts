@@ -227,6 +227,22 @@ export function navigateToSearch(params?: RouterParams["search-page"]) {
     );
 }
 
+/**
+ * 打开的页面和当前页面同名、又带了参数时，要新开一页。
+ *
+ * React Navigation 7 的 navigate 遇到「目标就是当前页面」时不会新开，而是把当前
+ * 页面的参数原地换掉：基本设置里点「缓存管理」会把基本设置这一页本身换成缓存管理，
+ * 返回键就直接回到了设置标签；歌手页里再打开另一个歌手也一样。不带参数的同名跳转
+ * （例如在播放页里再打开播放页）仍然原地不动，不会叠出两个一样的页面。
+ */
+export function shouldPushSameRoute(
+    currentRouteName: string | undefined,
+    targetRoute: string,
+    params: unknown,
+) {
+    return currentRouteName === targetRoute && params !== undefined;
+}
+
 /** 导航 */
 export function useNavigate() {
     const navigation = useNavigation<any>();
@@ -238,6 +254,17 @@ export function useNavigate() {
         if (route === ROUTE_PATH.SEARCH_PAGE) {
             // 搜索页在底部标签里，根栈里没有这个路由
             navigateToSearch(params as RouterParams["search-page"]);
+            return;
+        }
+        // 跟根栈当前那一页比：页面都在根栈里，而 getCurrentRoute 拿到的是最里层
+        // 的路由（主页标签、插件设置里的子页面），名字对不上
+        const rootState = navigationRef.isReady()
+            ? navigationRef.getRootState()
+            : undefined;
+        const currentRouteName = rootState?.routes[rootState.index]?.name;
+        if (shouldPushSameRoute(currentRouteName, route, params)) {
+            // PUSH 由根栈处理：在标签页或弹层里调用时，动作会一路冒泡上去
+            navigation.dispatch(StackActions.push(route, params));
             return;
         }
         navigation.navigate(route, params);
