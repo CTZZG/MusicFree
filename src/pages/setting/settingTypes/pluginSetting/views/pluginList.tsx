@@ -32,7 +32,7 @@ import {
 import {
     buildPluginDiagnosticReport,
     clearPluginDiagnosticEvents,
-    getRecentPluginDiagnosticEvents,
+    getRecentPluginDiagnosticErrors,
 } from "@/core/pluginManager/diagnostics";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { ScrollView } from "react-native-gesture-handler";
@@ -58,14 +58,15 @@ export default function PluginList() {
     const latestDiagnostics = useMemo(() => {
         const byPlugin = new Map<
             string,
-            ReturnType<typeof getRecentPluginDiagnosticEvents>[number]
+            ReturnType<typeof getRecentPluginDiagnosticErrors>[number]
         >();
         if (!pluginRevision) {
             return byPlugin;
         }
-        // 只看时间窗内的事件：否则安装以来的每一次失败都会永久显示，
-        // 包括早已修复的（例如插件 HTTP 策略调整之前记录的那批）。
-        for (const event of getRecentPluginDiagnosticEvents()) {
+        // 只看时间窗内的错误：否则安装以来的每一次失败都会永久显示，
+        // 包括早已修复的（例如插件 HTTP 策略调整之前记录的那批）；
+        // 能力使用、数据迁移这类 info 记录也不算错误。
+        for (const event of getRecentPluginDiagnosticErrors()) {
             const key = event.pluginHash ?? event.pluginName;
             if (key && !byPlugin.has(key)) {
                 byPlugin.set(key, event);

@@ -43,6 +43,12 @@ const sensitivePatterns: Array<{
     },
 ];
 
+/**
+ * error：插件真的出错了，插件卡片上的「最近错误」只显示这一类。
+ * info：用到了哪些能力、旧数据迁移这类记录，只进诊断报告。
+ */
+export type PluginDiagnosticSeverity = "error" | "info";
+
 export interface PluginDiagnosticEvent {
     id: string;
     pluginName: string;
@@ -51,6 +57,8 @@ export interface PluginDiagnosticEvent {
     message: string;
     estimatedLocation?: string;
     createdAt: number;
+    /** 加这个字段之前记录的事件没有它，按 method 推断，见 getPluginDiagnosticSeverity */
+    severity?: PluginDiagnosticSeverity;
 }
 
 interface IRecordPluginDiagnosticParams {
@@ -67,6 +75,8 @@ interface IRecordPluginDiagnosticMessageParams {
     method: string;
     message: string;
     estimatedLocation?: string | null;
+    /** 默认 error */
+    severity?: PluginDiagnosticSeverity;
 }
 
 interface IPluginDiagnosticReportPlugin {
@@ -147,7 +157,7 @@ function getPluginDiagnosticEventLines(events: PluginDiagnosticEvent[]) {
         return ["-"];
     }
     return events.map(event => [
-        `- ${new Date(event.createdAt).toLocaleString()} ${sanitizeReportValue(event.pluginName)} ${sanitizeReportValue(event.method)}`,
+        `- ${new Date(event.createdAt).toLocaleString()} ${sanitizeReportValue(event.pluginName)} ${sanitizeReportValue(event.method)} [${getPluginDiagnosticSeverity(event)}]`,
         `  ${sanitizeReportValue(event.message)}`,
         event.estimatedLocation
             ? `  ${sanitizeReportValue(event.estimatedLocation)}`
@@ -246,10 +256,24 @@ export function recordPluginDiagnosticMessage(
             ? sanitizeMessage(params.estimatedLocation)
             : undefined,
         createdAt: Date.now(),
+        severity: params.severity ?? "error",
     };
 
     setStoredEvents(trimEvents([event, ...getStoredEvents()]));
     return event;
+}
+
+// 这两类记录在区分严重程度之前也一律记成了事件，插件卡片把它们当成
+// 「最近错误」：每个插件都显示 storage-migration · quarantinedLegacyEntries=1
+const INFO_METHODS_BEFORE_SEVERITY = new Set(["capability", "storage-migration"]);
+
+export function getPluginDiagnosticSeverity(
+    event: Pick<PluginDiagnosticEvent, "method" | "severity">,
+): PluginDiagnosticSeverity {
+    if (event.severity) {
+        return event.severity;
+    }
+    return INFO_METHODS_BEFORE_SEVERITY.has(event.method) ? "info" : "error";
 }
 
 export function recordPluginInstallFailure(result: IInstallPluginResult) {
@@ -330,6 +354,16 @@ export function getRecentPluginDiagnosticEvents(
 ) {
     return getStoredEvents().filter(event =>
         isRecentPluginDiagnosticEvent(event, now, windowMs),
+    );
+}
+
+/** 时间窗内真正的错误，给插件卡片的「最近错误」用 */
+export function getRecentPluginDiagnosticErrors(
+    now = Date.now(),
+    windowMs = recentPluginDiagnosticWindowMs,
+) {
+    return getRecentPluginDiagnosticEvents(now, windowMs).filter(
+        event => getPluginDiagnosticSeverity(event) === "error",
     );
 }
 

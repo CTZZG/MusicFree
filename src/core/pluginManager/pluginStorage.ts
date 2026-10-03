@@ -15,6 +15,10 @@ export interface PluginStorageBackingStore {
 export interface PluginStorageMigrationReport {
     namespaceEntries: number;
     legacyEntries: number;
+    /**
+     * 共享存储里还留着、归属不到任何插件的旧数据条数。这是整个存储的状态，
+     * 不是这个插件的：每个插件绑定身份时看到的都是同一个数。
+     */
     quarantinedLegacyEntries: number;
 }
 

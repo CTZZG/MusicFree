@@ -1498,6 +1498,13 @@ export class Plugin {
                                 this.hash ||
                                 sourceHash,
                             method: "capability",
+                            // 只有非法模块名会让插件挂载失败；用到某个能力、
+                            // 拿不到可选模块（返回 null，与官方一致）都是记录
+                            severity:
+                                event.outcome === "denied" &&
+                                event.reason === "invalid-module-name"
+                                    ? "error"
+                                    : "info",
                             message: [
                                 `outcome=${event.outcome}`,
                                 event.capability
@@ -1577,13 +1584,19 @@ export class Plugin {
                 const migration = capabilityContext.bindIdentity(
                     _instance.platform,
                 );
-                if (migration.quarantinedLegacyEntries > 0) {
+                // 只在这次真的搬了旧数据时记一笔。quarantinedLegacyEntries 是
+                // 整个共享存储里归属不到任何插件的旧数据条数，不是这个插件的，
+                // 以前每次启动给每个插件都记成错误。
+                if (migration.legacyEntries > 0) {
                     recordPluginDiagnosticMessage({
                         pluginName: _instance.platform,
                         pluginHash: sourceHash,
                         method: "storage-migration",
-                        message:
-                            `quarantinedLegacyEntries=${migration.quarantinedLegacyEntries}`,
+                        severity: "info",
+                        message: [
+                            `legacyEntries=${migration.legacyEntries}`,
+                            `unattributedLegacyEntries=${migration.quarantinedLegacyEntries}`,
+                        ].join("; "),
                     });
                 }
             }

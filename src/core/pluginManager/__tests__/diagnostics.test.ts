@@ -1,5 +1,8 @@
 import {
+    buildPluginDiagnosticReport,
     clearPluginDiagnosticEvents,
+    getPluginDiagnosticSeverity,
+    getRecentPluginDiagnosticErrors,
     isRecentPluginDiagnosticEvent,
     recentPluginDiagnosticWindowMs,
     recordPluginDiagnosticMessage,
@@ -88,5 +91,77 @@ describe("plugin diagnostics sanitization", () => {
                 now,
             )).toBe(true);
         });
+    });
+});
+
+/**
+ * 回归背景：插件卡片的「最近错误」显示的是最新的任意事件，每个插件每次启动都
+ * 记一条 storage-migration · quarantinedLegacyEntries=1（共享存储里一条归属不到
+ * 任何插件的旧数据），用到能力的记录也会顶上去。现在只有 error 才算错误。
+ */
+describe("plugin diagnostic severity", () => {
+    beforeEach(() => {
+        clearPluginDiagnosticEvents();
+    });
+
+    it("records errors by default and keeps info as info", () => {
+        const error = recordPluginDiagnosticMessage({
+            pluginName: "p",
+            method: "search",
+            message: "boom",
+        });
+        const info = recordPluginDiagnosticMessage({
+            pluginName: "p",
+            method: "capability",
+            message: "outcome=allowed; capability=network",
+            severity: "info",
+        });
+
+        expect(error.severity).toBe("error");
+        expect(info.severity).toBe("info");
+    });
+
+    it("shows only errors as a plugin's recent error", () => {
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "search",
+            message: "network failed",
+        });
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "storage-migration",
+            message: "legacyEntries=1; unattributedLegacyEntries=1",
+            severity: "info",
+        });
+
+        const errors = getRecentPluginDiagnosticErrors();
+        expect(errors).toHaveLength(1);
+        expect(errors[0].method).toBe("search");
+    });
+
+    it("treats events stored before severity existed by their method", () => {
+        const legacy = { createdAt: Date.now() };
+        expect(
+            getPluginDiagnosticSeverity({ ...legacy, method: "storage-migration" }),
+        ).toBe("info");
+        expect(
+            getPluginDiagnosticSeverity({ ...legacy, method: "capability" }),
+        ).toBe("info");
+        expect(getPluginDiagnosticSeverity({ ...legacy, method: "mount" })).toBe(
+            "error",
+        );
+    });
+
+    it("labels each event's severity in the diagnostic report", () => {
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            method: "capability",
+            message: "outcome=allowed",
+            severity: "info",
+        });
+
+        expect(buildPluginDiagnosticReport([])).toContain("p capability [info]");
     });
 });
