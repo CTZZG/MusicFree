@@ -1063,6 +1063,7 @@ export interface ILanguageData {
     "panel.associateLrc.toast.fail": string; // 关联歌词失败
     "panel.associateLrc.toast.unlinkSuccess": string; // 取消关联歌词成功
     "panel.createMusicSheet.title": string; // 新建歌单
+    "panel.setUserVariables.title": string; // 设置用户变量
 
     // 面板相关 - 图片查看器
     "panel.imageViewer.saveImage": string; // 保存图片

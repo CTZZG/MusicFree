@@ -1,15 +1,15 @@
 import React, { useRef } from "react";
-import { KeyboardAvoidingView, StyleSheet } from "react-native";
-import rpx, { vmax } from "@/utils/rpx";
+import { KeyboardAvoidingView, StyleSheet, View } from "react-native";
+import { vmax } from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 
 import ThemeText from "@/components/base/themeText";
 import { ScrollView } from "react-native-gesture-handler";
 import PanelBase from "../base/panelBase";
 import { hidePanel } from "../usePanel";
-import ListItem from "@/components/base/listItem";
 import Input from "@/components/base/input";
 import globalStyle from "@/constants/globalStyle";
+import { useI18N } from "@/core/i18n";
 import PanelHeader from "../base/panelHeader";
 
 interface IUserVariablesProps {
@@ -22,22 +22,31 @@ interface IUserVariablesProps {
     onCancel?: () => void;
 }
 
+/**
+ * 插件用户变量、Last.fm 凭据、WebDAV 设置共用的表单。
+ *
+ * 每一项是 iOS 表单的写法：名称在上、输入框占满一行、说明完整写在下面。
+ * 以前名称和输入框挤在一行，名称最多占 35%、说明只放在占位文字里，两者都被
+ * 截断，而且一开始输入说明就看不见了（「留空则保留已保存的密码」这类说明尤其
+ * 要紧）。
+ */
 export default function SetUserVariables(props: IUserVariablesProps) {
     const { onOk, onCancel, variables, initValues = {}, title } = props;
 
     const colors = useColors();
+    const { t } = useI18N();
 
     const resultRef = useRef({ ...initValues });
 
     return (
         <PanelBase
             height={vmax(80)}
-            positionMethod='top'
-            keyboardAvoidBehavior='none'
+            positionMethod="top"
+            keyboardAvoidBehavior="none"
             renderBody={() => (
                 <>
                     <PanelHeader
-                        title={title ?? "设置用户变量"}
+                        title={title ?? t("panel.setUserVariables.title")}
                         onCancel={() => {
                             onCancel?.();
                             hidePanel();
@@ -50,23 +59,22 @@ export default function SetUserVariables(props: IUserVariablesProps) {
                         behavior="padding"
                         style={globalStyle.flex1}>
                         <ScrollView
-                            contentContainerStyle={{
-                                paddingBottom: vmax(20),
-                            }}>
+                            keyboardShouldPersistTaps="handled"
+                            contentContainerStyle={styles.content}>
                             {variables.map(it => (
-                                <ListItem
-                                    key={it.key}
-                                    withHorizontalPadding
-                                    style={styles.listItem}>
+                                <View key={it.key} style={styles.field}>
                                     <ThemeText
-                                        numberOfLines={1}
-                                        ellipsizeMode="tail"
-                                        style={styles.varName}>
+                                        fontWeight="semibold"
+                                        style={styles.label}>
                                         {it.name ?? it.key}
                                     </ThemeText>
                                     <Input
                                         secureTextEntry={it.secureTextEntry}
                                         defaultValue={initValues[it.key]}
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                        accessibilityLabel={it.name ?? it.key}
+                                        accessibilityHint={it.hint}
                                         onChangeText={e => {
                                             resultRef.current[it.key] = e;
                                         }}
@@ -77,9 +85,16 @@ export default function SetUserVariables(props: IUserVariablesProps) {
                                                     colors.placeholder,
                                             },
                                         ]}
-                                        placeholder={it.hint}
                                     />
-                                </ListItem>
+                                    {it.hint ? (
+                                        <ThemeText
+                                            fontSize="description"
+                                            fontColor="textSecondary"
+                                            style={styles.hint}>
+                                            {it.hint}
+                                        </ThemeText>
+                                    ) : null}
+                                </View>
                             ))}
                         </ScrollView>
                     </KeyboardAvoidingView>
@@ -90,27 +105,26 @@ export default function SetUserVariables(props: IUserVariablesProps) {
 }
 
 const styles = StyleSheet.create({
-    wrapper: {
-        width: rpx(750),
+    content: {
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: vmax(20),
     },
-    opeartions: {
-        width: rpx(750),
-        paddingHorizontal: rpx(24),
-        flexDirection: "row",
-        height: rpx(100),
-        alignItems: "center",
-        justifyContent: "space-between",
+    field: {
+        marginBottom: 22,
     },
-    listItem: {
-        justifyContent: "space-between",
-    },
-    varName: {
-        maxWidth: "35%",
+    label: {
+        marginBottom: 8,
     },
     input: {
-        width: "50%",
-        paddingVertical: rpx(8),
-        paddingHorizontal: rpx(12),
-        borderRadius: rpx(8),
+        width: "100%",
+        minHeight: 44,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+    },
+    hint: {
+        marginTop: 6,
+        lineHeight: 18,
     },
 });

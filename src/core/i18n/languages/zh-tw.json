@@ -974,6 +974,7 @@
     "panel.associateLrc.toast.fail": "關聯歌詞失敗",
     "panel.associateLrc.toast.unlinkSuccess": "取消關聯歌詞成功",
     "panel.createMusicSheet.title": "新建歌單",
+    "panel.setUserVariables.title": "設定使用者變數",
     "panel.imageViewer.saveImage": "儲存圖片",
     "panel.imageViewer.saveImageSuccess": "圖片已儲存到 {path}",
     "panel.imageViewer.saveImageFail": "儲存圖片失敗: {reason}",

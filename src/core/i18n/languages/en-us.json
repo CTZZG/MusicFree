@@ -974,6 +974,7 @@
     "panel.associateLrc.toast.fail": "Failed to associate lyrics",
     "panel.associateLrc.toast.unlinkSuccess": "Lyrics unlinked successfully",
     "panel.createMusicSheet.title": "New Playlist",
+    "panel.setUserVariables.title": "User Variables",
     "panel.imageViewer.saveImage": "Save Image",
     "panel.imageViewer.saveImageSuccess": "Image saved to {path}",
     "panel.imageViewer.saveImageFail": "Failed to save image: {reason}",
