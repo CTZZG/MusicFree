@@ -12,6 +12,10 @@ import TrackPlayer from "@/core/trackPlayer";
 import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
+import {
+    CardGroupPosition,
+    getCardGroupPosition,
+} from "@/components/base/shortcutPageSurface";
 import React, {
     useRef,
     useCallback,
@@ -401,6 +405,7 @@ export default function MusicList(props: IMusicListProps) {
         [],
     );
 
+    const listLength = musicList?.length ?? 0;
     const renderItem = useCallback(
         ({
             index,
@@ -413,6 +418,11 @@ export default function MusicList(props: IMusicListProps) {
                 <MusicListItem
                     musicItem={musicItem}
                     rawIndex={index}
+                    cardGroupPosition={
+                        presentation === "cards"
+                            ? getCardGroupPosition(index, listLength)
+                            : undefined
+                    }
                     displayIndex={showIndex ? index + 1 : undefined}
                     selectionMode={selectionMode}
                     selected={selectedKeys.has(getMediaUniqueKey(musicItem))}
@@ -432,6 +442,7 @@ export default function MusicList(props: IMusicListProps) {
             );
         },
         [
+            listLength,
             showIndex,
             selectionMode,
             selectedKeys,
@@ -708,6 +719,7 @@ export default function MusicList(props: IMusicListProps) {
 interface IMusicListItemProps {
     musicItem: IMusic.IMusicItem;
     rawIndex: number;
+    cardGroupPosition?: CardGroupPosition;
     displayIndex?: number;
     selectionMode: boolean;
     selected: boolean;
@@ -731,6 +743,7 @@ function MusicListItemImpl(props: IMusicListItemProps) {
     const {
         musicItem,
         rawIndex,
+        cardGroupPosition,
         displayIndex,
         selectionMode,
         selected,
@@ -770,6 +783,7 @@ function MusicListItemImpl(props: IMusicListItemProps) {
             musicItem={musicItem}
             index={showArtwork ? undefined : displayIndex}
             cardIndex={presentation === "cards" ? displayIndex : undefined}
+            cardGroupPosition={cardGroupPosition}
             onItemPress={handlePress}
             onItemLongPress={handleLongPress}
             left={left}

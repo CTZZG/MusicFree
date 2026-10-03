@@ -1003,7 +1003,8 @@ export interface ILanguageData {
     "quality.master": string; // 母带音质
 
     // 播放全部栏相关
-    "playAllBar.title": string; // 播放全部
+    "playAllBar.play": string; // 播放按钮
+    "playAllBar.shuffle": string; // 随机播放按钮
     "playAllBar.favorite": string; // 收藏
     "playAllBar.favorited": string; // 已收藏
     "playAllBar.addToSheet": string; // 加入歌单

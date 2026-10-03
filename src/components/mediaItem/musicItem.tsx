@@ -28,7 +28,10 @@ import {
 import useColors from "@/hooks/useColors";
 import useLocalMusicArtwork from "@/hooks/useLocalMusicArtwork";
 import Tag from "../base/tag";
-import { useShortcutCardStyle } from "../base/shortcutPageSurface";
+import {
+    CardGroupPosition,
+    useShortcutCardStyle,
+} from "../base/shortcutPageSurface";
 import {
     getMusicItemAccessibilityLabel,
     withAccessibilitySuffixes,
@@ -53,6 +56,8 @@ interface IMusicItemProps {
     showAddNextIcon?: boolean;
     presentation?: "plain" | "cards";
     cardIndex?: string | number;
+    /** 卡片样式下这一行在分组里的位置 */
+    cardGroupPosition?: CardGroupPosition;
     selected?: boolean;
 }
 
@@ -117,6 +122,7 @@ function MusicItem(props: IMusicItemProps) {
         showAddNextIcon = false,
         presentation = "plain",
         cardIndex,
+        cardGroupPosition,
         selected,
     } = props;
     const colors = useColors();
@@ -190,7 +196,10 @@ function MusicItem(props: IMusicItemProps) {
         () => formatMusicMetadata(musicItem.artist, musicItem.album),
         [musicItem.artist, musicItem.album],
     );
-    const cardStyle = useShortcutCardStyle({ highlighted: highlight });
+    const cardStyle = useShortcutCardStyle({
+        highlighted: highlight,
+        groupPosition: cardGroupPosition,
+    });
     const isCard = presentation === "cards";
     const accessibilityLabel = useMemo(
         () =>
