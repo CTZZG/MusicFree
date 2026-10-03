@@ -1,56 +1,84 @@
 import React from "react";
-import { StyleSheet, View } from "react-native";
-import rpx from "@/utils/rpx";
+import { Pressable, StyleSheet } from "react-native";
+import FastImage from "../base/fastImage";
+import ThemeText from "../base/themeText";
+import { ImgAsset } from "@/constants/assetsConst";
+import { useI18N } from "@/core/i18n";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import ImageBtn from "../base/imageBtn";
-import { useShortcutCardStyle } from "../base/shortcutPageSurface";
+import useColors from "@/hooks/useColors";
 
 interface ISheetItemProps {
     pluginHash: string;
     sheetInfo: IMusic.IMusicSheetItemBase;
-    presentation?: "plain" | "cards";
 }
 
-const marginBottom = rpx(16);
+// 相邻两格封面之间的距离。每格左右各让一半，列表两侧再补到 16，
+// 与首页「推荐歌单」横排的页边距一致
+const GRID_GUTTER = 12;
+const PAGE_MARGIN = 16;
 
+/** 歌单网格（推荐歌单、搜索结果的歌单页）列表两侧的内边距 */
+export const SHEET_GRID_SIDE_PADDING = PAGE_MARGIN - GRID_GUTTER / 2;
+
+/**
+ * 歌单网格里的一格：封面铺满列宽并保持正方形，标题在下面最多两行，样式与
+ * 首页「推荐歌单」横排一致，不再套卡片。
+ *
+ * 以前格子里放的是固定 210rpx 宽的图片按钮，再套一层左右各留 16 的卡片，三列时
+ * 内容比卡片宽，两边都被裁掉：标题第一个字缺一半，卡片的圆角和底色从图片上方
+ * 露出来。现在尺寸全部跟着列宽走，列数、屏幕宽度变了也不会超出格子。
+ */
 export default function SheetItem(props: ISheetItemProps) {
-    const { sheetInfo, pluginHash, presentation = "plain" } = props ?? {};
+    const { sheetInfo, pluginHash } = props;
     const navigate = useNavigate();
-    const cardStyle = useShortcutCardStyle({ compact: true });
+    const colors = useColors();
+    const { t } = useI18N();
+    const title = sheetInfo?.title || t("common.unknownName");
+
     return (
-        <View
-            style={[
-                presentation === "cards" ? cardStyle : null,
-                style.imageWrapper,
-                presentation === "cards" ? style.cardWrapper : null,
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={title}
+            onPress={() => {
+                navigate(ROUTE_PATH.PLUGIN_SHEET_DETAIL, {
+                    pluginHash,
+                    sheetInfo,
+                });
+            }}
+            style={({ pressed }) => [
+                styles.tile,
+                pressed ? styles.pressed : null,
             ]}>
-            <ImageBtn
-                style={{
-                    marginBottom,
-                }}
-                uri={sheetInfo?.artwork ?? sheetInfo?.coverImg}
-                title={sheetInfo?.title}
-                onPress={() => {
-                    navigate(ROUTE_PATH.PLUGIN_SHEET_DETAIL, {
-                        pluginHash,
-                        sheetInfo,
-                    });
-                }}
+            <FastImage
+                style={[styles.cover, { backgroundColor: colors.placeholder }]}
+                source={sheetInfo?.artwork ?? sheetInfo?.coverImg}
+                placeholderSource={ImgAsset.albumDefault}
             />
-        </View>
+            <ThemeText
+                numberOfLines={2}
+                fontSize="subTitle"
+                fontWeight="medium"
+                style={styles.title}>
+                {title}
+            </ThemeText>
+        </Pressable>
     );
 }
-const style = StyleSheet.create({
-    imageWrapper: {
-        width: "100%",
-        justifyContent: "center",
-        alignItems: "center",
+
+const styles = StyleSheet.create({
+    tile: {
+        marginHorizontal: GRID_GUTTER / 2,
+        marginBottom: 18,
     },
-    cardWrapper: {
-        width: "auto",
-        alignSelf: "stretch",
-        paddingHorizontal: rpx(10),
-        paddingTop: rpx(10),
-        paddingBottom: rpx(4),
+    pressed: {
+        opacity: 0.6,
+    },
+    cover: {
+        width: "100%",
+        aspectRatio: 1,
+        borderRadius: 12,
+    },
+    title: {
+        marginTop: 8,
     },
 });

@@ -82,5 +82,7 @@ const style = StyleSheet.create({
     header: {
         height: rpx(100),
         alignItems: "center",
+        // 标签自带左右 rpx(16) 的外边距，补到 16，第一个标签与下面的歌单网格左对齐
+        paddingHorizontal: 16 - rpx(16),
     },
 });
