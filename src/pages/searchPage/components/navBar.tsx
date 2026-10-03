@@ -11,6 +11,7 @@ import { Keyboard, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { addHistory } from "../common/historySearch";
 import { usePageStatus, useSubmitSearch } from "../hooks/useSearchSession";
 import { PageStatus, editingAtom, queryAtom } from "../store/atoms";
+import { PAGE_MARGIN } from "@/utils/tileLayout";
 
 interface INavBarProps {
     autoFocus?: boolean;
@@ -138,7 +139,7 @@ const styles = StyleSheet.create({
         paddingBottom: 8,
     },
     largeTitle: {
-        paddingHorizontal: 20,
+        paddingHorizontal: PAGE_MARGIN,
         marginBottom: 10,
         fontSize: 34,
         lineHeight: 41,
@@ -147,7 +148,7 @@ const styles = StyleSheet.create({
     row: {
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 16,
+        paddingHorizontal: PAGE_MARGIN,
     },
     field: {
         flex: 1,
