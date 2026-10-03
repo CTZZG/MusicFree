@@ -9,6 +9,7 @@ import {
 import useColors from "@/hooks/useColors";
 import ThemeText from "./themeText";
 import Icon, { IIconName } from "./icon";
+import type { CardGroupPosition } from "./cardGroupPosition";
 
 interface IGroupedSectionProps {
     /** 卡片上方的灰色小标题 */
@@ -88,6 +89,8 @@ interface IGroupedRowProps {
     onPress?: () => void;
     accessibilityLabel?: string;
     accessibilityHint?: string;
+    /** 比如开关行的 checked */
+    accessibilityState?: { checked?: boolean; selected?: boolean };
 }
 
 /** iOS 分组列表的一行 */
@@ -104,6 +107,7 @@ export function GroupedRow(props: IGroupedRowProps) {
         onPress,
         accessibilityLabel,
         accessibilityHint,
+        accessibilityState,
     } = props;
     const colors = useColors();
     const checked = accessory === "check";
@@ -136,7 +140,9 @@ export function GroupedRow(props: IGroupedRowProps) {
                 [title, value, subtitle].filter(Boolean).join("，")
             }
             accessibilityHint={accessibilityHint}
-            accessibilityState={checked ? { selected: true } : undefined}
+            accessibilityState={
+                accessibilityState ?? (checked ? { selected: true } : undefined)
+            }
             style={({ pressed }) => [
                 styles.row,
                 subtitle ? styles.rowWithSubtitle : null,
@@ -163,7 +169,8 @@ export function GroupedRow(props: IGroupedRowProps) {
             ) : null}
             <View style={styles.texts}>
                 <ThemeText
-                    numberOfLines={1}
+                    // 设置项的标题可能较长，最多折成两行
+                    numberOfLines={2}
                     color={destructive ? colors.danger : undefined}>
                     {title}
                 </ThemeText>
@@ -189,7 +196,60 @@ export function GroupedRow(props: IGroupedRowProps) {
     );
 }
 
+interface IGroupedCellProps {
+    position: CardGroupPosition;
+    /** 行间分隔线距左边缘的距离 */
+    dividerInset?: number;
+    children?: ReactNode;
+}
+
+/**
+ * 虚拟列表（SectionList 等）里用：一行就是分组卡片的一段，首尾圆角，
+ * 中间的行顶上画分隔线。不在虚拟列表里时直接用 GroupedSection。
+ */
+export function GroupedCell(props: IGroupedCellProps) {
+    const { position, dividerInset = 16, children } = props;
+    const colors = useColors();
+    const roundTop = position === "single" || position === "first";
+    const roundBottom = position === "single" || position === "last";
+
+    return (
+        <View
+            style={[
+                styles.cell,
+                { backgroundColor: colors.card },
+                roundTop ? styles.cellTop : null,
+                roundBottom ? styles.cellBottom : null,
+            ]}>
+            {roundTop ? null : (
+                <View
+                    style={[
+                        styles.divider,
+                        {
+                            marginLeft: dividerInset,
+                            backgroundColor: colors.divider,
+                        },
+                    ]}
+                />
+            )}
+            {children}
+        </View>
+    );
+}
+
 const styles = StyleSheet.create({
+    cell: {
+        marginHorizontal: 16,
+        overflow: "hidden",
+    },
+    cellTop: {
+        borderTopLeftRadius: 14,
+        borderTopRightRadius: 14,
+    },
+    cellBottom: {
+        borderBottomLeftRadius: 14,
+        borderBottomRightRadius: 14,
+    },
     section: {
         marginTop: 22,
     },

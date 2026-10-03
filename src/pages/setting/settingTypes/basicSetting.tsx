@@ -1,4 +1,6 @@
 import ColorBlock from "@/components/base/colorBlock";
+import { getCardGroupPosition } from "@/components/base/cardGroupPosition";
+import { GroupedCell, GroupedRow } from "@/components/base/groupedList";
 import ListItem from "@/components/base/listItem";
 import Paragraph from "@/components/base/paragraph";
 import ThemeSwitch from "@/components/base/switch";
@@ -124,7 +126,7 @@ const createRadio = function (
     return {
         title,
         right: (
-            <ThemeText style={styles.centerText}>
+            <ThemeText fontColor="textSecondary" style={styles.centerText}>
                 {valueMap ? valueMap[value] : value}
             </ThemeText>
         ),
@@ -213,6 +215,7 @@ export default function BasicSetting() {
     const telemetryAvailable = appMeta.telemetryAvailable;
 
     const navigate = useNavigate();
+    const colors = useColors();
 
     const [cacheSize, refreshCacheSize] = useCacheSize();
     const [pluginCacheCount, setPluginCacheCount] = useState(0);
@@ -368,7 +371,9 @@ export default function BasicSetting() {
                 {
                     title: t("basicSettings.clearPluginCache"),
                     right: (
-                        <ThemeText style={styles.centerText}>
+                        <ThemeText
+                            fontColor="textSecondary"
+                            style={styles.centerText}>
                             {pluginCacheCount}
                         </ThemeText>
                     ),
@@ -436,6 +441,7 @@ export default function BasicSetting() {
                     title: t("basicSettings.lastfm"),
                     right: (
                         <ThemeText
+                            fontColor="textSecondary"
                             fontSize="subTitle"
                             style={styles.centerText}>
                             {t("common.setting")}
@@ -451,6 +457,7 @@ export default function BasicSetting() {
                     title: t("dislikeMusic.manage"),
                     right: (
                         <ThemeText
+                            fontColor="textSecondary"
                             fontSize="subTitle"
                             style={styles.centerText}>
                             {t("common.setting")}
@@ -495,6 +502,7 @@ export default function BasicSetting() {
                     title: t("basicSettings.qualityManagement"),
                     right: (
                         <ThemeText
+                            fontColor="textSecondary"
                             fontSize="subTitle"
                             style={styles.centerText}>
                             {t("basicSettings.qualityManagement.custom")}
@@ -530,6 +538,7 @@ export default function BasicSetting() {
                     title: t("basicSettings.downloadPath"),
                     right: (
                         <ThemeText
+                            fontColor="textSecondary"
                             fontSize="subTitle"
                             style={styles.centerText}
                             numberOfLines={3}>
@@ -602,6 +611,7 @@ export default function BasicSetting() {
                     title: t("basicSettings.metadataSettings"),
                     right: (
                         <ThemeText
+                            fontColor="textSecondary"
                             fontSize="subTitle"
                             style={styles.centerText}>
                             {t("common.setting")}
@@ -700,6 +710,7 @@ export default function BasicSetting() {
                     title: t("cacheManagement.title"),
                     right: (
                         <ThemeText
+                            fontColor="textSecondary"
                             fontSize="subTitle"
                             style={styles.centerText}>
                             {t("common.open")}
@@ -714,7 +725,9 @@ export default function BasicSetting() {
                 {
                     title: t("basicSettings.cache.musicCacheLimit"),
                     right: (
-                        <ThemeText style={styles.centerText}>
+                        <ThemeText
+                            fontColor="textSecondary"
+                            style={styles.centerText}>
                             {maxCacheSize
                                 ? sizeFormatter(maxCacheSize)
                                 : "512M"}
@@ -747,7 +760,9 @@ export default function BasicSetting() {
                 {
                     title: t("basicSettings.cache.clearMusicCache"),
                     right: (
-                        <ThemeText style={styles.centerText}>
+                        <ThemeText
+                            fontColor="textSecondary"
+                            style={styles.centerText}>
                             {sizeFormatter(cacheSize.music)}
                         </ThemeText>
                     ),
@@ -766,7 +781,9 @@ export default function BasicSetting() {
                 {
                     title: t("basicSettings.cache.clearLyricCache"),
                     right: (
-                        <ThemeText style={styles.centerText}>
+                        <ThemeText
+                            fontColor="textSecondary"
+                            style={styles.centerText}>
                             {sizeFormatter(cacheSize.lyric)}
                         </ThemeText>
                     ),
@@ -785,7 +802,9 @@ export default function BasicSetting() {
                 {
                     title: t("basicSettings.cache.clearImageCache"),
                     right: (
-                        <ThemeText style={styles.centerText}>
+                        <ThemeText
+                            fontColor="textSecondary"
+                            style={styles.centerText}>
                             {sizeFormatter(cacheSize.image)}
                         </ThemeText>
                     ),
@@ -925,8 +944,16 @@ export default function BasicSetting() {
                         activeOpacity={0.7}
                         accessibilityRole="button"
                         accessibilityLabel={item}
-                        style={styles.headerItemStyle}>
-                        <ThemeText fontWeight="bold">{item}</ThemeText>
+                        style={[
+                            styles.headerItemStyle,
+                            { backgroundColor: colors.placeholder },
+                        ]}>
+                        <ThemeText
+                            fontSize="subTitle"
+                            fontWeight="semibold"
+                            fontColor="primary">
+                            {item}
+                        </ThemeText>
                     </TouchableOpacity>
                 )}
             />
@@ -935,9 +962,9 @@ export default function BasicSetting() {
                 renderSectionHeader={({ section }) => (
                     <View style={styles.sectionHeader}>
                         <ThemeText
-                            fontSize="subTitle"
-                            fontColor="textSecondary"
-                            fontWeight="bold">
+                            accessibilityRole="header"
+                            fontSize="description"
+                            fontColor="textSecondary">
                             {section.title}
                         </ThemeText>
                     </View>
@@ -946,25 +973,31 @@ export default function BasicSetting() {
                 renderSectionFooter={({ section }) => {
                     return section.footer ?? null;
                 }}
-                renderItem={({ item }) => {
-                    const Right = item.right;
+                renderItem={({ item, index, section }) => {
                     const checked =
                         "checked" in item
                             ? (item as { checked?: boolean }).checked
                             : undefined;
 
+                    // 一个分区的行拼成一张 iOS 分组卡片
                     return (
-                        <ListItem
-                            withHorizontalPadding
-                            heightType="small"
-                            onPress={item.onPress}
-                            accessibilityLabel={item.title}
-                            accessibilityState={
-                                checked !== undefined ? { checked } : undefined
-                            }>
-                            <ListItem.Content title={item.title} />
-                            {Right}
-                        </ListItem>
+                        <GroupedCell
+                            position={getCardGroupPosition(
+                                index,
+                                section.data.length,
+                            )}>
+                            <GroupedRow
+                                title={item.title}
+                                accessory={item.right ?? "none"}
+                                onPress={item.onPress}
+                                accessibilityLabel={item.title}
+                                accessibilityState={
+                                    checked !== undefined
+                                        ? { checked }
+                                        : undefined
+                                }
+                            />
+                        </GroupedCell>
                     );
                 }}
             />
@@ -982,24 +1015,25 @@ const styles = StyleSheet.create({
         textAlignVertical: "center",
         maxWidth: rpx(400),
     },
+    // iOS 分组标题：卡片上方的灰色小字
     sectionHeader: {
-        paddingHorizontal: rpx(24),
-        height: rpx(72),
-        flexDirection: "row",
-        alignItems: "center",
-        marginTop: rpx(20),
+        paddingHorizontal: 32,
+        paddingTop: 22,
+        paddingBottom: 7,
     },
     headerContainer: {
-        height: rpx(80),
+        flexGrow: 0,
     },
     headerContentContainer: {
-        height: rpx(80),
         alignItems: "center",
-        paddingHorizontal: rpx(24),
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        gap: 8,
     },
     headerItemStyle: {
-        paddingHorizontal: rpx(36),
-        height: rpx(80),
+        height: 32,
+        paddingHorizontal: 14,
+        borderRadius: 16,
         justifyContent: "center",
         alignItems: "center",
     },
@@ -1251,7 +1285,8 @@ function LyricSetting() {
     );
 
     return (
-        <View>
+        // 歌词设置挂在分区的 footer 里，自己包成一张分组卡片
+        <View style={[lyricStyles.card, { backgroundColor: colors.card }]}>
             <ListItem
                 withHorizontalPadding
                 heightType="small"
@@ -1493,6 +1528,11 @@ function LyricSetting() {
 }
 
 const lyricStyles = StyleSheet.create({
+    card: {
+        marginHorizontal: 16,
+        borderRadius: 14,
+        overflow: "hidden",
+    },
     slider: {
         flex: 1,
         marginLeft: rpx(24),
