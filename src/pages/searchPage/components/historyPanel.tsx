@@ -33,11 +33,13 @@ export default function () {
             ) : (
                 <>
                     <View style={style.header}>
-                        <ThemeText fontSize="title" fontWeight="semibold">
+                        <ThemeText
+                            accessibilityRole="header"
+                            fontWeight="bold"
+                            style={style.headerTitle}>
                             {t("searchPage.history")}
                         </ThemeText>
                         <Button
-                            fontColor="textSecondary"
                             onPress={async () => {
                                 await removeAllHistory();
                                 getHistory().then(setHistory);
@@ -89,15 +91,20 @@ const style = StyleSheet.create({
         width: "100%",
         maxWidth: "100%",
         flexDirection: "column",
-        padding: rpx(24),
+        paddingHorizontal: 20,
         flex: 1,
     },
     header: {
         width: "100%",
         flexDirection: "row",
-        paddingVertical: rpx(28),
+        paddingTop: 16,
+        paddingBottom: 12,
         justifyContent: "space-between",
-        alignItems: "center",
+        alignItems: "baseline",
+    },
+    headerTitle: {
+        fontSize: 22,
+        lineHeight: 28,
     },
     historyContent: {
         width: "100%",
@@ -109,7 +116,7 @@ const style = StyleSheet.create({
     },
     chip: {
         flexGrow: 0,
-        marginRight: rpx(24),
-        marginBottom: rpx(24),
+        marginRight: 10,
+        marginBottom: 10,
     },
 });

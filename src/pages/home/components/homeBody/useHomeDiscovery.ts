@@ -70,8 +70,11 @@ function getPreviewState(
     };
 }
 
-export default function useHomeDiscovery(topListPlugins: Plugin[]) {
-    const topListPlugin = topListPlugins[0] ?? null;
+/** 首页榜单预览：取所选音源的前几个榜单，有新鲜缓存时直接用缓存 */
+export default function useHomeDiscovery(plugin: Plugin | null) {
+    const topListPlugin = plugin?.supportedMethods.has("getTopLists")
+        ? plugin
+        : null;
     const topListPluginHash = topListPlugin?.hash;
     const topListPluginName = topListPlugin?.name;
     const pluginsTopList = useAtomValue(pluginsTopListAtom);
@@ -138,9 +141,10 @@ export default function useHomeDiscovery(topListPlugins: Plugin[]) {
                         0,
                         HOME_DISCOVERY_PREVIEW_LIMIT,
                     );
+                    const pluginHash = topListPlugin.hash;
                     setPluginsTopList(
                         produce(draft => {
-                            draft[topListPluginHash] = {
+                            draft[pluginHash] = {
                                 data: result ?? [],
                                 state: RequestStateCode.FINISHED,
                                 updatedAt: Date.now(),

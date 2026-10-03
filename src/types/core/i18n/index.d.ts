@@ -85,12 +85,16 @@ export interface ILanguageData {
     "home.managePlaylists.short": string; // 歌单管理
     "home.playlistManagement.a11y": string; // 歌单管理
     "home.importPlaylist.a11y": string; // 导入歌单
-    "home.import.short": string; // 导入
     "home.playById.a11y": string; // 通过ID播放
     "home.myPlaylistsCount.a11y": string; // 我的歌单数量
     "home.starredPlaylistsCount.a11y": string; // 我喜欢的歌单数量
     "home.songCount": string; // 歌曲数量
     "home.clickToSearch": string; // 点击搜索
+    "home.subtitle": string; // 首页大标题下的副标题
+    "home.seeAll": string; // 首页分区右侧的“全部”
+    "home.discoverySource": string; // 首页推荐歌单与榜单的音源选择
+    "home.discoverySource.a11y": string; // 音源切换按钮读屏文字
+    "common.retry": string; // 重试
     "home.allSources": string; // 全部源
     "home.continueListening": string; // 继续听
     "home.recentListening": string; // 最近播放
@@ -99,8 +103,6 @@ export interface ILanguageData {
     "home.manageSources": string; // 管理音乐源
     "home.manageSources.short": string; // 音乐源
     "home.quickAccess": string; // 快捷入口
-    "home.discovery": string; // 发现
-    "home.myMusic": string; // 我的音乐
     "home.scanLocal": string; // 扫描本地
     "home.playById.short": string; // 播放ID
     "home.multiSourceSearch": string; // 多源搜索
@@ -109,7 +111,6 @@ export interface ILanguageData {
     "home.localMusicShort": string; // 本地
     "home.starredShort": string; // 收藏
     "home.smartSheets": string; // 智能歌单
-    "home.playlistCount": string; // 歌单数量
     "home.downloadQueueCount": string; // 下载队列数量
     "home.sourceCapability.search": string; // 搜索
     "home.sourceCapability.source": string; // 音源
@@ -701,8 +702,8 @@ export interface ILanguageData {
     "themeSettings.coverStyleCircle": string; // 圆形
     "themeSettings.homeDisplay": string; // 首页显示
     "themeSettings.useEnhancedHome": string; // 使用信息流首页
-    "themeSettings.useEnhancedHome.desc": string; // 开启后使用信息流首页，关闭后使用经典增强首页
-    "themeSettings.hideHomeDiscovery": string; // 隐藏信息流发现区
+    "themeSettings.useEnhancedHome.desc": string; // 信息流首页开关说明
+    "themeSettings.hideHomeDiscovery": string; // 隐藏推荐歌单与榜单
     "themeSettings.hideHomeHeroCard": string; // 隐藏首页继续听卡片
     "themeSettings.hideHomeRecentListening": string; // 隐藏首页最近播放
     "themeSettings.hideHomeOperations": string; // 隐藏首页快捷入口

@@ -13,21 +13,26 @@ import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx
 import globalStyle from "@/constants/globalStyle";
 import Theme from "@/core/theme";
 import { HOME_TAB } from "@/core/router";
-import HomeBody from "./components/homeBody";
-import HomeBodyHorizontal from "./components/homeBodyHorizontal";
-import useOrientation from "@/hooks/useOrientation";
+import ClassicHomeBody from "./components/homeBody/classicHome";
+import HomeOverview from "./components/homeBody/homeOverview";
+import { useAppConfig } from "@/core/appConfig";
 import { useMusicBarLayoutState } from "@/components/musicBar/layoutState";
 import SearchPage from "@/pages/searchPage";
 import Library from "@/pages/library";
 import SettingsHome from "@/pages/settingsHome";
 
 function HomeFeed() {
-    const orientation = useOrientation();
+    const useEnhancedHome = useAppConfig("theme.useEnhancedHome") ?? true;
     const safeAreaInsets = useSafeAreaInsets();
     const topInset = Math.max(
         safeAreaInsets.top,
         NativeStatusBar.currentHeight ?? 0,
     );
+
+    // 信息流首页自带大标题，整页交给它
+    if (useEnhancedHome) {
+        return <HomeOverview />;
+    }
 
     return (
         <SafeAreaView
@@ -37,11 +42,7 @@ function HomeFeed() {
             <HorizontalSafeAreaView style={globalStyle.flex1}>
                 <>
                     <NavBar />
-                    {orientation === "vertical" ? (
-                        <HomeBody />
-                    ) : (
-                        <HomeBodyHorizontal />
-                    )}
+                    <ClassicHomeBody />
                 </>
             </HorizontalSafeAreaView>
         </SafeAreaView>

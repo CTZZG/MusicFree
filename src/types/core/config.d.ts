@@ -96,6 +96,8 @@ export interface IAppConfigProperties {
     "theme.hideHomeHeroCard": boolean;
     "theme.hideHomeRecentListening": boolean;
     "theme.hideHomeOperations": boolean;
+    /** 首页“推荐歌单 / 榜单”使用的插件名；为空时取排序第一个可用插件 */
+    "theme.homeDiscoverySource": string;
 
     // Last.fm scrobbling（api_secret 与 session key 存在系统安全存储里，不落这里）
     "lastfm.enabled": boolean;
