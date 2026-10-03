@@ -2,6 +2,7 @@ import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {parseNpmViewVersions} from './lib/npmView.mjs';
 
 // 稳定版发布前的生产依赖审计，阻断标准与
 // `npm audit --omit=dev --audit-level=high` 相同，但允许下面登记的例外。
@@ -126,19 +127,12 @@ function collectAdvisories(auditReport) {
     return [...advisories.values()];
 }
 
+/** 查询失败时直接报错，不当成「没有修复版」，见 lib/npmView.mjs */
 function listVersions(spec) {
-    const result = runNpm(['view', spec, 'version', '--json', `--registry=${registry}`]);
-    if (!result.stdout.trim()) {
-        return [];
-    }
-    const parsed = parseJson(result.stdout, `npm view ${spec}`);
-    if (parsed && parsed.error) {
-        if (parsed.error.code === 'E404') {
-            return [];
-        }
-        throw new Error(`npm view ${spec} failed: ${parsed.error.summary}`);
-    }
-    return Array.isArray(parsed) ? parsed : [parsed];
+    return parseNpmViewVersions(
+        spec,
+        runNpm(['view', spec, 'version', '--json', `--registry=${registry}`]),
+    );
 }
 
 /** 生产依赖树中这个包已安装的版本，以及依赖方声明的版本范围（来自锁文件） */

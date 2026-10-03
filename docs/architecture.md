@@ -55,7 +55,7 @@
 
 ## 质量门
 
-- `npm run verify`（`generator/verify.mjs`）：静态审计与 TypeScript（`audit:round20-static`）、只读 ESLint、Jest、`patch-package --check`。检查只读，不修改工作区。
+- `npm run verify`（`generator/verify.mjs`）：静态审计与 TypeScript（`audit:round20-static`）、只读 ESLint、Jest、`patch-package --error-on-fail`（补丁打不上时本地也失败）。不修改仓库文件；`node_modules` 里还没打上的补丁会被打上，与 postinstall 相同。
 - `npm run lint:check` 只检查；`npm run lint` 会自动修复文件。
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。

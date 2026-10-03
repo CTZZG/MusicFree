@@ -35,8 +35,15 @@ const checks = [
         env: {NODE_ENV: 'test'},
     },
     {
+        // 构建脚本自己的单元测试（node:test），例如审计里 npm view 结果的判定
+        name: 'Generator unit tests',
+        args: ['--test', path.join(rootDir, 'generator', 'lib', 'npmView.test.mjs')],
+    },
+    {
         name: 'patch-package replay',
-        args: [nodeModule('patch-package', 'index.js'), '--check'],
+        // patch-package 没有 --check：未知参数被忽略，补丁打不上时本地只打印
+        // 警告、退出码仍是 0（CI 上才默认报错）。--error-on-fail 让本地同样失败。
+        args: [nodeModule('patch-package', 'index.js'), '--error-on-fail'],
     },
 ];
 
