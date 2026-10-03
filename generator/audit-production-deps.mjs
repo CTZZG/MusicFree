@@ -38,6 +38,13 @@ const auditExceptions = [
         reason: imageSizeReason,
         reviewedOn: '2026-10-02',
     },
+    {
+        advisory: 'GHSA-vfj7-8cjw-p6xm',
+        packageName: 'braces',
+        reason:
+            '只在打包时由 Expo CLI 的 Metro 文件监视匹配仓库自己的路径规则（expo → @expo/cli → @expo/metro-file-map → micromatch → braces），不处理外部输入，也不打进 APK；最新的 3.0.3 仍受影响，上游暂无修复版。',
+        reviewedOn: '2026-10-03',
+    },
 ];
 
 const inGithubActions = process.env.GITHUB_ACTIONS === 'true';

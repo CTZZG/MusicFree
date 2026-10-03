@@ -12,6 +12,26 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 object PublicHttpsNetworkPolicy {
     private const val DEFAULT_MAX_REDIRECTS = 3
     private val redirectStatusCodes = setOf(301, 302, 303, 307, 308)
+    private val ipv4Literal = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
+    private val credentialHeaders = listOf("Authorization", "Cookie", "Proxy-Authorization")
+
+    /**
+     * Which redirect targets a client may follow.
+     *
+     * SAME_ORIGIN is the default for requests that can carry credentials or
+     * plugin-supplied headers (downloads, media proxies): every header is
+     * forwarded on each hop, so the host must not change.
+     *
+     * CROSS_ORIGIN is for credential-free display fetches such as cover art,
+     * whose URLs often go through a redirector on another host. Each hop still
+     * passes requirePublicRemote, every connection still goes through the
+     * public-address DNS filter, https never downgrades to http, and credential
+     * headers are dropped whenever the host changes.
+     */
+    enum class RedirectScope {
+        SAME_ORIGIN,
+        CROSS_ORIGIN,
+    }
 
     private val publicDns = createPublicDns(Dns.SYSTEM)
 
@@ -33,19 +53,22 @@ object PublicHttpsNetworkPolicy {
 
     internal fun redirectInterceptorForTesting(
         maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
+        redirectScope: RedirectScope = RedirectScope.SAME_ORIGIN,
     ): Interceptor =
-        SameOriginRedirectInterceptor(
+        PublicRedirectInterceptor(
             maxRedirects.coerceIn(0, DEFAULT_MAX_REDIRECTS),
+            redirectScope,
         )
 
     fun clientBuilder(
         maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
+        redirectScope: RedirectScope = RedirectScope.SAME_ORIGIN,
     ): OkHttpClient.Builder =
         OkHttpClient.Builder()
             .dns(publicDns)
             .followRedirects(false)
             .followSslRedirects(false)
-            .addInterceptor(redirectInterceptorForTesting(maxRedirects))
+            .addInterceptor(redirectInterceptorForTesting(maxRedirects, redirectScope))
 
     /**
      * Enforces only what this layer is genuinely responsible for: the connection
@@ -75,12 +98,58 @@ object PublicHttpsNetworkPolicy {
         }
     }
 
+    /**
+     * Throws unless [nextUrl] is a redirect target [scope] allows. Same-origin
+     * is judged against the request's original URL, downgrades against the hop
+     * that answered with the redirect.
+     */
+    internal fun requireAllowedRedirect(
+        scope: RedirectScope,
+        originalUrl: HttpUrl,
+        previousUrl: HttpUrl,
+        nextUrl: HttpUrl,
+    ) {
+        requirePublicRemote(nextUrl)
+        when (scope) {
+            RedirectScope.SAME_ORIGIN -> require(nextUrl.isSameOriginOrUpgradeOf(originalUrl)) {
+                "Only same-origin redirects (or an http->https upgrade) are allowed"
+            }
+            RedirectScope.CROSS_ORIGIN -> require(nextUrl.isHttps || !previousUrl.isHttps) {
+                "Redirects may not downgrade https to http"
+            }
+        }
+    }
+
     private fun isBlockedHostname(hostname: String): Boolean {
         val normalized = hostname.lowercase().trimEnd('.')
         return normalized.isEmpty() ||
             normalized == "localhost" ||
             normalized.endsWith(".localhost") ||
-            normalized.endsWith(".local")
+            normalized.endsWith(".local") ||
+            isBlockedIpLiteral(normalized)
+    }
+
+    /**
+     * IP hosts are judged here instead of being left to the DNS filter: whether
+     * OkHttp consults Dns at all for an IP host is an implementation detail, and
+     * the redirect interceptor has to refuse a private target before connecting.
+     */
+    private fun isBlockedIpLiteral(host: String): Boolean {
+        if (ipv4Literal.matches(host)) {
+            val octets = host.split('.').map(String::toInt)
+            return octets.any { it > 255 } || isBlockedIpv4(octets)
+        }
+        if (':' !in host) {
+            return false
+        }
+        // HttpUrl only yields a ':' in a host for an IPv6 literal it has already
+        // validated, so this parses the literal and never performs a DNS lookup.
+        val address = try {
+            InetAddress.getByName(host.removePrefix("[").removeSuffix("]"))
+        } catch (_: Exception) {
+            return true
+        }
+        return isBlockedAddress(address)
     }
 
     private fun isBlockedAddress(address: InetAddress): Boolean {
@@ -140,8 +209,9 @@ object PublicHttpsNetworkPolicy {
             multicast || documentation || discardOnly || mappedBlocked
     }
 
-    private class SameOriginRedirectInterceptor(
+    private class PublicRedirectInterceptor(
         private val maxRedirects: Int,
+        private val scope: RedirectScope,
     ) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             var request = chain.request()
@@ -165,16 +235,23 @@ object PublicHttpsNetworkPolicy {
                     throw IllegalStateException("Remote redirect URL is invalid")
                 }
                 try {
-                    requirePublicRemote(nextUrl)
-                    require(nextUrl.isSameOriginOrUpgradeOf(originalUrl)) {
-                        "Only same-origin redirects (or an http->https upgrade) are allowed"
-                    }
+                    requireAllowedRedirect(scope, originalUrl, request.url, nextUrl)
                 } catch (error: Throwable) {
                     response.close()
                     throw error
                 }
                 response.close()
-                request = request.newBuilder().url(nextUrl).build()
+                val dropCredentials =
+                    scope == RedirectScope.CROSS_ORIGIN &&
+                        !nextUrl.isSameOriginOrUpgradeOf(request.url)
+                request = request.newBuilder()
+                    .url(nextUrl)
+                    .apply {
+                        if (dropCredentials) {
+                            credentialHeaders.forEach { removeHeader(it) }
+                        }
+                    }
+                    .build()
                 redirectCount += 1
             }
         }

@@ -1,15 +1,20 @@
 package `fun`.upup.musicfree.network
 
+import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy.RedirectScope
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.UnknownHostException
 import okhttp3.Dns
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -119,6 +124,108 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
+    fun `cross origin scope follows a redirector to another public host without credentials`() {
+        // Cover-art URLs often point at a redirector on one host that answers
+        // with the real CDN host. The old Nitro loader followed these; the
+        // same-origin rule made the notification fall back to the default icon.
+        val redirector = newServer()
+        val cdn = newServer()
+        redirector.enqueue(
+            MockResponse().setResponseCode(302).setHeader(
+                "Location",
+                "http://cdn.test:${cdn.port}/cover.jpg",
+            ),
+        )
+        cdn.enqueue(MockResponse().setResponseCode(200).setBody("image"))
+        val client = redirectClient(setOf("public.test", "cdn.test"), RedirectScope.CROSS_ORIGIN)
+        val url = redirector.url("/cover").newBuilder().host("public.test").build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Cookie", "session=1")
+            .header("Authorization", "Bearer token")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            assertEquals(200, response.code)
+            assertEquals("image", response.body?.string())
+        }
+        assertEquals("session=1", redirector.takeRequest().getHeader("Cookie"))
+        val followed = cdn.takeRequest()
+        assertEquals("/cover.jpg", followed.path)
+        assertNull(followed.getHeader("Cookie"))
+        assertNull(followed.getHeader("Authorization"))
+    }
+
+    @Test
+    fun `cross origin scope still refuses private targets before connecting`() {
+        val server = newServer()
+        val client = redirectClient(setOf("public.test"), RedirectScope.CROSS_ORIGIN)
+        val url = server.url("/start").newBuilder().host("public.test").build()
+        val privateTargets = listOf(
+            "http://127.0.0.1:${server.port}/loopback",
+            "http://192.168.1.10/router",
+            "http://[::1]:${server.port}/loopback6",
+            "http://[::ffff:10.0.0.1]/mapped",
+            "http://nas.local/cover.jpg",
+            "http://user:pass@cdn.example/cover.jpg",
+        )
+
+        for (target in privateTargets) {
+            server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", target))
+            assertThrows(target, IllegalArgumentException::class.java) {
+                client.newCall(Request.Builder().url(url).build()).execute().close()
+            }
+        }
+        assertEquals(privateTargets.size, server.requestCount)
+    }
+
+    @Test
+    fun `redirect scopes differ only in host changes and downgrades`() {
+        val httpA = "http://a.example/x".toHttpUrl()
+        val httpsA = "https://a.example/x".toHttpUrl()
+        val httpB = "http://b.example/y".toHttpUrl()
+        val httpsB = "https://b.example/y".toHttpUrl()
+
+        fun allowed(scope: RedirectScope, from: HttpUrl, to: HttpUrl) =
+            runCatching {
+                PublicHttpsNetworkPolicy.requireAllowedRedirect(scope, from, from, to)
+            }.isSuccess
+
+        assertTrue(allowed(RedirectScope.SAME_ORIGIN, httpA, httpsA))
+        assertFalse(allowed(RedirectScope.SAME_ORIGIN, httpsA, httpsB))
+        assertTrue(allowed(RedirectScope.CROSS_ORIGIN, httpsA, httpsB))
+        assertTrue(allowed(RedirectScope.CROSS_ORIGIN, httpA, httpB))
+        assertTrue(allowed(RedirectScope.CROSS_ORIGIN, httpA, httpsB))
+        assertFalse(allowed(RedirectScope.CROSS_ORIGIN, httpsA, httpB))
+        assertFalse(allowed(RedirectScope.CROSS_ORIGIN, httpsA, "http://a.example/x".toHttpUrl()))
+    }
+
+    @Test
+    fun `URL policy refuses private IP literals but keeps public ones`() {
+        for (url in listOf(
+            "http://10.1.2.3/a.jpg",
+            "http://172.16.0.1/a.jpg",
+            "http://169.254.169.254/latest",
+            "http://[fd00::1]/a.jpg",
+            "http://[fe80::1]/a.jpg",
+        )) {
+            assertThrows(url, IllegalArgumentException::class.java) {
+                PublicHttpsNetworkPolicy.requirePublicRemote(url)
+            }
+        }
+        assertEquals(
+            "93.184.216.34",
+            PublicHttpsNetworkPolicy.requirePublicRemote("http://93.184.216.34/a.jpg").host,
+        )
+        assertEquals(
+            "2606:2800:220:1:248:1893:25c8:1946",
+            PublicHttpsNetworkPolicy.requirePublicRemote(
+                "https://[2606:2800:220:1:248:1893:25c8:1946]/a.jpg",
+            ).host,
+        )
+    }
+
+    @Test
     fun `URL policy allows cleartext but still refuses credentials and bad schemes`() {
         // Scheme policy moved to JS (basic.allowPluginInsecureHttp) on
         // 2026-07-26. Enforcing HTTPS here had silently broken downloads,
@@ -154,21 +261,24 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     private fun redirectClient(hostname: String): OkHttpClient =
+        redirectClient(setOf(hostname), RedirectScope.SAME_ORIGIN)
+
+    private fun redirectClient(hostnames: Set<String>, scope: RedirectScope): OkHttpClient =
         OkHttpClient.Builder()
             .dns(
                 object : Dns {
-                    override fun lookup(requestedHost: String): List<InetAddress> =
-                        if (requestedHost == hostname) {
+                    override fun lookup(hostname: String): List<InetAddress> =
+                        if (hostname in hostnames) {
                             listOf(InetAddress.getLoopbackAddress())
                         } else {
-                            throw UnknownHostException(requestedHost)
+                            throw UnknownHostException(hostname)
                         }
                 }
             )
             .followRedirects(false)
             .followSslRedirects(false)
             .addInterceptor(
-                PublicHttpsNetworkPolicy.redirectInterceptorForTesting(),
+                PublicHttpsNetworkPolicy.redirectInterceptorForTesting(redirectScope = scope),
             )
             .build()
 }
