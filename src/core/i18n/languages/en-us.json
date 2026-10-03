@@ -768,7 +768,6 @@
     "basicSettings.crossfadeEnabled.desc": "Fades the previous track out and the next one in. The two tracks never overlap.",
     "basicSettings.crossfadeSeconds": "Fade duration",
     "basicSettings.crossfadeSeconds.unit": "{seconds}s",
-    "basicSettings.lastfm": "Last.fm scrobbling",
     "basicSettings.tempRemoteDuck": "When playback is temporarily interrupted",
     "basicSettings.tempRemoteDuck.pause": "Pause playback",
     "basicSettings.tempRemoteDuck.lowerVolume": "Lower volume",

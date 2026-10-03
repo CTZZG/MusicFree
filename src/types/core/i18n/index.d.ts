@@ -832,7 +832,6 @@ export interface ILanguageData {
     "basicSettings.crossfadeEnabled.desc": string; // 上一首末尾淡出、下一首开头淡入
     "basicSettings.crossfadeSeconds": string; // 淡化时长
     "basicSettings.crossfadeSeconds.unit": string; // {{seconds}} 秒
-    "basicSettings.lastfm": string; // Last.fm 听歌记录
     "basicSettings.tempRemoteDuck": string; // 播放被暂时打断时
     "basicSettings.tempRemoteDuck.pause": string; // 暂停播放
     "basicSettings.tempRemoteDuck.lowerVolume": string; // 降低音量

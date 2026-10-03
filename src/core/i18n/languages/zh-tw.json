@@ -768,7 +768,6 @@
     "basicSettings.crossfadeEnabled.desc": "上一首結尾淡出、下一首開頭淡入。兩首歌不會重疊出聲。",
     "basicSettings.crossfadeSeconds": "淡化時長",
     "basicSettings.crossfadeSeconds.unit": "{seconds} 秒",
-    "basicSettings.lastfm": "Last.fm 聽歌記錄",
     "basicSettings.tempRemoteDuck": "播放被暫時打斷時",
     "basicSettings.tempRemoteDuck.pause": "暫停播放",
     "basicSettings.tempRemoteDuck.lowerVolume": "降低音量",

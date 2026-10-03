@@ -438,22 +438,6 @@ export default function BasicSetting() {
                     ]
                     : []),
                 {
-                    title: t("basicSettings.lastfm"),
-                    right: (
-                        <ThemeText
-                            fontColor="textSecondary"
-                            fontSize="subTitle"
-                            style={styles.centerText}>
-                            {t("common.setting")}
-                        </ThemeText>
-                    ),
-                    onPress() {
-                        navigate(ROUTE_PATH.SETTING, {
-                            type: "lastfm",
-                        });
-                    },
-                },
-                {
                     title: t("dislikeMusic.manage"),
                     right: (
                         <ThemeText
