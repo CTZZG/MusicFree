@@ -33,10 +33,12 @@ import androidx.core.app.NotificationCompat
 import `fun`.upup.musicfree.R
 import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import kotlin.math.max
 
 /**
@@ -91,12 +93,25 @@ class MpvPlaybackService : Service() {
     }
 
     private lateinit var mediaSession: MediaSessionCompat
-    private val artworkHttpClient = PublicHttpsNetworkPolicy.clientBuilder()
+
+    // 封面地址常常先指向另一个域名的跳转服务（Nitro 时期的取图会跟随这类跳转），
+    // 同源限制会让通知、锁屏和 Live Update 一直停在默认图标。封面请求不带凭据，
+    // 所以放行跨域跳转；每一跳仍须是公网地址，且不允许从 https 降级到 http。
+    // callTimeout 给整个请求（含跳转与读取正文）设上限，免得一个慢请求占住
+    // 单线程的取图执行器。
+    private val artworkHttpClient = PublicHttpsNetworkPolicy
+        .clientBuilder(redirectScope = PublicHttpsNetworkPolicy.RedirectScope.CROSS_ORIGIN)
         .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
         .build()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val artworkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val artworkLoads = ArtworkLoadTracker()
+    private val artworkRetryRunnable = Runnable {
+        artworkLoads.nextAttempt()?.let(::loadArtworkAsync)
+    }
+    private var destroyed = false
     private var notificationManager: NotificationManager? = null
     private var audioManager: AudioManager? = null
     private var audioFocusListener: AudioManager.OnAudioFocusChangeListener? = null
@@ -215,6 +230,7 @@ class MpvPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         releaseWakeLock()
         mainHandler.removeCallbacksAndMessages(null)
         MpvServiceBridge.service = null
@@ -256,8 +272,9 @@ class MpvPlaybackService : Service() {
         }
 
         updateMediaSessionMetadata()
-        if (!artwork.isNullOrBlank() && isNewTrack) {
-            loadArtworkAsync(artwork)
+        if (isNewTrack) {
+            mainHandler.removeCallbacks(artworkRetryRunnable)
+            artworkLoads.begin(artwork)?.let(::loadArtworkAsync)
         }
         updateAll()
     }
@@ -1041,24 +1058,59 @@ class MpvPlaybackService : Service() {
         noisyReceiverRegistered = false
     }
 
-    private fun loadArtworkAsync(url: String) {
-        artworkExecutor.execute artwork@{
-            val bitmap = fetchBitmap(url)
-            if (bitmap == null) {
-                // 封面失败会让灵动岛/锁屏退回默认小图标，和「JS 没给 artwork」
-                // 在界面上完全一样。这条路径以前全程无日志，三种成因（策略拒绝、
-                // 网络失败、解码失败）事后无法区分，所以失败必须留痕。
-                Log.w(TAG, "artwork load failed: ${describeArtworkUrl(url)}")
-                return@artwork
+    private sealed interface ArtworkFetchResult {
+        class Loaded(val bitmap: Bitmap) : ArtworkFetchResult
+
+        /** [retryable]：超时、断网、服务端暂时性错误这类过一会儿可能恢复的失败。 */
+        class Failed(val retryable: Boolean) : ArtworkFetchResult
+    }
+
+    private fun loadArtworkAsync(attempt: ArtworkLoadTracker.Attempt) {
+        try {
+            artworkExecutor.execute artwork@{
+                // 快速切歌时单线程执行器里会积压前几首的请求；封面已经换了就不再
+                // 联网，免得过期请求把当前这首的封面拖到几十秒后才出来。
+                if (!artworkLoads.shouldFetch(attempt)) return@artwork
+                val result = fetchArtwork(attempt.url)
+                mainHandler.post { onArtworkFetched(attempt, result) }
             }
-            mainHandler.post {
-                if (url != cachedArtwork) {
-                    return@post
-                }
-                cachedArtworkBitmap = bitmap
+        } catch (_: RejectedExecutionException) {
+            // onDestroy 已经关闭执行器。
+        }
+    }
+
+    private fun onArtworkFetched(
+        attempt: ArtworkLoadTracker.Attempt,
+        result: ArtworkFetchResult,
+    ) {
+        if (destroyed) return
+        val outcome = when (result) {
+            is ArtworkFetchResult.Loaded -> artworkLoads.onSuccess(attempt)
+            is ArtworkFetchResult.Failed -> artworkLoads.onFailure(attempt, result.retryable)
+        }
+        when (outcome) {
+            ArtworkLoadTracker.Outcome.Apply -> {
+                cachedArtworkBitmap = (result as ArtworkFetchResult.Loaded).bitmap
                 updateMediaSessionMetadata()
                 updateNotification()
             }
+            is ArtworkLoadTracker.Outcome.Retry -> {
+                // 封面失败会让灵动岛/锁屏退回默认小图标，和「JS 没给 artwork」
+                // 在界面上完全一样，所以每次失败都要留痕（具体原因见上一条日志）。
+                Log.w(
+                    TAG,
+                    "artwork load failed (attempt ${attempt.number}), retry in " +
+                        "${outcome.delayMs}ms: ${describeArtworkUrl(attempt.url)}",
+                )
+                mainHandler.removeCallbacks(artworkRetryRunnable)
+                mainHandler.postDelayed(artworkRetryRunnable, outcome.delayMs)
+            }
+            ArtworkLoadTracker.Outcome.GiveUp -> Log.w(
+                TAG,
+                "artwork load failed (attempt ${attempt.number}), giving up: " +
+                    describeArtworkUrl(attempt.url),
+            )
+            ArtworkLoadTracker.Outcome.Stale -> Unit
         }
     }
 
@@ -1075,10 +1127,11 @@ class MpvPlaybackService : Service() {
         return "scheme=$scheme host=$host len=${url.length}"
     }
 
-    private fun fetchBitmap(url: String): Bitmap? {
+    private fun fetchArtwork(url: String): ArtworkFetchResult {
+        val remote = url.startsWith("http://") || url.startsWith("https://")
         return try {
-            when {
-                url.startsWith("http://") || url.startsWith("https://") -> {
+            val bitmap = when {
+                remote -> {
                     val request = Request.Builder()
                         .url(PublicHttpsNetworkPolicy.requirePublicRemote(url))
                         .get()
@@ -1090,7 +1143,9 @@ class MpvPlaybackService : Service() {
                                 "artwork http ${response.code}: " +
                                     describeArtworkUrl(url),
                             )
-                            null
+                            return ArtworkFetchResult.Failed(
+                                retryable = ArtworkLoadTracker.isRetryableHttpStatus(response.code),
+                            )
                         } else {
                             val input = response.body?.byteStream()
                                 ?: return@use null
@@ -1116,11 +1171,18 @@ class MpvPlaybackService : Service() {
                 }
                 else -> decodeSampledFile(url)
             }
+            bitmap?.let { ArtworkFetchResult.Loaded(it) }
+                ?: ArtworkFetchResult.Failed(retryable = false)
+        } catch (e: IOException) {
+            // 远程：超时、断网、连接被重置等，过一会儿可能恢复。本地文件读不到则不会。
+            Log.w(TAG, "artwork fetch failed: ${describeArtworkUrl(url)}", e)
+            ArtworkFetchResult.Failed(retryable = remote)
         } catch (e: Throwable) {
             // 包含 PublicHttpsNetworkPolicy 的 IllegalArgumentException（私有地址/
-            // 带凭据的 URL）和跨域重定向被拒——这些都只在这里才能看出来。
+            // 带凭据的 URL）、从 https 降级到 http 的跳转、跳转次数超限和封面过大，
+            // 重试也不会变——这些都只在这里才能看出来。
             Log.w(TAG, "artwork fetch threw: ${describeArtworkUrl(url)}", e)
-            null
+            ArtworkFetchResult.Failed(retryable = false)
         }
     }
 
