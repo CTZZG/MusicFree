@@ -47,6 +47,8 @@ export default function TopListBody() {
 
     return (
         <TabView
+            // 翻到第一页、最后一页时的边缘回弹没结束，会吃掉下一次点击
+            overScrollMode="never"
             lazy
             navigationState={{
                 index,

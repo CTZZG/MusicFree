@@ -72,6 +72,7 @@
   - braces（GHSA-vfj7-8cjw-p6xm，2026-10-03 登记）：最新 3.0.3 仍受影响，经 `expo` → `@expo/cli` → `@expo/metro-file-map` → `micromatch` 引入，只在打包时匹配仓库自己的路径规则，不处理外部输入，也不打进 APK。
     `npm audit` 建议的“降级 expo 到 44”只是绕开这条依赖链，不能采用。
 - `brace-expansion` 通过 `overrides` 固定为 5.0.12，`patches/brace-expansion+5.0.12.patch` 让旧版 minimatch 仍能把它当函数调用；升级版本时需要同时重新生成补丁。
+- `patches/react-native+0.85.3.patch` 让所有 ScrollView（含 FlatList、SectionList、FlashList 和手势库的 ScrollView）在 Android 上默认 `overScrollMode="never"`。越界拉伸、回弹还没结束时，原生 ScrollView 会把下一次按下当成「停住回弹」拦掉，滚到底后第一下点不动。个别页面需要回弹时显式传 `overScrollMode`。`TabView` 不经过 ScrollView，在各处单独设置。升级 React Native 时需要重新生成补丁，`npm run verify` 会在补丁打不上时失败。
 - 原生代码由两套构建中的 `assembleRelease` 编译；`npm run audit:round20-native` 需要本地 Android 环境，不在 CI 质量门中。
 
 ## 核心行为清单

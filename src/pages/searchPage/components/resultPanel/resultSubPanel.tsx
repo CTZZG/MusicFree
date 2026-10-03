@@ -113,6 +113,8 @@ function ResultSubPanel(props: IResultSubPanelProps) {
 
     return (
         <TabView
+            // 翻到第一页、最后一页时的边缘回弹没结束，会吃掉下一次点击
+            overScrollMode="never"
             lazy
             navigationState={{
                 // 停用插件后来源变少，原来选中的位置可能已经越界
