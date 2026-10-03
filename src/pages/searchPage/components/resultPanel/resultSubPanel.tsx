@@ -1,7 +1,7 @@
 import Empty from "@/components/base/empty";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
-import PluginManager from "@/core/pluginManager";
+import PluginManager, { usePluginEnabledRevision } from "@/core/pluginManager";
 import useColors from "@/hooks/useColors";
 import rpx, { vw } from "@/utils/rpx";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -77,13 +77,17 @@ function ResultSubPanel(props: IResultSubPanelProps) {
     const { t } = useI18N();
     const typeResults = useSearchTypeResults(props.tab);
 
+    // 搜索标签常驻不卸载：插件启用或停用后，来源标签要跟着变
+    const enabledRevision = usePluginEnabledRevision();
     const routes = useMemo(
         () =>
             PluginManager.getSortedSearchablePlugins(props.tab).map(_ => ({
                 key: _.hash,
                 title: _.name,
             })),
-        [props.tab],
+        // enabledRevision 只用来让结果在启用状态变化后重算
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [props.tab, enabledRevision],
     );
     const initialIndex = useMemo(
         () =>
@@ -111,7 +115,8 @@ function ResultSubPanel(props: IResultSubPanelProps) {
         <TabView
             lazy
             navigationState={{
-                index,
+                // 停用插件后来源变少，原来选中的位置可能已经越界
+                index: Math.min(index, routes.length - 1),
                 routes,
             }}
             renderTabBar={_ => {

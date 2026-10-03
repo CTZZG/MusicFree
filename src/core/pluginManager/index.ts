@@ -21,6 +21,10 @@ import { copyFile, readDir, readFile, unlink, writeFile } from "react-native-fs"
 import { devLog, errorLog, trace } from "../../utils/log";
 import pluginMeta from "./meta";
 import {
+    notifyPluginEnabledChanged,
+    usePluginEnabledRevision,
+} from "./enabledRevision";
+import {
     builtinLyricPlugins,
     clearInstalledPluginStorage,
     localFilePlugin,
@@ -866,8 +870,10 @@ class PluginManager implements IPluginManager, IInjectable {
      * @param enabled - 是否启用插件
      */
     setPluginEnabled(plugin: Plugin, enabled: boolean) {
-        ee.emit("enabled-updated", plugin.name, enabled);
+        // 先落盘再通知：监听方会马上用 isPluginEnabled 重新算
         pluginMeta.setPluginEnabled(plugin.name, enabled);
+        ee.emit("enabled-updated", plugin.name, enabled);
+        notifyPluginEnabledChanged();
     }
 
     /**
@@ -933,8 +939,12 @@ const pluginManager = new PluginManager();
 
 export const usePlugins = () => useAtomValue(pluginsAtom);
 
+export { usePluginEnabledRevision };
+
+/** 排好序的插件；插件启用或停用时也会换成新数组，依赖它的计算会重新算 */
 export function useSortedPlugins() {
     const plugins = useAtomValue(pluginsAtom);
+    const enabledRevision = usePluginEnabledRevision();
     const [sortedPlugins, setSortedPlugins] = useState<Plugin[]>(
         pluginManager.getSortedPlugins(),
     );
@@ -957,7 +967,7 @@ export function useSortedPlugins() {
         return () => {
             ee.off("order-updated", callback);
         };
-    }, [plugins]);
+    }, [plugins, enabledRevision]);
 
     return sortedPlugins;
 }
