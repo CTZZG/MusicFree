@@ -45,6 +45,13 @@ import { useI18N } from "@/core/i18n";
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
 
+// 封面每次挂载（比如从歌词页切回来）都要重新解码图片，哪怕命中缓存也要几帧。
+// 这几帧里先不显示封面容器，图片画出来后再淡入；网络慢、迟迟画不出来时，
+// 到点先把占位卡片淡入，图片到了再叠上去
+const COVER_REVEAL_MS = 160;
+const COVER_REVEAL_FALLBACK_MS = 500;
+const ARTWORK_TRANSITION_MS = 260;
+
 export function getCoverLeftMargin() {
     return COVER_MARGIN;
 }
@@ -83,6 +90,9 @@ export default function AlbumCover(props: IProps) {
     const { measured, reportContentHeight, reportSongInfoHeight } =
         useMusicDetailLayout();
     const rotation = useSharedValue(0);
+    const coverOpacity = useSharedValue(0);
+    const coverRevealedRef = useRef(false);
+    const [coverRevealed, setCoverRevealed] = useState(false);
     const isCircleCover = coverStyle === "circle";
     const isHeroCover = coverStyle === "hero";
     const shouldRotateCover = isCircleCover && !musicIsPaused(musicState);
@@ -230,12 +240,27 @@ export default function AlbumCover(props: IProps) {
     }, [musicItem?.id, musicItem?.platform, rotation]);
 
     const coverAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: coverOpacity.value,
         transform: [
             {
                 rotate: `${rotation.value}deg`,
             },
         ],
     }));
+
+    const revealCover = useCallback(() => {
+        if (coverRevealedRef.current) {
+            return;
+        }
+        coverRevealedRef.current = true;
+        setCoverRevealed(true);
+        coverOpacity.value = withTiming(1, { duration: COVER_REVEAL_MS });
+    }, [coverOpacity]);
+
+    useEffect(() => {
+        const timer = setTimeout(revealCover, COVER_REVEAL_FALLBACK_MS);
+        return () => clearTimeout(timer);
+    }, [revealCover]);
 
     const handlePress = useCallback(() => {
         if (longPressTriggeredRef.current) {
@@ -281,7 +306,11 @@ export default function AlbumCover(props: IProps) {
                                 style={styles.coverImage}
                                 source={displayArtwork}
                                 placeholderSource={ImgAsset.albumDefault}
-                                transition={260}
+                                // 第一次直接画上，由外层淡入；之后换歌再交叉淡入
+                                transition={
+                                    coverRevealed ? ARTWORK_TRANSITION_MS : 0
+                                }
+                                onDisplay={revealCover}
                             />
                         </Animated.View>
                     </Pressable>
@@ -347,7 +376,10 @@ export default function AlbumCover(props: IProps) {
                             style={styles.coverImage}
                             source={displayArtwork}
                             placeholderSource={ImgAsset.albumDefault}
-                            transition={260}
+                            transition={
+                                coverRevealed ? ARTWORK_TRANSITION_MS : 0
+                            }
+                            onDisplay={revealCover}
                         />
                     </Animated.View>
                 </View>
@@ -410,7 +442,9 @@ const styles = StyleSheet.create({
     squareArtwork: {
         borderRadius: 14,
         overflow: "hidden",
-        backgroundColor: "rgba(255, 255, 255, 0.08)",
+        // 必须不透明：半透明底色下，Android 会透出自身的投影，图片没画出来时
+        // 就是一大一小两个方框
+        backgroundColor: "#2C2C2E",
         elevation: 16,
         shadowColor: "#000000",
         shadowOpacity: 0.45,

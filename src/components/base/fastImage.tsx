@@ -8,6 +8,8 @@ interface IImageProps {
     placeholderSource?: ImageRequireSource;
     source?: ImageProps["source"] | string;
     transition?: ImageProps["transition"];
+    /** 图片（不含 placeholder）真正画出来时 */
+    onDisplay?: ImageProps["onDisplay"];
 }
 export default function (props: IImageProps) {
     const {
@@ -16,6 +18,7 @@ export default function (props: IImageProps) {
         defaultSource,
         source,
         transition,
+        onDisplay,
     } = props ?? {};
     const [failedSourceKey, setFailedSourceKey] = useState<string>();
 
@@ -47,6 +50,7 @@ export default function (props: IImageProps) {
             defaultSource={defaultSource}
             placeholder={defaultSource}
             transition={transition}
+            onDisplay={onDisplay}
         />
     );
 }

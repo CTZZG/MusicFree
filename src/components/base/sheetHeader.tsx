@@ -44,7 +44,7 @@ export default function SheetHeader(props: ISheetHeaderProps) {
                         height: artworkSize,
                         backgroundColor: favorite
                             ? FAVORITE_TILE_COLOR
-                            : colors.placeholder,
+                            : colors.artworkPlaceholder,
                     },
                 ]}>
                 {artwork || !favorite ? (
