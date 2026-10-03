@@ -75,8 +75,12 @@ interface IRecordPluginDiagnosticMessageParams {
     method: string;
     message: string;
     estimatedLocation?: string | null;
-    /** 默认 error */
-    severity?: PluginDiagnosticSeverity;
+    /**
+     * 必填，每个调用点自己判断。以前不传就默认 error，存储迁移、能力记录这类
+     * 信息性事件因此在每个插件上都显示成「最近错误」；新增事件忘了传也会重现。
+     * 落盘的旧事件可能没有这个字段，读取时按 method 推断（getPluginDiagnosticSeverity）。
+     */
+    severity: PluginDiagnosticSeverity;
 }
 
 interface IPluginDiagnosticReportPlugin {
@@ -248,6 +252,7 @@ export function recordPluginDiagnosticError(
         method: params.method,
         message: formatErrorMessage(params.error),
         estimatedLocation: params.estimatedLocation,
+        severity: "error",
     });
 }
 
@@ -264,7 +269,7 @@ export function recordPluginDiagnosticMessage(
             ? sanitizeMessage(params.estimatedLocation)
             : undefined,
         createdAt: Date.now(),
-        severity: params.severity ?? "error",
+        severity: params.severity,
     };
 
     setStoredEvents(trimEvents([event, ...getStoredEvents()]));
@@ -308,6 +313,7 @@ export function recordPluginInstallFailure(result: IInstallPluginResult) {
         pluginHash: result.pluginHash,
         method: "install",
         message: details,
+        severity: "error",
     });
 }
 

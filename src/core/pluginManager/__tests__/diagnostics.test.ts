@@ -5,7 +5,9 @@ import {
     getRecentPluginDiagnosticErrors,
     isRecentPluginDiagnosticEvent,
     recentPluginDiagnosticWindowMs,
+    recordPluginDiagnosticError,
     recordPluginDiagnosticMessage,
+    recordPluginInstallFailure,
 } from "../diagnostics";
 
 const mockDiagnosticValues = new Map<string, string>();
@@ -32,6 +34,7 @@ describe("plugin diagnostics sanitization", () => {
         const event = recordPluginDiagnosticMessage({
             pluginName: "test",
             method: "capability",
+            severity: "info",
             message: [
                 "https://example.com/media/song.mp3?token=secret",
                 "authorization: Bearer-secret",
@@ -50,6 +53,7 @@ describe("plugin diagnostics sanitization", () => {
             pluginName: "test",
             pluginHash: "hash",
             method: "capability",
+            severity: "info",
             message:
                 "outcome=denied; capability=network.http; reason=url-policy",
         });
@@ -104,11 +108,12 @@ describe("plugin diagnostic severity", () => {
         clearPluginDiagnosticEvents();
     });
 
-    it("records errors by default and keeps info as info", () => {
+    it("records the severity each caller chose", () => {
         const error = recordPluginDiagnosticMessage({
             pluginName: "p",
             method: "search",
             message: "boom",
+            severity: "error",
         });
         const info = recordPluginDiagnosticMessage({
             pluginName: "p",
@@ -127,6 +132,7 @@ describe("plugin diagnostic severity", () => {
             pluginHash: "h",
             method: "search",
             message: "network failed",
+            severity: "error",
         });
         recordPluginDiagnosticMessage({
             pluginName: "p",
@@ -185,10 +191,39 @@ describe("plugin diagnostic severity", () => {
             pluginHash: "h",
             method: "search",
             message: "network failed",
+            severity: "error",
         });
         expect(buildPluginDiagnosticReport([plugin])).toContain(
             "recentErrors=1",
         );
+    });
+
+    it("records thrown errors and failed installs as errors", () => {
+        expect(
+            recordPluginDiagnosticError({
+                pluginName: "p",
+                method: "getMediaSource",
+                error: new Error("HTTP 403"),
+            }).severity,
+        ).toBe("error");
+        expect(
+            recordPluginInstallFailure({
+                success: false,
+                message: "下载失败",
+                pluginName: "p",
+            } as any)?.severity,
+        ).toBe("error");
+    });
+
+    it("does not let a new event leave its severity out", () => {
+        // 编译期检查：verify 会跑 tsc。severity 若又变回可选，下面那条
+        // 「期待报错」的指令就落空，tsc 会因此失败
+        const event = recordPluginDiagnosticMessage(
+            // @ts-expect-error severity 必填
+            { pluginName: "p", method: "search", message: "boom" },
+        );
+        // 绕过类型检查漏写时，按 method 推断，与落盘的旧事件一样
+        expect(getPluginDiagnosticSeverity(event)).toBe("error");
     });
 
     it("labels each event's severity in the diagnostic report", () => {
