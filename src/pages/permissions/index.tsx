@@ -9,13 +9,17 @@ import downloadNotificationManager from "@/core/downloadNotificationManager";
 import { useI18N } from "@/core/i18n";
 import LyricUtil from "@/native/lyricUtil";
 import NativeUtils from "@/native/utils";
+import {
+    checkAndroidAudioReadPermission,
+    toggleAndroidAudioReadPermission,
+} from "@/utils/androidMediaPermission";
 import rpx from "@/utils/rpx";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, StyleSheet } from "react-native";
 
 type IPermissionTypes =
     | "floatingWindow"
-    | "fileStorage"
+    | "audioFiles"
     | "batteryOptimization"
     | "notification";
 
@@ -25,7 +29,7 @@ export default function Permissions() {
         Record<IPermissionTypes, boolean>
     >({
         floatingWindow: false,
-        fileStorage: false,
+        audioFiles: false,
         batteryOptimization: false,
         notification: false,
     });
@@ -37,8 +41,8 @@ export default function Permissions() {
         if (!type || type === "floatingWindow") {
             updates.floatingWindow = await LyricUtil.checkSystemAlertPermission();
         }
-        if (!type || type === "fileStorage") {
-            updates.fileStorage = await NativeUtils.checkStoragePermission();
+        if (!type || type === "audioFiles") {
+            updates.audioFiles = await checkAndroidAudioReadPermission();
         }
         if (!type || type === "batteryOptimization") {
             updates.batteryOptimization = await NativeUtils.isIgnoringBatteryOptimizations();
@@ -50,6 +54,14 @@ export default function Permissions() {
 
         setPermissions(prev => ({ ...prev, ...updates }));
     }, []);
+
+    // 应用从 0.7.3 起不再申请「所有文件访问」：下载存在应用自己的目录，导入和
+    // 备份走系统文件选择器，只有扫描、播放手机里的本地音乐要读音频文件
+    const toggleAudioFiles = useCallback(() => {
+        toggleAndroidAudioReadPermission()
+            .catch(() => false)
+            .then(() => checkPermission("audioFiles"));
+    }, [checkPermission]);
 
     const toggleBatteryOptimization = useCallback(() => {
         if (permissions.batteryOptimization) {
@@ -109,20 +121,16 @@ export default function Permissions() {
             <ListItem
                 withHorizontalPadding
                 heightType="big"
-                onPress={() => {
-                    NativeUtils.requestStoragePermission();
-                }}
-                accessibilityLabel={t("permissionSetting.fileReadWritePermission")}
-                accessibilityState={{ checked: permissions.fileStorage }}>
+                onPress={toggleAudioFiles}
+                accessibilityLabel={t("permissionSetting.audioPermission")}
+                accessibilityState={{ checked: permissions.audioFiles }}>
                 <ListItem.Content
-                    title={t("permissionSetting.fileReadWritePermission")}
-                    description={t("permissionSetting.fileReadWritePermissionDescription")}
+                    title={t("permissionSetting.audioPermission")}
+                    description={t("permissionSetting.audioPermissionDescription")}
                 />
                 <ThemeSwitch
-                    value={permissions.fileStorage}
-                    onValueChange={() => {
-                        NativeUtils.requestStoragePermission();
-                    }}
+                    value={permissions.audioFiles}
+                    onValueChange={toggleAudioFiles}
                 />
             </ListItem>
             <ListItem

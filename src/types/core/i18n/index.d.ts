@@ -367,8 +367,8 @@ export interface ILanguageData {
     "permissionSetting.description": string; // 权限设置说明
     "permissionSetting.floatWindowPermission": string; // 悬浮窗权限
     "permissionSetting.floatWindowPermissionDescription": string; // 悬浮窗权限说明
-    "permissionSetting.fileReadWritePermission": string; // 文件读写权限
-    "permissionSetting.fileReadWritePermissionDescription": string; // 文件读写权限说明
+    "permissionSetting.audioPermission": string; // 音乐和音频
+    "permissionSetting.audioPermissionDescription": string; // 音乐和音频权限说明
     "permissionSetting.notificationPermission": string; // 通知权限
     "permissionSetting.notificationPermissionDescription": string; // 通知权限说明
     "permissionSetting.ignoreBatteryOptimization": string; // 忽略电池优化
@@ -1015,13 +1015,6 @@ export interface ILanguageData {
     "noPlugin.description": string; // 无插件描述
 
     // 对话框相关 - 存储权限
-    "dialog.checkStorage.title": string; // 存储权限
-    "dialog.checkStorage.content.0": string; // 存储权限内容0
-    "dialog.checkStorage.content.1": string; // 存储权限内容1
-    "dialog.checkStorage.content.2": string; // 存储权限内容2
-    "dialog.checkStorage.content.3": string; // 存储权限内容3
-    "dialog.checkStorage.button.grantPermission": string; // 去授予权限
-    "dialog.checkStorage.button.doNotShowAgain": string; // 不再提示
 
     // 对话框相关 - 下载
     "dialog.downloadDialog.title": string; // 发现新版本
