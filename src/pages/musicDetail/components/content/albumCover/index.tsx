@@ -63,7 +63,11 @@ export default function AlbumCover(props: IProps) {
     const musicState = useMusicState();
     const orientation = useOrientation();
     const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
-    const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+    const {
+        height: windowHeight,
+        width: windowWidth,
+        fontScale,
+    } = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
     const longPressTriggeredRef = useRef(false);
     const { t } = useI18N();
@@ -149,8 +153,15 @@ export default function AlbumCover(props: IProps) {
                 width: landscapeArea?.width ?? windowWidth / 2,
                 height: landscapeArea?.height ?? usableWindowHeight / 3,
                 showSongInfo: !immersiveMode,
+                fontScale,
             }),
-        [immersiveMode, landscapeArea, usableWindowHeight, windowWidth],
+        [
+            fontScale,
+            immersiveMode,
+            landscapeArea,
+            usableWindowHeight,
+            windowWidth,
+        ],
     );
     const onLandscapeLayout = useCallback((event: LayoutChangeEvent) => {
         const { width, height } = event.nativeEvent.layout;
@@ -275,9 +286,17 @@ export default function AlbumCover(props: IProps) {
                         </Animated.View>
                     </Pressable>
                 ) : null}
-                {immersiveMode ? null : (
-                    <SongInfo width={landscapeLayout.infoWidth} />
-                )}
+                {landscapeLayout.songInfo ? (
+                    // 行数已按量到的高度算好；万一系统字体的度量和预算对不上，
+                    // 宁可裁掉也不压到进度条上
+                    <View style={styles.horizontalSongInfo}>
+                        <SongInfo
+                            variant="landscape"
+                            width={landscapeLayout.infoWidth}
+                            landscapeFit={landscapeLayout.songInfo}
+                        />
+                    </View>
+                ) : null}
             </View>
         );
     }
@@ -407,5 +426,9 @@ const styles = StyleSheet.create({
     },
     horizontalCoverArea: {
         flexShrink: 0,
+    },
+    horizontalSongInfo: {
+        maxHeight: "100%",
+        overflow: "hidden",
     },
 });

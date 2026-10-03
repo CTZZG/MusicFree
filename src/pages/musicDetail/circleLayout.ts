@@ -167,24 +167,88 @@ const LANDSCAPE_MIN_INFO_WIDTH = 160;
 const LANDSCAPE_MAX_COVER = 320;
 const LANDSCAPE_MIN_COVER = 48;
 
+/**
+ * 横屏歌名区（SongInfo 的 landscape 样式）的尺寸。样式直接取这里的数字，
+ * 下面按高度预算行数时用的也是同一份，两边才不会对不上。行高都是显式的单行，
+ * 随系统字体大小等比放大（Android 14 起大字号放大得更少，按等比算只会偏保守）。
+ */
+export const LANDSCAPE_SONG_INFO_METRICS = {
+    paddingVertical: 4,
+    titleFontSize: 20,
+    titleLineHeight: 25,
+    artistFontSize: 15,
+    artistLineHeight: 20,
+    albumFontSize: 13,
+    albumLineHeight: 18,
+    buttonSize: 32,
+} as const;
+
+export interface ILandscapeSongInfoFit {
+    showArtist: boolean;
+    showAlbum: boolean;
+    /** 字大到标题一行都放不下时，标题的放大倍数上限（Text 的 maxFontSizeMultiplier） */
+    titleMaxFontScale?: number;
+}
+
+/**
+ * 按实际高度和字体缩放决定歌名区放几行：标题一定放，其次歌手，最后专辑，
+ * 放不下的那行整行省掉（导航栏上本来就有歌名和歌手）。连标题和按钮都放不下
+ * 时返回 null，整块不显示。
+ */
+export function fitLandscapeSongInfo(
+    height: number,
+    fontScale: number,
+): ILandscapeSongInfoFit | null {
+    const metrics = LANDSCAPE_SONG_INFO_METRICS;
+    const available = height - metrics.paddingVertical * 2;
+    const scale = Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1;
+    if (available < Math.max(metrics.buttonSize, metrics.titleLineHeight)) {
+        return null;
+    }
+
+    // RN 的放大倍数上限不能小于 1；上面已经保证 1 倍的标题放得下
+    const titleCap =
+        Math.floor((available / metrics.titleLineHeight) * 100) / 100;
+    const titleScale = Math.min(scale, titleCap);
+    let used = metrics.titleLineHeight * titleScale;
+    const showArtist = used + metrics.artistLineHeight * scale <= available;
+    if (showArtist) {
+        used += metrics.artistLineHeight * scale;
+    }
+    const showAlbum =
+        showArtist && used + metrics.albumLineHeight * scale <= available;
+
+    return {
+        showArtist,
+        showAlbum,
+        titleMaxFontScale: titleScale < scale ? titleScale : undefined,
+    };
+}
+
 interface IMusicDetailLandscapeLayoutOptions {
     /** 左半边内容区（导航栏和控制区之间）实际的宽高 */
     width: number;
     height: number;
     /** 沉浸模式不显示歌名，封面独占 */
     showSongInfo: boolean;
+    /** 系统字体缩放（useWindowDimensions().fontScale） */
+    fontScale?: number;
 }
 
 /**
  * 横屏封面：边长取决于内容区实际的高和宽，放不下就不放（导航栏已经有小封面
- * 和歌名），绝不超出内容区去盖住导航栏或歌名。歌名在封面右边，宽度是剩下的。
+ * 和歌名），绝不超出内容区去盖住导航栏或进度条。歌名在封面右边，宽度是剩下的，
+ * 行数由 fitLandscapeSongInfo 按同一个高度决定。
  */
 export function getMusicDetailLandscapeLayout(
     options: IMusicDetailLandscapeLayoutOptions,
 ) {
-    const { width, height, showSongInfo } = options;
+    const { width, height, showSongInfo, fontScale = 1 } = options;
+    const songInfo = showSongInfo
+        ? fitLandscapeSongInfo(height, fontScale)
+        : null;
     const byHeight = height - LANDSCAPE_VERTICAL_PADDING * 2;
-    const byWidth = showSongInfo
+    const byWidth = songInfo
         ? width - LANDSCAPE_GAP * 3 - LANDSCAPE_MIN_INFO_WIDTH
         : width - LANDSCAPE_GAP * 2;
     const fitted = Math.min(LANDSCAPE_MAX_COVER, byHeight, byWidth);
@@ -193,5 +257,5 @@ export function getMusicDetailLandscapeLayout(
         0,
         width - LANDSCAPE_GAP * (coverSize > 0 ? 3 : 2) - coverSize,
     );
-    return { coverSize, infoWidth, gap: LANDSCAPE_GAP };
+    return { coverSize, infoWidth, gap: LANDSCAPE_GAP, songInfo };
 }

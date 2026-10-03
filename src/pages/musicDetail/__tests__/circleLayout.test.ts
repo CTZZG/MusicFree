@@ -4,6 +4,7 @@ jest.mock("@/utils/rpx", () => ({
 }));
 
 import {
+    fitLandscapeSongInfo,
     fitMusicDetailCardCover,
     getMusicDetailCardLayout,
     getMusicDetailCircleLayout,
@@ -250,5 +251,65 @@ describe("getMusicDetailLandscapeLayout", () => {
 
         expect(layout.coverSize).toBe(0);
         expect(layout.infoWidth).toBe(440 - 16 * 2);
+    });
+});
+
+/**
+ * 外部复审：横屏的歌名区原来不看高度，320 dp 高的窗口、大字体下压进进度条。
+ * 完整的封面＋歌名渲染见 albumCover/__tests__/landscapeFit.test.tsx。
+ */
+describe("fitLandscapeSongInfo", () => {
+    it("keeps title, artist and album when they fit", () => {
+        expect(fitLandscapeSongInfo(96, 1)).toEqual({
+            showArtist: true,
+            showAlbum: true,
+            titleMaxFontScale: undefined,
+        });
+    });
+
+    it("drops the album before the artist", () => {
+        expect(fitLandscapeSongInfo(56, 1)).toMatchObject({
+            showArtist: true,
+            showAlbum: false,
+        });
+        expect(fitLandscapeSongInfo(56, 1.5)).toMatchObject({
+            showArtist: false,
+            showAlbum: false,
+        });
+    });
+
+    it("caps only the title, and only when it would not fit at the system scale", () => {
+        expect(fitLandscapeSongInfo(80, 2)?.titleMaxFontScale).toBeUndefined();
+
+        const tight = fitLandscapeSongInfo(56, 2);
+        expect(tight?.titleMaxFontScale).toBe(1.92);
+        // 上限低于 1 时 RN 不认，这里不会出现
+        expect(tight?.titleMaxFontScale).toBeGreaterThanOrEqual(1);
+    });
+
+    it("hides the song info when not even the title row fits", () => {
+        expect(fitLandscapeSongInfo(39, 1)).toBeNull();
+        expect(fitLandscapeSongInfo(40, 1)).not.toBeNull();
+    });
+
+    it("treats a missing font scale as the default size", () => {
+        expect(fitLandscapeSongInfo(80, Number.NaN)).toEqual(
+            fitLandscapeSongInfo(80, 1),
+        );
+        expect(fitLandscapeSongInfo(80, 0)).toEqual(
+            fitLandscapeSongInfo(80, 1),
+        );
+    });
+
+    it("gives the cover the whole width once the song info is hidden", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 400,
+            height: 36,
+            showSongInfo: true,
+            fontScale: 1,
+        });
+
+        expect(layout.songInfo).toBeNull();
+        expect(layout.infoWidth).toBe(400 - 16 * 2);
     });
 });
