@@ -1,7 +1,7 @@
 import Empty from "@/components/base/empty";
 import IconButton from "@/components/base/iconButton";
+import SegmentedControl from "@/components/base/segmentedControl";
 import ListItem from "@/components/base/listItem";
-import ThemeText from "@/components/base/themeText";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import { ImgAsset } from "@/constants/assetsConst";
@@ -14,9 +14,8 @@ import rpx from "@/utils/rpx";
 import Toast from "@/utils/toast";
 import { FlashList } from "@shopify/flash-list";
 import Color from "color";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { Pressable } from "react-native-gesture-handler";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 
 interface ISheetsProps {
@@ -41,15 +40,6 @@ export default function Sheets(props: ISheetsProps) {
         setIndex(initialIndex);
     }, [initialIndex]);
 
-    const selectedTabTextStyle = useMemo(() => {
-        return [
-            styles.selectTabText,
-            {
-                borderBottomColor: colors.primary,
-            },
-        ];
-    }, [colors]);
-
 
     return (
         <>
@@ -58,60 +48,23 @@ export default function Sheets(props: ISheetsProps) {
                     styles.subTitleContainer,
                     variant === "classic" ? styles.classicSubTitleContainer : null,
                 ]}>
-                <Pressable
-                    style={styles.tabContainer}
-                    accessible
-                    accessibilityLabel={t("home.myPlaylistsCount.a11y", {
-                        count: allSheets.length,
-                    })}
-                    onPress={() => {
-                        setIndex(0);
-                    }}>
-                    <ThemeText
-                        accessible={false}
-                        fontSize="title"
-                        style={[
-                            styles.tabText,
-                            index === 0 ? selectedTabTextStyle : null,
-                        ]}>
-                        {t("home.myPlaylists")}
-                    </ThemeText>
-                    <ThemeText
-                        accessible={false}
-                        fontColor="textSecondary"
-                        fontSize="subTitle"
-                        style={styles.tabText}>
-                        {" "}
-                        ({allSheets.length})
-                    </ThemeText>
-                </Pressable>
-                <Pressable
-                    style={styles.tabContainer}
-                    accessible
-                    accessibilityLabel={t("home.starredPlaylistsCount.a11y", {
-                        count: staredSheets.length,
-                    })}
-                    onPress={() => {
-                        setIndex(1);
-                    }}>
-                    <ThemeText
-                        fontSize="title"
-                        accessible={false}
-                        style={[
-                            styles.tabText,
-                            index === 1 ? selectedTabTextStyle : null,
-                        ]}>
-                        {t("home.starredPlaylists")}
-                    </ThemeText>
-                    <ThemeText
-                        fontColor="textSecondary"
-                        fontSize="subTitle"
-                        accessible={false}
-                        style={styles.tabText}>
-                        {" "}
-                        ({staredSheets.length})
-                    </ThemeText>
-                </Pressable>
+                <SegmentedControl
+                    style={styles.segmented}
+                    segments={[
+                        `${t("home.myPlaylists")} ${allSheets.length}`,
+                        `${t("home.starredPlaylists")} ${staredSheets.length}`,
+                    ]}
+                    accessibilityLabels={[
+                        t("home.myPlaylistsCount.a11y", {
+                            count: allSheets.length,
+                        }),
+                        t("home.starredPlaylistsCount.a11y", {
+                            count: staredSheets.length,
+                        }),
+                    ]}
+                    selectedIndex={index}
+                    onChange={setIndex}
+                />
                 <View style={styles.more}>
                     <IconButton
                         name="plus"
@@ -258,10 +211,11 @@ export default function Sheets(props: ISheetsProps) {
 
 const styles = StyleSheet.create({
     subTitleContainer: {
-        paddingHorizontal: rpx(24),
+        paddingHorizontal: 16,
+        paddingVertical: 8,
         flexDirection: "row",
-        alignItems: "flex-start",
-        marginBottom: rpx(12),
+        alignItems: "center",
+        gap: 8,
     },
     classicSubTitleContainer: {
         marginTop: rpx(24),
@@ -275,29 +229,14 @@ const styles = StyleSheet.create({
         borderWidth: StyleSheet.hairlineWidth,
         overflow: "hidden",
     },
-    subTitleLeft: {
-        flexDirection: "row",
-    },
-    tabContainer: {
-        flexDirection: "row",
-        marginRight: rpx(32),
-    },
-
-    tabText: {
-        lineHeight: rpx(60),
-    },
-    selectTabText: {
-        borderBottomWidth: rpx(6),
-        fontWeight: "bold",
+    segmented: {
+        flex: 1,
     },
     more: {
-        height: rpx(64),
-        marginTop: rpx(3),
-        flexGrow: 1,
         flexDirection: "row",
-        justifyContent: "flex-end",
+        alignItems: "center",
     },
     newSheetButton: {
-        marginRight: rpx(24),
+        marginRight: 8,
     },
 });
