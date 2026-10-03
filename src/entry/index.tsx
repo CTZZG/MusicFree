@@ -1,6 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+    RefObject,
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+} from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { BlurTargetView } from "expo-blur";
 import bootstrap from "./bootstrap/bootstrap";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Dialogs from "@/components/dialogs";
@@ -34,25 +41,25 @@ StatusBar.setTranslucent(true);
 bootstrap();
 const Stack = createNativeStackNavigator<any>();
 
-function MusicBarOverlay() {
+function MusicBarOverlay(props: { blurTarget: RefObject<View | null> }) {
     const { layout } = useMusicBarLayoutState();
     return (
         <View
             collapsable={false}
             pointerEvents={layout.visible ? "box-none" : "none"}
             style={styles.musicBarOverlay}>
-            <MusicBar />
+            <MusicBar blurTarget={props.blurTarget} />
         </View>
     );
 }
 
 const surfacedRoutes = routes.map(route => {
     const RouteComponent = route.component;
-    // 自定义背景图只铺在首页，其余页面保持 iOS 的纯色底
-    const showCustomBackground = route.path === ROUTE_PATH.HOME;
+    // 页面统一铺 iOS 的纯色底。首页的自定义背景图由主页自己铺在标签栏要模糊的
+    // BlurTargetView 里（见 pages/home），这里不再重复铺
     function SurfacedRoute(screenProps: any) {
         return (
-            <ScreenSurface showCustomBackground={showCustomBackground}>
+            <ScreenSurface>
                 <RouteComponent {...screenProps} />
             </ScreenSurface>
         );
@@ -73,6 +80,8 @@ export default function Pages() {
         routes[0].path,
     );
     const [transitionInProgress, setTransitionInProgress] = useState(false);
+    // 迷你播放器模糊的是整个根栈：它浮在这个 BlurTargetView 外面，页面都在里面
+    const rootBlurTargetRef = useRef<View>(null);
     const pendingRouteNameRef = useRef(currentRouteName);
     const transitionFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(
         null,
@@ -132,55 +141,66 @@ export default function Pages() {
                             onReady={commitCurrentRouteName}
                             onStateChange={stageCurrentRouteName}>
                             <ErrorBoundary>
-                                {/* 这层底色只在转场那几帧可见：旧屏幕已经停止绘制、
-                                    新屏幕还没滑到位时，中间的空隙会穿透到 Android 的
-                                    windowBackground（#27282C，接近黑），看起来就是
-                                    「切页面黑闪一下」。铺上主题页面背景后，空隙的颜色
-                                    与页面一致，正常情况下这层永远被页面盖住。 */}
-                                <View
-                                    style={[
-                                        globalStyle.flex1,
-                                        {
-                                            backgroundColor:
-                                                theme.colors.pageBackground ??
-                                                theme.colors.background,
-                                        },
-                                    ]}>
-                                    <Stack.Navigator
-                                        initialRouteName={routes[0].path}
-                                        screenOptions={{
-                                            headerShown: false,
-                                            animation: "slide_from_right",
-                                            animationDuration: 100,
-                                        }}
-                                        screenListeners={{
-                                            transitionEnd:
-                                                commitCurrentRouteName,
-                                        }}>
-                                        {surfacedRoutes.map(route => (
-                                            <Stack.Screen
-                                                key={route.path}
-                                                name={route.path}
-                                                component={route.component}
-                                                options={
-                                                    route.path ===
-                                                    ROUTE_PATH.MUSIC_DETAIL
-                                                        ? {
-                                                            statusBarBackgroundColor:
-                                                                  "transparent",
-                                                            statusBarTranslucent:
-                                                                  true,
-                                                            // 和 iOS 一样从底部升起
-                                                            animation:
-                                                                  "slide_from_bottom",
-                                                            animationDuration: 280,
-                                                        }
-                                                        : undefined
-                                                }
-                                            />
-                                        ))}
-                                    </Stack.Navigator>
-                                    <MusicBarOverlay />
+                                <View style={globalStyle.flex1}>
+                                    <BlurTargetView
+                                        ref={rootBlurTargetRef}
+                                        style={globalStyle.flex1}>
+                                        {/* 这层底色只在转场那几帧可见：旧屏幕已经停止
+                                            绘制、新屏幕还没滑到位时，中间的空隙会穿透到
+                                            Android 的 windowBackground（#27282C，接近黑），
+                                            看起来就是「切页面黑闪一下」。铺上主题页面背景
+                                            后，空隙的颜色与页面一致，正常情况下这层永远被
+                                            页面盖住。放在 BlurTargetView 里，迷你播放器
+                                            模糊到的空隙也是页面底色。 */}
+                                        <View
+                                            style={[
+                                                StyleSheet.absoluteFill,
+                                                {
+                                                    backgroundColor:
+                                                        theme.colors
+                                                            .pageBackground ??
+                                                        theme.colors.background,
+                                                },
+                                            ]}
+                                        />
+                                        <Stack.Navigator
+                                            initialRouteName={routes[0].path}
+                                            screenOptions={{
+                                                headerShown: false,
+                                                animation: "slide_from_right",
+                                                animationDuration: 100,
+                                            }}
+                                            screenListeners={{
+                                                transitionEnd:
+                                                    commitCurrentRouteName,
+                                            }}>
+                                            {surfacedRoutes.map(route => (
+                                                <Stack.Screen
+                                                    key={route.path}
+                                                    name={route.path}
+                                                    component={route.component}
+                                                    options={
+                                                        route.path ===
+                                                        ROUTE_PATH.MUSIC_DETAIL
+                                                            ? {
+                                                                statusBarBackgroundColor:
+                                                                      "transparent",
+                                                                statusBarTranslucent:
+                                                                      true,
+                                                                // 和 iOS 一样从底部升起
+                                                                animation:
+                                                                      "slide_from_bottom",
+                                                                animationDuration: 280,
+                                                            }
+                                                            : undefined
+                                                    }
+                                                />
+                                            ))}
+                                        </Stack.Navigator>
+                                    </BlurTargetView>
+                                    <MusicBarOverlay
+                                        blurTarget={rootBlurTargetRef}
+                                    />
                                     <Panels />
                                     <Dialogs />
                                     <Debug />

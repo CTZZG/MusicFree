@@ -24,7 +24,7 @@
 | 本地音乐 | `src/core/localMusicSheet.ts` | 扫描、元数据缓存、匹配与提交 |
 | 存储 | `src/utils/keyValueStore` | 原子写入的文件键值存储（提交 `9bfccd41` 起替代 MMKV） |
 | 导航 | `src/core/router`、`src/pages/home/index.tsx` | 根栈加主页的底部标签（首页、搜索、资料库、设置）；搜索标签沿用 `search-page` 路由名，从其他页面跳搜索用 `navigateToSearch`，先回到主页再切标签 |
-| 外观 | `src/core/theme.ts`、`src/core/themeAppearance.ts` | 只有 iOS 风格的浅色、深色两套配色，默认跟随系统；旧主题（液态硅胶、自定义配色）在启动时迁移为跟随系统 |
+| 外观 | `src/core/theme.ts`、`src/core/themeAppearance.ts`、`src/components/base/glassBackdrop.tsx` | 只有 iOS 风格的浅色、深色两套配色，默认跟随系统；旧主题（液态硅胶、自定义配色）在启动时迁移为跟随系统。标签栏和迷你播放器的毛玻璃在 Android 12+ 模糊各自的 `BlurTargetView`（主页标签内容、根栈），玻璃必须放在目标外面；做不到真模糊时改用接近不透明的磨砂底（`glassMaterial.ts`） |
 
 依赖规则：
 

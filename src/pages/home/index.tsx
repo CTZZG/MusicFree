@@ -1,13 +1,10 @@
 import React from "react";
 import { StatusBar as NativeStatusBar, StyleSheet } from "react-native";
-import {
-    BottomTabBarProps,
-    createBottomTabNavigator,
-} from "@react-navigation/bottom-tabs";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import NavBar from "./components/navBar";
-import HomeTabBar from "./components/tabBar";
+import HomeTabsLayout, { IHomeTabsLayoutProps } from "./components/tabsLayout";
 import StatusBar from "@/components/base/statusBar";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import globalStyle from "@/constants/globalStyle";
@@ -62,8 +59,13 @@ function HomeStatusBar() {
 
 const Tab = createBottomTabNavigator();
 
-function renderTabBar(props: BottomTabBarProps) {
-    return <HomeTabBar {...props} />;
+// 标签栏由 HomeTabsLayout 渲染在模糊目标外面，见 components/tabsLayout
+function renderHomeTabsLayout(props: IHomeTabsLayoutProps) {
+    return <HomeTabsLayout {...props} />;
+}
+
+function renderNoTabBar() {
+    return null;
 }
 
 /**
@@ -73,7 +75,7 @@ function renderTabBar(props: BottomTabBarProps) {
 export default function Home() {
     const theme = Theme.useTheme();
     const { setActiveTab } = useMusicBarLayoutState();
-    // 首页可以铺自定义背景图，其他标签用纯色底盖住它
+    // 首页标签透出 HomeTabsLayout 铺的自定义背景图，其他标签用纯色底盖住它
     const opaqueScene = {
         backgroundColor: theme.colors.pageBackground,
     };
@@ -82,7 +84,8 @@ export default function Home() {
         <Tab.Navigator
             initialRouteName={HOME_TAB.HOME}
             backBehavior="firstRoute"
-            tabBar={renderTabBar}
+            layout={renderHomeTabsLayout}
+            tabBar={renderNoTabBar}
             screenListeners={({ route }) => ({
                 focus: () => {
                     setActiveTab(route.name);
