@@ -268,11 +268,16 @@ function ContinueListening(props: {
                 style={styles.continueCover}
             />
             <View style={styles.continueTexts}>
+                {/* 标签和播放时间并成一行，卡片少一行高 */}
                 <ThemeText
+                    numberOfLines={1}
                     fontSize="tag"
                     fontWeight="semibold"
-                    fontColor="textSecondary">
-                    {t("home.continueListening")}
+                    fontColor="textSecondary"
+                    style={styles.tabular}>
+                    {`${t("home.continueListening")} · ${formatTime(
+                        elapsed,
+                    )} / ${formatTime(total)}`}
                 </ThemeText>
                 <ThemeText
                     numberOfLines={1}
@@ -289,28 +294,20 @@ function ContinueListening(props: {
                         {featuredMusic.artist}
                     </ThemeText>
                 ) : null}
-                <View style={styles.progressRow}>
+                <View
+                    style={[
+                        styles.progressTrack,
+                        { backgroundColor: colors.placeholder },
+                    ]}>
                     <View
                         style={[
-                            styles.progressTrack,
-                            { backgroundColor: colors.placeholder },
-                        ]}>
-                        <View
-                            style={[
-                                styles.progressFill,
-                                {
-                                    width: `${ratio * 100}%`,
-                                    backgroundColor: colors.primary,
-                                },
-                            ]}
-                        />
-                    </View>
-                    <ThemeText
-                        fontSize="tag"
-                        fontColor="textSecondary"
-                        style={styles.tabular}>
-                        {`${formatTime(elapsed)} / ${formatTime(total)}`}
-                    </ThemeText>
+                            styles.progressFill,
+                            {
+                                width: `${ratio * 100}%`,
+                                backgroundColor: colors.primary,
+                            },
+                        ]}
+                    />
                 </View>
             </View>
             <Pressable
@@ -542,7 +539,7 @@ function TopLists(props: { plugin: Plugin }) {
                         <Placeholders
                             count={2}
                             width={chartWidth}
-                            height={68}
+                            height={72}
                             radius={16}
                         />
                     )}
@@ -766,14 +763,8 @@ const styles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 19,
     },
-    progressRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        marginTop: 6,
-    },
     progressTrack: {
-        flex: 1,
+        marginTop: 8,
         height: 4,
         borderRadius: 2,
         overflow: "hidden",
