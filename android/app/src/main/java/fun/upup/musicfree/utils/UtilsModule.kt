@@ -22,6 +22,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
+import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import kotlin.system.exitProcess
 
 class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
@@ -173,6 +174,15 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
                 putString("appImportanceLabel", appImportanceLabel(processInfo.importance))
                 putArray("playbackServices", getPlaybackServiceDiagnostics())
                 putMap("mediaSession", getMediaSessionDiagnostics())
+                MpvServiceBridge.artworkStatus?.let { status ->
+                    putMap("artwork", Arguments.createMap().apply {
+                        putString("state", status.state)
+                        status.host?.let { putString("host", it) }
+                        putInt("attempt", status.attempt)
+                        status.reason?.let { putString("reason", it) }
+                        putDouble("updatedAt", status.updatedAt.toDouble())
+                    })
+                }
             })
         } catch (e: Throwable) {
             promise.reject("playback_native_diagnostics_failed", e)
