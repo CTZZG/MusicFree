@@ -151,6 +151,12 @@ interface RouterParams extends RouterParamsBase {
         | {
               initialPluginHash?: string;
           };
+    "recommend-sheets":
+        | undefined
+        | {
+              /** 打开时先显示这个插件的推荐歌单（首页「全部」带上首页选的音源） */
+              initialPluginHash?: string;
+          };
     "top-list-detail": {
         pluginHash: string;
         topList: IMusic.IMusicSheetItemBase;

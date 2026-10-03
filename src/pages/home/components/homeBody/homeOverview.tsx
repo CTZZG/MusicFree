@@ -380,7 +380,11 @@ function RecommendSheets(props: { plugin: Plugin }) {
         <View style={styles.section}>
             <SectionHeader
                 title={t("home.recommendSheet")}
-                onSeeAll={() => navigate(ROUTE_PATH.RECOMMEND_SHEETS)}
+                onSeeAll={() =>
+                    navigate(ROUTE_PATH.RECOMMEND_SHEETS, {
+                        initialPluginHash: plugin.hash,
+                    })
+                }
             />
             {failed ? (
                 <RetryLine onRetry={query} />

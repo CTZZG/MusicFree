@@ -2,6 +2,7 @@ import NoPlugin from "@/components/base/noPlugin";
 import { fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import PluginManager from "@/core/pluginManager";
+import { useParams } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import rpx, { vw } from "@/utils/rpx";
 import React, { useState } from "react";
@@ -10,13 +11,20 @@ import { TabBar, TabView } from "react-native-tab-view";
 import SheetBody from "./sheetBody";
 
 export default function Body() {
-    const [index, setIndex] = useState(0);
+    const params = useParams<"recommend-sheets">();
     const colors = useColors();
     const routes = PluginManager.getSortedPluginsWithAbility("getRecommendSheetsByTag").map(
         _ => ({
             key: _.hash,
             title: _.name,
         }),
+    );
+    // 从首页「推荐歌单 · 全部」进来时停在首页选的音源上；找不到就是第一个
+    const [index, setIndex] = useState(() =>
+        Math.max(
+            0,
+            routes.findIndex(route => route.key === params?.initialPluginHash),
+        ),
     );
     const { t } = useI18N();
 
