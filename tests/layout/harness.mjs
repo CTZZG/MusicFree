@@ -1082,35 +1082,102 @@ function containsAlong(outer, inner, axis, tolerance = EPSILON) {
     );
 }
 
+const AXES = {
+    x: {start: 'x', size: 'width'},
+    y: {start: 'y', size: 'height'},
+};
+
+const spanOf = (frame, axis) => [
+    frame[AXES[axis].start],
+    frame[AXES[axis].start] + frame[AXES[axis].size],
+];
+
+/** 这个祖先会在 axis 方向上裁掉超出它的部分吗（滚动容器在它能滚动的方向上另算） */
+function clipsAlong(ancestor, axis) {
+    if (ancestor.type === 'ScrollView') {
+        return true;
+    }
+    const {overflow} = flattenStyle(ancestor.props.style);
+    return overflow === 'hidden' || overflow === 'scroll';
+}
+
 /**
  * 最近一个会把 record 裁掉一部分的祖先，没有就是 null：
  * - overflow 不是 visible 的视图两个方向都裁（Android 上 scroll 和 hidden 一样裁）；
- * - 滚动容器只在不能滚动的方向上裁（竖向列表裁左右，横向列表裁上下）；
- * - 滚动容器里的内容能滚进视野：越过一层滚动容器以后，外层的祖先不再按它能
- *   滚动的方向裁（竖向列表里排在屏幕下面的格子不算被裁）。
+ * - 滚动容器在不能滚动的方向上照常裁（竖向列表裁左右，横向列表裁上下）；
+ * - 在能滚动的方向上，内容只能在 0～最大滚动量之间移动：滚动视口和外层各个裁剪
+ *   祖先共同留下一个可见窗口，滚动时窗口在内容上扫过 [窗口起点, 窗口终点 + 最大
+ *   滚动量]。record 的每一部分都在这段里，就能滚进来看到（比屏幕还长的内容可以
+ *   一段一段看）；排在屏幕下面、滚得过来的格子不算被裁。视口本身被外层裁掉一截、
+ *   整个跑到外层可见区之外，或者滚到底也露不出来的，都算被裁。
+ * 同一方向套了两层滚动容器时，外层只当作普通的裁剪窗口（不再滚动）。
  */
 export function clippingAncestor(record) {
-    const scrolls = {x: false, y: false};
     // 文字框按像素向上取整（RN 也这样，免得最后一个字被截），比父视图多出不到 1 dp
     const tolerance = record.type === 'Text' ? 1 : EPSILON;
-    const clippedAlong = (ancestor, axis) =>
-        !scrolls[axis] &&
-        !containsAlong(ancestor.frame, record.frame, axis, tolerance);
+    // 每个方向上第一个能滚动的容器，以及它和外层祖先共同留下的可见窗口
+    const scrolled = {x: null, y: null};
     for (let ancestor = record.parent; ancestor; ancestor = ancestor.parent) {
-        if (ancestor.type === 'ScrollView') {
-            const scrollAxis = ancestor.scroll === 'vertical' ? 'y' : 'x';
-            if (clippedAlong(ancestor, scrollAxis === 'y' ? 'x' : 'y')) {
-                return ancestor;
+        for (const axis of ['x', 'y']) {
+            if (!clipsAlong(ancestor, axis)) {
+                continue;
             }
-            scrolls[scrollAxis] = true;
+            const scrollAxis =
+                ancestor.type === 'ScrollView'
+                    ? ancestor.scroll === 'vertical'
+                        ? 'y'
+                        : 'x'
+                    : null;
+            const [start, end] = spanOf(ancestor.frame, axis);
+            if (scrollAxis === axis && !scrolled[axis]) {
+                const content = ancestor.children[0];
+                const viewport = ancestor.frame[AXES[axis].size];
+                scrolled[axis] = {
+                    maxScroll: Math.max(
+                        0,
+                        (content?.frame[AXES[axis].size] ?? 0) - viewport,
+                    ),
+                    start,
+                    end,
+                    startBy: ancestor,
+                    endBy: ancestor,
+                };
+                continue;
+            }
+            const window = scrolled[axis];
+            if (!window) {
+                // 和 record 一起移动的祖先（还没越过滚动容器）：直接比较
+                if (!containsAlong(ancestor.frame, record.frame, axis, tolerance)) {
+                    return ancestor;
+                }
+                continue;
+            }
+            if (start > window.start) {
+                window.start = start;
+                window.startBy = ancestor;
+            }
+            if (end < window.end) {
+                window.end = end;
+                window.endBy = ancestor;
+            }
+        }
+    }
+    // 能滚动的方向：窗口滚动时扫过的范围要盖住 record
+    for (const axis of ['x', 'y']) {
+        const window = scrolled[axis];
+        if (!window) {
             continue;
         }
-        const {overflow} = flattenStyle(ancestor.props.style);
-        if (
-            (overflow === 'hidden' || overflow === 'scroll') &&
-            (clippedAlong(ancestor, 'x') || clippedAlong(ancestor, 'y'))
-        ) {
-            return ancestor;
+        const [start, end] = spanOf(record.frame, axis);
+        if (window.end < window.start - tolerance) {
+            // 视口整个在外层的可见区之外，什么都看不到
+            return window.endBy;
+        }
+        if (start < window.start - tolerance) {
+            return window.startBy;
+        }
+        if (end > window.end + window.maxScroll + tolerance) {
+            return window.endBy;
         }
     }
     return null;

@@ -93,7 +93,7 @@ test('scroll content is not limited along the scroll axis, but is clipped across
     }
 });
 
-test('content can scroll into view past clipping ancestors, but only along the scroll axis', () => {
+test('content can scroll into view past clipping ancestors, but only along the scroll axis and within the scroll range', () => {
     const {root, unmount} = layout(
         h(
             'View',
@@ -127,6 +127,51 @@ test('content can scroll into view past clipping ancestors, but only along the s
         );
     } finally {
         unmount();
+    }
+
+    // 滚动只能在 0～最大滚动量之间：视口被更矮的祖先裁掉一截时，滚到底也露不出来的
+    // 末尾算被裁（外层 50 高，列表视口 100 高、内容 280 高，最后一项 80 高）
+    const shortWindow = layout(
+        h(
+            'View',
+            {nativeID: 'short', style: {height: 50, overflow: 'hidden'}},
+            h(
+                'ScrollView',
+                {style: {height: 100, flexShrink: 0}},
+                h('View', {style: {height: 200}}),
+                h('View', {nativeID: 'last', style: {height: 80}}),
+            ),
+        ),
+    );
+    try {
+        assert.equal(
+            clippingAncestor(findOne(shortWindow.root, byKey('last'), 'last')),
+            findOne(shortWindow.root, byKey('short'), 'short'),
+        );
+    } finally {
+        shortWindow.unmount();
+    }
+
+    // 视口整个在祖先的可见区之外：里面什么都看不到
+    const hidden = layout(
+        h(
+            'View',
+            {nativeID: 'frame', style: {height: 100, overflow: 'hidden'}},
+            h('View', {style: {height: 150, flexShrink: 0}}),
+            h(
+                'ScrollView',
+                {style: {height: 80, flexShrink: 0}},
+                h('View', {nativeID: 'item', style: {height: 20}}),
+            ),
+        ),
+    );
+    try {
+        assert.equal(
+            clippingAncestor(findOne(hidden.root, byKey('item'), 'item')),
+            findOne(hidden.root, byKey('frame'), 'frame'),
+        );
+    } finally {
+        hidden.unmount();
     }
 
     // 竖向列表里横着伸出去的内容，滚动帮不上忙，照样算被外层裁掉
