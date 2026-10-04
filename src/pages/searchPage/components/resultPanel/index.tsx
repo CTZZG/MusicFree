@@ -11,6 +11,7 @@ import results from "./results";
 import useColors from "@/hooks/useColors";
 import { useI18N } from "@/core/i18n";
 import { useParams } from "@/core/router";
+import { withAccessibilitySuffixes } from "@/utils/a11yLabels";
 import { getCategoryTabMeta } from "../../common/searchResultMeta";
 import { useSearchResults } from "../../hooks/useSearchSession";
 
@@ -55,19 +56,24 @@ function ResultPanel() {
             renderTabBar={props => {
                 const options = props.navigationState.routes.reduce(
                     (acc, route) => {
+                        const title = route.i18nKey
+                            ? t(route.i18nKey as any)
+                            : route.title;
+                        const meta = getCategoryTabMeta(
+                            searchResults[route.key],
+                            t,
+                        );
                         acc[route.key] = {
+                            // 不给的话读的是路由的 title（写死的中文）
+                            accessibilityLabel: withAccessibilitySuffixes(
+                                title,
+                                [meta.text],
+                            ),
                             label: ({ focused }: any) => (
                                 <ResultTabLabel
-                                    title={
-                                        route.i18nKey
-                                            ? t(route.i18nKey as any)
-                                            : route.title
-                                    }
+                                    title={title}
                                     focused={focused}
-                                    meta={getCategoryTabMeta(
-                                        searchResults[route.key],
-                                        t,
-                                    )}
+                                    meta={meta}
                                 />
                             ),
                         };

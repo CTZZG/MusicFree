@@ -46,14 +46,12 @@ export default function Body() {
             renderTabBar={props => {
                 const options = props.navigationState.routes.reduce(
                     (acc, route) => {
+                        const title = t(route.i18nKey as any) ?? route.title;
                         acc[route.key] = {
+                            // 不给的话读的是路由的 title（写死的中文）
+                            accessibilityLabel: title,
                             label: ({ focused }: any) => (
-                                <TabLabel
-                                    title={
-                                        t(route.i18nKey as any) ?? route.title
-                                    }
-                                    focused={focused}
-                                />
+                                <TabLabel title={title} focused={focused} />
                             ),
                         };
                         return acc;

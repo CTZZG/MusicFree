@@ -224,7 +224,8 @@ function assertChrome(root, device, t, fontSizes, artist) {
 
     // 两个标签：至少 48 高，名字完整显示，选中、未选中两份一样；窄屏、大字体时第二个
     // 标签可以滑过去（clippingAncestor 按标签栏能不能滚动来判断）
-    const tabs = ['单曲', '专辑'].map(label => findOne(root, record => record.props.accessibilityRole === 'tab' && record.props.accessibilityLabel === label, `tab ${label}`));
+    // 按界面语言朗读（以前读的是路由里写死的中文 title）
+    const tabs = [t('common.singleMusic'), t('common.album')].map(label => findOne(root, record => record.props.accessibilityRole === 'tab' && record.props.accessibilityLabel === label, `tab ${label}`));
     assert.ok(tabs[0].frame.x >= area.left - 0.5, 'the tabs start inside the safe area');
     for (const [index, tab] of tabs.entries()) {
         const title = t(index === 0 ? 'common.singleMusic' : 'common.album');
@@ -332,7 +333,7 @@ for (const device of DEVICES) {
                 const {t, fontSizes} = rendered;
                 const area = safeArea(device);
                 try {
-                    const albumTab = findOne(rendered.root, record => record.props.accessibilityRole === 'tab' && record.props.accessibilityLabel === '专辑', 'album tab');
+                    const albumTab = findOne(rendered.root, record => record.props.accessibilityRole === 'tab' && record.props.accessibilityLabel === t('common.album'), 'album tab');
                     const root = rendered.interact(() => albumTab.props.onPress());
                     const {tabs} = assertChrome(root, device, t, fontSizes, ARTISTS.full);
                     const rows = ALBUMS.map(album => {

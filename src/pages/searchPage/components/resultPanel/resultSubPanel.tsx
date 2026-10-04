@@ -6,6 +6,7 @@ import { vw } from "@/utils/rpx";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
+import { withAccessibilitySuffixes } from "@/utils/a11yLabels";
 import { getSourceTabMeta } from "../../common/searchResultMeta";
 import {
     useSearchSourceResult,
@@ -121,18 +122,22 @@ function ResultSubPanel(props: IResultSubPanelProps) {
             renderTabBar={_ => {
                 const options = _.navigationState.routes.reduce(
                     (acc: Record<string, any>, route: { key: string; title?: string }) => {
+                        const title =
+                            route.title ?? `(${t("common.unknownName")})`;
+                        const meta = getSourceTabMeta(
+                            typeResults[route.key],
+                            t,
+                        );
                         acc[route.key] = {
+                            accessibilityLabel: withAccessibilitySuffixes(
+                                title,
+                                [meta.text],
+                            ),
                             label: ({ focused }: any) => (
                                 <ResultTabLabel
-                                    title={
-                                        route.title ??
-                                        `(${t("common.unknownName")})`
-                                    }
+                                    title={title}
                                     focused={focused}
-                                    meta={getSourceTabMeta(
-                                        typeResults[route.key],
-                                        t,
-                                    )}
+                                    meta={meta}
                                     tintOnError
                                 />
                             ),

@@ -330,6 +330,8 @@ function TabBar({navigationState, options, style, tabStyle, contentContainerStyl
     const tabs = navigationState.routes.map((route, index) => {
         const focused = index === navigationState.index;
         const label = options?.[route.key]?.label;
+        // TabBarItem 朗读 options 里的 accessibilityLabel，没有时读 labelText（默认是路由的 title）
+        const accessibilityLabel = options?.[route.key]?.accessibilityLabel ?? route.title;
         const renderLabel = labelFocused =>
             label
                 ? label({focused: labelFocused, route, labelText: route.title})
@@ -339,7 +341,7 @@ function TabBar({navigationState, options, style, tabStyle, contentContainerStyl
             {
                 key: route.key,
                 accessibilityRole: 'tab',
-                accessibilityLabel: route.title,
+                accessibilityLabel,
                 accessibilityState: {selected: focused},
                 onPress: () => jumpTo(route.key),
             },

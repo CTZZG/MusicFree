@@ -350,16 +350,20 @@ function assertCancel(root, area, t, field) {
     assert.equal(clippingAncestor(label), null);
 }
 
+/** 标签朗读的内容：界面语言的名字，后面跟着结果数、加载中或失败（和 App 一样拼） */
+const tabLabelOf = ({title, meta}) => (meta ? `${title}, ${meta}` : title);
+
 /**
- * 一层标签（类别或来源）：至少 48 高；每个标签里选中、未选中两份都是名字加一行说明，
- * 名字和说明完整显示（特别长的来源名截断成一行），不出标签、不被裁掉。
- * @param {Array<{label: string, title: string, meta: string}>} expected 按顺序
+ * 一层标签（类别或来源）：按界面语言朗读；至少 48 高；每个标签里选中、未选中两份都是
+ * 名字加一行说明，名字和说明完整显示（特别长的来源名截断成一行），不出标签、不被裁掉。
+ * @param {Array<{title: string, meta: string}>} expected 按顺序
  * @returns 这一层标签
  */
 function assertResultTabs(root, expected, what) {
-    const tabs = expected.map(({label}) => findOne(root, record => record.props.accessibilityRole === 'tab' && record.props.accessibilityLabel === label, `${what} tab ${label}`));
+    const tabs = expected.map(tab => findOne(root, record => record.props.accessibilityRole === 'tab' && record.props.accessibilityLabel === tabLabelOf(tab), `${what} tab ${tabLabelOf(tab)}`));
     for (const [index, tab] of tabs.entries()) {
-        const {label, title, meta} = expected[index];
+        const {title, meta} = expected[index];
+        const label = tabLabelOf(expected[index]);
         assert.ok(tab.frame.height >= 48 - 0.5, `${what} tab ${label} ${describeFrame(tab.frame)} is at least 48 dp tall`);
         const texts = findAll(tab, isText);
         const titles = texts.filter(text => text.text === title);
@@ -391,10 +395,10 @@ function assertResultTabs(root, expected, what) {
 function categoryTabs(t) {
     return [
         // 还有来源在加载下一页
-        {label: '单曲', title: t('common.singleMusic'), meta: `${SONGS.length + 3}...`},
-        {label: '专辑', title: t('common.album'), meta: `${ALBUMS.length}`},
-        {label: '作者', title: t('common.artist'), meta: `${ARTISTS.length}`},
-        {label: '歌单', title: t('common.sheet'), meta: `${SHEETS.length}`},
+        {title: t('common.singleMusic'), meta: `${SONGS.length + 3}...`},
+        {title: t('common.album'), meta: `${ALBUMS.length}`},
+        {title: t('common.artist'), meta: `${ARTISTS.length}`},
+        {title: t('common.sheet'), meta: `${SHEETS.length}`},
     ];
 }
 
@@ -532,9 +536,9 @@ for (const device of DEVICES) {
                     const tabsBottom = assertResultLayout(root, area, t, {
                         category: 'music',
                         source: [
-                            {label: PLUGINS[0].name, title: PLUGINS[0].name, meta: `${SONGS.length}`},
-                            {label: PLUGINS[1].name, title: PLUGINS[1].name, meta: '3...'},
-                            {label: LONG_PLUGIN_NAME, title: LONG_PLUGIN_NAME, meta: t('searchPage.sourceTimeoutShort')},
+                            {title: PLUGINS[0].name, meta: `${SONGS.length}`},
+                            {title: PLUGINS[1].name, meta: '3...'},
+                            {title: LONG_PLUGIN_NAME, meta: t('searchPage.sourceTimeoutShort')},
                         ],
                     });
                     const rows = SONGS.map(song => findOne(root, byLabel(`${song.title}, ${song.artist}`), `row ${song.title}`));
@@ -620,9 +624,9 @@ for (const device of DEVICES) {
                     const tabsBottom = assertResultLayout(root, area, t, {
                         category: 'album',
                         source: [
-                            {label: PLUGINS[0].name, title: PLUGINS[0].name, meta: `${ALBUMS.length}`},
-                            {label: PLUGINS[1].name, title: PLUGINS[1].name, meta: '0'},
-                            {label: LONG_PLUGIN_NAME, title: LONG_PLUGIN_NAME, meta: t('searchPage.sourceTimeoutShort')},
+                            {title: PLUGINS[0].name, meta: `${ALBUMS.length}`},
+                            {title: PLUGINS[1].name, meta: '0'},
+                            {title: LONG_PLUGIN_NAME, meta: t('searchPage.sourceTimeoutShort')},
                         ],
                     });
                     const rows = ALBUMS.map(album => {
@@ -658,7 +662,7 @@ for (const device of DEVICES) {
                     const tabsBottom = assertResultLayout(root, area, t, {
                         category: 'artist',
                         // 另外两个来源还没搜过这一类：没有说明
-                        source: [{label: PLUGINS[0].name, title: PLUGINS[0].name, meta: `${ARTISTS.length}`}],
+                        source: [{title: PLUGINS[0].name, meta: `${ARTISTS.length}`}],
                     });
                     const rows = ARTISTS.map(artist => {
                         const name = findOne(root, byText(artist.name), `artist ${artist.name}`);
@@ -692,7 +696,7 @@ for (const device of DEVICES) {
                 try {
                     const tabsBottom = assertResultLayout(root, area, t, {
                         category: 'sheet',
-                        source: [{label: PLUGINS[0].name, title: PLUGINS[0].name, meta: `${SHEETS.length}`}],
+                        source: [{title: PLUGINS[0].name, meta: `${SHEETS.length}`}],
                     });
                     // 歌单网格：标题最多两行、不出封面的左右；上一行的标题不压到下一行
                     const covers = findAll(root, record => record.type === 'Image');
@@ -765,7 +769,7 @@ for (const device of DEVICES) {
                     const failed = t('common.failToLoad');
                     assertSearchField(root, area, t);
                     assertResultTabs(root, categoryTabs(t).map(tab => ({...tab, meta: failed})), 'category');
-                    assertResultTabs(root, PLUGINS.map(plugin => ({label: plugin.name, title: plugin.name, meta: failed})), 'source');
+                    assertResultTabs(root, PLUGINS.map(plugin => ({title: plugin.name, meta: failed})), 'source');
                     const texts = [
                         findOne(root, byText(t('searchPage.sourceLoadFailed', {source: PLUGINS[0].name})), 'error title'),
                         findOne(root, byText('Network request failed'), 'error description'),
