@@ -208,6 +208,7 @@ function ListItemIcon(props: IListItemIconProps) {
 
     return onPress ? (
         <TouchableOpacity
+            style={styles.actionPressable}
             hitSlop={hitSlop}
             onPress={onPress}
             accessibilityRole="button"
@@ -341,6 +342,15 @@ const styles = StyleSheet.create({
         width: "100%",
         flexDirection: "row",
         alignItems: "center",
+    },
+    /**
+     * 可点的图标：点击层撑满行高、图标在里面竖直居中，点击区域是整行的高度。
+     * 行只有最小高度时，里面那层的 stretch 跨不过点击层，点击区域会缩成图标那么大，
+     * 点图标上下就点到了整行。左右的间距（margin）仍在点击层里，宽度和以前一样
+     */
+    actionPressable: {
+        alignSelf: "stretch",
+        justifyContent: "center",
     },
     /** left */
     actionBase: {

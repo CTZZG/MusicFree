@@ -44,6 +44,8 @@ type DownloadWriteStatus = DownloadWriteResult;
 /** 1 倍字体时时长那一栏的最小宽度，放得下「12:34」，更长的（超过一小时）跟着变宽 */
 const DURATION_MIN_WIDTH = 36;
 
+const MORE_ICON_HIT_SLOP = { left: 12, right: 12 };
+
 interface IMusicItemProps {
     index?: string | number;
     showMoreIcon?: boolean;
@@ -446,10 +448,9 @@ function MusicItem(props: IMusicItemProps) {
             {showMoreIcon ? (
                 <ListItem.ListItemIcon
                     width={rpx(48)}
-                    hitSlop={{
-                        left: rpx(24),
-                        right: rpx(24),
-                    }}
+                    // 图标 22 宽，左右各放宽 12：任何屏幕上都有 44 以上的点击宽度
+                    // （以前按屏宽算，320 dp 的手机上只有 42）
+                    hitSlop={MORE_ICON_HIT_SLOP}
                     position="none"
                     icon="ellipsis-vertical"
                     accessibilityLabel={t("musicList.item.moreOptions.a11y", {

@@ -292,6 +292,13 @@ function assertSongRows(root, area, t) {
         assert.ok(contains(badge.parent.frame, badge.frame, 1), `badge ${badge.text} fits its frame ${describeFrame(badge.parent.frame)}`);
         const more = findOne(row, byLabel(t('musicList.item.moreOptions.a11y', {title: song.title})), 'more button');
         assert.ok(more.frame.x >= rightOf(duration.frame) - 0.5, 'more button is right of the duration');
+        // 「更多」的点击区域是整行的高度，加上左右的 hitSlop 至少 44 宽：点图标上下不会点到整行去播放
+        const slop = more.props.hitSlop ?? {};
+        assert.ok(
+            Math.abs(more.frame.y - row.frame.y) <= 0.5 && Math.abs(more.frame.height - row.frame.height) <= 0.5,
+            `more button ${describeFrame(more.frame)} spans row ${describeFrame(row.frame)}`,
+        );
+        assert.ok(more.frame.width + (slop.left ?? 0) + (slop.right ?? 0) >= 44 - 0.5, 'more button is at least 44 dp wide to touch');
     }
     assertNoOverlap(rows, 'song rows');
     return rows;
