@@ -1137,5 +1137,14 @@
     "searchPage.allMusic": "全部来源",
     "searchPage.allMusicHint": "跨来源汇总单曲；曲目信息完整且相同的结果可选择来源，信息不全时分别保留。",
     "searchPage.allMusicMore": "加载更多来源结果",
-    "searchPage.chooseSource": "选择来源（{count} 个）"
+    "searchPage.chooseSource": "选择来源（{count} 个）",
+    "panel.playList.edit": "编辑队列",
+    "panel.playList.moveUp": "上移",
+    "panel.playList.moveDown": "下移",
+    "panel.playList.moveNext": "设为下一首",
+    "panel.playList.remove": "移出队列",
+    "panel.playList.undo": "撤销",
+    "panel.playList.removed": "已移出 {count} 首",
+    "panel.playList.cleared": "已清空 {count} 首",
+    "panel.playList.undoHint": "撤销恢复队列，不改变当前播放"
 }

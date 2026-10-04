@@ -1137,5 +1137,14 @@
     "searchPage.allMusic": "全部來源",
     "searchPage.allMusicHint": "跨來源彙總單曲；曲目資訊完整且相同的結果可選擇來源，資訊不全時分別保留。",
     "searchPage.allMusicMore": "載入更多來源結果",
-    "searchPage.chooseSource": "選擇來源（{count} 個）"
+    "searchPage.chooseSource": "選擇來源（{count} 個）",
+    "panel.playList.edit": "編輯佇列",
+    "panel.playList.moveUp": "上移",
+    "panel.playList.moveDown": "下移",
+    "panel.playList.moveNext": "設為下一首",
+    "panel.playList.remove": "移出佇列",
+    "panel.playList.undo": "復原",
+    "panel.playList.removed": "已移出 {count} 首",
+    "panel.playList.cleared": "已清空 {count} 首",
+    "panel.playList.undoHint": "復原還原佇列，不變更目前播放"
 }

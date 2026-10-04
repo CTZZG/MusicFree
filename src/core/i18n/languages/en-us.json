@@ -1137,5 +1137,14 @@
     "searchPage.allMusic": "All sources",
     "searchPage.allMusicHint": "Songs from all sources. Results with matching complete metadata offer a source choice; incomplete results stay separate.",
     "searchPage.allMusicMore": "Load more source results",
-    "searchPage.chooseSource": "Choose source ({count})"
+    "searchPage.chooseSource": "Choose source ({count})",
+    "panel.playList.edit": "Edit queue",
+    "panel.playList.moveUp": "Move up",
+    "panel.playList.moveDown": "Move down",
+    "panel.playList.moveNext": "Play next",
+    "panel.playList.remove": "Remove from queue",
+    "panel.playList.undo": "Undo",
+    "panel.playList.removed": "Removed {count} track(s)",
+    "panel.playList.cleared": "Cleared {count} track(s)",
+    "panel.playList.undoHint": "Undo restores the queue and keeps playback as it is"
 }

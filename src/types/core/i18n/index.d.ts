@@ -1259,4 +1259,13 @@ export interface ILanguage {
     locale: string; // 语言代码
     name: string; // 语言名称
     languageData: ILanguageData; // 语言数据
+    "panel.playList.edit": string;
+    "panel.playList.moveUp": string;
+    "panel.playList.moveDown": string;
+    "panel.playList.moveNext": string;
+    "panel.playList.remove": string;
+    "panel.playList.undo": string;
+    "panel.playList.removed": string;
+    "panel.playList.cleared": string;
+    "panel.playList.undoHint": string;
 }
