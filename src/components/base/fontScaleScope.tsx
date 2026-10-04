@@ -1,4 +1,5 @@
 import React, { createContext, PropsWithChildren, useContext } from "react";
+import { useWindowDimensions } from "react-native";
 
 const FollowSystemFontScaleContext = createContext(false);
 
@@ -22,4 +23,15 @@ export function FontScaleScope(
 
 export function useFollowSystemFontScale() {
     return useContext(FollowSystemFontScaleContext);
+}
+
+/**
+ * ThemeText 实际的放大倍数：跟随系统字体时是系统字体的倍数，否则是 1。
+ * 宽度要跟着文字一起放大的地方（例如歌曲行里的时长）用它，没迁移的页面里不会
+ * 白白变宽。
+ */
+export function useThemeTextFontScale() {
+    const followSystem = useFollowSystemFontScale();
+    const { fontScale } = useWindowDimensions();
+    return followSystem ? fontScale : 1;
 }

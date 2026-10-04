@@ -344,7 +344,9 @@ const styles = StyleSheet.create({
     },
     /** left */
     actionBase: {
-        height: "100%",
+        // 占满行高。不用 height: "100%"：行只有最小高度（随文字变高）时，Yoga 按
+        // 百分比算出的高度不对，行会被撑得很高
+        alignSelf: "stretch",
         flexShrink: 0,
         flexGrow: 0,
         flexBasis: 0,
@@ -367,7 +369,7 @@ const styles = StyleSheet.create({
     itemContentContainer: {
         flex: 1,
         minWidth: 0,
-        height: "100%",
+        alignSelf: "stretch",
         justifyContent: "center",
     },
     contentDesc: {

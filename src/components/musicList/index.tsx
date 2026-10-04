@@ -38,7 +38,7 @@ import ListFooter from "../base/listFooter";
 import MusicItem from "../mediaItem/musicItem";
 import { getMediaUniqueKey, isSameMediaItem } from "@/utils/mediaUtils";
 import Icon from "../base/icon";
-import { iconSizeConst } from "@/constants/uiConst";
+import { iconSizeConst, maxFontScaleConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
 import { IIconName } from "../base/icon.tsx";
 import { showPanel } from "../panels/usePanel";
@@ -827,12 +827,14 @@ function SelectionAction(props: ISelectionActionProps) {
                 color={colors.appBarText}
                 style={disabled ? styles.disabledAction : undefined}
             />
+            {/* 底部操作栏高度固定、格子等宽，和其他尺寸固定的紧凑控件一样封顶 */}
             <ThemeText
                 fontSize="subTitle"
                 color={colors.appBarText}
                 opacity={disabled ? 0.6 : undefined}
                 style={styles.selectionActionText}
-                numberOfLines={1}>
+                numberOfLines={1}
+                maxFontSizeMultiplier={maxFontScaleConst.compact}>
                 {title}
             </ThemeText>
         </Pressable>
@@ -888,20 +890,27 @@ const styles = StyleSheet.create({
         textAlign: "center",
     },
     checkBoxWrapper: {
-        height: "100%",
+        // 占满行高（行随文字变高，见 ListItem 的 actionBase）
+        alignSelf: "stretch",
         justifyContent: "center",
         marginRight: rpx(16),
     },
     selectionHeader: {
-        height: rpx(84),
+        // 字体放大、一行放不下时「全选」「取消」折到下一行
+        minHeight: rpx(84),
         paddingHorizontal: rpx(24),
+        paddingVertical: rpx(8),
         flexDirection: "row",
+        flexWrap: "wrap",
         alignItems: "center",
         justifyContent: "space-between",
     },
     selectionHeaderActions: {
         flexDirection: "row",
+        flexWrap: "wrap",
         alignItems: "center",
+        // 折到下一行时也靠右
+        marginLeft: "auto",
     },
     selectionTextButton: {
         paddingVertical: rpx(12),

@@ -28,6 +28,8 @@ import {
 import useColors from "@/hooks/useColors";
 import useLocalMusicArtwork from "@/hooks/useLocalMusicArtwork";
 import Tag from "../base/tag";
+import { useThemeTextFontScale } from "../base/fontScaleScope";
+import { maxFontScaleConst } from "@/constants/uiConst";
 import {
     CardGroupPosition,
     useShortcutCardStyle,
@@ -38,6 +40,9 @@ import {
 } from "@/utils/a11yLabels";
 
 type DownloadWriteStatus = DownloadWriteResult;
+
+/** 1 倍字体时时长那一栏的最小宽度，放得下「12:34」，更长的（超过一小时）跟着变宽 */
+const DURATION_MIN_WIDTH = 36;
 
 interface IMusicItemProps {
     index?: string | number;
@@ -126,6 +131,7 @@ function MusicItem(props: IMusicItemProps) {
         selected,
     } = props;
     const colors = useColors();
+    const themeTextFontScale = useThemeTextFontScale();
     const qualityBadge = useMemo(
         () => showQuality ? getMusicItemQualityBadge(musicItem) : "",
         [musicItem, showQuality],
@@ -215,11 +221,11 @@ function MusicItem(props: IMusicItemProps) {
 
     return (
         <ListItem
-            heightType={isCard ? "none" : "big"}
+            heightType="none"
             pressableStyle={isCard ? cardStyle : null}
             style={[
                 containerStyle,
-                isCard ? styles.cardContainer : null,
+                isCard ? styles.cardContainer : styles.plainContainer,
             ]}
             withHorizontalPadding
             leftPadding={isCard ? rpx(14) : index !== undefined ? 0 : undefined}
@@ -307,6 +313,7 @@ function MusicItem(props: IMusicItemProps) {
                                 <ThemeText
                                     fontSize="tag"
                                     numberOfLines={1}
+                                    maxFontSizeMultiplier={maxFontScaleConst.compact}
                                     style={styles.qualityBadgeText}>
                                     {qualityBadge}
                                 </ThemeText>
@@ -343,6 +350,7 @@ function MusicItem(props: IMusicItemProps) {
                                     <ThemeText
                                         fontSize="tag"
                                         numberOfLines={1}
+                                        maxFontSizeMultiplier={maxFontScaleConst.compact}
                                         style={[
                                             styles.writeBadgeText,
                                             badge.status === "success"
@@ -394,12 +402,15 @@ function MusicItem(props: IMusicItemProps) {
                 </View>
             ) : durationText ? (
                 <ListItem.ListItemText
-                    width={rpx(72)}
                     position="none"
-                    fixedWidth
                     fontSize="description"
                     fontColor="textSecondary"
-                    contentStyle={styles.durationText}>
+                    containerStyle={[
+                        styles.duration,
+                        { minWidth: DURATION_MIN_WIDTH * themeTextFontScale },
+                    ]}
+                    contentStyle={styles.durationText}
+                    contentProps={{ numberOfLines: 1 }}>
                     {durationText}
                 </ListItem.ListItemText>
             ) : null}
@@ -462,6 +473,10 @@ const styles = StyleSheet.create({
     content: {
         minWidth: 0,
     },
+    plainContainer: {
+        // 字体放大、两行文字放不下时跟着变高（以前固定 64）
+        minHeight: ListItem.Size.big,
+    },
     cardContainer: {
         minHeight: rpx(132),
         paddingVertical: rpx(14),
@@ -512,7 +527,7 @@ const styles = StyleSheet.create({
         marginRight: rpx(8),
     },
     qualityBadge: {
-        height: rpx(28),
+        minHeight: rpx(28),
         maxWidth: rpx(72),
         paddingHorizontal: rpx(6),
         marginRight: rpx(8),
@@ -530,7 +545,7 @@ const styles = StyleSheet.create({
         lineHeight: rpx(24),
     },
     writeBadge: {
-        height: rpx(28),
+        minHeight: rpx(28),
         maxWidth: rpx(96),
         paddingHorizontal: rpx(6),
         marginRight: rpx(8),
@@ -564,6 +579,10 @@ const styles = StyleSheet.create({
     },
     writeBadgeTextSkipped: {
         color: "rgba(255,255,255,0.58)",
+    },
+    duration: {
+        // 时长靠右对齐：短的不足最小宽度时，各行的右边仍然对齐
+        justifyContent: "flex-end",
     },
     durationText: {
         textAlign: "right",
