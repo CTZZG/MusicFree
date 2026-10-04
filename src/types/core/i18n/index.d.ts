@@ -141,6 +141,33 @@ export interface ILanguageData {
     "toast.syncFail": string; // 同步失败
     "toast.sortHasBeenUpdated": string; // 排序已更新
     "toast.currentQualityNotAvailableForCurrentMusic": string; // 当前音乐的质量在此设备上不可用
+    "library.searchPlaylists": string;
+    "library.noMatchingPlaylists": string;
+    "library.managePlaylist": string;
+    "library.pinPlaylist": string;
+    "library.unpinPlaylist": string;
+    "library.pinned": string;
+    "library.assignGroup": string;
+    "library.allGroups": string;
+    "library.ungrouped": string;
+    "library.newGroup": string;
+    "library.groupName": string;
+    "library.groupPlaylist": string;
+    "library.groupNameRequired": string;
+    "panel.setFontSize.description": string;
+    "panel.setFontSize.preview": string;
+    "panel.setFontSize.previewLabel": string;
+    "panel.setFontSize.reset": string;
+    "panel.setFontSize.sliderLabel": string;
+    "panel.playList.edit": string;
+    "panel.playList.moveUp": string;
+    "panel.playList.moveDown": string;
+    "panel.playList.moveNext": string;
+    "panel.playList.remove": string;
+    "panel.playList.undo": string;
+    "panel.playList.removed": string;
+    "panel.playList.cleared": string;
+    "panel.playList.undoHint": string;
     "searchPage.allMusic": string;
     "searchPage.allMusicHint": string;
     "searchPage.allMusicMore": string;
@@ -1259,26 +1286,4 @@ export interface ILanguage {
     locale: string; // 语言代码
     name: string; // 语言名称
     languageData: ILanguageData; // 语言数据
-    "panel.playList.edit": string;
-    "panel.playList.moveUp": string;
-    "panel.playList.moveDown": string;
-    "panel.playList.moveNext": string;
-    "panel.playList.remove": string;
-    "panel.playList.undo": string;
-    "panel.playList.removed": string;
-    "panel.playList.cleared": string;
-    "panel.playList.undoHint": string;
-    "library.searchPlaylists": string;
-    "library.noMatchingPlaylists": string;
-    "library.managePlaylist": string;
-    "library.pinPlaylist": string;
-    "library.unpinPlaylist": string;
-    "library.pinned": string;
-    "library.assignGroup": string;
-    "library.allGroups": string;
-    "library.ungrouped": string;
-    "library.newGroup": string;
-    "library.groupName": string;
-    "library.groupPlaylist": string;
-    "library.groupNameRequired": string;
 }
