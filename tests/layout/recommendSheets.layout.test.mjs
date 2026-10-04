@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
     React,
+    assertReadable,
     byText,
     clippingAncestor,
     contains,
@@ -21,10 +22,13 @@ import {
 } from './harness.mjs';
 import {
     FlashListGrid,
+    assertSourceTabs,
     createCommonStubs,
     createEnv,
+    createPageStubs,
     createTabViewStub,
     inAppFontScaleScope,
+    pageMusicBarLayout,
 } from './stubs.mjs';
 
 const h = React.createElement;
@@ -87,41 +91,11 @@ const DEVICES = [
 const LANGUAGES = ['zh-CN', 'en-US'];
 const FONT_SCALES = [1, 1.3, 1.5, 2];
 
-/** 推荐歌单页没有标签栏：正在播放时迷你播放器浮在页面底部，用生产的规则和尺寸算 */
-function musicBarLayout(loader) {
-    const {resolveMusicBarLayout} = loader.load('@/components/musicBar/layoutPolicy');
-    const sizes = loader.load('@/components/musicBar/layout');
-    return resolveMusicBarLayout({
-        routeSupportsMusicBar: true,
-        routeHasTabBar: false,
-        hasCurrentMusic: true,
-        keyboardVisible: false,
-        barHeight: sizes.MUSIC_BAR_HEIGHT,
-        floatingBottom: sizes.MUSIC_BAR_FLOATING_BOTTOM,
-        tabBarHeight: sizes.TAB_BAR_HEIGHT,
-        tabBarGap: sizes.MUSIC_BAR_TAB_BAR_GAP,
-    });
-}
-
-function createPageStubs(env, {plugins, sheets, state, loaderRef}) {
+function createRecommendSheetsStubs(env, {plugins, sheets, state, loaderRef}) {
     const requestState = () =>
         loaderRef.current.load('@/constants/commonConst').RequestStateCode[state];
     return {
-        ...createCommonStubs(env),
-        '@react-navigation/native': strictStub('@react-navigation/native', {
-            useNavigation: () => ({goBack() {}}),
-            useTheme: () => ({dark: false}),
-        }),
-        '@/core/theme': strictStub('@/core/theme', {
-            default: {useTheme: () => ({dark: false})},
-        }),
-        // 标题栏的弹出菜单画在根视图的浮层里，不在页面的排版里
-        '@/components/base/portal': strictStub('portal', {default: () => null}),
-        '@/core/router': strictStub('@/core/router', {
-            ROUTE_PATH: new Proxy({}, {get: (_, key) => String(key)}),
-            useNavigate: () => () => {},
-            useParams: () => ({}),
-        }),
+        ...createPageStubs(env),
         '@/core/pluginManager': strictStub('@/core/pluginManager', {
             default: {getSortedPluginsWithAbility: () => plugins},
         }),
@@ -135,10 +109,6 @@ function createPageStubs(env, {plugins, sheets, state, loaderRef}) {
             'useRecommendSheets',
             {default: () => [() => {}, sheets, requestState()]},
         ),
-        // 真实的 useMusicBarFloatingOffset 读这份布局状态
-        '@/components/musicBar/layoutState': strictStub('musicBarLayoutState', {
-            useMusicBarLayoutState: () => ({layout: musicBarLayout(loaderRef.current)}),
-        }),
     };
 }
 
@@ -148,7 +118,7 @@ function createPageStubs(env, {plugins, sheets, state, loaderRef}) {
 function renderPage(env, {plugins = PLUGINS, sheets = SHEETS, state = 'FINISHED'} = {}) {
     const loaderRef = {current: null};
     const loader = createModuleLoader(
-        createPageStubs(env, {plugins, sheets, state, loaderRef}),
+        createRecommendSheetsStubs(env, {plugins, sheets, state, loaderRef}),
     );
     loaderRef.current = loader;
     const RecommendSheets = loader.load('@/pages/recommendSheets').default;
@@ -160,7 +130,7 @@ function renderPage(env, {plugins = PLUGINS, sheets = SHEETS, state = 'FINISHED'
         ...rendered,
         t: loader.load('@/core/i18n').default.t,
         fontSizes: loader.load('@/constants/uiConst').fontSizeConst,
-        musicBar: musicBarLayout(loader),
+        musicBar: pageMusicBarLayout(),
     };
 }
 
@@ -172,35 +142,6 @@ function safeArea(device) {
         top: device.insets.top,
         bottom: device.height - device.insets.bottom,
     };
-}
-
-/**
- * 竖直方向上把 record 裁掉一部分的祖先。横向滚动的内容左右本来就会滚出屏幕，
- * 只看上下：overflow 不是 visible 的视图、横向滚动容器都会裁掉超出上下边的部分。
- */
-function verticalClipper(record) {
-    for (let ancestor = record.parent; ancestor; ancestor = ancestor.parent) {
-        const overflow = flattenStyle(ancestor.props.style).overflow;
-        const clips =
-            overflow === 'hidden' ||
-            overflow === 'scroll' ||
-            (ancestor.type === 'ScrollView' && ancestor.scroll === 'horizontal');
-        if (
-            clips &&
-            (record.frame.y < ancestor.frame.y - 0.5 ||
-                record.frame.y + record.frame.height >
-                    ancestor.frame.y + ancestor.frame.height + 0.5)
-        ) {
-            return ancestor;
-        }
-    }
-    return null;
-}
-
-function assertReadable(text, what) {
-    assert.ok(text, `${what} is rendered`);
-    assert.ok(!text.textInfo.clippedVertically, `${what} is not cut off: ${describeFrame(text.frame)}`);
-    assert.ok(!text.textInfo.squeezed, `${what} has room: ${describeFrame(text.frame)}`);
 }
 
 function ancestorOf(record, predicate) {
@@ -236,34 +177,8 @@ for (const device of DEVICES) {
                     assert.ok(back.frame.x >= area.left - 0.5);
                     assert.ok(rightOf(back.frame) <= title.frame.x + 0.5, 'title does not cover the back button');
 
-                    // 音源标签：一样宽、至少 48 高；普通长度的名字选中、未选中都完整显示，
-                    // 特别长的名字截断成一行
-                    const tabs = findAll(root, record => record.props.accessibilityRole === 'tab');
-                    assert.deepEqual(tabs.map(tab => tab.props.accessibilityLabel), PLUGINS.map(plugin => plugin.name));
-                    for (const tab of tabs) {
-                        const name = tab.props.accessibilityLabel;
-                        assert.ok(tab.frame.height >= 48 - 0.5, `tab ${name} is at least 48 dp tall`);
-                        assert.ok(
-                            Math.abs(tab.frame.width - tabs[0].frame.width) <= 0.5,
-                            `tab ${name} ${describeFrame(tab.frame)} is as wide as the others ${describeFrame(tabs[0].frame)}`,
-                        );
-                        const labels = findAll(tab, isText);
-                        assert.equal(labels.length, 2, 'unfocused and focused copies of the label');
-                        for (const label of labels) {
-                            assertReadable(label, `tab label ${name}`);
-                            assert.equal(label.textInfo.shownLines, 1);
-                            assert.equal(
-                                label.textInfo.truncated,
-                                name === LONG_PLUGIN_NAME,
-                                name === LONG_PLUGIN_NAME
-                                    ? 'the long name is cut short'
-                                    : `tab label ${name} (${label.props.style.fontWeight}) is shown in full`,
-                            );
-                            assert.ok(contains(tab.frame, label.frame, 1), `label ${name} stays in its tab`);
-                            assert.equal(verticalClipper(label), null, `label ${name} is not cut off`);
-                        }
-                    }
-                    const tabBarBottom = Math.max(...tabs.map(tab => bottomOf(tab.frame)));
+                    // 音源标签：一样宽、至少 48 高；名字不长的完整显示，特别长的截断成一行
+                    const tabBarBottom = assertSourceTabs(root, PLUGINS.map(plugin => plugin.name), LONG_PLUGIN_NAME);
 
                     // 分类标签条：在音源标签下面，标签上下不被裁掉，第一个标签和网格左对齐
                     const defaultTag = findOne(root, byText(t('common.default')), 'default tag');
@@ -276,7 +191,7 @@ for (const device of DEVICES) {
                         assert.equal(text.textInfo.shownLines, 1, `tag ${text.text} stays on one line`);
                         const tagBox = text.parent;
                         assert.ok(contains(tagBox.frame, text.frame, 1), `tag ${text.text} fits its chip`);
-                        assert.equal(verticalClipper(tagBox), null, `tag ${text.text} ${describeFrame(tagBox.frame)} is not cut off`);
+                        assert.equal(clippingAncestor(tagBox), null, `tag ${text.text} ${describeFrame(tagBox.frame)} is not cut off`);
                     }
                     assert.ok(
                         Math.abs(defaultTag.parent.frame.x - (area.left + PAGE_MARGIN)) <= 0.5,

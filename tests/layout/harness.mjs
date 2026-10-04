@@ -19,6 +19,7 @@
  *   与 RN「先估一帧、量到后再排」的流程一致；
  * - 排版本身不裁剪，断言看到的是内容本来的大小，overflow: hidden 掩盖不了越界。
  */
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
 import path from 'node:path';
@@ -308,6 +309,8 @@ export function createReactNativeStub(env) {
         I18nManager: {isRTL: false},
         // 状态栏不参与排版；currentHeight 是 Android 状态栏的高度，取安全区顶部
         StatusBar: Object.assign(() => null, {currentHeight: env.insets?.top ?? 0}),
+        // 下拉刷新作为 ScrollView 的 refreshControl 传入，不单独占位
+        RefreshControl: () => null,
         InteractionManager: {
             runAfterInteractions: task => {
                 task?.();
@@ -1091,6 +1094,13 @@ export function clippingAncestor(record) {
         }
     }
     return null;
+}
+
+/** 文字能读：分到的高度装得下要显示的行，宽度不被挤成一条缝 */
+export function assertReadable(text, what) {
+    assert.ok(text, `${what} is rendered`);
+    assert.ok(!text.textInfo.clippedVertically, `${what} is not cut off: ${describeFrame(text.frame)}`);
+    assert.ok(!text.textInfo.squeezed, `${what} has room: ${describeFrame(text.frame)}`);
 }
 
 export function describeFrame(frame) {

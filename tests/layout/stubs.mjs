@@ -6,7 +6,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {React, createReactNativeStub, flattenStyle, strictStub} from './harness.mjs';
+import assert from 'node:assert/strict';
+import {
+    React,
+    assertReadable,
+    clippingAncestor,
+    contains,
+    createModuleLoader,
+    createReactNativeStub,
+    describeFrame,
+    findAll,
+    flattenStyle,
+    isText,
+    strictStub,
+} from './harness.mjs';
 
 const h = React.createElement;
 const rootDir = path.resolve(
@@ -153,16 +166,26 @@ function createSafeAreaStub(env) {
         bottom: ['paddingBottom', 'paddingVertical'],
         left: ['paddingLeft', 'paddingHorizontal'],
     };
-    function SafeAreaView({edges, style, ...rest}) {
+    // 原生的 SafeAreaView 按自己在窗口里的实际位置让开安全区：外层已经让开的
+    // 部分，里层量到的就是 0。这里按嵌套关系近似：里层只补外层还没让开的部分。
+    const AppliedInsets = React.createContext({top: 0, right: 0, bottom: 0, left: 0});
+    function SafeAreaView({edges, style, children, ...rest}) {
+        const applied = React.useContext(AppliedInsets);
         // 安全区内边距叠加在样式自己的内边距上
         const own = flattenStyle(style);
         const padding = {};
+        const nowApplied = {...applied};
         for (const edge of edges ?? ['top', 'right', 'bottom', 'left']) {
             const [key, axisKey] = EDGE_PADDING[edge];
-            padding[key] =
-                env.insets[edge] + (own[key] ?? own[axisKey] ?? own.padding ?? 0);
+            const inset = Math.max(0, env.insets[edge] - applied[edge]);
+            padding[key] = inset + (own[key] ?? own[axisKey] ?? own.padding ?? 0);
+            nowApplied[edge] = applied[edge] + inset;
         }
-        return h('View', {...rest, style: [own, padding]});
+        return h(
+            AppliedInsets.Provider,
+            {value: nowApplied},
+            h('View', {...rest, style: [own, padding]}, children),
+        );
     }
     return strictStub('react-native-safe-area-context', {
         SafeAreaView,
@@ -329,6 +352,41 @@ export function createTabViewStub() {
 }
 
 /**
+ * 推荐歌单、榜单页的音源标签（TabLabel）：一样宽、至少 48 高；名字不长的选中、
+ * 未选中两份都完整显示，longName 截断成一行；上下不被裁掉（左右可以滚出屏幕）。
+ * @param {string[]} names 按顺序的音源名
+ * @returns 标签栏的底边
+ */
+export function assertSourceTabs(root, names, longName) {
+    const tabs = findAll(root, record => record.props.accessibilityRole === 'tab');
+    assert.deepEqual(tabs.map(tab => tab.props.accessibilityLabel), names);
+    for (const tab of tabs) {
+        const name = tab.props.accessibilityLabel;
+        assert.ok(tab.frame.height >= 48 - 0.5, `tab ${name} is at least 48 dp tall`);
+        assert.ok(
+            Math.abs(tab.frame.width - tabs[0].frame.width) <= 0.5,
+            `tab ${name} ${describeFrame(tab.frame)} is as wide as the others ${describeFrame(tabs[0].frame)}`,
+        );
+        const labels = findAll(tab, isText);
+        assert.equal(labels.length, 2, 'unfocused and focused copies of the label');
+        for (const label of labels) {
+            assertReadable(label, `tab label ${name}`);
+            assert.equal(label.textInfo.shownLines, 1);
+            assert.equal(
+                label.textInfo.truncated,
+                name === longName,
+                name === longName
+                    ? 'the long name is cut short'
+                    : `tab label ${name} (weight ${flattenStyle(label.props.style).fontWeight}) is shown in full`,
+            );
+            assert.ok(contains(tab.frame, label.frame, 1), `label ${name} stays in its tab`);
+            assert.equal(clippingAncestor(label), null, `label ${name} is not cut off`);
+        }
+    }
+    return Math.max(...tabs.map(tab => tab.frame.y + tab.frame.height));
+}
+
+/**
  * 和 App 一样包上字体缩放的范围：登记过（src/constants/fontScaleMigration.ts）的
  * 页面、面板里 ThemeText 跟随系统字体。App 在 src/entry 和面板入口各包一层。
  * loader 要和渲染页面用的是同一个，ThemeText 才读得到这一层。
@@ -341,6 +399,54 @@ export function inAppFontScaleScope(loader, where, element) {
         ? migration.fontScaleMigratedRoutes.has(where.route)
         : migration.fontScaleMigratedPanels.has(where.panel);
     return h(FontScaleScope, {followSystem}, element);
+}
+
+/**
+ * 没有底部标签栏的页面：正在播放时迷你播放器浮在页面底部，用生产的规则和尺寸算。
+ * 两个模块都是纯计算，用单独的加载器读。
+ */
+export function pageMusicBarLayout() {
+    const loader = createModuleLoader({});
+    const {resolveMusicBarLayout} = loader.load('@/components/musicBar/layoutPolicy');
+    const sizes = loader.load('@/components/musicBar/layout');
+    return resolveMusicBarLayout({
+        routeSupportsMusicBar: true,
+        routeHasTabBar: false,
+        hasCurrentMusic: true,
+        keyboardVisible: false,
+        barHeight: sizes.MUSIC_BAR_HEIGHT,
+        floatingBottom: sizes.MUSIC_BAR_FLOATING_BOTTOM,
+        tabBarHeight: sizes.TAB_BAR_HEIGHT,
+        tabBarGap: sizes.MUSIC_BAR_TAB_BAR_GAP,
+    });
+}
+
+/**
+ * 有返回键、没有底部标签栏的普通页面要的桩：导航、主题、标题栏菜单的浮层（画在
+ * 根视图上，不在页面排版里）、路由参数，以及正在播放时迷你播放器的位置。
+ */
+export function createPageStubs(env, {params = {}} = {}) {
+    const musicBarLayout = pageMusicBarLayout();
+    return {
+        ...createCommonStubs(env),
+        '@react-navigation/native': strictStub('@react-navigation/native', {
+            useNavigation: () => ({goBack() {}}),
+            useTheme: () => ({dark: false}),
+        }),
+        '@/core/theme': strictStub('@/core/theme', {
+            default: {useTheme: () => ({dark: false})},
+        }),
+        '@/components/base/portal': strictStub('portal', {default: () => null}),
+        '@/core/router': strictStub('@/core/router', {
+            ROUTE_PATH: new Proxy({}, {get: (_, key) => String(key)}),
+            useNavigate: () => () => {},
+            useParams: () => params,
+        }),
+        // 真实的 useMusicBarFloatingOffset 读这份布局状态
+        '@/components/musicBar/layoutState': strictStub('musicBarLayoutState', {
+            useMusicBarLayoutState: () => ({layout: musicBarLayout}),
+        }),
+    };
 }
 
 /**
