@@ -36,13 +36,10 @@ const checks = [
         args: [path.join(rootDir, 'generator', 'audit-round20-static.mjs')],
     },
     {
-        name: 'ESLint (check only)',
-        args: [
-            nodeModule('eslint', 'bin', 'eslint.js'),
-            '.',
-            '--ext',
-            '.js,.jsx,.mjs,.ts,.tsx',
-        ],
+        // 有报错就失败；警告按规则与 generator/eslint-warning-baseline.json 比较，
+        // 只许减少。完整的警告列表用 npm run lint:check 查看
+        name: 'ESLint (errors, per-rule warning baseline)',
+        args: [path.join(rootDir, 'generator', 'eslint-ratchet.mjs')],
     },
     {
         name: 'Jest',
@@ -53,7 +50,7 @@ const checks = [
     },
     {
         // 构建脚本自己的单元测试（node:test），例如审计里 npm view 结果的判定、
-        // CI 是否需要跑原生测试的判定
+        // CI 是否需要跑原生测试的判定、ESLint 警告与基线的比较
         name: 'Generator unit tests',
         args: ['--test', ...generatorTests],
     },

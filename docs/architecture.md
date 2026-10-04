@@ -55,8 +55,13 @@
 
 ## 质量门
 
-- `npm run verify`（`generator/verify.mjs`）：静态审计与 TypeScript（`audit:round20-static`）、只读 ESLint、Jest、构建脚本自己的 node:test 用例（`generator/lib/*.test.mjs`，新加的自动纳入）、布局测试（`tests/layout/*.test.mjs`）、`patch-package --error-on-fail`（补丁打不上时本地也失败）。不修改仓库文件；`node_modules` 里还没打上的补丁会被打上，与 postinstall 相同。
+- `npm run verify`（`generator/verify.mjs`）：静态审计与 TypeScript（`audit:round20-static`）、ESLint（只读，见下）、Jest、构建脚本自己的 node:test 用例（`generator/lib/*.test.mjs`，新加的自动纳入）、布局测试（`tests/layout/*.test.mjs`）、`patch-package --error-on-fail`（补丁打不上时本地也失败）。不修改仓库文件；`node_modules` 里还没打上的补丁会被打上，与 postinstall 相同。
 - `npm run lint:check` 只检查；`npm run lint` 会自动修复文件。
+- ESLint 警告按规则设基线（`generator/eslint-warning-baseline.json`，`generator/eslint-ratchet.mjs`）：verify 中有报错就失败；
+  某条规则的警告比基线多（包括基线里没有的规则）就失败，并列出这条规则的全部警告；比基线少也失败，提示运行
+  `npm run lint:baseline` 把基线降下来再提交，免得空出来的名额以后被新警告悄悄用掉。`lint:baseline` 只降不升，
+  也不会加入新规则；确实要提高时（例如升级 ESLint 配置）手改 JSON，并在提交里写明原因。按规则比较，
+  修掉一条 A 规则的警告不能抵消新加的一条 B 规则的警告。
 - 布局测试（`tests/layout`，`npm run test:layout`）：渲染真实组件，用与 React Native 同一代的 Yoga（`yoga-layout`）按 RN 的配置排版
   （errata 兼容模式、按像素密度取整），再检查「谁不能压住谁、什么不能被裁掉」这类语义，而不是比对像素。
   - 覆盖播放页（竖屏方形、圆形、大图三种封面，横屏两种封面）、推荐歌单网格、插件用户变量表单（含 WebDAV、Last.fm），

@@ -1,0 +1,14 @@
+{
+    "@react-native/no-deep-imports": 1,
+    "@typescript-eslint/no-shadow": 9,
+    "eqeqeq": 1,
+    "no-bitwise": 7,
+    "no-script-url": 1,
+    "no-useless-escape": 4,
+    "no-void": 54,
+    "quotes": 88,
+    "radix": 1,
+    "react-hooks/exhaustive-deps": 31,
+    "react-native/no-inline-styles": 26,
+    "react/no-unstable-nested-components": 2
+}

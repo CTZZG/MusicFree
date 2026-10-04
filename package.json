@@ -12,6 +12,7 @@
         "ios": "react-native run-ios",
         "lint": "eslint . --ext .js,.jsx,.mjs,.ts,.tsx src --fix",
         "lint:check": "eslint . --ext .js,.jsx,.mjs,.ts,.tsx",
+        "lint:baseline": "node ./generator/eslint-ratchet.mjs --update",
         "typecheck": "tsc --noEmit --pretty false",
         "verify": "node ./generator/verify.mjs",
         "start": "react-native start",
