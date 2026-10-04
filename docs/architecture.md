@@ -62,10 +62,12 @@
   `npm run lint:baseline` 把基线降下来再提交，免得空出来的名额以后被新警告悄悄用掉。`lint:baseline` 只降不升，
   也不会加入新规则；确实要提高时（例如升级 ESLint 配置）手改 JSON，并在提交里写明原因。按规则比较，
   修掉一条 A 规则的警告不能抵消新加的一条 B 规则的警告。
+  `lint:baseline` 先通过错误和回归检查再写入；解析错误导致警告统计不完整时保留原基线。
 - 布局测试（`tests/layout`，`npm run test:layout`）：渲染真实组件，用与 React Native 同一代的 Yoga（`yoga-layout`）按 RN 的配置排版
   （errata 兼容模式、按像素密度取整），再检查「谁不能压住谁、什么不能被裁掉」这类语义，而不是比对像素。
   - 覆盖播放页（竖屏方形、圆形、大图三种封面，横屏两种封面）、推荐歌单网格、插件用户变量表单（含 WebDAV、Last.fm），
     在 320～412 dp 宽的竖屏、320～363 dp 高的横屏、系统字体 1～2 倍下各跑一遍，表单另外分中英文；
+  - 资料库的网格／列表和悬浮底栏也用真实组件检查；覆盖中英文、窄屏及横屏安全区，栏内触摸区域至少 44 dp；
   - 文字宽度按 Roboto 的字宽估算、按 Android 的规则断行，比真机略宽，几个 dp 以内的差别不拿来断言；
   - 工具只认识明确支持的样式、宿主组件和依赖，其余一律报错；页面用到的原生模块和运行时服务由测试显式给桩（`tests/layout/stubs.mjs`）；
   - 工具自身的行为由 `tests/layout/harness.test.mjs` 固定。排查时可以用 `dumpTree` 打印排版结果。
@@ -92,7 +94,17 @@
 - Android 单元测试（`android/app/src/test`，纯 JVM，不依赖 Android API）：
   - Beta 和稳定版构建在 `assembleRelease` 之前运行 `testReleaseUnitTest`，失败时不打包、不上传、不发布；
   - PR 和推送检查（`ci.yml` 的 Android unit tests）在改到原生代码、原生依赖或这项检查本身时运行 `testDebugUnitTest`，判断规则见 `generator/lib/nativeChanges.mjs`，拿不准时照样运行；没改到时任务直接以成功结束；
+    变更路径用 NUL 分隔读取，重命名按删除＋新增检查，移出原生目录的旧路径也会触发；
   - 三处都上传测试报告，测试失败时也上传。
+
+## 标签页与资料库布局
+
+- 悬浮播放条 50 dp，标签栏 52 dp，间距 6 dp，底部悬浮距离 8 dp；合计预留 116 dp，系统安全区单独叠加。
+  尺寸来自 `src/components/musicBar/layout.ts`，页面底部预留与实际栏共用同一套计算。
+- 标签页与搜索页的大标题为 28 dp，行高 34 dp。
+- 资料库右上角在歌单网格与列表之间切换，偏好保存到 `AppConfig` 的 `library.playlistView`，未设置时使用网格。
+  两种视图共用歌单打开、长按删除及“我喜欢”保护逻辑；网格按扣除横向安全区后的宽度计算。
+- 本轮工程改进与后续字体迁移的交接状态见 [2026-10-04 交接说明](handoff/engineering-ui-2026-10-04.md)。
 
 ## 核心行为清单
 
