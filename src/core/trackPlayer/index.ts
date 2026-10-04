@@ -2376,6 +2376,14 @@ class TrackPlayer
             1600,
             transition,
         );
+        // 等待期间事务被取消（清空队列、新的切歌……）：现在的状态归后来的操作，
+        // 不管等了多久都不再动它
+        if (
+            transition &&
+            !this.isMpvManualSkipTransitionActive(transition)
+        ) {
+            return false;
+        }
         if (
             !activeMusic &&
             wasWaitSuspended({
@@ -2388,12 +2396,6 @@ class TrackPlayer
             return false;
         }
         if (!activeMusic) {
-            if (
-                transition &&
-                !this.isMpvManualSkipTransitionActive(transition)
-            ) {
-                return false;
-            }
             trace(
                 "MPV 手动切歌确认超时，显式重载目标歌曲",
                 {
@@ -2410,6 +2412,12 @@ class TrackPlayer
                 2600,
                 transition,
             );
+            if (
+                transition &&
+                !this.isMpvManualSkipTransitionActive(transition)
+            ) {
+                return false;
+            }
             if (
                 !activeMusic &&
                 wasWaitSuspended({
@@ -2453,21 +2461,32 @@ class TrackPlayer
      * 放了好几首，这时再重载目标或回滚到切歌前，会把歌拽回好几首之前。改为以原生
      * 实际在放的为准：先结束这次切歌事务（事务没结束时，和目标不一致的曲目会被
      * 忽略），再按原生同步当前歌曲。事务已经结束，调用方接下来的回滚是空操作。
+     *
+     * 只处理仍归这次切歌所有的事务。事务已被清空队列、新的切歌等取消，或者
+     * 根本没有事务时什么都不做：原生的切歌事件照常同步，用不着这里；这时再按
+     * 原生同步，会把已经清掉的歌写回来。
      */
     private async settleMpvManualSkipAfterSuspension(
         transition: IMpvManualSkipTransition | null | undefined,
         reason: string,
     ) {
-        trace("MPV 手动切歌确认期间 JS 被挂起，改按原生当前曲目同步", {
-            reason,
-            transitionId: transition?.token.id ?? null,
-        });
-        if (transition) {
-            this.completeMpvManualSkipTransition(
+        if (
+            !transition ||
+            !this.completeMpvManualSkipTransition(
                 transition,
                 `${reason}-suspended`,
-            );
+            )
+        ) {
+            trace("MPV 手动切歌确认期间 JS 被挂起，事务已不归本次操作，不再同步", {
+                reason,
+                transitionId: transition?.token.id ?? null,
+            });
+            return;
         }
+        trace("MPV 手动切歌确认期间 JS 被挂起，改按原生当前曲目同步", {
+            reason,
+            transitionId: transition.token.id,
+        });
         await this.syncCurrentMusicFromBackendActiveTrack(
             `${reason}-suspended`,
         );

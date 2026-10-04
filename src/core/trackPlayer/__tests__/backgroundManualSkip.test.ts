@@ -187,3 +187,65 @@ it("still reloads the target when mpv really did not switch in the foreground", 
     expect(play.mock.calls[0][0]).toMatchObject({ id: "B" });
     expect(trackPlayer.currentMusic.id).toBe("B");
 });
+
+it("does not bring back a cleared playlist's song when the confirmation wakes up late", async () => {
+    // 确认的等待睡过了后台；这期间用户清空了播放队列：事务被取消、当前歌曲清空，
+    // 原生的 stop 还没返回，适配器缓存的当前曲目仍是 F。旧的确认醒来时不能再按
+    // 原生同步，把 F 写回来
+    let completeNativeReset: () => void = () => {};
+    const nativeReset = new Promise<void>(resolve => {
+        completeNativeReset = () => {
+            mockBackend.active = null;
+            resolve();
+        };
+    });
+    mockBackend.reset.mockImplementationOnce(() => nativeReset);
+    let clearing: Promise<void> | undefined;
+    delay.mockImplementation(async () => {
+        clock += 120_000;
+        nativeIsPlaying(songF);
+        clearing ??= trackPlayer.clearPlayList();
+    });
+    const transition = player.beginMpvManualSkipTransition(songB, songA, "manual-next");
+    try {
+        expect(await player.confirmMpvManualSkip(songB, "manual-next", transition)).toBe(false);
+    } finally {
+        completeNativeReset();
+        await clearing;
+    }
+    expect(trackPlayer.playList).toEqual([]);
+    expect(trackPlayer.currentMusic).toBeNull();
+});
+
+it("leaves a newer skip alone when the old confirmation wakes up late", async () => {
+    // 等待期间又点了一次下一首（新的事务指向 C）；旧的确认醒来时既不能结束新事务，
+    // 也不能按原生同步当前歌曲
+    const play = jest.spyOn(trackPlayer, "play").mockResolvedValue(undefined);
+    let newer: any;
+    delay.mockImplementation(async () => {
+        clock += 120_000;
+        nativeIsPlaying(songF);
+        newer ??= player.beginMpvManualSkipTransition(songs[2], songB, "manual-next");
+    });
+    const transition = player.beginMpvManualSkipTransition(songB, songA, "manual-next");
+
+    expect(await player.confirmMpvManualSkip(songB, "manual-next", transition)).toBe(false);
+    expect(player.mpvManualSkipTransition).toBe(newer);
+    expect(player.isMpvManualSkipTransitionActive(newer)).toBe(true);
+    expect(trackPlayer.currentMusic.id).toBe("A");
+    expect(play).not.toHaveBeenCalled();
+});
+
+it("does not sync from mpv after a late confirmation that owns no transition", async () => {
+    // 没有事务时，原生的切歌事件本来就照常同步；醒来晚了也不该再按原生写当前歌曲
+    // （这期间队列可能已经清空）
+    player.setPlayList([], false);
+    player.setCurrentMusic(null);
+    delay.mockImplementation(async () => {
+        clock += 120_000;
+        nativeIsPlaying(songF);
+    });
+
+    expect(await player.confirmMpvManualSkip(songB, "manual-next", null)).toBe(false);
+    expect(trackPlayer.currentMusic).toBeNull();
+});
