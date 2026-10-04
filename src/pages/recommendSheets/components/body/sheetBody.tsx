@@ -76,11 +76,15 @@ export default memo(SheetBody, (prev, curr) => prev.hash === curr.hash);
 
 const style = StyleSheet.create({
     headerWrapper: {
-        height: rpx(100),
         flexGrow: 0,
+        // ScrollView 默认可以收缩：下面的歌单列表一长（横屏时尤其明显），标签条就被
+        // 压得比标签还矮，标签上下被裁掉
+        flexShrink: 0,
     },
     header: {
-        height: rpx(100),
+        // 按标签定高：字体放大、标签变高时标签条跟着变高
+        minHeight: rpx(100),
+        paddingVertical: rpx(12),
         alignItems: "center",
         // 标签自带左右 rpx(16) 的外边距，补到 16，第一个标签与下面的歌单网格左对齐
         paddingHorizontal: 16 - rpx(16),
