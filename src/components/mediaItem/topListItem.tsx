@@ -5,24 +5,44 @@ import ThemeText from "@/components/base/themeText";
 import { ImgAsset } from "@/constants/assetsConst";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import useColors from "@/hooks/useColors";
-import rpx from "@/utils/rpx";
-import Color from "color";
+import { useI18N } from "@/core/i18n";
 
 interface ITopListResultsProps {
     pluginHash: string;
     topListItem: IMusic.IMusicSheetItemBase;
-    rank?: number;
+    tintIndex?: number;
     style?: StyleProp<ViewStyle>;
 }
 
+// 只使用榜单接口已有的预览，不为列表额外加载每个榜单详情。
+export function getTopListPreview(topListItem: IMusic.IMusicSheetItemBase) {
+    const musicList: unknown = topListItem.musicList;
+    return Array.isArray(musicList)
+        ? musicList.filter((music): music is IMusic.IMusicItem =>
+            music !== null &&
+            typeof music === "object" &&
+            typeof music.title === "string" &&
+            music.title.trim().length > 0,
+        ).slice(0, 3)
+        : [];
+}
+
+const TILE_COLORS = ["#8071C8", "#479CAB", "#C99143", "#57966B", "#A66591", "#527FB3"];
+
 export default function TopListItem(props: ITopListResultsProps) {
-    const { pluginHash, topListItem, rank, style } = props;
+    const { pluginHash, topListItem, tintIndex = 0, style } = props;
     const navigate = useNavigate();
     const colors = useColors();
-    const rankBackgroundColor = Color(colors.background).alpha(0.86).toString();
+    const { t } = useI18N();
+    const title = topListItem.title?.trim() || t("common.unknownName");
+    const cover = topListItem.coverImg || topListItem.artwork;
+    const preview = getTopListPreview(topListItem);
+    const hasPreview = preview.length > 0;
 
     return (
         <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={title}
             onPress={() => {
                 navigate(ROUTE_PATH.TOP_LIST_DETAIL, {
                     pluginHash: pluginHash,
@@ -31,58 +51,66 @@ export default function TopListItem(props: ITopListResultsProps) {
             }}
             style={({ pressed }) => [
                 styles.wrapper,
+                hasPreview ? styles.previewCard : styles.tile,
                 {
-                    backgroundColor: colors.card,
-                    borderColor: Color(colors.text).alpha(0.08).toString(),
+                    backgroundColor: hasPreview
+                        ? colors.card
+                        : TILE_COLORS[tintIndex % TILE_COLORS.length],
                     opacity: pressed ? 0.88 : 1,
                 },
                 style,
             ]}>
-            <View style={styles.coverFrame}>
-                <FastImage
-                    style={styles.cover}
-                    source={topListItem?.coverImg}
-                    placeholderSource={ImgAsset.albumDefault}
-                />
-                <View
-                    style={[
-                        styles.coverShade,
-                        {
-                            backgroundColor: Color(colors.background)
-                                .alpha(0.1)
-                                .toString(),
-                        },
-                    ]}
-                />
-                {rank !== undefined ? (
-                    <View
-                        style={[
-                            styles.rankBadge,
-                            {
-                                backgroundColor: rankBackgroundColor,
-                                borderColor: Color(colors.text)
-                                    .alpha(0.08)
-                                    .toString(),
-                            },
-                        ]}>
+            {hasPreview ? (
+                <>
+                    <View style={styles.previewTexts}>
                         <ThemeText
-                            fontSize="tag"
+                            fontSize="subTitle"
                             fontWeight="bold"
-                            color={colors.primary}>
-                            {`${rank}`.padStart(2, "0")}
+                            numberOfLines={1}
+                            style={styles.previewTitle}>
+                            {title}
+                        </ThemeText>
+                        {preview.map((music, index) => (
+                            <ThemeText
+                                key={index}
+                                numberOfLines={1}
+                                fontColor="textSecondary"
+                                style={styles.previewLine}>
+                                {`${index + 1}. ${music.title}${
+                                    typeof music.artist === "string" && music.artist
+                                        ? ` · ${music.artist}`
+                                        : ""
+                                }`}
+                            </ThemeText>
+                        ))}
+                    </View>
+                    <FastImage
+                        style={[styles.previewCover, { backgroundColor: colors.placeholder }]}
+                        source={cover}
+                        placeholderSource={ImgAsset.albumDefault}
+                    />
+                </>
+            ) : (
+                <>
+                    <View style={styles.tileAccent} />
+                    {cover ? (
+                        <FastImage
+                            style={StyleSheet.absoluteFill}
+                            source={cover}
+                            placeholderSource={ImgAsset.albumDefault}
+                        />
+                    ) : null}
+                    <View style={styles.tileTitle}>
+                        <ThemeText
+                            numberOfLines={2}
+                            fontWeight="bold"
+                            color="#FFFFFF"
+                            style={styles.tileTitleText}>
+                            {title}
                         </ThemeText>
                     </View>
-                ) : null}
-            </View>
-            <View style={styles.content}>
-                <ThemeText
-                    fontSize="description"
-                    fontWeight="bold"
-                    numberOfLines={2}
-                    style={styles.title}>
-                    {topListItem.title}
-                </ThemeText>
-            </View>
+                </>
+            )}
         </Pressable>
     );
 }
@@ -90,46 +118,57 @@ export default function TopListItem(props: ITopListResultsProps) {
 const styles = StyleSheet.create({
     wrapper: {
         width: "100%",
-        borderRadius: rpx(16),
-        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 14,
         overflow: "hidden",
     },
-    coverFrame: {
-        width: "100%",
+    tile: {
         aspectRatio: 1,
-        position: "relative",
-        overflow: "hidden",
     },
-    cover: {
-        width: "100%",
-        height: "100%",
+    tileAccent: {
+        position: "absolute",
+        width: "140%",
+        height: "70%",
+        left: "-20%",
+        bottom: "-32%",
+        borderRadius: 999,
+        backgroundColor: "rgba(255,255,255,0.15)",
     },
-    coverShade: {
+    tileTitle: {
         position: "absolute",
         left: 0,
         right: 0,
-        top: 0,
         bottom: 0,
+        padding: 8,
+        backgroundColor: "rgba(0,0,0,0.58)",
     },
-    content: {
-        minHeight: rpx(76),
-        paddingHorizontal: rpx(12),
-        paddingTop: rpx(10),
-        paddingBottom: rpx(12),
+    tileTitleText: {
+        fontSize: 12,
+        lineHeight: 16,
+        textAlign: "center",
     },
-    title: {
-        lineHeight: rpx(28),
-    },
-    rankBadge: {
-        position: "absolute",
-        top: rpx(8),
-        left: rpx(8),
-        minWidth: rpx(42),
-        height: rpx(32),
-        borderRadius: rpx(16),
-        paddingHorizontal: rpx(10),
-        borderWidth: StyleSheet.hairlineWidth,
+    previewCard: {
+        minHeight: 104,
+        flexDirection: "row",
         alignItems: "center",
-        justifyContent: "center",
+        padding: 12,
+        gap: 12,
+    },
+    previewTexts: {
+        flex: 1,
+        minWidth: 0,
+    },
+    previewTitle: {
+        lineHeight: 20,
+        marginBottom: 4,
+    },
+    previewLine: {
+        fontSize: 12,
+        lineHeight: 18,
+    },
+    previewCover: {
+        width: 72,
+        height: 72,
+        flexShrink: 0,
+        borderRadius: 12,
     },
 });
