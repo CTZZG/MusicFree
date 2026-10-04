@@ -9,13 +9,15 @@
 | 仓库 | [CTZZG/MusicFree](https://github.com/CTZZG/MusicFree) |
 | 工作分支 | `claude/sharp-planck-xtfenm` |
 | 本轮工程修复起点 | `f224cb599a31eacb3bc90160ee67bdd1e6798c43` |
-| 最新功能提交 | `987226e93833f1484e34cfcad7d6a5ab9189c1ff`（歌单、榜单详情跟随系统字体；此前是榜单 `c62720e`、推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
+| 最新功能提交 | `c0f1be5a63461962e483c2367b507aef3f2987f8`（处理 420f335 复核的最后一个提交；此前是歌单／榜单详情 `987226e`、榜单 `c62720e`、推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
 | 包版本 | `0.9.0`；实际构建用提交号和 Actions run 区分 |
 | 文档核对日期 | 2026-10-04，UTC；构建状态见第 5 节 |
 
 接手时先 fetch 并核对远端，后续纯文档提交可能使 HEAD 高于上述功能提交。**当前功能状态：播放条 60 dp、dock 60 dp、大标题 28 dp、资料库歌单可切网格／列表；榜单改为三列方卡，有现成歌曲数据时显示横向预览；底部总预留 136 dp，系统安全区另加。**
 
 Claude 在起点之前已实现 Android 测试 CI、诊断事件严重程度必填、Yoga 布局测试、ESLint 按规则限制警告增长，以及此前几项 UI 修复。Codex 本轮补上两处工程门禁缺陷，实施用户要求的标题／底栏／资料库调整，增加回归覆盖，并根据真机反馈重调底栏比例。
+
+**420f335 的复核已处理（Claude 补记）**：三项都复现后修复。`40adc49`：后台醒来的切歌确认先确认事务还归自己，被清空队列、新的切歌取消的就不再动，挂起处理在结束事务失败时也不再按原生同步（复核给的探针加入 `backgroundManualSkip.test.ts`）；`80bc6fa`：react-native-safe-area-context 5 每层 `SafeAreaView` 都按根 Provider 叠加安全区，布局测试的桩改回这个语义，榜单、`MusicSheetPage`、本地音乐等六处嵌套的 `HorizontalSafeAreaView` 去掉（横屏左右原来让开两次）；`c0f1be5`：判断「被裁掉」时考虑滚动范围和被外层裁掉的视口。验证状态见第 5 节。
 
 **后台切歌回退已修（Claude 补记）**：App 在后台时从通知栏、锁屏点下一首，之后原生又自动连播几首，回到 App 会退回点下一首之前的歌。原因是确认切歌的轮询用了 RN 的普通定时器，Activity 暂停后不触发，回前台时按超时重载目标或回滚；改用后台定时器，并在等待被挂起时以原生实际在放的为准。见 architecture.md 核心行为清单第 10 条，待真机验证。
 
@@ -171,40 +173,52 @@ APK 打包、自动测试通过、真机功能通过、用户视觉认可分别�
 
 ### 本地质量门
 
-最新功能状态完整 `npm run verify` 通过：
+（Claude 更新，2026-10-04，处理完 420f335 的复核之后，提交 `c0f1be5`）完整 `npm run verify` 通过：
 
 | 检查 | 结果 |
 | --- | --- |
 | 静态审计与 TypeScript | 通过 |
-| ESLint | 0 errors、224 warnings，内联样式规则基线由 26 收紧到 25 |
-| Jest | 151 套件、1070 项通过 |
-| generator | 27 项通过；本轮新增 7 项 Git／ESLint CLI 测试 |
-| Yoga 布局 | 186 项通过；本轮累计新增 24 项资料库、12 项底栏、16 项榜单 |
+| ESLint | 0 errors、223 warnings，与逐规则基线一致（内联样式规则 24） |
+| Jest | 153 套件、1081 项通过（含后台切歌的 6 个时序用例） |
+| generator | 27 项通过 |
+| Yoga 布局 | 517 项通过：播放页、推荐歌单整页与歌单类别面板、榜单整页与面板、歌单／榜单详情（含多选模式）、资料库、底栏、插件变量表单，以及工具自身 11 项 |
 | 补丁重放 | jimp、brace-expansion、expo-liquid-glass-native、react-native 四项通过 |
-| 提交及空白检查 | hooks、commitlint、`git diff --check` 通过 |
 
-新增矩阵覆盖中英文、窄屏和栏内触摸区域；资料库另有横屏侧边安全区。各套件维度不同，不能理解为每页均覆盖所有组合。
-
-同一工作区最新日志为 `/workspace/scratch/MusicFree-chart-cards-verify.log`，底栏前序日志为 `/workspace/scratch/MusicFree-bottom-bars-verify.log`；临时日志未入仓库，外部接手应重跑或查 Actions。
+各套件的维度不同（屏幕、中英文、字体倍数、横竖屏），见各测试文件，不能理解为每页都覆盖所有组合。日志未入仓库，外部接手应重跑或查 Actions。
 
 ### CI 与构建
 
-| 运行 | 已核对结果 |
-| --- | --- |
-| CI #24、Beta #69 | Claude 前期 debug／release 测试路径成功的证据 |
-| [Beta #70](https://github.com/CTZZG/MusicFree/actions/runs/37170562459) | d904ff2；构建成功；用户上传 XML 为 12 类、63 项 Android 测试，0 失败／错误／跳过 |
-| [Beta #71](https://github.com/CTZZG/MusicFree/actions/runs/37172584538) | 856859f；质量门、Android 单元测试与构建均已成功，APK 已上传；对应底栏调整，尚不含本次榜单改版 |
+| 运行 | 提交 | 结果 |
+| --- | --- | --- |
+| CI #24、Beta #69 | — | Claude 前期 debug／release 测试路径成功的证据 |
+| [Beta #70](https://github.com/CTZZG/MusicFree/actions/runs/37170562459) | d904ff2 | 成功；用户上传 XML 为 12 类、63 项 Android 测试，0 失败／错误／跳过 |
+| [Beta #71](https://github.com/CTZZG/MusicFree/actions/runs/37172584538) | 856859f | 成功；底栏调整 |
+| [Beta #72](https://github.com/CTZZG/MusicFree/actions/runs/37176296506) | bcce7b3 | 成功；Codex 本轮最后状态 |
+| [Beta #73](https://github.com/CTZZG/MusicFree/actions/runs/37177027404) | 5c7538c | 成功；Eng 5 接回 |
+| [Beta #74](https://github.com/CTZZG/MusicFree/actions/runs/37178451801) | 29a6b5d | 成功；后台切歌回退修复 |
+| [Beta #75](https://github.com/CTZZG/MusicFree/actions/runs/37179357150) | b496de8 | 成功；推荐歌单跟随系统字体 |
+| [Beta #76](https://github.com/CTZZG/MusicFree/actions/runs/37180062845) | 420f335 | 成功；榜单跟随系统字体（复核基准） |
+| [Beta #77](https://github.com/CTZZG/MusicFree/actions/runs/37192234469) | a27dde0 | 构建中；歌单、榜单详情跟随系统字体 |
 
-Beta #71 已有 `android-unit-tests-beta-37172584538` 和 `beta-apks-0.9.0-configured` 产物。本次榜单的 Android 构建结果需要查看后续 Beta；本轮本地未运行 Gradle，原生执行证据来自 CI。
+之后处理复核的三个提交（`40adc49`、`80bc6fa`、`c0f1be5`）另起 Beta。各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。
+
+### 真机验收（都还没有记录）
+
+| 场景 | 自动化覆盖 | 真机 |
+| --- | --- | --- |
+| 通知栏／锁屏点下一首后原生连播几首，回前台声音、界面、通知、队列一致 | Jest：真实 TrackPlayer + 假 mpv 后端，覆盖挂起后采用原生曲目、前台超时重载、等待期间清空队列／新的切歌接管／无事务 | 未验证；还要覆盖等待期间暂停、断网 |
+| 已迁移页面在最大系统字体下（播放页、推荐歌单与歌单类别面板、榜单、歌单／榜单详情含多选、插件变量表单） | 布局测试 1～2 倍、中英文、横竖屏 | 未验证 |
+| 横屏有侧边安全区时，榜单、详情页、本地音乐等左右只让开一次 | 布局测试（榜单、详情页） | 未验证 |
 
 ### 当前验证的边界
 
 1. Yoga 测几何，文字近似测量；原生字体、Android 非线性缩放、图片绘制、玻璃采样、首帧动画、触摸仲裁需设备确认。
-2. `ThemeText` 只在已登记的页面（播放页、插件用户变量表单）跟随系统；资料库、底栏、榜单等没登记的页面里，2 倍矩阵中 `ThemeText` 不变，不能声称系统字体迁移完成。
-3. 资料库交互测试用测试存储，覆盖订阅和重挂载，未验证杀进程后的真实文件恢复。
-4. 底栏测试检查栏内内容，堆叠偏移由规则测试覆盖；位移动画和整页末项遮挡仍需集成或设备检查。
-5. ~~`library.layout.test.mjs` 底部偏移桩仍为 116 dp~~：`efd08c1` 已改为用生产的 `resolveMusicBarLayout` 和两栏尺寸计算，并检查滚到底时最后一个歌单露在底栏和系统安全区上面（页面底部留白减 40 dp 时 24 个用例都失败）。位移动画过程中的遮挡仍需设备检查。
+2. `ThemeText` 只在已登记的页面跟随系统（`src/constants/fontScaleMigration.ts`：播放页、推荐歌单、榜单、歌单详情、榜单详情，面板 SetUserVariables、SheetTags）；资料库、底栏、搜索、设置等没登记的页面里 2 倍矩阵中 `ThemeText` 不变，不能声称系统字体迁移完成。
+3. 布局测试的 `SafeAreaView` 桩按 react-native-safe-area-context 5 的语义（每层都按根 Provider 叠加）；滚动内容按「窗口扫过的范围」判断能否看到。两者都由 `tests/layout/harness.test.mjs` 固定。
+4. 资料库交互测试用测试存储，覆盖订阅和重挂载，未验证杀进程后的真实文件恢复。
+5. 底栏测试检查栏内内容，堆叠偏移由规则测试覆盖；位移动画和整页末项遮挡仍需设备检查。
 6. 63 项 JVM 测试不运行 Android UI，不能证明通知、音频焦点、系统回收和媒体键在厂商系统上正常。
+7. 后台切歌的 Jest 用例模拟的是时序，真实的 Activity 暂停、进程冻结、原生 stop 的耗时要在设备上确认。
 
 ## 6. 后续方向、优先级与完成标准
 
