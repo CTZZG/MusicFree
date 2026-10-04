@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet } from "react-native";
 import rpx from "@/utils/rpx";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
-import { fontWeightConst } from "@/constants/uiConst";
+import TabLabel from "@/components/base/tabLabel";
 import ResultList from "./resultList";
 import { useAtomValue } from "jotai";
 import { queryResultAtom } from "../store/atoms";
@@ -48,21 +48,12 @@ export default function Body() {
                     (acc, route) => {
                         acc[route.key] = {
                             label: ({ focused }: any) => (
-                                <Text
-                                    numberOfLines={1}
-                                    style={{
-                                        width: rpx(160),
-                                        fontWeight: focused
-                                            ? fontWeightConst.bolder
-                                            : fontWeightConst.medium,
-                                        color: focused
-                                            ? colors.primary
-                                            : colors.textSecondary ??
-                                              colors.text,
-                                        textAlign: "center",
-                                    }}>
-                                    {t(route.i18nKey as any) ?? route.title}
-                                </Text>
+                                <TabLabel
+                                    title={
+                                        t(route.i18nKey as any) ?? route.title
+                                    }
+                                    focused={focused}
+                                />
                             ),
                         };
                         return acc;
@@ -70,13 +61,13 @@ export default function Body() {
                     {} as Record<string, any>,
                 );
 
+                // 标签跟着系统字体变宽，窄屏、大字体时第二个标签可以滑过去
                 return (
                     <TabBar
                         {...props}
+                        scrollEnabled
                         style={style.transparentColor}
-                        tabStyle={{
-                            width: "auto",
-                        }}
+                        tabStyle={style.tab}
                         renderIndicator={() => null}
                         pressColor="transparent"
                         inactiveColor={colors.text}
@@ -114,5 +105,8 @@ const style = StyleSheet.create({
         backgroundColor: "transparent",
         shadowColor: "transparent",
         borderColor: "transparent",
+    },
+    tab: {
+        width: "auto",
     },
 });

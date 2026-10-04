@@ -8,7 +8,7 @@
     "no-void": 54,
     "quotes": 88,
     "radix": 1,
-    "react-hooks/exhaustive-deps": 31,
-    "react-native/no-inline-styles": 22,
+    "react-hooks/exhaustive-deps": 30,
+    "react-native/no-inline-styles": 20,
     "react/no-unstable-nested-components": 2
 }

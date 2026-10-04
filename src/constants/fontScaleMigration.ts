@@ -27,6 +27,7 @@ export const fontScaleMigratedRoutes: ReadonlySet<RoutePaths> = new Set<RoutePat
         "top-list-detail",
         "album-detail",
         "local-sheet-detail",
+        "artist-detail",
     ],
 );
 
