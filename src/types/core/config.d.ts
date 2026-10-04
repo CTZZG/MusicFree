@@ -1,6 +1,7 @@
 import type { ResumeMode, SortType } from "@/constants/commonConst.ts";
 import type { CustomizedColors } from "@/hooks/useColors";
 import type { ILocalMusicScanPolicy } from "@/core/localMusicScanPolicy";
+import type { LibraryPlaylistOrganization } from "@/core/libraryPlaylistOrganization";
 
 export interface IAppConfigProperties {
     $schema: "2";
@@ -61,6 +62,7 @@ export interface IAppConfigProperties {
 
     // Library
     "library.playlistView": "grid" | "list";
+    "library.playlistOrganization": LibraryPlaylistOrganization;
 
     // Lyric
     "lyric.showStatusBarLyric": boolean;

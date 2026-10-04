@@ -1268,4 +1268,17 @@ export interface ILanguage {
     "panel.playList.removed": string;
     "panel.playList.cleared": string;
     "panel.playList.undoHint": string;
+    "library.searchPlaylists": string;
+    "library.noMatchingPlaylists": string;
+    "library.managePlaylist": string;
+    "library.pinPlaylist": string;
+    "library.unpinPlaylist": string;
+    "library.pinned": string;
+    "library.assignGroup": string;
+    "library.allGroups": string;
+    "library.ungrouped": string;
+    "library.newGroup": string;
+    "library.groupName": string;
+    "library.groupPlaylist": string;
+    "library.groupNameRequired": string;
 }

@@ -1146,5 +1146,18 @@
     "panel.playList.undo": "Undo",
     "panel.playList.removed": "Removed {count} track(s)",
     "panel.playList.cleared": "Cleared {count} track(s)",
-    "panel.playList.undoHint": "Undo restores the queue and keeps playback as it is"
+    "panel.playList.undoHint": "Undo restores the queue and keeps playback as it is",
+    "library.searchPlaylists": "Search playlist names",
+    "library.noMatchingPlaylists": "No matching playlists",
+    "library.managePlaylist": "Manage playlist: {name}",
+    "library.pinPlaylist": "Pin playlist",
+    "library.unpinPlaylist": "Unpin playlist",
+    "library.pinned": "Pinned",
+    "library.assignGroup": "Set group",
+    "library.allGroups": "All playlists",
+    "library.ungrouped": "Ungrouped",
+    "library.newGroup": "New group",
+    "library.groupName": "Group name",
+    "library.groupPlaylist": "Set a group for “{name}”",
+    "library.groupNameRequired": "Enter a group name"
 }

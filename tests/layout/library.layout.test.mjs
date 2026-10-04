@@ -71,7 +71,7 @@ for (const device of DEVICES) {
                     const {root, unmount, t, musicBarLayout} = renderLibrary(env);
                     try {
                         const container = findOne(root, byTestID(`library-playlist-${mode}`), 'playlists');
-                        const items = findAll(container, record => record.props.accessibilityRole === 'button');
+                        const items = findAll(container, record => typeof record.props.onLongPress === 'function');
                         assert.equal(items.length, SHEETS.length);
                         const left = device.insets.left + 16;
                         const right = device.width - device.insets.right - 16;
@@ -119,6 +119,51 @@ for (const device of DEVICES) {
                     }
                 });
             }
+        }
+    }
+}
+
+for (const device of DEVICES) {
+    for (const mode of ['grid', 'list']) {
+        for (const language of ['zh-CN', 'en-US']) {
+            test(`library saved pins/groups and filters, ${mode}, ${device.width} dp, ${language}, font scale 2`, () => {
+                const env = createEnv({...device, language, fontScale: 2, config: {
+                    'library.playlistView': mode,
+                    'library.playlistOrganization': {
+                        pinnedIds: ['two'],
+                        groupBySheetId: {one: '通勤与放松', two: 'Late Night Music', three: '通勤与放松'},
+                    },
+                }});
+                const rendered = renderLibrary(env);
+                try {
+                    let root = rendered.root;
+                    const rows = tree => findAll(findOne(tree, byTestID(`library-playlist-${mode}`), 'playlists'), record => typeof record.props.onLongPress === 'function');
+                    assert.ok(rows(root)[0].props.accessibilityLabel.startsWith(rendered.t('home.favoriteSheet')));
+                    assert.ok(rows(root)[1].props.accessibilityLabel.startsWith(SHEETS.find(sheet => sheet.id === 'two').title));
+                    for (const text of findAll(root, isText)) {
+                        assert.ok(!text.textInfo.clippedVertically, `${text.text} is tall enough`);
+                        assert.equal(clippingAncestor(text), null, `${text.text} can be scrolled into view`);
+                    }
+                    const manageButtons = findAll(root, record => record.props.accessibilityLabel?.startsWith(rendered.t('library.managePlaylist', {name: ''})));
+                    assert.equal(manageButtons.length, SHEETS.length - 1);
+                    for (const button of manageButtons) {
+                        assert.ok(button.frame.width >= 40 - 0.5);
+                        assert.ok(button.frame.height >= 44 - 0.5);
+                    }
+                    const group = findOne(root, record => record.props.accessibilityLabel === '通勤与放松', 'group filter');
+                    root = rendered.interact(() => group.props.onPress());
+                    assert.equal(rows(root).length, 2);
+                    const input = findOne(root, byTestID('library-playlist-search'), 'playlist name input');
+                    root = rendered.interact(() => input.props.onChangeText('纯音乐'));
+                    assert.equal(rows(root).length, 1);
+                    root = rendered.interact(() => input.props.onChangeText('missing playlist'));
+                    assert.equal(rows(root).length, 0);
+                    const empty = findOne(root, record => record.text === rendered.t('library.noMatchingPlaylists'), 'empty search state');
+                    assert.equal(clippingAncestor(empty), null);
+                } finally {
+                    rendered.unmount();
+                }
+            });
         }
     }
 }
