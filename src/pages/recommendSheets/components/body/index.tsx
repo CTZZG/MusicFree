@@ -1,21 +1,13 @@
 import NoPlugin from "@/components/base/noPlugin";
-import { fontWeightConst } from "@/constants/uiConst";
+import TabLabel from "@/components/base/tabLabel";
 import { useI18N } from "@/core/i18n";
 import PluginManager from "@/core/pluginManager";
 import { useParams } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import rpx, { vw } from "@/utils/rpx";
 import React, { useState } from "react";
-import { Text, useWindowDimensions } from "react-native";
 import { TabBar, TabView } from "react-native-tab-view";
 import SheetBody from "./sheetBody";
-
-/**
- * 音源标签里名字的宽度（1 倍字体时），能放下 5 个粗体汉字，更长的名字截断。
- * 名字（Text）跟着系统字体放大，宽度按同样的倍数放大，放大后能放下的字数不变。
- * 选中（粗体）、未选中两份文字叠在一起，宽度必须一样，所以不按文字长短自适应。
- */
-const TAB_LABEL_WIDTH = 80;
 
 export default function Body() {
     const params = useParams<"recommend-sheets">();
@@ -34,27 +26,16 @@ export default function Body() {
         ),
     );
     const { t } = useI18N();
-    const { fontScale } = useWindowDimensions();
 
     const renderTabBar = (_: any) => {
         const options = _.navigationState.routes.reduce(
             (acc: Record<string, any>, route: { key: string; title?: string }) => {
                 acc[route.key] = {
                     label: ({ focused }: any) => (
-                        <Text
-                            numberOfLines={1}
-                            style={{
-                                width: TAB_LABEL_WIDTH * fontScale,
-                                fontWeight: focused
-                                    ? fontWeightConst.bolder
-                                    : fontWeightConst.medium,
-                                color: focused
-                                    ? colors.primary
-                                    : colors.textSecondary ?? colors.text,
-                                textAlign: "center",
-                            }}>
-                            {route.title ?? `(${t("common.unknownName")})`}
-                        </Text>
+                        <TabLabel
+                            focused={focused}
+                            title={route.title ?? `(${t("common.unknownName")})`}
+                        />
                     ),
                 };
                 return acc;

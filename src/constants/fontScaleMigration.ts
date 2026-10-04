@@ -15,7 +15,7 @@ import type { RoutePaths } from "@/core/router/routes";
  * 全部迁移完以后，ThemeText 改为默认跟随系统，删掉这份名单和 FontScaleScope。
  */
 export const fontScaleMigratedRoutes: ReadonlySet<RoutePaths> = new Set<RoutePaths>(
-    ["music-detail", "recommend-sheets"],
+    ["music-detail", "recommend-sheets", "top-list"],
 );
 
 export const fontScaleMigratedPanels: ReadonlySet<keyof typeof panels> = new Set<

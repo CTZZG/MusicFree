@@ -3,6 +3,7 @@ import { Pressable, StyleProp, StyleSheet, View, ViewStyle } from "react-native"
 import FastImage from "@/components/base/fastImage";
 import ThemeText from "@/components/base/themeText";
 import { ImgAsset } from "@/constants/assetsConst";
+import { maxFontScaleConst } from "@/constants/uiConst";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import { useI18N } from "@/core/i18n";
@@ -101,10 +102,14 @@ export default function TopListItem(props: ITopListResultsProps) {
                         />
                     ) : null}
                     <View style={styles.tileTitle}>
+                        {/* 方卡的大小由网格决定、不随文字变，标题条压在封面上：
+                            放大到 2 倍时两行标题几乎盖住整张卡，所以和其他尺寸
+                            固定的紧凑控件一样封顶 */}
                         <ThemeText
                             numberOfLines={2}
                             fontWeight="bold"
                             color="#FFFFFF"
+                            maxFontSizeMultiplier={maxFontScaleConst.compact}
                             style={styles.tileTitleText}>
                             {title}
                         </ThemeText>
