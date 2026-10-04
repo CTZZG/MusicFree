@@ -207,6 +207,25 @@ test('text wraps at spaces, between CJK characters, and inside words too long fo
     }
 });
 
+test('a word longer than the line is broken by character and keeps the width of its widest line', () => {
+    // 一行放不下的长词按字符硬断：文字框宽度是最宽的那一行（前面的整行），不是最后剩下的几个字
+    const {root, unmount} = layout(
+        h(
+            'View',
+            {style: {width: 60, alignItems: 'center'}},
+            h('Text', {numberOfLines: 1, style: {fontSize: 20}}, 'Download'),
+        ),
+    );
+    try {
+        const [text] = findAll(root, isText);
+        assert.equal(text.textInfo.truncated, true);
+        assert.ok(text.frame.width >= 55, `width ${text.frame.width}`);
+        assert.equal(text.textInfo.squeezed, false);
+    } finally {
+        unmount();
+    }
+});
+
 test('system font scale respects allowFontScaling, maxFontSizeMultiplier and numberOfLines', () => {
     const {root, unmount} = layout(
         h(

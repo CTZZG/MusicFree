@@ -698,6 +698,8 @@ function breakParagraph(paragraph, metrics, maxWidth) {
             for (const ch of token) {
                 const charW = widthOf(ch);
                 if (!fits(lineWidth + charW) && lineWidth > 0) {
+                    // 换行前记下这一行：被硬断的长词，最宽的往往是前面的整行
+                    widest = Math.max(widest, lineWidth);
                     lines += 1;
                     lineWidth = 0;
                 }
@@ -936,85 +938,100 @@ function collectFrames(record, originX, originY) {
 /**
  * 渲染并排版到 width × height 的根容器里（相当于 RN 的根视图）。
  *
- * @returns {{root: object, renderer: object, passes: number}}
+ * @returns {{root: object, renderer: object, passes: number, unmount: Function, interact: Function}}
  */
 export function renderLayout(element, {env, width, height, maxPasses = 8}) {
-    const config = Yoga.Config.create();
-    config.setErrata(Errata.All);
-    config.setPointScaleFactor(env.window.scale);
-    try {
-        return settle(element, {env, width, height, maxPasses, config});
-    } finally {
-        config.free();
-    }
-}
-
-function settle(element, {env, width, height, maxPasses, config}) {
     let renderer;
     TestRenderer.act(() => {
         renderer = TestRenderer.create(element);
     });
+    // 已经回调过的 onLayout（按路径），交互之后再排版时只回调变了的
     const reported = new Map();
+    const layout = () =>
+        layoutUntilStable(renderer, {env, width, height, maxPasses, reported});
+    const result = {
+        ...layout(),
+        renderer,
+        unmount() {
+            TestRenderer.act(() => renderer.unmount());
+        },
+        /**
+         * 模拟一次交互（点按、长按……）：在 act 里调用 interaction，再重新排版到
+         * 稳定，返回新的排版结果。
+         */
+        interact(interaction) {
+            TestRenderer.act(() => {
+                interaction();
+            });
+            const next = layout();
+            result.root = next.root;
+            result.passes = next.passes;
+            return next.root;
+        },
+    };
+    return result;
+}
 
-    for (let pass = 1; pass <= maxPasses; pass += 1) {
-        const json = renderer.toJSON();
-        const records = [];
-        const rootNode = Yoga.Node.create(config);
-        rootNode.setWidth(width);
-        rootNode.setHeight(height);
-        const root = {
-            type: 'Root',
-            props: {},
-            path: 'root',
-            yoga: rootNode,
-            children: [],
-            text: null,
-            textInfo: null,
-            scroll: null,
-        };
-        appendChildren(
-            Array.isArray(json) ? json : json ? [json] : [],
-            rootNode,
-            root,
-            config,
-            env,
-            records,
-            'root',
-        );
-        rootNode.calculateLayout(width, height, Direction.LTR);
-        collectFrames(root, 0, 0);
-        rootNode.freeRecursive();
-
-        const callbacks = [];
-        for (const record of records) {
-            const onLayout = record.props.onLayout;
-            if (typeof onLayout !== 'function') {
-                continue;
-            }
-            const signature = Object.values(record.local)
-                .map(value => value.toFixed(2))
-                .join(',');
-            if (reported.get(record.path) !== signature) {
-                reported.set(record.path, signature);
-                const layout = {...record.local};
-                callbacks.push(() => onLayout({nativeEvent: {layout}}));
-            }
-        }
-        if (!callbacks.length) {
-            return {
-                root,
-                renderer,
-                passes: pass,
-                unmount() {
-                    TestRenderer.act(() => renderer.unmount());
-                },
+function layoutUntilStable(renderer, {env, width, height, maxPasses, reported}) {
+    const config = Yoga.Config.create();
+    config.setErrata(Errata.All);
+    config.setPointScaleFactor(env.window.scale);
+    try {
+        for (let pass = 1; pass <= maxPasses; pass += 1) {
+            const json = renderer.toJSON();
+            const records = [];
+            const rootNode = Yoga.Node.create(config);
+            rootNode.setWidth(width);
+            rootNode.setHeight(height);
+            const root = {
+                type: 'Root',
+                props: {},
+                path: 'root',
+                yoga: rootNode,
+                children: [],
+                text: null,
+                textInfo: null,
+                scroll: null,
             };
+            appendChildren(
+                Array.isArray(json) ? json : json ? [json] : [],
+                rootNode,
+                root,
+                config,
+                env,
+                records,
+                'root',
+            );
+            rootNode.calculateLayout(width, height, Direction.LTR);
+            collectFrames(root, 0, 0);
+            rootNode.freeRecursive();
+
+            const callbacks = [];
+            for (const record of records) {
+                const onLayout = record.props.onLayout;
+                if (typeof onLayout !== 'function') {
+                    continue;
+                }
+                const signature = Object.values(record.local)
+                    .map(value => value.toFixed(2))
+                    .join(',');
+                if (reported.get(record.path) !== signature) {
+                    reported.set(record.path, signature);
+                    const layoutEvent = {...record.local};
+                    callbacks.push(() => onLayout({nativeEvent: {layout: layoutEvent}}));
+                }
+            }
+            if (!callbacks.length) {
+                return {root, passes: pass};
+            }
+            TestRenderer.act(() => {
+                callbacks.forEach(callback => callback());
+            });
         }
-        TestRenderer.act(() => {
-            callbacks.forEach(callback => callback());
-        });
+        throw new Error(`Layout did not settle within ${maxPasses} passes`);
+    } finally {
+        config.free();
     }
-    throw new Error(`Layout did not settle within ${maxPasses} passes`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,11 +1074,11 @@ export function contains(outer, inner, tolerance = EPSILON) {
     );
 }
 
-function containsAlong(outer, inner, axis) {
+function containsAlong(outer, inner, axis, tolerance = EPSILON) {
     const [start, size] = axis === 'x' ? ['x', 'width'] : ['y', 'height'];
     return (
-        inner[start] >= outer[start] - EPSILON &&
-        inner[start] + inner[size] <= outer[start] + outer[size] + EPSILON
+        inner[start] >= outer[start] - tolerance &&
+        inner[start] + inner[size] <= outer[start] + outer[size] + tolerance
     );
 }
 
@@ -1074,8 +1091,11 @@ function containsAlong(outer, inner, axis) {
  */
 export function clippingAncestor(record) {
     const scrolls = {x: false, y: false};
+    // 文字框按像素向上取整（RN 也这样，免得最后一个字被截），比父视图多出不到 1 dp
+    const tolerance = record.type === 'Text' ? 1 : EPSILON;
     const clippedAlong = (ancestor, axis) =>
-        !scrolls[axis] && !containsAlong(ancestor.frame, record.frame, axis);
+        !scrolls[axis] &&
+        !containsAlong(ancestor.frame, record.frame, axis, tolerance);
     for (let ancestor = record.parent; ancestor; ancestor = ancestor.parent) {
         if (ancestor.type === 'ScrollView') {
             const scrollAxis = ancestor.scroll === 'vertical' ? 'y' : 'x';

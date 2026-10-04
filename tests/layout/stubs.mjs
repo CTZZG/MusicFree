@@ -212,16 +212,22 @@ function FastImage(props) {
 
 const assetHandles = new Proxy({}, {get: (_, key) => (typeof key === 'string' ? 1 : undefined)});
 
+/** FlashList 的 ListHeaderComponent 等：可以是元素，也可以是组件 */
+const asElement = component =>
+    component == null || React.isValidElement(component) ? component ?? null : h(component);
+
 /**
- * @shopify/flash-list 2 的网格（GridLayoutManager）：可用宽度是列表内容区去掉左右
- * 内边距，每格宽 = 可用宽度 / 列数，按行排，同一行的格子一样高（取最高的一格）。
- * 没有数据时排 ListEmptyComponent；ListFooterComponent 在最后。都在滚动内容里。
+ * @shopify/flash-list 2（numColumns 为 1 时就是普通列表）。网格（GridLayoutManager）：
+ * 可用宽度是列表内容区去掉左右内边距，每格宽 = 可用宽度 / 列数，按行排，同一行的
+ * 格子一样高（取最高的一格）。ListHeaderComponent 在最前；没有数据时排
+ * ListEmptyComponent；ListFooterComponent 在最后。都在滚动内容里。
  */
 export function FlashListGrid({
     data,
     renderItem,
     numColumns = 1,
     contentContainerStyle,
+    ListHeaderComponent,
     ListEmptyComponent,
     ListFooterComponent,
 }) {
@@ -232,6 +238,7 @@ export function FlashListGrid({
     return h(
         'ScrollView',
         {contentContainerStyle},
+        asElement(ListHeaderComponent),
         data.length
             ? rows.map((row, rowIndex) =>
                 h(
@@ -246,8 +253,8 @@ export function FlashListGrid({
                     ),
                 ),
             )
-            : ListEmptyComponent ?? null,
-        ListFooterComponent ?? null,
+            : asElement(ListEmptyComponent),
+        asElement(ListFooterComponent),
     );
 }
 
