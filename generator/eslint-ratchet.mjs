@@ -68,11 +68,6 @@ function warningsOf(rules) {
 }
 
 const target = update ? tightenBaseline(counts, baseline) : baseline;
-if (update) {
-    fs.writeFileSync(baselinePath, `${JSON.stringify(target, null, 4)}\n`);
-    console.log(`\nBaseline written to ${path.relative(rootDir, baselinePath)}.`);
-}
-
 const {ok, lines} = evaluate({errorCount, counts, baseline: target});
 if (!ok) {
     // 超出基线的规则：列出它们的全部警告，方便找到新加的那几条
@@ -84,4 +79,10 @@ if (!ok) {
     }
     console.error(lines.join('\n'));
     process.exit(1);
+}
+
+// 解析错误会让警告统计不完整；所有检查通过后才能写入，失败时保留原文件。
+if (update) {
+    fs.writeFileSync(baselinePath, `${JSON.stringify(target, null, 4)}\n`);
+    console.log(`\nBaseline written to ${path.relative(rootDir, baselinePath)}.`);
 }

@@ -15,14 +15,16 @@ if (!base) {
     reason = 'No comparable base (manual run or new branch); running the tests.';
 } else {
     try {
-        const output = execFileSync('git', ['diff', '--name-only', base, 'HEAD'], {
+        // 重命名按删除＋新增处理，旧的原生路径也必须检查；NUL 分隔保留中文、
+        // 空格和换行等文件名，不依赖 Git 的路径引号转义。
+        const output = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', base, 'HEAD', '--'], {
             encoding: 'utf8',
         });
-        const changed = output.split('\n').filter(Boolean);
+        const changed = output.split('\0').filter(Boolean);
         const related = nativeRelatedPaths(changed);
         native = related.length > 0;
         reason = native
-            ? `Native-related changes:\n${related.map(path => `  ${path}`).join('\n')}`
+            ? `Native-related changes:\n${related.map(path => `  ${JSON.stringify(path)}`).join('\n')}`
             : `No native-related changes among ${changed.length} changed files; skipping.`;
     } catch (error) {
         native = true;
