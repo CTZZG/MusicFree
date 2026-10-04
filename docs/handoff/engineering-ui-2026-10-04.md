@@ -9,7 +9,7 @@
 | 仓库 | [CTZZG/MusicFree](https://github.com/CTZZG/MusicFree) |
 | 工作分支 | `claude/sharp-planck-xtfenm` |
 | 本轮工程修复起点 | `f224cb599a31eacb3bc90160ee67bdd1e6798c43` |
-| 最新功能提交 | `ecbc08c6dd89e85b8091ef37e959451d08dba33a`（推荐歌单页跟随系统字体；此前是后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
+| 最新功能提交 | `c62720e6ecd53b7389248be4234c2566944fc612`（榜单页跟随系统字体；此前是推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
 | 包版本 | `0.9.0`；实际构建用提交号和 Actions run 区分 |
 | 文档核对日期 | 2026-10-04，UTC；构建状态见第 5 节 |
 
