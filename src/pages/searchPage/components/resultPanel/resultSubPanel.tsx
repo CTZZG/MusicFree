@@ -1,3 +1,6 @@
+import AllMusicResults from "./allMusicResults";
+import { ALL_MUSIC_SOURCE_KEY } from "@/core/search/aggregateMusicResults";
+import { getCategoryTabMeta } from "../../common/searchResultMeta";
 import Empty from "@/components/base/empty";
 import { useI18N } from "@/core/i18n";
 import PluginManager, { usePluginEnabledRevision } from "@/core/pluginManager";
@@ -64,7 +67,9 @@ function getSubRouterScene(
     const scene: Record<string, React.FC> = {};
     routes.forEach(r => {
         // todo: 是否声明不可搜索
-        scene[r.key] = getResultComponent(tab, r.key, r.title);
+        scene[r.key] = r.key === ALL_MUSIC_SOURCE_KEY
+            ? () => <AllMusicResults sources={routes.filter(route => route.key !== ALL_MUSIC_SOURCE_KEY).map(route => ({ hash: route.key, name: route.title }))} />
+            : getResultComponent(tab, r.key, r.title);
     });
     return SceneMap(scene);
 }
@@ -78,14 +83,15 @@ function ResultSubPanel(props: IResultSubPanelProps) {
     // 搜索标签常驻不卸载：插件启用或停用后，来源标签要跟着变
     const enabledRevision = usePluginEnabledRevision();
     const routes = useMemo(
-        () =>
-            PluginManager.getSortedSearchablePlugins(props.tab).map(_ => ({
-                key: _.hash,
-                title: _.name,
-            })),
+        () => {
+            const sourceRoutes = PluginManager.getSortedSearchablePlugins(props.tab).map(plugin => ({ key: plugin.hash, title: plugin.name }));
+            return props.tab === "music" && sourceRoutes.length
+                ? [{ key: ALL_MUSIC_SOURCE_KEY, title: t("searchPage.allMusic") }, ...sourceRoutes]
+                : sourceRoutes;
+        },
         // enabledRevision 只用来让结果在启用状态变化后重算
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [props.tab, enabledRevision],
+        [props.tab, enabledRevision, t],
     );
     const initialIndex = useMemo(
         () =>
@@ -124,10 +130,9 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                     (acc: Record<string, any>, route: { key: string; title?: string }) => {
                         const title =
                             route.title ?? `(${t("common.unknownName")})`;
-                        const meta = getSourceTabMeta(
-                            typeResults[route.key],
-                            t,
-                        );
+                        const meta = route.key === ALL_MUSIC_SOURCE_KEY
+                            ? getCategoryTabMeta(Object.fromEntries(Object.entries(typeResults).filter(([key]) => routes.some(candidate => candidate.key === key))), t)
+                            : getSourceTabMeta(typeResults[route.key], t);
                         acc[route.key] = {
                             accessibilityLabel: withAccessibilitySuffixes(
                                 title,

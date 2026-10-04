@@ -1133,5 +1133,9 @@
     "playbackRecovery.otherSource": "Find other sources",
     "playbackRecovery.pluginSettings": "Check plugin settings",
     "playbackRecovery.accessHint": "Further quality attempts on this source have stopped. Check authorization, keys or plugin settings, or find another source.",
-    "panel.musicQuality.current": "Current resolved quality: {quality}"
+    "panel.musicQuality.current": "Current resolved quality: {quality}",
+    "searchPage.allMusic": "All sources",
+    "searchPage.allMusicHint": "Songs from all sources. Results with matching complete metadata offer a source choice; incomplete results stay separate.",
+    "searchPage.allMusicMore": "Load more source results",
+    "searchPage.chooseSource": "Choose source ({count})"
 }

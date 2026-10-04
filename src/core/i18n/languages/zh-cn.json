@@ -1133,5 +1133,9 @@
     "playbackRecovery.otherSource": "查找其他来源",
     "playbackRecovery.pluginSettings": "检查插件设置",
     "playbackRecovery.accessHint": "同一音源的音质尝试已停止。请检查授权、密钥或插件配置，也可以查找其他来源。",
-    "panel.musicQuality.current": "当前已解析音质：{quality}"
+    "panel.musicQuality.current": "当前已解析音质：{quality}",
+    "searchPage.allMusic": "全部来源",
+    "searchPage.allMusicHint": "跨来源汇总单曲；曲目信息完整且相同的结果可选择来源，信息不全时分别保留。",
+    "searchPage.allMusicMore": "加载更多来源结果",
+    "searchPage.chooseSource": "选择来源（{count} 个）"
 }

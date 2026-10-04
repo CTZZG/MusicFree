@@ -1133,5 +1133,9 @@
     "playbackRecovery.otherSource": "尋找其他來源",
     "playbackRecovery.pluginSettings": "檢查外掛設定",
     "playbackRecovery.accessHint": "已停止嘗試同一音源的其他音質。請檢查授權、金鑰或外掛設定，也可以尋找其他來源。",
-    "panel.musicQuality.current": "目前已解析音質：{quality}"
+    "panel.musicQuality.current": "目前已解析音質：{quality}",
+    "searchPage.allMusic": "全部來源",
+    "searchPage.allMusicHint": "跨來源彙總單曲；曲目資訊完整且相同的結果可選擇來源，資訊不全時分別保留。",
+    "searchPage.allMusicMore": "載入更多來源結果",
+    "searchPage.chooseSource": "選擇來源（{count} 個）"
 }
