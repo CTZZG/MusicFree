@@ -41,7 +41,6 @@ import {
 } from "../../../circleLayout";
 import { useMusicDetailLayout } from "../../../layoutContext";
 import { useI18N } from "@/core/i18n";
-import { maxFontScaleConst } from "@/constants/uiConst";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -170,8 +169,7 @@ export default function AlbumCover(props: IProps) {
                 width: landscapeArea?.width ?? windowWidth / 2,
                 height: landscapeArea?.height ?? usableWindowHeight / 3,
                 showSongInfo: !immersiveMode,
-                // 歌名区的字最多放大到这个倍数，行数按实际显示的大小算
-                fontScale: Math.min(fontScale, maxFontScaleConst.display),
+                fontScale,
             }),
         [
             fontScale,

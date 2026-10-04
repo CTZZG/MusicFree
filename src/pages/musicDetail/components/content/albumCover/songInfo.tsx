@@ -9,7 +9,7 @@ import {
 import Icon, { IIconName } from "@/components/base/icon.tsx";
 import Tag from "@/components/base/tag";
 import { showPanel } from "@/components/panels/usePanel";
-import { fontWeightConst, maxFontScaleConst } from "@/constants/uiConst";
+import { fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import MusicSheet, { useFavorite } from "@/core/musicSheet";
 import pluginManager from "@/core/pluginManager";
@@ -251,10 +251,7 @@ export default function SongInfo(props: ISongInfoProps) {
                 <View style={styles.texts}>
                     <Text
                         numberOfLines={1}
-                        maxFontSizeMultiplier={Math.min(
-                            lines.titleMaxFontScale ?? Infinity,
-                            maxFontScaleConst.display,
-                        )}
+                        maxFontSizeMultiplier={lines.titleMaxFontScale}
                         style={[
                             styles.title,
                             isHero ? styles.heroTitle : null,
@@ -273,9 +270,6 @@ export default function SongInfo(props: ISongInfoProps) {
                                 ]}>
                                 <Text
                                     numberOfLines={1}
-                                    maxFontSizeMultiplier={
-                                        maxFontScaleConst.display
-                                    }
                                     style={[
                                         styles.artist,
                                         isHero ? styles.heroArtist : null,
@@ -304,7 +298,6 @@ export default function SongInfo(props: ISongInfoProps) {
                             ]}>
                             <Text
                                 numberOfLines={1}
-                                maxFontSizeMultiplier={maxFontScaleConst.display}
                                 style={[
                                     styles.album,
                                     isLandscape ? styles.landscapeAlbum : null,

@@ -72,8 +72,9 @@
   - 工具只认识明确支持的样式、宿主组件和依赖，其余一律报错；页面用到的原生模块和运行时服务由测试显式给桩（`tests/layout/stubs.mjs`）；
   - 工具自身的行为由 `tests/layout/harness.test.mjs` 固定。排查时可以用 `dumpTree` 打印排版结果。
 - 系统字体放大：目前 `ThemeText` 不跟随系统字体（`allowFontScaling={false}`），直接用 `Text` 的地方（例如播放页）跟随系统。
-  放在固定尺寸里的文字用 `maxFontScaleConst`（`src/constants/uiConst.ts`）限制到 1.5 倍，例如播放页的导航栏、进度时间、角标和歌名区；
-  播放页的迷你歌词是固定高度的窗口，不跟随系统放大（歌词页有单独的字号设置）。
+  尺寸固定的紧凑控件用 `maxFontScaleConst.compact`（`src/constants/uiConst.ts`）限制到 1.5 倍，例如播放页的导航栏、进度时间和角标；
+  播放页的歌名区不设上限，横屏放不下时先省掉专辑、歌手行。
+  播放页的迷你歌词是固定高度的窗口，不跟随系统放大（点开歌词页可以看完整歌词，那里有单独的字号设置）。
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。
 - 稳定版构建另外运行 `npm run audit:production-deps`（`generator/audit-production-deps.mjs`），有高危漏洞时不发布。
