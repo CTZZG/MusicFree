@@ -103,6 +103,7 @@ import {
     createMediaSourceFailureResult,
     MediaSourceResolutionError,
     mediaSourceFailureFromPluginResult,
+    preferMediaSourceFailure,
     preferUserFacingMediaSourceFailure,
     type MediaSourceAttemptType,
     type MediaSourceFailure,
@@ -1049,7 +1050,7 @@ class TrackPlayer
         let loadingSource = false;
         let ownedMpvTransition: IMpvManualSkipTransition | null = null;
         let sourceResolutionFailure: MediaSourceFailure | null = null;
-        const recoveryRequest = playbackRecovery.begin();
+        let recoveryRequest = playbackRecovery.currentRequest();
         let isPlayRequestActive = () => false;
         this.crossfade.onPlay();
         LastfmScrobbler.onResumed();
@@ -1126,6 +1127,7 @@ class TrackPlayer
                 );
                 return;
             }
+            recoveryRequest = playbackRecovery.begin();
             const previousMusicBeforePlay = this.currentMusic;
             this.cancelMpvManualSkipTransitionForTarget(
                 musicItem,
@@ -1263,6 +1265,7 @@ class TrackPlayer
                     }
                     const currentState = await this.backend.getState();
                     if (currentState === "stopped" || currentState === "idle") {
+                        loadingSource = true;
                         await this.setTrackSource(
                             currentTrack,
                             true,
@@ -1271,7 +1274,9 @@ class TrackPlayer
                     }
                     if (currentState !== "playing") {
                         // 2.1.2 恢复播放
+                        loadingSource = true;
                         await this.backend.play();
+                        loadingSource = false;
                     }
                     // 这种情况下，播放队列和当前歌曲都不需要变化
                     return;
@@ -1402,6 +1407,7 @@ class TrackPlayer
                                 "source-rejected",
                             ),
                         );
+                        loadingSource = false;
                     }
                 } else {
                     // 5.3.2 已经切换到其他歌曲了，
@@ -1487,47 +1493,25 @@ class TrackPlayer
 
                             for (let quality of qualityOrder) {
                                 if (isPlayRequestActive()) {
-                                    let candidate: IPlugin.IMediaSourceResult | null =
-                                        null;
+                                    let candidate: IPlugin.IMediaSourceResult | null = null;
+                                    let attemptFailure: MediaSourceFailure | null = null;
+                                    const attemptContext = {
+                                        mediaKey: getMediaUniqueKey(similarMusic),
+                                        pluginName: similarMusicPlugin?.name ?? similarMusic.platform,
+                                        quality,
+                                    };
                                     try {
-                                        candidate =
-                                            (await similarMusicPlugin?.methods?.getMediaSource(
-                                                similarMusic,
-                                                quality,
-                                            )) ?? null;
+                                        candidate = (await similarMusicPlugin?.methods?.getMediaSource(similarMusic, quality)) ?? null;
                                     } catch (error) {
-                                        rememberSourceFailure(
-                                            classifyMediaSourceFailure(error, {
-                                                mediaKey:
-                                                    getMediaUniqueKey(
-                                                        similarMusic,
-                                                    ),
-                                                pluginName:
-                                                    similarMusicPlugin?.name ??
-                                                    similarMusic.platform,
-                                                quality,
-                                            }),
-                                            "similar",
-                                        );
+                                        attemptFailure = classifyMediaSourceFailure(error, attemptContext);
                                     }
                                     if (!candidate?.url) {
-                                        rememberSourceFailure(
-                                            getMediaSourceResultFailure(
-                                                candidate,
-                                                {
-                                                    mediaKey:
-                                                        getMediaUniqueKey(
-                                                            similarMusic,
-                                                        ),
-                                                    pluginName:
-                                                        similarMusicPlugin?.name ??
-                                                        similarMusic.platform,
-                                                    quality,
-                                                },
-                                                "unavailable",
-                                            ),
-                                            "similar",
-                                        );
+                                        const resultFailure = getMediaSourceResultFailure(candidate, attemptContext, "unavailable");
+                                        attemptFailure = preferMediaSourceFailure(attemptFailure, resultFailure);
+                                        rememberSourceFailure(attemptFailure, "similar");
+                                        if (isProviderAccessFailure(attemptFailure)) {
+                                            break;
+                                        }
                                     }
                                     // 5.4.1 获取到真实源
                                     if (candidate?.url) {
@@ -4467,6 +4451,11 @@ class TrackPlayer
             const candidate =
                 (await plugin?.methods?.getMediaSource(musicItem, quality)) ??
                 null;
+            if (candidate?.failure && isProviderAccessFailure(mediaSourceFailureFromPluginResult(candidate.failure, {
+                mediaKey: getMediaUniqueKey(musicItem), pluginName: plugin?.name ?? musicItem.platform, quality,
+            }))) {
+                break;
+            }
             if (candidate?.url) {
                 const source = await this.createPlayableSource(
                     candidate,
@@ -4529,6 +4518,11 @@ class TrackPlayer
             const candidate =
                 (await plugin?.methods?.getMediaSource(musicItem, quality)) ??
                 null;
+            if (candidate?.failure && isProviderAccessFailure(mediaSourceFailureFromPluginResult(candidate.failure, {
+                mediaKey: getMediaUniqueKey(musicItem), pluginName: plugin?.name ?? musicItem.platform, quality,
+            }))) {
+                break;
+            }
             if (candidate?.url) {
                 const source = await this.createPlayableSource(
                     candidate,
@@ -4595,6 +4589,7 @@ class TrackPlayer
         error: any,
         activeTrack?: MusicFreePlayerTrack | null,
     ) {
+        const recoveryRequest = playbackRecovery.currentRequest();
         const musicItem =
             this.resolveMusicFromAdapterTrack(activeTrack) ?? this.currentMusic;
         if (!musicItem?.platform || !musicItem.id) {
@@ -4643,6 +4638,7 @@ class TrackPlayer
             const seekTo = this.normalizeProgress(progress?.position) ?? 0;
             const source = await this.resolveFreshMediaSource(musicItem);
             if (
+                playbackRecovery.currentRequest() !== recoveryRequest ||
                 !source?.url ||
                 !isSameMediaItem(this.currentMusic, musicItem)
             ) {
@@ -4661,8 +4657,15 @@ class TrackPlayer
                 platform: musicItem.platform,
                 errorMessage: error?.message,
             });
-            this.setCurrentMusic(recoveredTrack as IMusic.IMusicItem);
             await this.setTrackSource(recoveredTrack, true, seekTo);
+            if (playbackRecovery.currentRequest() !== recoveryRequest || !this.isCurrentMusic(musicItem)) {
+                return false;
+            }
+            this.setCurrentMusic(recoveredTrack as IMusic.IMusicItem);
+            const resolvedQuality = source.quality ?? recoveredTrack.playbackSource?.quality;
+            if (resolvedQuality) {
+                this.setQuality(resolvedQuality);
+            }
             return true;
         } catch (recoveryError: any) {
             errorLog("播放源恢复失败", recoveryError?.message ?? recoveryError);

@@ -145,7 +145,7 @@ it("does not publish a late failure from an earlier play request", async () => {
     let fail: (value: null) => void = () => {};
     let started: () => void = () => {};
     const firstRequested = new Promise<void>(resolve => {
-        started = resolve; 
+        started = resolve;
     });
     getMediaSource.mockImplementationOnce(() => new Promise(resolve => {
         fail = resolve;
@@ -167,4 +167,84 @@ it("does not record the attempted quality when loading the source fails", async 
     await trackPlayer.retryPlayback(songs[1], "hires");
     expect(trackPlayer.quality).toBe(previousQuality);
     expect(playbackRecovery.state.getValue()).toMatchObject({ musicItem: songs[1], failure: { code: "backend-error" } });
+});
+
+it("preserves recovery for a failed same-target request when a duplicate joins", async () => {
+    let fail: (value: null) => void = () => {};
+    let started: () => void = () => {};
+    const firstRequested = new Promise<void>(resolve => {
+        started = resolve;
+    });
+    getMediaSource.mockImplementationOnce(() => new Promise(resolve => {
+        fail = resolve; started();
+    }));
+    const original = trackPlayer.retryPlayback(songs[1], "128k");
+    await firstRequested;
+    const duplicate = trackPlayer.retryPlayback(songs[1], "128k");
+    fail(null);
+    await Promise.all([original, duplicate]);
+    expect(getMediaSource).toHaveBeenCalledTimes(1);
+    expect(playbackRecovery.state.getValue()).toMatchObject({ musicItem: songs[1], failure: { code: "unavailable" } });
+});
+
+
+it("reports native loading failure when restarting a stopped current track", async () => {
+    mockBackend.active = { track: { ...songs[0], url: "https://example.com/old.mp3" }, index: 0 };
+    mockBackend.getState.mockResolvedValueOnce("stopped");
+    player.setTrackSource.mockRejectedValueOnce(new Error("native load failed"));
+    await trackPlayer.play(songs[0]);
+    expect(player.setTrackSource).toHaveBeenCalledTimes(1);
+    expect(playbackRecovery.state.getValue()).toMatchObject({ musicItem: songs[0], failure: { code: "backend-error" } });
+});
+
+it("stops fallback-provider quality attempts after explicit credential rejection", async () => {
+    player.configService = { getConfig: (key: string) => ({
+        "basic.defaultPlayQuality": "flac",
+        "basic.useCelluarNetworkPlay": true,
+        "basic.playQualityOrder": "desc",
+        "basic.tryChangeSourceWhenPlayFail": true,
+    } as Record<string, unknown>)[key] };
+    getMediaSource.mockResolvedValue(null);
+    const fallbackSource = jest.fn(async () => ({ failure: { code: "access-denied" } }));
+    player.pluginManagerService.getByMedia = () => ({ name: "other", methods: { getMediaSource: fallbackSource } });
+    jest.spyOn(player, "getSimilarMusic").mockResolvedValue({ ...songs[1], platform: "other" });
+    await trackPlayer.play(songs[1], true);
+    expect(fallbackSource).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(["resolveDirectMediaSource", "resolveFreshMediaSource"])("%s stops requesting provider after credential rejection", async method => {
+    getMediaSource.mockResolvedValue({ failure: { code: "access-denied" } });
+    await player[method](songs[1]);
+    expect(getMediaSource).toHaveBeenCalledTimes(1);
+});
+
+
+it("native recovery does not publish quality before replacement source loads", async () => {
+    const renderer = require("react-test-renderer");
+    const React = require("react");
+    let observedQuality: unknown;
+    function QualityProbe() {
+        observedQuality = require("@/core/trackPlayer").useMusicQuality(); return null;
+    }
+    player.sourceRecoveryAttemptedAt.clear();
+    player.sourceRecoveryInFlight.clear();
+    const originalTrack = { ...songs[0], url: "https://example.com/original.mp3", playbackSource: { quality: "128k", origin: "plugin" } };
+    player.setCurrentMusic(originalTrack);
+    player.setQuality("128k");
+    mockBackend.active = { track: originalTrack, index: 0 };
+    jest.spyOn(player, "resolveFreshMediaSource").mockResolvedValue({ url: "https://example.com/replacement.flac", quality: "hires", playbackSource: { quality: "hires", origin: "recovery" } });
+    player.setTrackSource.mockRejectedValueOnce(new Error("native load failed"));
+    let tree: any;
+    renderer.act(() => {
+        tree = renderer.create(React.createElement(QualityProbe));
+    });
+    let recovered = true;
+    await renderer.act(async () => {
+        recovered = await player.recoverCurrentSourceAfterPlaybackError({ message: "Source error" }, originalTrack);
+    });
+    renderer.act(() => tree.unmount());
+    expect(recovered).toBe(false);
+    expect(mockBackend.active.track.playbackSource.quality).toBe("128k");
+    expect(observedQuality).toBe("128k");
 });
