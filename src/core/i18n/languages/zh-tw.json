@@ -53,6 +53,8 @@
     "tabs.home": "首頁",
     "tabs.library": "資料庫",
     "library.downloadingCount": "{count} 首下載中",
+    "library.switchToList": "切換到歌單列表",
+    "library.switchToGrid": "切換到歌單網格",
     "settingsHome.versionLine": "版本 {version} · 檢查更新",
     "settingsHome.section.common": "常用",
     "settingsHome.section.general": "一般",

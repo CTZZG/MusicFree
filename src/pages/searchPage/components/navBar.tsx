@@ -141,8 +141,8 @@ const styles = StyleSheet.create({
     largeTitle: {
         paddingHorizontal: PAGE_MARGIN,
         marginBottom: 10,
-        fontSize: 34,
-        lineHeight: 41,
+        fontSize: 28,
+        lineHeight: 34,
         letterSpacing: 0.4,
     },
     row: {

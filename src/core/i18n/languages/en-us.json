@@ -53,6 +53,8 @@
     "tabs.home": "Home",
     "tabs.library": "Library",
     "library.downloadingCount": "{count} downloading",
+    "library.switchToList": "Switch to playlist list",
+    "library.switchToGrid": "Switch to playlist grid",
     "settingsHome.versionLine": "Version {version} · Check for Updates",
     "settingsHome.section.common": "Quick Settings",
     "settingsHome.section.general": "General",

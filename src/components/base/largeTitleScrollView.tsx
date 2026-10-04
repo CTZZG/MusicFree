@@ -46,7 +46,7 @@ interface ILargeTitleScrollViewProps {
 const COMPACT_TITLE_FADE = [28, 44];
 
 /**
- * iOS 标签页的大标题布局：34pt 粗体标题跟着内容一起滚动，滚过之后顶部
+ * 标签页的大标题布局：28pt 粗体标题跟着内容一起滚动，滚过之后顶部
  * 换成居中的小标题和一条分隔线。再次点击当前标签会滚回顶部。
  */
 export default function LargeTitleScrollView(
@@ -172,8 +172,8 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
     largeTitle: {
-        fontSize: 34,
-        lineHeight: 41,
+        fontSize: 28,
+        lineHeight: 34,
         letterSpacing: 0.4,
     },
     actions: {

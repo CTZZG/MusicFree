@@ -63,6 +63,8 @@ export interface ILanguageData {
     "tabs.home": string; // 底部标签：首页
     "tabs.library": string; // 底部标签：资料库
     "library.downloadingCount": string; // 资料库：正在下载的数量
+    "library.switchToList": string; // 切换到歌单列表
+    "library.switchToGrid": string; // 切换到歌单网格
     "settingsHome.versionLine": string; // 设置页应用卡片：版本与检查更新
     "settingsHome.section.common": string; // 设置页分组：常用
     "settingsHome.section.general": string; // 设置页分组：通用

@@ -125,10 +125,10 @@ const styles = StyleSheet.create({
         paddingLeft: 8,
     },
     artworkWrapper: {
-        width: 46,
-        height: 46,
-        borderRadius: 23,
-        marginRight: 12,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        marginRight: 10,
         overflow: "hidden",
     },
     artworkImg: {
@@ -141,11 +141,11 @@ const styles = StyleSheet.create({
         justifyContent: "center",
     },
     artist: {
-        marginTop: 1,
+        marginTop: 0,
     },
     progressTrack: {
-        marginTop: 5,
-        height: 3,
+        marginTop: 3,
+        height: 2,
         borderRadius: 2,
         overflow: "hidden",
     },

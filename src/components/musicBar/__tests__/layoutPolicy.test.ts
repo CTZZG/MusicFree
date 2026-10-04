@@ -1,14 +1,20 @@
 import { resolveMusicBarLayout } from "../layoutPolicy";
+import {
+    MUSIC_BAR_FLOATING_BOTTOM,
+    MUSIC_BAR_HEIGHT,
+    MUSIC_BAR_TAB_BAR_GAP,
+    TAB_BAR_HEIGHT,
+} from "../layout";
 
 const baseInput = {
     routeSupportsMusicBar: true,
     routeHasTabBar: false,
     hasCurrentMusic: true,
     keyboardVisible: false,
-    barHeight: 62,
-    floatingBottom: 10,
-    tabBarHeight: 64,
-    tabBarGap: 10,
+    barHeight: MUSIC_BAR_HEIGHT,
+    floatingBottom: MUSIC_BAR_FLOATING_BOTTOM,
+    tabBarHeight: TAB_BAR_HEIGHT,
+    tabBarGap: MUSIC_BAR_TAB_BAR_GAP,
 };
 
 describe("resolveMusicBarLayout", () => {
@@ -20,7 +26,7 @@ describe("resolveMusicBarLayout", () => {
         expect(resolveMusicBarLayout({ ...baseInput, ...patch })).toEqual({
             visible: false,
             tabBarVisible: false,
-            barBottom: 10,
+            barBottom: 8,
             reservedBottom: 0,
         });
     });
@@ -29,8 +35,8 @@ describe("resolveMusicBarLayout", () => {
         expect(resolveMusicBarLayout(baseInput)).toEqual({
             visible: true,
             tabBarVisible: false,
-            barBottom: 10,
-            reservedBottom: 72,
+            barBottom: 8,
+            reservedBottom: 58,
         });
     });
 
@@ -40,9 +46,9 @@ describe("resolveMusicBarLayout", () => {
         ).toEqual({
             visible: true,
             tabBarVisible: true,
-            // 10 底距 + 64 标签栏 + 10 间距
-            barBottom: 84,
-            reservedBottom: 146,
+            // 8 底距 + 52 标签栏 + 6 间距
+            barBottom: 66,
+            reservedBottom: 116,
         });
     });
 
@@ -56,8 +62,8 @@ describe("resolveMusicBarLayout", () => {
         ).toEqual({
             visible: false,
             tabBarVisible: true,
-            barBottom: 84,
-            reservedBottom: 74,
+            barBottom: 66,
+            reservedBottom: 60,
         });
     });
 
@@ -71,7 +77,7 @@ describe("resolveMusicBarLayout", () => {
         ).toEqual({
             visible: false,
             tabBarVisible: false,
-            barBottom: 10,
+            barBottom: 8,
             reservedBottom: 0,
         });
     });

@@ -19,6 +19,8 @@ import { ROUTE_PATH, useNavigate } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import Toast from "@/utils/toast";
 import { getTileGrid, PAGE_MARGIN, TILE_GAP } from "@/utils/tileLayout";
+import AppConfig, { useAppConfig } from "@/core/appConfig";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // 歌单网格：手机上排三列（以前最窄 150，调大显示大小的手机上只排得下两列）
 const MIN_TILE_WIDTH = 100;
@@ -45,11 +47,12 @@ function HeaderButton(props: {
     );
 }
 
-function SheetTile(props: {
+function SheetItem(props: {
     sheet: IMusic.IMusicSheetItemBase;
     width: number;
+    list: boolean;
 }) {
-    const { sheet, width } = props;
+    const { sheet, width, list } = props;
     const colors = useColors();
     const navigate = useNavigate();
     const { t } = useI18N();
@@ -57,13 +60,14 @@ function SheetTile(props: {
     const cover = sheet.coverImg ?? sheet.artwork;
     const title = isFavorite ? t("home.favoriteSheet") : sheet.title ?? "";
     const count = t("home.songCount", { count: sheet.worksNum ?? 0 });
+    const coverSize = list ? 48 : width;
 
     return (
         <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${title}，${count}`}
             style={({ pressed }) => [
-                { width },
+                list ? styles.listItem : { width },
                 pressed ? styles.pressed : null,
             ]}
             onPress={() => {
@@ -92,7 +96,7 @@ function SheetTile(props: {
                     isFavorite
                         ? styles.favoriteCover
                         : { backgroundColor: colors.placeholder },
-                    { width, height: width },
+                    { width: coverSize, height: coverSize },
                 ]}>
                 {cover ? (
                     <FastImage
@@ -102,33 +106,41 @@ function SheetTile(props: {
                 ) : (
                     <Icon
                         name={isFavorite ? "heart" : "musical-note"}
-                        size={Math.round(width * 0.32)}
+                        size={Math.round(coverSize * 0.32)}
                         color={isFavorite ? "#FFFFFF" : colors.textSecondary}
                     />
                 )}
             </View>
-            <ThemeText
-                numberOfLines={1}
-                fontSize="subTitle"
-                fontWeight="medium"
-                style={styles.tileTitle}>
-                {title}
-            </ThemeText>
-            <ThemeText
-                numberOfLines={1}
-                fontSize="description"
-                fontColor="textSecondary">
-                {count}
-            </ThemeText>
+            <View style={list ? styles.listTexts : undefined}>
+                <ThemeText
+                    numberOfLines={list ? 2 : 1}
+                    fontSize="subTitle"
+                    fontWeight="medium"
+                    style={list ? undefined : styles.tileTitle}>
+                    {title}
+                </ThemeText>
+                <ThemeText
+                    numberOfLines={1}
+                    fontSize="description"
+                    fontColor="textSecondary">
+                    {count}
+                </ThemeText>
+            </View>
+            {list ? (
+                <Icon name="chevron-right" size={16} color={colors.textSecondary} />
+            ) : null}
         </Pressable>
     );
 }
 
-/** 资料库标签：本地音乐、下载、历史等入口，下面是自建歌单的网格 */
+/** 资料库标签：本地音乐、下载、历史等入口，歌单支持网格和列表 */
 export default function Library() {
     const { t } = useI18N();
     const navigate = useNavigate();
     const { width: windowWidth } = useWindowDimensions();
+    const safeAreaInsets = useSafeAreaInsets();
+    const playlistView = useAppConfig("library.playlistView");
+    const list = playlistView === "list";
     const sheets = useSheetsBase();
     const starredSheets = useStarredSheets();
     const downloadQueue = useDownloadQueue();
@@ -138,9 +150,10 @@ export default function Library() {
         ...sheets.filter(sheet => sheet.id === MusicSheet.defaultSheet.id),
         ...sheets.filter(sheet => sheet.id !== MusicSheet.defaultSheet.id),
     ];
-    const { tileWidth } = getTileGrid(windowWidth, {
-        minTileWidth: MIN_TILE_WIDTH,
-    });
+    const { tileWidth } = getTileGrid(
+        windowWidth - safeAreaInsets.left - safeAreaInsets.right,
+        { minTileWidth: MIN_TILE_WIDTH },
+    );
 
     return (
         <LargeTitleScrollView
@@ -156,6 +169,16 @@ export default function Library() {
                         icon="plus"
                         label={t("home.newPlaylist.a11y")}
                         onPress={() => showPanel("CreateMusicSheet")}
+                    />
+                    <HeaderButton
+                        icon={list ? "squares-2x2" : "bars-3"}
+                        label={t(
+                            list ? "library.switchToGrid" : "library.switchToList",
+                        )}
+                        onPress={() => AppConfig.setConfig(
+                            "library.playlistView",
+                            list ? "grid" : "list",
+                        )}
                     />
                 </>
             }>
@@ -231,9 +254,16 @@ export default function Library() {
                     <ThemeText fontColor="primary">{t("common.edit")}</ThemeText>
                 </Pressable>
             </View>
-            <View style={styles.grid}>
+            <View
+                testID={list ? "library-playlist-list" : "library-playlist-grid"}
+                style={list ? styles.list : styles.grid}>
                 {orderedSheets.map(sheet => (
-                    <SheetTile key={sheet.id} sheet={sheet} width={tileWidth} />
+                    <SheetItem
+                        key={sheet.id}
+                        sheet={sheet}
+                        width={tileWidth}
+                        list={list}
+                    />
                 ))}
             </View>
         </LargeTitleScrollView>
@@ -269,6 +299,21 @@ const styles = StyleSheet.create({
         paddingHorizontal: PAGE_MARGIN,
         columnGap: TILE_GAP,
         rowGap: 16,
+    },
+    list: {
+        paddingHorizontal: PAGE_MARGIN,
+    },
+    listItem: {
+        flexDirection: "row",
+        alignItems: "center",
+        minHeight: 64,
+        paddingVertical: 8,
+        gap: 12,
+    },
+    listTexts: {
+        flex: 1,
+        minWidth: 0,
+        gap: 2,
     },
     cover: {
         borderRadius: 10,

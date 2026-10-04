@@ -53,6 +53,8 @@
     "tabs.home": "首页",
     "tabs.library": "资料库",
     "library.downloadingCount": "{count} 首下载中",
+    "library.switchToList": "切换到歌单列表",
+    "library.switchToGrid": "切换到歌单网格",
     "settingsHome.versionLine": "版本 {version} · 检查更新",
     "settingsHome.section.common": "常用",
     "settingsHome.section.general": "通用",

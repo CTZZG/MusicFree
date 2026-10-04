@@ -59,6 +59,9 @@ export interface IAppConfigProperties {
     // Local music
     "localMusic.scanPolicy": ILocalMusicScanPolicy;
 
+    // Library
+    "library.playlistView": "grid" | "list";
+
     // Lyric
     "lyric.showStatusBarLyric": boolean;
     "lyric.showMediaNotificationLyric": boolean;
