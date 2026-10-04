@@ -57,6 +57,9 @@
 
 - `npm run verify`（`generator/verify.mjs`）：静态审计与 TypeScript（`audit:round20-static`）、只读 ESLint、Jest、构建脚本自己的 node:test 用例（`generator/lib/*.test.mjs`，新加的自动纳入）、`patch-package --error-on-fail`（补丁打不上时本地也失败）。不修改仓库文件；`node_modules` 里还没打上的补丁会被打上，与 postinstall 相同。
 - `npm run lint:check` 只检查；`npm run lint` 会自动修复文件。
+- 系统字体放大：目前 `ThemeText` 不跟随系统字体（`allowFontScaling={false}`），直接用 `Text` 的地方（例如播放页）跟随系统。
+  放在固定尺寸里的文字用 `maxFontScaleConst`（`src/constants/uiConst.ts`）限制到 1.5 倍，例如播放页的导航栏、进度时间、角标和歌名区；
+  播放页的迷你歌词是固定高度的窗口，不跟随系统放大（歌词页有单独的字号设置）。
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。
 - 稳定版构建另外运行 `npm run audit:production-deps`（`generator/audit-production-deps.mjs`），有高危漏洞时不发布。

@@ -16,6 +16,7 @@ import Animated, {
 
 import Icon from "@/components/base/icon.tsx";
 import { timingConfig } from "@/constants/commonConst";
+import { maxFontScaleConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import TrackPlayer, { useMusicState } from "@/core/trackPlayer";
 import useOrientation from "@/hooks/useOrientation";
@@ -293,6 +294,7 @@ export default function PlayControl(props: IPlayControlProps) {
                         </Animated.View>
                     </View>
                     <Animated.Text
+                        maxFontSizeMultiplier={maxFontScaleConst.compact}
                         style={[styles.swipeHintText, hintTextAnimatedStyle]}>
                         上滑切换下一首
                     </Animated.Text>

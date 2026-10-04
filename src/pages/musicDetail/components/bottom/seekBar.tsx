@@ -2,7 +2,7 @@ import React, { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import timeformat from "@/utils/timeformat";
-import { fontWeightConst } from "@/constants/uiConst";
+import { fontWeightConst, maxFontScaleConst } from "@/constants/uiConst";
 import TrackPlayer, {
     useCurrentMusic,
     useMusicQuality,
@@ -37,7 +37,11 @@ function Badge(props: {
                 styles.badge,
                 pressed ? styles.pressed : null,
             ]}>
-            <Text style={styles.badgeText}>{props.label}</Text>
+            <Text
+                maxFontSizeMultiplier={maxFontScaleConst.compact}
+                style={styles.badgeText}>
+                {props.label}
+            </Text>
         </Pressable>
     );
 }
@@ -146,14 +150,18 @@ export default function SeekBar() {
                 value={progress.position}
             />
             <View style={styles.timeRow}>
-                <Text style={[styles.time, styles.timeStart]}>
+                <Text
+                    maxFontSizeMultiplier={maxFontScaleConst.compact}
+                    style={[styles.time, styles.timeStart]}>
                     {timeformat(Math.max(position, 0))}
                 </Text>
                 <View style={styles.badges}>
                     <QualityBadge />
                     <RateBadge />
                 </View>
-                <Text style={[styles.time, styles.timeEnd]}>
+                <Text
+                    maxFontSizeMultiplier={maxFontScaleConst.compact}
+                    style={[styles.time, styles.timeEnd]}>
                     {`-${timeformat(Math.max(displayDuration - position, 0))}`}
                 </Text>
             </View>

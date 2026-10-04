@@ -80,7 +80,11 @@ jest.mock("@/components/panels/usePanel", () => ({ showPanel: jest.fn() }));
 
 jest.mock("../miniLyric", () => ({ __esModule: true, default: () => null }));
 
-jest.mock("../songInfo", () => ({ __esModule: true, default: () => null }));
+jest.mock("../songInfo", () => ({
+    __esModule: true,
+    default: () => null,
+    getSongInfoWidth: () => 300,
+}));
 
 // 共享值要跨渲染保持，动画直接跳到终点
 jest.mock("react-native-reanimated", () => {

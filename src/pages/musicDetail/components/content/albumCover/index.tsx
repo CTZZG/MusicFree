@@ -18,7 +18,7 @@ import {
     View,
 } from "react-native";
 import { showPanel } from "@/components/panels/usePanel.ts";
-import SongInfo from "./songInfo";
+import SongInfo, { getSongInfoWidth } from "./songInfo";
 import MiniLyric from "./miniLyric";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppConfig } from "@/core/appConfig";
@@ -41,6 +41,7 @@ import {
 } from "../../../circleLayout";
 import { useMusicDetailLayout } from "../../../layoutContext";
 import { useI18N } from "@/core/i18n";
+import { maxFontScaleConst } from "@/constants/uiConst";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
@@ -156,6 +157,12 @@ export default function AlbumCover(props: IProps) {
         windowWidth,
     ]);
 
+    // 方形卡片的歌名和迷你歌词与封面同宽、两边对齐；封面缩得很小时（小屏、
+    // 大字体）不再跟着缩，否则歌名只剩两三个字的宽度
+    const cardInfoWidth = isCircleCover
+        ? undefined
+        : Math.max(cardFit.coverSize, getSongInfoWidth(windowWidth));
+
     const landscapeLayout = useMemo(
         () =>
             getMusicDetailLandscapeLayout({
@@ -163,7 +170,8 @@ export default function AlbumCover(props: IProps) {
                 width: landscapeArea?.width ?? windowWidth / 2,
                 height: landscapeArea?.height ?? usableWindowHeight / 3,
                 showSongInfo: !immersiveMode,
-                fontScale,
+                // 歌名区的字最多放大到这个倍数，行数按实际显示的大小算
+                fontScale: Math.min(fontScale, maxFontScaleConst.display),
             }),
         [
             fontScale,
@@ -385,14 +393,12 @@ export default function AlbumCover(props: IProps) {
                 </View>
             </Pressable>
             <View style={styles.cardSongInfo} onLayout={onCardSongInfoLayout}>
-                <SongInfo
-                    width={isCircleCover ? undefined : cardFit.coverSize}
-                />
+                <SongInfo width={cardInfoWidth} />
             </View>
             {cardFit.showMiniLyric ? (
                 <MiniLyric
                     variant="circle"
-                    width={isCircleCover ? undefined : cardFit.coverSize}
+                    width={cardInfoWidth}
                     onPress={onTurnPageClick}
                 />
             ) : null}

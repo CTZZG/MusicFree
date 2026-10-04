@@ -43,5 +43,23 @@ const colorMap: Record<ColorKey, keyof CustomizedColors> = {
     primary: "primary",
 } as const;
 
-export { fontSizeConst, fontWeightConst, iconSizeConst, colorMap };
+/**
+ * 系统字体放大倍数的上限（Text 的 maxFontSizeMultiplier）。文字默认跟随系统
+ * 放大，只有放在固定尺寸里的文字才设上限：再大就会撑破控件，或把同一屏的
+ * 其他内容挤出去。设了上限的文字在上限以内照样跟着放大。
+ */
+const maxFontScaleConst = {
+    /** 高度固定的控件：导航栏、进度时间、角标、提示文字 */
+    compact: 1.5,
+    /** 本身就很大的标题，比如播放页的歌名区 */
+    display: 1.5,
+} as const;
+
+export {
+    fontSizeConst,
+    fontWeightConst,
+    iconSizeConst,
+    colorMap,
+    maxFontScaleConst,
+};
 export type { ColorKey };

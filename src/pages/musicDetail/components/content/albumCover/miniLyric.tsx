@@ -49,6 +49,9 @@ interface IMiniLyricProps {
 
 type MiniLyricLineType = LyricWordLineType;
 
+// 迷你歌词是固定高度的滚动窗口，窗口和每行的高度都按屏宽算好，文字不跟随系统
+// 字体放大：放大后字比行高还高，下半截会被裁掉。想看大字点开歌词页，那里有
+// 单独的字号设置
 const PRIMARY_LINE_HEIGHT = rpx(40);
 const SECONDARY_LINE_HEIGHT = rpx(28);
 const COMPACT_LINE_HEIGHT = rpx(36);
@@ -194,6 +197,7 @@ function MiniAnimatedCharacter(props: {
 
     return (
         <Animated.Text
+            allowFontScaling={false}
             style={[
                 styles.activeCharacter,
                 {
@@ -250,6 +254,7 @@ function MiniWordByWordLine(props: {
         return (
             <Text
                 numberOfLines={1}
+                allowFontScaling={false}
                 style={[
                     styles.activeLine,
                     subtle ? styles.heroActiveLine : null,
@@ -659,6 +664,7 @@ export default function MiniLyric(props: IMiniLyricProps) {
                                         <Text
                                             key={type}
                                             numberOfLines={1}
+                                            allowFontScaling={false}
                                             style={[
                                                 isHero
                                                     ? styles.heroContextLine
