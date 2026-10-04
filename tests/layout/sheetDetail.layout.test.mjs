@@ -266,7 +266,11 @@ function assertSongRows(root, area, t) {
     for (const [index, row] of rows.entries()) {
         const song = SONGS[index];
         assert.ok(row.frame.height >= 64 - 0.5, `row ${song.title} is at least 64 dp tall`);
-        assertInside(row, area, `row ${song.title}`);
+        // 行占满安全区的宽度：左右的安全区只让开一次
+        assert.ok(
+            Math.abs(row.frame.x - area.left) <= 0.5 && Math.abs(rightOf(row.frame) - area.right) <= 0.5,
+            `row ${song.title} ${describeFrame(row.frame)} spans the safe area x=${area.left}…${area.right}`,
+        );
         const texts = findAll(row, isText);
         for (const text of texts) {
             assertReadable(text, `"${text.text}" in row ${song.title}`);

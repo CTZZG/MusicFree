@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import Icon, { IIconName } from "@/components/base/icon";
-import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import ListItem from "@/components/base/listItem";
 import ThemeText from "@/components/base/themeText";
 import { showDialog } from "@/components/dialogs/useDialog";
@@ -817,7 +816,7 @@ export default function LocalMusicList() {
     }
 
     return (
-        <HorizontalSafeAreaView style={globalStyle.flex1}>
+        <View style={globalStyle.flex1}>
             <View style={globalStyle.flex1}>
                 {renderLibraryToolbar()}
                 {!isGroupMode ? renderListControls() : null}
@@ -873,7 +872,7 @@ export default function LocalMusicList() {
                     />
                 )}
             </View>
-        </HorizontalSafeAreaView>
+        </View>
     );
 }
 

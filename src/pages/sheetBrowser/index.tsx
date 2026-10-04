@@ -1,6 +1,6 @@
 import React from "react";
+import { View } from "react-native";
 import AppBar from "@/components/base/appBar";
-import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView";
 import VerticalSafeAreaView from "@/components/base/verticalSafeAreaView";
 import globalStyle from "@/constants/globalStyle";
 import { useI18N } from "@/core/i18n";
@@ -14,9 +14,9 @@ export default function SheetBrowser() {
     return (
         <VerticalSafeAreaView style={globalStyle.fwflex1}>
             <AppBar withStatusBar>{t("common.sheet")}</AppBar>
-            <HorizontalSafeAreaView style={globalStyle.flex1}>
+            <View style={globalStyle.flex1}>
                 <Sheets initialSheetType={params?.sheetType} />
-            </HorizontalSafeAreaView>
+            </View>
         </VerticalSafeAreaView>
     );
 }

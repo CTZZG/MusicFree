@@ -1,8 +1,8 @@
 import React from "react";
+import { View } from "react-native";
 import Header from "./header";
 import MusicList from "@/components/musicList";
 import { useParams } from "@/core/router";
-import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import globalStyle from "@/constants/globalStyle";
 import { useSheetItem } from "@/core/musicSheet";
 import { RequestStateCode } from "@/constants/commonConst";
@@ -14,7 +14,7 @@ export default function SheetMusicList() {
     const currentMusic = useCurrentMusic();
 
     return (
-        <HorizontalSafeAreaView style={globalStyle.flex1}>
+        <View style={globalStyle.flex1}>
             <MusicList
                 Header={<Header />}
                 musicList={musicSheet?.musicList}
@@ -27,6 +27,6 @@ export default function SheetMusicList() {
                 highlightMusicItem={currentMusic}
 
             />
-        </HorizontalSafeAreaView>
+        </View>
     );
 }

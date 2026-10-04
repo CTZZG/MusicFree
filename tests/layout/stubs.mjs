@@ -166,26 +166,20 @@ function createSafeAreaStub(env) {
         bottom: ['paddingBottom', 'paddingVertical'],
         left: ['paddingLeft', 'paddingHorizontal'],
     };
-    // 原生的 SafeAreaView 按自己在窗口里的实际位置让开安全区：外层已经让开的
-    // 部分，里层量到的就是 0。这里按嵌套关系近似：里层只补外层还没让开的部分。
-    const AppliedInsets = React.createContext({top: 0, right: 0, bottom: 0, left: 0});
-    function SafeAreaView({edges, style, children, ...rest}) {
-        const applied = React.useContext(AppliedInsets);
+    // react-native-safe-area-context 5.x：每个 SafeAreaView 都取最近的
+    // SafeAreaProvider 的安全区（App 只有根上一个），按 additive 叠加在自己的
+    // 内边距上，不管外层的 SafeAreaView 是否已经让开。所以同一条边嵌套两层就会
+    // 让开两次，页面里每条边只能由一层负责。
+    function SafeAreaView({edges, style, ...rest}) {
         // 安全区内边距叠加在样式自己的内边距上
         const own = flattenStyle(style);
         const padding = {};
-        const nowApplied = {...applied};
         for (const edge of edges ?? ['top', 'right', 'bottom', 'left']) {
             const [key, axisKey] = EDGE_PADDING[edge];
-            const inset = Math.max(0, env.insets[edge] - applied[edge]);
-            padding[key] = inset + (own[key] ?? own[axisKey] ?? own.padding ?? 0);
-            nowApplied[edge] = applied[edge] + inset;
+            padding[key] =
+                env.insets[edge] + (own[key] ?? own[axisKey] ?? own.padding ?? 0);
         }
-        return h(
-            AppliedInsets.Provider,
-            {value: nowApplied},
-            h('View', {...rest, style: [own, padding]}, children),
-        );
+        return h('View', {...rest, style: [own, padding]});
     }
     return strictStub('react-native-safe-area-context', {
         SafeAreaView,

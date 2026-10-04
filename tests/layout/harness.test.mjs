@@ -2,6 +2,7 @@
 // 一定报错。布局测试的结论依赖这些行为，改工具时这里先要过。
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {createCommonStubs, createEnv} from './stubs.mjs';
 import {
     React,
     clippingAncestor,
@@ -147,6 +148,33 @@ test('content can scroll into view past clipping ancestors, but only along the s
         );
     } finally {
         wide.unmount();
+    }
+});
+
+test('nested SafeAreaViews each add the provider insets, like react-native-safe-area-context 5', () => {
+    // 原生按最近的 SafeAreaProvider 取安全区，叠加在每个 SafeAreaView 自己的内边距上：
+    // 外层让开四边、里层再让开左右，左右就让开了两次
+    const env = createEnv({width: 806, height: 363, scale: 2, insets: {top: 0, right: 24, bottom: 20, left: 24}});
+    const {SafeAreaView} = createCommonStubs(env)['react-native-safe-area-context'];
+    const {root, unmount} = renderLayout(
+        h(
+            SafeAreaView,
+            {style: {flex: 1}},
+            h(
+                SafeAreaView,
+                {edges: ['left', 'right'], style: {flex: 1}},
+                h('View', {nativeID: 'content', style: {flex: 1}}),
+            ),
+        ),
+        {env, width: 806, height: 363},
+    );
+    try {
+        const content = findOne(root, byKey('content'), 'content').frame;
+        assert.equal(content.x, 48);
+        assert.equal(content.width, 806 - 96);
+        assert.equal(content.height, 363 - 20);
+    } finally {
+        unmount();
     }
 });
 

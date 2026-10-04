@@ -83,7 +83,8 @@
     越过一层滚动容器以后，外层祖先不再按它能滚动的方向判断（列表里排在屏幕下面的格子、横向滚出屏幕的标签可以滚进来）；
   - 工具只认识明确支持的样式、宿主组件和依赖，其余一律报错；页面用到的原生模块和运行时服务由测试显式给桩（`tests/layout/stubs.mjs`，
     含 FlashList 网格、react-native-tab-view 的可滚动标签栏，以及有返回键的普通页面共用的一组 `createPageStubs`）；
-    嵌套的 `SafeAreaView` 和原生一样，里层只补外层还没让开的安全区；
+    `SafeAreaView` 的桩和 react-native-safe-area-context 5 一样：每一层都按根上的 Provider 取安全区、叠加在自己的内边距上，
+    嵌套两层同一条边就让开两次（`harness.test.mjs` 固定了这一点）；
   - `renderLayout` 返回的 `interact` 在 act 里做一次交互（例如长按歌曲）后重新排版，用来检查交互之后才出现的界面；
   - 工具自身的行为由 `tests/layout/harness.test.mjs` 固定。排查时可以用 `dumpTree` 打印排版结果。
 - 系统字体放大：目标是全部跟随系统字体。直接用 `Text` 的地方本来就跟随；`ThemeText` 以前一律关掉了缩放，
@@ -110,6 +111,11 @@
     顶栏折行，底部操作栏高度固定、标签封顶 1.5 倍。
   - `ListItem` 里占满行高的部分（图标、文字、内容区）用 `alignSelf: "stretch"`，不用 `height: "100%"`：行只有最小高度时，
     Yoga 按百分比算出的高度不对，列表里的行会被撑得很高（布局测试里复现过）。
+- 安全区：每条边只由一层 `SafeAreaView` 负责。`VerticalSafeAreaView` 名字叫 Vertical，实际四边都让开（含
+  `ShortcutPageSurface`），里面不能再套 `HorizontalSafeAreaView`；react-native-safe-area-context 5 的每个 `SafeAreaView`
+  都按根上的 Provider 取安全区叠加，嵌套就让开两次。榜单、歌单／榜单／专辑详情（`MusicSheetPage`）、本地音乐、
+  歌单浏览、批量编辑、本地歌单详情原来都套了两层，横屏时左右各多让一次，已去掉里层。设置页、搜索页外层只让上下，
+  里层让左右，不重复。
   - 播放页的导航栏、进度时间、角标、上滑提示封顶 1.5 倍；歌名区不封顶，横屏放不下时先省专辑、歌手行。
     迷你歌词是固定高度的窗口，不跟随系统放大（点开歌词页可以看完整歌词，那里有单独的字号设置）。
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
