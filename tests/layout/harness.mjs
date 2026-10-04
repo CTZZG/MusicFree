@@ -228,7 +228,7 @@ export function flattenStyle(style) {
 }
 
 /**
- * @param {{window: {width: number, height: number, scale: number, fontScale: number}}} env
+ * @param {{window: {width: number, height: number, scale: number, fontScale: number}, insets?: {top: number}}} env
  *   测试可以在渲染之间修改 env.window（例如字体缩放）
  */
 export function createReactNativeStub(env) {
@@ -306,6 +306,8 @@ export function createReactNativeStub(env) {
             select: spec => ('android' in spec ? spec.android : spec.default),
         },
         I18nManager: {isRTL: false},
+        // 状态栏不参与排版；currentHeight 是 Android 状态栏的高度，取安全区顶部
+        StatusBar: Object.assign(() => null, {currentHeight: env.insets?.top ?? 0}),
         InteractionManager: {
             runAfterInteractions: task => {
                 task?.();
@@ -1062,22 +1064,28 @@ function containsAlong(outer, inner, axis) {
 
 /**
  * 最近一个会把 record 裁掉一部分的祖先，没有就是 null：
- * - overflow: hidden 的祖先两个方向都裁；
- * - 滚动容器只在不能滚动的方向上裁（竖向列表裁左右，横向列表裁上下）。
+ * - overflow 不是 visible 的视图两个方向都裁（Android 上 scroll 和 hidden 一样裁）；
+ * - 滚动容器只在不能滚动的方向上裁（竖向列表裁左右，横向列表裁上下）；
+ * - 滚动容器里的内容能滚进视野：越过一层滚动容器以后，外层的祖先不再按它能
+ *   滚动的方向裁（竖向列表里排在屏幕下面的格子不算被裁）。
  */
 export function clippingAncestor(record) {
+    const scrolls = {x: false, y: false};
+    const clippedAlong = (ancestor, axis) =>
+        !scrolls[axis] && !containsAlong(ancestor.frame, record.frame, axis);
     for (let ancestor = record.parent; ancestor; ancestor = ancestor.parent) {
-        const style = flattenStyle(ancestor.props.style);
-        if (style.overflow === 'hidden' && !contains(ancestor.frame, record.frame)) {
-            return ancestor;
+        if (ancestor.type === 'ScrollView') {
+            const scrollAxis = ancestor.scroll === 'vertical' ? 'y' : 'x';
+            if (clippedAlong(ancestor, scrollAxis === 'y' ? 'x' : 'y')) {
+                return ancestor;
+            }
+            scrolls[scrollAxis] = true;
+            continue;
         }
+        const {overflow} = flattenStyle(ancestor.props.style);
         if (
-            ancestor.type === 'ScrollView' &&
-            !containsAlong(
-                ancestor.frame,
-                record.frame,
-                ancestor.scroll === 'vertical' ? 'x' : 'y',
-            )
+            (overflow === 'hidden' || overflow === 'scroll') &&
+            (clippedAlong(ancestor, 'x') || clippedAlong(ancestor, 'y'))
         ) {
             return ancestor;
         }

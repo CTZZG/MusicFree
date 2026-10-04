@@ -13,7 +13,12 @@ import {
     renderLayout,
     strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
+import {
+    FlashListGrid,
+    createCommonStubs,
+    createEnv,
+    inAppFontScaleScope,
+} from './stubs.mjs';
 
 const h = React.createElement;
 const PAGE_MARGIN = 16;
@@ -30,45 +35,12 @@ const SHEETS = [
     {id: '8', title: 'Классическая музыка для концентрации', artwork: 'h'},
 ].map(sheet => ({...sheet, platform: '测试源'}));
 
-/**
- * FlashList 2 的网格（GridLayoutManager）：可用宽度是列表内容区去掉左右内边距，
- * 每格宽 = 可用宽度 / 列数，按行排，同一行的格子一样高（取最高的一格）。
- */
-function FlashList({
-    data,
-    renderItem,
-    numColumns = 1,
-    contentContainerStyle,
-    ListFooterComponent,
-}) {
-    const rows = [];
-    for (let start = 0; start < data.length; start += numColumns) {
-        rows.push(data.slice(start, start + numColumns));
-    }
-    return h(
-        'ScrollView',
-        {contentContainerStyle},
-        rows.map((row, rowIndex) =>
-            h(
-                'View',
-                {key: rowIndex, style: {flexDirection: 'row'}},
-                row.map((item, column) =>
-                    h(
-                        'View',
-                        {key: column, style: {width: `${100 / numColumns}%`}},
-                        renderItem({item, index: rowIndex * numColumns + column}),
-                    ),
-                ),
-            ),
-        ),
-        ListFooterComponent,
-    );
-}
-
 function renderSheetGrid(env) {
     const stubs = {
         ...createCommonStubs(env),
-        '@shopify/flash-list': strictStub('@shopify/flash-list', {FlashList}),
+        '@shopify/flash-list': strictStub('@shopify/flash-list', {
+            FlashList: FlashListGrid,
+        }),
         '@/pages/recommendSheets/hooks/useRecommendSheets': strictStub(
             'useRecommendSheets',
             {default: () => [() => {}, SHEETS, 'idle']},

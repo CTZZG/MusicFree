@@ -92,6 +92,64 @@ test('scroll content is not limited along the scroll axis, but is clipped across
     }
 });
 
+test('content can scroll into view past clipping ancestors, but only along the scroll axis', () => {
+    const {root, unmount} = layout(
+        h(
+            'View',
+            // 分页容器（overflow: hidden）里一个竖向列表、一条横向标签条
+            {nativeID: 'pager', style: {height: 200, overflow: 'hidden'}},
+            h(
+                'ScrollView',
+                {horizontal: true, style: {flexGrow: 0, flexShrink: 0}},
+                h('View', {nativeID: 'offscreen-tag', style: {marginLeft: 400, width: 60, height: 30}}),
+            ),
+            h(
+                'ScrollView',
+                null,
+                h('View', {nativeID: 'below-the-fold', style: {marginTop: 500, height: 40}}),
+            ),
+            // overflow: scroll 的普通视图在 Android 上和 hidden 一样裁
+            h(
+                'View',
+                {nativeID: 'scroll-overflow', style: {height: 10, overflow: 'scroll'}},
+                h('View', {nativeID: 'too-tall', style: {height: 20}}),
+            ),
+        ),
+    );
+    try {
+        // 横向滚出屏幕的标签、竖向排在下面的格子都能滚进来，不算被分页容器裁掉
+        assert.equal(clippingAncestor(findOne(root, byKey('offscreen-tag'), 'tag')), null);
+        assert.equal(clippingAncestor(findOne(root, byKey('below-the-fold'), 'cell')), null);
+        assert.equal(
+            clippingAncestor(findOne(root, byKey('too-tall'), 'too tall')),
+            findOne(root, byKey('scroll-overflow'), 'scroll overflow'),
+        );
+    } finally {
+        unmount();
+    }
+
+    // 竖向列表里横着伸出去的内容，滚动帮不上忙，照样算被外层裁掉
+    const wide = layout(
+        h(
+            'View',
+            {nativeID: 'pager', style: {width: 100, overflow: 'hidden'}},
+            h(
+                'View',
+                {style: {width: 300}},
+                h('ScrollView', null, h('View', {nativeID: 'wide', style: {width: 250, height: 10}})),
+            ),
+        ),
+    );
+    try {
+        assert.equal(
+            clippingAncestor(findOne(wide.root, byKey('wide'), 'wide')),
+            findOne(wide.root, byKey('pager'), 'pager'),
+        );
+    } finally {
+        wide.unmount();
+    }
+});
+
 test('overflow: hidden clips, and text squeezed or cut off is reported', () => {
     const {root, unmount} = layout(
         h(
