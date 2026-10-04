@@ -148,6 +148,42 @@ function createReanimatedStub() {
     });
 }
 
+/**
+ * FlatList（竖向）：不虚拟化，把每一项都排出来，放在滚动容器里。getItemLayout 不影响
+ * 排版，测试按实际排出来的行高检查。
+ */
+export function FlatListStub({
+    data,
+    renderItem,
+    keyExtractor,
+    horizontal,
+    style,
+    contentContainerStyle,
+    ListHeaderComponent,
+    ListEmptyComponent,
+    ListFooterComponent,
+}) {
+    if (horizontal) {
+        throw new Error('The FlatList stub models vertical lists only');
+    }
+    const items = data ?? [];
+    return h(
+        'ScrollView',
+        {style, contentContainerStyle},
+        asElement(ListHeaderComponent),
+        items.length
+            ? items.map((item, index) =>
+                h(
+                    React.Fragment,
+                    {key: keyExtractor ? keyExtractor(item, index) : index},
+                    renderItem({item, index}),
+                ),
+            )
+            : asElement(ListEmptyComponent),
+        asElement(ListFooterComponent),
+    );
+}
+
 function createGestureHandlerStub(RN) {
     const builder = new Proxy({}, {get: () => () => builder});
     return strictStub('react-native-gesture-handler', {
@@ -156,6 +192,7 @@ function createGestureHandlerStub(RN) {
         Pressable: RN.Pressable,
         TouchableOpacity: RN.Pressable,
         ScrollView: RN.ScrollView,
+        FlatList: FlatListStub,
     });
 }
 
@@ -465,9 +502,9 @@ export function createCommonStubs(env) {
         'react-native-reanimated': createReanimatedStub(),
         'react-native-gesture-handler': createGestureHandlerStub(RN),
         'react-native-safe-area-context': createSafeAreaStub(env),
-        // 只用来给占位文字调透明度
+        // 只用来调透明度：颜色不影响排版
         color: () => {
-            const chain = {alpha: () => chain, toString: () => '#808080'};
+            const chain = {alpha: () => chain, toString: () => '#808080', string: () => '#808080'};
             return chain;
         },
         '@/core/i18n': createI18nStub(env),

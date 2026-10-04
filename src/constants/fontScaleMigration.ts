@@ -28,4 +28,4 @@ export const fontScaleMigratedRoutes: ReadonlySet<RoutePaths> = new Set<RoutePat
 
 export const fontScaleMigratedPanels: ReadonlySet<keyof typeof panels> = new Set<
     keyof typeof panels
->(["SetUserVariables", "SheetTags"]);
+>(["SetUserVariables", "SheetTags", "MusicItemOptions", "AddToMusicSheet"]);

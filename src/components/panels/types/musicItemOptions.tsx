@@ -43,7 +43,9 @@ interface IMusicItemOptionsProps {
     from?: string;
 }
 
-const ITEM_HEIGHT = rpx(96);
+// 选项行的高度，和下面 ListItem 的 heightType="small" 一致（以前写成 rpx(96)，
+// 和实际行高对不上）。选项都是一行字，2 倍字体下也放得下，行高不会变
+const ITEM_HEIGHT = ListItem.Size.small;
 
 interface IOption {
     icon: IIconName;
@@ -513,7 +515,8 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
                     <Divider />
                     <View style={style.wrapper}>
                         <FlatList
-                            data={options}
+                            // 隐藏的选项不进列表：每一项都是同样的行高，getItemLayout 才对
+                            data={options.filter(item => item.show !== false)}
                             getItemLayout={(_, index) => ({
                                 length: ITEM_HEIGHT,
                                 offset: ITEM_HEIGHT * index,
@@ -527,21 +530,19 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
                                 },
                             ]}
                             keyExtractor={_ => _.title}
-                            renderItem={({ item }) =>
-                                item.show !== false ? (
-                                    <ListItem
-                                        withHorizontalPadding
-                                        heightType="small"
-                                        onPress={item.onPress}>
-                                        <ListItem.ListItemIcon
-                                            width={rpx(48)}
-                                            icon={item.icon}
-                                            iconSize={iconSizeConst.light}
-                                        />
-                                        <ListItem.Content title={item.title} />
-                                    </ListItem>
-                                ) : null
-                            }
+                            renderItem={({ item }) => (
+                                <ListItem
+                                    withHorizontalPadding
+                                    heightType="small"
+                                    onPress={item.onPress}>
+                                    <ListItem.ListItemIcon
+                                        width={rpx(48)}
+                                        icon={item.icon}
+                                        iconSize={iconSizeConst.light}
+                                    />
+                                    <ListItem.Content title={item.title} />
+                                </ListItem>
+                            )}
                         />
                     </View>
                 </>
@@ -557,7 +558,8 @@ const style = StyleSheet.create({
     },
     header: {
         width: rpx(750),
-        height: rpx(200),
+        // 字体放大、歌名和歌手各折成两行时跟着变高
+        minHeight: rpx(200),
         flexDirection: "row",
         padding: rpx(24),
     },
@@ -571,8 +573,8 @@ const style = StyleSheet.create({
     },
     content: {
         marginLeft: rpx(36),
-        width: rpx(526),
-        height: rpx(140),
+        flex: 1,
+        minHeight: rpx(140),
         justifyContent: "space-around",
     },
     title: {

@@ -21,6 +21,7 @@ import {
 } from "@/constants/uiConst";
 import FastImage from "./fastImage";
 import Icon, { IIconName } from "@/components/base/icon.tsx";
+import { useFollowSystemFontScale } from "./fontScaleScope";
 
 interface IListItemProps {
     // 是否有左右边距
@@ -75,10 +76,16 @@ function ListItem(props: IListItemProps) {
         accessibilityState,
     } = props;
 
+    // 跟随系统字体的页面、面板里，行高是最小高度，字体放大时跟着变高；没迁移的
+    // 地方保持固定行高，样子不变
+    const followSystemFontScale = useFollowSystemFontScale();
+    const rowHeight = Size[heightType];
     const defaultStyle: StyleProp<ViewStyle> = {
         paddingLeft: withHorizontalPadding ? leftPadding : 0,
         paddingRight: withHorizontalPadding ? rightPadding : 0,
-        height: Size[heightType],
+        ...(followSystemFontScale
+            ? { minHeight: rowHeight }
+            : { height: rowHeight }),
     };
 
     const colors = useColors();

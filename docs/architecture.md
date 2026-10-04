@@ -100,7 +100,8 @@
   - 已迁移：播放页（`music-detail`）、插件用户变量表单（`SetUserVariables` 面板，WebDAV、Last.fm 设置也用它）、
     推荐歌单页（`recommend-sheets`）和它的歌单类别面板（`SheetTags`）、榜单页（`top-list`）、
     歌单详情（`plugin-sheet-detail`）、榜单详情（`top-list-detail`）、专辑详情（`album-detail`）和自己的歌单详情
-    （`local-sheet-detail`）。
+    （`local-sheet-detail`），以及从歌曲行点出来的选项面板（`MusicItemOptions`）和加入歌单面板（`AddToMusicSheet`）。
+  - `ListItem` 在跟随系统字体的页面、面板里用最小行高（字体放大时跟着变高），没迁移的地方保持固定行高。
   - 推荐歌单：分类标签条按标签定高（最小 `rpx(100)`），也不再被下面的长列表压矮（以前横屏时 1.3 倍字体就裁掉标签）。
     共用的列表底部提示（`ListFooter`）改为最小高度，没有插件的提示（`NoPlugin`）占满宽度、留页边距（以前横屏时偏在左边）。
     面板标题和其他面板一样单行，放不下时截断。
