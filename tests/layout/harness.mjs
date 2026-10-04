@@ -754,6 +754,7 @@ function buildNode(json, config, env, records, parentPath) {
         type: json.type,
         props,
         path: where,
+        instance: json.instance,
         yoga: node,
         children: [],
         text: null,
@@ -940,13 +941,40 @@ function collectFrames(record, originX, originY) {
  *
  * @returns {{root: object, renderer: object, passes: number, unmount: Function, interact: Function}}
  */
+/**
+ * 渲染出来的宿主树，结构和 renderer.toJSON() 一样，每个节点带上它的宿主实例。
+ * 同一个实例在重新渲染之间保持不变；卸载再挂载（换 key、隐藏后重现）是新实例。
+ */
+function hostTree(renderer) {
+    const toNode = instance => {
+        const {children: _children, ...props} = instance.props;
+        return {
+            type: instance.type,
+            props,
+            children: hostChildren(instance),
+            instance,
+        };
+    };
+    const hostChildren = instance =>
+        instance.children.flatMap(child =>
+            typeof child === 'string'
+                ? [child]
+                : typeof child.type === 'string'
+                    ? [toNode(child)]
+                    : hostChildren(child),
+        );
+    const root = renderer.root;
+    return typeof root.type === 'string' ? [toNode(root)] : hostChildren(root);
+}
+
 export function renderLayout(element, {env, width, height, maxPasses = 8}) {
     let renderer;
     TestRenderer.act(() => {
         renderer = TestRenderer.create(element);
     });
-    // 已经回调过的 onLayout（按路径），交互之后再排版时只回调变了的
-    const reported = new Map();
+    // 每个宿主实例上次回调 onLayout 时的排版：尺寸、位置没变就不再回调；新挂载的
+    // 实例（换 key、隐藏后重现）不论尺寸是否和以前一样，都会收到第一次回调，和 RN 一样
+    const reported = new WeakMap();
     const layout = () =>
         layoutUntilStable(renderer, {env, width, height, maxPasses, reported});
     const result = {
@@ -978,7 +1006,7 @@ function layoutUntilStable(renderer, {env, width, height, maxPasses, reported}) 
     config.setPointScaleFactor(env.window.scale);
     try {
         for (let pass = 1; pass <= maxPasses; pass += 1) {
-            const json = renderer.toJSON();
+            const hosts = hostTree(renderer);
             const records = [];
             const rootNode = Yoga.Node.create(config);
             rootNode.setWidth(width);
@@ -993,15 +1021,7 @@ function layoutUntilStable(renderer, {env, width, height, maxPasses, reported}) 
                 textInfo: null,
                 scroll: null,
             };
-            appendChildren(
-                Array.isArray(json) ? json : json ? [json] : [],
-                rootNode,
-                root,
-                config,
-                env,
-                records,
-                'root',
-            );
+            appendChildren(hosts, rootNode, root, config, env, records, 'root');
             rootNode.calculateLayout(width, height, Direction.LTR);
             collectFrames(root, 0, 0);
             rootNode.freeRecursive();
@@ -1015,8 +1035,8 @@ function layoutUntilStable(renderer, {env, width, height, maxPasses, reported}) 
                 const signature = Object.values(record.local)
                     .map(value => value.toFixed(2))
                     .join(',');
-                if (reported.get(record.path) !== signature) {
-                    reported.set(record.path, signature);
+                if (reported.get(record.instance) !== signature) {
+                    reported.set(record.instance, signature);
                     const layoutEvent = {...record.local};
                     callbacks.push(() => onLayout({nativeEvent: {layout: layoutEvent}}));
                 }

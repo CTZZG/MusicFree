@@ -88,6 +88,7 @@
     `SafeAreaView` 的桩和 react-native-safe-area-context 5 一样：每一层都按根上的 Provider 取安全区、叠加在自己的内边距上，
     嵌套两层同一条边就让开两次（`harness.test.mjs` 固定了这一点）；
   - `renderLayout` 返回的 `interact` 在 act 里做一次交互（例如长按歌曲）后重新排版，用来检查交互之后才出现的界面；
+    onLayout 和 RN 一样按宿主实例回调：新挂载的视图（换 key、隐藏后重现）收到第一次回调，已挂着的只在排版变了时回调；
   - 工具自身的行为由 `tests/layout/harness.test.mjs` 固定。排查时可以用 `dumpTree` 打印排版结果。
 - 系统字体放大：目标是全部跟随系统字体。直接用 `Text` 的地方本来就跟随；`ThemeText` 以前一律关掉了缩放，
   现在按页面、面板逐个放开：核对过的登记在 `src/constants/fontScaleMigration.ts`，路由入口（`src/entry`）和面板入口

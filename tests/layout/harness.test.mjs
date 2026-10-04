@@ -341,6 +341,47 @@ test('onLayout is delivered until the layout settles', () => {
     }
 });
 
+test('after an interaction, onLayout fires for new mounts and changed layouts only', () => {
+    // RN 给每个新挂载的视图一次 onLayout；已经挂着的视图只在排版变了时再回调。
+    // 回调是内联函数，每次渲染换一个引用，不能拿它判断是不是同一个视图
+    const calls = [];
+    const controls = {};
+    function Probe() {
+        const [state, setState] = React.useState({key: 'first', visible: true, width: 100, tick: 0});
+        controls.set = patch => setState(previous => ({...previous, ...patch}));
+        return h(
+            'View',
+            null,
+            state.visible
+                ? h('View', {
+                    key: state.key,
+                    style: {width: state.width, height: 40},
+                    onLayout: event => calls.push(`${state.key}:${event.nativeEvent.layout.width}`),
+                })
+                : null,
+        );
+    }
+    const rendered = layout(h(Probe));
+    try {
+        assert.deepEqual(calls, ['first:100']);
+        // 同一个视图重新渲染、排版不变：不再回调
+        rendered.interact(() => controls.set({tick: 1}));
+        assert.deepEqual(calls, ['first:100']);
+        // 尺寸变了：回调
+        rendered.interact(() => controls.set({width: 120}));
+        assert.deepEqual(calls, ['first:100', 'first:120']);
+        // 换 key 重新挂载，尺寸和原来一样：新视图也要收到第一次回调
+        rendered.interact(() => controls.set({key: 'second'}));
+        assert.deepEqual(calls, ['first:100', 'first:120', 'second:120']);
+        // 隐藏后重现：同样是新挂载
+        rendered.interact(() => controls.set({visible: false}));
+        rendered.interact(() => controls.set({visible: true}));
+        assert.deepEqual(calls, ['first:100', 'first:120', 'second:120', 'second:120']);
+    } finally {
+        rendered.unmount();
+    }
+});
+
 test('anything it does not understand fails loudly instead of measuring as zero', () => {
     const cases = [
         [h('View', {style: {inset: 4}}), /Unsupported style key "inset"/],
