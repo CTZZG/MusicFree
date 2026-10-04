@@ -9,7 +9,7 @@
 | 仓库 | [CTZZG/MusicFree](https://github.com/CTZZG/MusicFree) |
 | 工作分支 | `claude/sharp-planck-xtfenm` |
 | 本轮工程修复起点 | `f224cb599a31eacb3bc90160ee67bdd1e6798c43` |
-| 最新功能提交 | `86bd936df38f47962be26e7cf0db5f945569c9fd`（歌手详情跟随系统字体；此前是布局测试工具 `ac9f2d1`、搜索页 `526c728`、歌曲选项和加入歌单面板 `cf6ee68`、专辑和自己的歌单详情 `7b2f1af`、a27dde0 复核两项 `23216c0`／`7f57a1e`、420f335 复核 `c0f1be5` 等、歌单／榜单详情 `987226e`、榜单 `c62720e`、推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
+| 最新功能提交 | `8106b9e213b9cdd0a4ceafa9ffcecaa8f925fb8f`（搜索结果和歌手详情的标签按界面语言朗读；此前是歌手详情 `86bd936`、布局测试工具 `ac9f2d1`、搜索页 `526c728`、歌曲选项和加入歌单面板 `cf6ee68`、专辑和自己的歌单详情 `7b2f1af`、a27dde0 复核两项 `23216c0`／`7f57a1e`、420f335 复核 `c0f1be5` 等、歌单／榜单详情 `987226e`、榜单 `c62720e`、推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
 | 包版本 | `0.9.0`；实际构建用提交号和 Actions run 区分 |
 | 文档核对日期 | 2026-10-04，UTC；构建状态见第 5 节 |
 
@@ -204,7 +204,7 @@ APK 打包、自动测试通过、真机功能通过、用户视觉认可分别�
 | [Beta #76](https://github.com/CTZZG/MusicFree/actions/runs/37180062845) | 420f335 | 成功；榜单跟随系统字体（复核基准） |
 | [Beta #77](https://github.com/CTZZG/MusicFree/actions/runs/37192234469) | a27dde0 | 成功；歌单、榜单详情跟随系统字体 |
 | [Beta #78](https://github.com/CTZZG/MusicFree/actions/runs/37193428121) | 7f669d3 | 成功；420f335 复核三项（`40adc49`、`80bc6fa`、`c0f1be5`） |
-| [Beta #79](https://github.com/CTZZG/MusicFree/actions/runs/37196610703) | 86bd936 | 构建中；a27dde0 复核两项，专辑和自己的歌单详情、两个歌曲面板、搜索页、歌手详情跟随系统字体 |
+| [Beta #79](https://github.com/CTZZG/MusicFree/actions/runs/37196610703) | 86bd936 | 成功；a27dde0 复核两项，专辑和自己的歌单详情、两个歌曲面板、搜索页、歌手详情跟随系统字体。之后的 `8106b9e`（标签按界面语言朗读）留给下一个 Beta |
 
 各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。
 
