@@ -12,7 +12,7 @@ import {
     renderLayout,
     strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv} from './stubs.mjs';
+import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
 
 const h = React.createElement;
 const MUSIC = {id: 'one', platform: 'test', title: '晴天 Live at the World Tour', artist: '周杰伦', duration: 269, artwork: 'cover'};
@@ -53,8 +53,11 @@ for (const width of [320, 363, 412]) {
                 const HomeTabBar = loader.load('@/pages/home/components/tabBar').default;
                 const routes = Object.values(HOME_TAB).map(name => ({name, key: name}));
                 for (const element of [
+                    // 迷你播放器浮在所有页面之上，不在任何路由里，保持默认（不跟随系统字体）
                     h(MusicBar),
-                    h(HomeTabBar, {state: {index: 2, routes}, navigation: {emit() {}, navigate() {}}}),
+                    // 标签栏在首页路由里，字体缩放跟着 home 路由的登记
+                    inAppFontScaleScope(loader, {route: 'home'},
+                        h(HomeTabBar, {state: {index: 2, routes}, navigation: {emit() {}, navigate() {}}})),
                 ]) {
                     const {root, unmount} = renderLayout(element, {env, width, height: 806});
                     try {

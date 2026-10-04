@@ -12,7 +12,7 @@ import {
     renderLayout,
     strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv} from './stubs.mjs';
+import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
 
 const h = React.createElement;
 const SHEETS = [
@@ -29,12 +29,35 @@ const DEVICES = [
     {width: 800, height: 363, scale: 3.5, insets: {top: 0, right: 24, bottom: 20, left: 24}},
 ];
 
+/**
+ * 首页正在播放、标签栏显示时底部两栏的位置，用生产的规则和尺寸算，不写死数字：
+ * 两栏尺寸调整后，这里的预留跟着变。
+ */
+function homeMusicBarLayout(loader) {
+    const {resolveMusicBarLayout} = loader.load('@/components/musicBar/layoutPolicy');
+    const sizes = loader.load('@/components/musicBar/layout');
+    return resolveMusicBarLayout({
+        routeSupportsMusicBar: true,
+        routeHasTabBar: true,
+        hasCurrentMusic: true,
+        keyboardVisible: false,
+        barHeight: sizes.MUSIC_BAR_HEIGHT,
+        floatingBottom: sizes.MUSIC_BAR_FLOATING_BOTTOM,
+        tabBarHeight: sizes.TAB_BAR_HEIGHT,
+        tabBarGap: sizes.MUSIC_BAR_TAB_BAR_GAP,
+    });
+}
+
 function renderLibrary(env) {
+    let loader;
     const stubs = {
         ...createCommonStubs(env),
         '@react-navigation/native': strictStub('navigation', {useScrollToTop() {}}),
         '@/components/base/statusBar': strictStub('statusBar', {default: () => null}),
-        '@/components/musicBar/useMusicBarFloatingOffset': strictStub('floatingOffset', {default: () => 116}),
+        // 真实的 useMusicBarFloatingOffset 读这份布局状态
+        '@/components/musicBar/layoutState': strictStub('musicBarLayoutState', {
+            useMusicBarLayoutState: () => ({layout: homeMusicBarLayout(loader)}),
+        }),
         '@/components/dialogs/useDialog': strictStub('dialogs', {showDialog() {}}),
         '@/core/downloader': strictStub('downloader', {useDownloadQueue: () => []}),
         '@/core/musicSheet': strictStub('musicSheet', {
@@ -43,11 +66,17 @@ function renderLibrary(env) {
             useStarredSheets: () => [],
         }),
     };
-    const loader = createModuleLoader(stubs);
+    loader = createModuleLoader(stubs);
     const Library = loader.load('@/pages/library').default;
     return {
-        ...renderLayout(h(Library), {env, width: env.window.width, height: env.window.height}),
+        // 资料库是首页路由里的一个标签，字体缩放跟着 home 路由的登记
+        ...renderLayout(inAppFontScaleScope(loader, {route: 'home'}, h(Library)), {
+            env,
+            width: env.window.width,
+            height: env.window.height,
+        }),
         t: loader.load('@/core/i18n').default.t,
+        musicBarLayout: homeMusicBarLayout(loader),
     };
 }
 
@@ -57,7 +86,7 @@ for (const device of DEVICES) {
             for (const fontScale of [1, 2]) {
                 test(`library ${mode}, ${device.width} dp, ${language}, font scale ${fontScale}`, () => {
                     const env = createEnv({...device, language, fontScale, config: {'library.playlistView': mode}});
-                    const {root, unmount, t} = renderLibrary(env);
+                    const {root, unmount, t, musicBarLayout} = renderLibrary(env);
                     try {
                         const container = findOne(root, byTestID(`library-playlist-${mode}`), 'playlists');
                         const items = findAll(container, record => record.props.accessibilityRole === 'button');
@@ -82,6 +111,17 @@ for (const device of DEVICES) {
                                 previousBottom = item.frame.y + item.frame.height;
                             }
                         }
+                        // 滚到底时最后一个歌单要露在底部两栏（和系统安全区）上面
+                        let content = container.parent;
+                        while (content.type !== 'ScrollContent') {
+                            content = content.parent;
+                        }
+                        const last = items[items.length - 1].frame;
+                        const spaceBelowLast = content.frame.y + content.frame.height - (last.y + last.height);
+                        assert.ok(
+                            spaceBelowLast >= device.insets.bottom + musicBarLayout.reservedBottom - 0.5,
+                            `only ${spaceBelowLast.toFixed(1)} dp below the last playlist; the bars need ${device.insets.bottom + musicBarLayout.reservedBottom}`,
+                        );
                         // 大标题右侧的三个操作按钮都必须留在安全区内。
                         const headerButtons = [
                             'home.importPlaylist.a11y',

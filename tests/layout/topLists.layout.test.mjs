@@ -4,7 +4,7 @@ import {
     React, clippingAncestor, contains, createModuleLoader, findAll,
     isText, renderLayout, strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv} from './stubs.mjs';
+import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
 
 const h = React.createElement;
 const chart = (id, title, extra = {}) => ({id, title, platform: 'source', ...extra});
@@ -57,9 +57,11 @@ for (const device of DEVICES) {
                 });
                 const BoardPanel = loader.load('@/pages/topList/components/boardPanel').default;
                 const {RequestStateCode} = loader.load('@/constants/commonConst');
+                // 字体缩放跟着榜单页（top-list 路由）的登记
                 const {root, unmount} = renderLayout(
-                    h('View', {style: {width: device.panelWidth, height: device.height}},
-                        h(BoardPanel, {hash: 'source', topListData: {state: RequestStateCode.FINISHED, data: SECTIONS}})),
+                    inAppFontScaleScope(loader, {route: 'top-list'},
+                        h('View', {style: {width: device.panelWidth, height: device.height}},
+                            h(BoardPanel, {hash: 'source', topListData: {state: RequestStateCode.FINISHED, data: SECTIONS}}))),
                     {env, width: device.width, height: device.height},
                 );
                 try {
