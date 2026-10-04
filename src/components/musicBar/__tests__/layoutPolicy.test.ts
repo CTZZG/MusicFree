@@ -36,7 +36,7 @@ describe("resolveMusicBarLayout", () => {
             visible: true,
             tabBarVisible: false,
             barBottom: 8,
-            reservedBottom: 58,
+            reservedBottom: 68,
         });
     });
 
@@ -46,9 +46,9 @@ describe("resolveMusicBarLayout", () => {
         ).toEqual({
             visible: true,
             tabBarVisible: true,
-            // 8 底距 + 52 标签栏 + 6 间距
-            barBottom: 66,
-            reservedBottom: 116,
+            // 8 底距 + 60 标签栏 + 8 间距
+            barBottom: 76,
+            reservedBottom: 136,
         });
     });
 
@@ -62,8 +62,8 @@ describe("resolveMusicBarLayout", () => {
         ).toEqual({
             visible: false,
             tabBarVisible: true,
-            barBottom: 66,
-            reservedBottom: 60,
+            barBottom: 76,
+            reservedBottom: 68,
         });
     });
 

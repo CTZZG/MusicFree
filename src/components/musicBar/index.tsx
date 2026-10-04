@@ -74,7 +74,7 @@ function MiniPlayButton() {
             }}>
             <Icon
                 name={isPaused ? "play" : "pause"}
-                size={24}
+                size={26}
                 color={colors.musicBarText}
             />
         </Pressable>
@@ -218,7 +218,7 @@ function MusicBar(props: IMusicBarProps) {
                 onPress={() => {
                     showPanel("PlayList");
                 }}>
-                <Icon name="playlist" size={24} color={colors.musicBarText} />
+                <Icon name="playlist" size={26} color={colors.musicBarText} />
             </Pressable>
         </Animated.View>
     );
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
         overflow: "hidden",
         flexDirection: "row",
         alignItems: "center",
-        paddingRight: 6,
+        paddingRight: 8,
         // 底色交给玻璃背板，容器本身保持透明
         backgroundColor: "transparent",
     },
@@ -246,8 +246,8 @@ const styles = StyleSheet.create({
         boxShadow: "0 4px 16px rgba(0, 0, 0, 0.45)",
     },
     barButton: {
-        width: 44,
-        height: 44,
+        width: 48,
+        height: 48,
         alignItems: "center",
         justifyContent: "center",
     },

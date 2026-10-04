@@ -1,4 +1,4 @@
-// 缩小悬浮底栏后，真实封面、文字和触摸区域仍须完整放进容器。
+// 悬浮底栏里的真实封面、文字和触摸区域须完整放进容器。
 // 两栏的间距由 layoutPolicy 测试覆盖；此处只检查栏内几何，不模拟位移动画。
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
@@ -27,7 +27,7 @@ function loaderFor(env, dark) {
         '@/components/base/liquidGlassBackdrop': strictStub('liquidGlass', {default: () => null, isLiquidGlassAvailable: () => false}),
         '@/components/musicBar/layoutState': strictStub('musicBarLayout', {
             useMusicBarLayoutState: () => ({
-                layout: {visible: true, barBottom: 66, reservedBottom: 116},
+                layout: {visible: true, barBottom: 76, reservedBottom: 136},
                 keyboardVisible: false,
                 transitionInProgress: false,
             }),
@@ -46,7 +46,7 @@ function loaderFor(env, dark) {
 for (const width of [320, 363, 412]) {
     for (const language of ['zh-CN', 'en-US']) {
         for (const dark of [false, true]) {
-            test(`compact bottom bars, ${width} dp, ${language}, dark=${dark}`, () => {
+            test(`floating bottom bars, ${width} dp, ${language}, dark=${dark}`, () => {
                 const env = createEnv({width, height: 806, language, fontScale: 2, insets: {top: 24, right: 0, bottom: 20, left: 0}});
                 const loader = loaderFor(env, dark);
                 const MusicBar = loader.load('@/components/musicBar').default;

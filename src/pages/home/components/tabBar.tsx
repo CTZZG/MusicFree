@@ -17,7 +17,7 @@ import {
 import { useMusicBarLayoutState } from "@/components/musicBar/layoutState";
 
 const TAB_BAR_RADIUS = TAB_BAR_HEIGHT / 2;
-const TAB_BAR_PADDING = 4;
+const TAB_BAR_PADDING = 6;
 
 const tabIcons: Record<string, IIconName> = {
     [HOME_TAB.HOME]: "home-outline",
@@ -111,7 +111,7 @@ export default function HomeTabBar(props: IHomeTabBarProps) {
                         ]}>
                         <Icon
                             name={tabIcons[route.name] ?? "musical-note"}
-                            size={22}
+                            size={24}
                             color={tint}
                         />
                         <ThemeText
@@ -159,8 +159,8 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(255, 255, 255, 0.12)",
     },
     label: {
-        marginTop: 2,
-        fontSize: 10,
-        lineHeight: 12,
+        marginTop: 3,
+        fontSize: 11,
+        lineHeight: 14,
     },
 });
