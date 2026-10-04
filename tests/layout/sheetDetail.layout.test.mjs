@@ -1,5 +1,6 @@
-// 歌单详情、榜单详情页（共用 MusicSheetPage：标题栏、封面和简介、播放按钮区、歌曲
-// 列表、列表底部提示，长按歌曲进入的多选模式）：按 1、1.3、1.5、2 倍系统字体排版，
+// 歌单详情、榜单详情、专辑详情（共用 MusicSheetPage）和自己的歌单详情（同样的头部、
+// 播放按钮区、歌曲列表）：标题栏、封面和简介、播放按钮区、歌曲行、列表底部提示，
+// 长按歌曲进入的多选模式。按 1、1.3、1.5、2 倍系统字体排版，
 // 文字不被裁掉、不挤成一条缝，控件之间不互相压住，按钮和歌曲行都留在安全区里。
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
@@ -72,6 +73,44 @@ const TOP_LIST = {
     musicList: SONGS,
 };
 
+const ALBUM = {
+    id: 'album',
+    platform: '网易云',
+    title: '2004 无与伦比演唱会 Live（豪华版）',
+    artist: '周杰伦',
+    artwork: 'album',
+    worksNum: 24,
+    description: '收录 2004 年演唱会全部曲目。',
+};
+
+// 自己建的歌单：没有作者、简介，有删除、排序等菜单，多选时能从歌单里删掉
+const LOCAL_SHEET = {
+    id: 'my-sheet',
+    platform: '本地',
+    title: '通勤路上听的歌 · Morning Commute Mix',
+    coverImg: 'mine',
+    musicList: SONGS,
+};
+
+const PAGES = {
+    'plugin-sheet-detail': {
+        module: '@/pages/pluginSheetDetail',
+        params: {pluginHash: 'p', sheetInfo: SHEET},
+    },
+    'top-list-detail': {
+        module: '@/pages/topListDetail',
+        params: {pluginHash: 'p', topList: TOP_LIST},
+    },
+    'album-detail': {
+        module: '@/pages/albumDetail',
+        params: {pluginHash: 'p', albumItem: ALBUM},
+    },
+    'local-sheet-detail': {
+        module: '@/pages/sheetDetail',
+        params: {id: LOCAL_SHEET.id},
+    },
+};
+
 const DEVICES = [
     {name: '320×640', width: 320, height: 640, scale: 2, insets: {top: 24, right: 0, bottom: 48, left: 0}},
     {name: "the user's phone 363×806", width: 363, height: 806, scale: 3.5, insets: {top: 36, right: 0, bottom: 20, left: 0}},
@@ -81,7 +120,7 @@ const DEVICES = [
 function noop() {}
 
 /**
- * @param {'plugin-sheet-detail' | 'top-list-detail'} route
+ * @param {keyof typeof PAGES} route
  * @param {{state?: string, musicList?: unknown[] | null}} options 第一页的请求状态和歌曲
  */
 function renderDetail(env, route, {state = 'FINISHED', musicList = SONGS} = {}) {
@@ -89,12 +128,11 @@ function renderDetail(env, route, {state = 'FINISHED', musicList = SONGS} = {}) 
     const requestState = () =>
         loaderRef.current.load('@/constants/commonConst').RequestStateCode[state];
     const loader = createModuleLoader({
-        ...createPageStubs(env, {
-            params:
-                route === 'plugin-sheet-detail'
-                    ? {pluginHash: 'p', sheetInfo: SHEET}
-                    : {pluginHash: 'p', topList: TOP_LIST},
+        ...createPageStubs(env, {params: PAGES[route].params}),
+        '@/pages/albumDetail/hooks/useAlbumMusicList': strictStub('useAlbumMusicList', {
+            default: () => [requestState(), ALBUM, musicList, noop],
         }),
+        '@/components/dialogs/useDialog': strictStub('useDialog', {showDialog: noop}),
         '@/pages/pluginSheetDetail/hooks/usePluginSheetMusicList': strictStub('usePluginSheetMusicList', {
             default: () => [requestState(), SHEET, musicList, noop],
         }),
@@ -117,8 +155,17 @@ function renderDetail(env, route, {state = 'FINISHED', musicList = SONGS} = {}) 
             default: {getByMedia: () => ({instance: {}})},
         }),
         '@/core/musicSheet': strictStub('@/core/musicSheet', {
-            default: {starMusicSheet: noop, unstarMusicSheet: noop, removeMusic: noop},
+            default: {
+                defaultSheet: {id: 'favorite'},
+                starMusicSheet: noop,
+                unstarMusicSheet: noop,
+                removeMusic: noop,
+                removeSheet: noop,
+                getSheetMeta: () => undefined,
+                setSortType: noop,
+            },
             useSheetIsStarred: () => false,
+            useSheetItem: () => ({...LOCAL_SHEET, musicList: musicList ?? []}),
         }),
         '@/core/localMusicSheet': strictStub('@/core/localMusicSheet', {
             default: {useLocalFileExists: () => undefined, useLocalMusic: () => null, removeMusic: noop},
@@ -136,9 +183,7 @@ function renderDetail(env, route, {state = 'FINISHED', musicList = SONGS} = {}) 
         }),
     });
     loaderRef.current = loader;
-    const Page = loader.load(
-        route === 'plugin-sheet-detail' ? '@/pages/pluginSheetDetail' : '@/pages/topListDetail',
-    ).default;
+    const Page = loader.load(PAGES[route].module).default;
     const rendered = renderLayout(inAppFontScaleScope(loader, {route}, h(Page)), {
         env,
         width: env.window.width,
@@ -304,9 +349,11 @@ function assertSongRows(root, area, t) {
     return rows;
 }
 
-function assertEndOfList(root, rows, t) {
-    const footer = findOne(root, byText(t('common.listReachEnd')), 'end of list');
-    assertReadable(footer, 'end of list');
+function assertEndOfList(root, rows, t, {footer: hasFooter = true} = {}) {
+    if (hasFooter) {
+        const footer = findOne(root, byText(t('common.listReachEnd')), 'end of list');
+        assertReadable(footer, 'end of list');
+    }
     let content = rows[rows.length - 1];
     while (content.type !== 'ScrollContent') {
         content = content.parent;
@@ -363,6 +410,78 @@ for (const device of DEVICES) {
                     assertEndOfList(root, rows, t);
                 } finally {
                     unmount();
+                }
+            });
+
+            test(`album detail on ${where}`, () => {
+                const env = createEnv({...device, language, fontScale});
+                const {root, unmount, t, fontSizes} = renderDetail(env, 'album-detail');
+                const area = safeArea(device);
+                try {
+                    const navTitle = navTitleOf(root, t('common.album'));
+                    assert.equal(navTitle.metrics.fontSize, fontSizes.appbar * fontScale, 'the page follows the system font');
+                    assertAppBar(root, area, navTitle);
+                    assertHeader(root, area, t, {
+                        title: ALBUM.title,
+                        subtitle: ALBUM.artist,
+                        count: ALBUM.worksNum,
+                        secondary: ['playAllBar.addToSheet', 'playAllBar.batchEdit'],
+                    });
+                    const rows = assertSongRows(root, area, t);
+                    assertEndOfList(root, rows, t);
+                } finally {
+                    unmount();
+                }
+            });
+
+            test(`local playlist detail on ${where}`, () => {
+                const env = createEnv({...device, language, fontScale});
+                const {root, unmount, t, fontSizes} = renderDetail(env, 'local-sheet-detail');
+                const area = safeArea(device);
+                try {
+                    const navTitle = navTitleOf(root, t('common.sheet'));
+                    assert.equal(navTitle.metrics.fontSize, fontSizes.appbar * fontScale, 'the page follows the system font');
+                    assertAppBar(root, area, navTitle);
+                    assertHeader(root, area, t, {
+                        title: LOCAL_SHEET.title,
+                        count: SONGS.length,
+                        secondary: ['playAllBar.addToSheet', 'playAllBar.batchEdit'],
+                    });
+                    const rows = assertSongRows(root, area, t);
+                    assertEndOfList(root, rows, t, {footer: false});
+                } finally {
+                    unmount();
+                }
+            });
+
+            test(`local playlist detail in selection mode on ${where}`, () => {
+                // 自己的歌单多选时还能删除：底部操作栏是 5 格
+                const env = createEnv({...device, language, fontScale});
+                const rendered = renderDetail(env, 'local-sheet-detail');
+                const {t, fontSizes} = rendered;
+                const area = safeArea(device);
+                try {
+                    const firstRow = findOne(rendered.root, byLabel(`${SONGS[0].title}, ${SONGS[0].artist}`), 'first row');
+                    const root = rendered.interact(() => firstRow.props.onLongPress());
+                    const bar = findOne(root, byLabel(t('musicListEditor.addToNextPlay')), 'play next').parent;
+                    const actions = [
+                        'musicListEditor.addToNextPlay',
+                        'playLater.add',
+                        'musicListEditor.addToSheet',
+                        'common.download',
+                        'common.delete',
+                    ].map(key => findOne(bar, byLabel(t(key)), key));
+                    assertInside(bar, area, 'selection bar');
+                    for (const action of actions) {
+                        const [label] = findAll(action, isText);
+                        assert.ok(label.metrics.fontSize <= fontSizes.subTitle * 1.5 + 0.01, `action ${label.text} is capped at 1.5x`);
+                        assertReadable(label, `action ${label.text}`);
+                        assert.ok(contains(action.frame, label.frame, 1), `action ${label.text} stays in its cell`);
+                        assert.ok(contains(bar.frame, action.frame, 0.5), `action ${label.text} stays in the bar`);
+                    }
+                    assertNoOverlap(actions, 'selection actions');
+                } finally {
+                    rendered.unmount();
                 }
             });
 
