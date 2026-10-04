@@ -22,7 +22,7 @@ function mountFailure() {
     playbackRecovery.report(playbackRecovery.begin(), song, createMediaSourceFailure("network-error"));
     const notice = playbackRecovery.state.getValue()!;
     act(() => {
-        tree = renderer.create(<PlaybackRecovery notice={notice} />); 
+        tree = renderer.create(<PlaybackRecovery notice={notice} />);
     });
 }
 function press(label: string) {
@@ -36,7 +36,7 @@ function press(label: string) {
 }
 beforeEach(() => jest.clearAllMocks());
 afterEach(() => {
-    act(() => tree?.unmount()); playbackRecovery.begin(); 
+    act(() => tree?.unmount()); playbackRecovery.begin();
 });
 
 it("retries the failed song rather than the track retained by a native rollback", () => {
