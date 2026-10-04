@@ -12,7 +12,7 @@ import {
     renderLayout,
     strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
+import {createCommonStubs, createEnv, homeTabMusicBarLayout, inAppFontScaleScope} from './stubs.mjs';
 
 const h = React.createElement;
 const SHEETS = [
@@ -29,34 +29,16 @@ const DEVICES = [
     {width: 800, height: 363, scale: 3.5, insets: {top: 0, right: 24, bottom: 20, left: 24}},
 ];
 
-/**
- * 首页正在播放、标签栏显示时底部两栏的位置，用生产的规则和尺寸算，不写死数字：
- * 两栏尺寸调整后，这里的预留跟着变。
- */
-function homeMusicBarLayout(loader) {
-    const {resolveMusicBarLayout} = loader.load('@/components/musicBar/layoutPolicy');
-    const sizes = loader.load('@/components/musicBar/layout');
-    return resolveMusicBarLayout({
-        routeSupportsMusicBar: true,
-        routeHasTabBar: true,
-        hasCurrentMusic: true,
-        keyboardVisible: false,
-        barHeight: sizes.MUSIC_BAR_HEIGHT,
-        floatingBottom: sizes.MUSIC_BAR_FLOATING_BOTTOM,
-        tabBarHeight: sizes.TAB_BAR_HEIGHT,
-        tabBarGap: sizes.MUSIC_BAR_TAB_BAR_GAP,
-    });
-}
-
 function renderLibrary(env) {
-    let loader;
+    // 首页正在播放、标签栏显示时底部两栏的位置
+    const musicBarLayout = homeTabMusicBarLayout();
     const stubs = {
         ...createCommonStubs(env),
         '@react-navigation/native': strictStub('navigation', {useScrollToTop() {}}),
         '@/components/base/statusBar': strictStub('statusBar', {default: () => null}),
         // 真实的 useMusicBarFloatingOffset 读这份布局状态
         '@/components/musicBar/layoutState': strictStub('musicBarLayoutState', {
-            useMusicBarLayoutState: () => ({layout: homeMusicBarLayout(loader)}),
+            useMusicBarLayoutState: () => ({layout: musicBarLayout}),
         }),
         '@/components/dialogs/useDialog': strictStub('dialogs', {showDialog() {}}),
         '@/core/downloader': strictStub('downloader', {useDownloadQueue: () => []}),
@@ -66,17 +48,17 @@ function renderLibrary(env) {
             useStarredSheets: () => [],
         }),
     };
-    loader = createModuleLoader(stubs);
+    const loader = createModuleLoader(stubs);
     const Library = loader.load('@/pages/library').default;
     return {
-        // 资料库是首页路由里的一个标签，字体缩放跟着 home 路由的登记
-        ...renderLayout(inAppFontScaleScope(loader, {route: 'home'}, h(Library)), {
+        // 资料库是主页的一个标签，字体缩放跟着标签的登记
+        ...renderLayout(inAppFontScaleScope(loader, {homeTab: 'library-tab'}, h(Library)), {
             env,
             width: env.window.width,
             height: env.window.height,
         }),
         t: loader.load('@/core/i18n').default.t,
-        musicBarLayout: homeMusicBarLayout(loader),
+        musicBarLayout,
     };
 }
 

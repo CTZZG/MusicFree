@@ -1,4 +1,5 @@
 import type panels from "@/components/panels/types";
+import type { HomeTabName } from "@/core/router";
 import type { RoutePaths } from "@/core/router/routes";
 
 /**
@@ -11,6 +12,9 @@ import type { RoutePaths } from "@/core/router/routes";
  *    只有尺寸固定、又没法省掉的紧凑控件才用 maxFontScaleConst.compact 封顶，
  *    正文、标题、说明不封顶；
  * 3. 登记到这里，在真机上用大字体看一遍。
+ *
+ * 主页（home 路由）底部的几个标签页各自登记在 fontScaleMigratedHomeTabs：标签页
+ * 自己再包一层 FontScaleScope，盖过 home 路由那一层。
  *
  * 全部迁移完以后，ThemeText 改为默认跟随系统，删掉这份名单和 FontScaleScope。
  */
@@ -29,3 +33,11 @@ export const fontScaleMigratedRoutes: ReadonlySet<RoutePaths> = new Set<RoutePat
 export const fontScaleMigratedPanels: ReadonlySet<keyof typeof panels> = new Set<
     keyof typeof panels
 >(["SetUserVariables", "SheetTags", "MusicItemOptions", "AddToMusicSheet"]);
+
+/**
+ * 已经核对过的主页标签（HOME_TAB）。home 路由本身（标签栏和标签页外面的东西）
+ * 不在 fontScaleMigratedRoutes 里，标签页逐个迁移。
+ */
+export const fontScaleMigratedHomeTabs: ReadonlySet<HomeTabName> = new Set<HomeTabName>(
+    ["search-page"],
+);

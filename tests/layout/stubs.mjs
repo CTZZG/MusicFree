@@ -385,8 +385,15 @@ function TabBar({navigationState, options, style, tabStyle, contentContainerStyl
     );
 }
 
+/** react-native-tab-view 的 SceneMap：按路由的 key 渲染对应的组件 */
+function SceneMap(scenes) {
+    return function renderScene({route, jumpTo, position}) {
+        return h(scenes[route.key], {key: route.key, route, jumpTo, position});
+    };
+}
+
 export function createTabViewStub() {
-    return strictStub('react-native-tab-view', {TabView, TabBar});
+    return strictStub('react-native-tab-view', {TabView, TabBar, SceneMap});
 }
 
 /**
@@ -426,30 +433,36 @@ export function assertSourceTabs(root, names, longName) {
 
 /**
  * 和 App 一样包上字体缩放的范围：登记过（src/constants/fontScaleMigration.ts）的
- * 页面、面板里 ThemeText 跟随系统字体。App 在 src/entry 和面板入口各包一层。
+ * 页面、面板、主页标签里 ThemeText 跟随系统字体。App 在 src/entry、面板入口和
+ * 主页的每个标签各包一层；标签那一层在 home 路由里面，盖过 home 路由那一层。
  * loader 要和渲染页面用的是同一个，ThemeText 才读得到这一层。
- * @param {{route?: string, panel?: string}} where 路由名或面板名
+ * @param {{route?: string, panel?: string, homeTab?: string}} where 路由名、面板名或主页标签名
  */
 export function inAppFontScaleScope(loader, where, element) {
     const {FontScaleScope} = loader.load('@/components/base/fontScaleScope');
     const migration = loader.load('@/constants/fontScaleMigration');
-    const followSystem = where.route
-        ? migration.fontScaleMigratedRoutes.has(where.route)
-        : migration.fontScaleMigratedPanels.has(where.panel);
+    let followSystem;
+    if (where.route) {
+        followSystem = migration.fontScaleMigratedRoutes.has(where.route);
+    } else if (where.panel) {
+        followSystem = migration.fontScaleMigratedPanels.has(where.panel);
+    } else {
+        followSystem = migration.fontScaleMigratedHomeTabs.has(where.homeTab);
+    }
     return h(FontScaleScope, {followSystem}, element);
 }
 
 /**
- * 没有底部标签栏的页面：正在播放时迷你播放器浮在页面底部，用生产的规则和尺寸算。
- * 两个模块都是纯计算，用单独的加载器读。
+ * 正在播放时迷你播放器（和主页的标签栏）的位置，用生产的规则和尺寸算，不写死数字：
+ * 两栏尺寸调整后，测试里的预留跟着变。两个模块都是纯计算，用单独的加载器读。
  */
-export function pageMusicBarLayout() {
+function musicBarLayoutFor({routeHasTabBar}) {
     const loader = createModuleLoader({});
     const {resolveMusicBarLayout} = loader.load('@/components/musicBar/layoutPolicy');
     const sizes = loader.load('@/components/musicBar/layout');
     return resolveMusicBarLayout({
         routeSupportsMusicBar: true,
-        routeHasTabBar: false,
+        routeHasTabBar,
         hasCurrentMusic: true,
         keyboardVisible: false,
         barHeight: sizes.MUSIC_BAR_HEIGHT,
@@ -457,6 +470,16 @@ export function pageMusicBarLayout() {
         tabBarHeight: sizes.TAB_BAR_HEIGHT,
         tabBarGap: sizes.MUSIC_BAR_TAB_BAR_GAP,
     });
+}
+
+/** 没有底部标签栏的页面：正在播放时迷你播放器浮在页面底部 */
+export function pageMusicBarLayout() {
+    return musicBarLayoutFor({routeHasTabBar: false});
+}
+
+/** 主页的标签页：底部标签栏一直在，正在播放时迷你播放器浮在标签栏上面 */
+export function homeTabMusicBarLayout() {
+    return musicBarLayoutFor({routeHasTabBar: true});
 }
 
 /**

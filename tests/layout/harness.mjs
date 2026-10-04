@@ -791,6 +791,8 @@ function buildNode(json, config, env, records, parentPath) {
         }
         applyStyle(node, style, where);
         const metrics = textMetrics(props, env);
+        // 输入的文字一行的高度：分到的高度比它矮，文字的上下会被裁掉
+        record.metrics = metrics;
         node.setMeasureFunc((width, widthMode) => ({
             width: widthMode === MeasureMode.Undefined ? 0 : width,
             height: metrics.lineHeight,

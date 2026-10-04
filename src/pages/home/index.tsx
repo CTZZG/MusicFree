@@ -9,7 +9,7 @@ import StatusBar from "@/components/base/statusBar";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import globalStyle from "@/constants/globalStyle";
 import Theme from "@/core/theme";
-import { HOME_TAB } from "@/core/router";
+import { HOME_TAB, type HomeTabName } from "@/core/router";
 import ClassicHomeBody from "./components/homeBody/classicHome";
 import HomeOverview from "./components/homeBody/homeOverview";
 import { useAppConfig } from "@/core/appConfig";
@@ -17,6 +17,8 @@ import { useMusicBarLayoutState } from "@/components/musicBar/layoutState";
 import SearchPage from "@/pages/searchPage";
 import Library from "@/pages/library";
 import SettingsHome from "@/pages/settingsHome";
+import { FontScaleScope } from "@/components/base/fontScaleScope";
+import { fontScaleMigratedHomeTabs } from "@/constants/fontScaleMigration";
 
 function HomeFeed() {
     const useEnhancedHome = useAppConfig("theme.useEnhancedHome") ?? true;
@@ -56,6 +58,30 @@ function HomeStatusBar() {
         />
     );
 }
+
+/**
+ * 标签页各自决定 ThemeText 是否跟随系统字体：核对过的标签登记在
+ * fontScaleMigratedHomeTabs，这一层盖过 home 路由（没登记）那一层
+ */
+function withTabFontScale(
+    tab: HomeTabName,
+    TabComponent: React.ComponentType<any>,
+) {
+    const followSystem = fontScaleMigratedHomeTabs.has(tab);
+    function TabScreen(props: any) {
+        return (
+            <FontScaleScope followSystem={followSystem}>
+                <TabComponent {...props} />
+            </FontScaleScope>
+        );
+    }
+    return TabScreen;
+}
+
+const HomeTab = withTabFontScale(HOME_TAB.HOME, HomeFeed);
+const SearchTab = withTabFontScale(HOME_TAB.SEARCH, SearchPage);
+const LibraryTab = withTabFontScale(HOME_TAB.LIBRARY, Library);
+const SettingsTab = withTabFontScale(HOME_TAB.SETTINGS, SettingsHome);
 
 const Tab = createBottomTabNavigator();
 
@@ -97,12 +123,12 @@ export default function Home() {
             }}>
             <Tab.Screen
                 name={HOME_TAB.HOME}
-                component={HomeFeed}
+                component={HomeTab}
                 options={{ sceneStyle: styles.transparentScene }}
             />
-            <Tab.Screen name={HOME_TAB.SEARCH} component={SearchPage} />
-            <Tab.Screen name={HOME_TAB.LIBRARY} component={Library} />
-            <Tab.Screen name={HOME_TAB.SETTINGS} component={SettingsHome} />
+            <Tab.Screen name={HOME_TAB.SEARCH} component={SearchTab} />
+            <Tab.Screen name={HOME_TAB.LIBRARY} component={LibraryTab} />
+            <Tab.Screen name={HOME_TAB.SETTINGS} component={SettingsTab} />
         </Tab.Navigator>
     );
 }

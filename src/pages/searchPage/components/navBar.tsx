@@ -150,18 +150,21 @@ const styles = StyleSheet.create({
         alignItems: "center",
         paddingHorizontal: PAGE_MARGIN,
     },
+    // 输入框（TextInput）的字一直跟着系统字体放大：框只给最小高度，字大了跟着变高
     field: {
         flex: 1,
-        height: 36,
+        minHeight: 36,
         borderRadius: 10,
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 8,
         gap: 6,
     },
+    // 撑满框的高度，点框里任何地方都能输入。不用 height: "100%"：框只有最小高度，
+    // 百分比高度算不出来
     input: {
         flex: 1,
-        height: "100%",
+        alignSelf: "stretch",
         paddingVertical: 0,
         fontSize: 17,
     },

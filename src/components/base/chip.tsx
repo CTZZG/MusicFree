@@ -39,7 +39,10 @@ export default function Chip(props: IChipProps) {
                 containerStyle,
             ]}>
             {typeof children === "string" ? (
-                <ThemeText fontSize="subTitle" numberOfLines={1}>
+                <ThemeText
+                    fontSize="subTitle"
+                    numberOfLines={1}
+                    style={styles.text}>
                     {children}
                 </ThemeText>
             ) : (
@@ -56,16 +59,21 @@ export default function Chip(props: IChipProps) {
     );
 }
 
-// iOS 胶囊标签
+// iOS 胶囊标签。字跟随系统字体放大时跟着变高
 const styles = StyleSheet.create({
     container: {
-        height: 32,
+        minHeight: 32,
+        paddingVertical: 4,
         paddingLeft: 12,
         paddingRight: 8,
         borderRadius: 16,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
+    },
+    // 太长时文字截断，胶囊不比所在的一行宽，两头留着内边距
+    text: {
+        flexShrink: 1,
     },
     icon: {
         marginLeft: 4,

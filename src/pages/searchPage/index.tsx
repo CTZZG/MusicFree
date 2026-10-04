@@ -62,8 +62,9 @@ export default function () {
     return (
         <SafeAreaView edges={["bottom", "top"]} style={style.wrapper}>
             <StatusBar />
-            <NavBar autoFocus={!initialQuery} inputRef={inputRef} />
+            {/* 横屏时搜索框、大标题也要让开左右的安全区（刘海、导航键） */}
             <SafeAreaView edges={["left", "right"]} style={style.wrapper}>
+                <NavBar autoFocus={!initialQuery} inputRef={inputRef} />
                 <View style={style.flex1}>
                     {pageStatus === PageStatus.EDITING && <HistoryPanel />}
                     {pageStatus === PageStatus.SEARCHING && <Loading />}

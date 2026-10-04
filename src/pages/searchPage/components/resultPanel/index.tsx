@@ -2,17 +2,16 @@
  * 搜索结果面板 一级页
  */
 import React, { memo, useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import rpx, { vw } from "@/utils/rpx";
+import { StyleSheet } from "react-native";
+import { vw } from "@/utils/rpx";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
 import ResultSubPanel from "./resultSubPanel";
+import ResultTabLabel from "./resultTabLabel";
 import results from "./results";
-import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import useColors from "@/hooks/useColors";
 import { useI18N } from "@/core/i18n";
 import { useParams } from "@/core/router";
-import Color from "color";
-import { getCategoryTabMeta, type ITabMeta } from "../../common/searchResultMeta";
+import { getCategoryTabMeta } from "../../common/searchResultMeta";
 import { useSearchResults } from "../../hooks/useSearchSession";
 
 const routes = results;
@@ -28,7 +27,6 @@ const getRouterScene = (
 };
 
 const renderScene = getRouterScene(routes);
-const ERROR_COLOR = "#FC5F5F";
 
 function ResultPanel() {
     const params = useParams<"search-page">();
@@ -59,7 +57,7 @@ function ResultPanel() {
                     (acc, route) => {
                         acc[route.key] = {
                             label: ({ focused }: any) => (
-                                <CategoryTabLabel
+                                <ResultTabLabel
                                     title={
                                         route.i18nKey
                                             ? t(route.i18nKey as any)
@@ -85,9 +83,7 @@ function ResultPanel() {
                         style={styles.tabBar}
                         inactiveColor={colors.text}
                         activeColor={colors.primary}
-                        tabStyle={{
-                            width: "auto",
-                        }}
+                        tabStyle={styles.tab}
                         renderIndicator={() => null}
                         pressColor="transparent"
                         options={options}
@@ -101,64 +97,6 @@ function ResultPanel() {
     );
 }
 
-function CategoryTabLabel(props: {
-    title: string;
-    focused: boolean;
-    meta: ITabMeta;
-}) {
-    const { title, focused, meta } = props;
-    const colors = useColors();
-    const textColor = focused
-        ? colors.primary
-        : colors.textSecondary ?? colors.text;
-    const metaColor = meta.isError
-        ? ERROR_COLOR
-        : focused
-            ? colors.primary
-            : colors.textSecondary;
-
-    return (
-        <View
-            style={[
-                styles.categoryTabLabel,
-                {
-                    backgroundColor: focused
-                        ? Color(colors.primary).alpha(0.1).toString()
-                        : "transparent",
-                    borderColor: focused
-                        ? Color(colors.primary).alpha(0.28).toString()
-                        : "transparent",
-                },
-            ]}>
-            <Text
-                numberOfLines={1}
-                style={[
-                    styles.categoryTabTitle,
-                    {
-                        fontWeight: focused
-                            ? fontWeightConst.bolder
-                            : fontWeightConst.medium,
-                        color: textColor,
-                    },
-                ]}>
-                {title}
-            </Text>
-            {meta.text ? (
-                <Text
-                    numberOfLines={1}
-                    style={[
-                        styles.categoryTabMeta,
-                        {
-                            color: metaColor,
-                        },
-                    ]}>
-                    {meta.text}
-                </Text>
-            ) : null}
-        </View>
-    );
-}
-
 export default memo(ResultPanel);
 
 const styles = StyleSheet.create({
@@ -169,24 +107,7 @@ const styles = StyleSheet.create({
         borderColor: "transparent",
         elevation: 0,
     },
-    categoryTabLabel: {
-        width: rpx(156),
-        minHeight: rpx(72),
-        paddingHorizontal: rpx(16),
-        paddingVertical: rpx(8),
-        borderRadius: rpx(8),
-        borderWidth: StyleSheet.hairlineWidth,
-        alignItems: "center",
-        justifyContent: "center",
-        rowGap: rpx(2),
-    },
-    categoryTabTitle: {
-        width: "100%",
-        textAlign: "center",
-    },
-    categoryTabMeta: {
-        width: "100%",
-        fontSize: fontSizeConst.tag,
-        textAlign: "center",
+    tab: {
+        width: "auto",
     },
 });

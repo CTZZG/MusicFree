@@ -1,11 +1,10 @@
 import Empty from "@/components/base/empty";
-import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import PluginManager, { usePluginEnabledRevision } from "@/core/pluginManager";
 import useColors from "@/hooks/useColors";
-import rpx, { vw } from "@/utils/rpx";
+import { vw } from "@/utils/rpx";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet } from "react-native";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
 import { getSourceTabMeta } from "../../common/searchResultMeta";
 import {
@@ -14,15 +13,13 @@ import {
 } from "../../hooks/useSearchSession";
 import { renderMap } from "./results";
 import DefaultResults from "./results/defaultResults";
+import ResultTabLabel from "./resultTabLabel";
 import ResultWrapper from "./resultWrapper";
 import { useParams } from "@/core/router";
-import Color from "color";
 
 interface IResultSubPanelProps {
     tab: ICommon.SupportMediaType;
 }
-
-const ERROR_COLOR = "#FC5F5F";
 
 // 展示结果的视图
 function getResultComponent(
@@ -125,75 +122,20 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                 const options = _.navigationState.routes.reduce(
                     (acc: Record<string, any>, route: { key: string; title?: string }) => {
                         acc[route.key] = {
-                            label: ({ focused }: any) => {
-                                const meta = getSourceTabMeta(
-                                    typeResults[route.key],
-                                    t,
-                                );
-                                const isError = meta.isError;
-                                const metaColor = isError
-                                    ? ERROR_COLOR
-                                    : focused
-                                        ? colors.primary
-                                        : colors.textSecondary;
-                                const titleColor = focused
-                                    ? colors.primary
-                                    : colors.textSecondary ?? colors.text;
-
-                                return (
-                                    <View
-                                        style={[
-                                            styles.pluginTabLabel,
-                                            {
-                                                backgroundColor: focused
-                                                    ? Color(colors.primary)
-                                                        .alpha(0.1)
-                                                        .toString()
-                                                    : isError
-                                                        ? Color(ERROR_COLOR)
-                                                            .alpha(0.08)
-                                                            .toString()
-                                                        : "transparent",
-                                                borderColor: focused
-                                                    ? Color(colors.primary)
-                                                        .alpha(0.28)
-                                                        .toString()
-                                                    : isError
-                                                        ? Color(ERROR_COLOR)
-                                                            .alpha(0.32)
-                                                            .toString()
-                                                        : "transparent",
-                                            },
-                                        ]}>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[
-                                                styles.pluginTabTitle,
-                                                {
-                                                    fontWeight: focused
-                                                        ? fontWeightConst.bolder
-                                                        : fontWeightConst.medium,
-                                                    color: titleColor,
-                                                },
-                                            ]}>
-                                            {route.title ??
-                                                `(${t("common.unknownName")})`}
-                                        </Text>
-                                        {meta.text ? (
-                                            <Text
-                                                numberOfLines={1}
-                                                style={[
-                                                    styles.pluginTabMeta,
-                                                    {
-                                                        color: metaColor,
-                                                    },
-                                                ]}>
-                                                {meta.text}
-                                            </Text>
-                                        ) : null}
-                                    </View>
-                                );
-                            },
+                            label: ({ focused }: any) => (
+                                <ResultTabLabel
+                                    title={
+                                        route.title ??
+                                        `(${t("common.unknownName")})`
+                                    }
+                                    focused={focused}
+                                    meta={getSourceTabMeta(
+                                        typeResults[route.key],
+                                        t,
+                                    )}
+                                    tintOnError
+                                />
+                            ),
                         };
                         return acc;
                     },
@@ -232,25 +174,5 @@ const styles = StyleSheet.create({
     },
     tab: {
         width: "auto",
-    },
-    pluginTabLabel: {
-        width: rpx(180),
-        minHeight: rpx(72),
-        paddingHorizontal: rpx(14),
-        paddingVertical: rpx(8),
-        borderRadius: rpx(8),
-        borderWidth: StyleSheet.hairlineWidth,
-        alignItems: "center",
-        justifyContent: "center",
-        rowGap: rpx(2),
-    },
-    pluginTabTitle: {
-        width: "100%",
-        textAlign: "center",
-    },
-    pluginTabMeta: {
-        width: "100%",
-        fontSize: fontSizeConst.tag,
-        textAlign: "center",
     },
 });
