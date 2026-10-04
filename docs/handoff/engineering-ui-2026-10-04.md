@@ -9,11 +9,11 @@
 | 仓库 | [CTZZG/MusicFree](https://github.com/CTZZG/MusicFree) |
 | 工作分支 | `claude/sharp-planck-xtfenm` |
 | 本轮工程修复起点 | `f224cb599a31eacb3bc90160ee67bdd1e6798c43` |
-| 最新功能提交 | `856859f619072f1222d558e4bfd1bdbd5c9bd9fc` |
+| 最新功能提交 | `da3036df65c90fb637458fe692a747908b62eb67` |
 | 包版本 | `0.9.0`；实际构建用提交号和 Actions run 区分 |
 | 文档核对日期 | 2026-10-04，UTC；构建状态见第 5 节 |
 
-接手时先 fetch 并核对远端，后续纯文档提交可能使 HEAD 高于上述功能提交。**当前功能状态：播放条 60 dp、dock 60 dp、大标题 28 dp、资料库歌单可切网格／列表；底部总预留 136 dp，系统安全区另加。**
+接手时先 fetch 并核对远端，后续纯文档提交可能使 HEAD 高于上述功能提交。**当前功能状态：播放条 60 dp、dock 60 dp、大标题 28 dp、资料库歌单可切网格／列表；榜单改为三列方卡，有现成歌曲数据时显示横向预览；底部总预留 136 dp，系统安全区另加。**
 
 Claude 在起点之前已实现 Android 测试 CI、诊断事件严重程度必填、Yoga 布局测试、ESLint 按规则限制警告增长，以及此前几项 UI 修复。Codex 本轮补上两处工程门禁缺陷，实施用户要求的标题／底栏／资料库调整，增加回归覆盖，并根据真机反馈重调底栏比例。
 
@@ -27,6 +27,7 @@ Claude 消息中的 **Eng 5 字体迁移尚未进入当前远端**：`ThemeText`
 | [89ef448](https://github.com/CTZZG/MusicFree/commit/89ef4483adee91716395f8bb0a80627137b483d5) | 初版底栏压缩、标题 28 dp、资料库列表模式、交互与布局测试 |
 | [d904ff2](https://github.com/CTZZG/MusicFree/commit/d904ff2936337763ac5a34c205f3314b6c29f72f) | 初版交接文档 |
 | [856859f](https://github.com/CTZZG/MusicFree/commit/856859f619072f1222d558e4bfd1bdbd5c9bd9fc) | 根据 DS One 参考图与用户反馈恢复底栏留白和触摸尺寸 |
+| [da3036d](https://github.com/CTZZG/MusicFree/commit/da3036df65c90fb637458fe692a747908b62eb67) | 参考酷狗概念版调整榜单密度、歌曲预览、面板宽度测量及布局回归 |
 
 ## 2. Codex 做了什么，为什么这样做
 
@@ -50,7 +51,7 @@ Claude 已建立按规则计数的基线，但 `--update` 的写盘顺序有缺�
 
 实现：[eslint-ratchet.mjs](../../generator/eslint-ratchet.mjs)。新增 [eslintRatchet.integration.test.mjs](../../generator/lib/eslintRatchet.integration.test.mjs) 的 3 项实际 ESLint CLI 测试，证明语法错误不写盘、一个规则减少不能抵消另一规则新增、合法改善可写入并通过下一次检查。
 
-当前仍为 **0 errors、225 warnings、12 条规则**，没有提高基线或屏蔽规则来通过。本机制允许同一规则内警告位置变化，不能发现所有“修一条又新增一条”的抵消；实际 diff 审查仍必要。后续可评估改动文件的增量检查，暂时不必引入脆弱的行号指纹系统。
+门禁修复时为 225 warnings；本次榜单改版移除一处内联样式警告，当前为 **0 errors、224 warnings、12 条规则**，已提交更低基线。本机制允许同一规则内警告位置变化，不能发现所有“修一条又新增一条”的抵消；实际 diff 审查仍必要。后续可评估改动文件的增量检查，暂时不必引入脆弱的行号指纹系统。
 
 ### 2.3 底栏：从压缩占用改为平衡留白与触摸
 
@@ -91,6 +92,20 @@ Claude 已建立按规则计数的基线，但 `--update` 的写盘顺序有缺�
 实现：[Library](../../src/pages/library/index.tsx)；类型：[config.d.ts](../../src/types/core/config.d.ts)；新增 [squares-2x2.svg](../../src/assets/icons/squares-2x2.svg)，同步生成图标入口。
 
 新增 [playlistView.test.tsx](../../src/pages/library/__tests__/playlistView.test.tsx) 的 5 项交互测试，使用真实 `useStoredJson` 订阅和测试存储，覆盖首次切换、卸载再挂载恢复、两种模式打开相同歌单、删除确认及收藏保护。真正杀进程后的落盘恢复仍需设备检查。
+
+### 2.6 榜单参考酷狗概念版：提高密度、减少卡片分割感
+
+用户对比 `13268.jpg`（酷狗概念版）和 `13266.jpg`（项目当前榜单），希望后者更紧凑、协调。原实现最小格宽 140 dp，普通手机只有两列，每张方形封面下还有白色标题底座与序号，导致同一屏显示的榜单偏少。
+
+普通卡片现在为三列、14 dp 圆角方卡，标题放在卡片内，最多两行，使用深色半透明底保证图片上白字可读；移除序号与外部白色底座。无封面时采用彩色底卡。页边距 16 dp、格间距 12 dp、组间距 24 dp，宽屏再按可用空间增加列数。
+
+如果 `getTopLists` 返回的条目已有有效 `musicList`，显示横向卡片：左侧榜名与最多三首歌曲，右侧 72 dp 封面。只展示插件已经返回的歌曲，不为列表另行请求所有榜单详情。LXD 等只返回标题和封面的来源使用方卡；不能用虚构歌曲填出参考图里的预览。不同类型混排时保持插件原顺序，点击仍传递原榜单对象与插件 hash。
+
+网格宽度改为测量实际面板，旋转后重新测量。测试发现 363 dp 场景下，`onLayout` 的像素取整可能使计算宽度略大于 Yoga 内部空间，第三张卡片因此换行；格宽向下取整后稳定为三列。
+
+实现：[TopListItem](../../src/components/mediaItem/topListItem.tsx)、[BoardPanel](../../src/pages/topList/components/boardPanel.tsx)、[topListGridLayout](../../src/pages/topList/components/topListGridLayout.ts)。新增 [交互测试](../../src/components/mediaItem/__tests__/topListItem.test.tsx) 4 项，验证两类卡片打开原榜单、最多三首有效歌曲、异常预览元数据和无标题／封面回退；[布局测试](../../tests/layout/topLists.layout.test.mjs) 16 项覆盖中英文、深浅色、320／363 dp、窄于窗口的 300 dp 面板以及 704 dp 横屏面板，检查文字、封面、顺序排布和不重叠。
+
+此次修改经过本地质量门，卡片观感仍需新版 APK 真机确认。优先检查原 LXD 的收听榜、资料库榜、发现分组，再选择带预览数据的来源验证横卡。
 
 ## 3. 接续 Claude 已有工作
 
@@ -159,16 +174,16 @@ APK 打包、自动测试通过、真机功能通过、用户视觉认可分别�
 | 检查 | 结果 |
 | --- | --- |
 | 静态审计与 TypeScript | 通过 |
-| ESLint | 0 errors、225 warnings，基线未提高 |
-| Jest | 150 套件、1066 项通过 |
+| ESLint | 0 errors、224 warnings，内联样式规则基线由 26 收紧到 25 |
+| Jest | 151 套件、1070 项通过 |
 | generator | 27 项通过；本轮新增 7 项 Git／ESLint CLI 测试 |
-| Yoga 布局 | 170 项通过；本轮新增 24 项资料库、12 项底栏 |
+| Yoga 布局 | 186 项通过；本轮累计新增 24 项资料库、12 项底栏、16 项榜单 |
 | 补丁重放 | jimp、brace-expansion、expo-liquid-glass-native、react-native 四项通过 |
 | 提交及空白检查 | hooks、commitlint、`git diff --check` 通过 |
 
 新增矩阵覆盖中英文、窄屏和栏内触摸区域；资料库另有横屏侧边安全区。各套件维度不同，不能理解为每页均覆盖所有组合。
 
-同一工作区日志为 `/workspace/scratch/MusicFree-bottom-bars-verify.log`；临时日志未入仓库，外部接手应重跑或查 Actions。
+同一工作区最新日志为 `/workspace/scratch/MusicFree-chart-cards-verify.log`，底栏前序日志为 `/workspace/scratch/MusicFree-bottom-bars-verify.log`；临时日志未入仓库，外部接手应重跑或查 Actions。
 
 ### CI 与构建
 
@@ -176,9 +191,9 @@ APK 打包、自动测试通过、真机功能通过、用户视觉认可分别�
 | --- | --- |
 | CI #24、Beta #69 | Claude 前期 debug／release 测试路径成功的证据 |
 | [Beta #70](https://github.com/CTZZG/MusicFree/actions/runs/37170562459) | d904ff2；构建成功；用户上传 XML 为 12 类、63 项 Android 测试，0 失败／错误／跳过 |
-| [Beta #71](https://github.com/CTZZG/MusicFree/actions/runs/37172584538) | 856859f；2026-10-04 03:26 UTC 核对时质量门、Android 单元测试与报告上传成功，APK 打包进行中 |
+| [Beta #71](https://github.com/CTZZG/MusicFree/actions/runs/37172584538) | 856859f；质量门、Android 单元测试与构建均已成功，APK 已上传；对应底栏调整，尚不含本次榜单改版 |
 
-Beta #71 已有 `android-unit-tests-beta-37172584538` 产物。仅把已核对步骤记为完成，接手时查 run 最终结果。本轮本地未运行 Gradle，执行证据来自 CI。
+Beta #71 已有 `android-unit-tests-beta-37172584538` 和 `beta-apks-0.9.0-configured` 产物。本次榜单的 Android 构建结果需要查看后续 Beta；本轮本地未运行 Gradle，原生执行证据来自 CI。
 
 ### 当前验证的边界
 
@@ -259,6 +274,6 @@ npm run lint:check
 | 操作 | 冷／热启动、缓存状态、逐步复现过程 |
 | 结果 | 预期、实际、截图／视频、可重复次数 |
 
-当前先查：首页／搜索／资料库／设置底栏；二级悬浮位置；键盘；末项滚动；歌单视图与杀进程恢复；外观首次点击；慢加载封面切回；失败音源提示；横屏、200% 字体；后台、通知、媒体键。
+当前先查：首页／搜索／资料库／设置底栏；二级悬浮位置；键盘；末项滚动；歌单视图与杀进程恢复；榜单三列、长标题和歌曲预览；外观首次点击；慢加载封面切回；失败音源提示；横屏、200% 字体；后台、通知、媒体键。
 
 验收后写回本文，注明通过 SHA。后续 PR 和交接按“触发问题 → 最终行为 → 决策取舍 → 验证证据 → 未验证范围”记录，建议实施后同步更新状态，避免口头进度与远端再次错位。
