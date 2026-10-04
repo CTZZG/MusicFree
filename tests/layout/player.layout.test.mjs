@@ -18,7 +18,7 @@ import {
     renderLayout,
     strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv} from './stubs.mjs';
+import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
 
 const h = React.createElement;
 
@@ -149,7 +149,8 @@ function renderPlayer(env) {
     const MusicDetail = loader.load('@/pages/musicDetail').default;
     const i18n = loader.load('@/core/i18n').default;
     const {width, height} = env.window;
-    return {...renderLayout(h(MusicDetail), {env, width, height}), t: i18n.t};
+    const page = inAppFontScaleScope(loader, {route: 'music-detail'}, h(MusicDetail));
+    return {...renderLayout(page, {env, width, height}), t: i18n.t};
 }
 
 const byLabel = label => record => record.props.accessibilityLabel === label;

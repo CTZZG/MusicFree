@@ -26,6 +26,8 @@ import ErrorBoundary from "@/components/errorBoundary";
 import { navigationRef, ROUTE_PATH } from "@/core/router";
 import MusicBar from "@/components/musicBar";
 import ScreenSurface from "@/components/base/screenSurface";
+import { FontScaleScope } from "@/components/base/fontScaleScope";
+import { fontScaleMigratedRoutes } from "@/constants/fontScaleMigration";
 import {
     MusicBarLayoutProvider,
     useMusicBarLayoutState,
@@ -57,11 +59,15 @@ const surfacedRoutes = routes.map(route => {
     const RouteComponent = route.component;
     // 页面统一铺 iOS 的纯色底。首页的自定义背景图由主页自己铺在标签栏要模糊的
     // BlurTargetView 里（见 pages/home），这里不再重复铺
+    // 已核对过系统字体放大的页面，ThemeText 跟随系统字体（见 fontScaleMigration）
+    const followSystemFontScale = fontScaleMigratedRoutes.has(route.path);
     function SurfacedRoute(screenProps: any) {
         return (
-            <ScreenSurface>
-                <RouteComponent {...screenProps} />
-            </ScreenSurface>
+            <FontScaleScope followSystem={followSystemFontScale}>
+                <ScreenSurface>
+                    <RouteComponent {...screenProps} />
+                </ScreenSurface>
+            </FontScaleScope>
         );
     }
     return { ...route, component: SurfacedRoute };

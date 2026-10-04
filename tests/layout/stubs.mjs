@@ -190,6 +190,21 @@ function FastImage(props) {
 const assetHandles = new Proxy({}, {get: (_, key) => (typeof key === 'string' ? 1 : undefined)});
 
 /**
+ * 和 App 一样包上字体缩放的范围：登记过（src/constants/fontScaleMigration.ts）的
+ * 页面、面板里 ThemeText 跟随系统字体。App 在 src/entry 和面板入口各包一层。
+ * loader 要和渲染页面用的是同一个，ThemeText 才读得到这一层。
+ * @param {{route?: string, panel?: string}} where 路由名或面板名
+ */
+export function inAppFontScaleScope(loader, where, element) {
+    const {FontScaleScope} = loader.load('@/components/base/fontScaleScope');
+    const migration = loader.load('@/constants/fontScaleMigration');
+    const followSystem = where.route
+        ? migration.fontScaleMigratedRoutes.has(where.route)
+        : migration.fontScaleMigratedPanels.has(where.panel);
+    return h(FontScaleScope, {followSystem}, element);
+}
+
+/**
  * 大多数页面都要的桩。测试再按需补上页面自己的依赖。
  * @returns {Record<string, unknown>}
  */

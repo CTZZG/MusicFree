@@ -13,7 +13,7 @@ import {
     renderLayout,
     strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv} from './stubs.mjs';
+import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
 
 const h = React.createElement;
 const PAGE_MARGIN = 16;
@@ -89,11 +89,12 @@ function renderSheetGrid(env) {
         '@/pages/recommendSheets/components/body/sheetList',
     ).default;
     const {width, height} = env.window;
-    return renderLayout(h(SheetList, {tag: {id: 'all'}, pluginHash: 'p'}), {
-        env,
-        width,
-        height,
-    });
+    const grid = inAppFontScaleScope(
+        loader,
+        {route: 'recommend-sheets'},
+        h(SheetList, {tag: {id: 'all'}, pluginHash: 'p'}),
+    );
+    return renderLayout(grid, {env, width, height});
 }
 
 function tilesOf(root) {

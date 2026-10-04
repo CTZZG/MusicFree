@@ -71,10 +71,15 @@
   - 文字宽度按 Roboto 的字宽估算、按 Android 的规则断行，比真机略宽，几个 dp 以内的差别不拿来断言；
   - 工具只认识明确支持的样式、宿主组件和依赖，其余一律报错；页面用到的原生模块和运行时服务由测试显式给桩（`tests/layout/stubs.mjs`）；
   - 工具自身的行为由 `tests/layout/harness.test.mjs` 固定。排查时可以用 `dumpTree` 打印排版结果。
-- 系统字体放大：目前 `ThemeText` 不跟随系统字体（`allowFontScaling={false}`），直接用 `Text` 的地方（例如播放页）跟随系统。
-  尺寸固定的紧凑控件用 `maxFontScaleConst.compact`（`src/constants/uiConst.ts`）限制到 1.5 倍，例如播放页的导航栏、进度时间和角标；
-  播放页的歌名区不设上限，横屏放不下时先省掉专辑、歌手行。
-  播放页的迷你歌词是固定高度的窗口，不跟随系统放大（点开歌词页可以看完整歌词，那里有单独的字号设置）。
+- 系统字体放大：目标是全部跟随系统字体。直接用 `Text` 的地方本来就跟随；`ThemeText` 以前一律关掉了缩放，
+  现在按页面、面板逐个放开：核对过的登记在 `src/constants/fontScaleMigration.ts`，路由入口（`src/entry`）和面板入口
+  给它们包一层跟随系统的 `FontScaleScope`，没登记的保持原样（不放大）。
+  - 迁移一个页面：布局测试按 1、1.3、1.5、2 倍检查（渲染时包上与 App 相同的范围）→ 先处理固定高度的容器 →
+    放不下时先省次要的行 → 只有尺寸固定、又没法省掉的紧凑控件才用 `maxFontScaleConst.compact`（1.5 倍）封顶，
+    正文、标题、说明不封顶 → 登记 → 真机用大字体看一遍。全部迁移完以后 `ThemeText` 改为默认跟随，删掉名单。
+  - 已迁移：暂无。
+  - 播放页的导航栏、进度时间、角标、上滑提示封顶 1.5 倍；歌名区不封顶，横屏放不下时先省专辑、歌手行。
+    迷你歌词是固定高度的窗口，不跟随系统放大（点开歌词页可以看完整歌词，那里有单独的字号设置）。
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。
 - 稳定版构建另外运行 `npm run audit:production-deps`（`generator/audit-production-deps.mjs`），有高危漏洞时不发布。

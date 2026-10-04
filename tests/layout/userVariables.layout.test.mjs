@@ -14,7 +14,7 @@ import {
     renderLayout,
     strictStub,
 } from './harness.mjs';
-import {createCommonStubs, createEnv} from './stubs.mjs';
+import {createCommonStubs, createEnv, inAppFontScaleScope} from './stubs.mjs';
 
 const h = React.createElement;
 const CONTENT_PADDING = 16;
@@ -82,14 +82,16 @@ function renderForm(env, pickForm) {
     const {t} = loader.load('@/core/i18n').default;
     const form = pickForm(formsOf(t));
     const {width, height} = env.window;
-    const rendered = renderLayout(
+    const panel = inAppFontScaleScope(
+        loader,
+        {panel: 'SetUserVariables'},
         h(SetUserVariables, {
             title: form.title,
             variables: form.variables,
             onOk() {},
         }),
-        {env, width, height},
     );
+    const rendered = renderLayout(panel, {env, width, height});
     return {...rendered, form, t};
 }
 
