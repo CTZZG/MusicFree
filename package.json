@@ -17,6 +17,7 @@
         "start": "react-native start",
         "clean": "cd ./android && ./gradlew clean",
         "test": "jest",
+        "test:layout": "node --test \"tests/layout/*.test.mjs\"",
         "audit:round20-static": "node ./generator/audit-round20-static.mjs",
         "audit:dependency-overrides": "node ./generator/audit-dependency-overrides.mjs",
         "audit:production-deps": "node ./generator/audit-production-deps.mjs",
@@ -137,7 +138,8 @@
         "prettier": "2.8.8",
         "react-native-svg-transformer": "^1.5.0",
         "react-test-renderer": "19.2.3",
-        "typescript": "~6.0.3"
+        "typescript": "~6.0.3",
+        "yoga-layout": "3.2.1"
     },
     "engines": {
         "node": ">=22.13.0"

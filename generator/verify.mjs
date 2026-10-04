@@ -21,6 +21,14 @@ const generatorTests = fs
     .sort()
     .map(name => path.join(generatorTestDir, name));
 
+// 布局测试（Yoga）：tests/layout 下所有 *.test.mjs
+const layoutTestDir = path.join(rootDir, 'tests', 'layout');
+const layoutTests = fs
+    .readdirSync(layoutTestDir)
+    .filter(name => name.endsWith('.test.mjs'))
+    .sort()
+    .map(name => path.join(layoutTestDir, name));
+
 const checks = [
     {
         // 格式样本矩阵、结构不变量、依赖覆盖审计与 TypeScript
@@ -48,6 +56,13 @@ const checks = [
         // CI 是否需要跑原生测试的判定
         name: 'Generator unit tests',
         args: ['--test', ...generatorTests],
+    },
+    {
+        // 渲染真实组件、用 Yoga 排版，检查播放页、歌单网格、设置表单在几种
+        // 屏幕尺寸、系统字体缩放和语言下不重叠、不被裁掉
+        name: 'Layout tests (Yoga)',
+        args: ['--test', ...layoutTests],
+        env: {NODE_ENV: 'test'},
     },
     {
         name: 'patch-package replay',

@@ -1,7 +1,7 @@
 name: Quality gate
 description: >-
     稳定版、Beta 与 PR 检查共用的依赖安装和基础质量门：
-    npm ci、静态审计与 TypeScript、只读 ESLint、Jest、补丁重放和空白检查。
+    npm ci、静态审计与 TypeScript、只读 ESLint、Jest、布局测试、补丁重放和空白检查。
     检查清单见 generator/verify.mjs，本地用 npm run verify 运行同一套检查。
 
 inputs:
@@ -27,7 +27,7 @@ runs:
               HUSKY: '0'
           run: npm ci --no-audit --no-fund
 
-        - name: Verify (static audits, TypeScript, ESLint, Jest, patches)
+        - name: Verify (static audits, TypeScript, ESLint, Jest, layout tests, patches)
           shell: bash
           run: npm run verify
 

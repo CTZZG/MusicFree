@@ -55,8 +55,15 @@
 
 ## 质量门
 
-- `npm run verify`（`generator/verify.mjs`）：静态审计与 TypeScript（`audit:round20-static`）、只读 ESLint、Jest、构建脚本自己的 node:test 用例（`generator/lib/*.test.mjs`，新加的自动纳入）、`patch-package --error-on-fail`（补丁打不上时本地也失败）。不修改仓库文件；`node_modules` 里还没打上的补丁会被打上，与 postinstall 相同。
+- `npm run verify`（`generator/verify.mjs`）：静态审计与 TypeScript（`audit:round20-static`）、只读 ESLint、Jest、构建脚本自己的 node:test 用例（`generator/lib/*.test.mjs`，新加的自动纳入）、布局测试（`tests/layout/*.test.mjs`）、`patch-package --error-on-fail`（补丁打不上时本地也失败）。不修改仓库文件；`node_modules` 里还没打上的补丁会被打上，与 postinstall 相同。
 - `npm run lint:check` 只检查；`npm run lint` 会自动修复文件。
+- 布局测试（`tests/layout`，`npm run test:layout`）：渲染真实组件，用与 React Native 同一代的 Yoga（`yoga-layout`）按 RN 的配置排版
+  （errata 兼容模式、按像素密度取整），再检查「谁不能压住谁、什么不能被裁掉」这类语义，而不是比对像素。
+  - 覆盖播放页（竖屏方形、圆形、大图三种封面，横屏两种封面）、推荐歌单网格、插件用户变量表单（含 WebDAV、Last.fm），
+    在 320～412 dp 宽的竖屏、320～363 dp 高的横屏、系统字体 1～2 倍下各跑一遍，表单另外分中英文；
+  - 文字宽度按 Roboto 的字宽估算、按 Android 的规则断行，比真机略宽，几个 dp 以内的差别不拿来断言；
+  - 工具只认识明确支持的样式、宿主组件和依赖，其余一律报错；页面用到的原生模块和运行时服务由测试显式给桩（`tests/layout/stubs.mjs`）；
+  - 工具自身的行为由 `tests/layout/harness.test.mjs` 固定。排查时可以用 `dumpTree` 打印排版结果。
 - 系统字体放大：目前 `ThemeText` 不跟随系统字体（`allowFontScaling={false}`），直接用 `Text` 的地方（例如播放页）跟随系统。
   放在固定尺寸里的文字用 `maxFontScaleConst`（`src/constants/uiConst.ts`）限制到 1.5 倍，例如播放页的导航栏、进度时间、角标和歌名区；
   播放页的迷你歌词是固定高度的窗口，不跟随系统放大（歌词页有单独的字号设置）。
