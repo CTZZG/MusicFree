@@ -2,12 +2,14 @@
 // 一定报错。布局测试的结论依赖这些行为，改工具时这里先要过。
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {inspect} from 'node:util';
 import {createCommonStubs, createEnv} from './stubs.mjs';
 import {
     React,
     clippingAncestor,
     createModuleLoader,
     createReactNativeStub,
+    describeFrame,
     findAll,
     findOne,
     isText,
@@ -196,6 +198,34 @@ test('content can scroll into view past clipping ancestors, but only along the s
     }
 });
 
+test('a scroll view that cannot scroll clips along its scroll axis too', () => {
+    // 不能滚动的横向列表（例如 scrollEnabled 为 false 的标签栏）：排法和能滚动的一样，
+    // 放不下的那一截看不到
+    const {root, unmount} = layout(
+        h(
+            'View',
+            {style: {width: 100}},
+            ...[true, false].map(scrollEnabled =>
+                h(
+                    'ScrollView',
+                    {key: String(scrollEnabled), nativeID: `bar-${scrollEnabled}`, horizontal: true, scrollEnabled, style: {flexGrow: 0}},
+                    h('View', {style: {width: 80, height: 10}}),
+                    h('View', {nativeID: `last-${scrollEnabled}`, style: {width: 60, height: 10}}),
+                ),
+            ),
+        ),
+    );
+    try {
+        const last = scrollEnabled => findOne(root, byKey(`last-${scrollEnabled}`), `last tab (scrollEnabled ${scrollEnabled})`);
+        assert.equal(last(true).frame.x, 80, 'laid out the same way');
+        assert.equal(last(false).frame.x, 80, 'laid out the same way');
+        assert.equal(clippingAncestor(last(true)), null, 'can be scrolled into view');
+        assert.equal(clippingAncestor(last(false)), findOne(root, byKey('bar-false'), 'bar'), 'cut off');
+    } finally {
+        unmount();
+    }
+});
+
 test('nested SafeAreaViews each add the provider insets, like react-native-safe-area-context 5', () => {
     // 原生按最近的 SafeAreaProvider 取安全区，叠加在每个 SafeAreaView 自己的内边距上：
     // 外层让开四边、里层再让开左右，左右就让开了两次
@@ -379,6 +409,32 @@ test('after an interaction, onLayout fires for new mounts and changed layouts on
         assert.deepEqual(calls, ['first:100', 'first:120', 'second:120', 'second:120']);
     } finally {
         rendered.unmount();
+    }
+});
+
+test('a failed assertion on a layout record reports that node only', () => {
+    // 断言失败时 assert 会把「实际值」展开到 1000 层：顺着父节点、子节点、宿主实例
+    // （连着整棵 React 树）走下去，整页的测试会卡住几十秒、吃掉十几 GB 内存
+    const {root, unmount} = layout(
+        h(
+            'View',
+            {nativeID: 'outer', accessibilityLabel: 'box', style: {width: 50, height: 20, overflow: 'hidden'}},
+            h('Text', null, 'a long text that does not fit'),
+        ),
+    );
+    try {
+        const outer = findOne(root, byKey('outer'), 'outer');
+        const text = outer.children[0];
+        assert.equal(text.parent, outer, 'links are still there');
+        assert.ok(text.instance && text.yoga, 'so are the host instance and the Yoga node');
+        for (const hidden of ['parent', 'children', 'instance', 'yoga']) {
+            assert.ok(!Object.keys(outer).includes(hidden), `${hidden} is not enumerable`);
+        }
+        assert.equal(inspect(outer), '<View [box] x=0.0 y=0.0 w=50.0 h=20.0>');
+        assert.equal(inspect(text), `<Text "a long text that does not fit" ${describeFrame(text.frame)}>`);
+        assert.throws(() => assert.equal(clippingAncestor(text), null), error => error.message.length < 2000);
+    } finally {
+        unmount();
     }
 });
 

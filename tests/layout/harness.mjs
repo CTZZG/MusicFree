@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import {createRequire} from 'node:module';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {inspect} from 'node:util';
 import vm from 'node:vm';
 import Yoga, {
     Align,
@@ -746,21 +747,50 @@ function measureText(text, metrics, maxWidth, numberOfLines) {
 /** 比较位置时的容差（dp），抵消按物理像素取整带来的误差 */
 const EPSILON = 0.5;
 
+/**
+ * 打印排版结果里的节点时只显示类型、标签、文字和位置。断言失败时测试运行器要打印、
+ * 序列化「实际值」，要是顺着宿主实例走遍整棵 React 树和它的内部状态，进程会卡住
+ * 几十秒、吃掉十几 GB 内存，失败看起来像是挂死了。
+ */
+const recordPrototype = {
+    [inspect.custom]() {
+        const label = this.props?.accessibilityLabel ? ` [${this.props.accessibilityLabel}]` : '';
+        const text = typeof this.text === 'string' ? ` "${this.text}"` : '';
+        const frame = this.frame ? ` ${describeFrame(this.frame)}` : '';
+        return `<${this.type}${label}${text}${frame}>`;
+    },
+};
+
+/**
+ * 排版结果里的一个节点。宿主实例、Yoga 节点、父节点和子节点不可枚举：assert 生成差异时
+ * 不理会 inspect.custom、一直展开到 1000 层，这样失败信息里只有这一个节点自己的字段
+ */
+function createRecord(fields, {instance, yoga}) {
+    const record = Object.assign(Object.create(recordPrototype), fields);
+    Object.defineProperties(record, {
+        instance: {value: instance, writable: true},
+        yoga: {value: yoga, writable: true},
+        parent: {value: undefined, writable: true},
+        children: {value: [], writable: true},
+    });
+    return record;
+}
+
 function buildNode(json, config, env, records, parentPath) {
     const where = `${parentPath}/${json.type}`;
     const node = Yoga.Node.create(config);
     const props = json.props ?? {};
-    const record = {
-        type: json.type,
-        props,
-        path: where,
-        instance: json.instance,
-        yoga: node,
-        children: [],
-        text: null,
-        textInfo: null,
-        scroll: null,
-    };
+    const record = createRecord(
+        {
+            type: json.type,
+            props,
+            path: where,
+            text: null,
+            textInfo: null,
+            scroll: null,
+        },
+        {instance: json.instance, yoga: node},
+    );
     records.push(record);
 
     if (json.type === 'Text') {
@@ -843,20 +873,23 @@ function buildNode(json, config, env, records, parentPath) {
             `${where}/content`,
         );
         node.insertChild(content, 0);
-        const contentRecord = {
-            type: 'ScrollContent',
-            props: {style: props.contentContainerStyle},
-            path: `${where}/content`,
-            yoga: content,
-            children: [],
-            text: null,
-            textInfo: null,
-            scroll: horizontal ? 'horizontal' : 'vertical',
-        };
+        const contentRecord = createRecord(
+            {
+                type: 'ScrollContent',
+                props: {style: props.contentContainerStyle},
+                path: `${where}/content`,
+                text: null,
+                textInfo: null,
+                scroll: horizontal ? 'horizontal' : 'vertical',
+            },
+            {instance: undefined, yoga: content},
+        );
         records.push(contentRecord);
         record.children.push(contentRecord);
         contentRecord.parent = record;
         record.scroll = horizontal ? 'horizontal' : 'vertical';
+        // scrollEnabled={false}：排法一样，只是滚不动，超出视口的部分看不到
+        record.scrollEnabled = props.scrollEnabled !== false;
         appendChildren(json.children, content, contentRecord, config, env, records, `${where}/content`);
         return record;
     }
@@ -1133,6 +1166,7 @@ function clipsAlong(ancestor, axis) {
  *   一段一段看）；排在屏幕下面、滚得过来的格子不算被裁。视口本身被外层裁掉一截、
  *   整个跑到外层可见区之外，或者滚到底也露不出来的，都算被裁。
  * 同一方向套了两层滚动容器时，外层只当作普通的裁剪窗口（不再滚动）。
+ * scrollEnabled 为 false 的滚动容器滚不动，两个方向都按普通的裁剪算。
  */
 export function clippingAncestor(record) {
     // 文字框按像素向上取整（RN 也这样，免得最后一个字被截），比父视图多出不到 1 dp
@@ -1145,7 +1179,7 @@ export function clippingAncestor(record) {
                 continue;
             }
             const scrollAxis =
-                ancestor.type === 'ScrollView'
+                ancestor.type === 'ScrollView' && ancestor.scrollEnabled
                     ? ancestor.scroll === 'vertical'
                         ? 'y'
                         : 'x'

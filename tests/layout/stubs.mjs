@@ -294,11 +294,12 @@ const ABSOLUTE_FILL = {position: 'absolute', left: 0, right: 0, top: 0, bottom: 
 /**
  * react-native-tab-view 4 的 TabView：外层 flex: 1、overflow: hidden，标签栏在上，
  * 下面的 PagerView 占满剩下的高度。PagerView 的每一页和当前页一样大，这里只排当前
- * 这一页（SceneView：flex: 1、overflow: hidden）。
+ * 这一页（SceneView：flex: 1、overflow: hidden）。点标签（jumpTo）切到那一页。
  */
-function TabView({navigationState, renderTabBar, renderScene, style}) {
+function TabView({navigationState, renderTabBar, renderScene, onIndexChange, style}) {
     const route = navigationState.routes[navigationState.index];
-    const sceneProps = {layout: {width: 0, height: 0}, jumpTo() {}, position: null};
+    const jumpTo = key => onIndexChange(navigationState.routes.findIndex(item => item.key === key));
+    const sceneProps = {layout: {width: 0, height: 0}, jumpTo, position: null};
     return h(
         'View',
         {style: [{flex: 1, overflow: 'hidden'}, style]},
@@ -316,14 +317,15 @@ function TabView({navigationState, renderTabBar, renderScene, style}) {
 }
 
 /**
- * react-native-tab-view 4 的 TabBar（可横向滚动）：一行标签放在横向的 FlatList 里。
+ * react-native-tab-view 4 的 TabBar：一行标签放在横向的 FlatList 里。
  * 每个标签（TabBarItem）是一层可点的视图，里面是 flex: 1、居中、padding 10、
  * minHeight 48 的容器，叠着未选中、选中两份文字（选中的那份绝对定位盖在上面）。
- * 只支持 scrollEnabled，且标签宽度由 tabStyle.width 给出（auto 或数值）。
+ * 只支持标签宽度由 tabStyle.width 给出（auto 或数值）。scrollEnabled 时放不下的
+ * 标签可以滚过去看；不能滚动时（FlatList 的 scrollEnabled 为 false）超出的部分被裁掉。
  */
-function TabBar({navigationState, options, style, tabStyle, contentContainerStyle, scrollEnabled}) {
-    if (!scrollEnabled || flattenStyle(tabStyle).width === undefined) {
-        throw new Error('The TabBar stub models scrollable tab bars with tabStyle.width only');
+function TabBar({navigationState, options, style, tabStyle, contentContainerStyle, scrollEnabled, jumpTo}) {
+    if (flattenStyle(tabStyle).width === undefined) {
+        throw new Error('The TabBar stub models tabs whose width comes from tabStyle.width only');
     }
     const tabs = navigationState.routes.map((route, index) => {
         const focused = index === navigationState.index;
@@ -339,6 +341,7 @@ function TabBar({navigationState, options, style, tabStyle, contentContainerStyl
                 accessibilityRole: 'tab',
                 accessibilityLabel: route.title,
                 accessibilityState: {selected: focused},
+                onPress: () => jumpTo(route.key),
             },
             h(
                 'View',
@@ -374,6 +377,7 @@ function TabBar({navigationState, options, style, tabStyle, contentContainerStyl
                 'ScrollView',
                 {
                     horizontal: true,
+                    scrollEnabled: !!scrollEnabled,
                     contentContainerStyle: [
                         {flexGrow: 1, flexDirection: 'row', flexWrap: 'nowrap'},
                         contentContainerStyle,
