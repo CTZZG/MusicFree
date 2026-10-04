@@ -673,7 +673,8 @@ function breakParagraph(paragraph, metrics, maxWidth) {
         tokens.push(word);
     }
 
-    const fits = width => width <= maxWidth + 1e-6;
+    // Yoga 内部是单精度浮点，排完的宽度会差几万分之一 dp
+    const fits = width => width <= maxWidth + 0.01;
     let lines = 1;
     let lineWidth = 0;
     let widest = 0;

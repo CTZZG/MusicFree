@@ -178,6 +178,7 @@ function landmarks(root, t) {
     const [title] = songText(MUSIC.title);
     const [artist] = songText(MUSIC.artist);
     const [album] = songText(MUSIC.album);
+    const platformTags = songText(MUSIC.platform);
     // 封面：导航栏以外最大的一张图。大图样式画在背景里，横屏放不下时不显示
     const cover =
         findAll(root, record => record.type === 'Image' && outsideNav(record)).sort(
@@ -227,6 +228,7 @@ function landmarks(root, t) {
         title,
         artist,
         album,
+        platformTags,
         cover,
         miniLyric,
         controls,
@@ -315,10 +317,13 @@ for (const device of PORTRAIT) {
                         bottomOf(marks.cover.frame) <= marks.title.frame.y + 0.5,
                         'song title sits below the cover',
                     );
+                    // 来源标签和歌手挤不下一行时换到下一行，不压缩歌手名
+                    assert.equal(marks.platformTags.length, 1, 'platform tag is shown');
                     for (const [what, text] of [
                         ['title', marks.title],
                         ['artist', marks.artist],
                         ['album', marks.album],
+                        ['platform tag', marks.platformTags[0]],
                     ]) {
                         assertBetween(text, navBottom, controlTop, what);
                         assertNotClipped(text, what);
@@ -401,8 +406,10 @@ for (const device of LANDSCAPE) {
                         assertBetween(marks.cover, navBottom, controlTop, 'cover');
                         assertNotClipped(marks.cover, 'cover');
                     }
-                    // 歌名区按高度决定显示几行：标题一定有，歌手、专辑放得下才显示
+                    // 歌名区按高度决定显示几行：标题一定有，歌手、专辑放得下才显示；
+                    // 来源标签不在横屏显示
                     assert.ok(marks.title, 'song title is shown');
+                    assert.equal(marks.platformTags.length, 0, 'no platform tag in landscape');
                     for (const [what, text] of [
                         ['title', marks.title],
                         ['artist', marks.artist],

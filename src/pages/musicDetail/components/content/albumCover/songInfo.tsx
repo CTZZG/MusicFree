@@ -280,7 +280,9 @@ export default function SongInfo(props: ISongInfoProps) {
                                     {musicItem.artist || "--"}
                                 </Text>
                             </Pressable>
-                            {musicItem.platform ? (
+                            {/* 横屏那条区域按行数排好了，放不下来源标签；竖屏和歌手
+                                    挤不下一行时换到下一行，不压缩歌手名 */}
+                            {musicItem.platform && !isLandscape ? (
                                 <Tag
                                     tagName={musicItem.platform}
                                     containerStyle={styles.tagBg}
@@ -430,7 +432,10 @@ const styles = StyleSheet.create({
     },
     artistRow: {
         flexDirection: "row",
+        flexWrap: "wrap",
         alignItems: "center",
+        columnGap: 8,
+        rowGap: 4,
         maxWidth: "100%",
     },
     artist: {
@@ -457,7 +462,8 @@ const styles = StyleSheet.create({
     },
     tagBg: {
         backgroundColor: "rgba(255, 255, 255, 0.2)",
-        marginLeft: 8,
+        // 间距由 artistRow 的 columnGap 给，换行后标签和歌手名左对齐
+        marginLeft: 0,
     },
     tagText: {
         color: "white",
