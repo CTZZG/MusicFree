@@ -3,6 +3,7 @@ import {
     MpvTrackTransitionGate,
     shouldIgnoreDuringTransition,
     waitForExpectedActive,
+    wasWaitSuspended,
 } from "../manualSkipCoordinator";
 
 describe("manual skip coordinator", () => {
@@ -273,5 +274,51 @@ describe("stale event filtering during a manual skip", () => {
             eventKey: "whatever",
             expectedKey: null,
         })).toBe(false);
+    });
+});
+
+describe("wasWaitSuspended", () => {
+    it("treats a wait that slept through the background as suspended", async () => {
+        // 后台定时器停摆：一次 32 ms 的等待醒来时已经过去两分钟
+        let clock = 0;
+        const active = await waitForExpectedActive(
+            async () => "A",
+            value => value === "B",
+            {
+                timeoutMs: 1600,
+                now: () => clock,
+                sleep: async () => {
+                    clock += 120_000;
+                },
+            },
+        );
+        expect(active).toBeNull();
+        expect(
+            wasWaitSuspended({ startedAt: 0, timeoutMs: 1600, now: clock }),
+        ).toBe(true);
+    });
+
+    it("does not mistake an ordinary timeout for a suspension", async () => {
+        let clock = 0;
+        const active = await waitForExpectedActive(
+            async () => "A",
+            value => value === "B",
+            {
+                timeoutMs: 1600,
+                pollIntervalMs: 32,
+                now: () => clock,
+                sleep: async ms => {
+                    clock += ms;
+                },
+            },
+        );
+        expect(active).toBeNull();
+        expect(
+            wasWaitSuspended({ startedAt: 0, timeoutMs: 1600, now: clock }),
+        ).toBe(false);
+        // 慢一些的设备上多花几秒仍算普通超时
+        expect(
+            wasWaitSuspended({ startedAt: 0, timeoutMs: 1600, now: 1600 + 4000 }),
+        ).toBe(false);
     });
 });

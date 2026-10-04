@@ -33,6 +33,10 @@
 - 纯规则（各模块的 `*Policy.ts` 与状态转换函数）不依赖 React、原生模块或文件系统，可以直接单元测试。
 - 跨模块只调用明确的入口，不新增全局事件总线，也不直接修改其他模块内部的 atom。
 - 保留 Jotai 与现有 external store；先明确状态归属，不同时迁移状态库。
+- App 在后台也要跑的播放协调代码（通知栏、锁屏切歌，自然切歌，淡入淡出）不用 RN 的普通定时器：Activity 暂停后
+  `setTimeout`、`setInterval` 不再触发，回到前台才一次性补跑。用 `@/utils/delay`（默认后台定时器）或
+  `react-native-background-timer`。手动切歌的确认如果仍然醒得远晚于约定时间（JS 被挂起过），以原生实际在放的曲目为准，
+  不再重载目标或回滚。
 
 ## 搜索
 
@@ -133,6 +137,7 @@
 | 7 | 本地音乐：重扫、文件移动、重复导入、权限撤销与重新授权 | 相关单元测试：`src/core/__tests__/localMusicScanPolicy.test.ts`、`localMusicSheetPolicy.test.ts` | 未验证 |
 | 8 | 播放器初始化失败、切后台再回前台，恢复入口不重复 | 相关单元测试：`src/core/trackPlayer/__tests__/playerStartupPolicy.test.ts` | 未验证 |
 | 9 | 代表性 Android 版本与厂商、耳机/蓝牙、锁屏下的核心流程 | 无 | 未验证 |
+| 10 | 播放：App 在后台时从通知栏、锁屏点下一首，之后原生又自动连播几首；回到 App 不回退到之前的歌 | `src/core/trackPlayer/__tests__/backgroundManualSkip.test.ts`（真实 TrackPlayer + 假 mpv 后端） | 未验证 |
 
 ## 历史材料
 

@@ -33,6 +33,7 @@ import type {
     PlayerAdapterTrackRef,
     PlayerBackendState,
 } from "./types";
+import delay from "@/utils/delay";
 
 /**
  * mpv 播放内核适配器（实验性，仅 Android）。
@@ -1273,7 +1274,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 }
                 restoreGeneration = pendingActivation.loadGeneration;
             }
-            await new Promise(resolve => setTimeout(resolve, 32));
+            // 回滚、恢复常在 App 后台（通知栏切歌）时发生，RN 的普通定时器在后台
+            // 停摆，要用后台也走的定时器
+            await delay(32);
         }
         return false;
     }

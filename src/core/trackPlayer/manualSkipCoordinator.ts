@@ -120,6 +120,27 @@ export function shouldIgnoreDuringTransition(input: {
     return input.eventKey !== input.expectedKey;
 }
 
+/**
+ * 等待比约定的超时多出这么久才返回，说明 JS 中途被挂起过：App 在后台时
+ * React Native 的普通定时器会停到回前台才触发，省电策略也可能冻结整个进程。
+ */
+export const SUSPENDED_WAIT_GRACE_MS = 5000;
+
+/**
+ * 一次等待（startedAt 开始、约定 timeoutMs）是否被挂起过。挂起期间原生播放器
+ * 照常往下放歌，醒来时看到的「当前曲目」已经不是等待开始时的那首；这时不能
+ * 按普通超时处理（重载目标、回滚到切歌前），而要以原生实际在放的为准。
+ */
+export function wasWaitSuspended(input: {
+    startedAt: number;
+    timeoutMs: number;
+    now: number;
+    graceMs?: number;
+}) {
+    const graceMs = input.graceMs ?? SUSPENDED_WAIT_GRACE_MS;
+    return input.now - input.startedAt > input.timeoutMs + graceMs;
+}
+
 interface IWaitForExpectedActiveOptions {
     timeoutMs: number;
     pollIntervalMs?: number;

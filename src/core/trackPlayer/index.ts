@@ -1,6 +1,7 @@
 import { AppState, AppStateStatus } from "react-native";
 import { sortIndexSymbol, timeStampSymbol } from "@/constants/commonConst";
 import delay from "@/utils/delay";
+import BackgroundTimer from "react-native-background-timer";
 import getUrlExt from "@/utils/getUrlExt";
 import { errorLog, trace } from "@/utils/log";
 import { createMediaIndexMap } from "@/utils/mediaIndexMap";
@@ -81,6 +82,7 @@ import {
     MpvTrackTransitionGate,
     shouldIgnoreDuringTransition,
     waitForExpectedActive,
+    wasWaitSuspended,
 } from "./manualSkipCoordinator";
 import QualityChangeCoordinator, {
     commitQualitySourcePair,
@@ -335,6 +337,11 @@ class TrackPlayer
         applyGain: gain => {
             this.backend?.setVolume(gain).catch(() => undefined);
         },
+        // 歌曲交界处的淡入淡出常发生在后台；RN 的普通定时器在后台停摆，
+        // 音量会卡在半路，要用后台也走的定时器
+        setTimer: (handler, intervalMs) =>
+            BackgroundTimer.setInterval(handler, intervalMs),
+        clearTimer: handle => BackgroundTimer.clearInterval(handle),
         readSettings: () => ({
             enabled:
                 this.configService?.getConfig("basic.crossfadeEnabled") === true,
@@ -2341,7 +2348,9 @@ class TrackPlayer
             {
                 timeoutMs,
                 pollIntervalMs: 32,
-                sleep: durationMs => delay(durationMs, false),
+                // 通知栏、锁屏的上/下一首在 App 后台时执行。RN 的普通定时器在后台
+                // 停摆，用它轮询会一直等到回前台；要用后台也走的定时器
+                sleep: durationMs => delay(durationMs),
                 isCancelled: transition
                     ? () =>
                         !this.isMpvManualSkipTransitionActive(transition)
@@ -2361,11 +2370,23 @@ class TrackPlayer
         ) {
             return false;
         }
+        let waitStartedAt = Date.now();
         let activeMusic = await this.waitForMpvActiveMusic(
             expectedMusic,
             1600,
             transition,
         );
+        if (
+            !activeMusic &&
+            wasWaitSuspended({
+                startedAt: waitStartedAt,
+                timeoutMs: 1600,
+                now: Date.now(),
+            })
+        ) {
+            await this.settleMpvManualSkipAfterSuspension(transition, reason);
+            return false;
+        }
         if (!activeMusic) {
             if (
                 transition &&
@@ -2383,11 +2404,26 @@ class TrackPlayer
                 "error",
             );
             await this.play(expectedMusic, true, transition);
+            waitStartedAt = Date.now();
             activeMusic = await this.waitForMpvActiveMusic(
                 expectedMusic,
                 2600,
                 transition,
             );
+            if (
+                !activeMusic &&
+                wasWaitSuspended({
+                    startedAt: waitStartedAt,
+                    timeoutMs: 2600,
+                    now: Date.now(),
+                })
+            ) {
+                await this.settleMpvManualSkipAfterSuspension(
+                    transition,
+                    reason,
+                );
+                return false;
+            }
         }
         if (!activeMusic) {
             trace(
@@ -2410,6 +2446,31 @@ class TrackPlayer
         const syncedMusic =
             await this.syncCurrentMusicFromBackendActiveTrack(reason);
         return !!syncedMusic && isSameMediaItem(syncedMusic, expectedMusic);
+    }
+
+    /**
+     * 确认切歌的等待被挂起过（App 在后台、省电冻结）：原生早已按自己的队列往下
+     * 放了好几首，这时再重载目标或回滚到切歌前，会把歌拽回好几首之前。改为以原生
+     * 实际在放的为准：先结束这次切歌事务（事务没结束时，和目标不一致的曲目会被
+     * 忽略），再按原生同步当前歌曲。事务已经结束，调用方接下来的回滚是空操作。
+     */
+    private async settleMpvManualSkipAfterSuspension(
+        transition: IMpvManualSkipTransition | null | undefined,
+        reason: string,
+    ) {
+        trace("MPV 手动切歌确认期间 JS 被挂起，改按原生当前曲目同步", {
+            reason,
+            transitionId: transition?.token.id ?? null,
+        });
+        if (transition) {
+            this.completeMpvManualSkipTransition(
+                transition,
+                `${reason}-suspended`,
+            );
+        }
+        await this.syncCurrentMusicFromBackendActiveTrack(
+            `${reason}-suspended`,
+        );
     }
 
     private async playMpvTransitionTargetWithFallback(
@@ -3734,7 +3795,8 @@ class TrackPlayer
         // 看门狗保证标志一定会被放开。
         // 定时器句柄用局部常量持有，不再放进实例字段：否则旧处理器的 finally
         // 会把新处理器刚装上的看门狗一起清掉。
-        const watchdog = setTimeout(() => {
+        // 自然结束多半发生在后台，看门狗要用后台也走的定时器，否则回前台才触发
+        const watchdog = BackgroundTimer.setTimeout(() => {
             if (this.mpvNaturalEndOwner === owner) {
                 errorLog(
                     "mpv 自然结束处理超时，强制解除重入锁",
@@ -3876,7 +3938,7 @@ class TrackPlayer
             await this.backend.stop().catch(() => undefined);
             this.emit(TrackPlayerEvents.NoPlayableMusic);
         } finally {
-            clearTimeout(watchdog);
+            BackgroundTimer.clearTimeout(watchdog);
             // 只有仍然持有令牌的处理器才有权释放重入锁；被看门狗放开过的旧处理器
             // 到这里已经不是 owner，必须什么都不做。
             if (this.mpvNaturalEndOwner === owner) {
