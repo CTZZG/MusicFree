@@ -275,6 +275,9 @@ export interface ITrackPlayer
         forcePlay?: boolean,
     ): Promise<void>;
 
+    /** Retry the failed track, optionally requesting one quality without changing defaults. */
+    retryPlayback(musicItem: IMusic.IMusicItem, quality?: IMusic.IQualityKey): Promise<void>;
+
     /**
      * 播放指定音乐并替换整个播放列表
      * @param musicItem 要播放的音乐

@@ -1125,5 +1125,13 @@
     "cacheManagement.clearAllSafeCaches": "清理全部缓存",
     "cacheManagement.clearAllSafeCachesConfirm": "将清理播放缓存、歌词缓存、图片缓存和插件懒加载缓存，不会删除已下载音乐、本地音乐、歌单和配置。确定继续吗？",
     "cacheManagement.allSafeCachesCleared": "缓存已清理",
-    "downloading.selectionRemoveConfirm": "将删除 {count} 条下载中心记录，不会删除本地音乐文件。确定继续吗？"
+    "downloading.selectionRemoveConfirm": "将删除 {count} 条下载中心记录，不会删除本地音乐文件。确定继续吗？",
+    "toast.mediaSourceAccessDenied": "音源拒绝访问，请检查插件授权或配置",
+    "playbackRecovery.title": "播放未成功",
+    "playbackRecovery.actions": "查看原因和处理方式",
+    "playbackRecovery.chooseQuality": "选择音质再试",
+    "playbackRecovery.otherSource": "查找其他来源",
+    "playbackRecovery.pluginSettings": "检查插件设置",
+    "playbackRecovery.accessHint": "同一音源的音质尝试已停止。请检查授权、密钥或插件配置，也可以查找其他来源。",
+    "panel.musicQuality.current": "当前已解析音质：{quality}"
 }

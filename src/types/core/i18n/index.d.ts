@@ -141,6 +141,14 @@ export interface ILanguageData {
     "toast.syncFail": string; // 同步失败
     "toast.sortHasBeenUpdated": string; // 排序已更新
     "toast.currentQualityNotAvailableForCurrentMusic": string; // 当前音乐的质量在此设备上不可用
+    "toast.mediaSourceAccessDenied": string;
+    "playbackRecovery.title": string;
+    "playbackRecovery.actions": string;
+    "playbackRecovery.chooseQuality": string;
+    "playbackRecovery.otherSource": string;
+    "playbackRecovery.pluginSettings": string;
+    "playbackRecovery.accessHint": string;
+    "panel.musicQuality.current": string;
     "toast.mediaSourceUnavailable": string; // 音源不可用
     "toast.mediaSourceNetworkError": string; // 音源网络请求失败
     "toast.mediaSourcePluginError": string; // 音源插件错误

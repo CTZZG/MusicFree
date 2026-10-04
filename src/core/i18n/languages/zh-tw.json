@@ -1125,5 +1125,13 @@
     "cacheManagement.clearAllSafeCaches": "清理全部快取",
     "cacheManagement.clearAllSafeCachesConfirm": "將清理播放快取、歌詞快取、圖片快取和插件懶載入快取，不會刪除已下載音樂、本機音樂、歌單和設定。確定繼續嗎？",
     "cacheManagement.allSafeCachesCleared": "快取已清理",
-    "downloading.selectionRemoveConfirm": "將刪除 {count} 條下載中心記錄，不會刪除本機音樂檔案。確定繼續嗎？"
+    "downloading.selectionRemoveConfirm": "將刪除 {count} 條下載中心記錄，不會刪除本機音樂檔案。確定繼續嗎？",
+    "toast.mediaSourceAccessDenied": "音源拒絕存取，請檢查外掛授權或設定",
+    "playbackRecovery.title": "播放未成功",
+    "playbackRecovery.actions": "查看原因與處理方式",
+    "playbackRecovery.chooseQuality": "選擇音質再試",
+    "playbackRecovery.otherSource": "尋找其他來源",
+    "playbackRecovery.pluginSettings": "檢查外掛設定",
+    "playbackRecovery.accessHint": "已停止嘗試同一音源的其他音質。請檢查授權、金鑰或外掛設定，也可以尋找其他來源。",
+    "panel.musicQuality.current": "目前已解析音質：{quality}"
 }

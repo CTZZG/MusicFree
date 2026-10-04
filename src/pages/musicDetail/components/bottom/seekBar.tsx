@@ -50,7 +50,7 @@ function QualityBadge() {
     const musicItem = useCurrentMusic();
     const currentQuality = useMusicQuality();
     const { t } = useI18N();
-    const label = getQualityAbbr(currentQuality) || "HQ";
+    const label = currentQuality ? getQualityAbbr(currentQuality) : "—";
 
     return (
         <Badge
@@ -64,6 +64,7 @@ function QualityBadge() {
                 }
                 showPanel("MusicQuality", {
                     musicItem,
+                    currentQuality,
                     async onQualityPress(quality) {
                         const changeResult =
                             await TrackPlayer.changeQualityWithResult(quality);

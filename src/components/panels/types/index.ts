@@ -3,6 +3,7 @@ import AssociateLrc from "./associateLrc";
 import ColorPicker from "./colorPicker";
 import ImportMusicSheet from "./importMusicSheet";
 import MusicItemOptions from "./musicItemOptions";
+import PlaybackRecovery from "./playbackRecovery";
 import MusicQuality from "./musicQuality";
 import CreateMusicSheet from "./createMusicSheet";
 import PlayById from "./playById";
@@ -44,6 +45,7 @@ export default {
     TimingClose,
     /** 音质选择 */
     MusicQuality,
+    PlaybackRecovery,
     /** 播放速度 */
     PlayRate,
     /** 音质管理 */

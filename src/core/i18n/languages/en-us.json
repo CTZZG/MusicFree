@@ -1125,5 +1125,13 @@
     "cacheManagement.clearAllSafeCaches": "Clear all caches",
     "cacheManagement.clearAllSafeCachesConfirm": "This clears playback, lyric, image, and plugin lazy-load caches. Downloaded music, local music, playlists, and settings will not be deleted. Continue?",
     "cacheManagement.allSafeCachesCleared": "Caches cleared",
-    "downloading.selectionRemoveConfirm": "This will delete {count} records from Downloading. Local music files will not be deleted. Continue?"
+    "downloading.selectionRemoveConfirm": "This will delete {count} records from Downloading. Local music files will not be deleted. Continue?",
+    "toast.mediaSourceAccessDenied": "The source denied access. Check plugin authorization or settings.",
+    "playbackRecovery.title": "Playback failed",
+    "playbackRecovery.actions": "See reason and recovery options",
+    "playbackRecovery.chooseQuality": "Try another quality",
+    "playbackRecovery.otherSource": "Find other sources",
+    "playbackRecovery.pluginSettings": "Check plugin settings",
+    "playbackRecovery.accessHint": "Further quality attempts on this source have stopped. Check authorization, keys or plugin settings, or find another source.",
+    "panel.musicQuality.current": "Current resolved quality: {quality}"
 }

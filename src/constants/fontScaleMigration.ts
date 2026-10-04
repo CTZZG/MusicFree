@@ -33,7 +33,7 @@ export const fontScaleMigratedRoutes: ReadonlySet<RoutePaths> = new Set<RoutePat
 
 export const fontScaleMigratedPanels: ReadonlySet<keyof typeof panels> = new Set<
     keyof typeof panels
->(["SetUserVariables", "SheetTags", "MusicItemOptions", "AddToMusicSheet"]);
+>(["SetUserVariables", "SheetTags", "MusicItemOptions", "AddToMusicSheet", "MusicQuality", "PlaybackRecovery"]);
 
 /**
  * 已经核对过的主页标签（HOME_TAB）。home 路由本身（标签栏和标签页外面的东西）

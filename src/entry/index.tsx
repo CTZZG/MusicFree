@@ -24,6 +24,7 @@ import { ReduceMotion, ReducedMotionConfig } from "react-native-reanimated";
 import { routes } from "@/core/router/routes.tsx";
 import ErrorBoundary from "@/components/errorBoundary";
 import { navigationRef, ROUTE_PATH } from "@/core/router";
+import PlaybackRecoveryNotice from "@/components/playbackRecoveryNotice";
 import MusicBar from "@/components/musicBar";
 import ScreenSurface from "@/components/base/screenSurface";
 import { FontScaleScope } from "@/components/base/fontScaleScope";
@@ -207,6 +208,7 @@ export default function Pages() {
                                     <MusicBarOverlay
                                         blurTarget={rootBlurTargetRef}
                                     />
+                                    <PlaybackRecoveryNotice />
                                     <Panels />
                                     <Dialogs />
                                     <Debug />

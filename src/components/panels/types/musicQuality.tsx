@@ -4,6 +4,7 @@ import rpx from "@/utils/rpx";
 import ThemeText from "@/components/base/themeText";
 
 import {
+    convertLegacyQuality,
     getQualityOptions,
     getQualitySize,
     getQualityText,
@@ -22,6 +23,7 @@ import { useAppConfig } from "@/core/appConfig";
 
 interface IMusicQualityProps {
     type?: "play" | "download";
+    currentQuality?: IMusic.IQualityKey | null;
     /** 歌曲信息 */
     musicItem: IMusic.IMusicItem;
     /** 点击回调 */
@@ -54,6 +56,7 @@ export default function MusicQuality(props: IMusicQualityProps) {
     );
 
     const { musicItem, onQualityPress, type = "play" } = props ?? {};
+    const currentQuality = props.currentQuality ? convertLegacyQuality(props.currentQuality) : null;
     const plugin = PluginManager.getByMedia(musicItem);
     const qualityOptions = getQualityOptions(musicItem, plugin?.instance);
 
@@ -80,6 +83,11 @@ export default function MusicQuality(props: IMusicQualityProps) {
                                 marginBottom: safeAreaInsets.bottom,
                             },
                         ]}>
+                        {currentQuality ? (
+                            <ThemeText style={style.current}>
+                                {i18n.t("panel.musicQuality.current", { quality: qualityTextI18n[currentQuality] ?? currentQuality })}
+                            </ThemeText>
+                        ) : null}
                         {qualityOptions.map(option => {
                             const key = option.key;
                             const qualityLabel = qualityTextI18n[key] ?? key;
@@ -94,6 +102,7 @@ export default function MusicQuality(props: IMusicQualityProps) {
                                 <Pressable
                                     key={`btn-${key}`}
                                     style={style.item}
+                                    accessibilityState={{ selected: key === currentQuality }}
                                     accessibilityRole="button"
                                     accessibilityLabel={`${qualityLabel}，${statusText}`}
                                     onPress={() => {
@@ -120,6 +129,7 @@ export default function MusicQuality(props: IMusicQualityProps) {
 }
 
 const style = StyleSheet.create({
+    current: { paddingVertical: 12 },
     header: {
         width: rpx(750),
         flexDirection: "row",
@@ -130,7 +140,7 @@ const style = StyleSheet.create({
         paddingHorizontal: rpx(24),
     },
     item: {
-        minHeight: rpx(96),
+        minHeight: 48,
         justifyContent: "center",
         paddingVertical: rpx(12),
     },

@@ -88,6 +88,7 @@ import QualityChangeCoordinator, {
     commitQualitySourcePair,
 } from "./qualityChangeCoordinator";
 import { shouldHydratePlayerHooks } from "./playerStartupPolicy";
+import { playbackRecovery } from "./playbackRecovery";
 import BackendListenerLifecycle from "./backendListenerLifecycle";
 import CrossfadeController from "./crossfadeController";
 import LastfmScrobbler from "@/core/lastfm";
@@ -96,6 +97,7 @@ import {
 } from "@/utils/remoteMediaUrl";
 import { isMediaHttpAllowed } from "@/utils/mediaHttpCompatibilityPolicy";
 import {
+    isProviderAccessFailure,
     classifyMediaSourceFailure,
     createMediaSourceFailure,
     createMediaSourceFailureResult,
@@ -212,6 +214,8 @@ export interface IPlaybackDiagnosticSnapshot {
 const currentMusicAtom = atom<IMusic.IMusicItem | null>(null);
 const repeatModeAtom = atom<MusicRepeatMode>(MusicRepeatMode.QUEUE);
 const qualityAtom = atom<IMusic.IQualityKey>("standard");
+// UI only shows a quality associated with a loaded source, never the default preference.
+const resolvedQualityAtom = atom<IMusic.IQualityKey | undefined>(undefined);
 const playListAtom = atom<IMusic.IMusicItem[]>([]);
 const playLaterQueueAtom = atom<IMusic.IMusicItem[]>([]);
 const musicStateAtom = atom<PlayerBackendState>("idle");
@@ -641,6 +645,7 @@ class TrackPlayer
             });
 
             this.addBackendListener("playbackError", async e => {
+                const recoveryRequest = playbackRecovery.currentRequest();
                 this.recordPlaybackError(e);
                 errorLog("播放出错", e.message);
                 // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
@@ -678,6 +683,14 @@ class TrackPlayer
                             currentTrack as MusicFreePlayerTrack | null,
                         );
                     if (!recovered) {
+                        const failedMusic = this.currentMusic;
+                        if (failedMusic && currentTrack && isSameMediaItem(failedMusic, currentTrack as IMusic.IMusicItem)) {
+                            playbackRecovery.report(recoveryRequest, failedMusic, createMediaSourceFailure("backend-error", {
+                                mediaKey: getMediaUniqueKey(failedMusic),
+                                pluginName: failedMusic.platform,
+                                quality: this.quality,
+                            }));
+                        }
                         this.handlePlayFail();
                     }
                 }
@@ -1022,13 +1035,22 @@ class TrackPlayer
         return isSameMediaItem(musicItem, this.currentMusic);
     }
 
+    async retryPlayback(musicItem: IMusic.IMusicItem, quality?: IMusic.IQualityKey) {
+        await this.play(musicItem, true, null, quality);
+    }
+
     async play(
         musicItem?: IMusic.IMusicItem | null,
         forcePlay?: boolean,
         mpvTransitionOwner?: IMpvManualSkipTransition | null,
+        requestedQuality?: IMusic.IQualityKey,
     ): Promise<void> {
+        let resolvedSourceQuality: IMusic.IQualityKey | undefined;
+        let loadingSource = false;
         let ownedMpvTransition: IMpvManualSkipTransition | null = null;
         let sourceResolutionFailure: MediaSourceFailure | null = null;
+        const recoveryRequest = playbackRecovery.begin();
+        let isPlayRequestActive = () => false;
         this.crossfade.onPlay();
         LastfmScrobbler.onResumed();
         try {
@@ -1135,7 +1157,7 @@ class TrackPlayer
             const seekToTime = this.resolveResumeSeekTime(resolvedMusicItem);
             const shouldDeferMpvCurrentCommit =
                 !!(ownedMpvTransition || mpvTransitionOwner);
-            const isPlayRequestActive = () => {
+            isPlayRequestActive = () => {
                 if (ownedMpvTransition) {
                     return this.isMpvManualSkipTransitionActive(
                         ownedMpvTransition,
@@ -1278,7 +1300,7 @@ class TrackPlayer
                 musicItem.platform,
             );
             // 5.2 获取音质排序
-            const qualityOrder = getQualityOrder(
+            const qualityOrder = requestedQuality ? [requestedQuality] : getQualityOrder(
                 this.configService.getConfig("basic.defaultPlayQuality") ??
                     "standard",
                 this.configService.getConfig("basic.playQualityOrder") ?? "asc",
@@ -1336,6 +1358,10 @@ class TrackPlayer
                             ),
                         );
                     }
+                    // Access rejection is shared by all qualities of this provider.
+                    if (!candidate?.url && isProviderAccessFailure(sourceResolutionFailure)) {
+                        break;
+                    }
                     // 5.3.1 获取到真实源
                     if (candidate?.url) {
                         if (this.isUnsupportedEncryptedSource(candidate)) {
@@ -1361,7 +1387,7 @@ class TrackPlayer
                             "plugin",
                         );
                         if (source?.url) {
-                            this.setQuality(source.quality ?? quality);
+                            resolvedSourceQuality = source.quality ?? quality;
                             break;
                         }
                         rememberSourceFailure(
@@ -1420,7 +1446,7 @@ class TrackPlayer
                                 "embedded-cache",
                             );
                             if (source?.url) {
-                                this.setQuality(source.quality ?? quality);
+                                resolvedSourceQuality = source.quality ?? quality;
                                 break;
                             }
                             rememberSourceFailure(
@@ -1535,9 +1561,7 @@ class TrackPlayer
                                             "similar-plugin",
                                         );
                                         if (source?.url) {
-                                            this.setQuality(
-                                                source.quality ?? quality,
-                                            );
+                                            resolvedSourceQuality = source.quality ?? quality;
                                             break;
                                         }
                                         rememberSourceFailure(
@@ -1652,11 +1676,13 @@ class TrackPlayer
                 backend: this.backend.name,
             });
             // 9. 设置音源
+            loadingSource = true;
             await this.setTrackSource(
                 track as MusicFreePlayerTrack,
                 true,
                 seekToTime,
             );
+            loadingSource = false;
             if (
                 mpvTransitionOwner &&
                 !this.isMpvManualSkipTransitionActive(mpvTransitionOwner)
@@ -1682,10 +1708,22 @@ class TrackPlayer
                         ownedMpvTransition,
                         "explicit-play-timeout",
                     );
+                    playbackRecovery.report(recoveryRequest, musicItem, createMediaSourceFailure("backend-error", {
+                        mediaKey: getMediaUniqueKey(musicItem),
+                        pluginName: musicItem.platform,
+                    }));
                     return;
                 }
             }
 
+            if (playbackRecovery.currentRequest() === recoveryRequest && this.isCurrentMusic(musicItem)) {
+                const resolvedQuality = source.quality ?? resolvedSourceQuality;
+                if (resolvedQuality) {
+                    this.setQuality(resolvedQuality);
+                } else {
+                    getDefaultStore().set(resolvedQualityAtom, undefined);
+                }
+            }
             const supplementalInfoPromise = this.updateSupplementalMusicInfo(
                 musicItem,
                 track,
@@ -1701,6 +1739,7 @@ class TrackPlayer
             }
             await supplementalInfoPromise;
         } catch (e: any) {
+            const requestWasActive = isPlayRequestActive();
             const transitionToRollback =
                 ownedMpvTransition &&
                 this.isMpvManualSkipTransitionActive(ownedMpvTransition)
@@ -1733,7 +1772,7 @@ class TrackPlayer
                 "The player is not initialized. Call setupPlayer first."
             ) {
                 await this.backend.setup();
-                this.play(musicItem, forcePlay);
+                this.play(musicItem, forcePlay, null, requestedQuality);
             } else if (message === PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY) {
                 this.emit(TrackPlayerEvents.CellularPlayForbidden);
             } else if (message === PlayFailReason.MISSING_AUDIO_PERMISSION) {
@@ -1745,18 +1784,23 @@ class TrackPlayer
                 this.lastInvalidSourceKey = musicItem
                     ? getMediaUniqueKey(musicItem)
                     : null;
-                this.emit(
-                    TrackPlayerEvents.MediaSourceFailed,
-                    classifyMediaSourceFailure(e, {
-                        mediaKey: musicItem
-                            ? getMediaUniqueKey(musicItem)
-                            : undefined,
-                        pluginName: musicItem?.platform,
-                    }),
-                );
+                const failure = classifyMediaSourceFailure(e, {
+                    mediaKey: musicItem ? getMediaUniqueKey(musicItem) : undefined,
+                    pluginName: musicItem?.platform,
+                });
+                if (requestWasActive && musicItem) {
+                    playbackRecovery.report(recoveryRequest, musicItem, failure);
+                }
+                this.emit(TrackPlayerEvents.MediaSourceFailed, failure);
                 await this.handlePlayFail();
             } else if (message === PlayFailReason.PLAY_LIST_IS_EMPTY) {
                 // 队列是空的，不应该出现这种情况
+            } else if (loadingSource && requestWasActive && musicItem) {
+                playbackRecovery.report(recoveryRequest, musicItem, createMediaSourceFailure("backend-error", {
+                    mediaKey: getMediaUniqueKey(musicItem),
+                    pluginName: musicItem.platform,
+                    quality: requestedQuality,
+                }));
             }
         }
     }
@@ -1845,6 +1889,7 @@ class TrackPlayer
 
     // 清空播放队列
     async clearPlayList(): Promise<void> {
+        playbackRecovery.begin();
         this.manualSkipGate.cancelPending();
         this.cancelMpvManualSkipTransition("clear-playlist");
         this.setPlayList([]);
@@ -3261,6 +3306,7 @@ class TrackPlayer
 
     private setCurrentMusic(musicItem?: IMusic.IMusicItem | null) {
         // 设置UI内部状态的musicitem
+        getDefaultStore().set(resolvedQualityAtom, musicItem?.playbackSource?.quality);
         if (!musicItem) {
             this.currentIndex = -1;
             getDefaultStore().set(currentMusicAtom, null);
@@ -3370,6 +3416,7 @@ class TrackPlayer
 
     private setQuality(quality: IMusic.IQualityKey) {
         getDefaultStore().set(qualityAtom, quality);
+        getDefaultStore().set(resolvedQualityAtom, quality);
         PersistStatus.set("music.quality", quality);
     }
 
@@ -5035,7 +5082,7 @@ export const usePlayList = () => useAtomValue(playListAtom);
 export const usePlayLaterQueue = () => useAtomValue(playLaterQueueAtom);
 export const useCurrentMusic = () => useAtomValue(currentMusicAtom);
 export const useRepeatMode = () => useAtomValue(repeatModeAtom);
-export const useMusicQuality = () => useAtomValue(qualityAtom);
+export const useMusicQuality = () => useAtomValue(resolvedQualityAtom);
 export function useMusicState() {
     const musicState = useAtomValue(musicStateAtom);
     const playerReady = useAtomValue(playerReadyAtom);

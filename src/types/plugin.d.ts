@@ -20,7 +20,8 @@ declare namespace IPlugin {
         | "policy-blocked"
         | "encrypted-unsupported"
         | "source-rejected"
-        | "backend-error";
+        | "backend-error"
+    | "access-denied";
 
     export interface IMediaSourceFailure {
         code: IMediaSourceFailureCode;
