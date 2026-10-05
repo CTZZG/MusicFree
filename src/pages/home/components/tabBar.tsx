@@ -1,4 +1,4 @@
-import React from "react";
+import React, { RefObject } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,9 +26,16 @@ const tabIcons: Record<string, IIconName> = {
     [HOME_TAB.SETTINGS]: "cog-8-tooth",
 };
 
+interface IHomeTabBarProps {
+    state: BottomTabBarProps["state"];
+    navigation: BottomTabBarProps["navigation"];
+    /** 标签页内容外面的 BlurTargetView，标签栏模糊的就是它 */
+    blurTarget?: RefObject<View | null>;
+}
+
 /** iOS 悬浮标签栏：毛玻璃胶囊，选中的标签用强调色加一层浅色胶囊底 */
-export default function HomeTabBar(props: BottomTabBarProps) {
-    const { state, navigation } = props;
+export default function HomeTabBar(props: IHomeTabBarProps) {
+    const { state, navigation, blurTarget } = props;
     const colors = useColors();
     const dark = Theme.useTheme().dark;
     const safeAreaInsets = useSafeAreaInsets();
@@ -53,13 +60,18 @@ export default function HomeTabBar(props: BottomTabBarProps) {
             accessibilityRole="tablist"
             style={[
                 styles.bar,
+                dark ? styles.barShadowDark : styles.barShadowLight,
                 {
                     bottom: safeAreaInsets.bottom + MUSIC_BAR_FLOATING_BOTTOM,
                     left: TAB_BAR_HORIZONTAL_MARGIN + safeAreaInsets.left,
                     right: TAB_BAR_HORIZONTAL_MARGIN + safeAreaInsets.right,
                 },
             ]}>
-            <GlassBackdrop radius={TAB_BAR_RADIUS} intensity={60} />
+            <GlassBackdrop
+                radius={TAB_BAR_RADIUS}
+                intensity={60}
+                blurTarget={blurTarget}
+            />
             {state.routes.map((route, index) => {
                 const focused = state.index === index;
                 const label = tabLabels[route.name] ?? route.name;
@@ -126,6 +138,13 @@ const styles = StyleSheet.create({
         padding: TAB_BAR_PADDING,
         gap: 4,
     },
+    // 柔和投影，让胶囊和背后同色的卡片分开；投影画在胶囊外面，不受 overflow 裁剪
+    barShadowLight: {
+        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)",
+    },
+    barShadowDark: {
+        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.45)",
+    },
     item: {
         flex: 1,
         alignItems: "center",
@@ -140,8 +159,8 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(255, 255, 255, 0.12)",
     },
     label: {
-        marginTop: 2,
-        fontSize: 10,
-        lineHeight: 12,
+        marginTop: 3,
+        fontSize: 11,
+        lineHeight: 14,
     },
 });

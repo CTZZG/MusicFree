@@ -5,7 +5,6 @@ import TextButton from "@/components/base/textButton.tsx";
 import { useAtom } from "jotai";
 import { editingMusicListAtom } from "../store/atom";
 import MusicList from "./musicList";
-import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import globalStyle from "@/constants/globalStyle";
 import { useI18N } from "@/core/i18n";
 
@@ -18,7 +17,7 @@ export default function Body() {
         [editingMusicList],
     );
     return (
-        <HorizontalSafeAreaView style={globalStyle.flex1}>
+        <View style={globalStyle.flex1}>
             <View style={style.header}>
                 <TextButton
                     onPress={() => {
@@ -49,7 +48,7 @@ export default function Body() {
                 </TextButton>
             </View>
             <MusicList />
-        </HorizontalSafeAreaView>
+        </View>
     );
 }
 

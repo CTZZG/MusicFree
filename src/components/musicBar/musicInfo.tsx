@@ -125,9 +125,9 @@ const styles = StyleSheet.create({
         paddingLeft: 8,
     },
     artworkWrapper: {
-        width: 46,
-        height: 46,
-        borderRadius: 23,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         marginRight: 12,
         overflow: "hidden",
     },
@@ -144,8 +144,8 @@ const styles = StyleSheet.create({
         marginTop: 1,
     },
     progressTrack: {
-        marginTop: 5,
-        height: 3,
+        marginTop: 4,
+        height: 2,
         borderRadius: 2,
         overflow: "hidden",
     },

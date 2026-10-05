@@ -1,22 +1,29 @@
 import NoPlugin from "@/components/base/noPlugin";
-import { fontWeightConst } from "@/constants/uiConst";
+import TabLabel from "@/components/base/tabLabel";
 import { useI18N } from "@/core/i18n";
 import PluginManager from "@/core/pluginManager";
+import { useParams } from "@/core/router";
 import useColors from "@/hooks/useColors";
 import rpx, { vw } from "@/utils/rpx";
 import React, { useState } from "react";
-import { Text } from "react-native";
 import { TabBar, TabView } from "react-native-tab-view";
 import SheetBody from "./sheetBody";
 
 export default function Body() {
-    const [index, setIndex] = useState(0);
+    const params = useParams<"recommend-sheets">();
     const colors = useColors();
     const routes = PluginManager.getSortedPluginsWithAbility("getRecommendSheetsByTag").map(
         _ => ({
             key: _.hash,
             title: _.name,
         }),
+    );
+    // 从首页「推荐歌单 · 全部」进来时停在首页选的音源上；找不到就是第一个
+    const [index, setIndex] = useState(() =>
+        Math.max(
+            0,
+            routes.findIndex(route => route.key === params?.initialPluginHash),
+        ),
     );
     const { t } = useI18N();
 
@@ -25,20 +32,10 @@ export default function Body() {
             (acc: Record<string, any>, route: { key: string; title?: string }) => {
                 acc[route.key] = {
                     label: ({ focused }: any) => (
-                        <Text
-                            numberOfLines={1}
-                            style={{
-                                width: rpx(160),
-                                fontWeight: focused
-                                    ? fontWeightConst.bolder
-                                    : fontWeightConst.medium,
-                                color: focused
-                                    ? colors.primary
-                                    : colors.textSecondary ?? colors.text,
-                                textAlign: "center",
-                            }}>
-                            {route.title ?? `(${t("common.unknownName")})`}
-                        </Text>
+                        <TabLabel
+                            focused={focused}
+                            title={route.title ?? `(${t("common.unknownName")})`}
+                        />
                     ),
                 };
                 return acc;
@@ -75,6 +72,8 @@ export default function Body() {
     }
     return (
         <TabView
+            // 翻到第一页、最后一页时的边缘回弹没结束，会吃掉下一次点击
+            overScrollMode="never"
             lazy
             navigationState={{
                 index,

@@ -23,6 +23,22 @@ const context = {
 };
 
 describe("plugin media source resolution", () => {
+    it("does not retry a legacy quality key after credential rejection", async () => {
+        const getMediaSource = jest.fn().mockRejectedValue({ response: { status: 401 } });
+        await expect(callGetMediaSourceWithLegacyFallback(getMediaSource, musicItem, "flac", context))
+            .resolves.toEqual({ failure: { code: "access-denied", retryable: false } });
+        expect(getMediaSource).toHaveBeenCalledTimes(1);
+    });
+
+    it("still allows quality fallback for a 403 without credential evidence", async () => {
+        const getMediaSource = jest.fn()
+            .mockRejectedValueOnce({ response: { status: 403 }, message: "VIP quality restricted" })
+            .mockResolvedValueOnce({ url: "https://example.com/song.mp3" });
+        await expect(callGetMediaSourceWithLegacyFallback(getMediaSource, musicItem, "flac", context))
+            .resolves.toEqual({ url: "https://example.com/song.mp3" });
+        expect(getMediaSource).toHaveBeenCalledTimes(2);
+    });
+
     it("preserves a normalized failure when the legacy fallback returns null", async () => {
         const getMediaSource = jest
             .fn()

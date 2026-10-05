@@ -11,6 +11,7 @@ import { Keyboard, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { addHistory } from "../common/historySearch";
 import { usePageStatus, useSubmitSearch } from "../hooks/useSearchSession";
 import { PageStatus, editingAtom, queryAtom } from "../store/atoms";
+import { PAGE_MARGIN } from "@/utils/tileLayout";
 
 interface INavBarProps {
     autoFocus?: boolean;
@@ -138,29 +139,32 @@ const styles = StyleSheet.create({
         paddingBottom: 8,
     },
     largeTitle: {
-        paddingHorizontal: 20,
+        paddingHorizontal: PAGE_MARGIN,
         marginBottom: 10,
-        fontSize: 34,
-        lineHeight: 41,
+        fontSize: 28,
+        lineHeight: 34,
         letterSpacing: 0.4,
     },
     row: {
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 16,
+        paddingHorizontal: PAGE_MARGIN,
     },
+    // 输入框（TextInput）的字一直跟着系统字体放大：框只给最小高度，字大了跟着变高
     field: {
         flex: 1,
-        height: 36,
+        minHeight: 36,
         borderRadius: 10,
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 8,
         gap: 6,
     },
+    // 撑满框的高度，点框里任何地方都能输入。不用 height: "100%"：框只有最小高度，
+    // 百分比高度算不出来
     input: {
         flex: 1,
-        height: "100%",
+        alignSelf: "stretch",
         paddingVertical: 0,
         fontSize: 17,
     },

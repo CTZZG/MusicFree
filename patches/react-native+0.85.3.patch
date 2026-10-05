@@ -1,0 +1,14 @@
+diff --git a/node_modules/react-native/Libraries/Components/ScrollView/ScrollView.js b/node_modules/react-native/Libraries/Components/ScrollView/ScrollView.js
+index 46881493..221a2467 100644
+--- a/node_modules/react-native/Libraries/Components/ScrollView/ScrollView.js
++++ b/node_modules/react-native/Libraries/Components/ScrollView/ScrollView.js
+@@ -1769,6 +1769,9 @@ class ScrollView extends React.Component<ScrollViewProps, ScrollViewState> {
+     } = this.props;
+     const props = {
+       ...otherProps,
++      // MusicFree：Android 默认不做越界拉伸/回弹。回弹还没结束时，原生 ScrollView
++      // 会把下一次按下当成「停住回弹」拦掉，滚到底以后第一下点不动。
++      overScrollMode: otherProps.overScrollMode ?? 'never',
+       alwaysBounceHorizontal,
+       alwaysBounceVertical,
+       style: StyleSheet.compose(baseStyle, this.props.style),

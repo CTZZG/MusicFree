@@ -33,7 +33,7 @@ export default function PanelHeader(props: IPanelHeaderProps) {
             <View style={[styles.header, style]}>
                 {hideButtons ? null : (
                     <Pressable style={styles.button} onPress={onCancel}>
-                        <ThemeText fontWeight="medium">
+                        <ThemeText fontWeight="medium" numberOfLines={1}>
                             {cancelText || i18n.t("common.cancel")}
                         </ThemeText>
                     </Pressable>
@@ -49,7 +49,10 @@ export default function PanelHeader(props: IPanelHeaderProps) {
                     <Pressable
                         style={[styles.button, styles.rightButton]}
                         onPress={onOk}>
-                        <ThemeText fontWeight="medium" fontColor="primary">
+                        <ThemeText
+                            fontWeight="medium"
+                            fontColor="primary"
+                            numberOfLines={1}>
                             {okText || i18n.t("common.confirm")}
                         </ThemeText>
                     </Pressable>
@@ -68,8 +71,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: rpx(24),
         height: rpx(100),
     },
+    // 按钮至少这么宽，文字更长时（英文的 Confirm、Loading...）跟着变宽，
+    // 由中间的标题让出位置，不再折成两行
     button: {
-        width: rpx(120),
+        minWidth: rpx(120),
         height: "100%",
         justifyContent: "center",
     },

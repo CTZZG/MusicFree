@@ -12,9 +12,10 @@ import React, { memo, useCallback, useEffect, useMemo } from "react";
 import { getSourceEmptyState } from "../../common/searchResultMeta";
 import { useSearchSessionId } from "../../hooks/useSearchSession";
 import { renderMap } from "./results";
+import { SHEET_GRID_SIDE_PADDING } from "@/components/mediaItem/sheetItem";
 import { useI18N } from "@/core/i18n";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 
 interface IResultWrapperProps<
@@ -143,10 +144,20 @@ function ResultWrapper(props: IResultWrapperProps) {
             numColumns={
                 tab === "sheet" ? (orientation === "vertical" ? 3 : 4) : 1
             }
+            contentContainerStyle={
+                tab === "sheet" ? styles.sheetGrid : undefined
+            }
             renderItem={renderItem}
             keyExtractor={keyExtractor}
         />
     );
 }
+
+const styles = StyleSheet.create({
+    sheetGrid: {
+        paddingHorizontal: SHEET_GRID_SIDE_PADDING,
+        paddingTop: 8,
+    },
+});
 
 export default memo(ResultWrapper);

@@ -2,6 +2,7 @@ import React from "react";
 import { Text, TextProps } from "react-native";
 import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import useColors, { CustomizedColors } from "@/hooks/useColors";
+import { useFollowSystemFontScale } from "./fontScaleScope";
 
 type IThemeTextProps = TextProps & {
     color?: string;
@@ -13,6 +14,8 @@ type IThemeTextProps = TextProps & {
 
 export default function ThemeText(props: IThemeTextProps) {
     const colors = useColors();
+    // 迁移过的页面跟随系统字体，其余保持原样（见 fontScaleScope）
+    const followSystemFontScale = useFollowSystemFontScale();
     const {
         style,
         color,
@@ -36,7 +39,10 @@ export default function ThemeText(props: IThemeTextProps) {
         : [themeStyle, style];
 
     return (
-        <Text {...props} style={_style} allowFontScaling={false}>
+        <Text
+            {...props}
+            style={_style}
+            allowFontScaling={props.allowFontScaling ?? followSystemFontScale}>
             {children}
         </Text>
     );

@@ -79,6 +79,61 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
+    fun `dns policy drops private answers and keeps the public ones`() {
+        val publicAddress = InetAddress.getByAddress(
+            "mixed.test",
+            byteArrayOf(93, 184.toByte(), 216.toByte(), 34),
+        )
+        val privateAddress = InetAddress.getByAddress(
+            "mixed.test",
+            byteArrayOf(10, 0, 0, 7),
+        )
+        val dns = PublicHttpsNetworkPolicy.publicDnsForTesting(
+            object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> =
+                    listOf(privateAddress, publicAddress)
+            },
+        )
+
+        assertEquals(listOf(publicAddress), dns.lookup("mixed.test"))
+    }
+
+    @Test
+    fun `dns policy accepts proxy fake-ip answers`() {
+        // Clash/sing-box/Surge in fake-ip mode answer every query from
+        // 198.18.0.0/15; the IPv6 pool (fc00::/18 for sing-box) is unique-local
+        // and stays blocked, so a dual-stack answer keeps only the IPv4 one.
+        val fakeIp = InetAddress.getByAddress(
+            "img.example",
+            byteArrayOf(198.toByte(), 18, 0, 42),
+        )
+        val fakeIpUpper = InetAddress.getByAddress(
+            "img.example",
+            byteArrayOf(198.toByte(), 19, 255.toByte(), 1),
+        )
+        val fakeIpv6 = InetAddress.getByAddress(
+            "img.example",
+            ByteArray(16).also {
+                it[0] = 0xfc.toByte()
+                it[15] = 42
+            },
+        )
+        val dns = PublicHttpsNetworkPolicy.publicDnsForTesting(
+            object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> =
+                    if (hostname == "img.example") {
+                        listOf(fakeIpv6, fakeIp)
+                    } else {
+                        listOf(fakeIpUpper)
+                    }
+            },
+        )
+
+        assertEquals(listOf(fakeIp), dns.lookup("img.example"))
+        assertEquals(listOf(fakeIpUpper), dns.lookup("cdn.example"))
+    }
+
+    @Test
     fun `redirect interceptor follows only same origin redirects`() {
         val server = newServer()
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/next"))
@@ -208,6 +263,8 @@ class PublicHttpsNetworkPolicyTest {
             "http://169.254.169.254/latest",
             "http://[fd00::1]/a.jpg",
             "http://[fe80::1]/a.jpg",
+            // fake-ip addresses are only accepted as DNS answers, never as literals
+            "http://198.18.0.42/a.jpg",
         )) {
             assertThrows(url, IllegalArgumentException::class.java) {
                 PublicHttpsNetworkPolicy.requirePublicRemote(url)

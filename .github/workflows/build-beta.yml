@@ -168,6 +168,28 @@ jobs:
             - name: Make gradlew executable
               run: chmod +x android/gradlew
 
+            # 原生单元测试先跑：失败就不再打包，也不会上传 APK
+            - name: Android unit tests
+              run: |
+                  cd android
+                  ./gradlew testReleaseUnitTest \
+                    --no-daemon \
+                    --stacktrace \
+                    --max-workers=2 \
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+
+            # 测试失败时也上传报告，方便直接看是哪个用例
+            - name: Upload Android unit test reports
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: android-unit-tests-beta-${{ github.run_id }}
+                  path: |
+                      android/app/build/reports/tests/
+                      android/app/build/test-results/
+                  if-no-files-found: ignore
+                  retention-days: 14
+
             - name: Build Beta APK
               run: |
                   cd android

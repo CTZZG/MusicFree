@@ -8,7 +8,8 @@ export type MediaSourceFailureCode =
     | "policy-blocked"
     | "encrypted-unsupported"
     | "source-rejected"
-    | "backend-error";
+    | "backend-error"
+    | "access-denied";
 
 export interface MediaSourceFailureContext {
     mediaKey?: string;
@@ -33,6 +34,7 @@ const mediaSourceFailureCodes = new Set<MediaSourceFailureCode>([
     "encrypted-unsupported",
     "source-rejected",
     "backend-error",
+    "access-denied",
 ]);
 
 const retryableByCode: Record<MediaSourceFailureCode, boolean> = {
@@ -44,6 +46,7 @@ const retryableByCode: Record<MediaSourceFailureCode, boolean> = {
     "encrypted-unsupported": false,
     "source-rejected": false,
     "backend-error": true,
+    "access-denied": false,
 };
 
 const failurePriority: Record<MediaSourceFailureCode, number> = {
@@ -55,6 +58,7 @@ const failurePriority: Record<MediaSourceFailureCode, number> = {
     "invalid-url": 60,
     "policy-blocked": 70,
     "encrypted-unsupported": 80,
+    "access-denied": 90,
 };
 
 const unavailableErrorCodes = new Set([
@@ -139,6 +143,12 @@ export function classifyMediaSourceFailure(
 
     const errorCode = normalizeErrorCode(error);
     const message = normalizeErrorMessage(error);
+    const status = (error as { response?: { status?: number }; status?: number } | null)?.response?.status
+        ?? (error as { status?: number } | null)?.status;
+    if (status === 401 || errorCode === "MEDIA_SOURCE_ACCESS_DENIED" ||
+        (!/(?:qmc|decrypt|解密)/i.test(message) && /(?:invalid|expired|revoked|missing) (?:api[ -]?)?key|(?:key|密钥|授权).*(?:无效|过期|已被删除|未授权)/i.test(message))) {
+        return createMediaSourceFailure("access-denied", context);
+    }
     if (
         unavailableErrorCodes.has(errorCode) ||
         message === "not retry"
@@ -264,6 +274,7 @@ export const mediaSourceFailureI18nKeys: Record<
     "encrypted-unsupported": "toast.mediaSourceEncryptedUnsupported",
     "source-rejected": "toast.mediaSourceRejected",
     "backend-error": "toast.mediaSourceBackendError",
+    "access-denied": "toast.mediaSourceAccessDenied",
 };
 
 export function getMediaSourceFailureI18nKey(code: unknown): keyof ILanguageData {
@@ -271,4 +282,9 @@ export function getMediaSourceFailureI18nKey(code: unknown): keyof ILanguageData
         mediaSourceFailureCodes.has(code as MediaSourceFailureCode)
         ? mediaSourceFailureI18nKeys[code as MediaSourceFailureCode]
         : mediaSourceFailureI18nKeys["plugin-error"];
+}
+
+/** Only explicit credential rejection applies across every quality. HTTP 403 alone does not. */
+export function isProviderAccessFailure(failure: MediaSourceFailure | null | undefined) {
+    return failure?.code === "access-denied";
 }

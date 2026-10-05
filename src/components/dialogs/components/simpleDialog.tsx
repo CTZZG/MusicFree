@@ -15,7 +15,8 @@ interface ISimpleDialogProps {
         closeOnPress?: boolean;
         onPress?: () => void;
     }>;
-    onOk?: () => void;
+    /** 返回 false 时对话框不关（例如输入不合法，提示后让用户改） */
+    onOk?: () => void | boolean | Promise<void>;
     onCancel?: () => void;
     onDismiss?: () => void;
 }
@@ -57,7 +58,9 @@ export default function SimpleDialog(props: ISimpleDialogProps) {
                 title: okText ?? t("common.confirm"),
                 type: "primary",
                 onPress() {
-                    onOk?.();
+                    if (onOk?.() === false) {
+                        return;
+                    }
                     hideDialog();
                 },
             },

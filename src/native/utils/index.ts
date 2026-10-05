@@ -15,6 +15,16 @@ export interface IPlaybackNativeMediaSessionDiagnostic {
     reason?: string;
 }
 
+/** 播放服务最近一次加载封面（通知、锁屏、Live Update 用）的结果 */
+export interface IPlaybackNativeArtworkDiagnostic {
+    /** none：应用没给封面地址 */
+    state: "none" | "loading" | "loaded" | "retrying" | "failed";
+    host?: string;
+    attempt?: number;
+    reason?: string;
+    updatedAt?: number;
+}
+
 export interface IPlaybackNativeDiagnostics {
     packageName?: string;
     processId?: number;
@@ -25,13 +35,12 @@ export interface IPlaybackNativeDiagnostics {
     appImportanceLabel?: string;
     playbackServices?: IPlaybackNativeServiceDiagnostic[];
     mediaSession?: IPlaybackNativeMediaSessionDiagnostic;
+    artwork?: IPlaybackNativeArtworkDiagnostic;
     error?: string;
 }
 
 interface INativeUtils extends NativeModule {
     exitApp: () => void;
-    checkStoragePermission: () => Promise<boolean>;
-    requestStoragePermission: () => void;
     getWindowDimensions: () => { width: number, height: number }; // Fix bug: https://github.com/facebook/react-native/issues/47080
     isIgnoringBatteryOptimizations: () => Promise<boolean>;
     requestIgnoreBatteryOptimizations: () => Promise<boolean>;

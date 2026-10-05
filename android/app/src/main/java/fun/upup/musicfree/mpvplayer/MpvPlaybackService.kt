@@ -108,9 +108,11 @@ class MpvPlaybackService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val artworkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val artworkLoads = ArtworkLoadTracker()
-    private val artworkRetryRunnable = Runnable {
-        artworkLoads.nextAttempt()?.let(::loadArtworkAsync)
-    }
+    private val artworkRetries = ArtworkRetryScheduler(
+        post = { runnable, delayMs -> mainHandler.postDelayed(runnable, delayMs) },
+        cancel = { runnable -> mainHandler.removeCallbacks(runnable) },
+        retry = { artworkLoads.nextAttempt()?.let(::loadArtworkAsync) },
+    )
     private var destroyed = false
     private var notificationManager: NotificationManager? = null
     private var audioManager: AudioManager? = null
@@ -273,8 +275,10 @@ class MpvPlaybackService : Service() {
 
         updateMediaSessionMetadata()
         if (isNewTrack) {
-            mainHandler.removeCallbacks(artworkRetryRunnable)
-            artworkLoads.begin(artwork)?.let(::loadArtworkAsync)
+            artworkRetries.reset()
+            val attempt = artworkLoads.begin(artwork)
+            recordArtworkStatus(if (attempt == null) "none" else "loading", attempt, null)
+            attempt?.let(::loadArtworkAsync)
         }
         updateAll()
     }
@@ -287,6 +291,7 @@ class MpvPlaybackService : Service() {
                 startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_PLAYING
                 cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                artworkRetries.onPlaybackStarted()
                 updateAll()
             }
             "buffering" -> {
@@ -318,6 +323,7 @@ class MpvPlaybackService : Service() {
                 releaseWakeLock()
                 abandonAudioFocus()
                 cachedState = PlaybackStateCompat.STATE_STOPPED
+                artworkRetries.onPlaybackStopped()
                 updatePlaybackState()
                 stopForegroundSafely()
             }
@@ -868,6 +874,10 @@ class MpvPlaybackService : Service() {
     }
 
     private fun updateNotification() {
+        // 停止播放（关闭通知、出错）后不再发通知。迟到的封面、歌词、元数据只更新
+        // 缓存，否则会把用户刚关掉的通知重新弹出来；下次开始播放时由
+        // startForegroundSafely 带着最新内容一起发。
+        if (cachedState == PlaybackStateCompat.STATE_STOPPED) return
         lastNotificationUpdateMs = System.currentTimeMillis()
         notificationManager?.notify(NOTIFICATION_ID, buildNotification())
         updateLiveUpdateProgressTicker()
@@ -1061,8 +1071,11 @@ class MpvPlaybackService : Service() {
     private sealed interface ArtworkFetchResult {
         class Loaded(val bitmap: Bitmap) : ArtworkFetchResult
 
-        /** [retryable]：超时、断网、服务端暂时性错误这类过一会儿可能恢复的失败。 */
-        class Failed(val retryable: Boolean) : ArtworkFetchResult
+        /**
+         * [retryable]：超时、断网、服务端暂时性错误这类过一会儿可能恢复的失败。
+         * [reason] 写进诊断信息，不含完整地址。
+         */
+        class Failed(val retryable: Boolean, val reason: String) : ArtworkFetchResult
     }
 
     private fun loadArtworkAsync(attempt: ArtworkLoadTracker.Attempt) {
@@ -1088,13 +1101,16 @@ class MpvPlaybackService : Service() {
             is ArtworkFetchResult.Loaded -> artworkLoads.onSuccess(attempt)
             is ArtworkFetchResult.Failed -> artworkLoads.onFailure(attempt, result.retryable)
         }
+        val failureReason = (result as? ArtworkFetchResult.Failed)?.reason
         when (outcome) {
             ArtworkLoadTracker.Outcome.Apply -> {
                 cachedArtworkBitmap = (result as ArtworkFetchResult.Loaded).bitmap
+                recordArtworkStatus("loaded", attempt, null)
                 updateMediaSessionMetadata()
                 updateNotification()
             }
             is ArtworkLoadTracker.Outcome.Retry -> {
+                recordArtworkStatus("retrying", attempt, failureReason)
                 // 封面失败会让灵动岛/锁屏退回默认小图标，和「JS 没给 artwork」
                 // 在界面上完全一样，所以每次失败都要留痕（具体原因见上一条日志）。
                 Log.w(
@@ -1102,29 +1118,50 @@ class MpvPlaybackService : Service() {
                     "artwork load failed (attempt ${attempt.number}), retry in " +
                         "${outcome.delayMs}ms: ${describeArtworkUrl(attempt.url)}",
                 )
-                mainHandler.removeCallbacks(artworkRetryRunnable)
-                mainHandler.postDelayed(artworkRetryRunnable, outcome.delayMs)
+                artworkRetries.schedule(
+                    outcome.delayMs,
+                    playbackStopped = cachedState == PlaybackStateCompat.STATE_STOPPED,
+                )
             }
-            ArtworkLoadTracker.Outcome.GiveUp -> Log.w(
-                TAG,
-                "artwork load failed (attempt ${attempt.number}), giving up: " +
-                    describeArtworkUrl(attempt.url),
-            )
+            ArtworkLoadTracker.Outcome.GiveUp -> {
+                recordArtworkStatus("failed", attempt, failureReason)
+                Log.w(
+                    TAG,
+                    "artwork load failed (attempt ${attempt.number}), giving up: " +
+                        describeArtworkUrl(attempt.url),
+                )
+            }
             ArtworkLoadTracker.Outcome.Stale -> Unit
         }
     }
 
+    private fun recordArtworkStatus(
+        state: String,
+        attempt: ArtworkLoadTracker.Attempt?,
+        reason: String?,
+    ) {
+        MpvServiceBridge.artworkStatus = ArtworkLoadStatus(
+            state = state,
+            host = attempt?.url?.let(::artworkHost),
+            attempt = attempt?.number ?: 0,
+            reason = reason,
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
+    private fun artworkHost(url: String): String {
+        val scheme = url.substringBefore("://", "")
+        if (scheme != "http" && scheme != "https") return "-"
+        return runCatching { url.toHttpUrlOrNull()?.host }.getOrNull() ?: "?"
+    }
+
+    private fun describeFailure(e: Throwable): String =
+        listOfNotNull(e.javaClass.simpleName, e.message).joinToString(": ")
+
     /** 只暴露形状（scheme/host/长度），不打完整 URL——里面常带签名票据。 */
     private fun describeArtworkUrl(url: String): String {
         val scheme = url.substringBefore("://", "").ifEmpty { "path" }
-        val host = runCatching {
-            if (scheme == "http" || scheme == "https") {
-                url.toHttpUrlOrNull()?.host ?: "?"
-            } else {
-                "-"
-            }
-        }.getOrDefault("?")
-        return "scheme=$scheme host=$host len=${url.length}"
+        return "scheme=$scheme host=${artworkHost(url)} len=${url.length}"
     }
 
     private fun fetchArtwork(url: String): ArtworkFetchResult {
@@ -1145,6 +1182,7 @@ class MpvPlaybackService : Service() {
                             )
                             return ArtworkFetchResult.Failed(
                                 retryable = ArtworkLoadTracker.isRetryableHttpStatus(response.code),
+                                reason = "http ${response.code}",
                             )
                         } else {
                             val input = response.body?.byteStream()
@@ -1172,17 +1210,17 @@ class MpvPlaybackService : Service() {
                 else -> decodeSampledFile(url)
             }
             bitmap?.let { ArtworkFetchResult.Loaded(it) }
-                ?: ArtworkFetchResult.Failed(retryable = false)
+                ?: ArtworkFetchResult.Failed(retryable = false, reason = "empty or undecodable image")
         } catch (e: IOException) {
             // 远程：超时、断网、连接被重置等，过一会儿可能恢复。本地文件读不到则不会。
             Log.w(TAG, "artwork fetch failed: ${describeArtworkUrl(url)}", e)
-            ArtworkFetchResult.Failed(retryable = remote)
+            ArtworkFetchResult.Failed(retryable = remote, reason = describeFailure(e))
         } catch (e: Throwable) {
             // 包含 PublicHttpsNetworkPolicy 的 IllegalArgumentException（私有地址/
             // 带凭据的 URL）、从 https 降级到 http 的跳转、跳转次数超限和封面过大，
             // 重试也不会变——这些都只在这里才能看出来。
             Log.w(TAG, "artwork fetch threw: ${describeArtworkUrl(url)}", e)
-            ArtworkFetchResult.Failed(retryable = false)
+            ArtworkFetchResult.Failed(retryable = false, reason = describeFailure(e))
         }
     }
 

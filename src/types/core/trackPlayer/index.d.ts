@@ -98,6 +98,14 @@ export interface ITrackPlayerProgressSnapshot extends PlayerAdapterProgress {
     sequence: number;
 }
 
+export type IPlaybackQueueScope = "normal" | "later";
+
+export interface IQueueUndoNotice {
+    id: number;
+    action: "remove" | "clear";
+    count: number;
+}
+
 export interface IQualityChangeResult {
     success: boolean;
     requestedQuality: IMusic.IQualityKey;
@@ -248,6 +256,21 @@ export interface ITrackPlayer
      */
     remove(musicItem: IMusic.IMusicItem): Promise<void>;
 
+    /** Move an entry within one queue without loading, seeking or restarting playback. */
+    moveQueueItem(musicItem: IMusic.IMusicItem, destination: number, scope?: IPlaybackQueueScope): boolean;
+
+    /** Make this entry next, ahead of the priority queue if one already exists. */
+    moveQueueItemNext(musicItem: IMusic.IMusicItem, scope?: IPlaybackQueueScope): boolean;
+
+    /** Remove an entry and offer a guarded, single-step queue undo. */
+    removeQueueItemWithUndo(musicItem: IMusic.IMusicItem, scope?: IPlaybackQueueScope): Promise<void>;
+
+    /** Clear either the priority queue or both queues and offer a guarded undo. */
+    clearQueueWithUndo(scope?: "later" | "all"): Promise<void>;
+
+    /** Restores membership/order only; does not change current song or playback progress. */
+    undoQueueEdit(id: number): boolean;
+
     /**
      * 判断指定音乐是否是当前播放的音乐
      * @param musicItem 要判断的音乐
@@ -274,6 +297,9 @@ export interface ITrackPlayer
         musicItem?: IMusic.IMusicItem | null,
         forcePlay?: boolean,
     ): Promise<void>;
+
+    /** Retry the failed track, optionally requesting one quality without changing defaults. */
+    retryPlayback(musicItem: IMusic.IMusicItem, quality?: IMusic.IQualityKey): Promise<void>;
 
     /**
      * 播放指定音乐并替换整个播放列表

@@ -1,9 +1,11 @@
 import React, { memo, useCallback } from "react";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import { FlashList } from "@shopify/flash-list";
 import useRecommendSheets from "../../hooks/useRecommendSheets";
-import SheetItem from "@/components/mediaItem/sheetItem";
+import SheetItem, {
+    SHEET_GRID_SIDE_PADDING,
+} from "@/components/mediaItem/sheetItem";
 import useOrientation from "@/hooks/useOrientation";
 import ListEmpty from "@/components/base/listEmpty";
 import ListFooter from "@/components/base/listFooter";
@@ -21,11 +23,7 @@ function SheetList(props: ISheetListProps) {
 
     function renderItem({ item }: { item: IMusic.IMusicSheetItemBase }) {
         return (
-            <SheetItem
-                sheetInfo={item}
-                pluginHash={pluginHash}
-                presentation="cards"
-            />
+            <SheetItem sheetInfo={item} pluginHash={pluginHash} />
         );
     }
     const orientation = useOrientation();
@@ -54,11 +52,19 @@ function SheetList(props: ISheetListProps) {
             }}
             onEndReachedThreshold={0.1}
             numColumns={orientation === "vertical" ? 3 : 4}
+            contentContainerStyle={styles.grid}
             renderItem={renderItem}
             data={sheets}
             keyExtractor={keyExtractor}
         />
     );
 }
+
+const styles = StyleSheet.create({
+    grid: {
+        paddingHorizontal: SHEET_GRID_SIDE_PADDING,
+        paddingTop: 8,
+    },
+});
 
 export default memo(SheetList);

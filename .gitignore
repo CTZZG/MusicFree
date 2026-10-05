@@ -74,6 +74,9 @@ docs/
 docs/*
 !docs/release-notes-v*.md
 !docs/architecture.md
+!docs/handoff/
+docs/handoff/*
+!docs/handoff/engineering-ui-2026-10-04.md
 /1.jpg
 /2.jpg
 /FINAL_SUMMARY.md

@@ -33,8 +33,10 @@ const styles = StyleSheet.create({
         flexShrink: 1,
         minWidth: 0,
     },
+    // 来源角标完整显示，放不下时只截断标题。以前角标和标题一起缩，标题一长，
+    // 角标就被挤成一两个字；特别长的来源名由 maxWidth 截断
     tag: {
         maxWidth: rpx(176),
-        flexShrink: 1,
+        flexShrink: 0,
     },
 });

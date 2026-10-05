@@ -1,13 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import rpx from "@/utils/rpx";
 import { ImgAsset } from "@/constants/assetsConst";
 import FastImage from "@/components/base/fastImage";
 import useOrientation from "@/hooks/useOrientation";
 import { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
-import globalStyle from "@/constants/globalStyle";
-import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
+import {
+    LayoutChangeEvent,
+    Pressable,
+    StyleSheet,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import { showPanel } from "@/components/panels/usePanel.ts";
-import SongInfo from "./songInfo";
+import SongInfo, { getSongInfoWidth } from "./songInfo";
 import MiniLyric from "./miniLyric";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppConfig } from "@/core/appConfig";
@@ -22,11 +33,24 @@ import Animated, {
 } from "react-native-reanimated";
 import { useMusicDetailVisuals } from "../../../artworkContext";
 import { getMusicDetailHeroLayout } from "../../../heroLayout";
-import { getMusicDetailCardLayout } from "../../../circleLayout";
+import {
+    fitMusicDetailCardCover,
+    getMusicDetailCardLayout,
+    getMusicDetailCircleLyricLayout,
+    getMusicDetailLandscapeLayout,
+} from "../../../circleLayout";
+import { useMusicDetailLayout } from "../../../layoutContext";
 import { useI18N } from "@/core/i18n";
 
 export const COVER_SIZE = rpx(500);
 export const COVER_MARGIN = (rpx(750) - COVER_SIZE) / 2;
+
+// 封面每次挂载（比如从歌词页切回来）都要重新解码图片，哪怕命中缓存也要几帧。
+// 这几帧里先不显示封面容器，图片画出来后再淡入；网络慢、迟迟画不出来时，
+// 到点先把占位卡片淡入，图片到了再叠上去
+const COVER_REVEAL_MS = 160;
+const COVER_REVEAL_FALLBACK_MS = 500;
+const ARTWORK_TRANSITION_MS = 260;
 
 export function getCoverLeftMargin() {
     return COVER_MARGIN;
@@ -46,16 +70,29 @@ export default function AlbumCover(props: IProps) {
     const musicState = useMusicState();
     const orientation = useOrientation();
     const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
-    const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+    const {
+        height: windowHeight,
+        width: windowWidth,
+        fontScale,
+    } = useWindowDimensions();
     const safeAreaInsets = useSafeAreaInsets();
     const longPressTriggeredRef = useRef(false);
     const { t } = useI18N();
-    // 横屏时左半边放封面和歌名，右半边是歌词
-    const horizontalInfoWidth = Math.max(rpx(280), windowWidth / 2 - 48);
+    // 横屏时左半边放封面和歌名（并排），右半边是歌词；尺寸按实际量到的区域定
+    const [landscapeArea, setLandscapeArea] = useState<{
+        width: number;
+        height: number;
+    } | null>(null);
 
     const usableWindowHeight =
         windowHeight - safeAreaInsets.top - safeAreaInsets.bottom;
+    // 封面按实际量到的空间收紧，歌名、迷你歌词才不会压到下面的进度条
+    const { measured, reportContentHeight, reportSongInfoHeight } =
+        useMusicDetailLayout();
     const rotation = useSharedValue(0);
+    const coverOpacity = useSharedValue(0);
+    const coverRevealedRef = useRef(false);
+    const [coverRevealed, setCoverRevealed] = useState(false);
     const isCircleCover = coverStyle === "circle";
     const isHeroCover = coverStyle === "hero";
     const shouldRotateCover = isCircleCover && !musicIsPaused(musicState);
@@ -66,8 +103,17 @@ export default function AlbumCover(props: IProps) {
                 windowHeight,
                 safeAreaTop: safeAreaInsets.top,
                 safeAreaBottom: safeAreaInsets.bottom,
+                contentHeight: measured.contentHeight,
+                songInfoHeight: measured.songInfoHeight.hero,
             }),
-        [safeAreaInsets.bottom, safeAreaInsets.top, windowHeight, windowWidth],
+        [
+            measured.contentHeight,
+            measured.songInfoHeight.hero,
+            safeAreaInsets.bottom,
+            safeAreaInsets.top,
+            windowHeight,
+            windowWidth,
+        ],
     );
     const cardLayout = useMemo(
         () =>
@@ -88,6 +134,80 @@ export default function AlbumCover(props: IProps) {
             windowWidth,
         ],
     );
+    const cardFit = useMemo(() => {
+        const lyricLayout = getMusicDetailCircleLyricLayout({
+            windowWidth,
+            windowHeight,
+        });
+        return fitMusicDetailCardCover({
+            windowWidth,
+            preferredCoverSize: cardLayout.coverSize,
+            topSpace: cardLayout.navHeight + cardLayout.topGap,
+            coverAreaExtra: cardLayout.coverAreaExtra,
+            miniLyricHeight: lyricLayout.containerHeight + lyricLayout.marginTop,
+            contentHeight: measured.contentHeight,
+            songInfoHeight: measured.songInfoHeight.card,
+        });
+    }, [
+        cardLayout,
+        measured.contentHeight,
+        measured.songInfoHeight.card,
+        windowHeight,
+        windowWidth,
+    ]);
+
+    // 方形卡片的歌名和迷你歌词与封面同宽、两边对齐；封面缩得很小时（小屏、
+    // 大字体）不再跟着缩，否则歌名只剩两三个字的宽度
+    const cardInfoWidth = isCircleCover
+        ? undefined
+        : Math.max(cardFit.coverSize, getSongInfoWidth(windowWidth));
+
+    const landscapeLayout = useMemo(
+        () =>
+            getMusicDetailLandscapeLayout({
+                // 量到之前按左半边、可用高度的三分之一估一个，第一帧之后就换成实测
+                width: landscapeArea?.width ?? windowWidth / 2,
+                height: landscapeArea?.height ?? usableWindowHeight / 3,
+                showSongInfo: !immersiveMode,
+                fontScale,
+            }),
+        [
+            fontScale,
+            immersiveMode,
+            landscapeArea,
+            usableWindowHeight,
+            windowWidth,
+        ],
+    );
+    const onLandscapeLayout = useCallback((event: LayoutChangeEvent) => {
+        const { width, height } = event.nativeEvent.layout;
+        setLandscapeArea(previous =>
+            previous &&
+            Math.abs(previous.width - width) < 0.5 &&
+            Math.abs(previous.height - height) < 0.5
+                ? previous
+                : { width, height },
+        );
+    }, []);
+
+    const onContentLayout = useCallback(
+        (event: LayoutChangeEvent) => {
+            reportContentHeight(event.nativeEvent.layout.height);
+        },
+        [reportContentHeight],
+    );
+    const onCardSongInfoLayout = useCallback(
+        (event: LayoutChangeEvent) => {
+            reportSongInfoHeight("card", event.nativeEvent.layout.height);
+        },
+        [reportSongInfoHeight],
+    );
+    const onHeroSongInfoLayout = useCallback(
+        (event: LayoutChangeEvent) => {
+            reportSongInfoHeight("hero", event.nativeEvent.layout.height);
+        },
+        [reportSongInfoHeight],
+    );
 
     const artworkStyle = useMemo(() => {
         // 圆形唱片；方形用 iOS 的圆角卡片，带一点投影
@@ -96,10 +216,15 @@ export default function AlbumCover(props: IProps) {
             : styles.squareArtwork;
         const coverSize =
             orientation === "vertical"
-                ? cardLayout.coverSize
-                : Math.min(rpx(300), usableWindowHeight * 0.4);
+                ? cardFit.coverSize
+                : landscapeLayout.coverSize;
         return [shapeStyle, { width: coverSize, height: coverSize }];
-    }, [cardLayout.coverSize, isCircleCover, orientation, usableWindowHeight]);
+    }, [
+        cardFit.coverSize,
+        isCircleCover,
+        landscapeLayout.coverSize,
+        orientation,
+    ]);
 
     useEffect(() => {
         if (shouldRotateCover) {
@@ -121,12 +246,27 @@ export default function AlbumCover(props: IProps) {
     }, [musicItem?.id, musicItem?.platform, rotation]);
 
     const coverAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: coverOpacity.value,
         transform: [
             {
                 rotate: `${rotation.value}deg`,
             },
         ],
     }));
+
+    const revealCover = useCallback(() => {
+        if (coverRevealedRef.current) {
+            return;
+        }
+        coverRevealedRef.current = true;
+        setCoverRevealed(true);
+        coverOpacity.value = withTiming(1, { duration: COVER_REVEAL_MS });
+    }, [coverOpacity]);
+
+    useEffect(() => {
+        const timer = setTimeout(revealCover, COVER_REVEAL_FALLBACK_MS);
+        return () => clearTimeout(timer);
+    }, [revealCover]);
 
     const handlePress = useCallback(() => {
         if (longPressTriggeredRef.current) {
@@ -151,46 +291,75 @@ export default function AlbumCover(props: IProps) {
 
     if (orientation === "horizontal") {
         return (
-            <View style={styles.horizontalRoot}>
-                <Pressable
-                    delayLongPress={500}
-                    onPress={handlePress}
-                    onLongPress={handleLongPress}
-                    style={styles.horizontalCoverArea}>
-                    <View style={globalStyle.fullCenter}>
+            <View
+                style={[
+                    styles.horizontalRoot,
+                    {
+                        paddingHorizontal: landscapeLayout.gap,
+                        gap: landscapeLayout.gap,
+                    },
+                ]}
+                onLayout={onLandscapeLayout}>
+                {landscapeLayout.coverSize > 0 ? (
+                    <Pressable
+                        delayLongPress={500}
+                        onPress={handlePress}
+                        onLongPress={handleLongPress}
+                        style={styles.horizontalCoverArea}>
                         <Animated.View
                             style={[artworkStyle, coverAnimatedStyle]}>
                             <FastImage
                                 style={styles.coverImage}
                                 source={displayArtwork}
                                 placeholderSource={ImgAsset.albumDefault}
-                                transition={260}
+                                // 第一次直接画上，由外层淡入；之后换歌再交叉淡入
+                                transition={
+                                    coverRevealed ? ARTWORK_TRANSITION_MS : 0
+                                }
+                                onDisplay={revealCover}
                             />
                         </Animated.View>
+                    </Pressable>
+                ) : null}
+                {landscapeLayout.songInfo ? (
+                    // 行数已按量到的高度算好；万一系统字体的度量和预算对不上，
+                    // 宁可裁掉也不压到进度条上
+                    <View style={styles.horizontalSongInfo}>
+                        <SongInfo
+                            variant="landscape"
+                            width={landscapeLayout.infoWidth}
+                            landscapeFit={landscapeLayout.songInfo}
+                        />
                     </View>
-                </Pressable>
-                {immersiveMode ? null : <SongInfo width={horizontalInfoWidth} />}
+                ) : null}
             </View>
         );
     }
 
     if (isHeroCover) {
         return (
-            <View style={[styles.verticalRoot, styles.heroVerticalRoot]}>
+            <View
+                style={[styles.verticalRoot, styles.heroVerticalRoot]}
+                onLayout={onContentLayout}>
                 <Pressable
                     delayLongPress={500}
                     onPress={handlePress}
                     onLongPress={handleLongPress}
                     style={[styles.heroTapArea, { height: heroLayout.tapHeight }]}
                 />
-                <MiniLyric variant="hero" onPress={onTurnPageClick} />
-                <SongInfo variant="hero" />
+                {heroLayout.showMiniLyric ? (
+                    <MiniLyric variant="hero" onPress={onTurnPageClick} />
+                ) : null}
+                <View onLayout={onHeroSongInfoLayout}>
+                    <SongInfo variant="hero" />
+                </View>
             </View>
         );
     }
 
     return (
         <View
+            onLayout={onContentLayout}
             style={[
                 styles.cardVerticalRoot,
                 {
@@ -205,7 +374,7 @@ export default function AlbumCover(props: IProps) {
                 accessibilityHint={t("musicDetail.showLyric.a11y")}
                 style={[
                     styles.coverArea,
-                    { height: cardLayout.coverSize + rpx(24) },
+                    { height: cardFit.coverSize + cardLayout.coverAreaExtra },
                 ]}>
                 <View style={styles.coverCenter}>
                     <Animated.View style={[artworkStyle, coverAnimatedStyle]}>
@@ -213,21 +382,24 @@ export default function AlbumCover(props: IProps) {
                             style={styles.coverImage}
                             source={displayArtwork}
                             placeholderSource={ImgAsset.albumDefault}
-                            transition={260}
+                            transition={
+                                coverRevealed ? ARTWORK_TRANSITION_MS : 0
+                            }
+                            onDisplay={revealCover}
                         />
                     </Animated.View>
                 </View>
             </Pressable>
-            <View style={styles.cardSongInfo}>
-                <SongInfo
-                    width={isCircleCover ? undefined : cardLayout.coverSize}
-                />
+            <View style={styles.cardSongInfo} onLayout={onCardSongInfoLayout}>
+                <SongInfo width={cardInfoWidth} />
             </View>
-            <MiniLyric
-                variant="circle"
-                width={isCircleCover ? undefined : cardLayout.coverSize}
-                onPress={onTurnPageClick}
-            />
+            {cardFit.showMiniLyric ? (
+                <MiniLyric
+                    variant="circle"
+                    width={cardInfoWidth}
+                    onPress={onTurnPageClick}
+                />
+            ) : null}
         </View>
     );
 }
@@ -274,7 +446,9 @@ const styles = StyleSheet.create({
     squareArtwork: {
         borderRadius: 14,
         overflow: "hidden",
-        backgroundColor: "rgba(255, 255, 255, 0.08)",
+        // 必须不透明：半透明底色下，Android 会透出自身的投影，图片没画出来时
+        // 就是一大一小两个方框
+        backgroundColor: "#2C2C2E",
         elevation: 16,
         shadowColor: "#000000",
         shadowOpacity: 0.45,
@@ -284,11 +458,15 @@ const styles = StyleSheet.create({
     horizontalRoot: {
         width: "100%",
         flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
         justifyContent: "center",
     },
     horizontalCoverArea: {
-        width: "100%",
-        flex: 1,
-        justifyContent: "center",
+        flexShrink: 0,
+    },
+    horizontalSongInfo: {
+        maxHeight: "100%",
+        overflow: "hidden",
     },
 });

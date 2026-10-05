@@ -4,9 +4,12 @@ jest.mock("@/utils/rpx", () => ({
 }));
 
 import {
+    fitLandscapeSongInfo,
+    fitMusicDetailCardCover,
     getMusicDetailCardLayout,
     getMusicDetailCircleLayout,
     getMusicDetailCircleLyricLayout,
+    getMusicDetailLandscapeLayout,
 } from "../circleLayout";
 
 describe("getMusicDetailCircleLayout", () => {
@@ -114,5 +117,199 @@ describe("getMusicDetailCircleLyricLayout", () => {
             contextLineHeight: 34,
             fadeHeight: 28,
         });
+    });
+});
+
+/**
+ * 回归背景：0.9.0 方形封面在一台 2.2:1 的手机上，三行迷你歌词压到了进度条上。
+ * 封面只按屏幕比例估算，没算歌名随系统字体变高、底部控制区比预想的高。
+ * 下面的数字按那台手机（约 400dp 宽、内容区约 588dp）换算。
+ */
+describe("fitMusicDetailCardCover", () => {
+    const base = {
+        windowWidth: 400,
+        preferredCoverSize: 328,
+        topSpace: 72.5,
+        coverAreaExtra: 12.8,
+        miniLyricHeight: 96,
+    };
+
+    function stackHeight(
+        fit: { coverSize: number; showMiniLyric: boolean },
+        songInfoHeight: number,
+    ) {
+        return (
+            base.topSpace +
+            fit.coverSize +
+            base.coverAreaExtra +
+            songInfoHeight +
+            (fit.showMiniLyric ? base.miniLyricHeight : 0)
+        );
+    }
+
+    it("keeps the estimate until the heights are measured", () => {
+        expect(
+            fitMusicDetailCardCover({
+                ...base,
+                contentHeight: null,
+                songInfoHeight: null,
+            }),
+        ).toEqual({ coverSize: 328, showMiniLyric: true });
+    });
+
+    it("never grows the cover when there is spare room", () => {
+        expect(
+            fitMusicDetailCardCover({
+                ...base,
+                contentHeight: 900,
+                songInfoHeight: 84,
+            }),
+        ).toEqual({ coverSize: 328, showMiniLyric: true });
+    });
+
+    it("shrinks the cover so the mini lyric stays above the seek bar", () => {
+        for (const songInfoHeight of [84, 110]) {
+            const fit = fitMusicDetailCardCover({
+                ...base,
+                contentHeight: 588,
+                songInfoHeight,
+            });
+            expect(fit.showMiniLyric).toBe(true);
+            expect(fit.coverSize).toBeLessThan(328);
+            expect(stackHeight(fit, songInfoHeight)).toBeLessThanOrEqual(588);
+        }
+    });
+
+    it("drops the mini lyric before the cover gets too small", () => {
+        const fit = fitMusicDetailCardCover({
+            ...base,
+            contentHeight: 360,
+            songInfoHeight: 110,
+        });
+
+        expect(fit.showMiniLyric).toBe(false);
+        expect(fit.coverSize).toBeCloseTo(360 - 72.5 - 12.8 - 110, 5);
+        expect(stackHeight(fit, 110)).toBeLessThanOrEqual(360);
+    });
+
+    it("keeps a visible cover even when nothing fits", () => {
+        const fit = fitMusicDetailCardCover({
+            ...base,
+            contentHeight: 120,
+            songInfoHeight: 110,
+        });
+
+        expect(fit).toEqual({ coverSize: 64, showMiniLyric: false });
+    });
+});
+
+/**
+ * 外部复审：横屏播放页封面盖住导航栏和歌名。横屏左半边只剩导航栏（64）和
+ * 控制区（约 170）之间很矮的一条，原来封面固定为可用高度的 40% 再叠上歌名，
+ * 放不下就上下溢出。
+ */
+describe("getMusicDetailLandscapeLayout", () => {
+    it("fits the cover into the short strip of a phone in landscape", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 440,
+            height: 124,
+            showSongInfo: true,
+        });
+
+        expect(layout.coverSize).toBe(100);
+        expect(layout.coverSize).toBeLessThanOrEqual(124);
+        expect(layout.infoWidth).toBe(440 - 16 * 3 - 100);
+    });
+
+    it("caps the cover and keeps room for the song info on a tablet", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 640,
+            height: 540,
+            showSongInfo: true,
+        });
+
+        expect(layout.coverSize).toBe(320);
+        expect(layout.infoWidth).toBeGreaterThanOrEqual(160);
+    });
+
+    it("lets the cover use the width in immersive mode", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 440,
+            height: 300,
+            showSongInfo: false,
+        });
+
+        expect(layout.coverSize).toBe(300 - 24);
+    });
+
+    it("drops the cover rather than overflowing a very short strip", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 440,
+            height: 60,
+            showSongInfo: true,
+        });
+
+        expect(layout.coverSize).toBe(0);
+        expect(layout.infoWidth).toBe(440 - 16 * 2);
+    });
+});
+
+/**
+ * 外部复审：横屏的歌名区原来不看高度，320 dp 高的窗口、大字体下压进进度条。
+ * 完整的封面＋歌名渲染见 albumCover/__tests__/landscapeFit.test.tsx。
+ */
+describe("fitLandscapeSongInfo", () => {
+    it("keeps title, artist and album when they fit", () => {
+        expect(fitLandscapeSongInfo(96, 1)).toEqual({
+            showArtist: true,
+            showAlbum: true,
+            titleMaxFontScale: undefined,
+        });
+    });
+
+    it("drops the album before the artist", () => {
+        expect(fitLandscapeSongInfo(56, 1)).toMatchObject({
+            showArtist: true,
+            showAlbum: false,
+        });
+        expect(fitLandscapeSongInfo(56, 1.5)).toMatchObject({
+            showArtist: false,
+            showAlbum: false,
+        });
+    });
+
+    it("caps only the title, and only when it would not fit at the system scale", () => {
+        expect(fitLandscapeSongInfo(80, 2)?.titleMaxFontScale).toBeUndefined();
+
+        const tight = fitLandscapeSongInfo(56, 2);
+        expect(tight?.titleMaxFontScale).toBe(1.92);
+        // 上限低于 1 时 RN 不认，这里不会出现
+        expect(tight?.titleMaxFontScale).toBeGreaterThanOrEqual(1);
+    });
+
+    it("hides the song info when not even the title row fits", () => {
+        expect(fitLandscapeSongInfo(39, 1)).toBeNull();
+        expect(fitLandscapeSongInfo(40, 1)).not.toBeNull();
+    });
+
+    it("treats a missing font scale as the default size", () => {
+        expect(fitLandscapeSongInfo(80, Number.NaN)).toEqual(
+            fitLandscapeSongInfo(80, 1),
+        );
+        expect(fitLandscapeSongInfo(80, 0)).toEqual(
+            fitLandscapeSongInfo(80, 1),
+        );
+    });
+
+    it("gives the cover the whole width once the song info is hidden", () => {
+        const layout = getMusicDetailLandscapeLayout({
+            width: 400,
+            height: 36,
+            showSongInfo: true,
+            fontScale: 1,
+        });
+
+        expect(layout.songInfo).toBeNull();
+        expect(layout.infoWidth).toBe(400 - 16 * 2);
     });
 });

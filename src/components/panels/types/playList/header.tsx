@@ -1,4 +1,3 @@
-import IconTextButton from "@/components/base/iconTextButton";
 import ThemeText from "@/components/base/themeText";
 import { MusicRepeatModeInfo } from "@/constants/trackPlayerConst";
 import { useI18N } from "@/core/i18n";
@@ -7,22 +6,23 @@ import TrackPlayer, {
     usePlayList,
     useRepeatMode,
 } from "@/core/trackPlayer";
-import delay from "@/utils/delay";
-import rpx from "@/utils/rpx";
+import Icon from "@/components/base/icon";
+import useColors from "@/hooks/useColors";
 import React from "react";
-import { InteractionManager, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
 export default function Header() {
     const repeatMode = useRepeatMode();
     const playList = usePlayList();
     const playLaterQueue = usePlayLaterQueue();
+    const colors = useColors();
     const { t } = useI18N();
 
     return (
-        <View style={style.wrapper}>
+        <View style={styles.wrapper}>
             <ThemeText
                 accessibilityRole="header"
-                style={style.headerText}
+                style={styles.headerText}
                 fontWeight="bold">
                 {t("panel.playList.title")}
                 <ThemeText fontSize="subTitle" fontColor="textSecondary">
@@ -31,42 +31,59 @@ export default function Header() {
                     })}
                 </ThemeText>
             </ThemeText>
-            <IconTextButton
-                onPress={() => {
-                    InteractionManager.runAfterInteractions(async () => {
-                        await delay(20, false);
-                        TrackPlayer.toggleRepeatMode();
-                    });
-                }}
-                icon={MusicRepeatModeInfo[repeatMode].icon}>
-                {t(("repeatMode." + repeatMode) as any)}
-            </IconTextButton>
-            <IconTextButton
-                icon="trash-outline"
-                onPress={() => {
-                    TrackPlayer.clearPlayList();
-                }}>
-                {t("common.clear")}
-            </IconTextButton>
+            <View style={styles.actions}>
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(("repeatMode." + repeatMode) as any)}
+                    style={styles.button}
+                    onPress={() => TrackPlayer.toggleRepeatMode()}>
+                    <Icon name={MusicRepeatModeInfo[repeatMode].icon} color={colors.text} size={20} />
+                    <ThemeText style={styles.buttonText} fontSize="description">
+                        {t(("repeatMode." + repeatMode) as any)}
+                    </ThemeText>
+                </Pressable>
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("common.clear")}
+                    style={styles.button}
+                    onPress={() => {
+                        TrackPlayer.clearQueueWithUndo();
+                    }}>
+                    <Icon name="trash-outline" color={colors.text} size={20} />
+                    <ThemeText style={styles.buttonText} fontSize="description">
+                        {t("common.clear")}
+                    </ThemeText>
+                </Pressable>
+            </View>
         </View>
     );
 }
 
-const style = StyleSheet.create({
+const styles = StyleSheet.create({
     wrapper: {
-        width: rpx(750),
-        height: 48,
-        paddingLeft: 20,
-        paddingRight: 12,
-        marginTop: 18,
-        marginBottom: 6,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
+        width: "100%",
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: 6,
     },
     headerText: {
-        flex: 1,
         fontSize: 20,
-        lineHeight: 25,
+    },
+    actions: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+    },
+    button: {
+        minHeight: 44,
+        minWidth: 44,
+        maxWidth: "100%",
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 6,
+    },
+    buttonText: {
+        flexShrink: 1,
+        marginLeft: 6,
     },
 });

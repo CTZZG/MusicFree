@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet } from "react-native";
 import rpx from "@/utils/rpx";
 import PluginManager from "@/core/pluginManager";
 import { TabBar, TabView } from "react-native-tab-view";
-import { fontWeightConst } from "@/constants/uiConst";
+import TabLabel from "@/components/base/tabLabel";
 import BoardPanelWrapper from "./boardPanelWrapper";
 import useColors from "@/hooks/useColors";
 import NoPlugin from "@/components/base/noPlugin";
@@ -47,6 +47,8 @@ export default function TopListBody() {
 
     return (
         <TabView
+            // 翻到第一页、最后一页时的边缘回弹没结束，会吃掉下一次点击
+            overScrollMode="never"
             lazy
             navigationState={{
                 index,
@@ -57,22 +59,7 @@ export default function TopListBody() {
                     (acc, route) => {
                         acc[route.key] = {
                             label: ({ focused }: any) => (
-                                <Text
-                                    numberOfLines={1}
-                                    style={[
-                                        styles.tabLabel,
-                                        {
-                                            fontWeight: focused
-                                                ? fontWeightConst.bolder
-                                                : fontWeightConst.medium,
-                                            color: focused
-                                                ? colors.primary
-                                                : colors.textSecondary ??
-                                                  colors.text,
-                                        },
-                                    ]}>
-                                    {route.title}
-                                </Text>
+                                <TabLabel focused={focused} title={route.title} />
                             ),
                         };
                         return acc;
@@ -111,9 +98,5 @@ const styles = StyleSheet.create({
     },
     tabStyle: {
         width: "auto",
-    },
-    tabLabel: {
-        width: rpx(160),
-        textAlign: "center",
     },
 });

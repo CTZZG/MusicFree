@@ -1,12 +1,15 @@
+import AllMusicResults from "./allMusicResults";
+import { ALL_MUSIC_SOURCE_KEY } from "@/core/search/aggregateMusicResults";
+import { getCategoryTabMeta } from "../../common/searchResultMeta";
 import Empty from "@/components/base/empty";
-import { fontSizeConst, fontWeightConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
-import PluginManager from "@/core/pluginManager";
+import PluginManager, { usePluginEnabledRevision } from "@/core/pluginManager";
 import useColors from "@/hooks/useColors";
-import rpx, { vw } from "@/utils/rpx";
+import { vw } from "@/utils/rpx";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet } from "react-native";
 import { SceneMap, TabBar, TabView } from "react-native-tab-view";
+import { withAccessibilitySuffixes } from "@/utils/a11yLabels";
 import { getSourceTabMeta } from "../../common/searchResultMeta";
 import {
     useSearchSourceResult,
@@ -14,15 +17,13 @@ import {
 } from "../../hooks/useSearchSession";
 import { renderMap } from "./results";
 import DefaultResults from "./results/defaultResults";
+import ResultTabLabel from "./resultTabLabel";
 import ResultWrapper from "./resultWrapper";
 import { useParams } from "@/core/router";
-import Color from "color";
 
 interface IResultSubPanelProps {
     tab: ICommon.SupportMediaType;
 }
-
-const ERROR_COLOR = "#FC5F5F";
 
 // 展示结果的视图
 function getResultComponent(
@@ -66,7 +67,9 @@ function getSubRouterScene(
     const scene: Record<string, React.FC> = {};
     routes.forEach(r => {
         // todo: 是否声明不可搜索
-        scene[r.key] = getResultComponent(tab, r.key, r.title);
+        scene[r.key] = r.key === ALL_MUSIC_SOURCE_KEY
+            ? () => <AllMusicResults sources={routes.filter(route => route.key !== ALL_MUSIC_SOURCE_KEY).map(route => ({ hash: route.key, name: route.title }))} />
+            : getResultComponent(tab, r.key, r.title);
     });
     return SceneMap(scene);
 }
@@ -77,13 +80,18 @@ function ResultSubPanel(props: IResultSubPanelProps) {
     const { t } = useI18N();
     const typeResults = useSearchTypeResults(props.tab);
 
+    // 搜索标签常驻不卸载：插件启用或停用后，来源标签要跟着变
+    const enabledRevision = usePluginEnabledRevision();
     const routes = useMemo(
-        () =>
-            PluginManager.getSortedSearchablePlugins(props.tab).map(_ => ({
-                key: _.hash,
-                title: _.name,
-            })),
-        [props.tab],
+        () => {
+            const sourceRoutes = PluginManager.getSortedSearchablePlugins(props.tab).map(plugin => ({ key: plugin.hash, title: plugin.name }));
+            return props.tab === "music" && sourceRoutes.length
+                ? [{ key: ALL_MUSIC_SOURCE_KEY, title: t("searchPage.allMusic") }, ...sourceRoutes]
+                : sourceRoutes;
+        },
+        // enabledRevision 只用来让结果在启用状态变化后重算
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [props.tab, enabledRevision, t],
     );
     const initialIndex = useMemo(
         () =>
@@ -109,84 +117,35 @@ function ResultSubPanel(props: IResultSubPanelProps) {
 
     return (
         <TabView
+            // 翻到第一页、最后一页时的边缘回弹没结束，会吃掉下一次点击
+            overScrollMode="never"
             lazy
             navigationState={{
-                index,
+                // 停用插件后来源变少，原来选中的位置可能已经越界
+                index: Math.min(index, routes.length - 1),
                 routes,
             }}
             renderTabBar={_ => {
                 const options = _.navigationState.routes.reduce(
                     (acc: Record<string, any>, route: { key: string; title?: string }) => {
+                        const title =
+                            route.title ?? `(${t("common.unknownName")})`;
+                        const meta = route.key === ALL_MUSIC_SOURCE_KEY
+                            ? getCategoryTabMeta(Object.fromEntries(Object.entries(typeResults).filter(([key]) => routes.some(candidate => candidate.key === key))), t)
+                            : getSourceTabMeta(typeResults[route.key], t);
                         acc[route.key] = {
-                            label: ({ focused }: any) => {
-                                const meta = getSourceTabMeta(
-                                    typeResults[route.key],
-                                    t,
-                                );
-                                const isError = meta.isError;
-                                const metaColor = isError
-                                    ? ERROR_COLOR
-                                    : focused
-                                        ? colors.primary
-                                        : colors.textSecondary;
-                                const titleColor = focused
-                                    ? colors.primary
-                                    : colors.textSecondary ?? colors.text;
-
-                                return (
-                                    <View
-                                        style={[
-                                            styles.pluginTabLabel,
-                                            {
-                                                backgroundColor: focused
-                                                    ? Color(colors.primary)
-                                                        .alpha(0.1)
-                                                        .toString()
-                                                    : isError
-                                                        ? Color(ERROR_COLOR)
-                                                            .alpha(0.08)
-                                                            .toString()
-                                                        : "transparent",
-                                                borderColor: focused
-                                                    ? Color(colors.primary)
-                                                        .alpha(0.28)
-                                                        .toString()
-                                                    : isError
-                                                        ? Color(ERROR_COLOR)
-                                                            .alpha(0.32)
-                                                            .toString()
-                                                        : "transparent",
-                                            },
-                                        ]}>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[
-                                                styles.pluginTabTitle,
-                                                {
-                                                    fontWeight: focused
-                                                        ? fontWeightConst.bolder
-                                                        : fontWeightConst.medium,
-                                                    color: titleColor,
-                                                },
-                                            ]}>
-                                            {route.title ??
-                                                `(${t("common.unknownName")})`}
-                                        </Text>
-                                        {meta.text ? (
-                                            <Text
-                                                numberOfLines={1}
-                                                style={[
-                                                    styles.pluginTabMeta,
-                                                    {
-                                                        color: metaColor,
-                                                    },
-                                                ]}>
-                                                {meta.text}
-                                            </Text>
-                                        ) : null}
-                                    </View>
-                                );
-                            },
+                            accessibilityLabel: withAccessibilitySuffixes(
+                                title,
+                                [meta.text],
+                            ),
+                            label: ({ focused }: any) => (
+                                <ResultTabLabel
+                                    title={title}
+                                    focused={focused}
+                                    meta={meta}
+                                    tintOnError
+                                />
+                            ),
                         };
                         return acc;
                     },
@@ -225,25 +184,5 @@ const styles = StyleSheet.create({
     },
     tab: {
         width: "auto",
-    },
-    pluginTabLabel: {
-        width: rpx(180),
-        minHeight: rpx(72),
-        paddingHorizontal: rpx(14),
-        paddingVertical: rpx(8),
-        borderRadius: rpx(8),
-        borderWidth: StyleSheet.hairlineWidth,
-        alignItems: "center",
-        justifyContent: "center",
-        rowGap: rpx(2),
-    },
-    pluginTabTitle: {
-        width: "100%",
-        textAlign: "center",
-    },
-    pluginTabMeta: {
-        width: "100%",
-        fontSize: fontSizeConst.tag,
-        textAlign: "center",
     },
 });

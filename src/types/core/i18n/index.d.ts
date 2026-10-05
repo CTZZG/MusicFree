@@ -63,6 +63,8 @@ export interface ILanguageData {
     "tabs.home": string; // 底部标签：首页
     "tabs.library": string; // 底部标签：资料库
     "library.downloadingCount": string; // 资料库：正在下载的数量
+    "library.switchToList": string; // 切换到歌单列表
+    "library.switchToGrid": string; // 切换到歌单网格
     "settingsHome.versionLine": string; // 设置页应用卡片：版本与检查更新
     "settingsHome.section.common": string; // 设置页分组：常用
     "settingsHome.section.general": string; // 设置页分组：通用
@@ -139,6 +141,46 @@ export interface ILanguageData {
     "toast.syncFail": string; // 同步失败
     "toast.sortHasBeenUpdated": string; // 排序已更新
     "toast.currentQualityNotAvailableForCurrentMusic": string; // 当前音乐的质量在此设备上不可用
+    "library.searchPlaylists": string;
+    "library.noMatchingPlaylists": string;
+    "library.managePlaylist": string;
+    "library.pinPlaylist": string;
+    "library.unpinPlaylist": string;
+    "library.pinned": string;
+    "library.assignGroup": string;
+    "library.allGroups": string;
+    "library.ungrouped": string;
+    "library.newGroup": string;
+    "library.groupName": string;
+    "library.groupPlaylist": string;
+    "library.groupNameRequired": string;
+    "library.noPlaylists": string;
+    "panel.setFontSize.description": string;
+    "panel.setFontSize.preview": string;
+    "panel.setFontSize.previewLabel": string;
+    "panel.setFontSize.reset": string;
+    "panel.setFontSize.sliderLabel": string;
+    "panel.playList.edit": string;
+    "panel.playList.moveUp": string;
+    "panel.playList.moveDown": string;
+    "panel.playList.moveNext": string;
+    "panel.playList.remove": string;
+    "panel.playList.undo": string;
+    "panel.playList.removed": string;
+    "panel.playList.cleared": string;
+    "panel.playList.undoHint": string;
+    "searchPage.allMusic": string;
+    "searchPage.allMusicHint": string;
+    "searchPage.allMusicMore": string;
+    "searchPage.chooseSource": string;
+    "toast.mediaSourceAccessDenied": string;
+    "playbackRecovery.title": string;
+    "playbackRecovery.actions": string;
+    "playbackRecovery.chooseQuality": string;
+    "playbackRecovery.otherSource": string;
+    "playbackRecovery.pluginSettings": string;
+    "playbackRecovery.accessHint": string;
+    "panel.musicQuality.current": string;
     "toast.mediaSourceUnavailable": string; // 音源不可用
     "toast.mediaSourceNetworkError": string; // 音源网络请求失败
     "toast.mediaSourcePluginError": string; // 音源插件错误
@@ -367,8 +409,8 @@ export interface ILanguageData {
     "permissionSetting.description": string; // 权限设置说明
     "permissionSetting.floatWindowPermission": string; // 悬浮窗权限
     "permissionSetting.floatWindowPermissionDescription": string; // 悬浮窗权限说明
-    "permissionSetting.fileReadWritePermission": string; // 文件读写权限
-    "permissionSetting.fileReadWritePermissionDescription": string; // 文件读写权限说明
+    "permissionSetting.audioPermission": string; // 音乐和音频
+    "permissionSetting.audioPermissionDescription": string; // 音乐和音频权限说明
     "permissionSetting.notificationPermission": string; // 通知权限
     "permissionSetting.notificationPermissionDescription": string; // 通知权限说明
     "permissionSetting.ignoreBatteryOptimization": string; // 忽略电池优化
@@ -421,6 +463,7 @@ export interface ILanguageData {
     "sheetDetail.sortMusicOption.oldest": string; // 最旧
     "sheetDetail.deleteSheet": string; // 删除歌单
     "sheetDetail.deleteSheetContent": string; // 确定删除该歌单吗？
+    "sheetDetail.favoriteEmptyHint": string;
     "sheetDetail.syncPlaylist": string; // 歌单同步
 
     // 历史记录相关
@@ -832,7 +875,6 @@ export interface ILanguageData {
     "basicSettings.crossfadeEnabled.desc": string; // 上一首末尾淡出、下一首开头淡入
     "basicSettings.crossfadeSeconds": string; // 淡化时长
     "basicSettings.crossfadeSeconds.unit": string; // {{seconds}} 秒
-    "basicSettings.lastfm": string; // Last.fm 听歌记录
     "basicSettings.tempRemoteDuck": string; // 播放被暂时打断时
     "basicSettings.tempRemoteDuck.pause": string; // 暂停播放
     "basicSettings.tempRemoteDuck.lowerVolume": string; // 降低音量
@@ -1016,13 +1058,6 @@ export interface ILanguageData {
     "noPlugin.description": string; // 无插件描述
 
     // 对话框相关 - 存储权限
-    "dialog.checkStorage.title": string; // 存储权限
-    "dialog.checkStorage.content.0": string; // 存储权限内容0
-    "dialog.checkStorage.content.1": string; // 存储权限内容1
-    "dialog.checkStorage.content.2": string; // 存储权限内容2
-    "dialog.checkStorage.content.3": string; // 存储权限内容3
-    "dialog.checkStorage.button.grantPermission": string; // 去授予权限
-    "dialog.checkStorage.button.doNotShowAgain": string; // 不再提示
 
     // 对话框相关 - 下载
     "dialog.downloadDialog.title": string; // 发现新版本
@@ -1071,6 +1106,7 @@ export interface ILanguageData {
     "panel.associateLrc.toast.fail": string; // 关联歌词失败
     "panel.associateLrc.toast.unlinkSuccess": string; // 取消关联歌词成功
     "panel.createMusicSheet.title": string; // 新建歌单
+    "panel.setUserVariables.title": string; // 设置用户变量
 
     // 面板相关 - 图片查看器
     "panel.imageViewer.saveImage": string; // 保存图片

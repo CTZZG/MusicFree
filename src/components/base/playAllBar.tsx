@@ -7,6 +7,7 @@ import { showPanel } from "../panels/usePanel";
 import TrackPlayer from "@/core/trackPlayer";
 import Toast from "@/utils/toast";
 import Icon, { IIconName } from "@/components/base/icon.tsx";
+import { maxFontScaleConst } from "@/constants/uiConst";
 import MusicSheet, { useSheetIsStarred } from "@/core/musicSheet";
 import { useI18N } from "@/core/i18n";
 import { MusicRepeatMode } from "@/constants/trackPlayerConst";
@@ -143,11 +144,14 @@ function MainButton(props: {
                 pressed ? style.pressed : null,
             ]}>
             <Icon name={props.icon} size={18} color={colors.primary} />
+            {/* 两个按钮并排、高度固定：2 倍字体时「随机播放」「Shuffle」在窄屏上放不下，
+                和其他尺寸固定的紧凑控件一样封顶 */}
             <ThemeText
                 numberOfLines={1}
                 fontSize="title"
                 fontWeight="semibold"
-                fontColor="primary">
+                fontColor="primary"
+                maxFontSizeMultiplier={maxFontScaleConst.compact}>
                 {props.title}
             </ThemeText>
         </Pressable>
@@ -209,8 +213,11 @@ const style = StyleSheet.create({
     },
     secondaryRow: {
         flexDirection: "row",
+        // 一行放不下（英文、大字体）时折到下一行，不伸出页面
+        flexWrap: "wrap",
         justifyContent: "center",
-        gap: 24,
+        columnGap: 24,
+        rowGap: 8,
         marginTop: 14,
     },
     secondaryButton: {

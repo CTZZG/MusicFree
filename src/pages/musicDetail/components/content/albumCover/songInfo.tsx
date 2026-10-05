@@ -17,13 +17,24 @@ import { ROUTE_PATH, useNavigate } from "@/core/router";
 import { useCurrentMusic } from "@/core/trackPlayer";
 import { parseArtists } from "@/utils/artistParser";
 import rpx from "@/utils/rpx";
+import {
+    ILandscapeSongInfoFit,
+    LANDSCAPE_SONG_INFO_METRICS,
+} from "../../../circleLayout";
 
 interface ISongInfoProps {
-    /** card：卡片封面下的标题区；hero：沉浸大图上的标题区 */
-    variant?: "card" | "hero";
+    /**
+     * card：卡片封面下的标题区；hero：沉浸大图上的标题区；
+     * landscape：横屏封面右边那条矮区域，字号和留白都收紧
+     */
+    variant?: "card" | "hero" | "landscape";
     /** 卡片式布局里与封面同宽，文字和封面两边对齐 */
     width?: number;
+    /** landscape 专用：按实际高度和字体缩放算好的行数（fitLandscapeSongInfo） */
+    landscapeFit?: ILandscapeSongInfoFit;
 }
+
+const ALL_LINES: ILandscapeSongInfoFit = { showArtist: true, showAlbum: true };
 
 // iOS 系统粉，收藏后的爱心
 const FAVORITE_COLOR = "#FF375F";
@@ -121,8 +132,10 @@ function canOpenArtistDetail(
 }
 
 export default function SongInfo(props: ISongInfoProps) {
-    const { variant = "card", width } = props;
+    const { variant = "card", width, landscapeFit } = props;
     const isHero = variant === "hero";
+    const isLandscape = variant === "landscape";
+    const lines = (isLandscape ? landscapeFit : undefined) ?? ALL_LINES;
     const musicItem = useCurrentMusic();
     const navigate = useNavigate();
     const { t } = useI18N();
@@ -231,19 +244,56 @@ export default function SongInfo(props: ISongInfoProps) {
             style={[
                 styles.container,
                 isHero ? styles.heroContainer : null,
+                isLandscape ? styles.landscapeContainer : null,
                 { width: infoWidth },
             ]}>
             <View style={styles.row}>
                 <View style={styles.texts}>
                     <Text
                         numberOfLines={1}
-                        style={[styles.title, isHero ? styles.heroTitle : null]}>
+                        maxFontSizeMultiplier={lines.titleMaxFontScale}
+                        style={[
+                            styles.title,
+                            isHero ? styles.heroTitle : null,
+                            isLandscape ? styles.landscapeTitle : null,
+                        ]}>
                         {musicItem.title || "--"}
                     </Text>
-                    <View style={styles.artistRow}>
+                    {lines.showArtist ? (
+                        <View style={styles.artistRow}>
+                            <Pressable
+                                disabled={singerList.length === 0}
+                                onPress={handleArtistPress}
+                                style={({ pressed }) => [
+                                    styles.clickableContainer,
+                                    pressed ? styles.pressed : null,
+                                ]}>
+                                <Text
+                                    numberOfLines={1}
+                                    style={[
+                                        styles.artist,
+                                        isHero ? styles.heroArtist : null,
+                                        isLandscape
+                                            ? styles.landscapeArtist
+                                            : null,
+                                    ]}>
+                                    {musicItem.artist || "--"}
+                                </Text>
+                            </Pressable>
+                            {/* 横屏那条区域按行数排好了，放不下来源标签；竖屏和歌手
+                                    挤不下一行时换到下一行，不压缩歌手名 */}
+                            {musicItem.platform && !isLandscape ? (
+                                <Tag
+                                    tagName={musicItem.platform}
+                                    containerStyle={styles.tagBg}
+                                    style={styles.tagText}
+                                />
+                            ) : null}
+                        </View>
+                    ) : null}
+                    {musicItem.album && !isHero && lines.showAlbum ? (
                         <Pressable
-                            disabled={singerList.length === 0}
-                            onPress={handleArtistPress}
+                            onPress={handleAlbumPress}
                             style={({ pressed }) => [
                                 styles.clickableContainer,
                                 pressed ? styles.pressed : null,
@@ -251,35 +301,17 @@ export default function SongInfo(props: ISongInfoProps) {
                             <Text
                                 numberOfLines={1}
                                 style={[
-                                    styles.artist,
-                                    isHero ? styles.heroArtist : null,
+                                    styles.album,
+                                    isLandscape ? styles.landscapeAlbum : null,
                                 ]}>
-                                {musicItem.artist || "--"}
-                            </Text>
-                        </Pressable>
-                        {musicItem.platform ? (
-                            <Tag
-                                tagName={musicItem.platform}
-                                containerStyle={styles.tagBg}
-                                style={styles.tagText}
-                            />
-                        ) : null}
-                    </View>
-                    {musicItem.album && !isHero ? (
-                        <Pressable
-                            onPress={handleAlbumPress}
-                            style={({ pressed }) => [
-                                styles.clickableContainer,
-                                pressed ? styles.pressed : null,
-                            ]}>
-                            <Text numberOfLines={1} style={styles.album}>
                                 {musicItem.album}
                             </Text>
                         </Pressable>
                     ) : null}
                 </View>
-                <FavoriteButton musicItem={musicItem} />
+                <FavoriteButton musicItem={musicItem} compact={isLandscape} />
                 <RoundButton
+                    compact={isLandscape}
                     icon="ellipsis-vertical"
                     accessibilityLabel={t("musicDetail.more.a11y")}
                     onPress={() => {
@@ -294,9 +326,10 @@ export default function SongInfo(props: ISongInfoProps) {
     );
 }
 
-/** 标题右侧的圆形按钮（收藏、更多） */
+/** 标题右侧的圆形按钮（收藏、更多）；横屏那条矮区域里用小一号的 */
 function RoundButton(props: {
     icon: IIconName;
+    compact?: boolean;
     color?: string;
     accessibilityLabel: string;
     accessibilityState?: { selected?: boolean };
@@ -311,20 +344,29 @@ function RoundButton(props: {
             onPress={props.onPress}
             style={({ pressed }) => [
                 styles.roundButton,
+                props.compact ? styles.compactRoundButton : null,
                 pressed ? styles.pressed : null,
             ]}>
-            <Icon name={props.icon} size={20} color={props.color ?? "white"} />
+            <Icon
+                name={props.icon}
+                size={props.compact ? 18 : 20}
+                color={props.color ?? "white"}
+            />
         </Pressable>
     );
 }
 
-function FavoriteButton(props: { musicItem: IMusic.IMusicItem }) {
-    const { musicItem } = props;
+function FavoriteButton(props: {
+    musicItem: IMusic.IMusicItem;
+    compact?: boolean;
+}) {
+    const { musicItem, compact } = props;
     const isFavorite = useFavorite(musicItem);
     const { t } = useI18N();
 
     return (
         <RoundButton
+            compact={compact}
             icon={isFavorite ? "heart" : "heart-outline"}
             color={isFavorite ? FAVORITE_COLOR : "white"}
             accessibilityLabel={t(
@@ -357,6 +399,10 @@ const styles = StyleSheet.create({
         paddingTop: rpx(12),
         paddingBottom: rpx(8),
     },
+    landscapeContainer: {
+        paddingTop: LANDSCAPE_SONG_INFO_METRICS.paddingVertical,
+        paddingBottom: LANDSCAPE_SONG_INFO_METRICS.paddingVertical,
+    },
     row: {
         flexDirection: "row",
         alignItems: "center",
@@ -380,9 +426,16 @@ const styles = StyleSheet.create({
         textShadowOffset: { width: 0, height: rpx(2) },
         textShadowRadius: rpx(6),
     },
+    landscapeTitle: {
+        fontSize: LANDSCAPE_SONG_INFO_METRICS.titleFontSize,
+        lineHeight: LANDSCAPE_SONG_INFO_METRICS.titleLineHeight,
+    },
     artistRow: {
         flexDirection: "row",
+        flexWrap: "wrap",
         alignItems: "center",
+        columnGap: 8,
+        rowGap: 4,
         maxWidth: "100%",
     },
     artist: {
@@ -396,6 +449,10 @@ const styles = StyleSheet.create({
         lineHeight: rpx(34),
         color: "rgba(255, 255, 255, 0.86)",
     },
+    landscapeArtist: {
+        fontSize: LANDSCAPE_SONG_INFO_METRICS.artistFontSize,
+        lineHeight: LANDSCAPE_SONG_INFO_METRICS.artistLineHeight,
+    },
     clickableContainer: {
         maxWidth: "100%",
         flexShrink: 1,
@@ -405,7 +462,8 @@ const styles = StyleSheet.create({
     },
     tagBg: {
         backgroundColor: "rgba(255, 255, 255, 0.2)",
-        marginLeft: 8,
+        // 间距由 artistRow 的 columnGap 给，换行后标签和歌手名左对齐
+        marginLeft: 0,
     },
     tagText: {
         color: "white",
@@ -416,6 +474,10 @@ const styles = StyleSheet.create({
         lineHeight: 20,
         includeFontPadding: false,
     },
+    landscapeAlbum: {
+        fontSize: LANDSCAPE_SONG_INFO_METRICS.albumFontSize,
+        lineHeight: LANDSCAPE_SONG_INFO_METRICS.albumLineHeight,
+    },
     roundButton: {
         width: 36,
         height: 36,
@@ -423,5 +485,10 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: "rgba(255, 255, 255, 0.16)",
+    },
+    compactRoundButton: {
+        width: LANDSCAPE_SONG_INFO_METRICS.buttonSize,
+        height: LANDSCAPE_SONG_INFO_METRICS.buttonSize,
+        borderRadius: LANDSCAPE_SONG_INFO_METRICS.buttonSize / 2,
     },
 });

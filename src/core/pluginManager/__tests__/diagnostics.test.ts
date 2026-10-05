@@ -1,8 +1,13 @@
 import {
+    buildPluginDiagnosticReport,
     clearPluginDiagnosticEvents,
+    getPluginDiagnosticSeverity,
+    getRecentPluginDiagnosticErrors,
     isRecentPluginDiagnosticEvent,
     recentPluginDiagnosticWindowMs,
+    recordPluginDiagnosticError,
     recordPluginDiagnosticMessage,
+    recordPluginInstallFailure,
 } from "../diagnostics";
 
 const mockDiagnosticValues = new Map<string, string>();
@@ -29,6 +34,7 @@ describe("plugin diagnostics sanitization", () => {
         const event = recordPluginDiagnosticMessage({
             pluginName: "test",
             method: "capability",
+            severity: "info",
             message: [
                 "https://example.com/media/song.mp3?token=secret",
                 "authorization: Bearer-secret",
@@ -47,6 +53,7 @@ describe("plugin diagnostics sanitization", () => {
             pluginName: "test",
             pluginHash: "hash",
             method: "capability",
+            severity: "info",
             message:
                 "outcome=denied; capability=network.http; reason=url-policy",
         });
@@ -88,5 +95,145 @@ describe("plugin diagnostics sanitization", () => {
                 now,
             )).toBe(true);
         });
+    });
+});
+
+/**
+ * 回归背景：插件卡片的「最近错误」显示的是最新的任意事件，每个插件每次启动都
+ * 记一条 storage-migration · quarantinedLegacyEntries=1（共享存储里一条归属不到
+ * 任何插件的旧数据），用到能力的记录也会顶上去。现在只有 error 才算错误。
+ */
+describe("plugin diagnostic severity", () => {
+    beforeEach(() => {
+        clearPluginDiagnosticEvents();
+    });
+
+    it("records the severity each caller chose", () => {
+        const error = recordPluginDiagnosticMessage({
+            pluginName: "p",
+            method: "search",
+            message: "boom",
+            severity: "error",
+        });
+        const info = recordPluginDiagnosticMessage({
+            pluginName: "p",
+            method: "capability",
+            message: "outcome=allowed; capability=network",
+            severity: "info",
+        });
+
+        expect(error.severity).toBe("error");
+        expect(info.severity).toBe("info");
+    });
+
+    it("shows only errors as a plugin's recent error", () => {
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "search",
+            message: "network failed",
+            severity: "error",
+        });
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "storage-migration",
+            message: "legacyEntries=1; unattributedLegacyEntries=1",
+            severity: "info",
+        });
+
+        const errors = getRecentPluginDiagnosticErrors();
+        expect(errors).toHaveLength(1);
+        expect(errors[0].method).toBe("search");
+    });
+
+    it("treats events stored before severity existed by their method", () => {
+        const legacy = { createdAt: Date.now() };
+        expect(
+            getPluginDiagnosticSeverity({ ...legacy, method: "storage-migration" }),
+        ).toBe("info");
+        expect(
+            getPluginDiagnosticSeverity({ ...legacy, method: "capability" }),
+        ).toBe("info");
+        expect(getPluginDiagnosticSeverity({ ...legacy, method: "mount" })).toBe(
+            "error",
+        );
+    });
+
+    it("counts only recent errors in a plugin's report summary", () => {
+        const plugin = {
+            name: "p",
+            hash: "h",
+            supportedMethods: new Set<string>(),
+            instance: { version: "1.0.0", author: "a" },
+        } as any;
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "capability",
+            message: "outcome=allowed; capability=network",
+            severity: "info",
+        });
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "storage-migration",
+            message: "legacyEntries=1",
+            severity: "info",
+        });
+
+        const infoOnly = buildPluginDiagnosticReport([plugin]);
+        expect(infoOnly).toContain("recentErrors=0");
+        expect(infoOnly).toContain("events=2");
+
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            pluginHash: "h",
+            method: "search",
+            message: "network failed",
+            severity: "error",
+        });
+        expect(buildPluginDiagnosticReport([plugin])).toContain(
+            "recentErrors=1",
+        );
+    });
+
+    it("records thrown errors and failed installs as errors", () => {
+        expect(
+            recordPluginDiagnosticError({
+                pluginName: "p",
+                method: "getMediaSource",
+                error: new Error("HTTP 403"),
+            }).severity,
+        ).toBe("error");
+        expect(
+            recordPluginInstallFailure({
+                success: false,
+                message: "下载失败",
+                pluginName: "p",
+            } as any)?.severity,
+        ).toBe("error");
+    });
+
+    it("does not let a new event leave its severity out", () => {
+        // 编译期检查：verify 会跑 tsc。severity 若又变回可选，下面那条
+        // 「期待报错」的指令就落空，tsc 会因此失败
+        const event = recordPluginDiagnosticMessage(
+            // @ts-expect-error severity 必填
+            { pluginName: "p", method: "search", message: "boom" },
+        );
+        // 绕过类型检查漏写时，按 method 推断，与落盘的旧事件一样
+        expect(getPluginDiagnosticSeverity(event)).toBe("error");
+    });
+
+    it("labels each event's severity in the diagnostic report", () => {
+        recordPluginDiagnosticMessage({
+            pluginName: "p",
+            method: "capability",
+            message: "outcome=allowed",
+            severity: "info",
+        });
+
+        expect(buildPluginDiagnosticReport([])).toContain("p capability [info]");
     });
 });

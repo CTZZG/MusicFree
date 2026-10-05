@@ -24,6 +24,7 @@ import useColors from "@/hooks/useColors";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import StatusBar from "./statusBar";
 import ThemeText from "./themeText";
+import { PAGE_MARGIN } from "@/utils/tileLayout";
 
 interface ILargeTitleScrollViewProps {
     title: string;
@@ -45,7 +46,7 @@ interface ILargeTitleScrollViewProps {
 const COMPACT_TITLE_FADE = [28, 44];
 
 /**
- * iOS 标签页的大标题布局：34pt 粗体标题跟着内容一起滚动，滚过之后顶部
+ * 标签页的大标题布局：28pt 粗体标题跟着内容一起滚动，滚过之后顶部
  * 换成居中的小标题和一条分隔线。再次点击当前标签会滚回顶部。
  */
 export default function LargeTitleScrollView(
@@ -158,7 +159,8 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "flex-end",
         justifyContent: "space-between",
-        paddingHorizontal: 20,
+        // 与页面内容（分组卡片、封面网格）同一条边
+        paddingHorizontal: PAGE_MARGIN,
         paddingTop: 12,
         gap: 12,
     },
@@ -170,8 +172,8 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
     largeTitle: {
-        fontSize: 34,
-        lineHeight: 41,
+        fontSize: 28,
+        lineHeight: 34,
         letterSpacing: 0.4,
     },
     actions: {

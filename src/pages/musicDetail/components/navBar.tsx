@@ -5,7 +5,7 @@ import Share from "react-native-share";
 import FastImage from "@/components/base/fastImage";
 import Icon from "@/components/base/icon.tsx";
 import { ImgAsset, B64Asset } from "@/constants/assetsConst";
-import { fontWeightConst } from "@/constants/uiConst";
+import { fontWeightConst, maxFontScaleConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import { useCurrentMusic } from "@/core/trackPlayer";
 import { useMusicDetailVisuals } from "../artworkContext";
@@ -57,7 +57,9 @@ export default function NavBar(props: INavBarProps) {
             />
             {compact ? (
                 <View style={styles.center}>
-                    <Text style={styles.nowPlaying}>
+                    <Text
+                        maxFontSizeMultiplier={maxFontScaleConst.compact}
+                        style={styles.nowPlaying}>
                         {t("musicDetail.nowPlaying")}
                     </Text>
                 </View>
@@ -79,11 +81,17 @@ export default function NavBar(props: INavBarProps) {
                         placeholderSource={ImgAsset.albumDefault}
                     />
                     <View style={styles.titleTexts}>
-                        <Text numberOfLines={1} style={styles.title}>
+                        <Text
+                            numberOfLines={1}
+                            maxFontSizeMultiplier={maxFontScaleConst.compact}
+                            style={styles.title}>
                             {musicItem?.title ?? "--"}
                         </Text>
                         {musicItem?.artist ? (
-                            <Text numberOfLines={1} style={styles.artist}>
+                            <Text
+                                numberOfLines={1}
+                                maxFontSizeMultiplier={maxFontScaleConst.compact}
+                                style={styles.artist}>
                                 {musicItem.artist}
                             </Text>
                         ) : null}

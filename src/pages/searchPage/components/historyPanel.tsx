@@ -15,6 +15,7 @@ import Button from "@/components/base/textButton.tsx";
 import Empty from "@/components/base/empty";
 import { useI18N } from "@/core/i18n";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import { PAGE_MARGIN } from "@/utils/tileLayout";
 
 export default function () {
     const [history, setHistory] = useState<string[] | null>(null);
@@ -91,7 +92,7 @@ const style = StyleSheet.create({
         width: "100%",
         maxWidth: "100%",
         flexDirection: "column",
-        paddingHorizontal: 20,
+        paddingHorizontal: PAGE_MARGIN,
         flex: 1,
     },
     header: {
@@ -103,8 +104,8 @@ const style = StyleSheet.create({
         alignItems: "baseline",
     },
     headerTitle: {
-        fontSize: 22,
-        lineHeight: 28,
+        fontSize: 20,
+        lineHeight: 25,
     },
     historyContent: {
         width: "100%",

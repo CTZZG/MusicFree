@@ -13,6 +13,7 @@ import HeartIcon from "../heartIcon";
 import Icon from "@/components/base/icon.tsx";
 import lyricManager, { useLyricState } from "@/core/lyricManager";
 import { useI18N } from "@/core/i18n";
+import { DEFAULT_DETAIL_LYRIC_FONT_SIZE_INDEX } from "@/utils/detailLyricFontSize";
 
 interface ILyricOperationsProps {
     scrollToCurrentLrcItem: () => void;
@@ -21,7 +22,10 @@ interface ILyricOperationsProps {
 export default function LyricOperations(props: ILyricOperationsProps) {
     const { scrollToCurrentLrcItem } = props;
 
-    const detailFontSize = PersistStatus.useValue("lyric.detailFontSize", 1);
+    const detailFontSize = PersistStatus.useValue(
+        "lyric.detailFontSize",
+        DEFAULT_DETAIL_LYRIC_FONT_SIZE_INDEX,
+    );
     const detailAlign = PersistStatus.useValue("lyric.detailAlign", "center");
     const isAmlLiteMode = PersistStatus.useValue(
         "lyric.detailAmlLiteMode",
@@ -59,11 +63,14 @@ export default function LyricOperations(props: ILyricOperationsProps) {
             />
             <Icon
                 name="font-size"
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t("panel.setFontSize.title")}
                 size={iconSizeConst.normal}
                 color="white"
                 onPress={() => {
                     showPanel("SetFontSize", {
-                        defaultSelect: detailFontSize ?? 1,
+                        defaultSelect: detailFontSize ?? DEFAULT_DETAIL_LYRIC_FONT_SIZE_INDEX,
                         onSelectChange(value) {
                             PersistStatus.set("lyric.detailFontSize", value);
                             scrollToCurrentLrcItem();

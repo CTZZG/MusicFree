@@ -1,5 +1,4 @@
 package `fun`.upup.musicfree.utils; // replace your-apps-package-name with your app’s package name
-import android.Manifest
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
@@ -8,7 +7,6 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -17,7 +15,6 @@ import android.util.DisplayMetrics
 import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -25,6 +22,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
+import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import kotlin.system.exitProcess
 
 class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
@@ -90,31 +88,6 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
     private fun killCurrentProcess() {
         android.os.Process.killProcess(android.os.Process.myPid())
         exitProcess(0)
-    }
-
-    @ReactMethod
-    fun checkStoragePermission(promise: Promise) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            promise.resolve(Environment.isExternalStorageManager())
-        } else {
-            val readPermission = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-            val writePermission = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-            promise.resolve(readPermission && writePermission)
-        }
-    }
-
-    @ReactMethod
-    fun requestStoragePermission() {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                data = Uri.parse("package:${reactContext.packageName}")
-            }
-        } else {
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:${reactContext.packageName}")
-            }
-        }
-        reactContext.currentActivity?.startActivity(intent)
     }
 
     @ReactMethod
@@ -201,6 +174,15 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
                 putString("appImportanceLabel", appImportanceLabel(processInfo.importance))
                 putArray("playbackServices", getPlaybackServiceDiagnostics())
                 putMap("mediaSession", getMediaSessionDiagnostics())
+                MpvServiceBridge.artworkStatus?.let { status ->
+                    putMap("artwork", Arguments.createMap().apply {
+                        putString("state", status.state)
+                        status.host?.let { putString("host", it) }
+                        putInt("attempt", status.attempt)
+                        status.reason?.let { putString("reason", it) }
+                        putDouble("updatedAt", status.updatedAt.toDouble())
+                    })
+                }
             })
         } catch (e: Throwable) {
             promise.reject("playback_native_diagnostics_failed", e)

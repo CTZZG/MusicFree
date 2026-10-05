@@ -16,6 +16,7 @@ import NavBar from "./components/navBar";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { MusicDetailArtworkProvider } from "./artworkContext";
+import { MusicDetailLayoutProvider } from "./layoutContext";
 import rpx from "@/utils/rpx";
 
 export default function MusicDetail() {
@@ -66,64 +67,66 @@ export default function MusicDetail() {
 
     return (
         <MusicDetailArtworkProvider>
-            <View style={style.root}>
-                <Animated.View
-                    pointerEvents="none"
-                    style={[
-                        style.backgroundLayer,
-                        backgroundSwipeAnimatedStyle,
-                    ]}>
-                    <Background tab={tab} useHeroLayout={useHeroLayout} />
-                </Animated.View>
-                <SafeAreaView
-                    edges={
-                        immersiveMode ? ["left", "right", "bottom"] : undefined
-                    }
-                    style={globalStyle.fwflex1}>
-                    <StatusBar
-                        hidden={immersiveMode}
-                        backgroundColor={"transparent"}
-                        barStyle="light-content"
-                        translucent
-                    />
+            <MusicDetailLayoutProvider>
+                <View style={style.root}>
                     <Animated.View
-                        style={[style.bodyWrapper, pageSwipeAnimatedStyle]}>
-                        <View style={globalStyle.flex1}>
-                            {showOverlayNav ? null : (
-                                <NavBar
-                                    onTitlePress={
-                                        tab === "lyric"
-                                            ? () => setTab("album")
-                                            : undefined
-                                    }
+                        pointerEvents="none"
+                        style={[
+                            style.backgroundLayer,
+                            backgroundSwipeAnimatedStyle,
+                        ]}>
+                        <Background tab={tab} useHeroLayout={useHeroLayout} />
+                    </Animated.View>
+                    <SafeAreaView
+                        edges={
+                            immersiveMode ? ["left", "right", "bottom"] : undefined
+                        }
+                        style={globalStyle.fwflex1}>
+                        <StatusBar
+                            hidden={immersiveMode}
+                            backgroundColor={"transparent"}
+                            barStyle="light-content"
+                            translucent
+                        />
+                        <Animated.View
+                            style={[style.bodyWrapper, pageSwipeAnimatedStyle]}>
+                            <View style={globalStyle.flex1}>
+                                {showOverlayNav ? null : (
+                                    <NavBar
+                                        onTitlePress={
+                                            tab === "lyric"
+                                                ? () => setTab("album")
+                                                : undefined
+                                        }
+                                    />
+                                )}
+                                <Content
+                                    immersiveMode={immersiveMode}
+                                    tab={tab}
+                                    onTabChange={setTab}
                                 />
-                            )}
-                            <Content
-                                immersiveMode={immersiveMode}
-                                tab={tab}
-                                onTabChange={setTab}
-                            />
-                            <Bottom
-                                swipeProgress={swipeProgress}
-                                tab={tab}
-                                onTabChange={setTab}
-                            />
-                            {showOverlayNav ? (
-                                <View
-                                    pointerEvents="box-none"
-                                    style={style.navOverlay}>
-                                    <NavBar compact />
+                                <Bottom
+                                    swipeProgress={swipeProgress}
+                                    tab={tab}
+                                    onTabChange={setTab}
+                                />
+                                {showOverlayNav ? (
+                                    <View
+                                        pointerEvents="box-none"
+                                        style={style.navOverlay}>
+                                        <NavBar compact />
+                                    </View>
+                                ) : null}
+                            </View>
+                            {orientation === "horizontal" ? (
+                                <View style={globalStyle.flex1}>
+                                    <Lyric immersiveMode={immersiveMode} />
                                 </View>
                             ) : null}
-                        </View>
-                        {orientation === "horizontal" ? (
-                            <View style={globalStyle.flex1}>
-                                <Lyric immersiveMode={immersiveMode} />
-                            </View>
-                        ) : null}
-                    </Animated.View>
-                </SafeAreaView>
-            </View>
+                        </Animated.View>
+                    </SafeAreaView>
+                </View>
+            </MusicDetailLayoutProvider>
         </MusicDetailArtworkProvider>
     );
 }

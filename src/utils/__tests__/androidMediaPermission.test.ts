@@ -1,10 +1,11 @@
 jest.mock("react-native", () => ({
+    Linking: { openSettings: jest.fn() },
     PermissionsAndroid: {
         PERMISSIONS: {
             READ_EXTERNAL_STORAGE: "android.permission.READ_EXTERNAL_STORAGE",
             READ_MEDIA_AUDIO: "android.permission.READ_MEDIA_AUDIO",
         },
-        RESULTS: { GRANTED: "granted" },
+        RESULTS: { GRANTED: "granted", NEVER_ASK_AGAIN: "never_ask_again" },
         check: jest.fn(),
         request: jest.fn(),
     },
@@ -12,12 +13,14 @@ jest.mock("react-native", () => ({
 }));
 
 import {
+    checkAndroidAudioReadPermission,
     ensureAndroidAudioReadPermission,
     getAndroidAudioReadPermission,
     requiresAudioReadPermission,
+    toggleAndroidAudioReadPermission,
 } from "../androidMediaPermission";
 
-const { PermissionsAndroid } = jest.requireMock("react-native");
+const { Linking, PermissionsAndroid } = jest.requireMock("react-native");
 
 describe("androidMediaPermission", () => {
     beforeEach(() => {
@@ -43,6 +46,50 @@ describe("androidMediaPermission", () => {
         PermissionsAndroid.check.mockResolvedValue(false);
         PermissionsAndroid.request.mockResolvedValue("denied");
         await expect(ensureAndroidAudioReadPermission()).resolves.toBe(false);
+    });
+
+    // 权限页的开关以前跳到「所有文件访问」，但应用从 0.7.3 起就不声明
+    // MANAGE_EXTERNAL_STORAGE 了，系统页上的开关永远是灰的。现在只管真正用到的
+    // 音频读取权限。
+    describe("permissions page toggle", () => {
+        it("checks the API-level audio permission", async () => {
+            PermissionsAndroid.check.mockResolvedValue(true);
+            await expect(checkAndroidAudioReadPermission()).resolves.toBe(true);
+            expect(PermissionsAndroid.check).toHaveBeenCalledWith(
+                "android.permission.READ_MEDIA_AUDIO",
+            );
+        });
+
+        it("asks the system when the permission is missing", async () => {
+            PermissionsAndroid.check.mockResolvedValue(false);
+            PermissionsAndroid.request.mockResolvedValue("granted");
+            await expect(toggleAndroidAudioReadPermission()).resolves.toBe(true);
+            expect(PermissionsAndroid.request).toHaveBeenCalledWith(
+                "android.permission.READ_MEDIA_AUDIO",
+            );
+            expect(Linking.openSettings).not.toHaveBeenCalled();
+        });
+
+        it("opens app settings when Android will not ask again", async () => {
+            PermissionsAndroid.check.mockResolvedValue(false);
+            PermissionsAndroid.request.mockResolvedValue("never_ask_again");
+            await expect(toggleAndroidAudioReadPermission()).resolves.toBe(false);
+            expect(Linking.openSettings).toHaveBeenCalledTimes(1);
+        });
+
+        it("stays put after a plain denial", async () => {
+            PermissionsAndroid.check.mockResolvedValue(false);
+            PermissionsAndroid.request.mockResolvedValue("denied");
+            await expect(toggleAndroidAudioReadPermission()).resolves.toBe(false);
+            expect(Linking.openSettings).not.toHaveBeenCalled();
+        });
+
+        it("opens app settings to turn an existing grant off", async () => {
+            PermissionsAndroid.check.mockResolvedValue(true);
+            await expect(toggleAndroidAudioReadPermission()).resolves.toBe(true);
+            expect(PermissionsAndroid.request).not.toHaveBeenCalled();
+            expect(Linking.openSettings).toHaveBeenCalledTimes(1);
+        });
     });
 
     // Device regression 2026-07-26 (API 36 Honor, targetSdk 30 -> 36 upgrade):

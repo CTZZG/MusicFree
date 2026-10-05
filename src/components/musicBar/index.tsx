@@ -1,4 +1,10 @@
-import React, { memo, useCallback, useEffect, useState } from "react";
+import React, {
+    memo,
+    RefObject,
+    useCallback,
+    useEffect,
+    useState,
+} from "react";
 import {
     ActivityIndicator,
     AppState,
@@ -68,14 +74,20 @@ function MiniPlayButton() {
             }}>
             <Icon
                 name={isPaused ? "play" : "pause"}
-                size={24}
+                size={26}
                 color={colors.musicBarText}
             />
         </Pressable>
     );
 }
 
-function MusicBar() {
+interface IMusicBarProps {
+    /** 包着根栈的 BlurTargetView，迷你播放器模糊的就是它 */
+    blurTarget?: RefObject<View | null>;
+}
+
+function MusicBar(props: IMusicBarProps) {
+    const { blurTarget } = props;
     const musicItem = useCurrentMusic();
     const { t } = useI18N();
     const [liquidSurfaceRefreshToken, setLiquidSurfaceRefreshToken] =
@@ -174,6 +186,7 @@ function MusicBar() {
         <Animated.View
             style={[
                 styles.wrapper,
+                dark ? styles.shadowDark : styles.shadowLight,
                 {
                     bottom: safeAreaInsets.bottom,
                     left: MUSIC_BAR_HORIZONTAL_MARGIN + safeAreaInsets.left,
@@ -187,7 +200,11 @@ function MusicBar() {
                     refreshToken={liquidSurfaceRefreshToken}
                 />
             ) : (
-                <GlassBackdrop radius={BAR_RADIUS} intensity={60} />
+                <GlassBackdrop
+                    radius={BAR_RADIUS}
+                    intensity={60}
+                    blurTarget={blurTarget}
+                />
             )}
             <MusicInfo musicItem={musicItem} />
             <MiniPlayButton />
@@ -201,7 +218,7 @@ function MusicBar() {
                 onPress={() => {
                     showPanel("PlayList");
                 }}>
-                <Icon name="playlist" size={24} color={colors.musicBarText} />
+                <Icon name="playlist" size={26} color={colors.musicBarText} />
             </Pressable>
         </Animated.View>
     );
@@ -217,13 +234,20 @@ const styles = StyleSheet.create({
         overflow: "hidden",
         flexDirection: "row",
         alignItems: "center",
-        paddingRight: 6,
+        paddingRight: 8,
         // 底色交给玻璃背板，容器本身保持透明
         backgroundColor: "transparent",
     },
+    // 柔和投影，让胶囊和背后同色的卡片分开；投影画在胶囊外面，不受 overflow 裁剪
+    shadowLight: {
+        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)",
+    },
+    shadowDark: {
+        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.45)",
+    },
     barButton: {
-        width: 44,
-        height: 44,
+        width: 48,
+        height: 48,
         alignItems: "center",
         justifyContent: "center",
     },

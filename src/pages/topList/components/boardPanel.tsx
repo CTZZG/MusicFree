@@ -1,26 +1,26 @@
-import React, { memo, useMemo } from "react";
+import React, { memo, useState } from "react";
 import {
     RefreshControl,
     ScrollView,
     StyleSheet,
     View,
     useWindowDimensions,
+    LayoutChangeEvent,
 } from "react-native";
-import rpx from "@/utils/rpx";
 import { IPluginTopListResult } from "../store/atoms";
 import { RequestStateCode } from "@/constants/commonConst";
 import Loading from "@/components/base/loading";
-import TopListItem from "@/components/mediaItem/topListItem";
+import TopListItem, { getTopListPreview } from "@/components/mediaItem/topListItem";
 import ThemeText from "@/components/base/themeText";
 import ListEmpty from "@/components/base/listEmpty";
 import useColors from "@/hooks/useColors";
 import useOrientation from "@/hooks/useOrientation";
 import { resolveTopListGridLayout } from "./topListGridLayout";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import { PAGE_MARGIN, TILE_GAP } from "@/utils/tileLayout";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const HORIZONTAL_PADDING = rpx(24);
-const COLUMN_GAP = rpx(16);
-const MIN_CARD_WIDTH = 140;
+const MIN_CARD_WIDTH = 92;
 
 interface IBoardPanelProps {
     hash: string;
@@ -32,7 +32,12 @@ function BoardPanel(props: IBoardPanelProps) {
     const colors = useColors();
     const orientation = useOrientation();
     const { width: windowWidth } = useWindowDimensions();
-    const musicBarBottomInset = useMusicBarFloatingOffset(rpx(36));
+    const insets = useSafeAreaInsets();
+    const [measurement, setMeasurement] = useState<{
+        windowWidth: number;
+        width: number;
+    }>();
+    const musicBarBottomInset = useMusicBarFloatingOffset(16);
     const requestState =
         topListData?.state ?? RequestStateCode.PENDING_FIRST_PAGE;
     const isLoading =
@@ -41,25 +46,27 @@ function BoardPanel(props: IBoardPanelProps) {
     const hasExistingData = !!topListData?.data?.length;
     const isRefreshing = isLoading && hasExistingData;
     const sections = topListData?.data || [];
-    const gridLayout = useMemo(
-        () =>
-            resolveTopListGridLayout({
-                containerWidth: windowWidth,
-                orientation,
-                horizontalPadding: HORIZONTAL_PADDING,
-                columnGap: COLUMN_GAP,
-                minCardWidth: MIN_CARD_WIDTH,
-            }),
-        [orientation, windowWidth],
-    );
+    const gridLayout = resolveTopListGridLayout({
+        containerWidth: measurement?.windowWidth === windowWidth
+            ? measurement.width
+            : windowWidth - insets.left - insets.right,
+        orientation,
+        horizontalPadding: PAGE_MARGIN,
+        columnGap: TILE_GAP,
+        minCardWidth: MIN_CARD_WIDTH,
+    });
+    const onLayout = (event: LayoutChangeEvent) => {
+        setMeasurement({ windowWidth, width: event.nativeEvent.layout.width });
+    };
 
     return isLoading && !hasExistingData ? (
         <Loading />
     ) : (
         <ScrollView
+            onLayout={onLayout}
             contentContainerStyle={[
                 style.contentContainer,
-                { paddingBottom: musicBarBottomInset || rpx(36) },
+                { paddingBottom: musicBarBottomInset || 16 },
             ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
@@ -75,8 +82,10 @@ function BoardPanel(props: IBoardPanelProps) {
             {!sections.length ? (
                 <ListEmpty state={requestState} onRetry={onRefresh} />
             ) : (
-                sections.map(section => (
-                    <View key={section.title} style={style.section}>
+                sections.map((section, sectionIndex) => (
+                    <View
+                        key={`${section.title}-${sectionIndex}`}
+                        style={[style.section, sectionIndex > 0 ? style.nextSection : null]}>
                         <View style={style.sectionHeader}>
                             <ThemeText fontWeight="bold" fontSize="title">
                                 {section.title}
@@ -89,19 +98,15 @@ function BoardPanel(props: IBoardPanelProps) {
                                     style={[
                                         style.gridItem,
                                         {
-                                            width: gridLayout.itemWidth,
-                                            marginRight:
-                                                (index + 1) %
-                                                    gridLayout.columnCount ===
-                                                0
-                                                    ? 0
-                                                    : COLUMN_GAP,
+                                            width: getTopListPreview(item).length
+                                                ? gridLayout.availableWidth
+                                                : gridLayout.itemWidth,
                                         },
                                     ]}>
                                     <TopListItem
                                         topListItem={item}
                                         pluginHash={hash}
-                                        rank={index + 1}
+                                        tintIndex={index}
                                     />
                                 </View>
                             ))}
@@ -123,24 +128,25 @@ export default memo(
 
 const style = StyleSheet.create({
     contentContainer: {
-        paddingHorizontal: HORIZONTAL_PADDING,
-        paddingTop: rpx(8),
-        paddingBottom: rpx(36),
+        paddingHorizontal: PAGE_MARGIN,
+        paddingTop: 16,
     },
     section: {
         width: "100%",
     },
+    nextSection: {
+        marginTop: 24,
+    },
     sectionHeader: {
-        marginTop: rpx(28),
-        marginBottom: rpx(16),
+        marginBottom: 12,
     },
     grid: {
         flexDirection: "row",
         flexWrap: "wrap",
         alignItems: "flex-start",
+        gap: TILE_GAP,
     },
     gridItem: {
-        marginBottom: COLUMN_GAP,
         flexShrink: 0,
     },
 });

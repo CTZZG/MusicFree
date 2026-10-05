@@ -104,7 +104,7 @@ export default function ClassicContinueHero(
             return "";
         }
         return isCurrent
-            ? getQualityAbbr(currentQuality)
+            ? currentQuality ? getQualityAbbr(currentQuality) : ""
             : getBestQualityBadge(featuredMusic);
     }, [currentQuality, featuredMusic, isCurrent]);
     const subtitle = useMemo(

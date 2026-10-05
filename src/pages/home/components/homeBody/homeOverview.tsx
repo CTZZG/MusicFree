@@ -16,13 +16,26 @@ import useRecommendSheets from "@/pages/recommendSheets/hooks/useRecommendSheets
 import { RequestStateCode } from "@/constants/commonConst";
 import { musicIsPaused } from "@/utils/trackUtils";
 import React, { ReactNode, useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    useWindowDimensions,
+    View,
+} from "react-native";
+import { getShelfTileWidth, PAGE_MARGIN, TILE_GAP } from "@/utils/tileLayout";
 import useHomeDiscovery from "./useHomeDiscovery";
 import useHomeDiscoverySource from "./useHomeDiscoverySource";
 import useHomeOverview from "./useHomeOverview";
 
-const PAGE_PADDING = 20;
+const PAGE_PADDING = PAGE_MARGIN;
 const RECOMMEND_LIMIT = 10;
+// 横排的封面按屏宽算：推荐歌单一屏露出两个半，最近播放小一号、露出三个多
+const SHEET_SHELF = { visible: 2.6, min: 100, max: 156 };
+const RECENT_SHELF = { visible: 3.2, min: 88, max: 120 };
+// 榜单卡片一屏露出一张多一点
+const CHART_CARD_MAX_WIDTH = 260;
+const CHART_CARD_WIDTH_RATIO = 0.72;
 
 function formatTime(value?: number) {
     if (!value || !Number.isFinite(value) || value < 0) {
@@ -125,7 +138,7 @@ function SourcePill(props: { plugin: Plugin; candidates: Plugin[] }) {
     );
 }
 
-/** 分区标题：22pt 粗体，右侧“全部” */
+/** 分区标题：20pt 粗体，右侧“全部” */
 function SectionHeader(props: { title: string; onSeeAll?: () => void }) {
     const { t } = useI18N();
 
@@ -160,7 +173,7 @@ function Carousel(props: { children: ReactNode; gap?: number }) {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={[
                 styles.carousel,
-                { gap: props.gap ?? 14 },
+                { gap: props.gap ?? TILE_GAP },
             ]}>
             {props.children}
         </ScrollView>
@@ -255,11 +268,16 @@ function ContinueListening(props: {
                 style={styles.continueCover}
             />
             <View style={styles.continueTexts}>
+                {/* 标签和播放时间并成一行，卡片少一行高 */}
                 <ThemeText
+                    numberOfLines={1}
                     fontSize="tag"
                     fontWeight="semibold"
-                    fontColor="textSecondary">
-                    {t("home.continueListening")}
+                    fontColor="textSecondary"
+                    style={styles.tabular}>
+                    {`${t("home.continueListening")} · ${formatTime(
+                        elapsed,
+                    )} / ${formatTime(total)}`}
                 </ThemeText>
                 <ThemeText
                     numberOfLines={1}
@@ -276,28 +294,20 @@ function ContinueListening(props: {
                         {featuredMusic.artist}
                     </ThemeText>
                 ) : null}
-                <View style={styles.progressRow}>
+                <View
+                    style={[
+                        styles.progressTrack,
+                        { backgroundColor: colors.placeholder },
+                    ]}>
                     <View
                         style={[
-                            styles.progressTrack,
-                            { backgroundColor: colors.placeholder },
-                        ]}>
-                        <View
-                            style={[
-                                styles.progressFill,
-                                {
-                                    width: `${ratio * 100}%`,
-                                    backgroundColor: colors.primary,
-                                },
-                            ]}
-                        />
-                    </View>
-                    <ThemeText
-                        fontSize="tag"
-                        fontColor="textSecondary"
-                        style={styles.tabular}>
-                        {`${formatTime(elapsed)} / ${formatTime(total)}`}
-                    </ThemeText>
+                            styles.progressFill,
+                            {
+                                width: `${ratio * 100}%`,
+                                backgroundColor: colors.primary,
+                            },
+                        ]}
+                    />
                 </View>
             </View>
             <Pressable
@@ -358,6 +368,8 @@ function RecommendSheets(props: { plugin: Plugin }) {
     const { plugin } = props;
     const { t } = useI18N();
     const navigate = useNavigate();
+    const { width: windowWidth } = useWindowDimensions();
+    const tileWidth = getShelfTileWidth(windowWidth, SHEET_SHELF);
     const supported = plugin.supportedMethods.has("getRecommendSheetsByTag");
     const [query, sheets, requestState] = useRecommendSheets(
         supported ? plugin.hash : "",
@@ -380,7 +392,11 @@ function RecommendSheets(props: { plugin: Plugin }) {
         <View style={styles.section}>
             <SectionHeader
                 title={t("home.recommendSheet")}
-                onSeeAll={() => navigate(ROUTE_PATH.RECOMMEND_SHEETS)}
+                onSeeAll={() =>
+                    navigate(ROUTE_PATH.RECOMMEND_SHEETS, {
+                        initialPluginHash: plugin.hash,
+                    })
+                }
             />
             {failed ? (
                 <RetryLine onRetry={query} />
@@ -399,13 +415,16 @@ function RecommendSheets(props: { plugin: Plugin }) {
                                     })
                                 }
                                 style={({ pressed }) => [
-                                    styles.sheetTile,
+                                    { width: tileWidth },
                                     pressed ? styles.pressed : null,
                                 ]}>
                                 <FastImage
                                     source={sheet.coverImg ?? sheet.artwork}
                                     placeholderSource={ImgAsset.albumDefault}
-                                    style={styles.sheetCover}
+                                    style={[
+                                        styles.sheetCover,
+                                        { width: tileWidth, height: tileWidth },
+                                    ]}
                                 />
                                 <ThemeText
                                     numberOfLines={2}
@@ -419,9 +438,9 @@ function RecommendSheets(props: { plugin: Plugin }) {
                     ) : (
                         <Placeholders
                             count={3}
-                            width={156}
-                            height={156}
-                            radius={14}
+                            width={tileWidth}
+                            height={tileWidth}
+                            radius={12}
                         />
                     )}
                 </Carousel>
@@ -436,6 +455,11 @@ function TopLists(props: { plugin: Plugin }) {
     const colors = useColors();
     const navigate = useNavigate();
     const preview = useHomeDiscovery(plugin);
+    const { width: windowWidth } = useWindowDimensions();
+    const chartWidth = Math.min(
+        CHART_CARD_MAX_WIDTH,
+        Math.round(windowWidth * CHART_CARD_WIDTH_RATIO),
+    );
 
     if (!plugin.supportedMethods.has("getTopLists")) {
         return null;
@@ -462,7 +486,7 @@ function TopLists(props: { plugin: Plugin }) {
                     {t("common.failToLoad")}
                 </ThemeText>
             ) : (
-                <Carousel gap={12}>
+                <Carousel>
                     {preview.topLists.length ? (
                         preview.topLists.map((topList, index) => (
                             <Pressable
@@ -478,6 +502,7 @@ function TopLists(props: { plugin: Plugin }) {
                                 style={({ pressed }) => [
                                     styles.chartCard,
                                     {
+                                        width: chartWidth,
                                         backgroundColor: pressed
                                             ? colors.listActive
                                             : colors.card,
@@ -513,9 +538,9 @@ function TopLists(props: { plugin: Plugin }) {
                     ) : (
                         <Placeholders
                             count={2}
-                            width={280}
-                            height={84}
-                            radius={20}
+                            width={chartWidth}
+                            height={72}
+                            radius={16}
                         />
                     )}
                 </Carousel>
@@ -545,6 +570,8 @@ function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
     const { musics } = props;
     const { t } = useI18N();
     const navigate = useNavigate();
+    const { width: windowWidth } = useWindowDimensions();
+    const tileWidth = getShelfTileWidth(windowWidth, RECENT_SHELF);
 
     if (!musics.length) {
         return null;
@@ -556,7 +583,7 @@ function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
                 title={t("home.recentListening")}
                 onSeeAll={() => navigate(ROUTE_PATH.HISTORY)}
             />
-            <Carousel gap={12}>
+            <Carousel>
                 {musics.map(musicItem => (
                     <Pressable
                         key={`${musicItem.platform}-${musicItem.id}`}
@@ -564,13 +591,16 @@ function RecentListening(props: { musics: IMusic.IMusicItem[] }) {
                         accessibilityLabel={`${musicItem.title}，${musicItem.artist ?? ""}`}
                         onPress={() => TrackPlayer.play(musicItem)}
                         style={({ pressed }) => [
-                            styles.recentTile,
+                            { width: tileWidth },
                             pressed ? styles.pressed : null,
                         ]}>
                         <FastImage
                             source={musicItem.artwork}
                             placeholderSource={ImgAsset.albumDefault}
-                            style={styles.recentCover}
+                            style={[
+                                styles.recentCover,
+                                { width: tileWidth, height: tileWidth },
+                            ]}
                         />
                         <ThemeText
                             numberOfLines={1}
@@ -675,26 +705,26 @@ const styles = StyleSheet.create({
         flexShrink: 1,
     },
     section: {
-        marginTop: 30,
+        marginTop: 24,
     },
     sectionHeader: {
         flexDirection: "row",
         alignItems: "baseline",
         justifyContent: "space-between",
         paddingHorizontal: PAGE_PADDING,
-        paddingBottom: 12,
+        paddingBottom: 10,
     },
     sectionTitle: {
-        fontSize: 22,
-        lineHeight: 28,
+        fontSize: 20,
+        lineHeight: 25,
     },
     carousel: {
         paddingHorizontal: PAGE_PADDING,
     },
     card: {
-        marginTop: 20,
+        marginTop: 16,
         marginHorizontal: PAGE_PADDING,
-        borderRadius: 20,
+        borderRadius: 16,
     },
     emptyCard: {
         flexDirection: "row",
@@ -703,8 +733,8 @@ const styles = StyleSheet.create({
     },
     emptyAction: {
         flex: 1,
-        height: 48,
-        borderRadius: 14,
+        height: 44,
+        borderRadius: 12,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
@@ -714,13 +744,13 @@ const styles = StyleSheet.create({
     continueCard: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 14,
-        padding: 12,
+        gap: 12,
+        padding: 10,
     },
     continueCover: {
-        width: 76,
-        height: 76,
-        borderRadius: 12,
+        width: 60,
+        height: 60,
+        borderRadius: 10,
     },
     continueTexts: {
         flex: 1,
@@ -733,14 +763,8 @@ const styles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 19,
     },
-    progressRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        marginTop: 8,
-    },
     progressTrack: {
-        flex: 1,
+        marginTop: 8,
         height: 4,
         borderRadius: 2,
         overflow: "hidden",
@@ -759,51 +783,40 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
     },
-    sheetTile: {
-        width: 156,
-    },
     sheetCover: {
-        width: 156,
-        height: 156,
-        borderRadius: 14,
+        borderRadius: 12,
     },
     tileTitle: {
         marginTop: 8,
     },
     chartCard: {
-        width: 280,
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderRadius: 20,
+        gap: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 16,
     },
     chartCover: {
-        width: 56,
-        height: 56,
-        borderRadius: 12,
+        width: 48,
+        height: 48,
+        borderRadius: 10,
     },
     chartTexts: {
         flex: 1,
         minWidth: 0,
         gap: 2,
     },
-    recentTile: {
-        width: 108,
-    },
     recentCover: {
-        width: 108,
-        height: 108,
-        borderRadius: 12,
+        borderRadius: 10,
     },
     quickChip: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 8,
-        height: 40,
-        paddingHorizontal: 14,
-        borderRadius: 20,
+        gap: 6,
+        height: 36,
+        paddingHorizontal: 12,
+        borderRadius: 18,
     },
     inlineMessage: {
         paddingHorizontal: PAGE_PADDING,

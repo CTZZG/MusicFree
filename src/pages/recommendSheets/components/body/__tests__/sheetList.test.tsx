@@ -29,7 +29,11 @@ jest.mock("@/components/musicBar/useMusicBarFloatingOffset", () => ({
     __esModule: true,
     default: () => 0,
 }));
-jest.mock("@/components/mediaItem/sheetItem", () => () => null);
+jest.mock("@/components/mediaItem/sheetItem", () => ({
+    __esModule: true,
+    default: () => null,
+    SHEET_GRID_SIDE_PADDING: 10,
+}));
 jest.mock("@/components/base/listEmpty", () => () => null);
 jest.mock("@/components/base/listFooter", () => () => null);
 

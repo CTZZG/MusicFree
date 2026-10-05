@@ -47,10 +47,8 @@ export default function SheetTags(props: ISheetTagsProps) {
                             />
                         </View>
                         {tags.map((tagGroupItem, index) => (
-                            <>
-                                <View
-                                    style={style.groupItem}
-                                    key={tagGroupItem.title ?? index}>
+                            <React.Fragment key={`${index}-${tagGroupItem.title ?? ""}`}>
+                                <View style={style.groupItem}>
                                     {tagGroupItem.title ? (
                                         <ThemeText
                                             fontSize="content"
@@ -72,7 +70,7 @@ export default function SheetTags(props: ISheetTagsProps) {
                                         />
                                     ))}
                                 </View>
-                            </>
+                            </React.Fragment>
                         ))}
                     </ScrollView>
                 </>

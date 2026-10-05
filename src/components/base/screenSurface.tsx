@@ -4,15 +4,11 @@ import { StyleSheet, View } from "react-native";
 import Theme from "@/core/theme";
 import PageBackground from "./pageBackground";
 
-interface IScreenSurfaceProps extends PropsWithChildren {
-    /** 是否在这一页铺用户设置的背景图 */
-    showCustomBackground?: boolean;
-}
-
-export default function ScreenSurface({
-    children,
-    showCustomBackground = false,
-}: IScreenSurfaceProps) {
+/**
+ * 每个页面的纯色底。首页的自定义背景图不在这里铺，由主页铺在标签栏要模糊的
+ * BlurTargetView 里（见 pages/home）。
+ */
+export default function ScreenSurface({ children }: PropsWithChildren) {
     const theme = Theme.useTheme();
 
     return (
@@ -24,7 +20,7 @@ export default function ScreenSurface({
                         theme.colors.pageBackground ?? theme.colors.background,
                 },
             ]}>
-            <PageBackground showCustomImage={showCustomBackground} />
+            <PageBackground />
             <View style={styles.content}>{children}</View>
         </View>
     );

@@ -35,17 +35,42 @@ object PublicHttpsNetworkPolicy {
 
     private val publicDns = createPublicDns(Dns.SYSTEM)
 
+    /**
+     * Only public addresses are ever handed to OkHttp. Non-public answers are
+     * dropped rather than failing the whole lookup, so a mixed answer still
+     * connects to its public addresses and never to the private ones.
+     *
+     * Proxy/VPN apps in fake-ip mode (Clash, sing-box, Surge, Shadowrocket...)
+     * answer every query from 198.18.0.0/15 and route the connection
+     * themselves. That range is not reachable on the public internet, so
+     * rejecting it protects nothing; it only made every native fetch (cover
+     * art for the notification and Live Update, downloads, the QMC/CENC
+     * proxies) fail for those users while the JS side kept working. It is
+     * accepted here as a DNS answer only; a URL that names such an IP
+     * literally is still refused by [requirePublicRemote].
+     */
     private fun createPublicDns(delegate: Dns): Dns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             if (isBlockedHostname(hostname)) {
                 throw UnknownHostException("Blocked non-public host")
             }
-            val addresses = delegate.lookup(hostname)
-            if (addresses.isEmpty() || addresses.any(::isBlockedAddress)) {
+            val addresses = delegate.lookup(hostname).filter { address ->
+                isProxyFakeIpAddress(address) || !isBlockedAddress(address)
+            }
+            if (addresses.isEmpty()) {
                 throw UnknownHostException("Blocked non-public address")
             }
             return addresses
         }
+    }
+
+    /** 198.18.0.0/15, the default fake-ip pool of proxy/VPN apps. */
+    private fun isProxyFakeIpAddress(address: InetAddress): Boolean {
+        val bytes = address.address
+        if (bytes.size != 4) return false
+        val a = bytes[0].toInt() and 0xff
+        val b = bytes[1].toInt() and 0xff
+        return a == 198 && b in 18..19
     }
 
     internal fun publicDnsForTesting(delegate: Dns): Dns =

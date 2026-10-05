@@ -29,7 +29,10 @@ export default function ListFooter(props: IProps) {
                 left: rpx(72),
                 right: rpx(72),
             }} onPress={props.onRetry}>
-                <ThemeText fontSize="content" fontColor="textSecondary">
+                <ThemeText
+                    fontSize="content"
+                    fontColor="textSecondary"
+                    style={style.text}>
                     {t("common.failToLoad")}<Text style={[style.underline, {
                         textDecorationColor: colors.textSecondary,
                     }]}>{" "}{t("common.clickToRetry")}</Text>
@@ -47,7 +50,10 @@ export default function ListFooter(props: IProps) {
         </View>;
     } else if (state === RequestStateCode.FINISHED) {
         return <View style={style.wrapper}>
-            <ThemeText fontSize="content" fontColor="textSecondary">
+            <ThemeText
+                fontSize="content"
+                fontColor="textSecondary"
+                style={style.text}>
                 {t("common.listReachEnd")}
             </ThemeText>
         </View>;
@@ -60,11 +66,16 @@ export default function ListFooter(props: IProps) {
 const style = StyleSheet.create({
     wrapper: {
         width: "100%",
-        height: rpx(120),
+        // 字体放大、文字折成两行时跟着变高，不被裁掉
+        minHeight: rpx(120),
+        paddingVertical: rpx(12),
         justifyContent: "center",
         alignItems: "center",
         flexDirection: "row",
         columnGap: rpx(24),
+    },
+    text: {
+        textAlign: "center",
     },
     underline: {
         textDecorationLine: "underline",

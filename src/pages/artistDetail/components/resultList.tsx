@@ -78,7 +78,6 @@ export default function ResultList(props: IResultListProps) {
                     queryState === RequestStateCode.PARTLY_DONE) &&
                     queryArtist(artistItem, undefined, tab);
             }}
-            overScrollMode="always" 
             data={data.data ?? []}
             renderItem={renderItem}
         />

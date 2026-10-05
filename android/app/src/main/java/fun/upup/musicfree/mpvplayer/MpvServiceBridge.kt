@@ -9,6 +9,18 @@ data class MpvQueueTrack(
 )
 
 /**
+ * 当前这首歌封面的加载结果。只记 host，不记完整地址（里面常带签名票据）。
+ */
+data class ArtworkLoadStatus(
+    /** none（应用没给封面地址）、loading、loaded、retrying、failed */
+    val state: String,
+    val host: String?,
+    val attempt: Int,
+    val reason: String?,
+    val updatedAt: Long,
+)
+
+/**
  * 单例桥接：MpvPlayerModule ↔ MpvPlaybackService 通信。
  */
 object MpvServiceBridge {
@@ -32,6 +44,13 @@ object MpvServiceBridge {
     /** Live Update 歌词模式下，播放服务通知切换为胶囊友好的 ProgressStyle。 */
     @Volatile
     var useLiveUpdateLyricNotification: Boolean = false
+
+    /**
+     * 给「复制播放诊断信息」用：封面拿不到时，通知、锁屏和 Live Update 都只会
+     * 退回默认图标，没有 adb 时只能从这里看出原因。
+     */
+    @Volatile
+    var artworkStatus: ArtworkLoadStatus? = null
 
     @Volatile
     var currentQueueIndex: Int = -1

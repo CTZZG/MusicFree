@@ -29,6 +29,11 @@ export interface CustomizedColors extends IColors {
     listActive?: string;
     /** 输入框背景色 */
     placeholder?: string;
+    /**
+     * 带投影的封面在图片画出来之前的底色。必须不透明：半透明底色下 Android
+     * 会透出这块视图自己的投影，看起来是一大一小两个方框
+     */
+    artworkPlaceholder?: string;
     /** 弹窗、浮层、菜单背景色 */
     backdrop?: string;
     /** 卡片背景色 */

@@ -1,4 +1,5 @@
 import {spawnSync} from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -12,6 +13,22 @@ function nodeModule(...segments) {
     return path.join(rootDir, 'node_modules', ...segments);
 }
 
+// 构建脚本自己的 node:test 用例：generator/lib 下所有 *.test.mjs，新加的自动纳入
+const generatorTestDir = path.join(rootDir, 'generator', 'lib');
+const generatorTests = fs
+    .readdirSync(generatorTestDir)
+    .filter(name => name.endsWith('.test.mjs'))
+    .sort()
+    .map(name => path.join(generatorTestDir, name));
+
+// 布局测试（Yoga）：tests/layout 下所有 *.test.mjs
+const layoutTestDir = path.join(rootDir, 'tests', 'layout');
+const layoutTests = fs
+    .readdirSync(layoutTestDir)
+    .filter(name => name.endsWith('.test.mjs'))
+    .sort()
+    .map(name => path.join(layoutTestDir, name));
+
 const checks = [
     {
         // 格式样本矩阵、结构不变量、依赖覆盖审计与 TypeScript
@@ -19,13 +36,10 @@ const checks = [
         args: [path.join(rootDir, 'generator', 'audit-round20-static.mjs')],
     },
     {
-        name: 'ESLint (check only)',
-        args: [
-            nodeModule('eslint', 'bin', 'eslint.js'),
-            '.',
-            '--ext',
-            '.js,.jsx,.mjs,.ts,.tsx',
-        ],
+        // 有报错就失败；警告按规则与 generator/eslint-warning-baseline.json 比较，
+        // 只许减少。完整的警告列表用 npm run lint:check 查看
+        name: 'ESLint (errors, per-rule warning baseline)',
+        args: [path.join(rootDir, 'generator', 'eslint-ratchet.mjs')],
     },
     {
         name: 'Jest',
@@ -35,8 +49,23 @@ const checks = [
         env: {NODE_ENV: 'test'},
     },
     {
+        // 构建脚本自己的单元测试（node:test），例如审计里 npm view 结果的判定、
+        // CI 是否需要跑原生测试的判定、ESLint 警告与基线的比较
+        name: 'Generator unit tests',
+        args: ['--test', ...generatorTests],
+    },
+    {
+        // 渲染真实组件、用 Yoga 排版，检查播放页、歌单网格、设置表单在几种
+        // 屏幕尺寸、系统字体缩放和语言下不重叠、不被裁掉
+        name: 'Layout tests (Yoga)',
+        args: ['--test', ...layoutTests],
+        env: {NODE_ENV: 'test'},
+    },
+    {
         name: 'patch-package replay',
-        args: [nodeModule('patch-package', 'index.js'), '--check'],
+        // patch-package 没有 --check：未知参数被忽略，补丁打不上时本地只打印
+        // 警告、退出码仍是 0（CI 上才默认报错）。--error-on-fail 让本地同样失败。
+        args: [nodeModule('patch-package', 'index.js'), '--error-on-fail'],
     },
 ];
 
