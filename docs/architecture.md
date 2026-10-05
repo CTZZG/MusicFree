@@ -155,6 +155,10 @@
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。
 - 稳定版构建另外运行 `npm run audit:production-deps`（`generator/audit-production-deps.mjs`），有高危漏洞时不发布。
+- 稳定版的 Release 正文就是 `docs/release-notes-v<版本>.md`，只写给用户看的内容：下载哪个文件、升级前要注意的行为变化、
+  新功能、改进与修复；不写测试数、Beta 编号、验证过程这类过程性内容。提交、构建时间、签名在附件 `android-build-info.txt`
+  和构建日志里，不追加到正文。发版后要改说明：改这个文件并合入 `feat/mpv-only`，再手动运行 Android Release Build、
+  勾选 `notes_only`，只更新正文，不重新构建、不动安装包；同一分支上正在跑的构建会让它排队。
   阻断标准与 `npm audit --omit=dev --audit-level=high` 相同，只放行脚本中登记的例外。例外只能是上游暂无修复版本的公告，并写明原因；
   一旦依赖方接受的版本范围内出现了不受影响的新版本，审计就会失败，提醒升级并删除例外。已不再匹配任何公告的例外只给出警告。
 - 2026-10-02 已把有修复版本的高危依赖全部升级（axios、nanoid、brace-expansion、@xmldom/xmldom、browserslist、joi、js-yaml、undici），

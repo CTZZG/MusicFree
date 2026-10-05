@@ -211,6 +211,7 @@ APK 打包、自动测试通过、真机功能通过、用户视觉认可分别�
 | [CI #27](https://github.com/CTZZG/MusicFree/actions/runs/37266876166)、[Android Release Build #258](https://github.com/CTZZG/MusicFree/actions/runs/37267231775) | 64f2b16 → 7482e27 | 成功；PR #10 的检查（质量门、Android 单元测试）和合并后的正式版验证构建，不发布 Release |
 | [CI](https://github.com/CTZZG/MusicFree/actions/runs/37275103334)、[Android Release Build #259](https://github.com/CTZZG/MusicFree/actions/runs/37275783738) | 8c8747e → a013488 | 成功；PR #11（搜索总览「其他来源」、0.10.0 版本号）的检查和合并后的验证构建 |
 | [Android Release Build #260](https://github.com/CTZZG/MusicFree/actions/runs/37275808929) | a013488 | 成功；在 `feat/mpv-only` 上手动运行，发布 [v0.10.0](https://github.com/CTZZG/MusicFree/releases/tag/v0.10.0)（5 个 APK、构建信息、SHA256SUMS） |
+| [Android Release Build #261](https://github.com/CTZZG/MusicFree/actions/runs/37283121471)、[#262](https://github.com/CTZZG/MusicFree/actions/runs/37283146878) | 1cf1714 → a6120e3 | 成功；PR #12 合并后的验证构建，以及 `notes_only` 只更新 v0.10.0 的 Release 正文（改成只写给用户看的内容），7 个附件没动 |
 
 各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。
 
