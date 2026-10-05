@@ -574,13 +574,36 @@ for (const device of DEVICES) {
                 const rendered = renderSearch(env, {phase: 'settled', params: {initialQuery: QUERY, initialSearchType: 'music', pluginHash: 'all-music-sources'}});
                 try {
                     const {root, t} = rendered;
-                    const choices = findAll(root, byText(t('searchPage.chooseSource', {count: 2})));
-                    assert.ok(choices.length > 0, 'matching recordings offer source choices');
-                    for (const choice of choices) {
-                        assertReadable(choice, 'source choice');
-                        assert.ok(choice.parent.frame.height >= 44 - 0.5, 'source choice has a usable touch target');
-                        // 合组规则的说明不占列表的地方，朗读「选择来源」时读出来
-                        assert.equal(choice.parent.props.accessibilityHint, t('searchPage.allMusicHint'));
+                    // 同一首歌的其他来源挂在那首歌下面：和歌名对齐、紧贴着它，离下一首远；
+                    // 以前是一整行「选择来源（2 个）」，离上下两首一样远，看不出是哪首歌的
+                    const songButtons = findAll(root, record => record.props.accessibilityRole === 'button' && SONGS.some(song => record.props.accessibilityLabel === `${song.title}, ${song.artist}`));
+                    const otherSourceLines = findAll(root, record => record.props.accessibilityRole === 'button' && record.props.accessibilityHint === t('searchPage.allMusicHint'));
+                    assert.ok(otherSourceLines.length > 0, 'matching recordings offer their other sources');
+                    for (const line of otherSourceLines) {
+                        const song = songButtons.find(row => Math.abs(bottomOf(row.frame) - line.frame.y) <= 0.5);
+                        assert.ok(song, `the other-sources line ${describeFrame(line.frame)} hangs right under a song`);
+                        const songTitle = song.props.accessibilityLabel.split(', ')[0];
+                        assert.ok(line.props.accessibilityLabel.startsWith(`${songTitle}, `), 'the line is read out with its song');
+                        const [label] = findAll(line, isText);
+                        assert.ok(label.text.startsWith(t('searchPage.otherSources', {names: ''})), `"${label.text}" names the other sources`);
+                        assertReadable(label, 'other sources');
+                        assert.ok(!label.textInfo.truncated, `"${label.text}" is shown in full`);
+                        assert.ok(line.frame.height >= 44 - 0.5, 'the line has a usable touch target');
+                        assert.ok(rightOf(line.frame) <= env.window.width - env.insets.right + 0.5);
+                        const icon = findOne(line, record => record.props.name === 'arrows-left-right', 'other sources icon');
+                        const title = findOne(song, byText(songTitle), 'song title');
+                        assert.ok(Math.abs(icon.frame.x - title.frame.x) <= 1, `the line starts at x=${icon.frame.x.toFixed(1)}, under the song title at x=${title.frame.x.toFixed(1)}`);
+                        const songTextBottom = Math.max(...findAll(song, isText).map(text => bottomOf(text.frame)));
+                        const gapAbove = label.frame.y - songTextBottom;
+                        assert.ok(gapAbove >= 0 && gapAbove <= 14, `the line is ${gapAbove.toFixed(1)} dp below its song's text`);
+                        const next = songButtons.find(row => row.frame.y >= bottomOf(line.frame) - 0.5 && row.frame.y <= bottomOf(line.frame) + 0.5);
+                        if (next) {
+                            const nextTop = Math.min(...findAll(next, isText).map(text => text.frame.y));
+                            const gapBelow = nextTop - bottomOf(label.frame);
+                            assert.ok(gapBelow >= gapAbove + 8, `the line is ${gapAbove.toFixed(1)} dp from its song but only ${gapBelow.toFixed(1)} dp from the next one`);
+                        }
+                        // 合组规则的说明不占列表的地方，朗读时读出来
+                        assert.equal(line.props.accessibilityHint, t('searchPage.allMusicHint'));
                     }
                     assert.equal(findAll(root, byText(t('searchPage.allMusicHint'))).length, 0, 'the explanation is not shown in the list');
                     // 列表顶上只有失败的来源：超时的那个可以重试，加载成功、还在加载的不占行

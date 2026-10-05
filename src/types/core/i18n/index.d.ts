@@ -172,7 +172,9 @@ export interface ILanguageData {
     "searchPage.allMusic": string;
     "searchPage.allMusicHint": string;
     "searchPage.allMusicMore": string;
-    "searchPage.chooseSource": string;
+    "searchPage.otherSources": string;
+    "searchPage.sourceSeparator": string;
+    "searchPage.chooseSourceHeader": string;
     "toast.mediaSourceAccessDenied": string;
     "playbackRecovery.title": string;
     "playbackRecovery.actions": string;

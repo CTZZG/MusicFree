@@ -20,7 +20,12 @@ jest.mock("../../../hooks/useSearchSession", () => ({
 jest.mock("@/core/search", () => ({ __esModule: true, default: { ensureLoaded: jest.fn(), retry: jest.fn(), loadMore: jest.fn(), getSnapshot: jest.fn(() => ({ id: 1 })) } }));
 jest.mock("@/core/trackPlayer", () => ({ __esModule: true, default: { play: jest.fn(), playWithReplacePlayList: jest.fn() } }));
 jest.mock("@/core/appConfig", () => ({ __esModule: true, default: { getConfig: jest.fn() } }));
-jest.mock("@/core/i18n", () => ({ useI18N: () => ({ t: (key: string) => key }) }));
+// 带参数的文案把参数接在后面，方便断言里面的歌名、来源名
+jest.mock("@/core/i18n", () => ({
+    useI18N: () => ({ t: (key: string, args?: Record<string, unknown>) => args ? `${key} ${Object.values(args).join("|")}` : key }),
+}));
+jest.mock("@/components/base/icon", () => "Icon");
+jest.mock("@/hooks/useColors", () => ({ __esModule: true, default: () => ({ primary: "#007AFF" }) }));
 jest.mock("@/components/musicBar/useMusicBarFloatingOffset", () => ({ __esModule: true, default: () => 136 }));
 jest.mock("@/components/base/themeText", () => "Text");
 jest.mock("@/components/base/listEmpty", () => () => null);
@@ -48,7 +53,7 @@ it("requests all enabled music sources through the shared session", () => {
     expect(searchSession.ensureLoaded).toHaveBeenCalledWith("music", "b");
 });
 it("plays the chosen original source and substitutes it in the grouped replacement playlist", () => {
-    const text = tree.root.findAll(node => node.props.children === "searchPage.chooseSource")[0];
+    const text = tree.root.findAll(node => node.props.children === "searchPage.otherSources B")[0];
     let button = text.parent;
     while (button && typeof button.props.onPress !== "function") {
         button = button.parent;
@@ -68,7 +73,7 @@ it("keeps the existing single-song click preference", () => {
 });
 
 it("ignores an old source chooser after a new search starts", () => {
-    const text = tree.root.findAll(node => node.props.children === "searchPage.chooseSource")[0];
+    const text = tree.root.findAll(node => node.props.children === "searchPage.otherSources B")[0];
     let button = text.parent;
     while (button && typeof button.props.onPress !== "function") {
         button = button.parent;
@@ -79,4 +84,19 @@ it("ignores an old source chooser after a new search starts", () => {
     act(() => payload.onPress(payload.candidates[1]));
     expect(TrackPlayer.playWithReplacePlayList).not.toHaveBeenCalled();
     expect(TrackPlayer.play).not.toHaveBeenCalled();
+});
+
+it("names the song's other sources right under it and titles the chooser with the song", () => {
+    // 只有一组有两个来源：A 的那首显示在行里，下面写其余的来源 B
+    const lines = tree.root.findAll(node => typeof node.props.children === "string" && node.props.children.startsWith("searchPage.otherSources"));
+    expect([...new Set(lines.map(node => node.props.children))]).toEqual(["searchPage.otherSources B"]);
+    let button = lines[0].parent;
+    while (button && typeof button.props.onPress !== "function") {
+        button = button.parent;
+    }
+    expect(button!.props.accessibilityLabel).toBe("Song, searchPage.otherSources B");
+    act(() => button!.props.onPress());
+    const payload = (showPanel as jest.Mock).mock.calls[0][1];
+    expect(payload.header).toBe("searchPage.chooseSourceHeader Song");
+    expect(payload.candidates.map((candidate: { title: string }) => candidate.title)).toEqual(["A · Song", "B · Song"]);
 });
