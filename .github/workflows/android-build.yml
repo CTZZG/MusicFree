@@ -7,6 +7,11 @@ on:
                 description: Optional version name; when provided it must match package.json
                 required: false
                 type: string
+            notes_only:
+                description: 只把 docs/release-notes-v<版本>.md 更新到已发布的 Release 上，不重新构建、不动安装包
+                required: false
+                default: false
+                type: boolean
     push:
         tags:
             - 'v*'
@@ -25,7 +30,7 @@ jobs:
     build-android:
         name: Build Android APK
         runs-on: ubuntu-latest
-        if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+        if: (github.event_name != 'pull_request' || github.event.pull_request.merged == true) && !inputs.notes_only
         env:
             NODE_VERSION: '22'
             JAVA_VERSION: '17'
@@ -404,17 +409,8 @@ jobs:
                   RELEASE_BODY_PATH="$RUNNER_TEMP/release-notes-${APP_VERSION}.md"
                   cp "$RELEASE_NOTES_PATH" "$RELEASE_BODY_PATH"
                   sed -i "s/<短 SHA>/${SHORT_SHA}/g" "$RELEASE_BODY_PATH"
-                  {
-                    echo
-                    echo "## 🧾 本次 Action 构建"
-                    echo
-                    echo "- 版本：${APP_VERSION}"
-                    echo "- 提交：[${SHORT_SHA}](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})"
-                    echo "- Ref：${BUILD_REF_NAME}（${BUILD_REF_TYPE}）"
-                    echo "- 构建时间：${BUILD_DATE}"
-                    echo "- 签名：${SIGNING_STATUS}"
-                    echo "- Action：[查看构建日志](${BUILD_RUN_URL})"
-                  } >> "$RELEASE_BODY_PATH"
+                  # Release 正文只放给用户看的更新说明；提交、构建时间、签名等在附件
+                  # android-build-info.txt 和这次 Action 的日志里
                   echo "RELEASE_BODY_PATH=$RELEASE_BODY_PATH" >> "$GITHUB_ENV"
 
             - name: Publish GitHub release assets
@@ -449,3 +445,40 @@ jobs:
                     echo "### Artifacts"
                     ls -1 dist | sed 's/^/- /'
                   } >> "$GITHUB_STEP_SUMMARY"
+
+    # 发版后改说明：只按 docs/release-notes-v<版本>.md 更新 Release 正文，安装包和附件不动
+    update-release-notes:
+        name: Update release notes
+        runs-on: ubuntu-latest
+        if: github.event_name == 'workflow_dispatch' && inputs.notes_only
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Update the published release notes
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GH_REPO: ${{ github.repository }}
+                  INPUT_VERSION: ${{ inputs.version_name }}
+              run: |
+                  PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+                  if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "$PACKAGE_VERSION" ]; then
+                    echo "::error title=Version mismatch::Manual version $INPUT_VERSION must match package.json version $PACKAGE_VERSION."
+                    exit 1
+                  fi
+                  RELEASE_TAG="v$PACKAGE_VERSION"
+                  RELEASE_NOTES_PATH="docs/release-notes-v${PACKAGE_VERSION}.md"
+                  if [ ! -f "$RELEASE_NOTES_PATH" ]; then
+                    echo "::error title=Release notes missing::$RELEASE_NOTES_PATH does not exist."
+                    exit 1
+                  fi
+                  if ! gh release view "$RELEASE_TAG" > /dev/null; then
+                    echo "::error title=Release missing::$RELEASE_TAG has not been published; run the full build instead."
+                    exit 1
+                  fi
+                  # 和正式构建一样替换说明里的短 SHA，用 Release 指向的提交
+                  TARGET_SHA="$(gh release view "$RELEASE_TAG" --json targetCommitish --jq .targetCommitish)"
+                  RELEASE_BODY_PATH="$RUNNER_TEMP/release-notes-${PACKAGE_VERSION}.md"
+                  sed "s/<短 SHA>/${TARGET_SHA::7}/g" "$RELEASE_NOTES_PATH" > "$RELEASE_BODY_PATH"
+                  gh release edit "$RELEASE_TAG" --notes-file "$RELEASE_BODY_PATH"
+                  echo "Updated the notes of $RELEASE_TAG from $RELEASE_NOTES_PATH." >> "$GITHUB_STEP_SUMMARY"
