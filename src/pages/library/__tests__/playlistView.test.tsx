@@ -198,9 +198,17 @@ describe("library playlist views", () => {
         const [, groups] = mockShowPanel.mock.calls[1];
         act(() => groups.onPress({ value: null }));
         const [, dialog] = mockShowDialog.mock.calls[0];
-        act(() => dialog.extraActions[0].onPress());
+        // 和其他对话框一样只有「取消」「确定」两个按钮，「确定」在右边
+        expect(dialog.extraActions).toBeUndefined();
+        expect(dialog.okText).toBeUndefined();
+        expect(dialog.cancelText).toBeUndefined();
+        let result: unknown;
+        act(() => {
+            result = dialog.onOk();
+        });
         expect(mockWarn).toHaveBeenCalledWith("请输入分组名称");
-        expect(mockHideDialog).not.toHaveBeenCalled();
+        // 返回 false：SimpleDialog 不关对话框，用户可以接着输入
+        expect(result).toBe(false);
         act(() => store.set("library.playlistOrganization", JSON.stringify({ pinnedIds: ["ordinary"], groupBySheetId: {} })));
         let editor: ReactTestRenderer;
         act(() => {
@@ -209,9 +217,11 @@ describe("library playlist views", () => {
         const input = editor!.root.findAll(node => node.props.testID === "library-group-name")[0];
         act(() => input.props.onChangeText("  工作  "));
         expect(input.props.value).toBe("  工作  ");
-        act(() => dialog.extraActions[0].onPress());
+        act(() => {
+            result = dialog.onOk();
+        });
+        expect(result).not.toBe(false);
         expect(JSON.parse(store.getString("library.playlistOrganization"))).toEqual({ pinnedIds: ["ordinary"], groupBySheetId: { ordinary: "工作" } });
-        expect(mockHideDialog).toHaveBeenCalledTimes(1);
         act(() => editor.unmount());
     });
 

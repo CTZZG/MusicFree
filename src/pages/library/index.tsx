@@ -13,7 +13,7 @@ import { GroupedRow, GroupedSection } from "@/components/base/groupedList";
 import Icon, { IIconName } from "@/components/base/icon.tsx";
 import LargeTitleScrollView from "@/components/base/largeTitleScrollView";
 import ThemeText from "@/components/base/themeText";
-import { hideDialog, showDialog } from "@/components/dialogs/useDialog";
+import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import { useDownloadQueue } from "@/core/downloader";
 import { useI18N } from "@/core/i18n";
@@ -228,25 +228,20 @@ export default function Library() {
                     onPress: groupItem => {
                         if (groupItem.value === null) {
                             let draftName = "";
+                            // 和其他对话框一样「取消」在左、「确定」在右；组名为空时提示，对话框不关
                             showDialog("SimpleDialog", {
                                 title: t("library.groupPlaylist", { name: sheet.title ?? "" }),
                                 content: <PlaylistGroupInput onChange={value => {
                                     draftName = value;
                                 }} />,
-                                okText: t("common.cancel"),
-                                extraActions: [{
-                                    title: t("common.confirm"),
-                                    type: "primary",
-                                    onPress: () => {
-                                        if (!draftName.trim()) {
-                                            Toast.warn(t("library.groupNameRequired"));
-                                            return;
-                                        }
-                                        saveGroup(sheet.id, draftName);
-                                        Keyboard.dismiss();
-                                        hideDialog();
-                                    },
-                                }],
+                                onOk: () => {
+                                    if (!draftName.trim()) {
+                                        Toast.warn(t("library.groupNameRequired"));
+                                        return false;
+                                    }
+                                    saveGroup(sheet.id, draftName);
+                                    Keyboard.dismiss();
+                                },
                             });
                         } else {
                             saveGroup(sheet.id, groupItem.value);
