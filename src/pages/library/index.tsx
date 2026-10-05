@@ -35,6 +35,12 @@ import PlaylistGroupInput from "./playlistGroupInput";
 
 // 歌单网格：手机上排三列（以前最窄 150，调大显示大小的手机上只排得下两列）
 const MIN_TILE_WIDTH = 100;
+// 列表里的 ⋮ 44 宽，往页边距里伸 12
+const LIST_MANAGE_WIDTH = 44;
+const LIST_MANAGE_OFFSET = -12;
+// 网格里的 ⋮ 32 宽，往格间距里伸 6；点击范围左右各放宽 6 凑够 44，右边正好到下一格边上（格间距 12）
+const TILE_MANAGE_OFFSET = -6;
+const TILE_MANAGE_HIT_SLOP = { left: 6, right: 6 };
 
 function HeaderButton(props: {
     icon: IIconName;
@@ -65,15 +71,13 @@ function SheetItem(props: {
     pinned: boolean;
     group?: string;
     onManage: () => void;
-    onRemoved: () => void;
 }) {
-    const { sheet, width, list, pinned, group, onManage, onRemoved } = props;
+    const { sheet, width, list, pinned, group, onManage } = props;
     const colors = useColors();
     const navigate = useNavigate();
     const { t } = useI18N();
-    const isFavorite = sheet.id === MusicSheet.defaultSheet.id;
     const cover = sheet.coverImg ?? sheet.artwork;
-    const title = isFavorite ? t("home.favoriteSheet") : sheet.title ?? "";
+    const title = sheet.title ?? "";
     const count = t("home.songCount", { count: sheet.worksNum ?? 0 });
     const coverSize = list ? 48 : width;
 
@@ -89,31 +93,16 @@ function SheetItem(props: {
                 onPress={() => {
                     navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, { id: sheet.id });
                 }}
-                onLongPress={() => {
-                    if (isFavorite) {
-                        return;
-                    }
-                    showDialog("SimpleDialog", {
-                        title: t("dialog.deleteSheetTitle"),
-                        content: t("dialog.deleteSheetContent", {
-                            name: sheet.title,
-                        }),
-                        okText: t("common.delete"),
-                        cancelText: t("common.cancel"),
-                        onOk: async () => {
-                            await MusicSheet.removeSheet(sheet.id);
-                            onRemoved();
-                            Toast.success(t("toast.deleteSuccess"));
-                        },
-                    });
-                }}>
+                // 长按和右边的 ⋮ 打开同一个菜单（置顶、分组、删除）
+                onLongPress={onManage}>
                 <View
                     style={[
                         styles.cover,
-                        isFavorite
-                            ? styles.favoriteCover
-                            : { backgroundColor: colors.placeholder },
-                        { width: coverSize, height: coverSize },
+                        {
+                            backgroundColor: colors.placeholder,
+                            width: coverSize,
+                            height: coverSize,
+                        },
                     ]}>
                     {cover ? (
                         <FastImage
@@ -122,13 +111,13 @@ function SheetItem(props: {
                         />
                     ) : (
                         <Icon
-                            name={isFavorite ? "heart" : "musical-note"}
+                            name="musical-note"
                             size={Math.round(coverSize * 0.32)}
-                            color={isFavorite ? "#FFFFFF" : colors.textSecondary}
+                            color={colors.textSecondary}
                         />
                     )}
                 </View>
-                <View style={list ? styles.listTexts : undefined}>
+                <View style={list ? styles.listTexts : styles.tileTexts}>
                     <ThemeText
                         numberOfLines={list ? 2 : 1}
                         fontSize="subTitle"
@@ -152,23 +141,24 @@ function SheetItem(props: {
                         </ThemeText>
                     ) : null}
                 </View>
-                {list ? (
-                    <Icon name="chevron-right" size={16} color={colors.textSecondary} />
-                ) : null}
             </Pressable>
-            {!isFavorite ? (
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t("library.managePlaylist", { name: title })}
-                    hitSlop={4}
-                    onPress={onManage}
-                    style={[
-                        list ? styles.listManage : styles.tileManage,
-                        { backgroundColor: colors.card },
-                    ]}>
-                    <Icon name="ellipsis-vertical" size={18} color={colors.text} />
-                </Pressable>
-            ) : null}
+            {/* 和歌曲行一样是不带底色的 ⋮。放在行外面而不是行里：行是一个无障碍
+                节点，里面的按钮读屏软件点不到 */}
+            <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("library.managePlaylist", { name: title })}
+                hitSlop={list ? undefined : TILE_MANAGE_HIT_SLOP}
+                onPress={onManage}
+                style={({ pressed }) => [
+                    list ? styles.listManage : [styles.tileManage, { top: width }],
+                    pressed ? styles.pressed : null,
+                ]}>
+                <Icon
+                    name="ellipsis-vertical"
+                    size={18}
+                    color={colors.textSecondary}
+                />
+            </Pressable>
         </View>
     );
 }
@@ -189,15 +179,42 @@ export default function Library() {
     const [query, setQuery] = useState("");
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
     const favoriteId = MusicSheet.defaultSheet.id;
+    const favoriteTitle = t("home.favoriteSheet");
+    const favoriteCount = sheets.find(sheet => sheet.id === favoriteId)?.worksNum ?? 0;
+    // 「我喜欢」是播放页 ♥ 收歌的地方，不能删、改名、置顶或分组，放在上面的入口里；
+    // 「我的歌单」只列自己建的和导入的（「编辑」页本来也只列这些）
+    const userSheets = sheets.filter(sheet => sheet.id !== favoriteId);
     const sheetIds = sheets.map(sheet => sheet.id);
     const organization = normalizePlaylistOrganization(storedOrganization, sheetIds, favoriteId);
     const groups = [...new Set(Object.values(organization.groupBySheetId))].sort();
     // An empty/deleted group must not leave the whole library hidden.
     const activeGroup = selectedGroup && !groups.includes(selectedGroup) ? null : selectedGroup;
     const orderedSheets = selectLibraryPlaylists(
-        sheets, favoriteId, organization, query, activeGroup, t("home.favoriteSheet"),
+        userSheets, favoriteId, organization, query, activeGroup, favoriteTitle,
     );
     const currentSheetIds = () => MusicSheet.getSheets().map(sheet => sheet.id);
+    const deleteSheet = (sheet: IMusic.IMusicSheetItemBase) => {
+        showDialog("SimpleDialog", {
+            title: t("dialog.deleteSheetTitle"),
+            content: t("dialog.deleteSheetContent", {
+                name: sheet.title,
+            }),
+            okText: t("common.delete"),
+            cancelText: t("common.cancel"),
+            onOk: async () => {
+                await MusicSheet.removeSheet(sheet.id);
+                // 删掉以后顺手清掉它的置顶和分组
+                AppConfig.setConfig(
+                    "library.playlistOrganization",
+                    normalizePlaylistOrganization(
+                        AppConfig.getConfig("library.playlistOrganization"),
+                        currentSheetIds().filter(id => id !== sheet.id), favoriteId,
+                    ),
+                );
+                Toast.success(t("toast.deleteSuccess"));
+            },
+        });
+    };
     const saveGroup = (sheetId: string, name: string) => {
         AppConfig.setConfig("library.playlistOrganization", assignPlaylistGroup(
             AppConfig.getConfig("library.playlistOrganization"), currentSheetIds(), favoriteId, sheetId, name,
@@ -210,12 +227,17 @@ export default function Library() {
             candidates: [
                 { title: t(pinned ? "library.unpinPlaylist" : "library.pinPlaylist"), icon: "bookmark-square", value: "pin" },
                 { title: t("library.assignGroup"), icon: "folder-outline", value: "group" },
+                { title: t("sheetDetail.deleteSheet"), icon: "trash-outline", value: "delete" },
             ],
             onPress: item => {
                 if (item.value === "pin") {
                     AppConfig.setConfig("library.playlistOrganization", togglePlaylistPin(
                         AppConfig.getConfig("library.playlistOrganization"), currentSheetIds(), favoriteId, sheet.id,
                     ));
+                    return;
+                }
+                if (item.value === "delete") {
+                    deleteSheet(sheet);
                     return;
                 }
                 showPanel("SimpleSelect", {
@@ -321,6 +343,23 @@ export default function Library() {
                 />
                 <GroupedRow
                     plainIcon
+                    icon="heart-outline"
+                    title={favoriteTitle}
+                    // 和「收藏歌单」一样，有歌才在右边写数量
+                    value={favoriteCount ? String(favoriteCount) : undefined}
+                    // 读出「我喜欢，12首」，不只读一个数字
+                    accessibilityLabel={
+                        favoriteCount
+                            ? `${favoriteTitle}，${t("home.songCount", { count: favoriteCount })}`
+                            : undefined
+                    }
+                    accessory="chevron"
+                    onPress={() =>
+                        navigate(ROUTE_PATH.LOCAL_SHEET_DETAIL, { id: favoriteId })
+                    }
+                />
+                <GroupedRow
+                    plainIcon
                     icon="bookmark-square"
                     title={t("home.starredPlaylists")}
                     value={
@@ -345,96 +384,114 @@ export default function Library() {
                     style={styles.sectionTitle}>
                     {t("home.myPlaylists")}
                 </ThemeText>
-                <Pressable
-                    accessibilityRole="button"
-                    hitSlop={10}
-                    onPress={() =>
-                        navigate(ROUTE_PATH.SHEET_EDITOR, { sheetType: "local" })
-                    }
-                    style={({ pressed }) => (pressed ? styles.pressed : null)}>
-                    <ThemeText fontColor="primary">{t("common.edit")}</ThemeText>
-                </Pressable>
-            </View>
-            <View style={styles.searchField}>
-                <Icon name="magnifying-glass" size={20} color={colors.textSecondary} />
-                <TextInput
-                    testID="library-playlist-search"
-                    accessibilityLabel={t("library.searchPlaylists")}
-                    placeholder={t("library.searchPlaylists")}
-                    placeholderTextColor={colors.textSecondary}
-                    value={query}
-                    onChangeText={setQuery}
-                    returnKeyType="search"
-                    onSubmitEditing={Keyboard.dismiss}
-                    style={[styles.searchInput, { color: colors.text }]}
-                />
-                {query ? (
+                {userSheets.length ? (
                     <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={t("common.clear")}
-                        onPress={() => setQuery("")}
-                        style={styles.smallButton}>
-                        <Icon name="x-mark" size={18} color={colors.textSecondary} />
+                        hitSlop={10}
+                        onPress={() =>
+                            navigate(ROUTE_PATH.SHEET_EDITOR, { sheetType: "local" })
+                        }
+                        style={({ pressed }) => (pressed ? styles.pressed : null)}>
+                        <ThemeText fontColor="primary">{t("common.edit")}</ThemeText>
                     </Pressable>
                 ) : null}
             </View>
-            {groups.length ? (
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.groupFilters}
-                    contentContainerStyle={styles.groupFilterContent}>
-                    {[
-                        { title: t("library.allGroups"), value: null },
-                        ...groups.map(name => ({ title: name, value: name })),
-                        { title: t("library.ungrouped"), value: "" },
-                    ].map(filter => (
-                        <Pressable
-                            key={filter.value === null ? "all" : `group:${filter.value}`}
-                            accessibilityRole="button"
-                            accessibilityLabel={filter.title}
-                            accessibilityState={{ selected: activeGroup === filter.value }}
-                            onPress={() => setSelectedGroup(filter.value)}
-                            style={[
-                                styles.groupFilter,
-                                { backgroundColor: activeGroup === filter.value ? colors.primary : colors.placeholder },
-                            ]}>
-                            <ThemeText
-                                numberOfLines={1}
-                                color={activeGroup === filter.value ? "#FFFFFF" : colors.text}>
-                                {filter.title}
-                            </ThemeText>
-                        </Pressable>
-                    ))}
-                </ScrollView>
-            ) : null}
-            <View
-                testID={list ? "library-playlist-list" : "library-playlist-grid"}
-                style={list ? styles.list : styles.grid}>
-                {orderedSheets.map(sheet => (
-                    <SheetItem
-                        key={sheet.id}
-                        sheet={sheet}
-                        width={tileWidth}
-                        list={list}
-                        pinned={organization.pinnedIds.includes(sheet.id)}
-                        group={getPlaylistGroup(organization, sheet.id)}
-                        onManage={() => manageSheet(sheet)}
-                        onRemoved={() => AppConfig.setConfig(
-                            "library.playlistOrganization",
-                            normalizePlaylistOrganization(
-                                AppConfig.getConfig("library.playlistOrganization"),
-                                currentSheetIds().filter(id => id !== sheet.id), favoriteId,
-                            ),
-                        )}
+            {userSheets.length ? (
+                <>
+                    <View style={styles.searchField}>
+                        <Icon name="magnifying-glass" size={20} color={colors.textSecondary} />
+                        <TextInput
+                            testID="library-playlist-search"
+                            accessibilityLabel={t("library.searchPlaylists")}
+                            placeholder={t("library.searchPlaylists")}
+                            placeholderTextColor={colors.textSecondary}
+                            value={query}
+                            onChangeText={setQuery}
+                            returnKeyType="search"
+                            onSubmitEditing={Keyboard.dismiss}
+                            style={[styles.searchInput, { color: colors.text }]}
+                        />
+                        {query ? (
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={t("common.clear")}
+                                onPress={() => setQuery("")}
+                                style={styles.smallButton}>
+                                <Icon name="x-mark" size={18} color={colors.textSecondary} />
+                            </Pressable>
+                        ) : null}
+                    </View>
+                    {groups.length ? (
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.groupFilters}
+                            contentContainerStyle={styles.groupFilterContent}>
+                            {[
+                                { title: t("library.allGroups"), value: null },
+                                ...groups.map(name => ({ title: name, value: name })),
+                                { title: t("library.ungrouped"), value: "" },
+                            ].map(filter => (
+                                <Pressable
+                                    key={filter.value === null ? "all" : `group:${filter.value}`}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={filter.title}
+                                    accessibilityState={{ selected: activeGroup === filter.value }}
+                                    onPress={() => setSelectedGroup(filter.value)}
+                                    style={[
+                                        styles.groupFilter,
+                                        { backgroundColor: activeGroup === filter.value ? colors.primary : colors.placeholder },
+                                    ]}>
+                                    <ThemeText
+                                        numberOfLines={1}
+                                        color={activeGroup === filter.value ? "#FFFFFF" : colors.text}>
+                                        {filter.title}
+                                    </ThemeText>
+                                </Pressable>
+                            ))}
+                        </ScrollView>
+                    ) : null}
+                    <View
+                        testID={list ? "library-playlist-list" : "library-playlist-grid"}
+                        style={list ? styles.list : styles.grid}>
+                        {orderedSheets.map(sheet => (
+                            <SheetItem
+                                key={sheet.id}
+                                sheet={sheet}
+                                width={tileWidth}
+                                list={list}
+                                pinned={organization.pinnedIds.includes(sheet.id)}
+                                group={getPlaylistGroup(organization, sheet.id)}
+                                onManage={() => manageSheet(sheet)}
+                            />
+                        ))}
+                    </View>
+                    {!orderedSheets.length ? (
+                        <ThemeText fontColor="textSecondary" style={styles.emptyText}>
+                            {t("library.noMatchingPlaylists")}
+                        </ThemeText>
+                    ) : null}
+                </>
+            ) : (
+                // 还没有自己的歌单：以前这里至少有个空的「我喜欢」占着，现在直接给出新建和导入
+                <GroupedSection
+                    title={t("library.noPlaylists")}
+                    dividerInset={56}
+                    style={styles.emptySection}>
+                    <GroupedRow
+                        plainIcon
+                        icon="plus"
+                        title={t("panel.createMusicSheet.title")}
+                        onPress={() => showPanel("CreateMusicSheet")}
                     />
-                ))}
-            </View>
-            {!orderedSheets.length ? (
-                <ThemeText fontColor="textSecondary" style={styles.emptyText}>
-                    {t("library.noMatchingPlaylists")}
-                </ThemeText>
-            ) : null}
+                    <GroupedRow
+                        plainIcon
+                        icon="inbox-arrow-down"
+                        title={t("panel.importMusicSheet.title")}
+                        onPress={() => showPanel("ImportMusicSheet")}
+                    />
+                </GroupedSection>
+            )}
         </LargeTitleScrollView>
     );
 }
@@ -478,31 +535,31 @@ const styles = StyleSheet.create({
         minHeight: 64,
         paddingVertical: 8,
         gap: 12,
-        paddingRight: 44,
+        // 给右边的 ⋮ 留位置
+        paddingRight: LIST_MANAGE_WIDTH + LIST_MANAGE_OFFSET,
     },
     listItemWrapper: {
         position: "relative",
     },
+    // 行高那么高、44 宽，往页边距里伸 12：⋮ 的中心离屏幕边 26 左右，和歌曲行的 ⋮、
+    // 上面的「编辑」对齐
     listManage: {
         position: "absolute",
-        right: 0,
+        right: LIST_MANAGE_OFFSET,
         top: 0,
         bottom: 0,
-        minWidth: 40,
-        minHeight: 44,
+        width: 44,
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: 20,
     },
+    // 网格里放在封面下面、名字右边（top 由封面边长决定），高 44 正好盖住名字和数量两行
     tileManage: {
         position: "absolute",
-        right: 4,
-        top: 4,
-        minWidth: 44,
-        minHeight: 44,
+        right: TILE_MANAGE_OFFSET,
+        width: 32,
+        height: 44,
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: 22,
     },
     searchField: {
         marginHorizontal: PAGE_MARGIN,
@@ -549,15 +606,18 @@ const styles = StyleSheet.create({
         minWidth: 0,
         gap: 2,
     },
+    // 名字和数量不伸到 ⋮ 底下
+    tileTexts: {
+        paddingRight: 32 + TILE_MANAGE_OFFSET,
+    },
+    emptySection: {
+        marginTop: 0,
+    },
     cover: {
         borderRadius: 10,
         overflow: "hidden",
         alignItems: "center",
         justifyContent: "center",
-    },
-    // “我喜欢”没有封面时用粉红底配白色爱心
-    favoriteCover: {
-        backgroundColor: "#F2456B",
     },
     tileTitle: {
         marginTop: 6,

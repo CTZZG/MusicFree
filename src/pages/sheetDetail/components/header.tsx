@@ -10,12 +10,14 @@ export default function Header() {
     const { id = "favorite" } = useParams<"local-sheet-detail">();
     const sheet = useSheetItem(id);
     const { t } = useI18N();
+    const favorite = sheet?.id === MusicSheet.defaultSheet.id;
 
     return (
         <SheetHeader
             artwork={sheet?.coverImg}
-            favorite={sheet?.id === MusicSheet.defaultSheet.id}
-            title={sheet?.title}
+            favorite={favorite}
+            // 「我喜欢」存的名字是中文，跟着界面语言显示（和资料库里一致）
+            title={favorite ? t("home.favoriteSheet") : sheet?.title}
             meta={t("sheetDetail.totalMusicCount", {
                 count: sheet?.musicList?.length ?? 0,
             })}>

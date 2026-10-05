@@ -154,6 +154,7 @@ export interface ILanguageData {
     "library.groupName": string;
     "library.groupPlaylist": string;
     "library.groupNameRequired": string;
+    "library.noPlaylists": string;
     "panel.setFontSize.description": string;
     "panel.setFontSize.preview": string;
     "panel.setFontSize.previewLabel": string;
@@ -462,6 +463,7 @@ export interface ILanguageData {
     "sheetDetail.sortMusicOption.oldest": string; // 最旧
     "sheetDetail.deleteSheet": string; // 删除歌单
     "sheetDetail.deleteSheetContent": string; // 确定删除该歌单吗？
+    "sheetDetail.favoriteEmptyHint": string;
     "sheetDetail.syncPlaylist": string; // 歌单同步
 
     // 历史记录相关

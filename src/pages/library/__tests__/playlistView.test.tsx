@@ -129,24 +129,75 @@ describe("library playlist views", () => {
         expect(store.getString("library.playlistView")).toBe(JSON.stringify("grid"));
     });
 
-    it.each(["grid", "list"])("keeps favorites first and opens the same playlist in %s mode", mode => {
+    it.each(["grid", "list"])("lists only the user's own playlists and opens the same playlist in %s mode", mode => {
         store.set("library.playlistView", JSON.stringify(mode));
         mount();
-        expect(playlistLabels(mode)).toEqual(["我喜欢，3首", "通勤歌单，12首"]);
+        expect(playlistLabels(mode)).toEqual(["通勤歌单，12首"]);
         act(() => button("通勤歌单，12首").props.onPress());
         expect(mockNavigate).toHaveBeenCalledWith("local-sheet-detail", { id: "ordinary" });
     });
 
-    it.each(["grid", "list"])("keeps delete confirmation and protects favorites in %s mode", async mode => {
+    it("shows 我喜欢 as a library entry with its song count and opens it", () => {
+        mount();
+        expect(renderer!.root.findAll(node => node.props.children === "3").length).toBeGreaterThan(0);
+        act(() => button("我喜欢，3首").props.onPress());
+        expect(mockNavigate).toHaveBeenCalledWith("local-sheet-detail", { id: "favorite" });
+        // 不能删、不能置顶分组，没有 ⋮
+        expect(renderer!.root.findAll(node => node.props.accessibilityLabel === "管理歌单：我喜欢")).toHaveLength(0);
+    });
+
+    it("shows an empty 我喜欢 without a count", () => {
+        const favorite = mockSheets.find(sheet => sheet.id === "favorite")!;
+        favorite.worksNum = 0;
+        try {
+            mount();
+            expect(button("我喜欢")).toBeDefined();
+            expect(renderer!.root.findAll(node => node.props.children === "0")).toHaveLength(0);
+        } finally {
+            favorite.worksNum = 3;
+        }
+    });
+
+    it.each(["grid", "list"])("opens the same menu from long press and ⋮, and deletes only after confirming in %s mode", async mode => {
         store.set("library.playlistView", JSON.stringify(mode));
         mount();
-        act(() => button("我喜欢，3首").props.onLongPress());
-        expect(mockShowDialog).not.toHaveBeenCalled();
         act(() => button("通勤歌单，12首").props.onLongPress());
+        act(() => button("管理歌单：通勤歌单").props.onPress());
+        expect(mockShowPanel).toHaveBeenCalledTimes(2);
+        const [[longPressPanel, longPressMenu], [managePanel, manageMenu]] = mockShowPanel.mock.calls;
+        expect(longPressPanel).toBe("SimpleSelect");
+        expect(managePanel).toBe("SimpleSelect");
+        expect(longPressMenu.candidates.map((item: any) => item.value)).toEqual(["pin", "group", "delete"]);
+        expect(manageMenu.candidates.map((item: any) => item.value)).toEqual(["pin", "group", "delete"]);
+        expect(mockShowDialog).not.toHaveBeenCalled();
+        act(() => manageMenu.onPress(manageMenu.candidates.find((item: any) => item.value === "delete")));
         expect(mockRemoveSheet).not.toHaveBeenCalled();
-        const [, dialog] = mockShowDialog.mock.calls[0];
+        const [dialogName, dialog] = mockShowDialog.mock.calls[0];
+        expect(dialogName).toBe("SimpleDialog");
+        expect(dialog.content).toBe("确认删除歌单「通勤歌单」吗？");
         await act(async () => dialog.onOk());
         expect(mockRemoveSheet).toHaveBeenCalledWith("ordinary");
+    });
+
+    it("offers create and import instead of an empty list when there are no playlists of its own", () => {
+        const ordinary = mockSheets.splice(0, 1);
+        try {
+            mount();
+            expect(container("grid")).toBeUndefined();
+            expect(renderer!.root.findAll(node => node.props.testID === "library-playlist-search")).toHaveLength(0);
+            expect(renderer!.root.findAll(node => node.props.children === "编辑")).toHaveLength(0);
+            expect(renderer!.root.findAll(node => node.props.children === "还没有自己的歌单").length).toBeGreaterThan(0);
+            // 大标题旁边一个，空状态里一个
+            const creating = renderer!.root.findAll(node => node.props.accessibilityLabel === "新建歌单" && typeof node.props.onPress === "function");
+            const importing = renderer!.root.findAll(node => node.props.accessibilityLabel === "导入歌单" && typeof node.props.onPress === "function");
+            expect(creating).toHaveLength(2);
+            expect(importing).toHaveLength(2);
+            act(() => creating[1].props.onPress());
+            act(() => importing[1].props.onPress());
+            expect(mockShowPanel.mock.calls.map(call => call[0])).toEqual(["CreateMusicSheet", "ImportMusicSheet"]);
+        } finally {
+            mockSheets.unshift(...ordinary);
+        }
     });
 
     it("filters playlist names immediately, clears the filter, and leaves organization unchanged", () => {
@@ -158,22 +209,21 @@ describe("library playlist views", () => {
         expect(playlistLabels()).toEqual([]);
         expect(renderer!.root.findAll(node => node.props.children === "没有匹配的歌单").length).toBeGreaterThan(0);
         act(() => button("清空").props.onPress());
-        expect(playlistLabels()).toEqual(["我喜欢，3首", "通勤歌单，12首"]);
+        expect(playlistLabels()).toEqual(["通勤歌单，12首"]);
         expect(store.getString("library.playlistOrganization")).toBeUndefined();
     });
 
-    it("pins through a separate management button, persists after remount, and keeps favorites first", () => {
+    it("pins through a separate management button and persists after remount", () => {
         mockSheets.push({ id: "night", title: "Late Night Music", worksNum: 8 });
         mount();
         act(() => button("管理歌单：Late Night Music").props.onPress());
         expect(mockNavigate).not.toHaveBeenCalled();
         const [, menu] = mockShowPanel.mock.calls[0];
         act(() => menu.onPress(menu.candidates.find((item: any) => item.value === "pin")));
-        expect(playlistLabels()).toEqual(["我喜欢，3首", "Late Night Music，8首", "通勤歌单，12首"]);
+        expect(playlistLabels()).toEqual(["Late Night Music，8首", "通勤歌单，12首"]);
         unmount();
         mount();
-        expect(playlistLabels()).toEqual(["我喜欢，3首", "Late Night Music，8首", "通勤歌单，12首"]);
-        expect(renderer!.root.findAll(node => node.props.accessibilityLabel === "管理歌单：我喜欢")).toHaveLength(0);
+        expect(playlistLabels()).toEqual(["Late Night Music，8首", "通勤歌单，12首"]);
     });
 
     it("assigns groups, filters them, and falls back to all playlists when the selected group is removed", () => {
@@ -186,7 +236,7 @@ describe("library playlist views", () => {
         act(() => menu.onPress(menu.candidates.find((item: any) => item.value === "group")));
         const [, groups] = mockShowPanel.mock.calls[1];
         act(() => groups.onPress({ value: "" }));
-        expect(playlistLabels()).toEqual(["我喜欢，3首", "通勤歌单，12首"]);
+        expect(playlistLabels()).toEqual(["通勤歌单，12首"]);
         expect(JSON.parse(store.getString("library.playlistOrganization"))).toEqual({ pinnedIds: [], groupBySheetId: {} });
     });
 
@@ -229,6 +279,8 @@ describe("library playlist views", () => {
         store.set("library.playlistOrganization", JSON.stringify({ pinnedIds: ["ordinary", "missing"], groupBySheetId: { ordinary: "通勤", missing: "Old" } }));
         mount();
         act(() => button("通勤歌单，12首").props.onLongPress());
+        const [, menu] = mockShowPanel.mock.calls[0];
+        act(() => menu.onPress({ value: "delete" }));
         const [, dialog] = mockShowDialog.mock.calls[0];
         mockRemoveSheet.mockRejectedValueOnce(new Error("disk full"));
         await act(async () => {
