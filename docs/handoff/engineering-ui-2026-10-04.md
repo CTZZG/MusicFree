@@ -9,8 +9,8 @@
 | 仓库 | [CTZZG/MusicFree](https://github.com/CTZZG/MusicFree) |
 | 工作分支 | `claude/sharp-planck-xtfenm` |
 | 本轮工程修复起点 | `f224cb599a31eacb3bc90160ee67bdd1e6798c43` |
-| 最新功能提交 | `1720946de9e0bffab754c83aaa81bcea9eb748e0`（资料库歌单的 ⋮ 改成和歌曲行一样的图标，「我喜欢」移到上面的入口；此前是删除正在放的歌时按最新状态重删 `fce35ef`、复核 PR #9 后修的搜索总览 `43b6802`、新建分组对话框 `3c843f5`、PR #9 的合并提交 `8b218b9`（Codex：播放失败处理、搜索总览、队列编辑、资料库整理、歌词字号，见 [产品改进记录](product-improvements-2026-10-04.md)）、标签朗读 `8106b9e`、歌手详情 `86bd936`、布局测试工具 `ac9f2d1`、搜索页 `526c728`、歌曲选项和加入歌单面板 `cf6ee68`、专辑和自己的歌单详情 `7b2f1af`、a27dde0 复核两项 `23216c0`／`7f57a1e`、420f335 复核 `c0f1be5` 等、歌单／榜单详情 `987226e`、榜单 `c62720e`、推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
-| 包版本 | `0.9.0`；实际构建用提交号和 Actions run 区分 |
+| 最新功能提交 | `b4ee8551`（搜索总览里同一首歌的其他来源挂在那首歌下面；此前 `claude/sharp-planck-xtfenm` 上的 83 个提交已由 PR #10 合入 `feat/mpv-only`（合并提交 `7482e27`），之后按 0.10.0 发布。再往前是资料库歌单的 ⋮ 和「我喜欢」入口 `1720946`、删除正在放的歌时按最新状态重删 `fce35ef`、复核 PR #9 后修的搜索总览 `43b6802`、新建分组对话框 `3c843f5`、PR #9 的合并提交 `8b218b9`（Codex：播放失败处理、搜索总览、队列编辑、资料库整理、歌词字号，见 [产品改进记录](product-improvements-2026-10-04.md)）、标签朗读 `8106b9e`、歌手详情 `86bd936`、布局测试工具 `ac9f2d1`、搜索页 `526c728`、歌曲选项和加入歌单面板 `cf6ee68`、专辑和自己的歌单详情 `7b2f1af`、a27dde0 复核两项 `23216c0`／`7f57a1e`、420f335 复核 `c0f1be5` 等、歌单／榜单详情 `987226e`、榜单 `c62720e`、推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
+| 包版本 | `0.10.0`（Android 构建号 400025）；实际构建用提交号和 Actions run 区分 |
 | 文档核对日期 | 2026-10-04，UTC；构建状态见第 5 节 |
 
 接手时先 fetch 并核对远端，后续纯文档提交可能使 HEAD 高于上述功能提交。**当前功能状态：播放条 60 dp、dock 60 dp、大标题 28 dp、资料库歌单可切网格／列表；榜单改为三列方卡，有现成歌曲数据时显示横向预览；底部总预留 136 dp，系统安全区另加。**
@@ -208,6 +208,7 @@ APK 打包、自动测试通过、真机功能通过、用户视觉认可分别�
 | [Beta #80](https://github.com/CTZZG/MusicFree/actions/runs/37251230454) | e6820df | 成功；标签按界面语言朗读 `8106b9e`，PR #9（播放失败处理、搜索总览、队列编辑、资料库整理、歌词字号）及复核后修的两处 |
 | [Beta #81](https://github.com/CTZZG/MusicFree/actions/runs/37262666069) | 129fe2d | 成功；删除正在放的歌时按最新状态重删 `fce35ef` |
 | [Beta #82](https://github.com/CTZZG/MusicFree/actions/runs/37264733503) | b4edc91 | 成功；资料库歌单的 ⋮ 和「我喜欢」入口 `1720946`（准备合并到 `feat/mpv-only` 的代码） |
+| [CI #27](https://github.com/CTZZG/MusicFree/actions/runs/37266876166)、[Android Release Build #258](https://github.com/CTZZG/MusicFree/actions/runs/37267231775) | 64f2b16 → 7482e27 | 成功；PR #10 的检查（质量门、Android 单元测试）和合并后的正式版验证构建，不发布 Release |
 
 各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。
 

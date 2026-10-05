@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.9.0），最后核对日期 2026-10-04。
+> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.10.0），最后核对日期 2026-10-05。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -51,7 +51,9 @@
 - 单曲的来源标签前有「全部来源」，不带指定来源的搜索默认进入它（`resultPanel/allMusicResults.tsx`），不另发请求，
   读同一个会话。按各来源原有排名交错排列；标题、歌手、专辑和取整到秒的时长都完整且一致时才合成一组、可选来源
   （`src/core/search/aggregateMusicResults.ts`），信息不全、同一来源里有多个相同信息的 ID 时分别列出。列表顶上只列出
-  失败的来源（可重试），加载中、结果数看来源标签；点歌沿用 `basic.clickMusicInSearch`。
+  失败的来源（可重试），加载中、结果数看来源标签；点歌沿用 `basic.clickMusicInSearch`。合成一组的歌下面挂一行
+  「⇄ 其他来源：…」，从歌名那一列开始、紧贴着那首歌（对齐用 `MUSIC_ITEM_ARTWORK_TEXT_INSET`），点开按来源选择播放；
+  以前是一整行「选择来源（N 个）」，离上下两首一样远，真机上看不出是哪首歌的。
 - 歌词搜索面板（`src/components/panels/types/searchLrc`）仍使用自己的请求编排，尚未接入会话。
 
 ## 依赖安装

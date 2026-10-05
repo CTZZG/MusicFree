@@ -401,6 +401,8 @@ const styles = StyleSheet.create({
 });
 
 ListItem.Size = Size;
+/** 行的默认左右边距，也是左侧图片和文字之间的距离 */
+ListItem.Padding = defaultPadding;
 ListItem.ListItemIcon = ListItemIcon;
 ListItem.ListItemImage = ListItemImage;
 ListItem.ListItemText = ListItemText;

@@ -45,6 +45,12 @@ type DownloadWriteStatus = DownloadWriteResult;
 const DURATION_MIN_WIDTH = 36;
 
 const MORE_ICON_HIT_SLOP = { left: 12, right: 12 };
+const ARTWORK_SIZE = rpx(68);
+/**
+ * 带封面的普通歌曲行（没有序号）里，歌名离行左边多远：行的左边距 + 封面 + 封面和文字的间距。
+ * 挂在歌曲行下面、要和歌名对齐的附属行（比如搜索总览里同一首歌的其他来源）用它。
+ */
+export const MUSIC_ITEM_ARTWORK_TEXT_INSET = ListItem.Padding + ARTWORK_SIZE + ListItem.Padding;
 
 interface IMusicItemProps {
     index?: string | number;
@@ -487,8 +493,8 @@ const styles = StyleSheet.create({
         lineHeight: rpx(40),
     },
     artwork: {
-        width: rpx(68),
-        height: rpx(68),
+        width: ARTWORK_SIZE,
+        height: ARTWORK_SIZE,
         borderRadius: rpx(12),
     },
     cardMeta: {

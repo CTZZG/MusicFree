@@ -2,7 +2,8 @@ import React, { useEffect, useMemo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import ThemeText from "@/components/base/themeText";
-import MusicItem from "@/components/mediaItem/musicItem";
+import Icon from "@/components/base/icon";
+import MusicItem, { MUSIC_ITEM_ARTWORK_TEXT_INSET } from "@/components/mediaItem/musicItem";
 import ListEmpty from "@/components/base/listEmpty";
 import { showPanel } from "@/components/panels/usePanel";
 import { RequestStateCode } from "@/constants/commonConst";
@@ -13,18 +14,24 @@ import TrackPlayer from "@/core/trackPlayer";
 import { useI18N } from "@/core/i18n";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import { withAccessibilitySuffixes } from "@/utils/a11yLabels";
+import useColors from "@/hooks/useColors";
 import { useSearchSessionId, useSearchTypeResults } from "../../hooks/useSearchSession";
 
 export default function AllMusicResults(props: { sources: readonly MusicResultSource[] }) {
     const results = useSearchTypeResults("music");
     const sessionId = useSearchSessionId();
     const { t } = useI18N();
+    const colors = useColors();
     const bottom = useMusicBarFloatingOffset(16);
     const { sources } = props;
     useEffect(() => {
         sources.forEach(source => searchSession.ensureLoaded("music", source.hash));
     }, [sources, sessionId]);
     const groups = useMemo(() => aggregateMusicResults(sources, results), [sources, results]);
+    // 排在第一个的来源就是这一行显示的那首（行里的来源标签），这里只列其余的
+    const otherSourcesText = (group: (typeof groups)[number]) => t("searchPage.otherSources", {
+        names: group.choices.slice(1).map(choice => choice.source.name).join(t("searchPage.sourceSeparator")),
+    });
     const play = (musicItem: IMusic.IMusicItem) => {
         if (searchSession.getSnapshot().id !== sessionId) {
             return;
@@ -85,21 +92,37 @@ export default function AllMusicResults(props: { sources: readonly MusicResultSo
                     <View>
                         <MusicItem musicItem={primary} showArtwork showQuality showDuration onItemPress={() => play(primary)} />
                         {group.choices.length > 1 ? (
+                            // 同一首歌的其他来源：挂在这首歌下面、和歌名对齐，紧贴着它，下一首离得远。
+                            // 以前是一整行居中的「选择来源（2 个）」，和上下两首一样远，看不出是哪首歌的
                             <Pressable
-                                style={styles.choices}
+                                style={({ pressed }) => [
+                                    styles.otherSources,
+                                    pressed ? styles.pressed : null,
+                                ]}
                                 accessibilityRole="button"
-                                accessibilityLabel={`${primary.title}, ${t("searchPage.chooseSource", { count: group.choices.length })}`}
+                                accessibilityLabel={withAccessibilitySuffixes(primary.title, [otherSourcesText(group)])}
                                 // 合组规则的说明不占列表的地方，朗读时告诉用户
                                 accessibilityHint={t("searchPage.allMusicHint")}
                                 onPress={() => showPanel("SimpleSelect", {
-                                    header: t("searchPage.allMusic"),
+                                    header: t("searchPage.chooseSourceHeader", { title: primary.title }),
                                     candidates: group.choices.map(choice => ({
                                         title: `${choice.source.name} · ${choice.musicItem.title}`,
                                         value: choice.musicItem,
                                     })),
                                     onPress: choice => play(choice.value),
                                 })}>
-                                <ThemeText fontColor="primary">{t("searchPage.chooseSource", { count: group.choices.length })}</ThemeText>
+                                <View style={styles.otherSourcesLine}>
+                                    <Icon name="arrows-left-right" size={14} color={colors.primary} />
+                                    <ThemeText
+                                        fontSize="description"
+                                        fontColor="primary"
+                                        // 窄屏、大字体时来源名折到第二行，不截断
+                                        numberOfLines={2}
+                                        style={styles.otherSourcesText}>
+                                        {otherSourcesText(group)}
+                                    </ThemeText>
+                                    <Icon name="chevron-right" size={12} color={colors.primary} />
+                                </View>
                             </Pressable>
                         ) : null}
                     </View>
@@ -112,6 +135,16 @@ const styles = StyleSheet.create({
     header: { paddingHorizontal: 16, paddingVertical: 4 },
     source: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
     sourceText: { flex: 1, minWidth: 0 },
-    choices: { minHeight: 44, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 8 },
+    // 点击范围 44 高，字放在最上面贴着歌曲行，空出来的部分在下面，和下一首隔开
+    otherSources: {
+        minHeight: 44,
+        paddingLeft: MUSIC_ITEM_ARTWORK_TEXT_INSET,
+        paddingRight: 16,
+        paddingTop: 2,
+        paddingBottom: 12,
+    },
+    otherSourcesLine: { flexDirection: "row", alignItems: "center", gap: 4 },
+    otherSourcesText: { flexShrink: 1, minWidth: 0 },
+    pressed: { opacity: 0.6 },
     more: { minHeight: 48, alignItems: "center", justifyContent: "center", padding: 12 },
 });
