@@ -574,18 +574,34 @@ for (const device of DEVICES) {
                 const rendered = renderSearch(env, {phase: 'settled', params: {initialQuery: QUERY, initialSearchType: 'music', pluginHash: 'all-music-sources'}});
                 try {
                     const {root, t} = rendered;
-                    const hint = findOne(root, byText(t('searchPage.allMusicHint')));
-                    assertReadable(hint, 'aggregate explanation');
                     const choices = findAll(root, byText(t('searchPage.chooseSource', {count: 2})));
                     assert.ok(choices.length > 0, 'matching recordings offer source choices');
                     for (const choice of choices) {
                         assertReadable(choice, 'source choice');
                         assert.ok(choice.parent.frame.height >= 44 - 0.5, 'source choice has a usable touch target');
+                        // 合组规则的说明不占列表的地方，朗读「选择来源」时读出来
+                        assert.equal(choice.parent.props.accessibilityHint, t('searchPage.allMusicHint'));
                     }
-                    const retry = findOne(root, record => isText(record) && record.text.includes(LONG_PLUGIN_NAME) && record.text.includes(t('common.retry')));
-                    assertReadable(retry, 'failed source retry');
-                    assert.ok(retry.frame.x >= env.insets.left - 0.5);
-                    assert.ok(rightOf(retry.frame) <= env.window.width - env.insets.right + 1);
+                    assert.equal(findAll(root, byText(t('searchPage.allMusicHint'))).length, 0, 'the explanation is not shown in the list');
+                    // 列表顶上只有失败的来源：超时的那个可以重试，加载成功、还在加载的不占行
+                    const retryRows = findAll(root, record => record.props.accessibilityRole === 'button' && record.props.accessibilityLabel?.endsWith(t('common.retry')));
+                    assert.deepEqual(retryRows.map(row => row.props.accessibilityLabel), [`${LONG_PLUGIN_NAME}, ${t('searchPage.sourceTimeoutShort')}, ${t('common.retry')}`]);
+                    const [retryRow] = retryRows;
+                    for (const text of findAll(retryRow, isText)) {
+                        assertReadable(text, `"${text.text}"`);
+                        assert.ok(contains(retryRow.frame, text.frame, 1), `"${text.text}" stays in its row`);
+                    }
+                    assert.ok(retryRow.frame.x >= env.insets.left - 0.5);
+                    assert.ok(rightOf(retryRow.frame) <= env.window.width - env.insets.right + 0.5);
+                    // 第一首歌紧跟在来源标签（和失败来源那一行）下面，不被说明文字推到第一屏外
+                    const sourceTabs = findAll(root, record => record.props.accessibilityRole === 'tab' && PLUGINS.some(plugin => record.props.accessibilityLabel?.startsWith(plugin.name)));
+                    const tabsBottom = Math.max(...sourceTabs.map(tab => bottomOf(tab.frame)));
+                    const songRows = findAll(root, record => record.props.accessibilityRole === 'button' && SONGS.some(song => record.props.accessibilityLabel === `${song.title}, ${song.artist}`));
+                    const firstSongTop = Math.min(...songRows.map(row => row.frame.y));
+                    assert.ok(
+                        firstSongTop - tabsBottom <= retryRow.frame.height + 16,
+                        `the first song starts ${(firstSongTop - tabsBottom).toFixed(0)} dp below the source tabs; only the failed source row (${retryRow.frame.height.toFixed(0)} dp) should be in between`,
+                    );
                 } finally { rendered.unmount(); }
             });
 

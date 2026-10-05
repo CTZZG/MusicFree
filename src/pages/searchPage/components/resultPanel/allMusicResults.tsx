@@ -12,8 +12,8 @@ import { aggregateMusicResults, MusicResultSource } from "@/core/search/aggregat
 import TrackPlayer from "@/core/trackPlayer";
 import { useI18N } from "@/core/i18n";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import { withAccessibilitySuffixes } from "@/utils/a11yLabels";
 import { useSearchSessionId, useSearchTypeResults } from "../../hooks/useSearchSession";
-import { getSourceTabMeta } from "../../common/searchResultMeta";
 
 export default function AllMusicResults(props: { sources: readonly MusicResultSource[] }) {
     const results = useSearchTypeResults("music");
@@ -40,29 +40,36 @@ export default function AllMusicResults(props: { sources: readonly MusicResultSo
     const pending = sources.some(source => !results[source.hash] ||
         [RequestStateCode.PENDING_FIRST_PAGE, RequestStateCode.PENDING_REST_PAGE].includes(results[source.hash]!.state));
     const canLoadMore = sources.some(source => results[source.hash]?.state === RequestStateCode.PARTLY_DONE);
+    // 列表顶上只列出失败的来源（可以重试）。各来源加载中、结果数在上面的来源标签里已经有了；
+    // 以前每个来源都占一行，再加两行说明，默认的搜索结果第一屏几乎看不到歌
+    const failedSources = sources.filter(source => results[source.hash]?.state === RequestStateCode.ERROR);
     return (
         <FlashList
             data={groups}
             keyExtractor={group => group.key}
             contentContainerStyle={{ paddingBottom: bottom }}
-            ListHeaderComponent={
+            ListHeaderComponent={failedSources.length ? (
                 <View style={styles.header}>
-                    <ThemeText fontColor="textSecondary">{t("searchPage.allMusicHint")}</ThemeText>
-                    {sources.map(source => {
-                        const meta = getSourceTabMeta(results[source.hash], t);
+                    {failedSources.map(source => {
+                        const reason = results[source.hash]?.failure?.kind === "timeout"
+                            ? t("searchPage.sourceTimeoutShort")
+                            : t("common.failToLoad");
                         return (
                             <Pressable
                                 key={source.hash}
                                 style={styles.source}
-                                accessibilityRole={meta.isError ? "button" : "text"}
-                                disabled={!meta.isError}
+                                accessibilityRole="button"
+                                accessibilityLabel={withAccessibilitySuffixes(source.name, [reason, t("common.retry")])}
                                 onPress={() => searchSession.retry("music", source.hash)}>
-                                <ThemeText>{source.name}: {meta.text || t("common.loading")}{meta.isError ? ` · ${t("common.failToLoad")} · ${t("common.retry")}` : ""}</ThemeText>
+                                <ThemeText style={styles.sourceText} numberOfLines={2}>
+                                    {source.name} · {reason}
+                                </ThemeText>
+                                <ThemeText fontColor="primary">{t("common.retry")}</ThemeText>
                             </Pressable>
                         );
                     })}
                 </View>
-            }
+            ) : null}
             ListEmptyComponent={<ListEmpty state={pending ? RequestStateCode.PENDING_FIRST_PAGE : RequestStateCode.FINISHED} />}
             ListFooterComponent={canLoadMore ? (
                 <Pressable
@@ -82,6 +89,8 @@ export default function AllMusicResults(props: { sources: readonly MusicResultSo
                                 style={styles.choices}
                                 accessibilityRole="button"
                                 accessibilityLabel={`${primary.title}, ${t("searchPage.chooseSource", { count: group.choices.length })}`}
+                                // 合组规则的说明不占列表的地方，朗读时告诉用户
+                                accessibilityHint={t("searchPage.allMusicHint")}
                                 onPress={() => showPanel("SimpleSelect", {
                                     header: t("searchPage.allMusic"),
                                     candidates: group.choices.map(choice => ({
@@ -100,8 +109,9 @@ export default function AllMusicResults(props: { sources: readonly MusicResultSo
     );
 }
 const styles = StyleSheet.create({
-    header: { paddingHorizontal: 16, paddingVertical: 12, gap: 4 },
-    source: { minHeight: 44, justifyContent: "center", paddingVertical: 8 },
+    header: { paddingHorizontal: 16, paddingVertical: 4 },
+    source: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
+    sourceText: { flex: 1, minWidth: 0 },
     choices: { minHeight: 44, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 8 },
     more: { minHeight: 48, alignItems: "center", justifyContent: "center", padding: 12 },
 });
