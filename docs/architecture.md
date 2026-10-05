@@ -48,6 +48,10 @@
 - 重试只重新请求失败的那个来源的失败那一页，已加载的页保留；“加载更多”不会跳过失败的页。
 - 取消语义：插件的 `search` 没有取消接口。超时或被取代的请求只是不再等待，插件内部的网络请求仍会继续，结果被丢弃。
 - 页面通过 `hooks/useSearchSession.ts` 按来源订阅快照：一个来源的结果变化不会让其他来源的列表重新渲染。
+- 单曲的来源标签前有「全部来源」，不带指定来源的搜索默认进入它（`resultPanel/allMusicResults.tsx`），不另发请求，
+  读同一个会话。按各来源原有排名交错排列；标题、歌手、专辑和取整到秒的时长都完整且一致时才合成一组、可选来源
+  （`src/core/search/aggregateMusicResults.ts`），信息不全、同一来源里有多个相同信息的 ID 时分别列出。列表顶上只列出
+  失败的来源（可重试），加载中、结果数看来源标签；点歌沿用 `basic.clickMusicInSearch`。
 - 歌词搜索面板（`src/components/panels/types/searchLrc`）仍使用自己的请求编排，尚未接入会话。
 
 ## 依赖安装
@@ -107,7 +111,8 @@
     推荐歌单页（`recommend-sheets`）和它的歌单类别面板（`SheetTags`）、榜单页（`top-list`）、
     歌单详情（`plugin-sheet-detail`）、榜单详情（`top-list-detail`）、专辑详情（`album-detail`）和自己的歌单详情
     （`local-sheet-detail`）、歌手详情（`artist-detail`），从歌曲行点出来的选项面板（`MusicItemOptions`）和加入歌单
-    面板（`AddToMusicSheet`），以及主页的搜索标签（`search-page`）。
+    面板（`AddToMusicSheet`），主页的搜索标签（`search-page`），以及播放页点出来的音质（`MusicQuality`）、播放
+    失败处理（`PlaybackRecovery`）、播放队列（`PlayList`）和歌词字号（`SetFontSize`）面板。
   - `ListItem` 在跟随系统字体的页面、面板里用最小行高（字体放大时跟着变高），没迁移的地方保持固定行高。
   - 推荐歌单：分类标签条按标签定高（最小 `rpx(100)`），也不再被下面的长列表压矮（以前横屏时 1.3 倍字体就裁掉标签）。
     共用的列表底部提示（`ListFooter`）改为最小高度，没有插件的提示（`NoPlugin`）占满宽度、留页边距（以前横屏时偏在左边）。
@@ -140,6 +145,10 @@
   里层让左右，不重复；搜索页的搜索框和大标题以前在让左右的那层外面，横屏时没让开刘海，已挪进去。
   - 播放页的导航栏、进度时间、角标、上滑提示封顶 1.5 倍；歌名区不封顶，横屏放不下时先省专辑、歌手行。
     迷你歌词是固定高度的窗口，不跟随系统放大（点开歌词页可以看完整歌词，那里有单独的字号设置）。
+  - 歌词页的歌词（原文、翻译、音译、逐字）只按歌词自己的字号设置显示，不再叠加系统字体（`allowFontScaling={false}`），
+    字号面板的说明和按钮仍跟随系统。档位 0～3 照旧（`rpx(24/30/36/42)`，默认 1），新增 `rpx(54/66/84)` 三档，覆盖以前
+    最大档叠加 2 倍系统字体的范围（`src/utils/detailLyricFontSize.ts`）。以前靠系统大字体看大歌词的用户，升级后要在
+    字号面板里自己选大一档。
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。
 - 稳定版构建另外运行 `npm run audit:production-deps`（`generator/audit-production-deps.mjs`），有高危漏洞时不发布。
@@ -171,10 +180,13 @@
 - 标签页与搜索页的大标题为 28 dp，行高 34 dp。
 - 资料库右上角在歌单网格与列表之间切换，偏好保存到 `AppConfig` 的 `library.playlistView`，未设置时使用网格。
   两种视图共用歌单打开、长按删除及“我喜欢”保护逻辑；网格按扣除横向安全区后的宽度计算。
+- 资料库的歌单可以按名称搜索、置顶、分组（每个歌单的「⋮」），整理信息存在 `AppConfig` 的
+  `library.playlistOrganization`，不改歌单内容；“我喜欢”始终在最前、不能置顶或分组（`src/core/libraryPlaylistOrganization.ts`）。
 - 榜单普通手机采用三列圆角方卡，标题位于卡内；宽屏按实际面板宽度增加列数，竖屏最多四列、横屏最多五列。
   面板用 `onLayout` 测量可用宽度，格宽向下取整，避免像素取整把第三张卡片挤到下一行。页边距 16 dp、格间距 12 dp、组间距 24 dp。
   榜单接口附带有效 `musicList` 时展示横向预览卡，最多三首，封面在右侧；预览直接使用接口已有数据。插件返回顺序和点击详情参数保持一致。
-- 本轮工程改进与后续字体迁移的交接状态见 [2026-10-04 交接说明](handoff/engineering-ui-2026-10-04.md)。
+- 本轮工程改进与后续字体迁移的交接状态见 [2026-10-04 交接说明](handoff/engineering-ui-2026-10-04.md)；播放失败处理、
+  搜索总览、队列编辑、资料库整理、歌词字号（PR #9）的理由与验收计划见 [产品改进记录](handoff/product-improvements-2026-10-04.md)。
 
 ## 核心行为清单
 
@@ -192,6 +204,8 @@
 | 8 | 播放器初始化失败、切后台再回前台，恢复入口不重复 | 相关单元测试：`src/core/trackPlayer/__tests__/playerStartupPolicy.test.ts` | 未验证 |
 | 9 | 代表性 Android 版本与厂商、耳机/蓝牙、锁屏下的核心流程 | 无 | 未验证 |
 | 10 | 播放：App 在后台时从通知栏、锁屏点下一首，之后原生又自动连播几首；回到 App 不回退到之前的歌 | `src/core/trackPlayer/__tests__/backgroundManualSkip.test.ts`（真实 TrackPlayer + 假 mpv 后端） | 未验证 |
+| 11 | 播放失败后留下可关闭的提示，打开后可重试、换音质再试、找其他来源、检查插件设置；明确的授权／密钥拒绝不再试同一插件的其他音质，单独的 403 仍降级；迟到的旧失败不覆盖新的播放 | `src/core/trackPlayer/__tests__/playbackRecoveryIntegration.test.ts`、`playbackRecovery.test.ts`、`src/components/panels/types/__tests__/playbackRecovery.test.tsx` | 未验证 |
+| 12 | 播放队列上移、下移、设为下一首不重新加载、不跳进度；删除、清空可撤销一步，之后再编辑、播放、切歌就不能撤销 | `src/core/trackPlayer/__tests__/queueEditingIntegration.test.ts`、`queueEditing.test.ts` | 未验证 |
 
 ## 历史材料
 
