@@ -19,7 +19,7 @@
 
 ## 本分支说明
 
-这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.9.0`，不代表上游官方发布。本分支主要增强 Android 播放体验，播放内核为 mpv（libmpv），用来覆盖更多音频格式和更复杂的本地播放场景。
+这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.10.0`，不代表上游官方发布。本分支主要增强 Android 播放体验，播放内核为 mpv（libmpv），用来覆盖更多音频格式和更复杂的本地播放场景。
 
 当前架构、支持范围、质量门和核心行为的验证状态见 [docs/architecture.md](./docs/architecture.md)。历史版本的说明以对应 tag 下的文件为准。
 
