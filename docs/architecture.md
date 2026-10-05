@@ -205,7 +205,7 @@
 | 9 | 代表性 Android 版本与厂商、耳机/蓝牙、锁屏下的核心流程 | 无 | 未验证 |
 | 10 | 播放：App 在后台时从通知栏、锁屏点下一首，之后原生又自动连播几首；回到 App 不回退到之前的歌 | `src/core/trackPlayer/__tests__/backgroundManualSkip.test.ts`（真实 TrackPlayer + 假 mpv 后端） | 未验证 |
 | 11 | 播放失败后留下可关闭的提示，打开后可重试、换音质再试、找其他来源、检查插件设置；明确的授权／密钥拒绝不再试同一插件的其他音质，单独的 403 仍降级；迟到的旧失败不覆盖新的播放 | `src/core/trackPlayer/__tests__/playbackRecoveryIntegration.test.ts`、`playbackRecovery.test.ts`、`src/components/panels/types/__tests__/playbackRecovery.test.tsx` | 未验证 |
-| 12 | 播放队列上移、下移、设为下一首不重新加载、不跳进度；删除、清空可撤销一步，之后再编辑、播放、切歌就不能撤销 | `src/core/trackPlayer/__tests__/queueEditingIntegration.test.ts`、`queueEditing.test.ts` | 未验证 |
+| 12 | 播放队列上移、下移、设为下一首不重新加载、不跳进度；删除、清空可撤销一步，之后再编辑、播放、切歌就不能撤销；删除正在放的歌时，查播放状态期间又有编辑或播放就按最新状态重删，不丢掉，也不抢在没完成的切歌前面换歌 | `src/core/trackPlayer/__tests__/queueEditingIntegration.test.ts`、`queueEditing.test.ts` | 未验证 |
 
 ## 历史材料
 
