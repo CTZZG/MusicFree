@@ -8,6 +8,10 @@ import React, {
 } from "react";
 import { LayoutRectangle, StyleSheet, Text, View } from "react-native";
 import rpx from "@/utils/rpx";
+import {
+    DEFAULT_DETAIL_LYRIC_FONT_SIZE_INDEX,
+    getDetailLyricFontSize,
+} from "@/utils/detailLyricFontSize";
 import useDelayFalsy from "@/hooks/useDelayFalsy";
 import { FlatList, Gesture, GestureDetector, TapGestureHandler } from "react-native-gesture-handler";
 import { fontSizeConst } from "@/constants/uiConst";
@@ -167,13 +171,6 @@ interface IProps {
     onTurnPageClick?: () => void;
 }
 
-const fontSizeMap = {
-    0: rpx(24),
-    1: rpx(30),
-    2: rpx(36),
-    3: rpx(42),
-} as Record<number, number>;
-
 const defaultDetailLyricOrder: LyricLineType[] = [
     "original",
     "translation",
@@ -295,7 +292,10 @@ export default function Lyric(props: IProps) {
     );
     const secondaryFontScale =
         useAppConfig("lyric.detailSecondaryFontScale") ?? 0.75;
-    const fontSizeKey = PersistStatus.useValue("lyric.detailFontSize", 1);
+    const fontSizeKey = PersistStatus.useValue(
+        "lyric.detailFontSize",
+        DEFAULT_DETAIL_LYRIC_FONT_SIZE_INDEX,
+    );
     const detailAlign = normalizeDetailAlign(
         PersistStatus.useValue("lyric.detailAlign", "center"),
     );
@@ -307,7 +307,7 @@ export default function Lyric(props: IProps) {
         : 0;
     const fontSizeStyle = useMemo(
         () => ({
-            fontSize: fontSizeMap[fontSizeKey!],
+            fontSize: getDetailLyricFontSize(fontSizeKey),
         }),
         [fontSizeKey],
     );

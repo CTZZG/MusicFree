@@ -146,6 +146,8 @@ function buildResults(RequestStateCode, {allFailed = false} = {}) {
  * @param {object} options.params 路由参数；有 initialQuery 时一打开就开始搜索（退出编辑）
  */
 function renderSearch(env, {phase = 'idle', params = {}, allFailed = false} = {}) {
+    // Existing cases exercise an individual source; the aggregate case opts in below.
+    params = {pluginHash: PLUGINS[0].hash, ...params};
     const musicBar = homeTabMusicBarLayout();
     let snapshot = null;
     const session = {
@@ -565,6 +567,26 @@ for (const device of DEVICES) {
                 } finally {
                     unmount();
                 }
+            });
+
+            test(`all-source song results on ${where}`, () => {
+                const env = createEnv({...device, language, fontScale});
+                const rendered = renderSearch(env, {phase: 'settled', params: {initialQuery: QUERY, initialSearchType: 'music', pluginHash: 'all-music-sources'}});
+                try {
+                    const {root, t} = rendered;
+                    const hint = findOne(root, byText(t('searchPage.allMusicHint')));
+                    assertReadable(hint, 'aggregate explanation');
+                    const choices = findAll(root, byText(t('searchPage.chooseSource', {count: 2})));
+                    assert.ok(choices.length > 0, 'matching recordings offer source choices');
+                    for (const choice of choices) {
+                        assertReadable(choice, 'source choice');
+                        assert.ok(choice.parent.frame.height >= 44 - 0.5, 'source choice has a usable touch target');
+                    }
+                    const retry = findOne(root, record => isText(record) && record.text.includes(LONG_PLUGIN_NAME) && record.text.includes(t('common.retry')));
+                    assertReadable(retry, 'failed source retry');
+                    assert.ok(retry.frame.x >= env.insets.left - 0.5);
+                    assert.ok(rightOf(retry.frame) <= env.window.width - env.insets.right + 1);
+                } finally { rendered.unmount(); }
             });
 
             test(`song results in selection mode on ${where}`, () => {

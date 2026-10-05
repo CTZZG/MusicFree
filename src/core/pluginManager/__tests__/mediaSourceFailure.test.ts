@@ -34,6 +34,10 @@ describe("media source failure model", () => {
     });
 
     it.each([
+        [{ response: { status: 401 } }, "access-denied", false],
+        [{ response: { status: 403 }, message: "invalid API key" }, "access-denied", false],
+        [{ message: "key已被删除" }, "access-denied", false],
+        [{ message: "QMC decrypt invalid key" }, "encrypted-unsupported", false],
         [{ code: "ETIMEDOUT" }, "network-error", true],
         [new Error("NOT RETRY"), "unavailable", false],
         [{ message: "当前暂无此音质播放地址" }, "unavailable", false],
@@ -127,6 +131,7 @@ describe("media source failure model", () => {
             "encrypted-unsupported",
             "source-rejected",
             "backend-error",
+            "access-denied",
         ] as const;
 
         expect(Object.keys(mediaSourceFailureI18nKeys).sort()).toEqual(

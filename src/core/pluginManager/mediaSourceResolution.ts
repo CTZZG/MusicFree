@@ -3,6 +3,7 @@ import {
     convertToLegacyQuality,
 } from "@/utils/qualities";
 import {
+    isProviderAccessFailure,
     classifyMediaSourceFailure,
     createMediaSourceFailureResult,
     mediaSourceFailureFromPluginResult,
@@ -41,6 +42,10 @@ export async function callGetMediaSourceWithLegacyFallback(
                 failureContext,
             ),
         );
+    }
+
+    if (isProviderAccessFailure(preferredFailure)) {
+        return createMediaSourceFailureResult(preferredFailure!);
     }
 
     const legacyQuality = convertToLegacyQuality(normalizedQuality);

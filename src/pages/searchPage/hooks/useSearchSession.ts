@@ -24,11 +24,11 @@ export function useSearchResults() {
     return useSearchSessionValue(snapshot => snapshot.results);
 }
 
-export function useSearchTypeResults(type: ICommon.SupportMediaType) {
+export function useSearchTypeResults<T extends ICommon.SupportMediaType>(type: T) {
     return useSearchSessionValue(
         snapshot =>
             snapshot.results[type] as Readonly<
-                Record<string, ISearchSourceResult>
+                Record<string, ISearchSourceResult<T>>
             >,
     );
 }

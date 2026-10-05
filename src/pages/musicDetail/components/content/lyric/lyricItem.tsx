@@ -224,6 +224,7 @@ function StaticWordGroup(props: {
     if (characters.length === 1) {
         return (
             <Text
+                allowFontScaling={false}
                 style={[
                     lyricStyles.wordText,
                     primary ? lyricStyles.primaryWord : null,
@@ -243,6 +244,7 @@ function StaticWordGroup(props: {
         <View style={lyricStyles.charGroup}>
             {characters.map((character, index) => (
                 <Text
+                    allowFontScaling={false}
                     key={`${character.startTime}-${index}`}
                     style={[
                         lyricStyles.wordText,
@@ -258,6 +260,7 @@ function StaticWordGroup(props: {
             ))}
             {trailingSpace ? (
                 <Text
+                    allowFontScaling={false}
                     style={[
                         lyricStyles.wordText,
                         {
@@ -346,6 +349,7 @@ function AnimatedWord(props: {
 
     return (
         <Animated.Text
+            allowFontScaling={false}
             style={[
                 lyricStyles.wordText,
                 primary ? lyricStyles.primaryWord : null,
@@ -398,6 +402,7 @@ function AnimatedWordGroup(props: {
                 />
                 {trailingSpace ? (
                     <Text
+                        allowFontScaling={false}
                         style={[
                             lyricStyles.wordText,
                             {
@@ -430,6 +435,7 @@ function AnimatedWordGroup(props: {
             ))}
             {trailingSpace ? (
                 <Text
+                    allowFontScaling={false}
                     style={[
                         lyricStyles.wordText,
                         {
@@ -509,6 +515,7 @@ function WordByWordLine(props: {
     );
 }
 
+// 原文、翻译、音译及逐字动画都使用详情页自定义字号，避免再叠加系统缩放。
 function LyricItemComponentInner(props: ILyricItemComponentProps) {
     const {
         light,
@@ -692,6 +699,7 @@ function LyricItemComponentInner(props: ILyricItemComponentProps) {
                             />
                         ) : (
                             <Text
+                                allowFontScaling={false}
                                 style={[
                                     lyricStyles.line,
                                     line.primary ? lyricStyles.primaryLine : null,

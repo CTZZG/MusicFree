@@ -69,6 +69,7 @@ function createI18nStub(env) {
     const primary = loadLanguage(env.language);
     const fallback = loadLanguage('zh-CN');
     const i18n = {
+        getLanguage: () => ({languageData: primary}),
         t(key, args) {
             const value = primary[key] ?? fallback[key];
             if (value === undefined) {

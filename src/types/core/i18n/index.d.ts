@@ -141,6 +141,45 @@ export interface ILanguageData {
     "toast.syncFail": string; // 同步失败
     "toast.sortHasBeenUpdated": string; // 排序已更新
     "toast.currentQualityNotAvailableForCurrentMusic": string; // 当前音乐的质量在此设备上不可用
+    "library.searchPlaylists": string;
+    "library.noMatchingPlaylists": string;
+    "library.managePlaylist": string;
+    "library.pinPlaylist": string;
+    "library.unpinPlaylist": string;
+    "library.pinned": string;
+    "library.assignGroup": string;
+    "library.allGroups": string;
+    "library.ungrouped": string;
+    "library.newGroup": string;
+    "library.groupName": string;
+    "library.groupPlaylist": string;
+    "library.groupNameRequired": string;
+    "panel.setFontSize.description": string;
+    "panel.setFontSize.preview": string;
+    "panel.setFontSize.previewLabel": string;
+    "panel.setFontSize.reset": string;
+    "panel.setFontSize.sliderLabel": string;
+    "panel.playList.edit": string;
+    "panel.playList.moveUp": string;
+    "panel.playList.moveDown": string;
+    "panel.playList.moveNext": string;
+    "panel.playList.remove": string;
+    "panel.playList.undo": string;
+    "panel.playList.removed": string;
+    "panel.playList.cleared": string;
+    "panel.playList.undoHint": string;
+    "searchPage.allMusic": string;
+    "searchPage.allMusicHint": string;
+    "searchPage.allMusicMore": string;
+    "searchPage.chooseSource": string;
+    "toast.mediaSourceAccessDenied": string;
+    "playbackRecovery.title": string;
+    "playbackRecovery.actions": string;
+    "playbackRecovery.chooseQuality": string;
+    "playbackRecovery.otherSource": string;
+    "playbackRecovery.pluginSettings": string;
+    "playbackRecovery.accessHint": string;
+    "panel.musicQuality.current": string;
     "toast.mediaSourceUnavailable": string; // 音源不可用
     "toast.mediaSourceNetworkError": string; // 音源网络请求失败
     "toast.mediaSourcePluginError": string; // 音源插件错误
