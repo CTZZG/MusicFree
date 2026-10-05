@@ -222,6 +222,11 @@ const resolvedQualityAtom = atom<IMusic.IQualityKey | undefined>(undefined);
 const playListAtom = atom<IMusic.IMusicItem[]>([]);
 const playLaterQueueAtom = atom<IMusic.IMusicItem[]>([]);
 const queueUndoAtom = atom<IQueueUndoNotice | null>(null);
+/** 删除正在放的歌时，等原生播放状态期间又被新的操作打断，最多按最新状态重删几次 */
+const MAX_QUEUE_REMOVE_ATTEMPTS = 3;
+/** 删除正在放的歌前，等还没完成的切歌、播放请求结束：每次等多久、最多等多久 */
+const QUEUE_REMOVE_WAIT_STEP_MS = 100;
+const QUEUE_REMOVE_WAIT_LIMIT_MS = 6000;
 
 interface IQueueUndoRecord {
     notice: IQueueUndoNotice;
@@ -1126,19 +1131,68 @@ class TrackPlayer
         }
     }
 
+    /**
+     * 从播放队列删掉一首歌。删的是正在放的那首时，要先跨原生桥查播放状态，决定接着放下一首
+     * 还是停下。等的时候队列又被编辑、或者有了新的播放（切歌、暂停、播放别的歌），这次算好的
+     * 结果就过时了：不拿它覆盖后来的操作，也不把用户的删除丢掉，按最新的队列和当前歌曲重新
+     * 删一次。还没完成的切歌、播放请求优先：等它结束再删，那时它多半已经换了歌，这首只是从
+     * 队列里拿掉。
+     */
     async remove(musicItem: IMusic.IMusicItem, undoable = false): Promise<void> {
+        for (let attempt = 1; attempt <= MAX_QUEUE_REMOVE_ATTEMPTS; attempt += 1) {
+            if (
+                this.isCurrentMusic(musicItem) &&
+                this.hasPendingPlaybackRequest()
+            ) {
+                await this.waitForPendingPlaybackRequest();
+            }
+            if ((await this.removeFromPlayListOnce(musicItem, undoable)) === "done") {
+                return;
+            }
+        }
+        trace("TrackPlayer.remove 多次被新的操作打断，没有删除", {
+            musicId: musicItem.id,
+            platform: musicItem.platform,
+        });
+    }
+
+    /** 有没有还没完成的手动切歌，或 MPV 上还没确认的播放请求 */
+    private hasPendingPlaybackRequest() {
+        return (
+            this.manualSkipGate.isPending ||
+            this.hasActiveMpvManualSkipTransition()
+        );
+    }
+
+    /** 等手动切歌、MPV 上还没确认的播放请求结束（最多几秒），删除不能抢在它们前面换歌 */
+    private async waitForPendingPlaybackRequest() {
+        for (
+            let waited = 0;
+            waited < QUEUE_REMOVE_WAIT_LIMIT_MS &&
+            this.hasPendingPlaybackRequest();
+            waited += QUEUE_REMOVE_WAIT_STEP_MS
+        ) {
+            await delay(QUEUE_REMOVE_WAIT_STEP_MS);
+        }
+    }
+
+    /** 按当前的队列和播放状态删一次；查播放状态期间被新的操作打断时返回 superseded */
+    private async removeFromPlayListOnce(
+        musicItem: IMusic.IMusicItem,
+        undoable: boolean,
+    ): Promise<"done" | "superseded"> {
         const playList = this.playList;
         const laterQueue = this.playLaterQueue;
         const targetIndex = this.getMusicIndexInPlayList(musicItem);
         if (targetIndex === -1) {
-            return;
+            // 不在队列里，或者后来的操作已经把它拿掉了
+            return "done";
         }
         const editIntent = this.beginQueueEdit();
         const revision = this.queueRevision;
         const playbackIntent = this.queuePlaybackIntent;
-        const previousCurrent = this.currentMusic;
         const newPlayList = playList.filter((_, index) => index !== targetIndex);
-        let currentMusic = previousCurrent;
+        let currentMusic = this.currentMusic;
         let shouldPlayCurrent: boolean | null = null;
         if (this.currentIndex === targetIndex) {
             currentMusic = newPlayList[targetIndex % newPlayList.length] ?? null;
@@ -1146,10 +1200,8 @@ class TrackPlayer
             if (currentMusic) {
                 state = await this.backend.getState().catch(() => "idle" as const);
             }
-            // The state query crosses the native bridge. A newer edit or playback request
-            // must win rather than having this stale deletion overwrite its queue/song.
             if (editIntent !== this.queueEditIntent || revision !== this.queueRevision || playbackIntent !== this.queuePlaybackIntent) {
-                return;
+                return "superseded";
             }
             shouldPlayCurrent = !!currentMusic && state === "playing";
             this.setCurrentMusic(currentMusic);
@@ -1170,6 +1222,7 @@ class TrackPlayer
             this.rememberQueueUndo("remove", 1, playList, laterQueue);
         }
         await completion;
+        return "done";
     }
 
     isCurrentMusic(musicItem?: IMusic.IMusicItem | null) {
