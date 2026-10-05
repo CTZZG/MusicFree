@@ -206,7 +206,8 @@ APK 打包、自动测试通过、真机功能通过、用户视觉认可分别�
 | [Beta #78](https://github.com/CTZZG/MusicFree/actions/runs/37193428121) | 7f669d3 | 成功；420f335 复核三项（`40adc49`、`80bc6fa`、`c0f1be5`） |
 | [Beta #79](https://github.com/CTZZG/MusicFree/actions/runs/37196610703) | 86bd936 | 成功；a27dde0 复核两项，专辑和自己的歌单详情、两个歌曲面板、搜索页、歌手详情跟随系统字体。之后的 `8106b9e`（标签按界面语言朗读）留给下一个 Beta |
 | [Beta #80](https://github.com/CTZZG/MusicFree/actions/runs/37251230454) | e6820df | 成功；标签按界面语言朗读 `8106b9e`，PR #9（播放失败处理、搜索总览、队列编辑、资料库整理、歌词字号）及复核后修的两处 |
-| [Beta #81](https://github.com/CTZZG/MusicFree/actions/runs/37262666069) | 129fe2d | 构建中；删除正在放的歌时按最新状态重删 `fce35ef` |
+| [Beta #81](https://github.com/CTZZG/MusicFree/actions/runs/37262666069) | 129fe2d | 成功；删除正在放的歌时按最新状态重删 `fce35ef` |
+| [Beta #82](https://github.com/CTZZG/MusicFree/actions/runs/37264733503) | b4edc91 | 成功；资料库歌单的 ⋮ 和「我喜欢」入口 `1720946`（准备合并到 `feat/mpv-only` 的代码） |
 
 各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。
 
