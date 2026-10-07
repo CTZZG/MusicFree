@@ -98,7 +98,7 @@ let getMediaSource: jest.Mock;
 beforeEach(() => {
     jest.clearAllMocks();
     playbackRecovery.begin();
-    player.lastPlayedAttemptKey = null;
+    player.playedAttemptRun = null;
     mockBackend.name = "mpv";
     mockBackend.active = { track: songs[0], index: 0 };
     jest.spyOn(player, "syncPreparedNextTrack").mockImplementation(() => undefined);
@@ -289,16 +289,25 @@ it("never plays a different version from another source", async () => {
     expect(playbackRecovery.state.getValue()).toMatchObject({ musicItem: songs[1], failure: { code: "unavailable" } });
 });
 
-it("records a normal play from the song's own source once", async () => {
+it("records each listen from the start once: pausing or seeking ahead is the same listen, a replay is a new one", async () => {
     getMediaSource.mockResolvedValue({ url: "https://example.com/2.mp3" });
     await trackPlayer.play(songs[1], true);
     player.notePlayedAttempt(2.5, "playing");
-    player.notePlayedAttempt(30, "playing");
+    player.notePlayedAttempt(30, "paused");
+    player.notePlayedAttempt(31, "playing");
+    player.notePlayedAttempt(120, "playing");
     expect(mockRecordPlayAttempt).toHaveBeenCalledTimes(1);
     expect(mockRecordPlayAttempt).toHaveBeenCalledWith(expect.objectContaining({
         platform: "test",
         outcome: "played",
     }));
+
+    // 重播、单曲循环：进度回到开头，放够 2 秒再记一次
+    player.notePlayedAttempt(0.4, "playing");
+    player.notePlayedAttempt(1.5, "playing");
+    expect(mockRecordPlayAttempt).toHaveBeenCalledTimes(1);
+    player.notePlayedAttempt(2.4, "playing");
+    expect(mockRecordPlayAttempt).toHaveBeenCalledTimes(2);
 });
 
 it("does not look for other sources when switching is turned off", async () => {

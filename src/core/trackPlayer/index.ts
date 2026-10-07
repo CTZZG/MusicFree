@@ -407,8 +407,12 @@ class TrackPlayer
     private mpvNaturalEndSequence = 0;
     /** 最近一次因为取不到音源而失败的歌曲，用于自然结束时的有界续播 */
     private lastInvalidSourceKey: string | null = null;
-    /** 播放统计里最近记过“播放了”的那首歌，暂停后继续、拖动进度不重复记 */
-    private lastPlayedAttemptKey: string | null = null;
+    /** 播放统计正在看的那一遍：哪首歌、进度到哪、这一遍记过没有 */
+    private playedAttemptRun: {
+        key: string;
+        position: number;
+        recorded: boolean;
+    } | null = null;
     private manualSkipGate = new ManualSkipOperationGate();
     private qualityChangeCoordinator = new QualityChangeCoordinator();
     private mpvTrackTransitionGate = new MpvTrackTransitionGate();
@@ -5360,7 +5364,7 @@ class TrackPlayer
             return false;
         }
         if (musicItem.platform && musicItem.platform !== localPluginPlatform) {
-            this.lastPlayedAttemptKey = null;
+            this.playedAttemptRun = null;
             recordPlayAttempt({
                 at: Date.now(),
                 platform: musicItem.platform,
@@ -5372,22 +5376,27 @@ class TrackPlayer
         return true;
     }
 
-    /** 真的放出来至少 2 秒才记一次“播放了”（换源播放的记为 alternate） */
+    /**
+     * 每一遍从头放出来 2 秒记一次“播放了”（换源播放的记为 alternate）。暂停后继续、
+     * 往后拖进度还是同一遍；重播、单曲循环、拖回开头算新的一遍。
+     */
     private notePlayedAttempt(position: number, state: PlayerBackendState) {
         const musicItem = this.currentMusic;
-        if (
-            !musicItem?.platform ||
-            musicItem.platform === localPluginPlatform ||
-            position < 2 ||
-            state !== "playing"
-        ) {
+        if (!musicItem?.platform || musicItem.platform === localPluginPlatform) {
             return;
         }
         const key = getMediaUniqueKey(musicItem);
-        if (key === this.lastPlayedAttemptKey) {
+        const run = this.playedAttemptRun;
+        if (!run || run.key !== key || (position < 3 && position + 3 < run.position)) {
+            this.playedAttemptRun = { key, position, recorded: false };
+        } else {
+            run.position = position;
+        }
+        const current = this.playedAttemptRun!;
+        if (current.recorded || position < 2 || state !== "playing") {
             return;
         }
-        this.lastPlayedAttemptKey = key;
+        current.recorded = true;
         const via = getDefaultStore().get(alternateSourceInUseAtom)[key];
         recordPlayAttempt({
             at: Date.now(),

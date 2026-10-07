@@ -1,4 +1,4 @@
-# 设置 → 基本设置 → 开发选项 → 播放统计：前面换源成功一次（Fallback）、失败两次（Broken、Live Only）
+# 设置 → 基本设置 → 开发选项 → 播放统计：前面换源播放过（Fallback）、失败两次（Broken、Live Only）
 appId: fun.upup.musicfree
 ---
 # 再点一首能播的歌，失败提示随之消失，不挡住设置页
@@ -11,7 +11,7 @@ appId: fun.upup.musicfree
     timeout: 30000
 - tapOn: "播放统计"
 - extendedWaitUntil:
-    visible: "(?s).*E2E 测试源 A：\\d+ 次，正常播放 \\d+，换源播放 1，失败 2.*"
+    visible: "(?s).*E2E 测试源 A：\\d+ 次，正常播放 \\d+，换源播放 [1-9]\\d*，失败 2.*"
     timeout: 15000
-- assertVisible: "(?s).*换到 E2E 测试源 B：1 次.*"
+- assertVisible: "(?s).*换到 E2E 测试源 B：[1-9]\\d* 次.*"
 - takeScreenshot: 11-play-stats
