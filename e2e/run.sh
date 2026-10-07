@@ -129,6 +129,8 @@ log "设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb
 log "插件：$PLUGIN_URL"
 # 只留 Wi-Fi：应用在移动网络下默认不播放，会弹“流量提醒”
 adb shell svc data disable || true
+# 刚开机的模拟器上系统桌面等经常“无响应”，弹窗会盖住应用；应用自己崩溃另看 logcat
+adb shell settings put global hide_error_dialogs 1 || true
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb logcat -c || true
