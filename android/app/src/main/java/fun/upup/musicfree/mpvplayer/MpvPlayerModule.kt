@@ -241,6 +241,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var ignoreEndFileUntilMs = 0L
     private var suppressIdleUntilMs = 0L
     private var stopRequested = false
+    private val pendingSeek = PendingSeek()
 
     private var defaultUserAgent: String? = null
     private var cachedTitle = ""
@@ -478,7 +479,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             0.0
         }
 
-    private fun updateDurationFromMpv() {
+    /** [seekingTo] 是刚发出的跳转目标：mpv 还没跳过去，这时读到的 time-pos 是 0，不能用 */
+    private fun updateDurationFromMpv(seekingTo: Double? = null) {
         try {
             val nativeDuration = validDuration(MPVLib.getPropertyDouble("duration"))
             if (nativeDuration > 0) {
@@ -486,7 +488,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 syncMetadata()
             }
             val nativePosition = MPVLib.getPropertyDouble("time-pos")
-            if (nativePosition != null && !nativePosition.isNaN() && nativePosition >= 0) {
+            if (seekingTo != null) {
+                positionSecs = seekingTo
+            } else if (nativePosition != null && !nativePosition.isNaN() && nativePosition >= 0) {
                 positionSecs = nativePosition
             }
             emitProgress(force = true)
@@ -504,6 +508,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         ignoreEndFileUntilMs = now + END_FILE_SUPPRESS_MS
         suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
         stopRequested = false
+        pendingSeek.reset()
         return generation
     }
 
@@ -1475,7 +1480,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 return@postPromise
             }
             try {
-                MPVLib.command(arrayOf("seek", seconds.toString(), "absolute"))
+                val generation = currentLoadGeneration
+                if (loadingGeneration == generation) {
+                    // 新文件还没加载好，现在跳会丢：等它加载好再跳（见 PendingSeek）
+                    pendingSeek.defer(generation, seconds)
+                } else {
+                    MPVLib.command(arrayOf("seek", seconds.toString(), "absolute"))
+                }
                 positionSecs = seconds.coerceAtLeast(0.0)
                 emitProgress(force = true)
                 operationPromise.resolve(null)
@@ -1741,7 +1752,16 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     if (loadingGeneration == generation) {
                         loadingGeneration = -1L
                     }
-                    updateDurationFromMpv()
+                    // 加载期间收到的跳转在开始出声前补上
+                    val deferredSeek = pendingSeek.take(generation)
+                    if (deferredSeek != null) {
+                        try {
+                            MPVLib.command(arrayOf("seek", deferredSeek.toString(), "absolute"))
+                        } catch (e: Exception) {
+                            Log.w(TAG, "deferred seek failed", e)
+                        }
+                    }
+                    updateDurationFromMpv(seekingTo = deferredSeek)
                     explicitIdentity?.let { identity ->
                         replaceActiveIdentity(identity)
                         loadingTrackIdentity = null
