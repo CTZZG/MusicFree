@@ -48,6 +48,8 @@ AppBar 菜单关闭动画为 200ms，原先却在点击后 20ms 触发菜单动�
 
 应用和测试 APK 按原生源码、Gradle 配置、依赖锁文件与补丁的哈希缓存，缓存不包含 Metro 的 JS 内容；JS 和录屏脚本更新会在本次检出的代码上验证。原生改动会使 APK 缓存失效。安装后直接以 `adb shell am instrument` 运行指定测试类，校验报告的总数、每个完成状态、测试类和最终 instrumentation 结果码；不能仅凭 adb 退出码认为 JUnit 通过。结果保存在 `instrumentation-summary.json` 和完整日志中。常规 CI 仍运行 Gradle 单元测试。
 
+[模拟器运行 37668217146](https://github.com/CTZZG/MusicFree/actions/runs/37668217146) 已实际执行全部 19 个测试：新增系统代理 7 个、真实服务取图 1 个全部通过，确认解码后的 Bitmap 进入 MediaSession 的 ART 与 ALBUM_ART。原有公网策略的 4 个跳转用例失败，原因是测试服务器监听 IPv4，但客户端用 `getLoopbackAddress()` 在 Android 上选择了 `::1`；其余 7 个通过。现已统一该测试配置的绑定和解析地址为 127.0.0.1，不修改生产 IPv6 或私网策略；下一次运行应重新验证全部 19 个，并继续订阅界面流程。
+
 最终模拟器结果另行补充，不能把 JVM 或组件测试等同于模拟器视觉验收，也不声称已经验证所有厂商的 Live Update 外观。
 
 ## 交接注意

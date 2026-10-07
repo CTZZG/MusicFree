@@ -21,6 +21,9 @@ import org.junit.Test
 
 class PublicHttpsNetworkPolicyTest {
     private val servers = mutableListOf<MockWebServer>()
+    // Android's getLoopbackAddress() may choose ::1 while MockWebServer's
+    // default bind chooses IPv4. Bind and resolve the same fixture address.
+    private val loopbackAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
 
     @After
     fun tearDown() {
@@ -313,7 +316,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     private fun newServer(): MockWebServer = MockWebServer().also {
-        it.start()
+        it.start(loopbackAddress, 0)
         servers += it
     }
 
@@ -326,7 +329,7 @@ class PublicHttpsNetworkPolicyTest {
                 object : Dns {
                     override fun lookup(hostname: String): List<InetAddress> =
                         if (hostname in hostnames) {
-                            listOf(InetAddress.getLoopbackAddress())
+                            listOf(loopbackAddress)
                         } else {
                             throw UnknownHostException(hostname)
                         }
