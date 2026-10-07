@@ -1,5 +1,5 @@
 import { AppState, AppStateStatus } from "react-native";
-import { sortIndexSymbol, timeStampSymbol } from "@/constants/commonConst";
+import { localPluginPlatform, sortIndexSymbol, timeStampSymbol } from "@/constants/commonConst";
 import delay from "@/utils/delay";
 import BackgroundTimer from "react-native-background-timer";
 import getUrlExt from "@/utils/getUrlExt";
@@ -81,6 +81,7 @@ import {
     getRememberedAlternate,
     rememberAlternate,
 } from "./alternateSource";
+import { recordPlayAttempt } from "./playAttemptLog";
 import { shouldEvictRecoveredRemoteSourceCacheAfterFailure } from "./sourceRecoveryPolicy";
 import {
     IManualSkipOperationToken,
@@ -406,6 +407,8 @@ class TrackPlayer
     private mpvNaturalEndSequence = 0;
     /** 最近一次因为取不到音源而失败的歌曲，用于自然结束时的有界续播 */
     private lastInvalidSourceKey: string | null = null;
+    /** 播放统计里最近记过“播放了”的那首歌，暂停后继续、拖动进度不重复记 */
+    private lastPlayedAttemptKey: string | null = null;
     private manualSkipGate = new ManualSkipOperationGate();
     private qualityChangeCoordinator = new QualityChangeCoordinator();
     private mpvTrackTransitionGate = new MpvTrackTransitionGate();
@@ -722,7 +725,7 @@ class TrackPlayer
                     if (!recovered) {
                         const failedMusic = this.currentMusic;
                         if (failedMusic && currentTrack && isSameMediaItem(failedMusic, currentTrack as IMusic.IMusicItem)) {
-                            playbackRecovery.report(recoveryRequest, failedMusic, createMediaSourceFailure("backend-error", {
+                            this.reportPlaybackFailure(recoveryRequest, failedMusic, createMediaSourceFailure("backend-error", {
                                 mediaKey: getMediaUniqueKey(failedMusic),
                                 pluginName: failedMusic.platform,
                                 quality: this.quality,
@@ -793,6 +796,10 @@ class TrackPlayer
                 this.persistPlaybackProgress(currentProgress.position);
                 this.crossfade.onProgress(currentProgress);
                 LastfmScrobbler.onProgressTick();
+                this.notePlayedAttempt(
+                    currentProgress.position,
+                    getDefaultStore().get(musicStateAtom),
+                );
             });
 
             this.addBackendListener("playbackSeeked", adapterProgress => {
@@ -1825,7 +1832,7 @@ class TrackPlayer
                         ownedMpvTransition,
                         "explicit-play-timeout",
                     );
-                    playbackRecovery.report(recoveryRequest, musicItem, createMediaSourceFailure("backend-error", {
+                    this.reportPlaybackFailure(recoveryRequest, musicItem, createMediaSourceFailure("backend-error", {
                         mediaKey: getMediaUniqueKey(musicItem),
                         pluginName: musicItem.platform,
                     }));
@@ -1907,14 +1914,14 @@ class TrackPlayer
                     pluginName: musicItem?.platform,
                 });
                 if (requestWasActive && musicItem) {
-                    playbackRecovery.report(recoveryRequest, musicItem, failure);
+                    this.reportPlaybackFailure(recoveryRequest, musicItem, failure);
                 }
                 this.emit(TrackPlayerEvents.MediaSourceFailed, failure);
                 await this.handlePlayFail();
             } else if (message === PlayFailReason.PLAY_LIST_IS_EMPTY) {
                 // 队列是空的，不应该出现这种情况
             } else if (loadingSource && requestWasActive && musicItem) {
-                playbackRecovery.report(recoveryRequest, musicItem, createMediaSourceFailure("backend-error", {
+                this.reportPlaybackFailure(recoveryRequest, musicItem, createMediaSourceFailure("backend-error", {
                     mediaKey: getMediaUniqueKey(musicItem),
                     pluginName: musicItem.platform,
                     quality: requestedQuality,
@@ -5341,6 +5348,54 @@ class TrackPlayer
             );
         }
         return null;
+    }
+
+    /** 用户看得到的播放失败：留下失败提示，并记进播放统计 */
+    private reportPlaybackFailure(
+        request: number,
+        musicItem: IMusic.IMusicItem,
+        failure: MediaSourceFailure,
+    ) {
+        if (!playbackRecovery.report(request, musicItem, failure)) {
+            return false;
+        }
+        if (musicItem.platform && musicItem.platform !== localPluginPlatform) {
+            this.lastPlayedAttemptKey = null;
+            recordPlayAttempt({
+                at: Date.now(),
+                platform: musicItem.platform,
+                outcome: "failed",
+                code: failure.code,
+                quality: failure.quality,
+            });
+        }
+        return true;
+    }
+
+    /** 真的放出来至少 2 秒才记一次“播放了”（换源播放的记为 alternate） */
+    private notePlayedAttempt(position: number, state: PlayerBackendState) {
+        const musicItem = this.currentMusic;
+        if (
+            !musicItem?.platform ||
+            musicItem.platform === localPluginPlatform ||
+            position < 2 ||
+            state !== "playing"
+        ) {
+            return;
+        }
+        const key = getMediaUniqueKey(musicItem);
+        if (key === this.lastPlayedAttemptKey) {
+            return;
+        }
+        this.lastPlayedAttemptKey = key;
+        const via = getDefaultStore().get(alternateSourceInUseAtom)[key];
+        recordPlayAttempt({
+            at: Date.now(),
+            platform: musicItem.platform,
+            outcome: via ? "alternate" : "played",
+            via,
+            quality: getDefaultStore().get(resolvedQualityAtom),
+        });
     }
 
     /** 记下这首歌现在是不是由其他来源在播，播放页据此显示来源 */

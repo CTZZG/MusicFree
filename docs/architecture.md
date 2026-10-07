@@ -221,6 +221,7 @@
 | 11 | 播放失败后留下可关闭的提示，打开后可重试、换音质再试、找其他来源、检查插件设置；明确的授权／密钥拒绝不再试同一插件的其他音质，单独的 403 仍降级；迟到的旧失败不覆盖新的播放 | `src/core/trackPlayer/__tests__/playbackRecoveryIntegration.test.ts`、`playbackRecovery.test.ts`、`src/components/panels/types/__tests__/playbackRecovery.test.tsx` | 未验证 |
 | 12 | 播放队列上移、下移、设为下一首不重新加载、不跳进度；删除、清空可撤销一步，之后再编辑、播放、切歌就不能撤销；删除正在放的歌时，查播放状态期间又有编辑或播放就按最新状态重删，不丢掉，也不抢在没完成的切歌前面换歌 | `src/core/trackPlayer/__tests__/queueEditingIntegration.test.ts`、`queueEditing.test.ts` | 未验证 |
 | 13 | 播放：原来源取不到地址时，到其他已启用的来源找同一个录音换过去播：歌名（连同括号里的 Live、伴奏等版本说明）和歌手都一致、两边都有时长且相差不超过 2 秒才算，专辑只用来排序（`src/utils/sameRecording.ts`）；各来源同时搜，最多等 8 秒。记住能播的来源（最多 300 首），下次这首歌原来源再失败时先试它；切歌、预先准备后面几首、播放地址过期重取、换音质也用它，但不在这些地方重新搜。原来源每次都先试，恢复了就照常用。播放页来源标签写“改用 XX”。基本设置里的“播放失败时尝试更换音源”默认改为开启（以前是用歌名搜两条、取最接近的一条，可能放错歌，默认关） | `src/utils/__tests__/sameRecording.test.ts`、`src/core/trackPlayer/__tests__/alternateSource.test.ts`、`playbackRecoveryIntegration.test.ts`、`tests/layout/player.layout.test.mjs`；模拟器：`e2e/` 的 E2E Fallback、E2E Live Only | 未验证 |
+| 14 | 播放统计：每首歌真的放出来 2 秒记一次（换源播放的单独记），用户看到“播放未成功”时记一次失败和原因；只记来源、结果、原因和音质，不记歌名，只存在本机最近 500 次（`src/core/trackPlayer/playAttemptLog.ts`）。设置 → 基本设置 → 开发选项 → 播放统计显示最近 7 天各来源的次数、换源去向、失败原因和最近 10 次失败，可复制；“复制播放诊断”里也带上全部记录的汇总 | `src/core/trackPlayer/__tests__/playAttemptLog.test.ts`、`playAttemptReport.test.ts`、`playbackRecoveryIntegration.test.ts`；模拟器：`e2e/` 的播放统计 | 未验证 |
 
 ## 历史材料
 

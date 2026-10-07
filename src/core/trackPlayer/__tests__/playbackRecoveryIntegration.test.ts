@@ -83,6 +83,10 @@ jest.mock("@/service/encryptedMediaProxy", () => mockAutoStub());
 jest.mock("@/core/lastfm", () => mockAutoStub());
 jest.mock("@/utils/androidMediaPermission", () => mockAutoStub());
 jest.mock("@/utils/userAgentHelper", () => mockAutoStub());
+const mockRecordPlayAttempt = jest.fn();
+jest.mock("../playAttemptLog", () => ({
+    recordPlayAttempt: (...args: unknown[]) => mockRecordPlayAttempt(...args),
+}));
 
 
 const trackPlayer = require("@/core/trackPlayer").default;
@@ -94,6 +98,7 @@ let getMediaSource: jest.Mock;
 beforeEach(() => {
     jest.clearAllMocks();
     playbackRecovery.begin();
+    player.lastPlayedAttemptKey = null;
     mockBackend.name = "mpv";
     mockBackend.active = { track: songs[0], index: 0 };
     jest.spyOn(player, "syncPreparedNextTrack").mockImplementation(() => undefined);
@@ -124,6 +129,13 @@ it("publishes the exact failed song and stops requesting qualities after credent
     await trackPlayer.play(songs[1], true);
     expect(getMediaSource).toHaveBeenCalledTimes(1);
     expect(playbackRecovery.state.getValue()).toMatchObject({ musicItem: songs[1], failure: { code: "access-denied" } });
+    // 用户看到的失败记进播放统计
+    expect(mockRecordPlayAttempt).toHaveBeenCalledTimes(1);
+    expect(mockRecordPlayAttempt).toHaveBeenCalledWith(expect.objectContaining({
+        platform: "test",
+        outcome: "failed",
+        code: "access-denied",
+    }));
 });
 
 it("falls back when a quality is unavailable and stores the resolved quality", async () => {
@@ -251,6 +263,19 @@ it("plays the same recording from another source and remembers it", async () => 
         "music.alternateSources",
         { "test@2": expect.objectContaining({ item: expect.objectContaining({ id: "o2", platform: "other" }) }) },
     );
+
+    // 真的放出来 2 秒才记一次，记为换源播放；暂停后继续、再来进度都不重复记
+    player.notePlayedAttempt(1, "playing");
+    player.notePlayedAttempt(3, "paused");
+    expect(mockRecordPlayAttempt).not.toHaveBeenCalled();
+    player.notePlayedAttempt(3, "playing");
+    player.notePlayedAttempt(9, "playing");
+    expect(mockRecordPlayAttempt).toHaveBeenCalledTimes(1);
+    expect(mockRecordPlayAttempt).toHaveBeenCalledWith(expect.objectContaining({
+        platform: "test",
+        outcome: "alternate",
+        via: "other",
+    }));
 });
 
 it("never plays a different version from another source", async () => {
@@ -262,6 +287,18 @@ it("never plays a different version from another source", async () => {
 
     expect(otherSource).not.toHaveBeenCalled();
     expect(playbackRecovery.state.getValue()).toMatchObject({ musicItem: songs[1], failure: { code: "unavailable" } });
+});
+
+it("records a normal play from the song's own source once", async () => {
+    getMediaSource.mockResolvedValue({ url: "https://example.com/2.mp3" });
+    await trackPlayer.play(songs[1], true);
+    player.notePlayedAttempt(2.5, "playing");
+    player.notePlayedAttempt(30, "playing");
+    expect(mockRecordPlayAttempt).toHaveBeenCalledTimes(1);
+    expect(mockRecordPlayAttempt).toHaveBeenCalledWith(expect.objectContaining({
+        platform: "test",
+        outcome: "played",
+    }));
 });
 
 it("does not look for other sources when switching is turned off", async () => {
