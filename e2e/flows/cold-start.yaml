@@ -1,0 +1,18 @@
+# run.sh 暂停后把应用彻底关掉再打开。播放条要恢复上次那首，播放页上的音质还是刚才选的 HQ。
+# 点播放后由 run.sh 看媒体会话确认是从暂停的地方接着播
+appId: fun.upup.musicfree
+---
+- runFlow: dismiss-update.yaml
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone A 歌手: E2E Artist"
+    timeout: 60000
+- takeScreenshot: 15-cold-start
+- tapOn: "歌曲: E2E Tone A 歌手: E2E Artist"
+- extendedWaitUntil:
+    visible: "音质：HQ，点按切换"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "播放"
+    timeout: 30000
+- tapOn: "播放"
+- takeScreenshot: 16-cold-start-player

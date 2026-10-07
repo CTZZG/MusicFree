@@ -135,14 +135,18 @@ function mountE2EPlugin(file: string) {
     return plugin;
 }
 
-function getMediaSource(plugin: Plugin, item: IMusic.IMusicItem) {
+function getMediaSource(
+    plugin: Plugin,
+    item: IMusic.IMusicItem,
+    quality: IMusic.IQualityKey = "standard",
+) {
     const getSource = plugin.methods.getMediaSource as unknown as (
         music: IMusic.IMusicItem,
         quality: IMusic.IQualityKey,
         retries: number,
         skipCacheWrite: boolean,
     ) => Promise<IPlugin.IMediaSourceResult | null>;
-    return getSource.call(plugin.methods, item, "standard", 0, true);
+    return getSource.call(plugin.methods, item, quality, 0, true);
 }
 
 const fixture = (file: string) =>
@@ -190,6 +194,22 @@ describe("e2e test source A", () => {
                 failure: { code: "unavailable" },
             });
         }
+    });
+
+    it("has the everyday qualities but no lossless one", async () => {
+        // 模拟器上先切到 320K（要成功、接着播），再选无损（要失败、保持 320K 接着播）
+        const plugin = mountE2EPlugin("e2e-source-a.js");
+        const result = await plugin.methods.search(`e2e ${ref}`, 1, "music");
+        const toneA = (result.data as IMusic.IMusicItem[])[0];
+        for (const quality of ["128k", "192k", "320k", "high"]) {
+            await expect(getMediaSource(plugin, toneA, quality)).resolves.toMatchObject({
+                url: fixture("tone-a.mp3"),
+            });
+        }
+        // 应用取不到 flac 时还会用旧写法 super 再问一遍，两次都要取不到
+        await expect(getMediaSource(plugin, toneA, "flac")).resolves.toMatchObject({
+            failure: { code: "unavailable" },
+        });
     });
 });
 

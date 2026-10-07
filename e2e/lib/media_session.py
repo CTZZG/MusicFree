@@ -13,8 +13,14 @@
   media_session.py is-playing <标题> <JSON>
       这次采样正在播这首歌才返回 0
 
+  media_session.py is-state <状态> <标题> <JSON>
+      这次采样是这首歌、而且是这个状态（PLAYING、PAUSED……）才返回 0
+
   media_session.py playing <标题> <第一次的 JSON> <第二次的 JSON> [最少前进毫秒]
       两次采样都在播这首歌、而且进度前进了才返回 0，否则打印原因并返回 1
+
+  media_session.py resumed <标题> <暂停时的 JSON> <接着播时的 JSON>
+      暂停后再播时，是从暂停的地方接着播（不是从头）才返回 0，否则打印原因并返回 1
 
   media_session.py --self-test
 """
@@ -93,8 +99,26 @@ def check_playing(title, first, second, min_advance_ms=2000):
         if sample.get("state") != "PLAYING":
             return f"{label}采样的状态是 {sample.get('state')}，应该是 PLAYING"
     advanced = second.get("position", 0) - first.get("position", 0)
+    if advanced < 0:
+        return f"进度从 {first.get('position', 0) / 1000:.1f}s 退回到 {second.get('position', 0) / 1000:.1f}s（从头播了？）"
     if advanced < min_advance_ms:
         return f"进度只前进了 {advanced} 毫秒（至少 {min_advance_ms}）"
+    return None
+
+
+# 从点播放到采样之间会多播几秒；往回最多容许 3 秒（暂停时上报的进度可能稍晚）
+RESUME_BACK_MS = 3000
+RESUME_AHEAD_MS = 30000
+
+
+def check_resumed(title, paused, playing):
+    if not paused.get("found") or paused.get("title") != title or paused.get("state") != "PAUSED":
+        return f"暂停时的采样不对：{brief(paused)}"
+    if not playing.get("found") or playing.get("title") != title or playing.get("state") != "PLAYING":
+        return f"接着播时的采样不对：{brief(playing)}"
+    start, now = paused.get("position", 0), playing.get("position", 0)
+    if now < start - RESUME_BACK_MS or now > start + RESUME_AHEAD_MS:
+        return f"暂停在 {start / 1000:.1f}s，再播时在 {now / 1000:.1f}s，不是接着播"
     return None
 
 
@@ -147,11 +171,21 @@ def self_test():
     assert "进度只前进了" in check_playing("E2E Tone C", new, dict(new, position=12500))
     assert "应该是「E2E Tone A」" in check_playing("E2E Tone A", new, later)
     assert "PAUSED" in check_playing("E2E Tone A", old, old)
+    assert "退回到 1.0s" in check_playing("E2E Tone C", new, dict(new, position=1000))
     assert brief(new) == "PLAYING E2E Tone C 12.3s", brief(new)
+
+    paused = dict(old, position=60000)
+    assert check_resumed("E2E Tone A", paused, dict(paused, state="PLAYING", position=61500)) is None
+    assert check_resumed("E2E Tone A", paused, dict(paused, state="PLAYING", position=58000)) is None
+    assert "不是接着播" in check_resumed("E2E Tone A", paused, dict(paused, state="PLAYING", position=2000))
+    assert "接着播时的采样不对" in check_resumed("E2E Tone A", paused, paused)
+    assert "暂停时的采样不对" in check_resumed("E2E Tone A", dict(paused, state="PLAYING"), paused)
     assert brief({"found": False}) == "-"
     assert main(["", "is-playing", "E2E Tone C", json.dumps(new)]) == 0
     assert main(["", "is-playing", "E2E Tone A", json.dumps(new)]) == 1
     assert main(["", "is-playing", "E2E Tone A", json.dumps(old)]) == 1
+    assert main(["", "is-state", "PAUSED", "E2E Tone A", json.dumps(old)]) == 0
+    assert main(["", "is-state", "PLAYING", "E2E Tone A", json.dumps(old)]) == 1
     print("media_session.py self-test ok")
 
 
@@ -168,11 +202,19 @@ def main(argv):
         print(brief(parse(sys.stdin.read(), package)))
         return 0
     if argv[1:2] == ["is-playing"] and len(argv) == 4:
-        sample = json.loads(argv[3])
-        return 0 if sample.get("title") == argv[2] and sample.get("state") == "PLAYING" else 1
+        return main(["", "is-state", "PLAYING", argv[2], argv[3]])
+    if argv[1:2] == ["is-state"] and len(argv) == 5:
+        sample = json.loads(argv[4])
+        return 0 if sample.get("title") == argv[3] and sample.get("state") == argv[2] else 1
     if argv[1:2] == ["playing"] and len(argv) >= 5:
         min_advance = int(argv[5]) if len(argv) > 5 else 2000
         problem = check_playing(argv[2], json.loads(argv[3]), json.loads(argv[4]), min_advance)
+        if problem:
+            print(problem)
+            return 1
+        return 0
+    if argv[1:2] == ["resumed"] and len(argv) == 5:
+        problem = check_resumed(argv[2], json.loads(argv[3]), json.loads(argv[4]))
         if problem:
             print(problem)
             return 1

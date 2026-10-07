@@ -23,6 +23,10 @@ const SONGS = [
     { id: "short", title: "E2E Short", file: "short.mp3", duration: 20 },
 ];
 
+// 只有这几档音质，选无损之类的取不到：用来检查切换音质失败时，保持原来的音质接着播。
+// 应用先用新写法（192k）问，取不到再用旧写法（standard）问一遍
+const QUALITIES = ["128k", "192k", "320k", "low", "standard", "high"];
+
 function readRef(query) {
     const match = /(?:^|\s)([0-9a-f]{40})(?:\s|$)/i.exec(String(query || ""));
     return match ? match[1].toLowerCase() : "";
@@ -54,9 +58,12 @@ module.exports = {
         };
     },
 
-    async getMediaSource(musicItem) {
+    async getMediaSource(musicItem, quality) {
         const ref = String(musicItem.e2eRef || "");
         if (!musicItem.e2eFile || !/^[0-9a-f]{40}$/.test(ref)) {
+            return { failure: { code: "unavailable", retryable: false } };
+        }
+        if (quality && !QUALITIES.includes(quality)) {
             return { failure: { code: "unavailable", retryable: false } };
         }
         return {

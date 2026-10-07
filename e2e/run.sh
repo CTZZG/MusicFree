@@ -71,18 +71,23 @@ start_timeline() {
     TIMELINE_PID=$!
 }
 
-# wait_for_song <标题> <秒>：等到系统媒体会话在播这首歌
-wait_for_song() {
-    local title=$1 deadline=$((SECONDS + $2)) now=""
+# wait_for_state <状态> <标题> <秒>：等到系统媒体会话里这首歌是这个状态（PLAYING、PAUSED……）
+wait_for_state() {
+    local state=$1 title=$2 deadline=$((SECONDS + $3)) now=""
     while [ $SECONDS -lt $deadline ]; do
         now=$(session)
-        if python3 -I "$SESSION" is-playing "$title" "$now"; then
+        if python3 -I "$SESSION" is-state "$state" "$title" "$now"; then
             return 0
         fi
         sleep 1
     done
-    log "等了 $2 秒还没在播「$title」，最后一次：$now"
+    log "等了 $3 秒，「$title」还不是 $state，最后一次：$now"
     return 1
+}
+
+# wait_for_song <标题> <秒>：等到系统媒体会话在播这首歌
+wait_for_song() {
+    wait_for_state PLAYING "$1" "$2"
 }
 
 # expect_playing <检查名> <标题>：在播这首歌，而且 4 秒里进度真的往前走了
@@ -100,6 +105,62 @@ expect_playing() {
         return 0
     fi
     fail "$name" "$problem"
+    return 1
+}
+
+# expect_continued <检查名> <标题> <之前的采样>：还在播这首歌，而且接着之前的进度往前播（没有从头播、没有停）
+expect_continued() {
+    local name=$1 title=$2 before=$3 after problem
+    after=$(session)
+    if problem=$(python3 -I "$SESSION" playing "$title" "$before" "$after" 1000); then
+        pass "$name" "$(python3 -I -c 'import json,sys; a,b=(json.loads(x)["position"] for x in sys.argv[1:]); print(f"进度 {a/1000:.1f}s → {b/1000:.1f}s")' "$before" "$after")"
+        return 0
+    fi
+    fail "$name" "$problem"
+    return 1
+}
+
+# expect_resumed <检查名> <标题> <暂停时的采样>：在播这首歌，而且是从暂停的地方接着播的
+expect_resumed() {
+    local name=$1 title=$2 paused=$3 now problem
+    if ! wait_for_song "$title" 30; then
+        fail "$name" "没在播「$title」：$(session)"
+        return 1
+    fi
+    now=$(session)
+    if problem=$(python3 -I "$SESSION" resumed "$title" "$paused" "$now"); then
+        pass "$name" "$(python3 -I -c 'import json,sys; a,b=(json.loads(x)["position"] for x in sys.argv[1:]); print(f"暂停在 {a/1000:.1f}s，接着从 {b/1000:.1f}s 播")' "$paused" "$now")"
+        return 0
+    fi
+    fail "$name" "$problem"
+    return 1
+}
+
+# set_network on|off：模拟器只用 Wi-Fi 上网（移动数据在开头关掉了），关掉 Wi-Fi 就是断网。
+# 等系统的默认网络真的断开或连上再返回
+set_network() {
+    local want=$1 deadline=$((SECONDS + 60)) current=""
+    if [ "$want" = on ]; then
+        adb shell svc wifi enable
+    else
+        adb shell svc wifi disable
+    fi
+    while [ $SECONDS -lt $deadline ]; do
+        current=$(adb shell dumpsys connectivity | tr -d '\r' | sed -n 's/^ *Active default network: *//p' | head -n 1)
+        if [ -z "$current" ]; then
+            log "dumpsys connectivity 里找不到默认网络，等 10 秒"
+            sleep 10
+            return 0
+        fi
+        if { [ "$want" = on ] && [ "$current" != none ]; } || { [ "$want" = off ] && [ "$current" = none ]; }; then
+            log "网络已$([ "$want" = on ] && echo 连上 || echo 断开)（默认网络：$current）"
+            # 刚连上时域名解析可能还没好
+            [ "$want" = on ] && sleep 3
+            return 0
+        fi
+        sleep 1
+    done
+    log "等了 60 秒网络还没$([ "$want" = on ] && echo 连上 || echo 断开)（默认网络：$current）"
     return 1
 }
 
@@ -226,5 +287,53 @@ flow "其他来源只有 Live 版时不换，留下失败提示" live-only.yaml
 
 # 9. 设置里的播放统计记下了上面的换源和失败
 flow "播放统计记下了换源和失败" play-stats.yaml
+
+# 10. 播放中切换音质：在播放页换成 320K，要接着原来的进度播；再选测试源 A 没有的无损，
+#     取不到时保持 320K 接着播
+before=$(session)
+if flow "播放中切到 320K，标签变成 HQ" quality.yaml; then
+    expect_continued "切换音质后接着原来的进度播" "E2E Tone A" "$before"
+fi
+before=$(session)
+if flow "选了取不到的无损，标签保持 HQ" quality-unavailable.yaml; then
+    expect_continued "取不到新音质时照常播" "E2E Tone A" "$before"
+fi
+
+# 11. 冷启动：暂停后把应用彻底关掉（和被系统清掉一样）再打开。播放条要恢复上次那首，
+#     音质还是 HQ，点播放从暂停的地方接着播
+adb shell input keyevent KEYCODE_MEDIA_PAUSE
+if wait_for_state PAUSED "E2E Tone A" 15; then
+    # 暂停时会马上存一次进度，留点余量
+    sleep 2
+    paused=$(session)
+    adb shell am force-stop "$PKG"
+    sleep 2
+    adb shell am start -W -n "$ACTIVITY" > /dev/null
+    if flow "冷启动后恢复上次的歌和音质" cold-start.yaml; then
+        expect_resumed "冷启动后点播放，从暂停的地方接着播" "E2E Tone A" "$paused"
+    fi
+else
+    fail "冷启动前暂停" "$(session)"
+fi
+
+# 12. 断网：断网后点一首歌，要提示播放未成功（不能一直转圈，也不能一路往下跳）；
+#     恢复网络后在提示里点“重试”，要能播
+open_link "musicfree://search?keyword=e2e%20$REF"
+if flow "再次打开搜索页" search-results.yaml && set_network off; then
+    offline_notice=0
+    if flow "断网时点歌，提示播放未成功" offline-song.yaml; then
+        offline_notice=1
+    fi
+    log "断网时的媒体会话：$(session)"
+    set_network on
+    if [ "$offline_notice" -eq 1 ]; then
+        flow "网络恢复后在失败提示里点重试" offline-retry.yaml
+    else
+        flow "网络恢复后再点一次这首歌" offline-replay.yaml
+    fi
+    expect_playing "网络恢复后在播 B" "E2E Tone B"
+fi
+# 不管上面哪步没过，都把网络恢复
+set_network on > /dev/null
 
 finish

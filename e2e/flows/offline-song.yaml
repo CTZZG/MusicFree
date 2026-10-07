@@ -1,0 +1,9 @@
+# run.sh 已经断网。点一首歌（播放器不在本机留音频，要重新联网取）：
+# 要在一分钟内提示“播放未成功”，不能一直转圈，也不能一路往下跳
+appId: fun.upup.musicfree
+---
+- tapOn: "E2E Tone B"
+- extendedWaitUntil:
+    visible: "播放未成功: E2E Tone B"
+    timeout: 60000
+- takeScreenshot: 17-offline-failure

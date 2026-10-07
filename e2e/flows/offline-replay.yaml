@@ -1,0 +1,5 @@
+# 断网时没有出现失败提示的话，恢复网络后直接再点一次这首歌，看能不能播
+appId: fun.upup.musicfree
+---
+- takeScreenshot: 18-offline-no-notice
+- tapOn: "E2E Tone B"
