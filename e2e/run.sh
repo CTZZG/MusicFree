@@ -202,9 +202,9 @@ flow "播放失败后有提示和处理方式" broken-song.yaml
 log "失败后的媒体会话：$(session)"
 
 # 6. 在后台播完一首后自动接下一首。队列现在是 A、B、C、Broken、Short，
-#    队列循环模式下 Short 播完回到 A。短歌只有 6 秒，Maestro 读一次界面就要好几秒，
+#    队列循环模式下 Short 播完回到 A。Short 只有 20 秒，Maestro 读一次界面就要好几秒，
 #    所以只用它点歌，开始播放和播完切歌都看媒体会话（每秒查一次）
-if flow "点播一首 6 秒的短歌" short-song.yaml; then
+if flow "点播一首 20 秒的短歌" short-song.yaml; then
     if wait_for_song "E2E Short" 15; then
         adb shell input keyevent KEYCODE_HOME
         expect_playing "后台播完自动接下一首（回到 A）" "E2E Tone A"

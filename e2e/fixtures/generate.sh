@@ -12,5 +12,5 @@ tone() { # 文件名 频率 秒数
 tone tone-a.mp3 440 180
 tone tone-b.mp3 554 180
 tone tone-c.mp3 659 180
-# 6 秒就播完，用来检查播完后自动接下一首
-tone short.mp3 330 6
+# 20 秒就播完，用来检查在后台播完后自动接下一首（Maestro 点完歌退出要好几秒，太短会错过）
+tone short.mp3 330 20
