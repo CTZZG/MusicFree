@@ -5,13 +5,19 @@ set -euo pipefail
 OUT="$PWD/proxy-subscription-results"
 mkdir -p "$OUT"
 METRO_PID=""
+RECORD_PID=""
 cleanup() {
+    if [ -n "$RECORD_PID" ]; then
+        adb shell pkill -2 screenrecord 2>/dev/null || true
+        wait "$RECORD_PID" 2>/dev/null || true
+        adb pull /sdcard/subscription-transition.mp4 "$OUT/subscription-transition.mp4" 2>/dev/null || true
+    fi
     [ -z "$METRO_PID" ] || kill "$METRO_PID" 2>/dev/null || true
     adb logcat -d > "$OUT/logcat.txt" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-./android/gradlew -p android connectedDebugAndroidTest \
+./android/gradlew -p android :app:connectedDebugAndroidTest \
     -Pandroid.testInstrumentationRunnerArguments.class=fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest \
     -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 \
     -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m" \
@@ -35,12 +41,15 @@ adb shell am start -W -n fun.upup.musicfree/.MainActivity
 
 maestro test --test-output-dir "$OUT/maestro-settings" e2e/flows/plugin-settings.yaml \
     > "$OUT/open-settings.log" 2>&1
-adb shell screenrecord --time-limit 12 /sdcard/subscription-transition.mp4 &
+# Leave enough time for Maestro's driver startup; stop once the flow completes.
+adb shell screenrecord --time-limit 60 /sdcard/subscription-transition.mp4 &
 RECORD_PID=$!
 sleep 1
 maestro test --no-reinstall-driver --test-output-dir "$OUT/maestro-subscription" e2e/flows/plugin-subscription.yaml \
     > "$OUT/subscription.log" 2>&1
-wait "$RECORD_PID"
+adb shell pkill -2 screenrecord || true
+wait "$RECORD_PID" || true
+RECORD_PID=""
 adb pull /sdcard/subscription-transition.mp4 "$OUT/subscription-transition.mp4"
 maestro hierarchy --compact --no-reinstall-driver > "$OUT/final-hierarchy.txt"
 echo 'Native proxy tests passed; subscription entry/back flow passed with animations enabled.' \

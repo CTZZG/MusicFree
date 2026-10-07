@@ -45,7 +45,7 @@ jobs:
               working-directory: android
               run: |
                   chmod +x gradlew
-                  ./gradlew assembleDebug assembleDebugAndroidTest testDebugUnitTest \
+                  ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest \
                     -PreactNativeArchitectures=x86_64 \
                     --no-daemon --max-workers=2 \
                     -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
