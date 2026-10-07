@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.11.1），最后核对日期 2026-10-07。
+> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.11.2），最后核对日期 2026-10-07。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
