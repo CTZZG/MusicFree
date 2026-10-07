@@ -5,10 +5,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 tone() { # 文件名 频率 秒数
     ffmpeg -hide_banner -loglevel error -y \
-        -f lavfi -i "sine=frequency=$2:sample_rate=22050:duration=$3" \
-        -ac 1 -c:a libmp3lame -b:a 32k "$1"
+        -f lavfi -i "sine=frequency=$2:sample_rate=16000:duration=$3" \
+        -ac 1 -c:a libmp3lame -b:a 16k "$1"
 }
-tone tone-a.mp3 440 30
-tone tone-b.mp3 554 30
-tone tone-c.mp3 659 30
+# 主流程里的几首要够长：整套检查要两三分钟，歌中途播完自己切走会干扰判断
+tone tone-a.mp3 440 180
+tone tone-b.mp3 554 180
+tone tone-c.mp3 659 180
+# 6 秒就播完，用来检查播完后自动接下一首
 tone short.mp3 330 6

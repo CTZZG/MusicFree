@@ -9,11 +9,11 @@ const PLATFORM = "E2E 测试源 A";
 const RAW_BASE = "https://raw.githubusercontent.com/CTZZG/MusicFree";
 
 const SONGS = [
-    { id: "tone-a", title: "E2E Tone A", file: "tone-a.mp3", duration: 30 },
-    { id: "tone-b", title: "E2E Tone B", file: "tone-b.mp3", duration: 30 },
-    { id: "tone-c", title: "E2E Tone C", file: "tone-c.mp3", duration: 30 },
+    { id: "tone-a", title: "E2E Tone A", file: "tone-a.mp3", duration: 180 },
+    { id: "tone-b", title: "E2E Tone B", file: "tone-b.mp3", duration: 180 },
+    { id: "tone-c", title: "E2E Tone C", file: "tone-c.mp3", duration: 180 },
     // 取不到播放地址，用来检查播放失败后的提示
-    { id: "broken", title: "E2E Broken", file: "", duration: 30 },
+    { id: "broken", title: "E2E Broken", file: "", duration: 180 },
     // 6 秒就播完，用来检查播完后自动接下一首
     { id: "short", title: "E2E Short", file: "short.mp3", duration: 6 },
 ];

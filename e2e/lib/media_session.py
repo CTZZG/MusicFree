@@ -7,6 +7,9 @@
   adb shell dumpsys media_session | media_session.py parse [包名]
       输出一行 JSON：found / state / position(毫秒) / title / artist / album
 
+  adb shell dumpsys media_session | media_session.py brief [包名]
+      输出一行简要状态，例如 "PLAYING E2E Tone A 12.3s"，用来记时间线
+
   media_session.py is-playing <标题> <JSON>
       这次采样正在播这首歌才返回 0
 
@@ -75,6 +78,12 @@ def parse(text, package=DEFAULT_PACKAGE):
     return found[0]
 
 
+def brief(sample):
+    if not sample.get("found"):
+        return "-"
+    return f"{sample.get('state')} {sample.get('title')} {sample.get('position', 0) / 1000:.1f}s"
+
+
 def check_playing(title, first, second, min_advance_ms=2000):
     for label, sample in (("第一次", first), ("第二次", second)):
         if not sample.get("found"):
@@ -138,6 +147,8 @@ def self_test():
     assert "进度只前进了" in check_playing("E2E Tone C", new, dict(new, position=12500))
     assert "应该是「E2E Tone A」" in check_playing("E2E Tone A", new, later)
     assert "PAUSED" in check_playing("E2E Tone A", old, old)
+    assert brief(new) == "PLAYING E2E Tone C 12.3s", brief(new)
+    assert brief({"found": False}) == "-"
     assert main(["", "is-playing", "E2E Tone C", json.dumps(new)]) == 0
     assert main(["", "is-playing", "E2E Tone A", json.dumps(new)]) == 1
     assert main(["", "is-playing", "E2E Tone A", json.dumps(old)]) == 1
@@ -151,6 +162,10 @@ def main(argv):
     if argv[1:2] == ["parse"]:
         package = argv[2] if len(argv) > 2 else DEFAULT_PACKAGE
         print(json.dumps(parse(sys.stdin.read(), package), ensure_ascii=False))
+        return 0
+    if argv[1:2] == ["brief"]:
+        package = argv[2] if len(argv) > 2 else DEFAULT_PACKAGE
+        print(brief(parse(sys.stdin.read(), package)))
         return 0
     if argv[1:2] == ["is-playing"] and len(argv) == 4:
         sample = json.loads(argv[3])

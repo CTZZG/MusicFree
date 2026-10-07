@@ -58,6 +58,19 @@ session() {
     adb shell dumpsys media_session | python3 -I "$SESSION" parse "$PKG"
 }
 
+# 每 2 秒记一次播放状态，失败时看歌是怎么切的
+TIMELINE_PID=""
+start_timeline() {
+    (
+        while true; do
+            printf '%s %s\n' "$(date -u +%H:%M:%S)" \
+                "$(adb shell dumpsys media_session | python3 -I "$SESSION" brief "$PKG")"
+            sleep 2
+        done
+    ) > "$OUT/session-timeline.txt" 2>&1 &
+    TIMELINE_PID=$!
+}
+
 # wait_for_song <标题> <秒>：等到系统媒体会话在播这首歌
 wait_for_song() {
     local title=$1 deadline=$((SECONDS + $2)) now=""
@@ -115,6 +128,13 @@ write_summary() {
 }
 
 finish() {
+    if [ -n "$TIMELINE_PID" ]; then
+        kill "$TIMELINE_PID" 2>/dev/null || true
+        log "播放状态的变化（完整的每 2 秒一条在 session-timeline.txt）："
+        # 只列歌名或状态变了的那几条
+        awk '{ key = $2; for (i = 3; i < NF; i++) key = key " " $i; if (key != last) print; last = key }' \
+            "$OUT/session-timeline.txt"
+    fi
     adb logcat -d > "$OUT/logcat.txt" 2>/dev/null || true
     adb logcat -d -b crash > "$OUT/crash.txt" 2>/dev/null || true
     if [ -s "$OUT/crash.txt" ]; then
@@ -143,6 +163,7 @@ else
     finish
 fi
 adb shell am start -W -n "$ACTIVITY" > /dev/null
+start_timeline
 flow "启动后进入首页" home.yaml || finish
 
 # 2. 用外部链接装测试插件
@@ -177,10 +198,15 @@ flow "播放失败后有提示和处理方式" broken-song.yaml
 log "失败后的媒体会话：$(session)"
 
 # 6. 在后台播完一首后自动接下一首。队列现在是 A、B、C、Broken、Short，
-#    队列循环模式下 Short 播完回到 A
+#    队列循环模式下 Short 播完回到 A。短歌只有 6 秒，Maestro 读一次界面就要好几秒，
+#    所以只用它点歌，开始播放和播完切歌都看媒体会话（每秒查一次）
 if flow "点播一首 6 秒的短歌" short-song.yaml; then
-    adb shell input keyevent KEYCODE_HOME
-    expect_playing "后台播完自动接下一首（回到 A）" "E2E Tone A"
+    if wait_for_song "E2E Short" 15; then
+        adb shell input keyevent KEYCODE_HOME
+        expect_playing "后台播完自动接下一首（回到 A）" "E2E Tone A"
+    else
+        fail "短歌开始播放" "$(session)"
+    fi
 fi
 
 finish

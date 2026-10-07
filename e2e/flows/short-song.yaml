@@ -1,7 +1,4 @@
-# 点播 6 秒的短歌。run.sh 接着回到桌面，等它播完后自动接队列里的下一首
+# 点播 6 秒的短歌。开始播放和播完后自动接下一首由 run.sh 看媒体会话判断
 appId: fun.upup.musicfree
 ---
 - tapOn: "E2E Short"
-- extendedWaitUntil:
-    visible: "歌曲: E2E Short 歌手: E2E Artist"
-    timeout: 30000
