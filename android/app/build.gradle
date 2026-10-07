@@ -117,6 +117,10 @@ static def getVersion() {
 
 def appVersion = getVersion()
 def appVersionCode = 400027
+// Honor the documented RN architecture override for emulator builds. The
+// default gradle.properties value still produces all four release ABIs.
+def apkArchitectures = (findProperty("reactNativeArchitectures") ?: "armeabi-v7a,arm64-v8a,x86,x86_64")
+    .split(",").collect { it.trim() }
 
 android {
     ndkVersion = rootProject.ext.ndkVersion
@@ -159,7 +163,7 @@ android {
                 reset()
                 enable = true
                 universalApk = true
-                include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                include(*apkArchitectures)
             }
     }
 
