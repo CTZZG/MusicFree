@@ -185,7 +185,8 @@
     变更路径用 NUL 分隔读取，重命名按删除＋新增检查，移出原生目录的旧路径也会触发；
   - 三处都上传测试报告，测试失败时也上传。
   - `src/test/java` 也编进模拟器测试 APK（`androidTest`），安装下限 API 24 的 DEX 不允许方法名里有空格和 ASCII 标点，
-    所以测试方法用普通驼峰名，不用反引号句子名；`audit-invariants.mjs` 会拦下这类名字。
+    所以测试方法用普通驼峰名，不用反引号句子名。`audit-invariants.mjs` 跳过注释和字符串，拦下测试代码里所有带空格、ASCII 标点的
+    反引号名字（规则和用例见 `generator/lib/dexNames.mjs`），最终以测试 APK 的 D8 构建为准。
 - 模拟器端到端测试（`e2e/`，怎么跑、怎么加检查见 `e2e/README.md`）：Beta 构建打包后默认在 Android 14 模拟器（x86_64，
   GitHub Actions）上装刚打出的 APK，用 Maestro 点界面，用 `dumpsys media_session` 看实际播放（进度由 mpv 上报，不是界面
   数字）。覆盖：外部链接装插件、搜索点播、后台用媒体键切歌后回到应用不跳回旧歌、播放失败提示和处理方式、后台播完接下一首、
@@ -200,6 +201,7 @@
   绑定真实的 MpvPlaybackService，经系统选定的本机 HTTP 代理取封面，确认解码后进了 MediaSession），再通过 Metro 打开
   插件管理右上角菜单、进入订阅设置再返回，并录屏。转场顺不顺要看录屏，检查本身只判断能进能回。只构建 x86_64
   （`-PreactNativeArchitectures=x86_64`，APK 拆分跟着这个属性走，发行构建仍是四种 ABI）。
+  debug 版的警告浮层会挡住底部标签，现在靠点屏幕上的固定位置关掉，只适用于这次的 Pixel 6 配置，以后应改成能定位的关闭操作。
 
 ## 标签页、资料库与榜单布局
 
@@ -243,7 +245,7 @@
 | 12 | 播放队列上移、下移、设为下一首不重新加载、不跳进度；删除、清空可撤销一步，之后再编辑、播放、切歌就不能撤销；删除正在放的歌时，查播放状态期间又有编辑或播放就按最新状态重删，不丢掉，也不抢在没完成的切歌前面换歌 | `src/core/trackPlayer/__tests__/queueEditingIntegration.test.ts`、`queueEditing.test.ts` | 未验证 |
 | 13 | 播放：原来源取不到地址时，到其他已启用的来源找同一个录音换过去播：歌名（连同括号里的 Live、伴奏等版本说明）和歌手都一致、两边都有时长且相差不超过 2 秒才算，专辑只用来排序（`src/utils/sameRecording.ts`）；各来源同时搜，最多等 8 秒。记住能播的来源（最多 300 首），下次这首歌原来源再失败时先试它；切歌、预先准备后面几首、播放地址过期重取、换音质也用它，但不在这些地方重新搜。原来源每次都先试，恢复了就照常用。播放页来源标签写“改用 XX”。基本设置里的“播放失败时尝试更换音源”默认改为开启（以前是用歌名搜两条、取最接近的一条，可能放错歌，默认关） | `src/utils/__tests__/sameRecording.test.ts`、`src/core/trackPlayer/__tests__/alternateSource.test.ts`、`playbackRecoveryIntegration.test.ts`、`tests/layout/player.layout.test.mjs`；模拟器：`e2e/` 的 E2E Fallback、E2E Live Only | 未验证 |
 | 14 | 播放统计：每一遍从头放出来 2 秒记一次（暂停后继续、往后拖进度还是同一遍，重播、单曲循环算新的一遍；换源播放的单独记），用户看到“播放未成功”时记一次失败和原因；只记来源、结果、原因和音质，不记歌名，只存在本机最近 500 次（`src/core/trackPlayer/playAttemptLog.ts`）。设置 → 基本设置 → 开发选项 → 播放统计显示最近 7 天各来源的次数、换源去向、失败原因和最近 10 次失败，可复制；“复制播放诊断”里也带上全部记录的汇总 | `src/core/trackPlayer/__tests__/playAttemptLog.test.ts`、`playAttemptReport.test.ts`、`playbackRecoveryIntegration.test.ts`；模拟器：`e2e/` 的播放统计 | 未验证 |
-| 15 | 原生联网（通知栏和锁屏封面、下载、QMC/CENC 代理）在系统设置了本机或局域网 HTTP 代理时（FlClash 等的“系统代理”）经这个代理连接；只放行这次选路时系统给出的代理地址，直接连接的目标仍拒绝私网、回环地址（`PublicHttpsNetworkPolicy` 的 `ProxyRouteDns`，依赖 OkHttp 4.10 在同一线程里选代理、解析地址，升级 OkHttp 时要保留这些测试） | `android/.../network/SystemProxyNetworkPolicyTest.kt`、`PublicHttpsNetworkPolicyTest.kt`；模拟器：`proxy-subscription-check.yml` 的 `NotificationArtworkProxyTest`（系统代理用测试替身，没有装 FlClash） | 未验证 |
+| 15 | 原生联网在系统设置了本机或局域网 HTTP 代理时（FlClash 等的“系统代理”）经这个代理连接：只放行这次选路时系统给出的代理地址，直接连接的目标仍拒绝私网、回环地址（`PublicHttpsNetworkPolicy` 的 `ProxyRouteDns`）。通知栏封面、下载、QMC/CENC 代理和写入封面共用这个客户端，都受影响。前提是 OkHttp 4.10 在同一线程里先选代理、再解析地址；升级 OkHttp 后要重新核对新的选路实现并重跑这些测试，不能默认仍然成立 | `android/.../network/SystemProxyNetworkPolicyTest.kt`、`PublicHttpsNetworkPolicyTest.kt`（网络策略）；模拟器：`proxy-subscription-check.yml` 的 `NotificationArtworkProxyTest`（播放服务经代理取封面、写入 MediaSession；系统代理用测试替身，没有装 FlClash）。下载、QMC/CENC 播放经代理没有端到端测试 | 未验证 |
 
 ## 历史材料
 
