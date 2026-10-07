@@ -9,7 +9,7 @@ import org.junit.Test
 
 class FixedLengthHeadResponseTest {
     @Test
-    fun `HEAD response sends exactly one content length header`() {
+    fun headResponseSendsExactlyOneContentLengthHeader() {
         val server = object : NanoHTTPD("127.0.0.1", 0) {
             override fun serve(session: IHTTPSession): Response =
                 fixedLengthHeadResponse(Response.Status.OK, "audio/flac", 123L)
@@ -48,7 +48,7 @@ class FixedLengthHeadResponseTest {
     }
 
     @Test
-    fun `HEAD response rejects a negative content length`() {
+    fun headResponseRejectsANegativeContentLength() {
         assertThrows(IllegalArgumentException::class.java) {
             fixedLengthHeadResponse(NanoHTTPD.Response.Status.OK, "audio/flac", -1L)
         }
