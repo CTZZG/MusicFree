@@ -1,0 +1,9 @@
+# run.sh 已经恢复网络。在失败提示里点“重试”，在播由 run.sh 看媒体会话确认
+appId: fun.upup.musicfree
+---
+- tapOn: "查看原因和处理方式"
+- extendedWaitUntil:
+    visible: "重试"
+    timeout: 15000
+- takeScreenshot: 18-offline-retry
+- tapOn: "重试"

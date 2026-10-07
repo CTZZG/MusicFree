@@ -9,7 +9,8 @@ const PLATFORM = "E2E 测试源 A";
 const RAW_BASE = "https://raw.githubusercontent.com/CTZZG/MusicFree";
 
 const SONGS = [
-    { id: "tone-a", title: "E2E Tone A", file: "tone-a.mp3", duration: 180 },
+    // A 要从播放统计一直放到冷启动续播，比另外两首长（见 fixtures/generate.sh）
+    { id: "tone-a", title: "E2E Tone A", file: "tone-a.mp3", duration: 480 },
     { id: "tone-b", title: "E2E Tone B", file: "tone-b.mp3", duration: 180 },
     { id: "tone-c", title: "E2E Tone C", file: "tone-c.mp3", duration: 180 },
     // 取不到播放地址，用来检查播放失败后的提示
@@ -22,6 +23,10 @@ const SONGS = [
     // 结果替换播放队列，所以它要排在最后：播完绕回第一首 A
     { id: "short", title: "E2E Short", file: "short.mp3", duration: 20 },
 ];
+
+// 只有这几档音质，选无损之类的取不到：用来检查切换音质失败时，保持原来的音质接着播。
+// 应用先用新写法（192k）问，取不到再用旧写法（standard）问一遍
+const QUALITIES = ["128k", "192k", "320k", "low", "standard", "high"];
 
 function readRef(query) {
     const match = /(?:^|\s)([0-9a-f]{40})(?:\s|$)/i.exec(String(query || ""));
@@ -54,9 +59,12 @@ module.exports = {
         };
     },
 
-    async getMediaSource(musicItem) {
+    async getMediaSource(musicItem, quality) {
         const ref = String(musicItem.e2eRef || "");
         if (!musicItem.e2eFile || !/^[0-9a-f]{40}$/.test(ref)) {
+            return { failure: { code: "unavailable", retryable: false } };
+        }
+        if (quality && !QUALITIES.includes(quality)) {
             return { failure: { code: "unavailable", retryable: false } };
         }
         return {

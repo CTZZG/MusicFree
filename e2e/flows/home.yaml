@@ -11,3 +11,5 @@ appId: fun.upup.musicfree
     visible: "资料库"
     timeout: 90000
 - takeScreenshot: 01-home
+# 测的 APK 比最新发布的版本旧时会弹“发现新版本”，见 dismiss-update.yaml
+- runFlow: dismiss-update.yaml

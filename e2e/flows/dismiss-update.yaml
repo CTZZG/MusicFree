@@ -1,0 +1,18 @@
+# 测的 APK 比 GitHub 上最新发布的版本旧时，启动后会弹“发现新版本”，挡住后面的操作。
+# 弹了就勾上“跳过此版本”再取消，之后重启不会再弹。启动时检查要联网，最多等 8 秒
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "发现新版本.*"
+    timeout: 8000
+    optional: true
+- runFlow:
+    when:
+      visible: "发现新版本.*"
+    commands:
+      - takeScreenshot: update-dialog
+      - tapOn: "跳过此版本"
+      - tapOn: "取消"
+      - extendedWaitUntil:
+          notVisible: "发现新版本.*"
+          timeout: 10000

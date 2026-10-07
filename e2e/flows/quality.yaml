@@ -1,0 +1,24 @@
+# 播放中切换音质：在播放页点音质标签，选“高清音质 320K”，标签要变成 HQ。
+# run.sh 在前后各看一次媒体会话，确认是接着原来的进度播，没有从头播或停下
+appId: fun.upup.musicfree
+---
+# 关掉上一步的播放统计，回到设置标签页（基本设置页上没有播放条），从播放条打开播放页
+- tapOn: "我知道了"
+- back
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone A 歌手: E2E Artist"
+    timeout: 15000
+- tapOn: "歌曲: E2E Tone A 歌手: E2E Artist"
+- extendedWaitUntil:
+    visible: "音质：MQ，点按切换"
+    timeout: 15000
+- tapOn: "音质：MQ，点按切换"
+- extendedWaitUntil:
+    visible: "高清音质 320K.*"
+    timeout: 10000
+- takeScreenshot: 12-quality-panel
+- tapOn: "高清音质 320K.*"
+- extendedWaitUntil:
+    visible: "音质：HQ，点按切换"
+    timeout: 20000
+- takeScreenshot: 13-quality-hq

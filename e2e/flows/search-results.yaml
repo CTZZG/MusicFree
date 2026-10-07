@@ -1,0 +1,6 @@
+# run.sh 用 musicfree://search 打开了搜索页，等搜索结果出来
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "E2E Tone B"
+    timeout: 45000

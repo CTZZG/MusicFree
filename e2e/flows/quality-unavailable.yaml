@@ -1,0 +1,15 @@
+# 选测试源 A 没有的无损音质：取不到，标签要保持 HQ（接着播由 run.sh 看媒体会话确认）
+appId: fun.upup.musicfree
+---
+- tapOn: "音质：HQ，点按切换"
+- extendedWaitUntil:
+    visible: "无损音质 FLAC.*"
+    timeout: 10000
+- tapOn: "无损音质 FLAC.*"
+# 取不到时会短暂提示一下；提示只停一秒多，没赶上也不算失败，等到取源结束再看标签
+- extendedWaitUntil:
+    visible: "音源插件未返回此音质的播放地址"
+    timeout: 10000
+    optional: true
+- assertVisible: "音质：HQ，点按切换"
+- takeScreenshot: 14-quality-unavailable
