@@ -33,6 +33,8 @@ AppBar 菜单关闭动画为 200ms，原先却在点击后 20ms 触发菜单动�
 
 本地容器没有 Android SDK 或 KVM，因此使用 GitHub Actions 的一次性 Android 模拟器。新增 `proxy-subscription-check.yml`，仅构建 debug 应用和测试 APK，不发布 Release、不打 tag。
 
+检查限定为 `:app:` 的 Gradle 任务。原来的 APK splits 硬编码四种 ABI，RN 插件在启用 splits 时又不会将 `reactNativeArchitectures` 写入 abiFilters，所以仅传 `-PreactNativeArchitectures=x86_64` 仍会构建四种应用 ABI；现在 splits 读取同一属性，模拟检查真正只构建 x86_64。默认属性仍为原来的四种架构，常规发行构建保持四种 ABI。
+
 常规 [CI 37654645890](https://github.com/CTZZG/MusicFree/actions/runs/37654645890) 已通过：质量门通过，Gradle `testDebugUnitTest` 实际执行 14 个测试类、75 个用例，0 失败、0 错误、0 跳过。已下载并核对 XML 报告，其中公网策略 11 个、系统代理 7 个用例全部通过。
 
 流程包括：
