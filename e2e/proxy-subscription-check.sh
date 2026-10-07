@@ -17,13 +17,37 @@ cleanup() {
 }
 trap cleanup EXIT
 
-./android/gradlew -p android :app:connectedDebugAndroidTest \
-    -Pandroid.testInstrumentationRunnerArguments.class=fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest \
-    -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 \
-    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m" \
-    > "$OUT/instrumentation.log" 2>&1
-
 adb install -r android/app/build/outputs/apk/debug/app-x86_64-debug.apk
+adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest"
+adb shell am instrument -w -r -e class "$TEST_CLASSES" \
+    fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
+    > "$OUT/instrumentation.log" 2>&1
+# `am instrument` can exit zero even when JUnit fails. Require every selected
+# class to complete tests successfully, and reject skipped or partial runs.
+python3 - "$OUT/instrumentation.log" "$TEST_CLASSES" <<'PY'
+import json, re, sys
+from pathlib import Path
+log = Path(sys.argv[1]).read_text()
+completed, fields = [], {}
+for line in log.splitlines():
+    if line.startswith('INSTRUMENTATION_STATUS: '):
+        key, sep, value = line.removeprefix('INSTRUMENTATION_STATUS: ').partition('=')
+        if sep: fields[key] = value
+    elif line.startswith('INSTRUMENTATION_STATUS_CODE: '):
+        code = int(line.split(':', 1)[1])
+        if code <= 0 and 'class' in fields and 'test' in fields:
+            completed.append({'class': fields['class'], 'test': fields['test'], 'code': code})
+        fields = {}
+expected = max((int(n) for n in re.findall(r'^INSTRUMENTATION_STATUS: numtests=(\d+)', log, re.M)), default=0)
+passed = len(completed) == expected and expected > 0 and all(t['code'] == 0 for t in completed)
+passed &= {t['class'] for t in completed} == set(sys.argv[2].split(','))
+passed &= bool(re.search(r'^INSTRUMENTATION_CODE: -1\s*$', log, re.M))
+summary = {'passed': passed, 'expected': expected, 'completed': completed}
+Path(sys.argv[1]).with_name('instrumentation-summary.json').write_text(json.dumps(summary, indent=2))
+print(json.dumps({'passed': passed, 'expected': expected, 'completed': len(completed)}))
+sys.exit(0 if passed else 1)
+PY
 adb reverse tcp:8081 tcp:8081
 adb shell settings put global window_animation_scale 2
 adb shell settings put global transition_animation_scale 2
