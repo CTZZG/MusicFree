@@ -309,6 +309,22 @@ if wait_for_state PAUSED "E2E Tone A" 15; then
     adb shell am force-stop "$PKG"
     sleep 2
     adb shell am start -W -n "$ACTIVITY" > /dev/null
+    # 应用起来后会把上次那首按暂停的进度装好：通知栏、锁屏上要停在暂停的地方，不是 0 秒
+    restored=""
+    problem="30 秒内媒体会话里没有暂停的「E2E Tone A」"
+    deadline=$((SECONDS + 30))
+    while [ $SECONDS -lt $deadline ]; do
+        restored=$(session)
+        if problem=$(python3 -I "$SESSION" paused-at "E2E Tone A" "$paused" "$restored"); then
+            break
+        fi
+        sleep 1
+    done
+    if [ -z "$problem" ]; then
+        pass "冷启动后通知栏停在暂停的地方" "$(python3 -I -c 'import json,sys; a,b=(json.loads(x)["position"] for x in sys.argv[1:]); print(f"暂停在 {a/1000:.1f}s，重开后 {b/1000:.1f}s")' "$paused" "$restored")"
+    else
+        fail "冷启动后通知栏停在暂停的地方" "$problem"
+    fi
     if flow "冷启动后恢复上次的歌和音质" cold-start.yaml; then
         expect_resumed "冷启动后点播放，从暂停的地方接着播" "E2E Tone A" "$paused"
     fi
