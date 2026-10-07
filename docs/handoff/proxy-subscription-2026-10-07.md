@@ -37,7 +37,7 @@ AppBar 菜单关闭动画为 200ms，原先却在点击后 20ms 触发菜单动�
 
 第一次完整测试 APK 编译暴露了原有共享测试目录的兼容问题：41 个 Kotlin 测试方法使用含空格的反引号名称，JVM 允许，但项目最低版本配置（根配置 minSdk 24）对应的 DEX 不允许；D8 报 `Space characters in SimpleName ... are not allowed prior to DEX version 040`。已把这些方法改为普通 camelCase 名称，断言和测试逻辑不变，没有提高应用最低系统版本。系统代理测试的本机服务器也明确绑定 IPv4，避免 `localhost` 在 Android 上解析为 IPv6 时与模拟的 127.0.0.1 代理不一致。
 
-常规 [CI 37654645890](https://github.com/CTZZG/MusicFree/actions/runs/37654645890) 已通过：质量门通过，Gradle `testDebugUnitTest` 实际执行 14 个测试类、75 个用例，0 失败、0 错误、0 跳过。已下载并核对 XML 报告，其中公网策略 11 个、系统代理 7 个用例全部通过。
+常规 [CI 37669301567](https://github.com/CTZZG/MusicFree/actions/runs/37669301567) 已通过；对应源码提交为 `37bc19e`。质量门通过，Gradle `testDebugUnitTest` 实际执行 14 个测试类、75 个用例，0 失败、0 错误、0 跳过。对应模拟器构建的 XML 报告已下载核对，其中公网策略 11 个、系统代理 7 个用例全部通过。
 
 流程包括：
 
@@ -48,12 +48,19 @@ AppBar 菜单关闭动画为 200ms，原先却在点击后 20ms 触发菜单动�
 
 应用和测试 APK 按原生源码、Gradle 配置、依赖锁文件与补丁的哈希缓存，缓存不包含 Metro 的 JS 内容；JS 和录屏脚本更新会在本次检出的代码上验证。原生改动会使 APK 缓存失效。安装后直接以 `adb shell am instrument` 运行指定测试类，校验报告的总数、每个完成状态、测试类和最终 instrumentation 结果码；不能仅凭 adb 退出码认为 JUnit 通过。结果保存在 `instrumentation-summary.json` 和完整日志中。常规 CI 仍运行 Gradle 单元测试。
 
-[模拟器运行 37668217146](https://github.com/CTZZG/MusicFree/actions/runs/37668217146) 已实际执行全部 19 个测试：新增系统代理 7 个、真实服务取图 1 个全部通过，确认解码后的 Bitmap 进入 MediaSession 的 ART 与 ALBUM_ART。原有公网策略的 4 个跳转用例失败，原因是测试服务器监听 IPv4，但客户端用 `getLoopbackAddress()` 在 Android 上选择了 `::1`；其余 7 个通过。现已统一该测试配置的绑定和解析地址为 127.0.0.1，不修改生产 IPv6 或私网策略；下一次运行应重新验证全部 19 个，并继续订阅界面流程。
+[模拟器运行 37669301492](https://github.com/CTZZG/MusicFree/actions/runs/37669301492) 的原生检查全部通过：公网策略 11 个、系统代理 7 个、真实服务取图 1 个，共 19 个。完整 instrumentation 日志和 JSON 汇总均已下载核对；真实服务用例确认解码后的 Bitmap 进入 MediaSession 的 ART 与 ALBUM_ART。
 
-最终模拟器结果另行补充，不能把 JVM 或组件测试等同于模拟器视觉验收，也不声称已经验证所有厂商的 Live Update 外观。
+首轮 Android 运行暴露了原有 4 个跳转测试的环境依赖：服务器监听 IPv4，客户端用 `getLoopbackAddress()` 在 Android 上选择 `::1`。已统一测试配置的绑定和解析地址为 127.0.0.1，生产 IPv6 或私网策略没有修改，修正后上述 19 个全部通过。随后界面流程被 React Native 调试版的警告浮层挡住，截图确认浮层覆盖底部“设置”；测试现先关闭该浮层再操作，未修改正式版行为。
+
+最终 [模拟器运行 37672619445](https://github.com/CTZZG/MusicFree/actions/runs/37672619445) 在 `2c14612` 上全部通过：19 个原生测试再次通过，真实应用打开插件管理菜单、进入订阅设置、确认“添加”按钮并返回插件管理的流程通过。对应 [常规 CI 37672619373](https://github.com/CTZZG/MusicFree/actions/runs/37672619373) 的质量门和 Android 单元测试也通过。
+
+已下载 artifact `proxy-subscription-37672619445`，核对完整测试日志、界面操作日志、进入后的截图以及 25.1 秒的 1080×2400 录屏。查看进入和返回阶段的录屏原始帧：约 16.54–16.73 秒菜单淡出，之后仍显示插件管理；约 17.23–17.65 秒订阅设置从右侧进入并停稳；约 23.25–23.77 秒返回插件管理。在这段录屏中，没有出现订阅页面先在原位显示、随后才开始滑动的顺序。原始视频名为 `subscription-transition.mp4`，截图为 `subscription-entered.png`，测试结果为 `instrumentation-summary.json`。CI artifact 保留 14 天。
+
+验收范围是 Android 36 / Google Pixel 6 模拟器、系统选定本机 HTTP 代理、真实服务取图与 MediaSession 更新，以及这一次页面进入／返回。没有安装 FlClash 本体，也没有验证厂商专有 Live Update 展示；通过系统代理模拟其已确认的传输设置，不把 MediaSession 的结果说成厂商气泡外观的实测结果。
 
 ## 交接注意
 
 - `ProxyRouteDns` 依赖 OkHttp 4.10 的选路和 DNS 在调用线程同步执行这一行为；升级 OkHttp 时保留系统代理、DIRECT 回落和并发测试。
 - 这轮没有改上一份代码复核里列出的备用来源恢复和队列遗留问题，避免混合任务。
 - 用户不需要为了诊断安装 adb 或提供日志；已使用订阅与测试环境自行收集证据。真实设备的厂商展示差异可在代码和模拟器验证完成后作为补充验收。
+- 修复和验证基础设施已推送到独立分支，集中在 [草稿 PR #17](https://github.com/CTZZG/MusicFree/pull/17)，目标分支为 `claude/sharp-planck-xtfenm`。文档补充不改变上述已验证的运行时代码，未合并或发布 Beta。
