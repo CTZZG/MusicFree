@@ -41,7 +41,16 @@ jobs:
                   java-version: '17'
                   cache: gradle
             - run: npm ci --no-audit --no-fund
+            - name: Restore native test APKs
+              id: native-apks
+              uses: actions/cache/restore@v4
+              with:
+                  path: |
+                      android/app/build/outputs/apk/debug/app-x86_64-debug.apk
+                      android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+                  key: proxy-test-apks-${{ runner.os }}-${{ hashFiles('android/**', 'package.json', 'package-lock.json', 'patches/**', '.github/workflows/proxy-subscription-check.yml') }}
             - name: Build debug app and native test APK
+              if: steps.native-apks.outputs.cache-hit != 'true'
               working-directory: android
               run: |
                   chmod +x gradlew
@@ -49,6 +58,14 @@ jobs:
                     -PreactNativeArchitectures=x86_64 \
                     --no-daemon --max-workers=2 \
                     -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+            - name: Save native test APKs
+              if: steps.native-apks.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: |
+                      android/app/build/outputs/apk/debug/app-x86_64-debug.apk
+                      android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+                  key: ${{ steps.native-apks.outputs.cache-primary-key }}
             - name: Install Maestro
               run: |
                   curl -fsSL https://get.maestro.mobile.dev | bash

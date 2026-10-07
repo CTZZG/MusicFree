@@ -35,7 +35,7 @@ AppBar 菜单关闭动画为 200ms，原先却在点击后 20ms 触发菜单动�
 
 检查限定为 `:app:` 的 Gradle 任务。原来的 APK splits 硬编码四种 ABI，RN 插件在启用 splits 时又不会将 `reactNativeArchitectures` 写入 abiFilters，所以仅传 `-PreactNativeArchitectures=x86_64` 仍会构建四种应用 ABI；现在 splits 读取同一属性，模拟检查真正只构建 x86_64。默认属性仍为原来的四种架构，常规发行构建保持四种 ABI。
 
-第一次完整测试 APK 编译暴露了原有共享测试目录的兼容问题：41 个 Kotlin 测试方法使用含空格的反引号名称，JVM 允许，但应用 minSdk 26 对应的 DEX 不允许；D8 报 `Space characters in SimpleName ... are not allowed prior to DEX version 040`。已把这些方法改为普通 camelCase 名称，断言和测试逻辑不变，没有提高应用最低系统版本。系统代理测试的本机服务器也明确绑定 IPv4，避免 `localhost` 在 Android 上解析为 IPv6 时与模拟的 127.0.0.1 代理不一致。
+第一次完整测试 APK 编译暴露了原有共享测试目录的兼容问题：41 个 Kotlin 测试方法使用含空格的反引号名称，JVM 允许，但项目最低版本配置（根配置 minSdk 24）对应的 DEX 不允许；D8 报 `Space characters in SimpleName ... are not allowed prior to DEX version 040`。已把这些方法改为普通 camelCase 名称，断言和测试逻辑不变，没有提高应用最低系统版本。系统代理测试的本机服务器也明确绑定 IPv4，避免 `localhost` 在 Android 上解析为 IPv6 时与模拟的 127.0.0.1 代理不一致。
 
 常规 [CI 37654645890](https://github.com/CTZZG/MusicFree/actions/runs/37654645890) 已通过：质量门通过，Gradle `testDebugUnitTest` 实际执行 14 个测试类、75 个用例，0 失败、0 错误、0 跳过。已下载并核对 XML 报告，其中公网策略 11 个、系统代理 7 个用例全部通过。
 
@@ -45,6 +45,8 @@ AppBar 菜单关闭动画为 200ms，原先却在点击后 20ms 触发菜单动�
 2. Android 36 模拟器中运行网络策略测试。
 3. `NotificationArtworkProxyTest` 绑定真实 MpvPlaybackService，通过系统选定的本机 HTTP 代理下载 PNG，验证真实 Bitmap 解码成功，封面进入 MediaSession 的 ART 和 ALBUM_ART。
 4. Debug 应用通过 Metro 启动，打开插件管理右上角菜单，进入订阅设置后返回。保留动画并录制视频，上传截图、日志和测试报告。
+
+应用和测试 APK 按原生源码、Gradle 配置、依赖锁文件与补丁的哈希缓存，缓存不包含 Metro 的 JS 内容；JS 和录屏脚本更新会在本次检出的代码上验证。原生改动会使 APK 缓存失效。安装后直接以 `adb shell am instrument` 运行指定测试类，校验报告的总数、每个完成状态、测试类和最终 instrumentation 结果码；不能仅凭 adb 退出码认为 JUnit 通过。结果保存在 `instrumentation-summary.json` 和完整日志中。常规 CI 仍运行 Gradle 单元测试。
 
 最终模拟器结果另行补充，不能把 JVM 或组件测试等同于模拟器视觉验收，也不声称已经验证所有厂商的 Live Update 外观。
 
