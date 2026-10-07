@@ -216,6 +216,44 @@ expect(
 );
 // Nitro 播放后端已整体移除，其 patch 与相关断言随之退役。
 
+// --- 5. 原生测试的方法名必须能编进 DEX --------------------------------------
+// build.gradle 把 src/test/java 也编进模拟器测试 APK（androidTest）。安装下限
+// API 24 对应的 DEX 不允许名字里有空格和 ASCII 标点：反引号测试名
+// fun `a b`() 在 JVM 单元测试里照常能跑，编模拟器测试 APK 时 D8 才报错。
+// 那一步只在代理与订阅检查工作流里跑，平时的 CI 发现不了，所以在这里拦。
+const dexUnsafeName =
+    /[^A-Za-z0-9_$\-¡-῿‐-‧‰-￯]/;
+const backtickDeclaration =
+    /\b(?:fun|val|var|class|object|interface)\s+`([^`\n]+)`/g;
+const dexUnsafeTestNames = [];
+function walkSources(directory) {
+    return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) return walkSources(absolute);
+        return /\.(?:kt|java)$/.test(entry.name) ? [absolute] : [];
+    });
+}
+for (const testRoot of [
+    "android/app/src/test/java",
+    "android/app/src/androidTest/java",
+]) {
+    const absoluteRoot = path.join(root, testRoot);
+    if (!fs.existsSync(absoluteRoot)) continue;
+    for (const absolute of walkSources(absoluteRoot)) {
+        const source = fs.readFileSync(absolute, "utf8");
+        for (const match of source.matchAll(backtickDeclaration)) {
+            if (!dexUnsafeName.test(match[1])) continue;
+            const line = source.slice(0, match.index).split("\n").length;
+            const relative = path.relative(root, absolute).replaceAll("\\", "/");
+            dexUnsafeTestNames.push(`${relative}:${line}`);
+        }
+    }
+}
+expect(
+    dexUnsafeTestNames.length === 0,
+    `native test names with spaces or punctuation break the androidTest DEX build: ${dexUnsafeTestNames.join(", ")}`,
+);
+
 // --- 结果 --------------------------------------------------------------------
 if (failures.length) {
     console.error("Structural invariant audit failed:");
@@ -223,5 +261,5 @@ if (failures.length) {
     process.exit(1);
 }
 console.log(
-    "Structural invariant audit passed: no restricted-transport bypass, cleartext opt-in confined, release manifest hardened with WorkManager initialization, reverted components stay deleted.",
+    "Structural invariant audit passed: no restricted-transport bypass, cleartext opt-in confined, release manifest hardened with WorkManager initialization, reverted components stay deleted, native test names are DEX-safe.",
 );
