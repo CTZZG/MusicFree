@@ -377,9 +377,11 @@ if flow "打开资料库里的播放历史" library-history.yaml; then
     adb shell "input keyevent KEYCODE_BACK; sleep 0.6; input keyevent KEYCODE_HOME"
     sleep 5
     adb shell am start -W -n "$ACTIVITY" > /dev/null
-    sleep 2
-    flow "回到应用后切到首页标签" tap-home-tab.yaml
-    expect_dock_clear "从二级页面返回后马上切后台，回来切标签，迷你播放器不盖住标签栏"
+    sleep 3
+    # 用链接换到搜索标签让主页重绘。不去点标签栏：要是已经被盖住，点下去会点到迷你播放器
+    open_link "musicfree://search?keyword=e2e%20$REF"
+    sleep 3
+    expect_dock_clear "从二级页面返回后马上切后台，回来换个标签，迷你播放器不盖住标签栏"
 fi
 
 finish

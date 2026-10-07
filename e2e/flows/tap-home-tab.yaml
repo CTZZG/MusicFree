@@ -1,7 +1,0 @@
-# 切到首页标签：主页重绘一次，迷你播放器跟着重绘
-appId: fun.upup.musicfree
----
-- tapOn: "首页"
-- extendedWaitUntil:
-    visible: "歌曲: .* 歌手: .*"
-    timeout: 10000
