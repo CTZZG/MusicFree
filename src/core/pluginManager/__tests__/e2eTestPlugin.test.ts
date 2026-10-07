@@ -174,9 +174,9 @@ describe("e2e test source A", () => {
             "E2E Tone B",
             "E2E Tone C",
             "E2E Broken",
-            "E2E Short",
             "E2E Fallback",
             "E2E Live Only",
+            "E2E Short",
         ]);
         const items = result.data as IMusic.IMusicItem[];
         const byTitle = (title: string) => items.find(item => item.title === title)!;

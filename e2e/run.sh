@@ -174,7 +174,8 @@ install_plugin() {
 install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 
-# 3. 搜索并依次播放三首，确认系统媒体会话里的进度真的在走
+# 3. 搜索并依次播放三首，确认系统媒体会话里的进度真的在走。新装的应用点搜索结果时，
+#    用整页结果替换播放队列（旧版配置迁移时设的默认值），所以队列就是测试源 A 的那 7 首
 open_link "musicfree://search?keyword=e2e%20$REF"
 flow "搜索并依次点播三首歌" play-three.yaml || finish
 expect_playing "前台播放：在播 C，进度在走" "E2E Tone C"
@@ -201,9 +202,9 @@ flow "回到应用后播放条显示 A" reopened.yaml
 flow "播放失败后有提示和处理方式" broken-song.yaml
 log "失败后的媒体会话：$(session)"
 
-# 6. 在后台播完一首后自动接下一首。队列现在是 A、B、C、Broken、Short，
-#    队列循环模式下 Short 播完回到 A。Short 只有 20 秒，Maestro 读一次界面就要好几秒，
-#    所以只用它点歌，开始播放和播完切歌都看媒体会话（每秒查一次）
+# 6. 在后台播完一首后自动接下一首。Short 排在队列最后，队列循环模式下播完绕回 A。
+#    Short 只有 20 秒，Maestro 读一次界面就要好几秒，所以只用它点歌，开始播放和播完
+#    切歌都看媒体会话（每秒查一次）
 if flow "点播一首 20 秒的短歌" short-song.yaml; then
     if wait_for_song "E2E Short" 15; then
         adb shell input keyevent KEYCODE_HOME
