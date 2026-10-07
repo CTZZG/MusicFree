@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.10.0），最后核对日期 2026-10-05。
+> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.10.0），最后核对日期 2026-10-07。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -12,6 +12,7 @@
 | 最低 Android 版本 | 安装包声明 API 24；播放内核 libmpv 要求 API 26，通过 `tools:overrideLibrary` 强制合并。API 24–25 设备能安装，但不在播放支持范围内，也未验证 | `android/build.gradle`（`minSdkVersion`）、`android/app/build.gradle`（libmpv 依赖注释）、`android/app/src/main/AndroidManifest.xml` |
 | targetSdk | 36 | `android/build.gradle` |
 | iOS | 保留 `ios/` 目录，本分支不构建、不验证，不承诺可运行 | 没有 iOS 构建流程 |
+| 应用内检查更新 | 读本仓库 GitHub Releases 的最新正式版（`api.github.com`），连不上时用 jsDelivr 取最新的版本标签。“从浏览器下载”直接下与手机 CPU 架构对应的 APK（没有就下通用版），“备用链接”是发布页；对话框里显示发布说明中“下载”以外的各节。仓库里的 `release/version.json` 是上游的更新机制，应用不读 | `src/utils/checkUpdate.ts`、`src/hooks/useCheckUpdate.ts` |
 
 ## 模块与依赖方向
 

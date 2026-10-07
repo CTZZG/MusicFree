@@ -62,6 +62,7 @@
     "settingsHome.pluginCount": "{count}",
     "settingsHome.scheduleClose.off": "Off",
     "checkUpdate.error.latestVersion": "Already the latest version",
+    "checkUpdate.error.failed": "Couldn't check for updates. Try again later.",
     "home.recommendSheet": "Recommended Playlists",
     "home.topList": "Charts",
     "home.playHistory": "Play History",

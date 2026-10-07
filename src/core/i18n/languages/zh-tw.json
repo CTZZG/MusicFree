@@ -62,6 +62,7 @@
     "settingsHome.pluginCount": "{count} 個",
     "settingsHome.scheduleClose.off": "關閉",
     "checkUpdate.error.latestVersion": "當前已是最新版本",
+    "checkUpdate.error.failed": "檢查更新失敗，請稍後再試",
     "home.recommendSheet": "推薦歌單",
     "home.topList": "榜單",
     "home.playHistory": "播放歷史",
