@@ -15,7 +15,7 @@ PKG=fun.upup.musicfree
 ACTIVITY="$PKG/.MainActivity"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SESSION="$HERE/lib/media_session.py"
-PLUGIN_URL="https://raw.githubusercontent.com/CTZZG/MusicFree/$REF/e2e/plugins/e2e-source-a.js"
+PLUGIN_BASE="https://raw.githubusercontent.com/CTZZG/MusicFree/$REF/e2e/plugins"
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
 RESULTS="$OUT/results.tsv"
@@ -146,7 +146,7 @@ finish() {
 }
 
 log "设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
-log "插件：$PLUGIN_URL"
+log "测试音源：$PLUGIN_BASE/"
 # 只留 Wi-Fi：应用在移动网络下默认不播放，会弹“流量提醒”
 adb shell svc data disable || true
 # 刚开机的模拟器上系统桌面等经常“无响应”，弹窗会盖住应用；应用自己崩溃另看 logcat
@@ -166,9 +166,13 @@ adb shell am start -W -n "$ACTIVITY" > /dev/null
 start_timeline
 flow "启动后进入首页" home.yaml || finish
 
-# 2. 用外部链接装测试插件
-open_link "musicfree://install/$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PLUGIN_URL")"
-flow "通过链接安装测试插件" install-plugin.yaml || finish
+# 2. 用外部链接装两个测试音源（B 只在找其他来源时有结果，见 plugins/e2e-source-b.js）
+install_plugin() {
+    open_link "musicfree://install/$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PLUGIN_BASE/$1")"
+    flow "通过链接安装 $1" install-plugin.yaml
+}
+install_plugin e2e-source-a.js || finish
+install_plugin e2e-source-b.js || finish
 
 # 3. 搜索并依次播放三首，确认系统媒体会话里的进度真的在走
 open_link "musicfree://search?keyword=e2e%20$REF"
@@ -208,5 +212,15 @@ if flow "点播一首 6 秒的短歌" short-song.yaml; then
         fail "短歌开始播放" "$(session)"
     fi
 fi
+
+# 7. 原来源取不到地址时，自动换到其他来源的同一个录音，播放页标出改用的来源
+adb shell am start -W -n "$ACTIVITY" > /dev/null
+if flow "点播只有其他来源能播的歌" fallback-song.yaml; then
+    expect_playing "原来源失败，自动换到测试源 B 播放" "E2E Fallback"
+    flow "播放页标出改用的来源" fallback-player.yaml
+fi
+
+# 8. 其他来源只有别的版本（Live 版）时不能换，要留下失败提示
+flow "其他来源只有 Live 版时不换，留下失败提示" live-only.yaml
 
 finish

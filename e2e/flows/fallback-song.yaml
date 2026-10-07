@@ -1,0 +1,4 @@
+# 点一首测试源 A 取不到地址、测试源 B 有同一个录音的歌。换源和播放由 run.sh 看媒体会话判断
+appId: fun.upup.musicfree
+---
+- tapOn: "E2E Fallback"

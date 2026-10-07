@@ -125,15 +125,13 @@ jest.mock("@/utils/log", () => ({
 
 // e2e/plugins/ 里的测试音源要在模拟器上真的被应用装上、搜到、播放。
 // 这里用应用自己的插件加载代码先跑一遍，免得到模拟器上才发现插件写错了。
-const pluginSource = fs.readFileSync(
-    path.join(__dirname, "../../../../e2e/plugins/e2e-source-a.js"),
-    "utf8",
-);
 const ref = "0123456789abcdef0123456789abcdef01234567";
 
-function mountE2EPlugin() {
-    const plugin = new Plugin(pluginSource, "e2e-source-a.js");
+function mountE2EPlugin(file: string) {
+    const source = fs.readFileSync(path.join(__dirname, "../../../../e2e/plugins", file), "utf8");
+    const plugin = new Plugin(source, file);
     expect(plugin.errorMessage).toBeFalsy();
+    expect([...plugin.runtimeCapabilities]).toEqual([]);
     return plugin;
 }
 
@@ -147,20 +145,18 @@ function getMediaSource(plugin: Plugin, item: IMusic.IMusicItem) {
     return getSource.call(plugin.methods, item, "standard", 0, true);
 }
 
-describe("e2e test plugin", () => {
+const fixture = (file: string) =>
+    `https://raw.githubusercontent.com/CTZZG/MusicFree/${ref}/e2e/fixtures/${file}`;
+
+describe("e2e test source A", () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockGetMediaCache.mockReturnValue(null);
     });
 
-    it("mounts through the string plugin path without asking for capabilities", () => {
-        const plugin = mountE2EPlugin();
-        expect(plugin.name).toBe("E2E 测试源 A");
-        expect([...plugin.runtimeCapabilities]).toEqual([]);
-    });
-
     it("returns nothing unless the keyword carries a commit", async () => {
-        const plugin = mountE2EPlugin();
+        const plugin = mountE2EPlugin("e2e-source-a.js");
+        expect(plugin.name).toBe("E2E 测试源 A");
         await expect(plugin.methods.search("e2e", 1, "music")).resolves.toEqual({
             isEnd: true,
             data: [],
@@ -170,8 +166,8 @@ describe("e2e test plugin", () => {
         });
     });
 
-    it("serves the fixtures of the searched commit and fails the broken song", async () => {
-        const plugin = mountE2EPlugin();
+    it("serves the fixtures of the searched commit and fails the broken songs", async () => {
+        const plugin = mountE2EPlugin("e2e-source-a.js");
         const result = await plugin.methods.search(`e2e ${ref}`, 1, "music");
         expect(result.data.map(item => item.title)).toEqual([
             "E2E Tone A",
@@ -179,15 +175,58 @@ describe("e2e test plugin", () => {
             "E2E Tone C",
             "E2E Broken",
             "E2E Short",
+            "E2E Fallback",
+            "E2E Live Only",
         ]);
-        const [toneA, , , broken] = result.data as IMusic.IMusicItem[];
-        expect(toneA.platform).toBe("E2E 测试源 A");
+        const items = result.data as IMusic.IMusicItem[];
+        const byTitle = (title: string) => items.find(item => item.title === title)!;
+        expect(byTitle("E2E Tone A").platform).toBe("E2E 测试源 A");
 
-        await expect(getMediaSource(plugin, toneA)).resolves.toMatchObject({
-            url: `https://raw.githubusercontent.com/CTZZG/MusicFree/${ref}/e2e/fixtures/tone-a.mp3`,
+        await expect(getMediaSource(plugin, byTitle("E2E Tone A"))).resolves.toMatchObject({
+            url: fixture("tone-a.mp3"),
         });
-        await expect(getMediaSource(plugin, broken)).resolves.toMatchObject({
-            failure: { code: "unavailable" },
+        for (const title of ["E2E Broken", "E2E Fallback", "E2E Live Only"]) {
+            await expect(getMediaSource(plugin, byTitle(title))).resolves.toMatchObject({
+                failure: { code: "unavailable" },
+            });
+        }
+    });
+});
+
+describe("e2e test source B", () => {
+    it("stays out of the normal search but answers the other-source search", async () => {
+        const plugin = mountE2EPlugin("e2e-source-b.js");
+        expect(plugin.name).toBe("E2E 测试源 B");
+        // 还没见过提交号时，什么都不返回
+        await expect(plugin.methods.search("E2E Fallback E2E Artist", 1, "music")).resolves.toMatchObject({ data: [] });
+
+        await expect(plugin.methods.search(`e2e ${ref}`, 1, "music")).resolves.toMatchObject({ data: [] });
+        const fallback = await plugin.methods.search("E2E Fallback E2E Artist", 1, "music");
+        expect(fallback.data).toEqual([expect.objectContaining({
+            title: "E2E Fallback",
+            artist: "E2E Artist",
+            duration: 181,
+            platform: "E2E 测试源 B",
+        })]);
+        await expect(getMediaSource(plugin, fallback.data[0] as IMusic.IMusicItem)).resolves.toMatchObject({
+            url: fixture("tone-b.mp3"),
         });
+
+        const liveOnly = await plugin.methods.search("E2E Live Only E2E Artist", 1, "music");
+        expect(liveOnly.data.map(item => item.title)).toEqual(["E2E Live Only (Live)"]);
+        await expect(plugin.methods.search("周杰伦 晴天", 1, "music")).resolves.toMatchObject({ data: [] });
+    });
+
+    it("pairs with source A exactly as the app's same-recording rule expects", async () => {
+        const { matchRecording } = require("@/utils/sameRecording");
+        const a = mountE2EPlugin("e2e-source-a.js");
+        const b = mountE2EPlugin("e2e-source-b.js");
+        const aItems = (await a.methods.search(`e2e ${ref}`, 1, "music")).data as IMusic.IMusicItem[];
+        await b.methods.search(`e2e ${ref}`, 1, "music");
+        const bFallback = (await b.methods.search("E2E Fallback E2E Artist", 1, "music")).data[0];
+        const bLive = (await b.methods.search("E2E Live Only E2E Artist", 1, "music")).data[0];
+        const aItem = (title: string) => aItems.find(item => item.title === title);
+        expect(matchRecording(aItem("E2E Fallback"), bFallback)).not.toBeNull();
+        expect(matchRecording(aItem("E2E Live Only"), bLive)).toBeNull();
     });
 });

@@ -16,6 +16,8 @@
 | 回到应用后不跳回旧歌 | 回到应用 6 秒后仍在播 A，播放条显示 A |
 | 播放失败后的提示 | 点一首取不到地址的歌，出现“播放未成功”，点开有“查找其他来源” |
 | 后台播完自动接下一首 | 6 秒的短歌播完后，在后台自动播队列里的下一首 |
+| 原来源失败时换到其他来源 | 测试源 A 取不到地址的歌，自动换到测试源 B 的同一首歌播放，播放页的来源标签写“改用E2E 测试源 B” |
+| 不换成别的版本 | 测试源 B 只有 Live 版时不换，留下“播放未成功”提示 |
 
 “在播”和“进度在走”都看系统媒体会话（`dumpsys media_session`），那里的进度是 mpv 直接上报的，
 不是界面上的数字。
@@ -46,6 +48,8 @@ e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-
 - `plugins/e2e-source-a.js`：测试音源。搜索关键字写成 `e2e <40 位提交号>` 才有结果，
   歌曲文件从这个提交的 `fixtures/` 读取，所以**提交号必须已经推到 GitHub**。
   应用只允许从公网 https 地址装插件和取音频，模拟器上不能用本机地址。
+- `plugins/e2e-source-b.js`：第二个测试音源，正常搜索时不返回歌（只记下提交号），应用替测试源 A
+  找其他来源时才返回同一首 Fallback 和一首 Live 版。
 - `fixtures/*.mp3`：几段纯音，由 `fixtures/generate.sh` 用 ffmpeg 生成。
 - 插件在 Jest 里也会用应用自己的加载代码跑一遍（`src/core/pluginManager/__tests__/e2eTestPlugin.test.ts`），
   写错了在 `npm run verify` 就能发现，不用等模拟器。

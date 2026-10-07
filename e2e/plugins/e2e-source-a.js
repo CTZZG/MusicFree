@@ -16,6 +16,10 @@ const SONGS = [
     { id: "broken", title: "E2E Broken", file: "", duration: 180 },
     // 6 秒就播完，用来检查播完后自动接下一首
     { id: "short", title: "E2E Short", file: "short.mp3", duration: 6 },
+    // 这两首在这里都取不到地址。测试源 B 有同一首 Fallback（应当自动换过去），
+    // Live Only 在 B 只有 Live 版（不是同一个录音，不能换）
+    { id: "fallback", title: "E2E Fallback", file: "", duration: 180 },
+    { id: "live-only", title: "E2E Live Only", file: "", duration: 180 },
 ];
 
 function readRef(query) {
