@@ -28,9 +28,9 @@ class SystemProxyNetworkPolicyTest {
         Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", server.port))
 
     @Test
-    fun `public artwork can load through the system-selected loopback HTTP proxy`() {
+    fun publicArtworkCanLoadThroughTheSystemSelectedLoopbackHTTPProxy() {
         MockWebServer().use { server ->
-            server.start()
+            server.start(InetAddress.getByName("127.0.0.1"), 0)
             server.enqueue(MockResponse().setBody("cover"))
             val client = PublicHttpsNetworkPolicy.clientBuilderForTesting(
                 Dns.SYSTEM,
@@ -48,9 +48,9 @@ class SystemProxyNetworkPolicyTest {
     }
 
     @Test
-    fun `system proxy supplied as a local hostname is resolved as a transport endpoint`() {
+    fun systemProxySuppliedAsALocalHostnameIsResolvedAsATransportEndpoint() {
         MockWebServer().use { server ->
-            server.start()
+            server.start(InetAddress.getByName("127.0.0.1"), 0)
             server.enqueue(MockResponse().setBody("cover"))
             val httpProxy = Proxy(
                 Proxy.Type.HTTP,
@@ -67,9 +67,9 @@ class SystemProxyNetworkPolicyTest {
     }
 
     @Test
-    fun `a rejected connection can fall back to another selected HTTP proxy`() {
+    fun aRejectedConnectionCanFallBackToAnotherSelectedHTTPProxy() {
         MockWebServer().use { server ->
-            server.start()
+            server.start(InetAddress.getByName("127.0.0.1"), 0)
             server.enqueue(MockResponse().setBody("cover"))
             val unavailable = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", 1))
             val client = PublicHttpsNetworkPolicy.clientBuilderForTesting(
@@ -83,9 +83,9 @@ class SystemProxyNetworkPolicyTest {
     }
 
     @Test
-    fun `remote loopback URL stays blocked even when the selected proxy is loopback`() {
+    fun remoteLoopbackURLStaysBlockedEvenWhenTheSelectedProxyIsLoopback() {
         MockWebServer().use { server ->
-            server.start()
+            server.start(InetAddress.getByName("127.0.0.1"), 0)
             val client = PublicHttpsNetworkPolicy.clientBuilderForTesting(
                 Dns.SYSTEM,
                 selector(listOf(proxy(server))),
@@ -99,7 +99,7 @@ class SystemProxyNetworkPolicyTest {
     }
 
     @Test
-    fun `direct destination with a private DNS answer stays blocked`() {
+    fun directDestinationWithAPrivateDNSAnswerStaysBlocked() {
         val privateDns = object : Dns {
             override fun lookup(hostname: String) = listOf(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
         }
@@ -114,7 +114,7 @@ class SystemProxyNetworkPolicyTest {
     }
 
     @Test
-    fun `a direct route cannot reuse an exemption from a previous proxy selection`() {
+    fun aDirectRouteCannotReuseAnExemptionFromAPreviousProxySelection() {
         val privateDns = object : Dns {
             override fun lookup(hostname: String) = listOf(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
         }
@@ -134,7 +134,7 @@ class SystemProxyNetworkPolicyTest {
     }
 
     @Test
-    fun `a proxy DNS exemption is not shared with another call thread`() {
+    fun aProxyDNSExemptionIsNotSharedWithAnotherCallThread() {
         val httpProxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", 7890))
         val client = PublicHttpsNetworkPolicy.clientBuilderForTesting(
             Dns.SYSTEM,

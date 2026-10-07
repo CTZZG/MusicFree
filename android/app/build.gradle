@@ -198,6 +198,8 @@ android {
     }
 
     sourceSets {
+        // Shared tests must use DEX-compatible method names (no whitespace),
+        // because the app still supports API 26, before DEX 040.
         androidTest.java.srcDirs += "src/test/java"
     }
 }
