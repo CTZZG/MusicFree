@@ -252,7 +252,13 @@ Jest 167 套件、1199 项；generator 27 项；Yoga 布局 1231 项（比下表
 | [Beta #93](https://github.com/CTZZG/MusicFree/actions/runs/37632275163) | 0ff1a20 | 用 #92 的 APK 重跑模拟器测试（A 加长到 8 分钟）：30 项全部通过 |
 | [Beta #94](https://github.com/CTZZG/MusicFree/actions/runs/37645461551) | 9ff9e54 | 用 #92 的 APK（没有 Reanimated 补丁）跑新加的标签栏遮挡检查：复现，回来点“首页”时点到了盖在标签栏上的迷你播放器 |
 | [Beta #95](https://github.com/CTZZG/MusicFree/actions/runs/37645512957) | c092003 | 打包成功（带 Reanimated 补丁）；模拟器全部通过 |
-| [Beta #96](https://github.com/CTZZG/MusicFree/actions/runs/37647927397)、[#97](https://github.com/CTZZG/MusicFree/actions/runs/37649883225) | cb7e80b | 检查改成用链接换标签后，分别测 #92（修复前）和 #95（修复后）的 APK：#96 报迷你播放器盖住标签栏，#97 共 34 项全部通过 |
+| [Beta #96](https://github.com/CTZZG/MusicFree/actions/runs/37647927397)、[#97](https://github.com/CTZZG/MusicFree/actions/runs/37649883225) | cb7e80b | 检查改成用链接换标签后，分别测 #92（修复前）和 #95（修复后）的 APK：#96 报迷你播放器盖住标签栏，#97 共 33 项全部通过 |
+| [Android Release Build #267](https://github.com/CTZZG/MusicFree/actions/runs/37645077113) | b74e50f | 成功；PR #15（断网点歌提示、换音质接着播）合并后的验证构建 |
+| [Android Release Build #268](https://github.com/CTZZG/MusicFree/actions/runs/37653368568)、[#269](https://github.com/CTZZG/MusicFree/actions/runs/37653373726) | b9c3a5a → 4286a63 | 成功；PR #16 合并后的验证构建，以及发布 [v0.11.1](https://github.com/CTZZG/MusicFree/releases/tag/v0.11.1)（5 个 APK、构建信息、SHA256SUMS） |
+| [CI](https://github.com/CTZZG/MusicFree/actions/runs/37680952337)、[代理与订阅检查](https://github.com/CTZZG/MusicFree/actions/runs/37680952406) | f4f346d | 成功；PR #18（合并 Codex PR #17）的质量门和 Android 单元测试，模拟器上 19 项原生网络测试和订阅页进入／返回 |
+| [Beta #98](https://github.com/CTZZG/MusicFree/actions/runs/37680918613) | f4f346d | 打包成功；模拟器 33 项全部通过（检查项和 #97 相同） |
+| [CI](https://github.com/CTZZG/MusicFree/actions/runs/37685269928)、[代理与订阅检查](https://github.com/CTZZG/MusicFree/actions/runs/37685270064) | ec2ad41 | 成功；测试名检查改为跳过注释和字符串（`generator/lib/dexNames.mjs`）之后 |
+| [Android Release Build #270](https://github.com/CTZZG/MusicFree/actions/runs/37686725766)、[#271](https://github.com/CTZZG/MusicFree/actions/runs/37686770976) | ec2ad41 → 8cc3812 | 成功；PR #18 合并后的验证构建，以及发布 [v0.11.2](https://github.com/CTZZG/MusicFree/releases/tag/v0.11.2)（5 个 APK、构建信息、SHA256SUMS，正文与 `docs/release-notes-v0.11.2.md` 一致） |
 
 各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。从 #86 起，Beta 打包后在 Android 14 模拟器上
 跑端到端测试（`e2e/`），结果在运行的 Summary 里，截图在附件 `e2e-results-<运行 ID>`。
