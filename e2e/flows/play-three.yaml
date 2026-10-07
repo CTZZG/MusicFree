@@ -1,0 +1,22 @@
+# run.sh 已经用 musicfree://search 打开了搜索页。依次点三首歌：
+# 点歌会把它加到播放队列末尾并开始播放，最后队列是 A、B、C，正在播 C。
+# 播放条把歌名和歌手合成一个读屏标签，用它确认播放条换到了这首歌。
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "E2E Tone A"
+    timeout: 45000
+- takeScreenshot: 03-search-results
+- tapOn: "E2E Tone A"
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone A 歌手: E2E Artist"
+    timeout: 30000
+- tapOn: "E2E Tone B"
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone B 歌手: E2E Artist"
+    timeout: 30000
+- tapOn: "E2E Tone C"
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone C 歌手: E2E Artist"
+    timeout: 30000
+- takeScreenshot: 04-playing-c

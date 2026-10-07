@@ -1,0 +1,18 @@
+# 播一首取不到播放地址的歌：要留下失败提示，点开能看到处理方式
+appId: fun.upup.musicfree
+---
+- tapOn: "E2E Broken"
+- extendedWaitUntil:
+    visible: "播放未成功: E2E Broken"
+    timeout: 45000
+- takeScreenshot: 06-failure-notice
+- tapOn: "查看原因和处理方式"
+- extendedWaitUntil:
+    visible: "查找其他来源"
+    timeout: 15000
+- takeScreenshot: 07-failure-panel
+# 关掉面板，留在搜索页上（下一首歌开始播时失败提示会自己消失）
+- back
+- extendedWaitUntil:
+    notVisible: "查找其他来源"
+    timeout: 10000

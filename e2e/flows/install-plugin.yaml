@@ -1,0 +1,11 @@
+# run.sh 已经发了 musicfree://install/<插件地址>，这里确认安装
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "确认安装插件"
+    timeout: 30000
+- takeScreenshot: 02-install-confirm
+- tapOn: "确认安装"
+- extendedWaitUntil:
+    notVisible: "确认安装插件"
+    timeout: 10000
