@@ -57,6 +57,11 @@ interface IAppBarProps {
     spacious?: boolean;
 }
 
+interface PendingMenuAction {
+    generation: number;
+    action?: () => void;
+}
+
 const ANIMATION_EASING: EasingFunction = Easing.out(Easing.exp);
 const ANIMATION_DURATION = 200;
 
@@ -111,7 +116,8 @@ export default function AppBar(props: IAppBarProps) {
     );
     const [rightWidth, setRightWidth] = useState(0);
     const scaleRate = useSharedValue(0);
-    const pendingMenuAction = useRef<(() => void) | undefined>(undefined);
+    const menuActionGeneration = useRef(0);
+    const pendingMenuAction = useRef<PendingMenuAction | undefined>(undefined);
 
     const hasMenu = menu?.length > 0;
     const menuOnLeft = hasMenu && menuPosition === "left";
@@ -119,10 +125,13 @@ export default function AppBar(props: IAppBarProps) {
     const centeredTitle = typeof children === "string";
     const titleInset = Math.max(MIN_TITLE_INSET, leftWidth, rightWidth);
 
-    const finishMenuClose = useCallback(() => {
-        const action = pendingMenuAction.current;
+    const finishMenuClose = useCallback((generation: number) => {
+        const pending = pendingMenuAction.current;
+        if (pending?.generation !== generation) {
+            return;
+        }
         pendingMenuAction.current = undefined;
-        action?.();
+        pending.action?.();
     }, []);
 
     useEffect(() => {
@@ -130,9 +139,10 @@ export default function AppBar(props: IAppBarProps) {
             pendingMenuAction.current = undefined;
             scaleRate.value = withTiming(1, timingConfig);
         } else {
+            const generation = pendingMenuAction.current?.generation;
             scaleRate.value = withTiming(0, timingConfig, finished => {
-                if (finished) {
-                    runOnJS(finishMenuClose)();
+                if (finished && generation !== undefined) {
+                    runOnJS(finishMenuClose)(generation);
                 }
             });
         }
@@ -339,7 +349,10 @@ export default function AppBar(props: IAppBarProps) {
                                         if (!showMenu) {
                                             return;
                                         }
-                                        pendingMenuAction.current = it.onPress;
+                                        pendingMenuAction.current = {
+                                            generation: ++menuActionGeneration.current,
+                                            action: it.onPress,
+                                        };
                                         setShowMenu(false);
                                     }}>
                                     <ListItem.Content title={it.title} />

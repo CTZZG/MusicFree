@@ -112,4 +112,16 @@ describe("AppBar menu navigation", () => {
         act(() => closing.finish?.(true));
         expect(action).not.toHaveBeenCalled();
     });
+
+    it("does not let a late close callback consume a newer menu selection", () => {
+        const previousClose = selectSubscription();
+        act(() => {
+            renderer.root.find(node => (node.type as unknown) === "menu-icon" && node.props.accessibilityLabel === "ellipsis-vertical").props.onPress();
+        });
+        const currentClose = selectSubscription();
+        act(() => previousClose.finish?.(true));
+        expect(action).not.toHaveBeenCalled();
+        act(() => currentClose.finish?.(true));
+        expect(action).toHaveBeenCalledTimes(1);
+    });
 });
