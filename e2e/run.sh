@@ -223,4 +223,7 @@ fi
 # 8. 其他来源只有别的版本（Live 版）时不能换，要留下失败提示
 flow "其他来源只有 Live 版时不换，留下失败提示" live-only.yaml
 
+# 9. 设置里的播放统计记下了上面的换源和失败
+flow "播放统计记下了换源和失败" play-stats.yaml
+
 finish
