@@ -9,7 +9,8 @@ const PLATFORM = "E2E 测试源 A";
 const RAW_BASE = "https://raw.githubusercontent.com/CTZZG/MusicFree";
 
 const SONGS = [
-    { id: "tone-a", title: "E2E Tone A", file: "tone-a.mp3", duration: 180 },
+    // A 要从播放统计一直放到冷启动续播，比另外两首长（见 fixtures/generate.sh）
+    { id: "tone-a", title: "E2E Tone A", file: "tone-a.mp3", duration: 480 },
     { id: "tone-b", title: "E2E Tone B", file: "tone-b.mp3", duration: 180 },
     { id: "tone-c", title: "E2E Tone C", file: "tone-c.mp3", duration: 180 },
     // 取不到播放地址，用来检查播放失败后的提示
