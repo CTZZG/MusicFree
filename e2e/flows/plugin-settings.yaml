@@ -1,0 +1,19 @@
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "资料库"
+    timeout: 90000
+- runFlow: dismiss-update.yaml
+- tapOn: "设置"
+- scrollUntilVisible:
+    element: "插件管理"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "插件管理"
+- extendedWaitUntil:
+    visible: "ellipsis-vertical"
+    timeout: 15000
+- tapOn: "ellipsis-vertical"
+- extendedWaitUntil:
+    visible: "订阅设置"
+    timeout: 10000

@@ -1,7 +1,13 @@
 package `fun`.upup.musicfree.network
 
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.SocketAddress
+import java.net.URI
 import java.net.UnknownHostException
+import java.io.IOException
 import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
@@ -33,10 +39,8 @@ object PublicHttpsNetworkPolicy {
         CROSS_ORIGIN,
     }
 
-    private val publicDns = createPublicDns(Dns.SYSTEM)
-
     /**
-     * Only public addresses are ever handed to OkHttp. Non-public answers are
+     * Direct destination DNS only hands public addresses to OkHttp. Non-public answers are
      * dropped rather than failing the whole lookup, so a mixed answer still
      * connects to its public addresses and never to the private ones.
      *
@@ -47,7 +51,8 @@ object PublicHttpsNetworkPolicy {
      * art for the notification and Live Update, downloads, the QMC/CENC
      * proxies) fail for those users while the JS side kept working. It is
      * accepted here as a DNS answer only; a URL that names such an IP
-     * literally is still refused by [requirePublicRemote].
+     * literally is still refused by [requirePublicRemote]. System HTTP proxy
+     * transport endpoints are handled separately by [ProxyRouteDns].
      */
     private fun createPublicDns(delegate: Dns): Dns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
@@ -88,12 +93,95 @@ object PublicHttpsNetworkPolicy {
     fun clientBuilder(
         maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
         redirectScope: RedirectScope = RedirectScope.SAME_ORIGIN,
-    ): OkHttpClient.Builder =
-        OkHttpClient.Builder()
-            .dns(publicDns)
+    ): OkHttpClient.Builder = createClientBuilder(
+        Dns.SYSTEM,
+        ProxySelector.getDefault(),
+        maxRedirects,
+        redirectScope,
+    )
+
+    internal fun clientBuilderForTesting(
+        dns: Dns,
+        proxySelector: ProxySelector?,
+        redirectScope: RedirectScope = RedirectScope.SAME_ORIGIN,
+    ): OkHttpClient.Builder = createClientBuilder(
+        dns,
+        proxySelector,
+        DEFAULT_MAX_REDIRECTS,
+        redirectScope,
+    )
+
+    private fun createClientBuilder(
+        dns: Dns,
+        proxySelector: ProxySelector?,
+        maxRedirects: Int,
+        redirectScope: RedirectScope,
+    ): OkHttpClient.Builder {
+        val proxyRoutes = ProxyRouteDns(dns, proxySelector)
+        return OkHttpClient.Builder()
+            .dns(proxyRoutes.dns)
+            .proxySelector(proxyRoutes.selector)
             .followRedirects(false)
             .followSslRedirects(false)
             .addInterceptor(redirectInterceptorForTesting(maxRedirects, redirectScope))
+    }
+
+    /**
+     * OkHttp uses the same Dns callback for a direct destination and an HTTP
+     * proxy's socket address. Android VPN apps can select a loopback proxy;
+     * that transport endpoint is not the request's remote target.
+     *
+     * RouteSelector selects proxies and resolves their addresses synchronously
+     * on the call's thread. Keep that selection thread-local, so concurrent
+     * calls and DIRECT fallbacks never inherit another request's exemption.
+     * URL validation and direct destination DNS filtering remain unchanged.
+     */
+    private class ProxyRouteDns(
+        private val delegateDns: Dns,
+        private val delegateSelector: ProxySelector?,
+    ) {
+        private data class Routes(val targetHost: String, val proxyHosts: Set<String>)
+        private val selectedRoutes = ThreadLocal<Routes>()
+        private val publicDns = createPublicDns(delegateDns)
+
+        val selector = object : ProxySelector() {
+            override fun select(uri: URI): List<Proxy> {
+                selectedRoutes.remove()
+                val proxies = delegateSelector?.select(uri)?.takeIf { it.isNotEmpty() }
+                    ?: listOf(Proxy.NO_PROXY)
+                val proxyHosts = proxies.mapNotNull { proxy ->
+                    if (proxy.type() != Proxy.Type.HTTP) return@mapNotNull null
+                    val endpoint = proxy.address() as? InetSocketAddress
+                        ?: return@mapNotNull null
+                    // Match OkHttp's socketHost: a resolved proxy uses its IP;
+                    // an unresolved proxy keeps the system-supplied hostname.
+                    normalizeHost(endpoint.address?.hostAddress ?: endpoint.hostString)
+                }.toSet()
+                selectedRoutes.set(Routes(normalizeHost(uri.host.orEmpty()), proxyHosts))
+                return proxies
+            }
+
+            override fun connectFailed(uri: URI, sa: SocketAddress, ioe: IOException) {
+                delegateSelector?.connectFailed(uri, sa, ioe)
+            }
+        }
+
+        val dns = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                val host = normalizeHost(hostname)
+                val routes = selectedRoutes.get()
+                return if (
+                    routes != null && host != routes.targetHost && host in routes.proxyHosts
+                ) {
+                    delegateDns.lookup(hostname)
+                } else {
+                    publicDns.lookup(hostname)
+                }
+            }
+        }
+
+        private fun normalizeHost(host: String) = host.lowercase().trimEnd('.')
+    }
 
     /**
      * Enforces only what this layer is genuinely responsible for: the connection
