@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import `fun`.upup.musicfree.mpvplayer.MpvPlaybackService
 import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
@@ -43,7 +44,7 @@ class NotificationArtworkProxyTest {
         val intent = Intent(context, MpvPlaybackService::class.java)
         var bound = false
         MockWebServer().use { server ->
-            server.start()
+            server.start(InetAddress.getByName("127.0.0.1"), 0)
             val image = Base64.decode(
                 "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGNQaHjwHxkzkC4AADaHJ/HO9Z+HAAAAAElFTkSuQmCC",
                 Base64.DEFAULT,

@@ -13,7 +13,7 @@ class ArtworkLoadTrackerTest {
     private val coverB = "https://img.example/b.jpg"
 
     @Test
-    fun `a track without artwork starts no request`() {
+    fun aTrackWithoutArtworkStartsNoRequest() {
         val tracker = ArtworkLoadTracker()
 
         assertNull(tracker.begin(null))
@@ -22,7 +22,7 @@ class ArtworkLoadTrackerTest {
     }
 
     @Test
-    fun `transient failures retry with backoff and then give up`() {
+    fun transientFailuresRetryWithBackoffAndThenGiveUp() {
         val tracker = ArtworkLoadTracker()
         var attempt = tracker.begin(coverA)!!
         val delays = mutableListOf<Long>()
@@ -41,7 +41,7 @@ class ArtworkLoadTrackerTest {
     }
 
     @Test
-    fun `a permanent failure gives up without retrying`() {
+    fun aPermanentFailureGivesUpWithoutRetrying() {
         val tracker = ArtworkLoadTracker()
         val attempt = tracker.begin(coverA)!!
 
@@ -49,7 +49,7 @@ class ArtworkLoadTrackerTest {
     }
 
     @Test
-    fun `a retry that succeeds is applied and ends the round`() {
+    fun aRetryThatSucceedsIsAppliedAndEndsTheRound() {
         val tracker = ArtworkLoadTracker()
         val first = tracker.begin(coverA)!!
         assertEquals(Outcome.Retry(2_000L), tracker.onFailure(first, retryable = true))
@@ -63,7 +63,7 @@ class ArtworkLoadTrackerTest {
     }
 
     @Test
-    fun `results for a previous track are discarded`() {
+    fun resultsForAPreviousTrackAreDiscarded() {
         val tracker = ArtworkLoadTracker()
         val oldAttempt = tracker.begin(coverA)!!
         val newAttempt = tracker.begin(coverB)!!
@@ -78,7 +78,7 @@ class ArtworkLoadTrackerTest {
     }
 
     @Test
-    fun `a new round for the same artwork still accepts the earlier image`() {
+    fun aNewRoundForTheSameArtworkStillAcceptsTheEarlierImage() {
         // Title or album metadata changed but the cover URL did not.
         val tracker = ArtworkLoadTracker()
         val earlier = tracker.begin(coverA)!!
@@ -90,7 +90,7 @@ class ArtworkLoadTrackerTest {
     }
 
     @Test
-    fun `only the latest attempt of a round schedules a retry`() {
+    fun onlyTheLatestAttemptOfARoundSchedulesARetry() {
         val tracker = ArtworkLoadTracker()
         val first = tracker.begin(coverA)!!
         assertEquals(Outcome.Retry(2_000L), tracker.onFailure(first, retryable = true))
@@ -104,7 +104,7 @@ class ArtworkLoadTrackerTest {
     }
 
     @Test
-    fun `server errors and throttling are retryable but other client errors are not`() {
+    fun serverErrorsAndThrottlingAreRetryableButOtherClientErrorsAreNot() {
         listOf(408, 429, 500, 502, 503, 504).forEach {
             assertTrue("$it", ArtworkLoadTracker.isRetryableHttpStatus(it))
         }

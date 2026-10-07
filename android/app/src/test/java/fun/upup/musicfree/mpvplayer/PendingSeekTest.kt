@@ -6,7 +6,7 @@ import org.junit.Test
 
 class PendingSeekTest {
     @Test
-    fun `a seek made while the file loads runs once that file has loaded`() {
+    fun aSeekMadeWhileTheFileLoadsRunsOnceThatFileHasLoaded() {
         val pending = PendingSeek()
         pending.reset()
         pending.defer(loadingGeneration = 7, seconds = 62.5)
@@ -17,7 +17,7 @@ class PendingSeekTest {
     }
 
     @Test
-    fun `the latest seek wins`() {
+    fun theLatestSeekWins() {
         val pending = PendingSeek()
         pending.defer(loadingGeneration = 3, seconds = 10.0)
         pending.defer(loadingGeneration = 3, seconds = 40.0)
@@ -26,7 +26,7 @@ class PendingSeekTest {
     }
 
     @Test
-    fun `a seek meant for an earlier file is dropped`() {
+    fun aSeekMeantForAnEarlierFileIsDropped() {
         val pending = PendingSeek()
         pending.defer(loadingGeneration = 3, seconds = 40.0)
         // 还没加载好就换了下一首
@@ -36,7 +36,7 @@ class PendingSeekTest {
     }
 
     @Test
-    fun `a seek from another generation does not move the loaded file`() {
+    fun aSeekFromAnotherGenerationDoesNotMoveTheLoadedFile() {
         val pending = PendingSeek()
         pending.defer(loadingGeneration = 3, seconds = 40.0)
 
@@ -45,7 +45,7 @@ class PendingSeekTest {
     }
 
     @Test
-    fun `negative positions start from the beginning`() {
+    fun negativePositionsStartFromTheBeginning() {
         val pending = PendingSeek()
         pending.defer(loadingGeneration = 1, seconds = -2.0)
 

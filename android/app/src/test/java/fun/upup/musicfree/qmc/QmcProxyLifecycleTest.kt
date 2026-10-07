@@ -13,7 +13,7 @@ import org.junit.Test
 
 class QmcProxyLifecycleTest {
     @Test
-    fun `detaching an old owner keeps resources for a new owner`() {
+    fun detachingAnOldOwnerKeepsResourcesForANewOwner() {
         val lifecycle = QmcProxyLifecycle()
         val oldOwner = lifecycle.attachOwner()
         val newOwner = lifecycle.attachOwner()
@@ -29,7 +29,7 @@ class QmcProxyLifecycleTest {
     }
 
     @Test
-    fun `work from a detached owner is rejected`() {
+    fun workFromADetachedOwnerIsRejected() {
         val lifecycle = QmcProxyLifecycle()
         val owner = lifecycle.attachOwner()
         lifecycle.detachOwner(owner) {}
@@ -40,7 +40,7 @@ class QmcProxyLifecycleTest {
     }
 
     @Test
-    fun `last owner cleanup waits for active registration`() {
+    fun lastOwnerCleanupWaitsForActiveRegistration() {
         val lifecycle = QmcProxyLifecycle()
         val owner = lifecycle.attachOwner()
         val operationEntered = CountDownLatch(1)
