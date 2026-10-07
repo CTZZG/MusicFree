@@ -362,3 +362,26 @@ it("native recovery does not publish quality before replacement source loads", a
     expect(mockBackend.active.track.playbackSource.quality).toBe("128k");
     expect(observedQuality).toBe("128k");
 });
+
+it("tells which song failed when the player never loads it and playback goes back to the previous song", async () => {
+    // 断网时播放器加载不出这首，也不报错：确认切歌超时后重载一次，还不行就回到之前那首。
+    // 回到之前那首后要留下这首的失败提示，不能被确认过程中的那次重载当成过时的请求丢掉
+    let clock = 1_000_000;
+    jest.spyOn(Date, "now").mockImplementation(() => clock);
+    require("@/utils/delay").default.mockImplementation(async (ms: number) => {
+        clock += ms;
+    });
+    getMediaSource.mockResolvedValue({ url: "https://example.com/song.mp3" });
+    player.setTrackSource.mockImplementation(async () => undefined);
+
+    await trackPlayer.play(songs[1], true);
+
+    // 第一次加载，加上确认超时后的一次重载
+    expect(player.setTrackSource).toHaveBeenCalledTimes(2);
+    expect(trackPlayer.currentMusic).toMatchObject({ id: songs[0].id });
+    expect(playbackRecovery.state.getValue()).toMatchObject({
+        musicItem: { id: songs[1].id },
+        failure: { code: "backend-error" },
+    });
+    expect(mockRecordPlayAttempt).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed", code: "backend-error" }));
+});

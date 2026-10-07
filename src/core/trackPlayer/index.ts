@@ -137,6 +137,8 @@ interface IMpvManualSkipTransition {
     previousProgress: PlayerAdapterProgress;
     resumeOnRollback: boolean;
     reason: string;
+    /** 点歌（play）开始的事务记下那次点歌的失败提示请求，确认超时后的重载沿用它 */
+    recoveryRequest?: number;
 }
 
 interface IPlaybackDiagnosticMusicIdentity {
@@ -1347,7 +1349,12 @@ class TrackPlayer
                 );
                 return;
             }
-            recoveryRequest = playbackRecovery.begin();
+            // 确认切歌超时后，confirmMpvManualSkip 会带着同一个事务重载目标歌曲。这次重载
+            // 属于原来那次点歌，沿用它的请求：另起一个的话，原来那次点歌回到之前那首后
+            // 报的失败会被当成过时的请求丢掉，用户什么提示都看不到
+            recoveryRequest =
+                mpvTransitionOwner?.recoveryRequest ??
+                playbackRecovery.begin();
             const previousMusicBeforePlay = this.currentMusic;
             this.cancelMpvManualSkipTransitionForTarget(
                 musicItem,
@@ -1363,6 +1370,7 @@ class TrackPlayer
                     previousMusicBeforePlay,
                     "explicit-play",
                 );
+                ownedMpvTransition.recoveryRequest = recoveryRequest;
                 await this.pauseMpvActiveTrackForTransition(
                     ownedMpvTransition,
                 );
