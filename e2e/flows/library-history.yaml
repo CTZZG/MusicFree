@@ -1,0 +1,11 @@
+# 切到资料库标签，打开播放历史（二级页面，迷你播放器落到底部）
+appId: fun.upup.musicfree
+---
+- tapOn: "资料库"
+- tapOn: "播放历史"
+- extendedWaitUntil:
+    visible: "播放记录"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "歌曲: .* 歌手: .*"
+    timeout: 10000

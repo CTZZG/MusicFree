@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.11.0），最后核对日期 2026-10-07。
+> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.11.1），最后核对日期 2026-10-07。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -173,6 +173,11 @@
     `npm audit` 建议的“降级 expo 到 44”只是绕开这条依赖链，不能采用。
 - `brace-expansion` 通过 `overrides` 固定为 5.0.12，`patches/brace-expansion+5.0.12.patch` 让旧版 minimatch 仍能把它当函数调用；升级版本时需要同时重新生成补丁。
 - `patches/react-native+0.85.3.patch` 让所有 ScrollView（含 FlatList、SectionList、FlashList 和手势库的 ScrollView）在 Android 上默认 `overScrollMode="never"`。越界拉伸、回弹还没结束时，原生 ScrollView 会把下一次按下当成「停住回弹」拦掉，滚到底后第一下点不动。个别页面需要回弹时显式传 `overScrollMode`。`TabView` 不经过 ScrollView，在各处单独设置。升级 React Native 时需要重新生成补丁，`npm run verify` 会在补丁打不上时失败。
+- `patches/react-native-reanimated+4.4.0.patch`：Reanimated 4.4 在动画停下后每 0.5 秒把最终样式同步回 React（`settledProps`），
+  但它先删掉 2 秒前的记录、再取要同步的值。动画刚停下时如果切到了后台、锁屏，或者 JS 忙了一两秒，最终值在同步之前就被删掉，
+  React 留着更早的值，组件下次重绘就退回去：迷你播放器从二级页面回到标签页、刚升到标签栏上方时遇到这种情况，之后一重绘就
+  掉回底部、盖住标签栏。补丁改成先取出要同步的值、再清理（Reanimated 4.7 已重写这段）。升级 Reanimated 时去掉补丁，并保留
+  模拟器测试里的标签栏遮挡检查。
 - 原生代码由两套构建中的 `assembleRelease` 编译；`npm run audit:round20-native` 需要本地 Android 环境，不在 CI 质量门中。
 - Android 单元测试（`android/app/src/test`，纯 JVM，不依赖 Android API）：
   - Beta 和稳定版构建在 `assembleRelease` 之前运行 `testReleaseUnitTest`，失败时不打包、不上传、不发布；
@@ -183,7 +188,8 @@
   GitHub Actions）上装刚打出的 APK，用 Maestro 点界面，用 `dumpsys media_session` 看实际播放（进度由 mpv 上报，不是界面
   数字）。覆盖：外部链接装插件、搜索点播、后台用媒体键切歌后回到应用不跳回旧歌、播放失败提示和处理方式、后台播完接下一首、
   换到其他来源和不换成别的版本、播放统计、播放中换音质接着原来的进度播（取不到的音质保持原样照常播）、冷启动恢复
-  （通知栏停在暂停的地方、播放条和音质恢复、点播放接着播）、断网时点歌留下失败提示和网络恢复后重试。
+  （通知栏停在暂停的地方、播放条和音质恢复、点播放接着播）、断网时点歌留下失败提示和网络恢复后重试、迷你播放器不盖住
+  底部标签栏（从二级页面返回后马上切后台，回来换个标签）。
   测试音源和音频按提交号从 raw.githubusercontent.com 读取，提交必须已推送。
   只改测试时可以填 `e2e_apk_run_id`，直接测以前某次 Beta 的 APK，不重新打包。结果写进运行的 Summary，截图、Maestro 日志、
   logcat 在附件里，截图和结果另外推到 `refs/e2e/latest`（不在分支列表里，每次覆盖）。

@@ -164,6 +164,18 @@ set_network() {
     return 1
 }
 
+# expect_dock_clear <检查名>：主页上迷你播放器要在底部标签栏上方，不能盖住它（见 lib/dock.py）
+expect_dock_clear() {
+    local name=$1 detail
+    if detail=$(maestro hierarchy --compact --no-reinstall-driver 2>/dev/null | python3 -I "$HERE/lib/dock.py"); then
+        pass "$name" "$detail"
+        return 0
+    fi
+    fail "$name" "$detail"
+    shot "failed-dock"
+    return 1
+}
+
 open_link() {
     adb shell "am start -W -a android.intent.action.VIEW -d '$1' -n $ACTIVITY" > /dev/null
 }
@@ -351,5 +363,25 @@ if flow "再次打开搜索页" search-results.yaml && set_network off; then
 fi
 # 不管上面哪步没过，都把网络恢复
 set_network on > /dev/null
+
+# 13. 迷你播放器不能盖住底部标签栏。从二级页面回到标签页时，播放条会从底部升到标签栏上方；
+#     刚升上去就切到后台、过几秒再回来，Reanimated 4.4 会丢掉播放条最后停下的位置，之后
+#     页面一重绘（这里是切换标签）播放条就掉回底部、正好盖住标签栏（真机上遇到过“标签栏
+#     不见了，只剩播放条”）。patches/react-native-reanimated+4.4.0.patch 修了这个问题
+adb shell am start -W -n "$ACTIVITY" > /dev/null
+expect_dock_clear "标签页上迷你播放器在标签栏上方"
+if flow "打开资料库里的播放历史" library-history.yaml; then
+    # 等播放条在二级页面底部停稳，位置同步回 React
+    sleep 3
+    # 返回标签页，播放条开始上升；升完、还没同步就按 Home 切到后台
+    adb shell "input keyevent KEYCODE_BACK; sleep 0.6; input keyevent KEYCODE_HOME"
+    sleep 5
+    adb shell am start -W -n "$ACTIVITY" > /dev/null
+    sleep 3
+    # 用链接换到搜索标签让主页重绘。不去点标签栏：要是已经被盖住，点下去会点到迷你播放器
+    open_link "musicfree://search?keyword=e2e%20$REF"
+    sleep 3
+    expect_dock_clear "从二级页面返回后马上切后台，回来换个标签，迷你播放器不盖住标签栏"
+fi
 
 finish

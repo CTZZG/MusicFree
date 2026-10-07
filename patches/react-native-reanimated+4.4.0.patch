@@ -1,0 +1,33 @@
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/Fabric/updates/AnimatedPropsRegistry.cpp b/node_modules/react-native-reanimated/Common/cpp/reanimated/Fabric/updates/AnimatedPropsRegistry.cpp
+index 2db064c..e168c6d 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/Fabric/updates/AnimatedPropsRegistry.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/Fabric/updates/AnimatedPropsRegistry.cpp
+@@ -46,7 +46,13 @@ jsi::Value AnimatedPropsRegistry::getUpdatesOlderThanTimestamp(
+     const double timestamp,
+     const double cleanupTimestamp) {
+   react_native_assert(UpdatesRegistryManager::isLockedByCurrentThread());
+-  removeUpdatesOlderThanTimestamp(cleanupTimestamp);
++  // MusicFree patch: collect before cleaning up. Upstream removed the entries
++  // older than `cleanupTimestamp` first, so an update that settled while the JS
++  // garbage collector interval was not running (app in background, busy JS
++  // thread) was dropped without ever being synced back to React. React then
++  // kept an older `settledProps` snapshot and the next re-render moved the view
++  // back to it (the mini player jumped down over the tab bar). Reanimated 4.7
++  // rewrote this logic; see AnimatedPropsRegistry::collectSettledUpdates there.
+ 
+   std::vector<std::pair<Tag, std::reference_wrapper<const folly::dynamic>>> updates;
+ 
+@@ -66,6 +72,13 @@ jsi::Value AnimatedPropsRegistry::getUpdatesOlderThanTimestamp(
+     array.setValueAtIndex(rt, i++, item);
+   }
+ 
++  // `updates` holds references into `updatesRegistry_`; remove entries only
++  // after their values have been copied into the JS array above. Anything
++  // older than `cleanupTimestamp` is also older than `timestamp`, so it has
++  // just been returned to JS.
++  updates.clear();
++  removeUpdatesOlderThanTimestamp(cleanupTimestamp);
++
+   return jsi::Value(rt, array);
+ }
+ 
