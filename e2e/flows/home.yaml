@@ -1,0 +1,13 @@
+# 等首页出来：第一次启动要初始化播放器和插件，可能要一会儿
+appId: fun.upup.musicfree
+---
+# run.sh 已经关掉了系统的“无响应”弹窗；万一还是弹了，点“Wait”
+- runFlow:
+    when:
+      visible: ".*isn't responding"
+    commands:
+      - tapOn: "Wait"
+- extendedWaitUntil:
+    visible: "资料库"
+    timeout: 90000
+- takeScreenshot: 01-home

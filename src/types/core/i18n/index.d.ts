@@ -74,6 +74,7 @@ export interface ILanguageData {
 
     // 检查更新相关
     "checkUpdate.error.latestVersion": string; // 当前已是最新版本
+    "checkUpdate.error.failed": string; // 检查更新失败，请稍后再试
 
     // 首页相关
     "home.recommendSheet": string; // 推荐歌单
@@ -389,6 +390,8 @@ export interface ILanguageData {
     "musicDetail.showLyric.a11y": string; // 切到歌词
     "musicDetail.showCover.a11y": string; // 切回封面
     "musicDetail.quality.a11y": string; // 音质标签
+    "musicDetail.alternateSource.tag": string; // 改用{platform}
+    "musicDetail.alternateSource.a11y": string; // 原来源「{original}」播放失败，正在用「{platform}」播放
     "musicDetail.rate.a11y": string; // 倍速标签
     "lyricEditor.title": string; // 编辑歌词
     "lyricEditor.addLine": string; // 插入歌词行
@@ -982,6 +985,18 @@ export interface ILanguageData {
     "basicSettings.developer.devLog": string; // 调试面板
     "basicSettings.developer.viewErrorLog": string; // 查看错误日志
     "basicSettings.developer.copyPlaybackDiagnostic": string; // 复制播放诊断
+    "basicSettings.developer.playAttempts": string; // 播放统计
+    "playAttempts.summary": string; // 最近 {days} 天播放 {total} 次
+    "playAttempts.empty": string; // 最近 {days} 天还没有播放记录。之后播放的歌会记在这里（只记来源和结果，不记歌名，只存在本机）。
+    "playAttempts.source": string; // {platform}：{total} 次，正常播放 {played}
+    "playAttempts.sourceAlternate": string; // ，换源播放 {count}
+    "playAttempts.sourceFailed": string; // ，失败 {count}
+    "playAttempts.alternateVia": string; //   · 换到 {platform}：{count} 次
+    "playAttempts.failureReason": string; //   · {reason}：{count} 次
+    "playAttempts.recentFailures": string; // 最近的失败
+    "playAttempts.recentFailure": string; // {time}  {platform}：{reason}
+    "playAttempts.note": string; // “换源播放”是原来源取不到地址、自动换到其他来源的同一首歌。只记来源和结果，不记歌名，只存在本机，最多 500 次。
+    "playAttempts.copy": string; // 复制
     "basicSettings.developer.clearLog": string; // 清空日志
     "basicSettings.developer.disableTelemetry": string; // 禁止自动上报性能和异常信息
 

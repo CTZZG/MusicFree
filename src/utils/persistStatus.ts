@@ -24,6 +24,8 @@ interface IPersistStatus {
     "music.playList": IMusic.IMusicItem[];
     /** 稍后播放队列 */
     "music.playLaterQueue": IMusic.IMusicItem[];
+    /** 原来源播放失败时换过去能播的来源，键是原来那首歌的 getMediaUniqueKey */
+    "music.alternateSources": Record<string, { item: IMusic.IMusicItem; savedAt: number }>;
     /** 速度 */
     "music.rate": number;
     /** 音质 */

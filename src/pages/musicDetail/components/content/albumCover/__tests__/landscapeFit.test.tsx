@@ -41,6 +41,7 @@ const mockMusicItem = {
 
 jest.mock("@/core/trackPlayer", () => ({
     useCurrentMusic: () => mockMusicItem,
+    useAlternateSourceInUse: () => null,
     useMusicState: () => "paused",
 }));
 

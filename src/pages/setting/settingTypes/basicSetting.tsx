@@ -42,6 +42,8 @@ import {
 import { readdir } from "react-native-fs";
 import { FlatList, ScrollView } from "react-native-gesture-handler";
 import { resolveDownloadDirectory } from "@/utils/downloadStoragePolicy";
+import { getPlayAttempts, summarizePlayAttempts } from "@/core/trackPlayer/playAttemptLog";
+import { formatPlayAttemptReport } from "@/core/trackPlayer/playAttemptReport";
 
 async function buildPlaybackDiagnosticReport() {
     const [playback, lyric, download] = await Promise.all([
@@ -55,12 +57,40 @@ async function buildPlaybackDiagnosticReport() {
             createdAt: new Date().toISOString(),
             build: buildInfo,
             playback,
+            playAttempts: summarizePlayAttempts(getPlayAttempts()),
             lyric,
             download,
         },
         null,
         2,
     );
+}
+
+const PLAY_ATTEMPT_DAYS = 7;
+
+function showPlayAttemptReport(t: ReturnType<typeof useI18N>["t"]) {
+    const report = formatPlayAttemptReport(
+        summarizePlayAttempts(
+            getPlayAttempts(),
+            Date.now() - PLAY_ATTEMPT_DAYS * 24 * 60 * 60 * 1000,
+        ),
+        PLAY_ATTEMPT_DAYS,
+        t,
+    );
+    showDialog("SimpleDialog", {
+        title: t("basicSettings.developer.playAttempts"),
+        content: (
+            <ScrollView>
+                <Paragraph>{report}</Paragraph>
+            </ScrollView>
+        ),
+        cancelText: t("dialog.errorLogKnow"),
+        okText: t("playAttempts.copy"),
+        onOk() {
+            Clipboard.setString(report);
+            Toast.success(t("toast.copiedToClipboard"));
+        },
+    });
 }
 
 function createSwitch(
@@ -404,10 +434,11 @@ export default function BasicSetting() {
                     "basic.autoPlayWhenAppStart",
                     autoPlayWhenAppStart ?? false,
                 ),
+                // 默认开：只换到歌名、歌手、时长都对得上的同一首歌（见 src/utils/sameRecording.ts）
                 createSwitch(
                     t("basicSettings.tryChangeSourceWhenPlayFail"),
                     "basic.tryChangeSourceWhenPlayFail",
-                    tryChangeSourceWhenPlayFail ?? false,
+                    tryChangeSourceWhenPlayFail ?? true,
                 ),
                 createSwitch(
                     t("basicSettings.autoStopWhenError"),
@@ -862,6 +893,13 @@ export default function BasicSetting() {
                                 Toast.success(t("toast.copiedToClipboard"));
                             },
                         });
+                    },
+                },
+                {
+                    title: t("basicSettings.developer.playAttempts"),
+                    right: undefined,
+                    onPress() {
+                        showPlayAttemptReport(t);
                     },
                 },
                 {

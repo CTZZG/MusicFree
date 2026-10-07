@@ -1,0 +1,8 @@
+# 测试源 B 只有 Live 版，不是同一个录音：不能换过去，要留下失败提示
+appId: fun.upup.musicfree
+---
+- tapOn: "E2E Live Only"
+- extendedWaitUntil:
+    visible: "播放未成功: E2E Live Only"
+    timeout: 60000
+- takeScreenshot: 10-live-only-failure

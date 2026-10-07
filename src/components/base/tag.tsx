@@ -8,6 +8,8 @@ interface ITagProps {
     tagName: string;
     containerStyle?: StyleProp<ViewStyle>;
     style?: StyleProp<TextStyle>;
+    /** 标签文字说不清楚时给读屏的完整说明 */
+    accessibilityLabel?: string;
 }
 
 /** iOS 小标签：灰色填充的圆角块，不描边 */
@@ -15,6 +17,8 @@ export default function Tag(props: ITagProps) {
     const colors = useColors();
     return (
         <View
+            accessible={props.accessibilityLabel ? true : undefined}
+            accessibilityLabel={props.accessibilityLabel}
             style={[
                 styles.tag,
                 { backgroundColor: colors.placeholder },

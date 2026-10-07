@@ -11,6 +11,16 @@ on:
                 required: false
                 default: 'false'
                 type: boolean
+            e2e:
+                description: '打包后在模拟器上跑自动测试'
+                required: false
+                default: true
+                type: boolean
+            e2e_apk_run_id:
+                description: '只跑自动测试：填一次 Beta 构建的运行 ID，直接测那次打出的 APK，不重新打包'
+                required: false
+                default: ''
+                type: string
 
 jobs:
     check-version:
@@ -45,7 +55,7 @@ jobs:
 
     build-beta:
         needs: check-version
-        if: needs.check-version.outputs.should_build == 'true'
+        if: needs.check-version.outputs.should_build == 'true' && inputs.e2e_apk_run_id == ''
         runs-on: ubuntu-latest
         env:
             NODE_VERSION: '22'
@@ -253,3 +263,124 @@ jobs:
                     echo "### Artifacts"
                     ls -1 dist | sed 's/^/- /'
                   } >> "$GITHUB_STEP_SUMMARY"
+
+    # 在 Android 模拟器上装刚打出的 x86_64 APK，跑 e2e/ 里的端到端测试（说明见 e2e/README.md）
+    e2e:
+        name: Emulator E2E
+        needs: [check-version, build-beta]
+        if: >-
+            !cancelled() && inputs.e2e &&
+            (needs.build-beta.result == 'success' || inputs.e2e_apk_run_id != '')
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        permissions:
+            # 下载别的运行里的 APK；把截图推到 refs/e2e/latest
+            actions: read
+            contents: write
+        env:
+            MAESTRO_VERSION: '2.8.0'
+            MAESTRO_CLI_NO_ANALYTICS: '1'
+            MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: 'true'
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+
+            - name: Download the APK built by this run
+              if: inputs.e2e_apk_run_id == ''
+              uses: actions/download-artifact@v8
+              with:
+                  pattern: beta-apks-*
+                  path: apk
+                  merge-multiple: true
+
+            - name: Download the APK built by run ${{ inputs.e2e_apk_run_id }}
+              if: inputs.e2e_apk_run_id != ''
+              uses: actions/download-artifact@v8
+              with:
+                  pattern: beta-apks-*
+                  path: apk
+                  merge-multiple: true
+                  run-id: ${{ inputs.e2e_apk_run_id }}
+                  github-token: ${{ github.token }}
+
+            - name: Pick the x86_64 APK
+              run: |
+                  shopt -s nullglob
+                  apks=(apk/*x86_64-release.apk)
+                  if [ ${#apks[@]} -ne 1 ]; then
+                    echo "::error title=E2E::Expected one x86_64 APK, found ${#apks[@]}."
+                    ls -l apk || true
+                    exit 1
+                  fi
+                  echo "E2E_APK=${apks[0]}" >> "$GITHUB_ENV"
+                  echo "Testing ${apks[0]}"
+
+            - name: Self-test E2E helpers
+              run: python3 -I e2e/lib/media_session.py --self-test
+
+            - name: Enable KVM
+              run: |
+                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                  sudo udevadm control --reload-rules
+                  sudo udevadm trigger --name-match=kvm
+
+            - name: Setup Java
+              uses: actions/setup-java@v5
+              with:
+                  java-version: '17'
+                  distribution: 'temurin'
+
+            - name: Install Maestro
+              run: |
+                  curl -fsSL "https://get.maestro.mobile.dev" | bash
+                  echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+                  "$HOME/.maestro/bin/maestro" --version
+
+            # 不加 -noaudio：mpv 要有音频输出才会往前播
+            - name: Run E2E on the emulator
+              uses: reactivecircus/android-emulator-runner@v2
+              with:
+                  api-level: 34
+                  target: google_apis
+                  arch: x86_64
+                  profile: pixel_6
+                  cores: 3
+                  ram-size: 4096M
+                  disable-animations: true
+                  emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
+                  script: bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results
+
+            - name: E2E summary
+              if: always()
+              run: |
+                  if [ -f e2e-results/summary.md ]; then
+                    cat e2e-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
+            - name: Upload E2E results
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: e2e-results-${{ github.run_id }}
+                  path: e2e-results
+                  if-no-files-found: ignore
+                  retention-days: 14
+
+            # 截图和结果另外推到一个不显示在分支列表里的引用（每次覆盖），
+            # 不用下载 Actions 附件也能取到：git fetch origin refs/e2e/latest
+            - name: Publish screenshots to refs/e2e/latest
+              if: always() && hashFiles('e2e-results/summary.md') != ''
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  publish_dir="$(mktemp -d)"
+                  mkdir -p "$publish_dir/screens"
+                  cp e2e-results/summary.md e2e-results/results.tsv "$publish_dir/"
+                  find e2e-results -name '*.png' -exec cp {} "$publish_dir/screens/" \;
+                  cd "$publish_dir"
+                  git init -q
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add -A
+                  git commit -q -m "E2E results for ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
+                  git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/e2e/latest

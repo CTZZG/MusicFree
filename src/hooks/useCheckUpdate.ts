@@ -11,7 +11,7 @@ export const checkUpdateAndShowResult = (
     checkSkip = false,
 ) => {
     checkUpdate().then(updateInfo => {
-        if (updateInfo?.needUpdate) {
+        if (updateInfo?.needUpdate && updateInfo.data) {
             const { data } = updateInfo;
             const skipVersion = PersistStatus.get("app.skipVersion");
             if (
@@ -27,9 +27,12 @@ export const checkUpdateAndShowResult = (
                 fromUrl: data.download[0],
                 backUrl: data.download[1],
             });
-        } else {
-            if (showToast) {
+        } else if (showToast) {
+            // 取不到版本信息时不能说“已是最新”
+            if (updateInfo) {
                 Toast.success(i18n.t("checkUpdate.error.latestVersion"));
+            } else {
+                Toast.warn(i18n.t("checkUpdate.error.failed"));
             }
         }
     });

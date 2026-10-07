@@ -1,0 +1,8 @@
+# 在后台切到 A 之后回到应用：播放条应该还是 A，不能跳回切歌前的那首
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone A 歌手: E2E Artist"
+    timeout: 15000
+- assertNotVisible: "歌曲: E2E Tone C 歌手: E2E Artist"
+- takeScreenshot: 05-reopened

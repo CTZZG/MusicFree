@@ -47,7 +47,7 @@ function SimpleView(props) {
     return h('View', props);
 }
 
-function createPlayerStubs(env) {
+function createPlayerStubs(env, options = {}) {
     return {
         ...createCommonStubs(env),
         '@react-native-community/slider': strictStub('slider', {
@@ -109,6 +109,7 @@ function createPlayerStubs(env) {
             useMusicState: () => 'playing',
             useProgress: () => ({position: 83, duration: MUSIC.duration}),
             useMusicQuality: () => 'standard',
+            useAlternateSourceInUse: () => options.alternateSource ?? null,
             useRepeatMode: () => 'QUEUE',
         }),
         '@/core/lyricManager': strictStub('@/core/lyricManager', {
@@ -144,8 +145,8 @@ function createPlayerStubs(env) {
     };
 }
 
-function renderPlayer(env) {
-    const loader = createModuleLoader(createPlayerStubs(env));
+function renderPlayer(env, options) {
+    const loader = createModuleLoader(createPlayerStubs(env, options));
     const MusicDetail = loader.load('@/pages/musicDetail').default;
     const i18n = loader.load('@/core/i18n').default;
     const {width, height} = env.window;
@@ -367,6 +368,37 @@ for (const device of PORTRAIT) {
                     assertBetween(marks.miniLyric, navBottom, marks.title.frame.y, 'mini lyric');
                 }
                 assertLyricLines(marks);
+                assertControls(marks);
+            } finally {
+                unmount();
+            }
+        });
+    }
+}
+
+// 原来源播放失败、改由其他来源播放时，来源标签换成“改用 XX”，读屏说清楚原来源失败了
+const LONG_ALTERNATE = '一个名字特别长的备用音源插件';
+for (const device of PORTRAIT) {
+    for (const fontScale of [1, 2]) {
+        test(`portrait ${device.name}, playing from another source, font scale ${fontScale}`, () => {
+            const env = createEnv({...device, fontScale, config: {'theme.coverStyle': 'square'}});
+            const {root, t, unmount} = renderPlayer(env, {alternateSource: LONG_ALTERNATE});
+            try {
+                const marks = landmarks(root, t);
+                assert.equal(marks.platformTags.length, 0, 'the failed source is not shown as the source');
+                const tagText = t('musicDetail.alternateSource.tag', {platform: LONG_ALTERNATE});
+                const tag = findOne(root, record => isText(record) && record.text === tagText, 'alternate source tag');
+                assertBetween(tag, marks.navContentBottom, marks.controlTop, 'alternate source tag');
+                assert.ok(
+                    contains(tag.parent.frame, tag.frame, 1),
+                    `alternate source tag ${describeFrame(tag.frame)} stays inside its background`,
+                );
+                assert.ok(!tag.textInfo.clippedVertically, 'alternate source tag is not cut off vertically');
+                assertNotClipped(marks.artist, 'artist');
+                assert.equal(
+                    tag.parent.props.accessibilityLabel,
+                    t('musicDetail.alternateSource.a11y', {original: MUSIC.platform, platform: LONG_ALTERNATE}),
+                );
                 assertControls(marks);
             } finally {
                 unmount();

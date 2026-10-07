@@ -1,0 +1,9 @@
+# 打开播放页：歌手旁的来源标签要写明改用了测试源 B
+appId: fun.upup.musicfree
+---
+- tapOn: "歌曲: E2E Fallback 歌手: E2E Artist"
+- extendedWaitUntil:
+    visible: ".*E2E 测试源 B.*"
+    timeout: 20000
+- takeScreenshot: 09-fallback-player
+- back
