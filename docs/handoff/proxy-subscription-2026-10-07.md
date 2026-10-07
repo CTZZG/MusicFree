@@ -24,13 +24,16 @@ AppBar 菜单关闭动画为 200ms，原先却在点击后 20ms 触发菜单动�
 
 - 原有 11 个网络策略测试及新增 7 个系统代理用例，共 18 个 JVM 测试通过。覆盖 loopback 代理、hostname 代理、多代理回落、私有目标拒绝、DIRECT 路径拒绝私有 DNS 响应、切换选路和线程隔离。
 - 4 个 AppBar 组件测试通过，覆盖导航执行时序、中断关闭、重新打开菜单和卸载后的迟到回调。
-- 完整 `npm run verify` 通过；具体计数以运行日志为准。
+- 完整 `npm run verify` 通过：168 个 Jest 测试套件、1205 个测试，27 个 generator 测试、1231 个布局测试。TypeScript、静态审计、patch 回放通过；ESLint 0 错误、218 个原有警告，基线未增加。
 - 用户订阅 `https://music.cwo.cc.cd/api/subscription.json?source=quandouyao.json` 返回 7 个插件。下载并执行其中网易云、酷我、酷狗的真实搜索函数，关键词“带我去找夜生活”均返回歌曲和封面 URL，域名分别为 `p1.music.126.net`、`img4.kuwo.cn`、`imge.kugou.com`。这证明真实插件提供了封面元数据，不把封面缺失归因于订阅未返回图片。
 - 外部订阅、插件代码和歌曲图片仅存于临时验证目录，没有提交到仓库；不会让日常单元测试依赖第三方网络或账号。
+- 上述三张封面实测返回 HTTP 200、有效 JPEG。另以测试证书和 MockWebServer 模拟本机 HTTP 代理，验证 HTTPS CONNECT、TLS 域名校验，以及真实网易云封面 280498 字节的完整读取。测试客户端只信任临时测试证书，生产 TLS 配置没有修改。
 
 ## Android 模拟器验证
 
 本地容器没有 Android SDK 或 KVM，因此使用 GitHub Actions 的一次性 Android 模拟器。新增 `proxy-subscription-check.yml`，仅构建 debug 应用和测试 APK，不发布 Release、不打 tag。
+
+常规 [CI 37654645890](https://github.com/CTZZG/MusicFree/actions/runs/37654645890) 已通过：质量门通过，Gradle `testDebugUnitTest` 实际执行 14 个测试类、75 个用例，0 失败、0 错误、0 跳过。已下载并核对 XML 报告，其中公网策略 11 个、系统代理 7 个用例全部通过。
 
 流程包括：
 
