@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useRef, useState } from "react";
+import React, { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
     LayoutRectangle,
     StatusBar as OriginalStatusBar,
@@ -21,6 +21,7 @@ import Animated, {
     useAnimatedStyle,
     useSharedValue,
     withTiming,
+    runOnJS,
 } from "react-native-reanimated";
 import Portal from "./portal";
 import ListItem from "./listItem";
@@ -110,9 +111,7 @@ export default function AppBar(props: IAppBarProps) {
     );
     const [rightWidth, setRightWidth] = useState(0);
     const scaleRate = useSharedValue(0);
-    const menuActionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-        null,
-    );
+    const pendingMenuAction = useRef<(() => void) | undefined>(undefined);
 
     const hasMenu = menu?.length > 0;
     const menuOnLeft = hasMenu && menuPosition === "left";
@@ -120,19 +119,28 @@ export default function AppBar(props: IAppBarProps) {
     const centeredTitle = typeof children === "string";
     const titleInset = Math.max(MIN_TITLE_INSET, leftWidth, rightWidth);
 
+    const finishMenuClose = useCallback(() => {
+        const action = pendingMenuAction.current;
+        pendingMenuAction.current = undefined;
+        action?.();
+    }, []);
+
     useEffect(() => {
         if (showMenu) {
+            pendingMenuAction.current = undefined;
             scaleRate.value = withTiming(1, timingConfig);
         } else {
-            scaleRate.value = withTiming(0, timingConfig);
+            scaleRate.value = withTiming(0, timingConfig, finished => {
+                if (finished) {
+                    runOnJS(finishMenuClose)();
+                }
+            });
         }
-    }, [scaleRate, showMenu]);
+    }, [finishMenuClose, scaleRate, showMenu]);
 
     useEffect(
         () => () => {
-            if (menuActionTimerRef.current) {
-                clearTimeout(menuActionTimerRef.current);
-            }
+            pendingMenuAction.current = undefined;
         },
         [],
     );
@@ -328,15 +336,11 @@ export default function AppBar(props: IAppBarProps) {
                                         it.accessibilityLabel ?? it.title
                                     }
                                     onPress={() => {
-                                        setShowMenu(false);
-                                        // async
-                                        if (menuActionTimerRef.current) {
-                                            clearTimeout(menuActionTimerRef.current);
+                                        if (!showMenu) {
+                                            return;
                                         }
-                                        menuActionTimerRef.current = setTimeout(() => {
-                                            menuActionTimerRef.current = null;
-                                            it.onPress?.();
-                                        }, 20);
+                                        pendingMenuAction.current = it.onPress;
+                                        setShowMenu(false);
                                     }}>
                                     <ListItem.Content title={it.title} />
                                     <ListItem.ListItemIcon

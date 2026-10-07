@@ -1,0 +1,12 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "订阅设置"
+- extendedWaitUntil:
+    notVisible: "插件管理"
+    timeout: 10000
+- assertVisible: "添加"
+- takeScreenshot: subscription-entered
+- back
+- extendedWaitUntil:
+    visible: "插件管理"
+    timeout: 10000

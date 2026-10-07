@@ -6,6 +6,7 @@ import PluginSort from "./views/pluginSort";
 import PluginSubscribe from "./views/pluginSubscribe";
 import { useParams } from "@/core/router";
 import LxSourceList from "./views/lxSourceList";
+import useColors from "@/hooks/useColors";
 
 const Stack = createNativeStackNavigator<any>();
 
@@ -30,6 +31,7 @@ const routes = [
 
 export default function PluginSetting() {
     const params = useParams<"setting">();
+    const colors = useColors();
     const requestedInitialRouteName = params?.initialPluginSettingRoute;
     const initialRouteName = requestedInitialRouteName &&
         routes.some(route => route.path === requestedInitialRouteName)
@@ -45,6 +47,9 @@ export default function PluginSetting() {
                 headerShown: false,
                 animation: "slide_from_right",
                 animationDuration: 100,
+                // The navigation theme is transparent. Each child scene must
+                // cover the next scene until the native slide reveals it.
+                contentStyle: { backgroundColor: colors.background },
             }}>
             {routes.map(route => {
                 const RouteComponent = route.component;
