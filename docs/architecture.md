@@ -182,7 +182,9 @@
 - 模拟器端到端测试（`e2e/`，怎么跑、怎么加检查见 `e2e/README.md`）：Beta 构建打包后默认在 Android 14 模拟器（x86_64，
   GitHub Actions）上装刚打出的 APK，用 Maestro 点界面，用 `dumpsys media_session` 看实际播放（进度由 mpv 上报，不是界面
   数字）。覆盖：外部链接装插件、搜索点播、后台用媒体键切歌后回到应用不跳回旧歌、播放失败提示和处理方式、后台播完接下一首、
-  换到其他来源和不换成别的版本、播放统计。测试音源和音频按提交号从 raw.githubusercontent.com 读取，提交必须已推送。
+  换到其他来源和不换成别的版本、播放统计、播放中换音质接着原来的进度播（取不到的音质保持原样照常播）、冷启动恢复
+  （通知栏停在暂停的地方、播放条和音质恢复、点播放接着播）、断网时点歌留下失败提示和网络恢复后重试。
+  测试音源和音频按提交号从 raw.githubusercontent.com 读取，提交必须已推送。
   只改测试时可以填 `e2e_apk_run_id`，直接测以前某次 Beta 的 APK，不重新打包。结果写进运行的 Summary，截图、Maestro 日志、
   logcat 在附件里，截图和结果另外推到 `refs/e2e/latest`（不在分支列表里，每次覆盖）。
 
@@ -216,15 +218,15 @@
 | --- | --- | --- | --- |
 | 1 | 搜索：两个来源一快一超时，先看到成功结果，只重试失败来源 | `src/core/search/__tests__/searchSession.test.ts`、`src/pages/searchPage/hooks/__tests__/useSearchSession.test.tsx` | 未验证 |
 | 2 | 搜索：连续搜索 A、B 且 A 最后完成，B 不混入 A 的结果或错误；分页失败后重试同一页 | `src/core/search/__tests__/searchSession.test.ts` | 未验证 |
-| 3 | 播放：连续下一首、指定播放、切音质与暂停，旧 START/END/error 事件不覆盖最终意图 | 相关单元测试：`src/core/trackPlayer/__tests__/manualSkipCoordinator.test.ts`、`qualityChangeCoordinator.test.ts`、`src/core/playerAdapter/__tests__/mpvPlayerAdapter.test.ts`（未逐条核对是否覆盖本场景） | 未验证 |
-| 4 | 播放：冷启动恢复某曲后立即修改同一曲的音质或进度，旧恢复不覆盖新意图 | 相关单元测试：`src/core/trackPlayer/__tests__/sourceRecoveryPolicy.test.ts`（未逐条核对） | 未验证 |
+| 3 | 播放：连续下一首、指定播放、切音质与暂停，旧 START/END/error 事件不覆盖最终意图；切音质接着原来的进度播（mpv 新文件加载好之前收到的跳转先记下，加载好再跳，`PendingSeek`） | 相关单元测试：`src/core/trackPlayer/__tests__/manualSkipCoordinator.test.ts`、`qualityChangeCoordinator.test.ts`、`src/core/playerAdapter/__tests__/mpvPlayerAdapter.test.ts`（未逐条核对是否覆盖本场景）、`android/.../mpvplayer/PendingSeekTest.kt`；模拟器：`e2e/` 的播放中切换音质 | 未验证 |
+| 4 | 播放：冷启动恢复某曲后立即修改同一曲的音质或进度，旧恢复不覆盖新意图 | 相关单元测试：`src/core/trackPlayer/__tests__/sourceRecoveryPolicy.test.ts`（未逐条核对）；模拟器：`e2e/` 的冷启动续播（只测恢复本身：通知栏进度、播放条、音质、接着播） | 未验证 |
 | 5 | 播放：JS 暂时不活跃时 native 连续切到已准备的曲目，恢复后界面、通知与队列一致 | 相关单元测试：`src/core/playerAdapter/__tests__/mpvQueue.test.ts`（只覆盖 JS 侧） | 未验证 |
 | 6 | 下载：最终化各阶段中断或重启后，文件、任务、音乐库一致，重复恢复幂等 | 相关单元测试：`src/core/__tests__/downloadFinalizationRunner.test.ts`、`downloadFinalizationJournal.test.ts` | 未验证 |
 | 7 | 本地音乐：重扫、文件移动、重复导入、权限撤销与重新授权 | 相关单元测试：`src/core/__tests__/localMusicScanPolicy.test.ts`、`localMusicSheetPolicy.test.ts` | 未验证 |
 | 8 | 播放器初始化失败、切后台再回前台，恢复入口不重复 | 相关单元测试：`src/core/trackPlayer/__tests__/playerStartupPolicy.test.ts` | 未验证 |
 | 9 | 代表性 Android 版本与厂商、耳机/蓝牙、锁屏下的核心流程 | 无 | 未验证 |
 | 10 | 播放：App 在后台时从通知栏、锁屏点下一首，之后原生又自动连播几首；回到 App 不回退到之前的歌 | `src/core/trackPlayer/__tests__/backgroundManualSkip.test.ts`（真实 TrackPlayer + 假 mpv 后端） | 未验证 |
-| 11 | 播放失败后留下可关闭的提示，打开后可重试、换音质再试、找其他来源、检查插件设置；明确的授权／密钥拒绝不再试同一插件的其他音质，单独的 403 仍降级；迟到的旧失败不覆盖新的播放 | `src/core/trackPlayer/__tests__/playbackRecoveryIntegration.test.ts`、`playbackRecovery.test.ts`、`src/components/panels/types/__tests__/playbackRecovery.test.tsx` | 未验证 |
+| 11 | 播放失败后留下可关闭的提示，打开后可重试、换音质再试、找其他来源、检查插件设置；明确的授权／密钥拒绝不再试同一插件的其他音质，单独的 403 仍降级；迟到的旧失败不覆盖新的播放；点的歌播放器加载不出来（例如断网，原生不报错）时，确认超时后重载一次，还不行就回到之前那首并留下这首的提示 | `src/core/trackPlayer/__tests__/playbackRecoveryIntegration.test.ts`、`playbackRecovery.test.ts`、`src/components/panels/types/__tests__/playbackRecovery.test.tsx`；模拟器：`e2e/` 的 E2E Broken、断网时点歌、网络恢复后重试 | 未验证 |
 | 12 | 播放队列上移、下移、设为下一首不重新加载、不跳进度；删除、清空可撤销一步，之后再编辑、播放、切歌就不能撤销；删除正在放的歌时，查播放状态期间又有编辑或播放就按最新状态重删，不丢掉，也不抢在没完成的切歌前面换歌 | `src/core/trackPlayer/__tests__/queueEditingIntegration.test.ts`、`queueEditing.test.ts` | 未验证 |
 | 13 | 播放：原来源取不到地址时，到其他已启用的来源找同一个录音换过去播：歌名（连同括号里的 Live、伴奏等版本说明）和歌手都一致、两边都有时长且相差不超过 2 秒才算，专辑只用来排序（`src/utils/sameRecording.ts`）；各来源同时搜，最多等 8 秒。记住能播的来源（最多 300 首），下次这首歌原来源再失败时先试它；切歌、预先准备后面几首、播放地址过期重取、换音质也用它，但不在这些地方重新搜。原来源每次都先试，恢复了就照常用。播放页来源标签写“改用 XX”。基本设置里的“播放失败时尝试更换音源”默认改为开启（以前是用歌名搜两条、取最接近的一条，可能放错歌，默认关） | `src/utils/__tests__/sameRecording.test.ts`、`src/core/trackPlayer/__tests__/alternateSource.test.ts`、`playbackRecoveryIntegration.test.ts`、`tests/layout/player.layout.test.mjs`；模拟器：`e2e/` 的 E2E Fallback、E2E Live Only | 未验证 |
 | 14 | 播放统计：每一遍从头放出来 2 秒记一次（暂停后继续、往后拖进度还是同一遍，重播、单曲循环算新的一遍；换源播放的单独记），用户看到“播放未成功”时记一次失败和原因；只记来源、结果、原因和音质，不记歌名，只存在本机最近 500 次（`src/core/trackPlayer/playAttemptLog.ts`）。设置 → 基本设置 → 开发选项 → 播放统计显示最近 7 天各来源的次数、换源去向、失败原因和最近 10 次失败，可复制；“复制播放诊断”里也带上全部记录的汇总 | `src/core/trackPlayer/__tests__/playAttemptLog.test.ts`、`playAttemptReport.test.ts`、`playbackRecoveryIntegration.test.ts`；模拟器：`e2e/` 的播放统计 | 未验证 |
