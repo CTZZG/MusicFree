@@ -17,8 +17,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-adb install -r android/app/build/outputs/apk/debug/app-x86_64-debug.apk
-adb install -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb install -r -t android/app/build/outputs/apk/debug/app-x86_64-debug.apk
+adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest"
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
