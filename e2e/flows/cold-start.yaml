@@ -14,5 +14,8 @@ appId: fun.upup.musicfree
 - extendedWaitUntil:
     visible: "播放"
     timeout: 30000
-- tapOn: "播放"
+# 点完马上返回，由 run.sh 立刻去看媒体会话里的进度
+- tapOn:
+    text: "播放"
+    waitToSettleTimeoutMs: 500
 - takeScreenshot: 16-cold-start-player

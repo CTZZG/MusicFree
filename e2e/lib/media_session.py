@@ -108,7 +108,7 @@ def check_playing(title, first, second, min_advance_ms=2000):
 
 # 从点播放到采样之间会多播几秒；往回最多容许 3 秒（暂停时上报的进度可能稍晚）
 RESUME_BACK_MS = 3000
-RESUME_AHEAD_MS = 30000
+RESUME_AHEAD_MS = 60000
 
 
 def check_resumed(title, paused, playing):
