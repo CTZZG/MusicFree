@@ -14,7 +14,7 @@ import { useI18N } from "@/core/i18n";
 import MusicSheet, { useFavorite } from "@/core/musicSheet";
 import pluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import { useCurrentMusic } from "@/core/trackPlayer";
+import { useAlternateSourceInUse, useCurrentMusic } from "@/core/trackPlayer";
 import { parseArtists } from "@/utils/artistParser";
 import rpx from "@/utils/rpx";
 import {
@@ -137,6 +137,7 @@ export default function SongInfo(props: ISongInfoProps) {
     const isLandscape = variant === "landscape";
     const lines = (isLandscape ? landscapeFit : undefined) ?? ALL_LINES;
     const musicItem = useCurrentMusic();
+    const alternatePlatform = useAlternateSourceInUse();
     const navigate = useNavigate();
     const { t } = useI18N();
     const { width: windowWidth } = useWindowDimensions();
@@ -284,7 +285,17 @@ export default function SongInfo(props: ISongInfoProps) {
                                     挤不下一行时换到下一行，不压缩歌手名 */}
                             {musicItem.platform && !isLandscape ? (
                                 <Tag
-                                    tagName={musicItem.platform}
+                                    tagName={alternatePlatform
+                                        ? t("musicDetail.alternateSource.tag", {
+                                            platform: alternatePlatform,
+                                        })
+                                        : musicItem.platform}
+                                    accessibilityLabel={alternatePlatform
+                                        ? t("musicDetail.alternateSource.a11y", {
+                                            original: musicItem.platform,
+                                            platform: alternatePlatform,
+                                        })
+                                        : undefined}
                                     containerStyle={styles.tagBg}
                                     style={styles.tagText}
                                 />

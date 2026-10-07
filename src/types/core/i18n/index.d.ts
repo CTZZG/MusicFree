@@ -390,6 +390,8 @@ export interface ILanguageData {
     "musicDetail.showLyric.a11y": string; // 切到歌词
     "musicDetail.showCover.a11y": string; // 切回封面
     "musicDetail.quality.a11y": string; // 音质标签
+    "musicDetail.alternateSource.tag": string; // 改用{platform}
+    "musicDetail.alternateSource.a11y": string; // 原来源「{original}」播放失败，正在用「{platform}」播放
     "musicDetail.rate.a11y": string; // 倍速标签
     "lyricEditor.title": string; // 编辑歌词
     "lyricEditor.addLine": string; // 插入歌词行

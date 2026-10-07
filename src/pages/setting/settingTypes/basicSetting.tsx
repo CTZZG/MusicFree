@@ -404,10 +404,11 @@ export default function BasicSetting() {
                     "basic.autoPlayWhenAppStart",
                     autoPlayWhenAppStart ?? false,
                 ),
+                // 默认开：只换到歌名、歌手、时长都对得上的同一首歌（见 src/utils/sameRecording.ts）
                 createSwitch(
                     t("basicSettings.tryChangeSourceWhenPlayFail"),
                     "basic.tryChangeSourceWhenPlayFail",
-                    tryChangeSourceWhenPlayFail ?? false,
+                    tryChangeSourceWhenPlayFail ?? true,
                 ),
                 createSwitch(
                     t("basicSettings.autoStopWhenError"),

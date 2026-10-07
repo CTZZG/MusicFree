@@ -316,6 +316,8 @@
     "musicDetail.showLyric.a11y": "Show Lyrics",
     "musicDetail.showCover.a11y": "Show Artwork",
     "musicDetail.quality.a11y": "Quality: {quality}, tap to change",
+    "musicDetail.alternateSource.tag": "via {platform}",
+    "musicDetail.alternateSource.a11y": "{original} failed; playing from {platform}",
     "musicDetail.rate.a11y": "Speed: {rate}, tap to change",
     "lyricEditor.title": "Edit lyrics",
     "lyricEditor.addLine": "Add lyric line",

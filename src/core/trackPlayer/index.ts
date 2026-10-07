@@ -75,7 +75,12 @@ import {
     isUnsupportedEncryptedMediaSource,
     resolveEncryptedMediaStreamIfNeeded,
 } from "@/service/encryptedMediaProxy";
-import { getLyricCandidateDistance } from "../lyricSearchPolicy";
+import {
+    findAlternateCandidates,
+    forgetAlternate,
+    getRememberedAlternate,
+    rememberAlternate,
+} from "./alternateSource";
 import { shouldEvictRecoveredRemoteSourceCacheAfterFailure } from "./sourceRecoveryPolicy";
 import {
     IManualSkipOperationToken,
@@ -116,6 +121,13 @@ import {
 type MusicFreePlayerTrack = PlayerAdapterTrack &
     Partial<IMusic.IMusicItem> &
     Record<string, any>;
+
+interface IAlternateSourceResult {
+    /** 实际取到地址的那个来源里的同一首歌 */
+    musicItem: IMusic.IMusicItem;
+    source: IPlugin.IMediaSourceResult;
+    quality: IMusic.IQualityKey;
+}
 
 interface IMpvManualSkipTransition {
     token: IMpvTrackTransitionToken;
@@ -219,6 +231,8 @@ const repeatModeAtom = atom<MusicRepeatMode>(MusicRepeatMode.QUEUE);
 const qualityAtom = atom<IMusic.IQualityKey>("standard");
 // UI only shows a quality associated with a loaded source, never the default preference.
 const resolvedQualityAtom = atom<IMusic.IQualityKey | undefined>(undefined);
+/** 原来源取不到地址、正由其他来源播放的歌：getMediaUniqueKey → 实际来源的插件名 */
+const alternateSourceInUseAtom = atom<Record<string, string>>({});
 const playListAtom = atom<IMusic.IMusicItem[]>([]);
 const playLaterQueueAtom = atom<IMusic.IMusicItem[]>([]);
 const queueUndoAtom = atom<IQueueUndoNotice | null>(null);
@@ -1241,6 +1255,7 @@ class TrackPlayer
     ): Promise<void> {
         this.beginQueuePlaybackIntent();
         let resolvedSourceQuality: IMusic.IQualityKey | undefined;
+        let playedAlternate: IMusic.IMusicItem | null = null;
         let loadingSource = false;
         let ownedMpvTransition: IMpvManualSkipTransition | null = null;
         let sourceResolutionFailure: MediaSourceFailure | null = null;
@@ -1664,113 +1679,37 @@ class TrackPlayer
                         }
                     }
                 }
-                // 5.4 没有返回源
+                // 5.4 没有返回源：到其他来源找同一个录音（默认开启，可在基本设置里关掉）
                 if (!source && !musicItem.url) {
-                    // 插件失效的情况
                     if (
                         this.configService.getConfig(
                             "basic.tryChangeSourceWhenPlayFail",
-                        )
+                        ) ?? true
                     ) {
-                        // 重试
-                        const similarMusic = await this.getSimilarMusic(
+                        // 找其他来源出了问题也不能盖掉原来源的失败原因
+                        const alternate = await this.resolveAlternateSource(
                             musicItem,
-                            "music",
-                            () => !isPlayRequestActive(),
-                        );
-
-                        if (similarMusic) {
-                            const similarMusicPlugin =
-                                this.pluginManagerService.getByMedia(
-                                    similarMusic,
-                                );
-
-                            for (let quality of qualityOrder) {
-                                if (isPlayRequestActive()) {
-                                    let candidate: IPlugin.IMediaSourceResult | null = null;
-                                    let attemptFailure: MediaSourceFailure | null = null;
-                                    const attemptContext = {
-                                        mediaKey: getMediaUniqueKey(similarMusic),
-                                        pluginName: similarMusicPlugin?.name ?? similarMusic.platform,
-                                        quality,
-                                    };
-                                    try {
-                                        candidate = (await similarMusicPlugin?.methods?.getMediaSource(similarMusic, quality)) ?? null;
-                                    } catch (error) {
-                                        attemptFailure = classifyMediaSourceFailure(error, attemptContext);
-                                    }
-                                    if (!candidate?.url) {
-                                        const resultFailure = getMediaSourceResultFailure(candidate, attemptContext, "unavailable");
-                                        attemptFailure = preferMediaSourceFailure(attemptFailure, resultFailure);
-                                        rememberSourceFailure(attemptFailure, "similar");
-                                        if (isProviderAccessFailure(attemptFailure)) {
-                                            break;
-                                        }
-                                    }
-                                    // 5.4.1 获取到真实源
-                                    if (candidate?.url) {
-                                        if (
-                                            this.isUnsupportedEncryptedSource(
-                                                candidate,
-                                            )
-                                        ) {
-                                            rememberSourceFailure(
-                                                createMediaSourceFailure(
-                                                    "encrypted-unsupported",
-                                                    {
-                                                        mediaKey:
-                                                            getMediaUniqueKey(
-                                                                similarMusic,
-                                                            ),
-                                                        pluginName:
-                                                            similarMusicPlugin?.name ??
-                                                            similarMusic.platform,
-                                                        quality,
-                                                    },
-                                                ),
-                                                "similar",
-                                            );
-                                            continue;
-                                        }
-                                        source = await this.createPlayableSource(
-                                            candidate,
-                                            similarMusic,
-                                            quality,
-                                            "similar-plugin",
-                                        );
-                                        if (source?.url) {
-                                            resolvedSourceQuality = source.quality ?? quality;
-                                            break;
-                                        }
-                                        rememberSourceFailure(
-                                            getMediaSourceResultFailure(
-                                                source,
-                                                {
-                                                    mediaKey:
-                                                        getMediaUniqueKey(
-                                                            similarMusic,
-                                                        ),
-                                                    pluginName:
-                                                        similarMusicPlugin?.name ??
-                                                        similarMusic.platform,
-                                                    quality,
-                                                },
-                                                "source-rejected",
-                                            ),
-                                            "similar",
-                                        );
-                                    }
-                                } else {
-                                    // 5.4.2 已经切换到其他歌曲了，
-                                    return;
-                                }
-                            }
+                            qualityOrder,
+                            isPlayRequestActive,
+                            rememberSourceFailure,
+                        ).catch(error => {
+                            errorLog(
+                                "查找其他来源失败",
+                                error?.message ?? error,
+                            );
+                            return null;
+                        });
+                        if (alternate === "inactive") {
+                            // 5.4.2 已经切换到其他歌曲了
+                            return;
                         }
-
-                        if (!source) {
-                            throw createInvalidSourceError();
+                        if (alternate) {
+                            source = alternate.source;
+                            resolvedSourceQuality = alternate.quality;
+                            playedAlternate = alternate.musicItem;
                         }
-                    } else {
+                    }
+                    if (!source) {
                         throw createInvalidSourceError();
                     }
                 } else if (!source && musicItem.url) {
@@ -1901,6 +1840,7 @@ class TrackPlayer
                 } else {
                     getDefaultStore().set(resolvedQualityAtom, undefined);
                 }
+                this.noteAlternateInUse(musicItem, playedAlternate);
             }
             const supplementalInfoPromise = this.updateSupplementalMusicInfo(
                 musicItem,
@@ -3097,9 +3037,20 @@ class TrackPlayer
                 quality: newQuality,
             }));
         }
+        // 正由其他来源播放时，换音质也在那个来源里换（原来源取不到地址）
+        const alternatePlatform = getDefaultStore().get(alternateSourceInUseAtom)[
+            getMediaUniqueKey(musicItem)
+        ];
+        const remembered = alternatePlatform
+            ? getRememberedAlternate(musicItem)
+            : null;
+        const sourceItem =
+            remembered && remembered.platform === alternatePlatform
+                ? remembered
+                : musicItem;
         const failureContext = {
-            mediaKey: getMediaUniqueKey(musicItem),
-            pluginName: musicItem.platform,
+            mediaKey: getMediaUniqueKey(sourceItem),
+            pluginName: sourceItem.platform,
             quality: newQuality,
         };
 
@@ -3119,11 +3070,11 @@ class TrackPlayer
             return superseded();
         }
 
-        const plugin = this.pluginManagerService.getByMedia(musicItem);
+        const plugin = this.pluginManagerService.getByMedia(sourceItem);
         let newSource: IPlugin.IMediaSourceResult | null = null;
         try {
             newSource = (await plugin?.methods?.getMediaSource(
-                musicItem,
+                sourceItem,
                 newQuality,
             )) ?? null;
         } catch (error) {
@@ -3158,9 +3109,9 @@ class TrackPlayer
         try {
             const playableSource = await this.createPlayableSource(
                 newSource,
-                musicItem,
+                sourceItem,
                 newQuality,
-                "plugin",
+                sourceItem === musicItem ? "plugin" : "similar-plugin",
             );
             if (
                 !this.qualityChangeCoordinator.isActive(requestToken) ||
@@ -4684,6 +4635,7 @@ class TrackPlayer
                     "plugin",
                 );
                 if (source?.url) {
+                    this.noteAlternateInUse(musicItem, null);
                     return source;
                 }
             }
@@ -4722,6 +4674,24 @@ class TrackPlayer
                 undefined,
                 "direct",
             );
+        }
+
+        // 切歌、预先准备后面几首时只用记住的其他来源，不在这里搜：搜索要好几秒，
+        // 还会在后台连着发请求。没记住的交给 play() 去找。
+        const remembered =
+            (this.configService.getConfig("basic.tryChangeSourceWhenPlayFail") ?? true)
+                ? getRememberedAlternate(musicItem)
+                : null;
+        if (remembered) {
+            const alternate = await this.resolveSourceFromAlternate(
+                remembered,
+                qualityOrder,
+                () => true,
+            );
+            if (alternate && alternate !== "inactive") {
+                this.noteAlternateInUse(musicItem, alternate.musicItem);
+                return alternate.source;
+            }
         }
 
         return null;
@@ -4770,6 +4740,24 @@ class TrackPlayer
                 "recovery",
                 true,
             );
+        }
+
+        // 播放地址过期后重新取：原来源还是不行，就用记住的其他来源
+        const remembered =
+            (this.configService.getConfig("basic.tryChangeSourceWhenPlayFail") ?? true)
+                ? getRememberedAlternate(musicItem)
+                : null;
+        if (remembered) {
+            MediaCache.removeMediaCache(remembered);
+            const alternate = await this.resolveSourceFromAlternate(
+                remembered,
+                qualityOrder,
+                () => true,
+            );
+            if (alternate && alternate !== "inactive") {
+                this.noteAlternateInUse(musicItem, alternate.musicItem);
+                return alternate.source;
+            }
         }
 
         return null;
@@ -5217,73 +5205,164 @@ class TrackPlayer
     }
 
     /**
-     *
-     * @param musicItem 音乐类型
-     * @param type 媒体类型
-     * @param abortFunction 如果函数为true，则中断
-     * @returns
+     * 原来源取不到地址时，换到其他来源的同一个录音（规则见 alternateSource.ts）。
+     * 先试上次换成功的来源；不行再到其他已启用的来源里搜，搜到的按接近程度逐个试。
      */
-    private async getSimilarMusic<T extends ICommon.SupportMediaType>(
+    private async resolveAlternateSource(
         musicItem: IMusic.IMusicItem,
-        type: T = "music" as T,
-        abortFunction?: () => boolean,
-    ): Promise<ICommon.SupportMediaItemBase[T] | null> {
-        const keyword = musicItem.alias || musicItem.title;
-        const plugins = this.pluginManagerService.getSearchablePlugins(type);
-
-        let distance = Infinity;
-        let minDistanceMusicItem;
-        let targetPlugin;
-
-        const startTime = Date.now();
-
-        for (let plugin of plugins) {
-            // 超时时间：8s
-            if (abortFunction?.() || Date.now() - startTime > 8000) {
-                break;
+        qualityOrder: IMusic.IQualityKey[],
+        isPlayRequestActive: () => boolean,
+        rememberSourceFailure: (
+            failure?: MediaSourceFailure | null,
+            attemptType?: MediaSourceAttemptType,
+        ) => void,
+    ): Promise<IAlternateSourceResult | "inactive" | null> {
+        const tried = new Set<string>();
+        const tryCandidate = async (alternate: IMusic.IMusicItem) => {
+            const key = getMediaUniqueKey(alternate);
+            if (tried.has(key)) {
+                return null;
             }
-            if (plugin.name === musicItem.platform) {
+            tried.add(key);
+            return this.resolveSourceFromAlternate(
+                alternate,
+                qualityOrder,
+                isPlayRequestActive,
+                rememberSourceFailure,
+            );
+        };
+
+        const remembered = getRememberedAlternate(musicItem);
+        if (remembered) {
+            const result = await tryCandidate(remembered);
+            if (result) {
+                return result;
+            }
+            forgetAlternate(musicItem);
+        }
+
+        const sources = this.pluginManagerService
+            .getSortedSearchablePlugins("music")
+            .map(plugin => ({
+                name: plugin.name,
+                search: async (keyword: string) =>
+                    (await plugin.methods.search(keyword, 1, "music"))
+                        ?.data as IMusic.IMusicItem[] | undefined,
+            }));
+        const candidates = await findAlternateCandidates(musicItem, sources, {
+            timeoutMs: 8000,
+            isCancelled: () => !isPlayRequestActive(),
+        });
+        if (!isPlayRequestActive()) {
+            return "inactive";
+        }
+        trace("查找其他来源", {
+            musicId: musicItem.id,
+            platform: musicItem.platform,
+            candidates: candidates.length,
+        });
+        for (const candidate of candidates) {
+            const result = await tryCandidate(candidate);
+            if (result === "inactive") {
+                return result;
+            }
+            if (result) {
+                rememberAlternate(musicItem, candidate);
+                return result;
+            }
+        }
+        return null;
+    }
+
+    /** 用另一个来源的同一首歌取播放地址，按音质顺序逐个试 */
+    private async resolveSourceFromAlternate(
+        alternate: IMusic.IMusicItem,
+        qualityOrder: IMusic.IQualityKey[],
+        isActive: () => boolean,
+        rememberSourceFailure?: (
+            failure?: MediaSourceFailure | null,
+            attemptType?: MediaSourceAttemptType,
+        ) => void,
+    ): Promise<IAlternateSourceResult | "inactive" | null> {
+        const plugin = this.pluginManagerService.getByMedia(alternate);
+        if (!plugin || !this.pluginManagerService.isPluginEnabled(plugin)) {
+            return null;
+        }
+        for (const quality of qualityOrder) {
+            if (!isActive()) {
+                return "inactive";
+            }
+            const attemptContext = {
+                mediaKey: getMediaUniqueKey(alternate),
+                pluginName: plugin.name,
+                quality,
+            };
+            let candidate: IPlugin.IMediaSourceResult | null = null;
+            let attemptFailure: MediaSourceFailure | null = null;
+            try {
+                candidate = (await plugin.methods.getMediaSource(alternate, quality)) ?? null;
+            } catch (error) {
+                attemptFailure = classifyMediaSourceFailure(error, attemptContext);
+            }
+            if (!candidate?.url) {
+                attemptFailure = preferMediaSourceFailure(
+                    attemptFailure,
+                    getMediaSourceResultFailure(candidate, attemptContext, "unavailable"),
+                );
+                rememberSourceFailure?.(attemptFailure, "similar");
+                if (isProviderAccessFailure(attemptFailure)) {
+                    return null;
+                }
                 continue;
             }
-            const results = await plugin.methods
-                .search(keyword, 1, type)
-                .catch(() => null);
-
-            // 取前两个
-            const firstTwo = results?.data?.slice(0, 2) || [];
-
-            for (let item of firstTwo) {
-                if (
-                    item.title === keyword &&
-                    item.artist === musicItem.artist
-                ) {
-                    distance = 0;
-                    minDistanceMusicItem = item;
-                    targetPlugin = plugin;
-                    break;
-                } else {
-                    const dist = getLyricCandidateDistance(
-                        keyword,
-                        musicItem,
-                        item,
-                    );
-                    if (dist < distance) {
-                        distance = dist;
-                        minDistanceMusicItem = item;
-                        targetPlugin = plugin;
-                    }
-                }
+            if (this.isUnsupportedEncryptedSource(candidate)) {
+                rememberSourceFailure?.(
+                    createMediaSourceFailure("encrypted-unsupported", attemptContext),
+                    "similar",
+                );
+                continue;
             }
-
-            if (distance === 0) {
-                break;
+            const source = await this.createPlayableSource(
+                candidate,
+                alternate,
+                quality,
+                "similar-plugin",
+            );
+            if (source?.url) {
+                return {
+                    musicItem: alternate,
+                    source,
+                    quality: source.quality ?? quality,
+                };
             }
+            rememberSourceFailure?.(
+                getMediaSourceResultFailure(source, attemptContext, "source-rejected"),
+                "similar",
+            );
         }
-        if (minDistanceMusicItem && targetPlugin) {
-            return minDistanceMusicItem as ICommon.SupportMediaItemBase[T];
-        }
-
         return null;
+    }
+
+    /** 记下这首歌现在是不是由其他来源在播，播放页据此显示来源 */
+    private noteAlternateInUse(
+        musicItem: IMusic.IMusicItem,
+        alternate: IMusic.IMusicItem | null,
+    ) {
+        const key = getMediaUniqueKey(musicItem);
+        const store = getDefaultStore();
+        const current = store.get(alternateSourceInUseAtom);
+        if (alternate) {
+            if (current[key] !== alternate.platform) {
+                store.set(alternateSourceInUseAtom, {
+                    ...current,
+                    [key]: alternate.platform,
+                });
+            }
+        } else if (key in current) {
+            const next = { ...current };
+            delete next[key];
+            store.set(alternateSourceInUseAtom, next);
+        }
     }
 
     private patchMediaArtwork(track: MusicFreePlayerTrack) {
@@ -5308,6 +5387,12 @@ export const getQueueUndoNotice = () => getDefaultStore().get(queueUndoAtom);
 export const useCurrentMusic = () => useAtomValue(currentMusicAtom);
 export const useRepeatMode = () => useAtomValue(repeatModeAtom);
 export const useMusicQuality = () => useAtomValue(resolvedQualityAtom);
+/** 当前这首歌正由哪个其他来源播放；用的是原来源时为 null */
+export function useAlternateSourceInUse() {
+    const currentMusic = useAtomValue(currentMusicAtom);
+    const inUse = useAtomValue(alternateSourceInUseAtom);
+    return currentMusic ? inUse[getMediaUniqueKey(currentMusic)] ?? null : null;
+}
 export function useMusicState() {
     const musicState = useAtomValue(musicStateAtom);
     const playerReady = useAtomValue(playerReadyAtom);

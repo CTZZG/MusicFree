@@ -316,6 +316,8 @@
     "musicDetail.showLyric.a11y": "顯示歌詞",
     "musicDetail.showCover.a11y": "顯示封面",
     "musicDetail.quality.a11y": "音質：{quality}，點按切換",
+    "musicDetail.alternateSource.tag": "改用{platform}",
+    "musicDetail.alternateSource.a11y": "原來源「{original}」播放失敗，正在用「{platform}」播放",
     "musicDetail.rate.a11y": "播放速度：{rate}，點按切換",
     "lyricEditor.title": "編輯歌詞",
     "lyricEditor.addLine": "插入歌詞行",
