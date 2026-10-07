@@ -21,6 +21,9 @@ import org.junit.Test
 
 class PublicHttpsNetworkPolicyTest {
     private val servers = mutableListOf<MockWebServer>()
+    // Android's getLoopbackAddress() may choose ::1 while MockWebServer's
+    // default bind chooses IPv4. Bind and resolve the same fixture address.
+    private val loopbackAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
 
     @After
     fun tearDown() {
@@ -28,7 +31,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `dns policy revalidates every lookup and rejects a public to private flip`() {
+    fun dnsPolicyRevalidatesEveryLookupAndRejectsAPublicToPrivateFlip() {
         val publicAddress = InetAddress.getByAddress(
             "public.test",
             byteArrayOf(93, 184.toByte(), 216.toByte(), 34),
@@ -59,7 +62,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `dns policy rejects an IPv4 mapped IPv6 loopback address`() {
+    fun dnsPolicyRejectsAnIPv4MappedIPv6LoopbackAddress() {
         val bytes = ByteArray(16)
         bytes[10] = 0xff.toByte()
         bytes[11] = 0xff.toByte()
@@ -79,7 +82,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `dns policy drops private answers and keeps the public ones`() {
+    fun dnsPolicyDropsPrivateAnswersAndKeepsThePublicOnes() {
         val publicAddress = InetAddress.getByAddress(
             "mixed.test",
             byteArrayOf(93, 184.toByte(), 216.toByte(), 34),
@@ -99,7 +102,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `dns policy accepts proxy fake-ip answers`() {
+    fun dnsPolicyAcceptsProxyFakeIpAnswers() {
         // Clash/sing-box/Surge in fake-ip mode answer every query from
         // 198.18.0.0/15; the IPv6 pool (fc00::/18 for sing-box) is unique-local
         // and stays blocked, so a dual-stack answer keeps only the IPv4 one.
@@ -134,7 +137,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `redirect interceptor follows only same origin redirects`() {
+    fun redirectInterceptorFollowsOnlySameOriginRedirects() {
         val server = newServer()
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/next"))
         server.enqueue(MockResponse().setResponseCode(200).setBody("ok"))
@@ -150,7 +153,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `redirect interceptor rejects private and cross origin targets before connecting`() {
+    fun redirectInterceptorRejectsPrivateAndCrossOriginTargetsBeforeConnecting() {
         val server = newServer()
         val client = redirectClient("public.test")
         val url = server.url("/start").newBuilder().host("public.test").build()
@@ -179,7 +182,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `cross origin scope follows a redirector to another public host without credentials`() {
+    fun crossOriginScopeFollowsARedirectorToAnotherPublicHostWithoutCredentials() {
         // Cover-art URLs often point at a redirector on one host that answers
         // with the real CDN host. The old Nitro loader followed these; the
         // same-origin rule made the notification fall back to the default icon.
@@ -212,7 +215,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `cross origin scope still refuses private targets before connecting`() {
+    fun crossOriginScopeStillRefusesPrivateTargetsBeforeConnecting() {
         val server = newServer()
         val client = redirectClient(setOf("public.test"), RedirectScope.CROSS_ORIGIN)
         val url = server.url("/start").newBuilder().host("public.test").build()
@@ -235,7 +238,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `redirect scopes differ only in host changes and downgrades`() {
+    fun redirectScopesDifferOnlyInHostChangesAndDowngrades() {
         val httpA = "http://a.example/x".toHttpUrl()
         val httpsA = "https://a.example/x".toHttpUrl()
         val httpB = "http://b.example/y".toHttpUrl()
@@ -256,7 +259,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `URL policy refuses private IP literals but keeps public ones`() {
+    fun urlPolicyRefusesPrivateIPLiteralsButKeepsPublicOnes() {
         for (url in listOf(
             "http://10.1.2.3/a.jpg",
             "http://172.16.0.1/a.jpg",
@@ -283,7 +286,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     @Test
-    fun `URL policy allows cleartext but still refuses credentials and bad schemes`() {
+    fun urlPolicyAllowsCleartextButStillRefusesCredentialsAndBadSchemes() {
         // Scheme policy moved to JS (basic.allowPluginInsecureHttp) on
         // 2026-07-26. Enforcing HTTPS here had silently broken downloads,
         // CENC playback and cover-art embedding for http:// sources.
@@ -313,7 +316,7 @@ class PublicHttpsNetworkPolicyTest {
     }
 
     private fun newServer(): MockWebServer = MockWebServer().also {
-        it.start()
+        it.start(loopbackAddress, 0)
         servers += it
     }
 
@@ -326,7 +329,7 @@ class PublicHttpsNetworkPolicyTest {
                 object : Dns {
                     override fun lookup(hostname: String): List<InetAddress> =
                         if (hostname in hostnames) {
-                            listOf(InetAddress.getLoopbackAddress())
+                            listOf(loopbackAddress)
                         } else {
                             throw UnknownHostException(hostname)
                         }

@@ -36,7 +36,7 @@ class ArtworkRetrySchedulerTest {
     )
 
     @Test
-    fun `a failure while playing retries after the backoff`() {
+    fun aFailureWhilePlayingRetriesAfterTheBackoff() {
         scheduler.schedule(5_000L, playbackStopped = false)
 
         assertEquals(listOf(5_000L), handler.pending.map { it.second })
@@ -45,7 +45,7 @@ class ArtworkRetrySchedulerTest {
     }
 
     @Test
-    fun `stopping playback holds the pending retry until playback starts again`() {
+    fun stoppingPlaybackHoldsThePendingRetryUntilPlaybackStartsAgain() {
         scheduler.schedule(5_000L, playbackStopped = false)
 
         scheduler.onPlaybackStopped()
@@ -60,7 +60,7 @@ class ArtworkRetrySchedulerTest {
     }
 
     @Test
-    fun `a failure that arrives after stopping waits for the next playback`() {
+    fun aFailureThatArrivesAfterStoppingWaitsForTheNextPlayback() {
         scheduler.schedule(2_000L, playbackStopped = true)
 
         assertTrue(handler.pending.isEmpty())
@@ -70,7 +70,7 @@ class ArtworkRetrySchedulerTest {
     }
 
     @Test
-    fun `starting playback with nothing deferred does not fetch`() {
+    fun startingPlaybackWithNothingDeferredDoesNotFetch() {
         scheduler.onPlaybackStarted()
         scheduler.onPlaybackStopped()
         scheduler.onPlaybackStarted()
@@ -80,7 +80,7 @@ class ArtworkRetrySchedulerTest {
     }
 
     @Test
-    fun `a new track drops the previous track's retries`() {
+    fun aNewTrackDropsThePreviousTrackSRetries() {
         scheduler.schedule(5_000L, playbackStopped = false)
         scheduler.onPlaybackStopped()
 

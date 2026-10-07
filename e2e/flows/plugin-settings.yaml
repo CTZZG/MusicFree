@@ -1,0 +1,31 @@
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "资料库"
+    timeout: 90000
+- runFlow: dismiss-update.yaml
+# RN's debug-only warning toast covers the dock on the Pixel 6 fixture. Its
+# close button has no accessibility label/resource ID; dismiss the observed
+# toast at its close-button position before tapping the settings tab.
+- runFlow:
+    when:
+      visible: ".*Open debugger to view warnings.*"
+    commands:
+      - tapOn:
+          point: "92%,92%"
+      - extendedWaitUntil:
+          notVisible: ".*Open debugger to view warnings.*"
+          timeout: 5000
+- tapOn: "设置"
+- scrollUntilVisible:
+    element: "插件管理"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "插件管理"
+- extendedWaitUntil:
+    visible: "ellipsis-vertical"
+    timeout: 15000
+- tapOn: "ellipsis-vertical"
+- extendedWaitUntil:
+    visible: "订阅设置"
+    timeout: 10000
