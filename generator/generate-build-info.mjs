@@ -1,4 +1,4 @@
-import {execSync} from 'node:child_process';
+import {execFileSync, execSync} from 'node:child_process';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -60,14 +60,15 @@ function getAndroidVersionCode() {
 }
 
 // 播放内核 libmpv 的版本写在 libmpv.so 里（形如 "mpv v0.41.0"）。读不到
-// （本机没有 unzip、AAR 不在）时记 unknown，不影响构建。
+// （本机没有 unzip、AAR 不在）时记 unknown，不影响构建。路径作为参数直接交给
+// unzip，不经过 shell：工程路径里有 $、引号、反引号也照样读得到。
 function getMpvVersion() {
     const aarPath = path.join(rootDir, 'android', 'app', 'libs', 'libmpv-release.aar');
     if (!existsSync(aarPath)) {
         return 'unknown';
     }
     try {
-        const library = execSync(`unzip -p "${aarPath}" jni/arm64-v8a/libmpv.so`, {
+        const library = execFileSync('unzip', ['-p', aarPath, 'jni/arm64-v8a/libmpv.so'], {
             cwd: rootDir,
             maxBuffer: 64 * 1024 * 1024,
             stdio: ['ignore', 'pipe', 'ignore'],
