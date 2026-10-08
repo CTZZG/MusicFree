@@ -23,22 +23,33 @@ TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.m
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
     > "$OUT/instrumentation.log" 2>&1
+# 系统对每个应用的通知更新限速（约每秒 5 次），超过时丢掉更新并打这条日志
+adb logcat -d -s NotificationService:E | grep -i "shedding" || true
 # `am instrument` can exit zero even when JUnit fails. Require every selected
 # class to complete tests successfully, and reject skipped or partial runs.
 python3 - "$OUT/instrumentation.log" "$TEST_CLASSES" <<'PY'
 import json, re, sys
 from pathlib import Path
 log = Path(sys.argv[1]).read_text()
-completed, fields = [], {}
+completed, fields, last_key = [], {}, None
 for line in log.splitlines():
     if line.startswith('INSTRUMENTATION_STATUS: '):
         key, sep, value = line.removeprefix('INSTRUMENTATION_STATUS: ').partition('=')
-        if sep: fields[key] = value
+        if sep: fields[key], last_key = value, key
     elif line.startswith('INSTRUMENTATION_STATUS_CODE: '):
         code = int(line.split(':', 1)[1])
         if code <= 0 and 'class' in fields and 'test' in fields:
-            completed.append({'class': fields['class'], 'test': fields['test'], 'code': code})
-        fields = {}
+            completed.append({'class': fields['class'], 'test': fields['test'], 'code': code,
+                              'stack': fields.get('stack', '')})
+        fields, last_key = {}, None
+    elif last_key == 'stack':
+        # 失败的堆栈跨多行，后面的行不带前缀
+        fields['stack'] += '\n' + line
+# 失败的测试和堆栈打在任务日志里：结果附件不一定下载得到
+for t in completed:
+    if t['code'] != 0:
+        print(f"FAILED {t['class']}#{t['test']} (status {t['code']})")
+        print('\n'.join(t['stack'].splitlines()[:40]))
 expected = max((int(n) for n in re.findall(r'^INSTRUMENTATION_STATUS: numtests=(\d+)', log, re.M)), default=0)
 passed = len(completed) == expected and expected > 0 and all(t['code'] == 0 for t in completed)
 passed &= {t['class'] for t in completed} == set(sys.argv[2].split(','))
