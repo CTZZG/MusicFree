@@ -10,7 +10,7 @@
 | 工作分支 | `claude/sharp-planck-xtfenm` |
 | 本轮工程修复起点 | `f224cb599a31eacb3bc90160ee67bdd1e6798c43` |
 | 最新功能提交 | `b4ee8551`（搜索总览里同一首歌的其他来源挂在那首歌下面；此前 `claude/sharp-planck-xtfenm` 上的 83 个提交已由 PR #10 合入 `feat/mpv-only`（合并提交 `7482e27`）；这一处调整和 0.10.0 的版本号由 PR #11 合入（`a013488`），已发布 [v0.10.0](https://github.com/CTZZG/MusicFree/releases/tag/v0.10.0)。再往前是资料库歌单的 ⋮ 和「我喜欢」入口 `1720946`、删除正在放的歌时按最新状态重删 `fce35ef`、复核 PR #9 后修的搜索总览 `43b6802`、新建分组对话框 `3c843f5`、PR #9 的合并提交 `8b218b9`（Codex：播放失败处理、搜索总览、队列编辑、资料库整理、歌词字号，见 [产品改进记录](product-improvements-2026-10-04.md)）、标签朗读 `8106b9e`、歌手详情 `86bd936`、布局测试工具 `ac9f2d1`、搜索页 `526c728`、歌曲选项和加入歌单面板 `cf6ee68`、专辑和自己的歌单详情 `7b2f1af`、a27dde0 复核两项 `23216c0`／`7f57a1e`、420f335 复核 `c0f1be5` 等、歌单／榜单详情 `987226e`、榜单 `c62720e`、推荐歌单 `ecbc08c`、后台切歌修复 `29a6b5d`、Eng 5 接回 `2e07e1c`；Codex 本轮最后一个功能提交是 `da3036d`） |
-| 包版本 | `0.11.2`（Android 构建号 400028）；实际构建用提交号和 Actions run 区分 |
+| 包版本 | `0.11.3`（Android 构建号 400029）；实际构建用提交号和 Actions run 区分 |
 | 文档核对日期 | 2026-10-04，UTC；构建状态见第 5 节 |
 
 **2026-10-07 更新（Claude）**：用户决定停止字体迁移（已迁移的页面保留，不再继续），方向转到“能稳定听下去”。之后的功能提交：
@@ -43,6 +43,15 @@ Codex 复核 `f4f346d` 后指出：这项测试名检查只认 `fun` 后面紧�
 右上角 + 管安装，其余入口直接放在页面的分组里；关于页改成这个修改版自己的版本、更新、源代码和构建信息，致谢里一句“基于猫头猫的
 MusicFree 修改、AGPL-3.0、不提供担保”；崩溃页的反馈入口改指本仓库；构建信息里的播放器从已删除的 Nitro 依赖（一直是 unknown）
 改为从 libmpv 读出的版本。布局测试 `tests/layout/settingsPages.layout.test.mjs` 覆盖两页（320／363 dp、横屏，中英文）。
+
+**Live Update 留白，发布 0.11.3（Claude 补记，2026-10-08）**：用户截图里荣耀的实况卡片标题是歌词、有进度条和封面，
+下面按钮那块一片空白，“有时候”出现。原因：当前这句为空（前奏、间奏的空行、换歌）时 JS 清掉 Live Update 歌词，原生层把清空
+当作关掉了 Live Update，同一条通知（id 3001）在进度样式和媒体样式之间来回切；“来回切导致荣耀留白”是推断，没有在荣耀上复现。
+另一个可能的原因一并修了：Live Update 的按钮图标用按资源 ID 的旧构造函数，包名是空的。改动：`LiveUpdateLyricState` 把开关和
+当前这句分开记，只有关掉开关才换回媒体样式，没有歌词时标题用歌名；JS 发歌词前把开关同步给原生层；按钮图标带包名；封面缩略图
+只在换封面时生成。Android 16 以下保持原样。行为变化：开着开关时没有歌词的歌也显示 Live Update 卡片。代理与订阅检查加了
+`LiveUpdateNotificationStyleTest`（Android 16 模拟器上绑定真实播放服务，检查清空、换歌、关开关后的通知样式和按钮图标包名）。
+用户在荣耀手机上装 Beta #100 测过 Live Update、插件管理和关于页，没有问题，连同上一段的改动发布 0.11.3。
 
 接手时先 fetch 并核对远端，后续纯文档提交可能使 HEAD 高于上述功能提交。**当前功能状态：播放条 60 dp、dock 60 dp、大标题 28 dp、资料库歌单可切网格／列表；榜单改为三列方卡，有现成歌曲数据时显示横向预览；底部总预留 136 dp，系统安全区另加。**
 
@@ -266,6 +275,8 @@ Jest 167 套件、1199 项；generator 27 项；Yoga 布局 1231 项（比下表
 | [Beta #98](https://github.com/CTZZG/MusicFree/actions/runs/37680918613) | f4f346d | 打包成功；模拟器 33 项全部通过（检查项和 #97 相同） |
 | [CI](https://github.com/CTZZG/MusicFree/actions/runs/37685269928)、[代理与订阅检查](https://github.com/CTZZG/MusicFree/actions/runs/37685270064) | ec2ad41 | 成功；测试名检查改为跳过注释和字符串（`generator/lib/dexNames.mjs`）之后 |
 | [Android Release Build #270](https://github.com/CTZZG/MusicFree/actions/runs/37686725766)、[#271](https://github.com/CTZZG/MusicFree/actions/runs/37686770976) | ec2ad41 → 8cc3812 | 成功；PR #18 合并后的验证构建，以及发布 [v0.11.2](https://github.com/CTZZG/MusicFree/releases/tag/v0.11.2)（5 个 APK、构建信息、SHA256SUMS，正文与 `docs/release-notes-v0.11.2.md` 一致） |
+| [Beta #99](https://github.com/CTZZG/MusicFree/actions/runs/37738505556)、[代理与订阅检查 #12](https://github.com/CTZZG/MusicFree/actions/runs/37738508283) | f647bb4 | 成功；插件管理、关于页改版后的打包和模拟器测试，订阅设置改为点页面上的行进入／返回 |
+| [Beta #100](https://github.com/CTZZG/MusicFree/actions/runs/37742855597)、[代理与订阅检查 #13](https://github.com/CTZZG/MusicFree/actions/runs/37742852348) | 6bf82b2 | 成功；Live Update 修复：模拟器 33 项全部通过，Android 16 模拟器上 20 项原生测试（新增通知样式一项）全部通过；用户在荣耀手机上测过这一版 |
 
 各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。从 #86 起，Beta 打包后在 Android 14 模拟器上
 跑端到端测试（`e2e/`），结果在运行的 Summary 里，截图在附件 `e2e-results-<运行 ID>`。
