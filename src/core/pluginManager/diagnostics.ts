@@ -179,7 +179,7 @@ function getBuildInfoLines() {
         `Build date: ${sanitizeReportValue(buildInfo.buildDate)}`,
         `Signing: ${sanitizeReportValue(buildInfo.signing)}`,
         `Runtime: RN ${sanitizeReportValue(buildInfo.reactNative)} / Expo ${sanitizeReportValue(buildInfo.expo)} / React ${sanitizeReportValue(buildInfo.react)}`,
-        `Player: ${sanitizeReportValue(buildInfo.nitroPlayer)}`,
+        `Player: ${sanitizeReportValue(buildInfo.player)}`,
     ].filter(Boolean);
 }
 
