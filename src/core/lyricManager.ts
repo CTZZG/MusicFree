@@ -761,6 +761,8 @@ class LyricManager implements IInjectable {
             );
             this.currentMusicChangedListener = null;
         }
+        // 下次 setup 后重新告诉原生层开关的状态
+        this.nativeLiveUpdateEnabled = undefined;
         this.initialized = false;
     }
 

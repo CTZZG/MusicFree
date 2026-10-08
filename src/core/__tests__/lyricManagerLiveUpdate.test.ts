@@ -99,4 +99,67 @@ describe("LyricManager Live Update switch", () => {
 
         lyricManager.dispose();
     });
+
+    // 冷启动：保存的开关是开着的，第一首完全没有歌词。原生层这时还不知道开关，
+    // 要靠换歌时的这一次同步，第一条播放通知才是 Live Update，不会等到有歌词的歌
+    // 才从媒体样式换过去。
+    it("tells native the switch is on when the first song after a cold start has no lyrics", async () => {
+        const appConfig = {
+            getConfig: jest.fn((key: string) =>
+                key === "lyric.showLiveUpdateLyric" ? true : undefined,
+            ),
+        } as any;
+        let onMusicChanged: (() => void) | undefined;
+        const trackPlayer = {
+            currentMusic: {
+                platform: "test",
+                id: "no-lyric",
+                title: "没有歌词的歌",
+                artist: "歌手",
+            },
+            on: jest.fn((_event: string, listener: () => void) => {
+                onMusicChanged = listener;
+            }),
+            off: jest.fn(),
+            playerAdapter: {
+                name: "mpv",
+                getState: jest.fn().mockResolvedValue("playing"),
+                addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+            },
+            getProgress: jest.fn().mockResolvedValue({
+                position: 0,
+                duration: 0,
+                buffered: 0,
+            }),
+            getProgressSnapshot: jest.fn(() => ({
+                position: 0,
+                duration: 0,
+                buffered: 0,
+                sequence: 0,
+            })),
+            isCurrentMusic: jest.fn(() => true),
+        } as any;
+        // 没有能提供歌词的插件：这首歌没有歌词
+        const pluginManager = {
+            getByMedia: jest.fn(() => undefined),
+            getSearchablePlugins: jest.fn(() => []),
+        } as any;
+        const setEnabled = LyricUtil.setLiveUpdateLyricEnabled as jest.Mock;
+        const setText = LyricUtil.setLiveUpdateLyricText as jest.Mock;
+
+        lyricManager.dispose();
+        setEnabled.mockClear();
+        setText.mockClear();
+        lyricManager.injectDependencies(trackPlayer, appConfig, pluginManager);
+        await lyricManager.setup();
+
+        onMusicChanged?.();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(setEnabled).toHaveBeenCalledWith(true);
+        expect(setEnabled).not.toHaveBeenCalledWith(false);
+        expect(setText).not.toHaveBeenCalled();
+
+        lyricManager.dispose();
+    });
 });
