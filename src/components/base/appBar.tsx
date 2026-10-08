@@ -38,6 +38,8 @@ interface IAppBarProps {
         icon: IIconName;
         onPress?: () => void;
         accessibilityLabel?: string;
+        /** 现在用不了（例如没有改动可保存）：变淡，点了没反应 */
+        disabled?: boolean;
     }>;
     menu?: Array<{
         icon: IIconName;
@@ -89,6 +91,7 @@ interface IBarButtonProps {
     onPress?: () => void;
     onLayout?: (event: LayoutChangeEvent) => void;
     accessibilityLabel: string;
+    disabled?: boolean;
 }
 
 /**
@@ -104,16 +107,23 @@ function BarButton(props: IBarButtonProps) {
         onPress,
         onLayout,
         accessibilityLabel,
+        disabled = false,
     } = props;
     return (
         <Pressable
             onPress={onPress}
             onLayout={onLayout}
+            disabled={disabled}
             accessibilityRole="button"
             accessibilityLabel={accessibilityLabel}
+            accessibilityState={{ disabled }}
             style={({ pressed }) => [
                 styles.barButton,
-                pressed ? styles.barButtonPressed : null,
+                disabled
+                    ? styles.barButtonDisabled
+                    : pressed
+                        ? styles.barButtonPressed
+                        : null,
             ]}>
             <Icon name={icon} size={iconSizeConst[sizeType]} color={tint} />
         </Pressable>
@@ -222,6 +232,7 @@ export default function AppBar(props: IAppBarProps) {
                     icon={action.icon}
                     tint={tintColor}
                     onPress={action.onPress}
+                    disabled={action.disabled}
                     accessibilityLabel={
                         action.accessibilityLabel ?? action.icon
                     }
@@ -434,6 +445,9 @@ const styles = StyleSheet.create({
     },
     barButtonPressed: {
         opacity: 0.4,
+    },
+    barButtonDisabled: {
+        opacity: 0.35,
     },
     content: {
         flexDirection: "row",

@@ -14,7 +14,6 @@ import Divider from "@/components/base/divider";
 import rpx from "@/utils/rpx";
 import useColors from "@/hooks/useColors";
 import { Fragment, useMemo } from "react";
-import IconButton from "@/components/base/iconButton";
 import { beginSheetTypeChange } from "../store/action";
 import {
     confirmSheetEditorTransition,
@@ -41,6 +40,7 @@ export default function NavBar() {
     const sheetChanged = useAtomValue(musicSheetChangedAtom);
     const isReady = useAtomValue(sheetEditorReadyAtom);
     const isSaving = useAtomValue(sheetEditorSavingAtom);
+    const canSave = sheetChanged && isReady && !isSaving;
     
     const selectedIndicatorStyle = useMemo(() => {
         return [
@@ -53,17 +53,16 @@ export default function NavBar() {
 
     return (
         <AppBar backgroundColor="transparent" spacious contentStyle={styles.navBarContentStyle}
-            actionComponent={<IconButton
-                name="save-outline"
-                sizeType="normal"
-                color={sheetChanged ? colors.primary : colors.text}
-                opacity={sheetChanged ? 1 : 0.6}
-                onPress={async () => {
-                    if (sheetChanged && isReady && !isSaving) {
+            actions={[{
+                icon: "save-outline",
+                accessibilityLabel: t("common.save"),
+                disabled: !canSave,
+                onPress: async () => {
+                    if (canSave) {
                         await saveEditingMusicSheetWithFeedback();
                     }
-                }}
-            />}
+                },
+            }]}
         >
             {tabs.map((tab, index) => (
                 <Fragment key={tab.key}>
