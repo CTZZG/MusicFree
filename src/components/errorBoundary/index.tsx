@@ -1,10 +1,10 @@
 import React, { Component, ReactNode, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Image, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Platform } from "react-native";
 import DeviceInfo from "react-native-device-info";
 import useColors from "@/hooks/useColors";
 import rpx from "@/utils/rpx";
 import LinkText from "@/components/base/linkText";
-import { ImgAsset } from "@/constants/assetsConst";
+import { PROJECT_URL } from "@/constants/projectLinks";
 import ThemeText from "@/components/base/themeText";
 import telemetry from "@/core/telemetry";
 
@@ -222,21 +222,21 @@ function ErrorFallback({ error, errorInfo }: ErrorFallbackProps) {
                     </ThemeText>
                     
                     <View style={styles.feedbackOptions}>
-                        {/* GitHub Issue */}
+                        {/* 本仓库没有开 Issues，反馈入口放项目主页；这是 MusicFree 的修改版，不要引到原作者那里 */}
                         <View style={[styles.feedbackItem, { backgroundColor: colors.card, borderColor: colors.divider }]}>
                             <ThemeText 
                                 fontSize="content" 
                                 fontWeight="medium"
                                 style={[styles.feedbackLabel, { color: colors.text }]}
                             >
-                                📝 GitHub Issues (推荐):
+                                📝 项目主页 (GitHub):
                             </ThemeText>
                             <LinkText 
                                 fontSize="content"
-                                linkTo="https://github.com/maotoumao/MusicFree/issues"
+                                linkTo={PROJECT_URL}
                                 style={styles.link}
                             >
-                                https://github.com/maotoumao/MusicFree/issues
+                                {PROJECT_URL}
                             </LinkText>
                             <ThemeText 
                                 fontSize="description" 
@@ -244,30 +244,6 @@ function ErrorFallback({ error, errorInfo }: ErrorFallbackProps) {
                             >
                                 点击链接或复制粘贴到浏览器打开
                             </ThemeText>
-                        </View>
-
-                        {/* 微信公众号 */}
-                        <View style={[styles.feedbackItem, { backgroundColor: colors.card, borderColor: colors.divider }]}>
-                            <ThemeText 
-                                fontSize="content" 
-                                fontWeight="medium"
-                                style={[styles.feedbackLabel, { color: colors.text }]}
-                            >
-                                💬 微信公众号【一只猫头猫】:
-                            </ThemeText>
-                            <View style={styles.qrCodeContainer}>
-                                <Image 
-                                    source={ImgAsset.wechatChannel} 
-                                    style={styles.qrCode}
-                                    resizeMode="contain"
-                                />
-                                <ThemeText 
-                                    fontSize="description" 
-                                    style={[styles.qrCodeHint, { color: colors.textSecondary }]}
-                                >
-                                    扫描二维码关注公众号反馈
-                                </ThemeText>
-                            </View>
                         </View>
                     </View>
                 </View>
@@ -375,18 +351,6 @@ const styles = StyleSheet.create({
     },
     link: {
         lineHeight: rpx(36),
-    },
-    qrCodeContainer: {
-        alignItems: "center",
-        gap: rpx(16),
-    },
-    qrCode: {
-        width: rpx(300),
-        height: rpx(300),
-        borderRadius: rpx(12),
-    },
-    qrCodeHint: {
-        textAlign: "center",
     },
     bottomTip: {
         alignItems: "center",
