@@ -308,7 +308,14 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     @ReactMethod
     fun setLiveUpdateLyricEnabled(enabled: Boolean, promise: Promise) {
         try {
-            MpvServiceBridge.service?.onLiveUpdateLyricEnabledChanged(enabled)
+            // 播放服务还没起来（刚启动、还没播放）时也记下开关：第一次发播放通知
+            // 就用对的样式，不会先发媒体样式、第一句歌词来了再换
+            val service = MpvServiceBridge.service
+            if (service != null) {
+                service.onLiveUpdateLyricEnabledChanged(enabled)
+            } else {
+                MpvServiceBridge.liveUpdateLyric.setEnabled(enabled)
+            }
             if (enabled) {
                 MpvServiceBridge.service?.onMediaNotificationLyricChanged(null)
             } else {

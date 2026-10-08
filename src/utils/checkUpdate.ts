@@ -2,10 +2,11 @@ import { compare, validate } from "compare-versions";
 import DeviceInfo from "react-native-device-info";
 import { validateRemoteNetworkUrl } from "./remoteNetworkPolicy";
 import { createRestrictedHttpClient } from "./restrictedHttpClient";
+import { PROJECT_REPO } from "@/constants/projectLinks";
 
 // 本分支的版本只发布在这个仓库的 GitHub Releases 上。上游的 version.json
 // 不会提示本分支的版本，以前的“检查更新”因此形同虚设。
-const RELEASE_REPO = "CTZZG/MusicFree";
+const RELEASE_REPO = PROJECT_REPO;
 const LATEST_RELEASE_API = `https://api.github.com/repos/${RELEASE_REPO}/releases/latest`;
 // api.github.com 连不上时的后备：jsDelivr 只能告诉我们最新的版本号，
 // 下载就指向那个版本的发布页面

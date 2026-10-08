@@ -5,9 +5,12 @@ on:
         paths:
             - 'android/app/src/main/java/fun/upup/musicfree/network/**'
             - 'android/app/src/test/java/fun/upup/musicfree/network/**'
-            - 'android/app/src/androidTest/java/fun/upup/musicfree/network/**'
+            - 'android/app/src/androidTest/**'
+            # 播放服务发的通知（Live Update 样式）也在这里的 Android 16 模拟器上测
+            - 'android/app/src/main/java/fun/upup/musicfree/mpvplayer/**'
+            - 'android/app/src/main/java/fun/upup/musicfree/lyricUtil/**'
             - 'src/components/base/appBar.tsx'
-            - 'src/pages/setting/settingTypes/pluginSetting/index.tsx'
+            - 'src/pages/setting/settingTypes/pluginSetting/**'
             - 'e2e/flows/plugin-*.yaml'
             - 'e2e/proxy-subscription-check.sh'
             - '.github/workflows/proxy-subscription-check.yml'

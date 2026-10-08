@@ -36,9 +36,9 @@ jest.mock("react-native-reanimated", () => {
 });
 jest.mock("../portal", () => ({ __esModule: true, default: ({ children }: any) => children }));
 jest.mock("../statusBar", () => ({ __esModule: true, default: () => null }));
-jest.mock("../iconButton", () => ({
+jest.mock("../icon", () => ({
     __esModule: true,
-    default: (props: any) => require("react").createElement("menu-icon", props),
+    default: () => null,
 }));
 jest.mock("../themeText", () => ({
     __esModule: true,
@@ -67,7 +67,7 @@ describe("AppBar menu navigation", () => {
             </AppBar>);
         });
         act(() => {
-            renderer.root.find(node => (node.type as unknown) === "menu-icon" && node.props.accessibilityLabel === "ellipsis-vertical").props.onPress();
+            openMenu();
         });
     });
 
@@ -75,6 +75,11 @@ describe("AppBar menu navigation", () => {
         act(() => renderer.unmount());
         jest.useRealTimers();
     });
+
+    // 导航栏按钮是一层 Pressable，图标在里面
+    function openMenu() {
+        renderer.root.find(node => node.props.accessibilityLabel === "ellipsis-vertical" && typeof node.props.onPress === "function").props.onPress();
+    }
 
     function selectSubscription() {
         act(() => renderer.root.find(node => (node.type as unknown) === "menu-item").props.onPress());
@@ -100,7 +105,7 @@ describe("AppBar menu navigation", () => {
     it("cancels a pending action when the menu is reopened", () => {
         const closing = selectSubscription();
         act(() => {
-            renderer.root.find(node => (node.type as unknown) === "menu-icon" && node.props.accessibilityLabel === "ellipsis-vertical").props.onPress();
+            openMenu();
         });
         act(() => closing.finish?.(true));
         expect(action).not.toHaveBeenCalled();
@@ -116,7 +121,7 @@ describe("AppBar menu navigation", () => {
     it("does not let a late close callback consume a newer menu selection", () => {
         const previousClose = selectSubscription();
         act(() => {
-            renderer.root.find(node => (node.type as unknown) === "menu-icon" && node.props.accessibilityLabel === "ellipsis-vertical").props.onPress();
+            openMenu();
         });
         const currentClose = selectSubscription();
         act(() => previousClose.finish?.(true));

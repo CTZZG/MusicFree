@@ -11,14 +11,14 @@ import { trace } from "@/utils/log";
 import Toast from "@/utils/toast";
 import { useNavigation } from "@react-navigation/native";
 import Config from "@/core/appConfig";
-import Empty from "@/components/base/empty";
 import HorizontalSafeAreaView from "@/components/base/horizontalSafeAreaView.tsx";
 import { showDialog } from "@/components/dialogs/useDialog";
 import { showPanel } from "@/components/panels/usePanel";
 import AppBar from "@/components/base/appBar";
-import Fab from "@/components/base/fab";
+import { GroupedRow, GroupedSection } from "@/components/base/groupedList";
+import ThemeText from "@/components/base/themeText";
+import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
 import PluginItem from "../components/pluginItem";
-import { IIconName } from "@/components/base/icon.tsx";
 import { IInstallPluginResult } from "@/types/core/pluginManager";
 import { useI18N } from "@/core/i18n";
 import {
@@ -38,11 +38,14 @@ import Clipboard from "@react-native-clipboard/clipboard";
 import { ScrollView } from "react-native-gesture-handler";
 import Paragraph from "@/components/base/paragraph";
 
-interface IOption {
-    icon: IIconName;
-    title: string;
-    onPress?: () => void;
-}
+// iOS 系统色图标块，和设置页一致
+const TINT = {
+    indigo: "#5856D6",
+    gray: "#8E8E93",
+    purple: "#AF52DE",
+    blue: "#007AFF",
+    green: "#34C759",
+};
 
 export default function PluginList() {
     const plugins = useSortedPlugins();
@@ -79,84 +82,53 @@ export default function PluginList() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pluginRevision, diagnosticRevision]);
 
-    const menuOptions = useMemo<IOption[]>(() => [
-        {
-            icon: "bookmark-square",
-            title: t("pluginSetting.menu.subscriptionSetting"),
-            async onPress() {
-                navigator.navigate("/pluginsetting/subscribe");
-            },
-        },
-        {
-            icon: "bars-3",
-            title: t("pluginSetting.menu.sort"),
-            onPress() {
-                navigator.navigate("/pluginsetting/sort");
-            },
-        },
-        {
-            icon: "javascript",
-            title: t("lxSource.title"),
-            onPress() {
-                navigator.navigate("/pluginsetting/lx-source");
-            },
-        },
-        {
-            // 诊断数据一直在写 MMKV，但此前没有任何界面能读出来——
-            // buildPluginDiagnosticReport 写好却从未被调用。结果插件安装/挂载
-            // 失败时只能看到一句被截断的 message，真实异常与堆栈位置无从获取。
-            icon: "document-outline",
+    const bottomInset = Math.max(useMusicBarFloatingOffset(24), 32);
+
+    // 诊断数据一直在写 MMKV，但此前没有任何界面能读出来——
+    // buildPluginDiagnosticReport 写好却从未被调用。结果插件安装/挂载
+    // 失败时只能看到一句被截断的 message，真实异常与堆栈位置无从获取。
+    function onCopyDiagnosticsClick() {
+        const report = buildPluginDiagnosticReport(plugins ?? []);
+        showDialog("SimpleDialog", {
             title: t("pluginSetting.menu.copyDiagnostics"),
-            onPress() {
-                const report = buildPluginDiagnosticReport(plugins ?? []);
-                showDialog("SimpleDialog", {
-                    title: t("pluginSetting.menu.copyDiagnostics"),
-                    content: (
-                        <ScrollView>
-                            <Paragraph>{report}</Paragraph>
-                        </ScrollView>
-                    ),
-                    cancelText: t("dialog.errorLogKnow"),
-                    okText: t("dialog.errorLogCopy"),
-                    onOk() {
-                        Clipboard.setString(report);
-                        Toast.success(t("toast.copiedToClipboard"));
-                    },
-                });
+            content: (
+                <ScrollView>
+                    <Paragraph>{report}</Paragraph>
+                </ScrollView>
+            ),
+            cancelText: t("dialog.errorLogKnow"),
+            okText: t("dialog.errorLogCopy"),
+            onOk() {
+                Clipboard.setString(report);
+                Toast.success(t("toast.copiedToClipboard"));
             },
-        },
-        {
-            icon: "document-outline",
-            title: t("pluginSetting.menu.clearDiagnostics"),
-            onPress() {
-                const cleared = clearPluginDiagnosticEvents();
-                setDiagnosticRevision(revision => revision + 1);
-                Toast.success(
-                    t("pluginSetting.menu.clearDiagnosticsDone", {
-                        count: String(cleared),
-                    }),
-                );
-            },
-        },
-        {
-            icon: "trash-outline",
+        });
+    }
+
+    function onClearDiagnosticsClick() {
+        const cleared = clearPluginDiagnosticEvents();
+        setDiagnosticRevision(revision => revision + 1);
+        Toast.success(
+            t("pluginSetting.menu.clearDiagnosticsDone", {
+                count: String(cleared),
+            }),
+        );
+    }
+
+    function onUninstallAllClick() {
+        showDialog("SimpleDialog", {
             title: t("pluginSetting.menu.uninstallAll"),
-            onPress() {
-                showDialog("SimpleDialog", {
-                    title: t("pluginSetting.menu.uninstallAll"),
-                    content: t("pluginSetting.menu.uninstallAllContent"),
-                    async onOk() {
-                        setLoading(true);
-                        try {
-                            await PluginManager.uninstallAllPlugins();
-                        } finally {
-                            setLoading(false);
-                        }
-                    },
-                });
+            content: t("pluginSetting.menu.uninstallAllContent"),
+            async onOk() {
+                setLoading(true);
+                try {
+                    await PluginManager.uninstallAllPlugins();
+                } finally {
+                    setLoading(false);
+                }
             },
-        },
-    ], [navigator, t]);
+        });
+    }
 
     const renderPluginItem = useCallback(
         ({ item }: { item: Plugin }) => (
@@ -448,81 +420,159 @@ export default function PluginList() {
         }
     }
 
+    // 右上角的 + 只管安装；更新、订阅、排序这些常用入口直接放在页面上，
+    // 不再藏进右上角的 ⋮ 菜单和右下角的悬浮按钮
+    function onInstallClick() {
+        showPanel("SimpleSelect", {
+            header: t("pluginSetting.menu.installPlugin"),
+            candidates: [
+                {
+                    value: "local",
+                    title: t("pluginSetting.fabOptions.installFromLocal"),
+                },
+                {
+                    value: "network",
+                    title: t("pluginSetting.fabOptions.installFromNetwork"),
+                },
+                {
+                    value: "lx",
+                    title: t("pluginSetting.fabOptions.importLxSource"),
+                },
+            ],
+            onPress(item) {
+                if (item.value === "local") {
+                    onInstallFromLocalClick();
+                } else if (item.value === "network") {
+                    onInstallFromNetworkClick();
+                } else if (item.value === "lx") {
+                    onInstallLxSourceClick();
+                }
+            },
+        });
+    }
+
+    const hasPlugins = (plugins?.length ?? 0) > 0;
+
+    const listHeader = (
+        <View>
+            <GroupedSection dividerInset={58}>
+                <GroupedRow
+                    icon="bookmark-square"
+                    iconTint={TINT.indigo}
+                    title={t("pluginSetting.menu.subscriptionSetting")}
+                    accessory="chevron"
+                    onPress={() => navigator.navigate("/pluginsetting/subscribe")}
+                />
+                <GroupedRow
+                    icon="bars-3"
+                    iconTint={TINT.gray}
+                    title={t("pluginSetting.menu.sort")}
+                    accessory="chevron"
+                    onPress={() => navigator.navigate("/pluginsetting/sort")}
+                />
+                <GroupedRow
+                    icon="javascript"
+                    iconTint={TINT.purple}
+                    title={t("lxSource.title")}
+                    accessory="chevron"
+                    onPress={() => navigator.navigate("/pluginsetting/lx-source")}
+                />
+            </GroupedSection>
+            <GroupedSection
+                dividerInset={58}
+                footer={t("pluginSetting.updateFooter")}>
+                <GroupedRow
+                    icon="arrow-down-tray"
+                    iconTint={TINT.blue}
+                    title={t("pluginSetting.fabOptions.updateSubscription")}
+                    onPress={onSubscribeClick}
+                />
+                <GroupedRow
+                    icon="arrow-path"
+                    iconTint={TINT.green}
+                    title={t("pluginSetting.fabOptions.updateAllPlugins")}
+                    onPress={onUpdateAllClick}
+                />
+            </GroupedSection>
+            {hasPlugins ? (
+                <ThemeText
+                    accessibilityRole="header"
+                    fontSize="description"
+                    fontColor="textSecondary"
+                    style={style.sectionTitle}>
+                    {t("pluginSetting.section.installed")}
+                </ThemeText>
+            ) : null}
+        </View>
+    );
+
+    const listFooter = (
+        <View style={{ paddingBottom: bottomInset }}>
+            <GroupedSection title={t("pluginSetting.section.diagnostics")}>
+                <GroupedRow
+                    title={t("pluginSetting.menu.copyDiagnostics")}
+                    onPress={onCopyDiagnosticsClick}
+                />
+                <GroupedRow
+                    title={t("pluginSetting.menu.clearDiagnostics")}
+                    onPress={onClearDiagnosticsClick}
+                />
+            </GroupedSection>
+            {hasPlugins ? (
+                <GroupedSection>
+                    <GroupedRow
+                        title={t("pluginSetting.menu.uninstallAll")}
+                        destructive
+                        onPress={onUninstallAllClick}
+                    />
+                </GroupedSection>
+            ) : null}
+        </View>
+    );
+
+    // 标题栏也放在让开左右安全区的容器里：横屏时右上角的 + 不落进系统栏、挖孔
     return (
-        <>
-            <AppBar backgroundColor="transparent" spacious menu={menuOptions}>
+        <HorizontalSafeAreaView style={style.wrapper}>
+            <AppBar
+                backgroundColor="transparent"
+                spacious
+                actions={[
+                    {
+                        icon: "plus",
+                        accessibilityLabel: t("pluginSetting.menu.installPlugin"),
+                        onPress: onInstallClick,
+                    },
+                ]}>
                 {t("sidebar.pluginManagement")}
             </AppBar>
-            <HorizontalSafeAreaView style={style.wrapper}>
-                <>
-                    {loading ? (
-                        <Loading />
-                    ) : (
-                        <FlashList
-                            style={style.list}
-                            ListEmptyComponent={Empty}
-                            ListFooterComponent={PluginListFooter}
-                            data={plugins ?? []}
-                            drawDistance={rpx(320)}
-                            keyExtractor={keyExtractor}
-                            renderItem={renderPluginItem}
-                        />
-                    )}
-
-                    <Fab
-                        icon="plus"
-                        accessibilityLabel={t("common.add")}
-                        onPress={() => {
-                            showPanel("SimpleSelect", {
-                                header: t("pluginSetting.menu.installPlugin"),
-                                candidates: [
-                                    {
-                                        value: "从本地安装插件",
-                                        title: t("pluginSetting.fabOptions.installFromLocal"),
-                                    },
-                                    {
-                                        value: "从网络安装插件",
-                                        title: t("pluginSetting.fabOptions.installFromNetwork"),
-                                    },
-                                    {
-                                        value: "导入LX自定义源",
-                                        title: t("pluginSetting.fabOptions.importLxSource"),
-                                    },
-                                    {
-                                        value: "更新全部插件",
-                                        title: t("pluginSetting.fabOptions.updateAllPlugins"),
-                                    },
-                                    {
-                                        value: "更新订阅",
-                                        title: t("pluginSetting.fabOptions.updateSubscription"),
-                                    },
-                                ],
-                                onPress(item) {
-                                    if (item.value === "从本地安装插件") {
-                                        onInstallFromLocalClick();
-                                    } else if (
-                                        item.value === "从网络安装插件"
-                                    ) {
-                                        onInstallFromNetworkClick();
-                                    } else if (item.value === "导入LX自定义源") {
-                                        onInstallLxSourceClick();
-                                    } else if (item.value === "更新订阅") {
-                                        onSubscribeClick();
-                                    } else if (item.value === "更新全部插件") {
-                                        onUpdateAllClick();
-                                    }
-                                },
-                            });
-                        }}
-                    />
-                </>
-            </HorizontalSafeAreaView>
-        </>
+            {loading ? (
+                <Loading />
+            ) : (
+                <FlashList
+                    style={style.list}
+                    ListHeaderComponent={listHeader}
+                    ListEmptyComponent={PluginListEmpty}
+                    ListFooterComponent={listFooter}
+                    data={plugins ?? []}
+                    drawDistance={rpx(320)}
+                    keyExtractor={keyExtractor}
+                    renderItem={renderPluginItem}
+                />
+            )}
+        </HorizontalSafeAreaView>
     );
 }
 
-function PluginListFooter() {
-    return <View style={style.blank} />;
+function PluginListEmpty() {
+    const { t } = useI18N();
+    return (
+        <ThemeText
+            fontSize="description"
+            fontColor="textSecondary"
+            style={style.emptyHint}>
+            {t("pluginSetting.empty")}
+        </ThemeText>
+    );
 }
 
 const style = StyleSheet.create({
@@ -533,7 +583,14 @@ const style = StyleSheet.create({
     list: {
         flex: 1,
     },
-    blank: {
-        height: rpx(200),
+    sectionTitle: {
+        marginTop: 22,
+        marginHorizontal: 32,
+        marginBottom: 1,
+    },
+    emptyHint: {
+        marginTop: 28,
+        marginHorizontal: 32,
+        textAlign: "center",
     },
 });

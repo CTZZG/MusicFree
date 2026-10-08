@@ -71,6 +71,25 @@ export interface ILanguageData {
     "settingsHome.section.pluginsAndData": string; // 设置页分组：插件与数据
     "settingsHome.pluginCount": string; // 设置页：已安装插件数量
     "settingsHome.scheduleClose.off": string; // 设置页：定时关闭未开启
+    "about.versionLine": string; // 关于页：版本与构建号
+    "about.checkUpdate": string; // 关于页：检查更新
+    "about.releases": string; // 关于页：本仓库的历史版本（GitHub Releases）
+    "about.sourceCode": string; // 关于页：本仓库的源代码
+    "about.section.credits": string; // 关于页分组：致谢
+    "about.upstreamAuthor": string; // 关于页：上游 MusicFree 的作者
+    "about.licenseNotice": string; // 关于页：修改版与开源协议声明
+    "about.section.build": string; // 关于页分组：构建信息
+    "about.build.version": string; // 关于页：构建版本
+    "about.build.commit": string; // 关于页：构建所用的提交
+    "about.build.date": string; // 关于页：构建时间
+    "about.build.signing": string; // 关于页：安装包签名
+    "about.build.signed": string; // 关于页：已用发布密钥签名
+    "about.build.unsigned": string; // 关于页：未签名
+    "about.build.player": string; // 关于页：播放内核
+    "about.build.runtime": string; // 关于页：主要依赖版本
+    "about.build.run": string; // 关于页：打开构建记录
+    "about.build.copy": string; // 关于页：复制构建信息
+    "about.pluginNotice": string; // 关于页：插件说明
 
     // 检查更新相关
     "checkUpdate.error.latestVersion": string; // 当前已是最新版本
@@ -672,6 +691,10 @@ export interface ILanguageData {
     "pluginSetting.menu.installPluginDialogPlaceholder": string; // 插件安装对话框占位符
     "pluginSetting.menu.pluginInstallFailedDialogTitle": string; // 插件安装失败对话框标题
     "pluginSetting.menu.pluginUpdateFailedDialogTitle": string; // 插件更新失败对话框标题
+    "pluginSetting.section.installed": string; // 插件管理分组：已安装的插件
+    "pluginSetting.section.diagnostics": string; // 插件管理分组：诊断
+    "pluginSetting.updateFooter": string; // 插件管理：两种更新的说明
+    "pluginSetting.empty": string; // 插件管理：还没有插件时的提示
     "pluginSetting.fabOptions.installFromLocal": string; // 从本地安装
     "pluginSetting.fabOptions.installFromNetwork": string; // 从网络安装
     "pluginSetting.fabOptions.importLxSource": string; // 导入 LX 自定义源

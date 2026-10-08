@@ -1,6 +1,8 @@
 import React, { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
+    LayoutChangeEvent,
     LayoutRectangle,
+    Pressable,
     StatusBar as OriginalStatusBar,
     StyleProp,
     StyleSheet,
@@ -11,7 +13,8 @@ import {
 import useColors from "@/hooks/useColors";
 import StatusBar from "./statusBar";
 import color from "color";
-import IconButton from "./iconButton";
+import Icon from "./icon";
+import { iconSizeConst } from "@/constants/uiConst";
 import globalStyle from "@/constants/globalStyle";
 import ThemeText from "./themeText";
 import { useNavigation, useTheme } from "@react-navigation/native";
@@ -75,6 +78,47 @@ const BAR_HEIGHT = 48;
 const SPACIOUS_BAR_HEIGHT = 56;
 const BAR_BUTTON_SIZE = 44;
 const MIN_TITLE_INSET = 52;
+// 导航栏左右的内边距；居中标题两侧的留白要算上它，否则长标题会贴到按钮上
+const BAR_PADDING = 4;
+const SPACIOUS_BAR_PADDING = 8;
+
+interface IBarButtonProps {
+    icon: IIconName;
+    sizeType?: keyof typeof iconSizeConst;
+    tint: string;
+    onPress?: () => void;
+    onLayout?: (event: LayoutChangeEvent) => void;
+    accessibilityLabel: string;
+}
+
+/**
+ * 导航栏按钮：44 宽、和导航栏一样高的点击区域，图标居中。
+ * 不能直接把 SVG 图标当按钮：react-native-svg 会把图标自身的宽高写在样式最后，
+ * 给的 44 宽被盖掉，能点的只剩图标那么大（22 或 31），⋮、+、返回都很难点中。
+ */
+function BarButton(props: IBarButtonProps) {
+    const {
+        icon,
+        sizeType = "normal",
+        tint,
+        onPress,
+        onLayout,
+        accessibilityLabel,
+    } = props;
+    return (
+        <Pressable
+            onPress={onPress}
+            onLayout={onLayout}
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}
+            style={({ pressed }) => [
+                styles.barButton,
+                pressed ? styles.barButtonPressed : null,
+            ]}>
+            <Icon name={icon} size={iconSizeConst[sizeType]} color={tint} />
+        </Pressable>
+    );
+}
 
 /**
  * iOS 风格导航栏：底色与页面一致，返回与操作按钮用强调色，
@@ -123,7 +167,11 @@ export default function AppBar(props: IAppBarProps) {
     const menuOnLeft = hasMenu && menuPosition === "left";
     const transparentSurface = spacious && bgColor === "transparent";
     const centeredTitle = typeof children === "string";
-    const titleInset = Math.max(MIN_TITLE_INSET, leftWidth, rightWidth);
+    const titleInset = Math.max(
+        MIN_TITLE_INSET,
+        (spacious ? SPACIOUS_BAR_PADDING : BAR_PADDING) +
+            Math.max(leftWidth, rightWidth),
+    );
 
     const finishMenuClose = useCallback((generation: number) => {
         const pending = pendingMenuAction.current;
@@ -169,12 +217,10 @@ export default function AppBar(props: IAppBarProps) {
                 setRightWidth(evt.nativeEvent.layout.width);
             }}>
             {actions.map((action, index) => (
-                <IconButton
+                <BarButton
                     key={index}
-                    name={action.icon}
-                    sizeType="normal"
-                    color={tintColor}
-                    style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                    icon={action.icon}
+                    tint={tintColor}
                     onPress={action.onPress}
                     accessibilityLabel={
                         action.accessibilityLabel ?? action.icon
@@ -183,14 +229,12 @@ export default function AppBar(props: IAppBarProps) {
             ))}
             {actionComponent ?? null}
             {hasMenu && !menuOnLeft ? (
-                <IconButton
-                    name={menuIcon}
-                    sizeType="normal"
+                <BarButton
+                    icon={menuIcon}
                     onLayout={evt => {
                         setMenuIconLayout(evt.nativeEvent.layout);
                     }}
-                    color={tintColor}
-                    style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                    tint={tintColor}
                     onPress={() => {
                         setShowMenu(true);
                     }}
@@ -228,25 +272,22 @@ export default function AppBar(props: IAppBarProps) {
                             setLeftWidth(evt.nativeEvent.layout.width);
                         }}>
                         {menuOnLeft ? (
-                            <IconButton
-                                name={menuIcon}
-                                sizeType="normal"
+                            <BarButton
+                                icon={menuIcon}
                                 onLayout={evt => {
                                     setMenuIconLayout(evt.nativeEvent.layout);
                                 }}
-                                color={tintColor}
-                                style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                                tint={tintColor}
                                 onPress={() => {
                                     setShowMenu(true);
                                 }}
                                 accessibilityLabel={menuIcon}
                             />
                         ) : hideBackButton ? null : (
-                            <IconButton
-                                name="chevron-left"
+                            <BarButton
+                                icon="chevron-left"
                                 sizeType="big"
-                                color={tintColor}
-                                style={[globalStyle.noShrinkNoGrow, styles.barButton]}
+                                tint={tintColor}
                                 onPress={
                                     onBackPress ||
                                     (() => {
@@ -377,7 +418,7 @@ const styles = StyleSheet.create({
         height: BAR_HEIGHT,
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 4,
+        paddingHorizontal: BAR_PADDING,
     },
     buttonGroup: {
         height: "100%",
@@ -386,7 +427,13 @@ const styles = StyleSheet.create({
     },
     barButton: {
         width: BAR_BUTTON_SIZE,
-        textAlign: "center",
+        height: "100%",
+        flexShrink: 0,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    barButtonPressed: {
+        opacity: 0.4,
     },
     content: {
         flexDirection: "row",
@@ -406,7 +453,7 @@ const styles = StyleSheet.create({
     },
     spaciousContainer: {
         height: SPACIOUS_BAR_HEIGHT,
-        paddingHorizontal: 8,
+        paddingHorizontal: SPACIOUS_BAR_PADDING,
     },
     spaciousContent: {
         paddingHorizontal: 12,

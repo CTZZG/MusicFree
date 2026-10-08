@@ -22,10 +22,7 @@ appId: fun.upup.musicfree
     direction: DOWN
     timeout: 15000
 - tapOn: "插件管理"
-- extendedWaitUntil:
-    visible: "ellipsis-vertical"
-    timeout: 15000
-- tapOn: "ellipsis-vertical"
+# 订阅设置是插件管理页上的一行，不在右上角菜单里
 - extendedWaitUntil:
     visible: "订阅设置"
-    timeout: 10000
+    timeout: 15000
