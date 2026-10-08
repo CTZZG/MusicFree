@@ -66,13 +66,13 @@ class LiveUpdateNotificationStyleTest {
             service.onLiveUpdateLyricChanged("屋顶灰色瓦片 安静的画面")
         }
         awaitNotification("first lyric line") {
-            it.template() == PROGRESS_STYLE && it.title() == "屋顶灰色瓦片 安静的画面"
+            it.template() == PROGRESS_STYLE && it.title() == "屋顶灰色瓦片 安静的画面" && it.playing()
         }.also(::assertActionIconsCarryThePackage)
 
         // 间奏：JS 清掉这一句。仍是 Live Update，标题换回歌名
         instrumentation.runOnMainSync { service.onLiveUpdateLyricChanged(null) }
         awaitNotification("lyric cleared") {
-            it.template() == PROGRESS_STYLE && it.title() == "大城小爱"
+            it.template() == PROGRESS_STYLE && it.title() == "大城小爱" && it.playing()
         }.also(::assertActionIconsCarryThePackage)
 
         // 换歌：新的一首还没有歌词，也不换样式
@@ -98,13 +98,14 @@ class LiveUpdateNotificationStyleTest {
         MpvServiceBridge.liveUpdateLyric.setEnabled(true)
         var service = bindPlaybackService()
 
-        // 第一首完全没有歌词：第一条通知就是 Live Update，标题是歌名
+        // 第一首完全没有歌词：第一条通知就是 Live Update，标题是歌名。
+        // 换歌那一下先发一条还没开始播的（按钮是“播放”），要等到播放中的那条
         instrumentation.runOnMainSync {
             service.onMetadataChanged("没有歌词的歌", "歌手", "专辑", null, 200.0)
             service.onPlaybackStateChanged("playing")
         }
         awaitNotification("first song without lyrics") {
-            it.template() == PROGRESS_STYLE && it.title() == "没有歌词的歌"
+            it.template() == PROGRESS_STYLE && it.title() == "没有歌词的歌" && it.playing()
         }.also(::assertActionIconsCarryThePackage)
 
         // 播放服务被系统回收后重建：开关还在，新服务的第一条通知仍是 Live Update
@@ -118,7 +119,7 @@ class LiveUpdateNotificationStyleTest {
             service.onPlaybackStateChanged("playing")
         }
         awaitNotification("first song after the service is rebuilt") {
-            it.template() == PROGRESS_STYLE && it.title() == "重建后的歌"
+            it.template() == PROGRESS_STYLE && it.title() == "重建后的歌" && it.playing()
         }
 
         // 关掉再打开：换回媒体样式，再回到 Live Update，歌词照常显示
@@ -202,6 +203,10 @@ class LiveUpdateNotificationStyleTest {
 
     private fun Notification.title(): String? =
         extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+
+    /** 播放中：中间的按钮是“暂停” */
+    private fun Notification.playing(): Boolean =
+        actions?.getOrNull(1)?.title?.toString() == "暂停"
 
     private companion object {
         // MpvPlaybackService.NOTIFICATION_ID
