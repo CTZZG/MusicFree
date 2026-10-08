@@ -61,6 +61,7 @@ class MpvPlaybackService : Service() {
         private const val TRUNCATION_MARK = "…"
         private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
         private const val MAX_ARTWORK_DECODE_SIZE = 512
+        private const val LIVE_UPDATE_LARGE_ICON_SIZE = 256
         private const val MAX_ARTWORK_DOWNLOAD_BYTES = 8 * 1024 * 1024
         private const val WAKE_LOCK_TAG = "MusicFree:MpvPlayback"
 
@@ -132,8 +133,11 @@ class MpvPlaybackService : Service() {
     private var cachedAlbum = ""
     private var cachedArtwork: String? = null
     private var cachedArtworkBitmap: Bitmap? = null
+    // Live Update 通知每秒重发一次（进度），封面不能每次都缩一遍、按 512 像素整张
+    // 传给系统：封面到了就缩好两份留着，大图 256、胶囊里的小图 128
+    private var liveUpdateLargeIcon: Bitmap? = null
+    private var liveUpdateSmallIcon: Icon? = null
     private var cachedMediaNotificationLyric = ""
-    private var cachedLiveUpdateLyric = ""
     private var cachedDuration = 0L
     private var cachedPosition = 0L
     private var cachedBufferedPosition = 0L
@@ -268,9 +272,9 @@ class MpvPlaybackService : Service() {
             cachedPosition = 0L
             cachedBufferedPosition = 0L
             cachedPositionUpdatedAtMs = System.currentTimeMillis()
-            cachedArtworkBitmap = null
+            setArtworkBitmap(null)
             cachedMediaNotificationLyric = ""
-            cachedLiveUpdateLyric = ""
+            MpvServiceBridge.liveUpdateLyric.clearLyric()
         }
 
         updateMediaSessionMetadata()
@@ -365,35 +369,24 @@ class MpvPlaybackService : Service() {
     }
 
     fun onLiveUpdateLyricEnabledChanged(enabled: Boolean) {
-        if (MpvServiceBridge.useLiveUpdateLyricNotification == enabled) return
-        MpvServiceBridge.useLiveUpdateLyricNotification = enabled
+        if (!MpvServiceBridge.liveUpdateLyric.setEnabled(enabled)) return
         if (enabled) {
             cachedMediaNotificationLyric = ""
             updateMediaSessionMetadata()
-        } else {
-            cachedLiveUpdateLyric = ""
         }
         updateNotification()
     }
 
+    /**
+     * JS 发来 Live Update 的当前这句；空的或 null 表示这会儿没有歌词（前奏、间奏、
+     * 换歌）。没有歌词时通知标题换回歌名，仍是 Live Update 样式：以前在这里切回
+     * 媒体样式，同一条通知来回换样式，荣耀的实况卡片会留下一大块空白。
+     */
     fun onLiveUpdateLyricChanged(lyric: String?): Boolean {
-        val nextLyric = lyric?.trim().orEmpty()
-        val previousLiveUpdateEnabled = MpvServiceBridge.useLiveUpdateLyricNotification
-        if (nextLyric.isNotEmpty()) {
-            MpvServiceBridge.useLiveUpdateLyricNotification = true
-        } else {
-            MpvServiceBridge.useLiveUpdateLyricNotification = false
-        }
-        val liveUpdateEnabledChanged =
-            previousLiveUpdateEnabled != MpvServiceBridge.useLiveUpdateLyricNotification
-        if (
-            !liveUpdateEnabledChanged &&
-            cachedLiveUpdateLyric == nextLyric &&
-            cachedMediaNotificationLyric.isBlank()
-        ) {
+        val changed = MpvServiceBridge.liveUpdateLyric.setLyric(lyric)
+        if (!changed && cachedMediaNotificationLyric.isBlank()) {
             return canOwnLiveUpdateNotification()
         }
-        cachedLiveUpdateLyric = nextLyric
         cachedMediaNotificationLyric = ""
         updateMediaSessionMetadata()
         updateNotification()
@@ -705,7 +698,10 @@ class MpvPlaybackService : Service() {
         }
 
         return builder.build().apply {
-            if (MpvServiceBridge.useLiveUpdateLyricNotification) {
+            // 开着 Live Update 歌词还走到媒体样式，只会是 Android 16 以下（16 及以上
+            // 用上面的进度样式）。这里照旧：有当前这句时才带荣耀的这两个标记
+            val liveUpdateLyric = MpvServiceBridge.liveUpdateLyric
+            if (liveUpdateLyric.enabled && liveUpdateLyric.lyric.isNotEmpty()) {
                 extras.putBoolean("NOT_SHOW_MEDIA_NOTIFICATION_FLG", true)
                 extras.putString("specialType", "")
             }
@@ -713,7 +709,7 @@ class MpvPlaybackService : Service() {
     }
 
     private fun shouldUseLiveUpdateNotificationStyle(): Boolean =
-        MpvServiceBridge.useLiveUpdateLyricNotification &&
+        MpvServiceBridge.liveUpdateLyric.enabled &&
             Build.VERSION.SDK_INT >= API_LIVE_UPDATE
 
     private fun canOwnLiveUpdateNotification(): Boolean =
@@ -736,9 +732,10 @@ class MpvPlaybackService : Service() {
         contentIntent: PendingIntent?,
     ): Notification {
         val notificationPosition = currentNotificationPosition()
-        val title = cachedLiveUpdateLyric.ifBlank { cachedTitle.ifBlank { "MusicFree" } }
+        val liveUpdateLyric = MpvServiceBridge.liveUpdateLyric.lyric
+        val title = liveUpdateLyric.ifBlank { cachedTitle.ifBlank { "MusicFree" } }
         val text =
-            if (cachedLiveUpdateLyric.isNotBlank()) {
+            if (liveUpdateLyric.isNotBlank()) {
                 buildTrackIdentityText()
             } else {
                 buildNotificationText()
@@ -786,17 +783,20 @@ class MpvPlaybackService : Service() {
             // 该数组形状只是线索，尚不能排除 artwork 小图标 / promoted ongoing /
             // shortCriticalText 等其它组合在特定 ROM 上的缺陷。
             .setContentIntent(contentIntent)
-            .addAction(Notification.Action.Builder(R.drawable.ic_notification_skip_previous, "上一首", prevIntent).build())
-            .addAction(Notification.Action.Builder(playIcon, playLabel, playIntent).build())
-            .addAction(Notification.Action.Builder(R.drawable.ic_notification_skip_next, "下一首", nextIntent).build())
+            // 按钮图标带上本应用的包名：按资源 ID 的旧构造函数包名是空的，
+            // 要系统界面自己补，厂商的实况卡片不一定补得上
+            .addAction(liveUpdateAction(R.drawable.ic_notification_skip_previous, "上一首", prevIntent))
+            .addAction(liveUpdateAction(playIcon, playLabel, playIntent))
+            .addAction(liveUpdateAction(R.drawable.ic_notification_skip_next, "下一首", nextIntent))
             .apply {
                 if (progressText.isNotBlank()) {
                     setSubText(progressText)
                 }
                 if (MpvServiceBridge.showStopAction) {
-                    addAction(Notification.Action.Builder(R.drawable.ic_notification_stop, "关闭", stopIntent).build())
+                    addAction(liveUpdateAction(R.drawable.ic_notification_stop, "关闭", stopIntent))
                 }
-                cachedArtworkBitmap?.let { setLiveUpdateArtworkIcons(it) }
+                liveUpdateLargeIcon?.let { setLargeIcon(it) }
+                liveUpdateSmallIcon?.let { setSmallIcon(it) }
                 requestPromotedOngoing()
                 setShortCriticalText(toChipText(title))
             }
@@ -820,15 +820,39 @@ class MpvPlaybackService : Service() {
         return this
     }
 
-    private fun Notification.Builder.setLiveUpdateArtworkIcons(bitmap: Bitmap): Notification.Builder {
-        setLargeIcon(bitmap)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                setSmallIcon(Icon.createWithBitmap(bitmap.toLiveUpdateSmallIconBitmap()))
-            } catch (_: Throwable) {
+    private fun liveUpdateAction(
+        iconRes: Int,
+        title: String,
+        intent: PendingIntent,
+    ): Notification.Action =
+        Notification.Action.Builder(Icon.createWithResource(this, iconRes), title, intent).build()
+
+    /** 封面换了：留好 Live Update 用的两份缩小图，免得每秒重发时再缩、整张传给系统 */
+    private fun setArtworkBitmap(bitmap: Bitmap?) {
+        cachedArtworkBitmap = bitmap
+        liveUpdateLargeIcon = bitmap?.let { it.scaledToMaxSide(LIVE_UPDATE_LARGE_ICON_SIZE) }
+        liveUpdateSmallIcon =
+            if (bitmap != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    Icon.createWithBitmap(bitmap.toLiveUpdateSmallIconBitmap())
+                } catch (_: Throwable) {
+                    null
+                }
+            } else {
+                null
             }
-        }
-        return this
+    }
+
+    private fun Bitmap.scaledToMaxSide(maxSide: Int): Bitmap {
+        val side = max(width, height)
+        if (side <= maxSide) return this
+        val scale = maxSide.toFloat() / side.toFloat()
+        return Bitmap.createScaledBitmap(
+            this,
+            max(1, (width * scale).toInt()),
+            max(1, (height * scale).toInt()),
+            true,
+        )
     }
 
     private fun Bitmap.toLiveUpdateSmallIconBitmap(): Bitmap {
@@ -1104,7 +1128,7 @@ class MpvPlaybackService : Service() {
         val failureReason = (result as? ArtworkFetchResult.Failed)?.reason
         when (outcome) {
             ArtworkLoadTracker.Outcome.Apply -> {
-                cachedArtworkBitmap = (result as ArtworkFetchResult.Loaded).bitmap
+                setArtworkBitmap((result as ArtworkFetchResult.Loaded).bitmap)
                 recordArtworkStatus("loaded", attempt, null)
                 updateMediaSessionMetadata()
                 updateNotification()

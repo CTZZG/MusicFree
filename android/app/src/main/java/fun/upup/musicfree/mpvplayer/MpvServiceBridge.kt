@@ -41,9 +41,11 @@ object MpvServiceBridge {
     @Volatile
     var isAndroidAutoConnected: Boolean = false
 
-    /** Live Update 歌词模式下，播放服务通知切换为胶囊友好的 ProgressStyle。 */
-    @Volatile
-    var useLiveUpdateLyricNotification: Boolean = false
+    /**
+     * Live Update 歌词：开着时播放服务的通知用胶囊友好的 ProgressStyle。
+     * 开关和当前这句分开记，见 [LiveUpdateLyricState]。
+     */
+    internal val liveUpdateLyric = LiveUpdateLyricState()
 
     /**
      * 给「复制播放诊断信息」用：封面拿不到时，通知、锁屏和 Live Update 都只会
@@ -75,7 +77,8 @@ object MpvServiceBridge {
             queueSnapshot = emptyList()
             currentQueueIndex = -1
         }
-        useLiveUpdateLyricNotification = false
+        // 开关是用户设置，不随播放会话重建清掉；上一首的歌词作废
+        liveUpdateLyric.clearLyric()
         service?.onQueueSnapshotChanged()
         MpvMediaBrowserService.getInstance()?.onQueueUpdated()
     }

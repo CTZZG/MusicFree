@@ -197,8 +197,10 @@
   只改测试时可以填 `e2e_apk_run_id`，直接测以前某次 Beta 的 APK，不重新打包。结果写进运行的 Summary，截图、Maestro 日志、
   logcat 在附件里，截图和结果另外推到 `refs/e2e/latest`（不在分支列表里，每次覆盖）。
 - 代理与订阅检查（`.github/workflows/proxy-subscription-check.yml`，`e2e/proxy-subscription-check.sh`）：PR 改到原生网络层、
-  `appBar.tsx`、插件设置页或这项检查本身时，在 Android 16 模拟器上装 debug 版和测试 APK：先跑网络策略的原生测试（其中一个
-  绑定真实的 MpvPlaybackService，经系统选定的本机 HTTP 代理取封面，确认解码后进了 MediaSession），再通过 Metro 打开
+  播放服务和歌词的原生代码、原生的设备测试、`appBar.tsx`、插件设置页或这项检查本身时，在 Android 16 模拟器上装 debug 版和
+  测试 APK：先跑原生测试（网络策略；绑定真实的 MpvPlaybackService，经系统选定的本机 HTTP 代理取封面，确认解码后进了
+  MediaSession；同一个服务开着 Live Update 歌词时，当前这句变空（前奏、间奏、换歌）通知仍是进度样式、标题换回歌名，
+  只有关掉开关才换回媒体样式，按钮图标带着本应用的包名），再通过 Metro 打开
   插件管理页上的「订阅设置」进入、再返回，并录屏。转场顺不顺要看录屏，检查本身只判断能进能回。只构建 x86_64
   （`-PreactNativeArchitectures=x86_64`，APK 拆分跟着这个属性走，发行构建仍是四种 ABI）。
   debug 版的警告浮层会挡住底部标签，现在靠点屏幕上的固定位置关掉，只适用于这次的 Pixel 6 配置，以后应改成能定位的关闭操作。

@@ -353,6 +353,8 @@ class LyricManager implements IInjectable {
 
     private lyricParser: LyricParser | null = null;
     private lastNativeLyricOutputSignature = "";
+    /** 最近一次告诉原生层的 Live Update 歌词开关；undefined 表示还没同步过 */
+    private nativeLiveUpdateEnabled: boolean | undefined = undefined;
     private isPlaybackAdvancing = false;
     private lastProgressPositionMs = 0;
     private isPositionClockRunning = false;
@@ -883,6 +885,7 @@ class LyricManager implements IInjectable {
             updatedAt: Date.now(),
         };
         const previousOutput = getDefaultStore().get(nativeLyricOutputAtom);
+        this.syncNativeLiveUpdateEnabled();
         const signature = [
             this.appConfig.getConfig("lyric.showStatusBarLyric")
                 ? statusBarText
@@ -961,6 +964,22 @@ class LyricManager implements IInjectable {
             );
             LyricUtil.clearLiveUpdateLyricText?.().catch(() => undefined);
         }
+    }
+
+    /**
+     * Live Update 歌词的开关单独告诉原生层。当前这句是空的（前奏、间奏、换歌）
+     * 只是这会儿没有歌词，下面照样会清掉 Live Update 的歌词，但原生层要知道开关
+     * 还开着：播放通知继续用 Live Update 样式、标题换回歌名，不能换回媒体样式。
+     * 同一条通知来回换样式，荣耀的实况卡片会留下一大块空白。
+     */
+    private syncNativeLiveUpdateEnabled() {
+        const enabled =
+            this.appConfig.getConfig("lyric.showLiveUpdateLyric") === true;
+        if (enabled === this.nativeLiveUpdateEnabled) {
+            return;
+        }
+        this.nativeLiveUpdateEnabled = enabled;
+        LyricUtil.setLiveUpdateLyricEnabled?.(enabled).catch(() => undefined);
     }
 
     refreshNativeNotificationLyric() {
