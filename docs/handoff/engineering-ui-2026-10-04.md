@@ -284,6 +284,7 @@ Jest 167 套件、1199 项；generator 27 项；Yoga 布局 1231 项（比下表
 | [Android Release Build #270](https://github.com/CTZZG/MusicFree/actions/runs/37686725766)、[#271](https://github.com/CTZZG/MusicFree/actions/runs/37686770976) | ec2ad41 → 8cc3812 | 成功；PR #18 合并后的验证构建，以及发布 [v0.11.2](https://github.com/CTZZG/MusicFree/releases/tag/v0.11.2)（5 个 APK、构建信息、SHA256SUMS，正文与 `docs/release-notes-v0.11.2.md` 一致） |
 | [Beta #99](https://github.com/CTZZG/MusicFree/actions/runs/37738505556)、[代理与订阅检查 #12](https://github.com/CTZZG/MusicFree/actions/runs/37738508283) | f647bb4 | 成功；插件管理、关于页改版后的打包和模拟器测试，订阅设置改为点页面上的行进入／返回 |
 | [Beta #100](https://github.com/CTZZG/MusicFree/actions/runs/37742855597)、[代理与订阅检查 #13](https://github.com/CTZZG/MusicFree/actions/runs/37742852348) | 6bf82b2 | 成功；Live Update 修复：模拟器 33 项全部通过，Android 16 模拟器上 20 项原生测试（新增通知样式一项）全部通过；用户在荣耀手机上测过这一版 |
+| [Android Release Build #272](https://github.com/CTZZG/MusicFree/actions/runs/37762249583)、[#273](https://github.com/CTZZG/MusicFree/actions/runs/37762260819) | 401ada1 → a9e83f1 | 成功；PR #19 合并后的验证构建，以及发布 [v0.11.3](https://github.com/CTZZG/MusicFree/releases/tag/v0.11.3)（5 个 APK、构建信息、SHA256SUMS，正文与 `docs/release-notes-v0.11.3.md` 一致） |
 
 各 Beta 都先过质量门和 Android 单元测试，原生执行证据来自 CI，本地未运行 Gradle。从 #86 起，Beta 打包后在 Android 14 模拟器上
 跑端到端测试（`e2e/`），结果在运行的 Summary 里，截图在附件 `e2e-results-<运行 ID>`。
