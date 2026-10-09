@@ -1370,9 +1370,15 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     attemptId,
                     nextJournal,
                 ),
+            commitJournal: () => downloadTasksStore.flush(),
             cleanupCache: async () => {
                 await this.unlinkFinalizationPath(journal.cachePath);
             },
+            reportCacheKept: () =>
+                errorLog("下载收尾日志没能落盘，保留缓存文件", {
+                    attemptId,
+                    cachePath: journal.cachePath,
+                }),
             releaseReservation: () =>
                 this.releaseReservedDownloadPath(journal.targetPath),
             publishCompletion: () =>

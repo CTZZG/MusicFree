@@ -15,7 +15,17 @@ export interface IDownloadFinalizationOperations {
     persistJournal(
         journal: IDownloadFinalizationJournal,
     ): IDownloadFinalizationJournal;
+    /**
+     * 把最近一次 persistJournal 的结果真正写到磁盘，返回是否写成功。
+     *
+     * persistJournal 只改内存，落盘是合并延迟的（最多约 1 秒）。删除缓存之类
+     * 不可逆的操作之前必须等它：否则进程在这之间被杀，磁盘上还是更早的阶段，
+     * 重启恢复看到缓存没了就回滚，回滚会把已经做好的最终文件一起删掉。
+     */
+    commitJournal(): Promise<boolean>;
     cleanupCache(): Promise<void>;
+    /** 收尾日志没能写到磁盘、缓存因此保留时上报。 */
+    reportCacheKept?(): void;
     releaseReservation(): void;
     publishCompletion(): Promise<void>;
     cancelPublishedCompletion(): Promise<void>;
@@ -31,6 +41,10 @@ export async function runDownloadFinalizationTransaction(
 
     operations.assertCanContinue();
     if (!hasReachedDownloadFinalizationStage(journal.stage, "artifact-ready")) {
+        // 开始写最终文件之前，让“准备收尾”（含最终路径）先落盘：进程在这之后
+        // 被杀，重启时才知道有这个文件要接着做或回滚，不会留下没人管的文件
+        await operations.commitJournal();
+        operations.assertCanContinue();
         await operations.prepareArtifact();
         operations.assertCanContinue();
         journal = operations.persistJournal({
@@ -85,7 +99,15 @@ export async function runDownloadFinalizationTransaction(
     operations.assertCanContinue();
     journal = operations.persistJournal({ ...journal, stage: "completed" });
 
-    await operations.cleanupCache();
+    // “已完成”必须先落盘，才能删恢复所需的缓存。写不进去就保留缓存：多一个
+    // 临时文件，好过重启后按旧日志回滚、把做好的歌删掉
+    const completedOnDisk = await operations.commitJournal();
+    operations.assertCanContinue();
+    if (completedOnDisk) {
+        await operations.cleanupCache();
+    } else {
+        operations.reportCacheKept?.();
+    }
     operations.assertCanContinue();
     operations.releaseReservation();
     let completionPublished = false;

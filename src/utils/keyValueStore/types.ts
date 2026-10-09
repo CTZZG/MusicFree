@@ -30,6 +30,11 @@ export interface IKeyValueStore {
     readonly size: number;
     /** MMKV 的碎片整理，对本实现是空操作。 */
     trim(): void;
+    /**
+     * 立刻把调用之前的变更写到磁盘并等待完成，返回是否写成功。平时的写入是
+     * 合并延迟的；不可逆的操作（删文件）之前用它确认状态已经落盘。
+     */
+    flush(): Promise<boolean>;
     addOnValueChangedListener(
         listener: (key: string) => void,
     ): { remove(): void };
