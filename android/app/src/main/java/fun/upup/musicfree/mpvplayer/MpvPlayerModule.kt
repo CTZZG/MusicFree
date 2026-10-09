@@ -237,7 +237,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var activeTrackIdentity: TrackIdentity? = null
     private var loadingTrackIdentity: TrackIdentity? = null
     private var loadingGeneration = -1L
-    private var pendingUnpauseGeneration = -1L
+    private val pendingUnpause = PendingUnpause()
     private var ignoreEndFileUntilMs = 0L
     private var suppressIdleUntilMs = 0L
     private var stopRequested = false
@@ -503,7 +503,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         val generation = requestedGeneration
         currentLoadGeneration = generation
         loadingGeneration = generation
-        pendingUnpauseGeneration = if (autoPlay) generation else -1L
+        if (autoPlay) {
+            pendingUnpause.arm(generation)
+        } else {
+            pendingUnpause.cancel()
+        }
         val now = System.currentTimeMillis()
         ignoreEndFileUntilMs = now + END_FILE_SUPPRESS_MS
         suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
@@ -544,7 +548,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         generation == currentLoadGeneration
 
     private fun forceUnpause(generation: Long) {
-        if (!isCurrentGeneration(generation) || stopRequested) {
+        // 排着的重试在明确暂停之后照样会到点执行：撤销过就什么都不做（见 PendingUnpause）
+        if (
+            !isCurrentGeneration(generation) ||
+            stopRequested ||
+            !pendingUnpause.isArmedFor(generation)
+        ) {
             return
         }
         val identity = loadingTrackIdentity
@@ -744,7 +753,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         )
         if (autoAdvanced) {
             ignoreEndFileUntilMs = max(ignoreEndFileUntilMs, now + NATURAL_END_DEDUP_MS)
-            pendingUnpauseGeneration = currentLoadGeneration
+            pendingUnpause.arm(currentLoadGeneration)
             suppressIdleUntilMs = now + END_FILE_SUPPRESS_MS
             scheduleUnpauseRetries(currentLoadGeneration)
             emitState("buffering")
@@ -837,7 +846,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         clearActiveIdentity()
         clearLoadingIdentity()
         loadingGeneration = -1L
-        pendingUnpauseGeneration = -1L
+        pendingUnpause.cancel()
         MpvServiceBridge.onCommand = null
         unregisterAndroidAutoConnectionDetector(notifyJs = false)
         try {
@@ -1398,6 +1407,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 return@postPromise
             }
             try {
+                // 明确暂停：撤销还排着的自动取消暂停，免得几百毫秒后又被放出来
+                pendingUnpause.cancel()
                 MPVLib.setPropertyBoolean("pause", true)
                 emitState("paused")
                 operationPromise.resolve(null)
@@ -1425,7 +1436,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     MPVLib.command(arrayOf("seek", "0", "absolute"))
                 }
                 val generation = currentLoadGeneration
-                pendingUnpauseGeneration = generation
+                pendingUnpause.arm(generation)
                 scheduleUnpauseRetries(generation)
                 emitState("playing")
                 operationPromise.resolve(null)
@@ -1454,7 +1465,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 clearActiveIdentity()
                 clearLoadingIdentity()
                 loadingGeneration = -1L
-                pendingUnpauseGeneration = -1L
+                pendingUnpause.cancel()
                 ignoreEndFileUntilMs = System.currentTimeMillis() + END_FILE_SUPPRESS_MS
                 MPVLib.command(arrayOf("stop"))
                 positionSecs = 0.0
@@ -1720,7 +1731,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     loadingGeneration = if (explicitLoading != null) generation else -1L
                     if (
                         explicitLoading != null &&
-                        pendingUnpauseGeneration == generation
+                        pendingUnpause.isArmedFor(generation)
                     ) {
                         emitState("buffering")
                         scheduleUnpauseRetries(generation)
@@ -1767,7 +1778,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         loadingTrackIdentity = null
                         emitActiveTrackChanged(identity, "loaded")
                     }
-                    if (pendingUnpauseGeneration == generation) {
+                    if (pendingUnpause.isArmedFor(generation)) {
                         forceUnpause(generation)
                     } else {
                         MPVLib.setPropertyBoolean("pause", true)
@@ -1781,7 +1792,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                     updateDurationFromMpv()
                     val generation = currentLoadGeneration
-                    if (pendingUnpauseGeneration == generation) {
+                    if (pendingUnpause.isArmedFor(generation)) {
                         forceUnpause(generation)
                     }
                 }
@@ -1796,7 +1807,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         Log.d(TAG, "END_FILE suppressed")
                         return@runMpvCallbackOnMain
                     }
-                    pendingUnpauseGeneration = -1L
+                    pendingUnpause.cancel()
                     loadingGeneration = -1L
                     val endedIdentity = activeTrackIdentity
                     val pending = PendingNaturalEnd(
