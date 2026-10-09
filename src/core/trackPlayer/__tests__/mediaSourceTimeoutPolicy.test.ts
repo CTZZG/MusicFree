@@ -3,6 +3,7 @@ import {
     isStaleManualSkipIntent,
     manualSkipIntentTtlMs,
     withMediaSourceTimeout,
+    TimedOutSources,
 } from "../mediaSourceTimeoutPolicy";
 
 describe("withMediaSourceTimeout", () => {
@@ -79,5 +80,19 @@ describe("isStaleManualSkipIntent", () => {
         expect(
             isStaleManualSkipIntent({ enqueuedAt: now + 5000, now }),
         ).toBe(false);
+    });
+});
+
+describe("TimedOutSources", () => {
+    it("remembers a source for one song and one plugin only", () => {
+        const sources = new TimedOutSources();
+        sources.add("kuwo", "kuwo@1");
+
+        expect(sources.has("kuwo", "kuwo@1")).toBe(true);
+        // 同一首歌换个来源、同一个来源换首歌，都还要问
+        expect(sources.has("kugou", "kuwo@1")).toBe(false);
+        expect(sources.has("kuwo", "kuwo@2")).toBe(false);
+        // 每次切歌各用一份，新的一份什么都没记
+        expect(new TimedOutSources().has("kuwo", "kuwo@1")).toBe(false);
     });
 });

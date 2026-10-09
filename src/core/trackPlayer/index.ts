@@ -60,6 +60,8 @@ import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
 import {
     isStaleManualSkipIntent,
     MediaSourceTimeoutError,
+    mediaSourceTimeoutMs,
+    TimedOutSources,
     withMediaSourceTimeout,
 } from "./mediaSourceTimeoutPolicy";
 import {
@@ -140,6 +142,8 @@ interface IMpvManualSkipTransition {
     reason: string;
     /** 点歌（play）开始的事务记下那次点歌的失败提示请求，确认超时后的重载沿用它 */
     recoveryRequest?: number;
+    /** 这次切歌里已经超时的取源：预取超时后 play() 兜底不再重问同一个来源 */
+    timedOutSources: TimedOutSources;
 }
 
 interface IPlaybackDiagnosticMusicIdentity {
@@ -1545,6 +1549,9 @@ class TrackPlayer
             );
             // 5.3 插件返回音源
             let source: IPlugin.IMediaSourceResult | null = null;
+            // 切歌兜底：预取时已经超时的来源不再重问（见 TimedOutSources）
+            const timedOutSources = (mpvTransitionOwner ?? ownedMpvTransition)
+                ?.timedOutSources;
             for (let quality of qualityOrder) {
                 if (isPlayRequestActive()) {
                     trace("TrackPlayer.play getMediaSource start", {
@@ -1562,6 +1569,7 @@ class TrackPlayer
                             plugin,
                             musicItem,
                             quality,
+                            timedOutSources,
                         );
                     } catch (error) {
                         timedOut = error instanceof MediaSourceTimeoutError;
@@ -1716,6 +1724,7 @@ class TrackPlayer
                             qualityOrder,
                             isPlayRequestActive,
                             rememberSourceFailure,
+                            timedOutSources,
                         ).catch(error => {
                             errorLog(
                                 "查找其他来源失败",
@@ -2737,6 +2746,7 @@ class TrackPlayer
             },
             resumeOnRollback: false,
             reason,
+            timedOutSources: new TimedOutSources(),
         };
         this.mpvManualSkipTransition = transition;
         trace("MPV 手动切歌事务开始", {
@@ -4654,18 +4664,32 @@ class TrackPlayer
         plugin: ReturnType<IPluginManager["getByName"]> | null | undefined,
         musicItem: IMusic.IMusicItem,
         quality: IMusic.IQualityKey,
+        timedOutSources?: TimedOutSources,
     ): Promise<IPlugin.IMediaSourceResult | null> {
+        const pluginName: string | undefined = plugin?.name;
+        const mediaKey = getMediaUniqueKey(musicItem);
+        if (pluginName && timedOutSources?.has(pluginName, mediaKey)) {
+            // 这次切歌里已经等满过一次期限：不再重问，按超时处理
+            throw new MediaSourceTimeoutError(mediaSourceTimeoutMs, true);
+        }
         const task = plugin?.methods?.getMediaSource(musicItem, quality);
         if (!task) {
             return null;
         }
-        return (
-            (await withMediaSourceTimeout(Promise.resolve(task), {
-                setTimer: (handler, delayMs) =>
-                    BackgroundTimer.setTimeout(handler, delayMs),
-                clearTimer: handle => BackgroundTimer.clearTimeout(handle),
-            })) ?? null
-        );
+        try {
+            return (
+                (await withMediaSourceTimeout(Promise.resolve(task), {
+                    setTimer: (handler, delayMs) =>
+                        BackgroundTimer.setTimeout(handler, delayMs),
+                    clearTimer: handle => BackgroundTimer.clearTimeout(handle),
+                })) ?? null
+            );
+        } catch (error) {
+            if (error instanceof MediaSourceTimeoutError && pluginName) {
+                timedOutSources?.add(pluginName, mediaKey);
+            }
+            throw error;
+        }
     }
 
     /**
@@ -4676,12 +4700,14 @@ class TrackPlayer
         plugin: ReturnType<IPluginManager["getByName"]> | null | undefined,
         musicItem: IMusic.IMusicItem,
         quality: IMusic.IQualityKey,
+        timedOutSources?: TimedOutSources,
     ): Promise<IPlugin.IMediaSourceResult | null | "timed-out"> {
         try {
             return await this.requestPluginMediaSource(
                 plugin,
                 musicItem,
                 quality,
+                timedOutSources,
             );
         } catch (error) {
             if (!(error instanceof MediaSourceTimeoutError)) {
@@ -4694,6 +4720,7 @@ class TrackPlayer
                     platform: musicItem.platform,
                     quality,
                     timeoutMs: error.timeoutMs,
+                    earlierAttempt: error.earlierAttempt,
                 },
                 "error",
             );
@@ -4703,6 +4730,7 @@ class TrackPlayer
 
     private async resolveDirectMediaSource(
         musicItem: IMusic.IMusicItem,
+        timedOutSources?: TimedOutSources,
     ): Promise<IPlugin.IMediaSourceResult | null> {
         const plugin = this.pluginManagerService.getByName(musicItem.platform);
         const qualityOrder = this.getPlayQualityOrder();
@@ -4712,6 +4740,7 @@ class TrackPlayer
                 plugin,
                 musicItem,
                 quality,
+                timedOutSources,
             );
             if (candidate === "timed-out") {
                 break;
@@ -4781,6 +4810,8 @@ class TrackPlayer
                 remembered,
                 qualityOrder,
                 () => true,
+                undefined,
+                timedOutSources,
             );
             if (alternate && alternate !== "inactive") {
                 this.noteAlternateInUse(musicItem, alternate.musicItem);
@@ -5007,7 +5038,10 @@ class TrackPlayer
         }
         try {
             const [source, artwork] = await Promise.all([
-                this.resolveDirectMediaSource(musicItem),
+                this.resolveDirectMediaSource(
+                    musicItem,
+                    transition.timedOutSources,
+                ),
                 resolveLocalMusicArtwork(musicItem).catch(() => ""),
             ]);
             if (!this.isMpvManualSkipTransitionActive(transition)) {
@@ -5315,6 +5349,7 @@ class TrackPlayer
             failure?: MediaSourceFailure | null,
             attemptType?: MediaSourceAttemptType,
         ) => void,
+        timedOutSources?: TimedOutSources,
     ): Promise<IAlternateSourceResult | "inactive" | null> {
         const tried = new Set<string>();
         const tryCandidate = async (alternate: IMusic.IMusicItem) => {
@@ -5328,6 +5363,7 @@ class TrackPlayer
                 qualityOrder,
                 isPlayRequestActive,
                 rememberSourceFailure,
+                timedOutSources,
             );
         };
 
@@ -5382,6 +5418,7 @@ class TrackPlayer
             failure?: MediaSourceFailure | null,
             attemptType?: MediaSourceAttemptType,
         ) => void,
+        timedOutSources?: TimedOutSources,
     ): Promise<IAlternateSourceResult | "inactive" | null> {
         const plugin = this.pluginManagerService.getByMedia(alternate);
         if (!plugin || !this.pluginManagerService.isPluginEnabled(plugin)) {
@@ -5404,6 +5441,7 @@ class TrackPlayer
                     plugin,
                     alternate,
                     quality,
+                    timedOutSources,
                 );
             } catch (error) {
                 timedOut = error instanceof MediaSourceTimeoutError;
