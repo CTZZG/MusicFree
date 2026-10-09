@@ -35,6 +35,7 @@ const mockBackend: any = new Proxy(
         getProgress: jest.fn(async () => ({ position: 30, duration: 200, buffered: 30 })),
         getPlayNextQueue: jest.fn(async () => []),
         getUpNextQueue: jest.fn(async () => []),
+        getNextTracks: jest.fn(async () => []),
         restoreActiveTrack: jest.fn(async () => true),
     } as Record<string, any>,
     {
@@ -171,10 +172,15 @@ const other = {
 let changeSourceOnFailure = false;
 
 const settledAfter = (promise: Promise<unknown>) => {
-    const state = { settled: false };
-    promise.then(() => {
-        state.settled = true;
-    });
+    const state = { settled: false, error: undefined as unknown };
+    promise.then(
+        () => {
+            state.settled = true;
+        },
+        error => {
+            state.error = error;
+        },
+    );
     return state;
 };
 
@@ -332,4 +338,98 @@ it("lets a song picked while waiting win over the late skip", async () => {
     expect(requests.filter(request => request.id === "B")).toHaveLength(1);
     expect(player.setTrackSource).toHaveBeenCalledTimes(1);
     expect(player.setTrackSource.mock.calls[0][0]).toMatchObject({ id: "D" });
+});
+
+// 复核 49dfa12e（P2，旧问题）：切歌先暂停正在放的歌、等目标的地址。等待期间用户
+// 暂停（应用里的暂停、睡眠定时、musicfree://pause），之后不管是超时回滚还是新歌
+// 装好，都要保持暂停；以前回滚照样自动接着放，盖掉了用户的暂停
+describe("a pause while the skip is waiting", () => {
+    let calls: string[];
+
+    beforeEach(() => {
+        calls = [];
+        let state = "playing";
+        mockBackend.getState.mockImplementation(async () => state);
+        mockBackend.pause = jest.fn(async () => {
+            calls.push("pause");
+            state = "paused";
+        });
+        mockBackend.play = jest.fn(async () => {
+            calls.push("play");
+            state = "playing";
+        });
+        mockBackend.restoreActiveTrack = jest.fn(
+            async (options: { autoPlay?: boolean }) => {
+                calls.push(`restore(autoPlay=${options?.autoPlay})`);
+                state = options?.autoPlay ? "playing" : "paused";
+                return true;
+            },
+        );
+        mockBackend.skipToIndex = jest.fn(async (index: number) => {
+            calls.push(`skipTo(${songs[index].id})`);
+            nativeIsPlaying(songs[index].id);
+            state = "playing";
+            return true;
+        });
+    });
+
+    afterEach(() => {
+        mockBackend.getState.mockImplementation(async () => "playing");
+        delete mockBackend.pause;
+        delete mockBackend.play;
+        delete mockBackend.skipToIndex;
+        mockBackend.restoreActiveTrack = jest.fn(async () => true);
+    });
+
+    it("keeps the old song paused when the source never answers", async () => {
+        const skip = settledAfter(trackPlayer.skipToNext());
+        await jest.advanceTimersByTimeAsync(5_000);
+        calls.length = 0;
+
+        await trackPlayer.pause();
+        await jest.advanceTimersByTimeAsync(10_000);
+
+        expect(skip.settled).toBe(true);
+        expect(trackPlayer.currentMusic.id).toBe("A");
+        expect(calls).not.toContain("play");
+        expect(calls).not.toContain("restore(autoPlay=true)");
+        expect(await mockBackend.getState()).toBe("paused");
+    });
+
+    it("loads another source without playing it when the fallback finds one", async () => {
+        changeSourceOnFailure = true;
+        const skip = settledAfter(trackPlayer.skipToNext());
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        await trackPlayer.pause();
+        await jest.advanceTimersByTimeAsync(10_000);
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        expect(skip.settled).toBe(true);
+        expect(player.setTrackSource).toHaveBeenCalledTimes(1);
+        const [track, autoPlay] = player.setTrackSource.mock.calls[0];
+        expect(track).toMatchObject({ url: "https://other.example/B-other.mp3" });
+        expect(autoPlay).toBe(false);
+    });
+
+    it("keeps the new song paused when its source arrives after the pause", async () => {
+        let deliver: (value: unknown) => void = () => undefined;
+        answer = () =>
+            new Promise(resolve => {
+                deliver = resolve;
+            });
+        const skip = settledAfter(trackPlayer.skipToNext());
+        await jest.advanceTimersByTimeAsync(3_000);
+
+        await trackPlayer.pause();
+        calls.length = 0;
+        deliver({ url: "https://test.example/B.mp3" });
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        expect(skip.settled).toBe(true);
+        expect(trackPlayer.currentMusic.id).toBe("B");
+        expect(calls).toContain("skipTo(B)");
+        expect(calls[calls.length - 1]).toBe("pause");
+        expect(await mockBackend.getState()).toBe("paused");
+    });
 });

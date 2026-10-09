@@ -144,6 +144,11 @@ interface IMpvManualSkipTransition {
     recoveryRequest?: number;
     /** 这次切歌里已经超时的取源：预取超时后 play() 兜底不再重问同一个来源 */
     timedOutSources: TimedOutSources;
+    /**
+     * 等待期间用户暂停过（应用里的暂停、睡眠定时、musicfree://pause）：回滚回
+     * 原来那首、或者新歌装好，都保持暂停，不按切歌前的播放状态自动接着放
+     */
+    pausedDuringTransition?: boolean;
 }
 
 interface IPlaybackDiagnosticMusicIdentity {
@@ -1825,11 +1830,12 @@ class TrackPlayer
                 encrypted: Boolean(source.ekey && source.cek),
                 backend: this.backend.name,
             });
-            // 9. 设置音源
+            // 9. 设置音源。切歌兜底等待期间用户暂停过的话，装好不自动播
             loadingSource = true;
             await this.setTrackSource(
                 track as MusicFreePlayerTrack,
-                true,
+                !(mpvTransitionOwner ?? ownedMpvTransition)
+                    ?.pausedDuringTransition,
                 seekToTime,
             );
             loadingSource = false;
@@ -1995,6 +2001,13 @@ class TrackPlayer
 
     async pause(): Promise<void> {
         this.beginQueuePlaybackIntent();
+        const transition = this.mpvManualSkipTransition;
+        if (transition && this.isMpvManualSkipTransitionActive(transition)) {
+            // 切歌还在等目标的地址：切歌开始时已经把原来那首暂停了，这里的暂停
+            // 后端看不出来，要记在事务上，收场时不能再自动接着放
+            transition.pausedDuringTransition = true;
+            transition.resumeOnRollback = false;
+        }
         this.crossfade.onPause();
         LastfmScrobbler.onPaused();
         await this.backend.pause();
@@ -2383,6 +2396,7 @@ class TrackPlayer
             }
             throw error;
         }
+        await this.keepPausedAfterTransitionLoad(mpvManualTransition);
         if (expectedMpvNext) {
             const confirmed = await this.confirmMpvManualSkip(
                 expectedMpvNext,
@@ -2503,6 +2517,7 @@ class TrackPlayer
             );
             throw error;
         }
+        await this.keepPausedAfterTransitionLoad(mpvManualTransition);
         const confirmed = await this.confirmMpvManualSkip(
             previousItem,
             "manual-previous",
@@ -2777,6 +2792,15 @@ class TrackPlayer
         await this.backend.pause().catch(() => undefined);
     }
 
+    /** 新歌已经开始装载：等待期间用户暂停过的话，让它停在暂停（见 pause()） */
+    private async keepPausedAfterTransitionLoad(
+        transition?: IMpvManualSkipTransition | null,
+    ) {
+        if (transition?.pausedDuringTransition) {
+            await this.backend.pause().catch(() => undefined);
+        }
+    }
+
     private isMpvManualSkipTransitionActive(
         transition?: IMpvManualSkipTransition | null,
     ) {
@@ -2846,6 +2870,12 @@ class TrackPlayer
         this.mpvTrackTransitionGate.clear(transition.token);
         this.mpvManualSkipTransition = null;
         this.mpvActiveTrackSyncSerial += 1;
+        if (transition.pausedDuringTransition) {
+            // 确认切歌期间才暂停的，装载时没赶上，这里补一次
+            this.keepPausedAfterTransitionLoad(transition).catch(
+                () => undefined,
+            );
+        }
         trace("MPV 手动切歌事务完成", {
             id: transition.token.id,
             reason,
