@@ -3,6 +3,8 @@ import NativeUtils from "@/native/utils";
 import { BackHandler } from "react-native";
 
 const EXIT_PREPARE_GRACE_MS = 500;
+/** 退出预算里留给播放器收集最终进度的部分，剩下的留给落盘。 */
+const PLAYER_PREPARE_BUDGET_MS = 300;
 
 let isExiting = false;
 
@@ -51,11 +53,17 @@ export default function forceExitApp() {
     }
     isExiting = true;
 
+    // 先让播放器把最终进度写进 PersistStatus，再落盘。以前两者并行：播放器要等
+    // 原生返回进度才写断点，落盘可能已经先完成，新断点留在内存里，下次打开
+    // 回到旧的位置。两步都在同一个预算里，播放器卡住也不会拖住退出。
     const exitAfterPrepareOrTimeout = Promise.race([
-        Promise.all([
-            preparePlayerForExitBestEffort(),
-            flushStoresBestEffort(),
-        ]),
+        (async () => {
+            await Promise.race([
+                preparePlayerForExitBestEffort(),
+                wait(PLAYER_PREPARE_BUDGET_MS),
+            ]);
+            await flushStoresBestEffort();
+        })(),
         wait(EXIT_PREPARE_GRACE_MS),
     ]);
 
