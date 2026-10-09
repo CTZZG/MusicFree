@@ -384,4 +384,25 @@ if flow "打开资料库里的播放历史" library-history.yaml; then
     expect_dock_clear "从二级页面返回后马上切后台，回来换个标签，迷你播放器不盖住标签栏"
 fi
 
+# 14. 插件一直不回应：从 C 按下一首切到取播放地址时插件一直不回应的 Hang。切歌先暂停 C，
+#     等一轮取源期限（15 秒）就放弃、回到 C 接着播；以前预取等 15 秒、兜底再向同一个来源
+#     要一次又等 15 秒。之后按上一首照常切到 B，切歌没有被卡住
+open_link "musicfree://search?keyword=e2e%20hang%20$REF"
+if flow "点播不回应那首前面的 C" hang-song.yaml && wait_for_song "E2E Tone C" 30; then
+    adb shell input keyevent KEYCODE_MEDIA_NEXT
+    started=$SECONDS
+    if wait_for_state PAUSED "E2E Tone C" 10 && wait_for_song "E2E Tone C" 45; then
+        waited=$((SECONDS - started))
+        if [ "$waited" -le 25 ]; then
+            pass "插件不回应时只等一轮就回到原来那首" "按下一首后 ${waited} 秒回到 C 接着播"
+        else
+            fail "插件不回应时只等一轮就回到原来那首" "等了 ${waited} 秒才回到 C（一轮取源期限是 15 秒）"
+        fi
+    else
+        fail "插件不回应时只等一轮就回到原来那首" "$(session)"
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PREVIOUS
+    expect_playing "之后按上一首照常切到 B" "E2E Tone B"
+fi
+
 finish

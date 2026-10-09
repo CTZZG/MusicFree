@@ -1,0 +1,12 @@
+# run.sh 用 musicfree://search 搜了 "e2e hang <提交号>"：结果只有 B、C 和一首取播放地址时
+# 插件一直不回应的 Hang。点 C：播放队列换成 B、C、Hang，正在播 C
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "E2E Hang"
+    timeout: 45000
+- tapOn: "E2E Tone C"
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone C 歌手: E2E Artist"
+    timeout: 30000
+- takeScreenshot: 20-hang-queue

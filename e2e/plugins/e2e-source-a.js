@@ -24,6 +24,15 @@ const SONGS = [
     { id: "short", title: "E2E Short", file: "short.mp3", duration: 20 },
 ];
 
+// 只在搜 "e2e hang <提交号>" 时出现：B、C 和一首取播放地址时一直不回应的 Hang。
+// 用来检查插件不回应时，切歌只等一轮取源期限就回到原来那首（见 run.sh）。不放进
+// 上面的列表：多一行会把 Short 挤到迷你播放器下面，点不到
+const HANG_SONGS = [
+    SONGS[1],
+    SONGS[2],
+    { id: "hang", title: "E2E Hang", file: "", duration: 180 },
+];
+
 // 只有这几档音质，选无损之类的取不到：用来检查切换音质失败时，保持原来的音质接着播。
 // 应用先用新写法（192k）问，取不到再用旧写法（standard）问一遍
 const QUALITIES = ["128k", "192k", "320k", "low", "standard", "high"];
@@ -45,9 +54,10 @@ module.exports = {
         if (type !== "music" || page > 1 || !ref) {
             return { isEnd: true, data: [] };
         }
+        const songs = /(?:^|\s)hang(?:\s|$)/i.test(String(query)) ? HANG_SONGS : SONGS;
         return {
             isEnd: true,
-            data: SONGS.map(song => ({
+            data: songs.map(song => ({
                 id: song.id,
                 title: song.title,
                 artist: "E2E Artist",
@@ -59,16 +69,24 @@ module.exports = {
         };
     },
 
-    async getMediaSource(musicItem, quality) {
-        const ref = String(musicItem.e2eRef || "");
-        if (!musicItem.e2eFile || !/^[0-9a-f]{40}$/.test(ref)) {
-            return { failure: { code: "unavailable", retryable: false } };
+    getMediaSource(musicItem, quality) {
+        if (musicItem.id === "hang") {
+            // 一直不回应：不 resolve 也不 reject
+            return new Promise(() => undefined);
         }
-        if (quality && !QUALITIES.includes(quality)) {
-            return { failure: { code: "unavailable", retryable: false } };
-        }
-        return {
-            url: `${RAW_BASE}/${ref}/e2e/fixtures/${musicItem.e2eFile}`,
-        };
+        return Promise.resolve(resolveMediaSource(musicItem, quality));
     },
 };
+
+function resolveMediaSource(musicItem, quality) {
+    const ref = String(musicItem.e2eRef || "");
+    if (!musicItem.e2eFile || !/^[0-9a-f]{40}$/.test(ref)) {
+        return { failure: { code: "unavailable", retryable: false } };
+    }
+    if (quality && !QUALITIES.includes(quality)) {
+        return { failure: { code: "unavailable", retryable: false } };
+    }
+    return {
+        url: `${RAW_BASE}/${ref}/e2e/fixtures/${musicItem.e2eFile}`,
+    };
+}

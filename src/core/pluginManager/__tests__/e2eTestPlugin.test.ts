@@ -198,6 +198,23 @@ describe("e2e test source A", () => {
         }
     });
 
+    it("has a song that never answers, only in the hang search", async () => {
+        // 模拟器上从 C 切到它：取播放地址一直不回应，切歌要等满一轮期限就回到 C
+        const plugin = mountE2EPlugin("e2e-source-a.js");
+        const result = await plugin.methods.search(`e2e hang ${ref}`, 1, "music");
+        expect(result.data.map(item => item.title)).toEqual([
+            "E2E Tone B",
+            "E2E Tone C",
+            "E2E Hang",
+        ]);
+        const hang = (result.data as IMusic.IMusicItem[])[2];
+        const outcome = await Promise.race([
+            getMediaSource(plugin, hang).then(() => "answered"),
+            new Promise(resolve => setTimeout(() => resolve("still waiting"), 50)),
+        ]);
+        expect(outcome).toBe("still waiting");
+    });
+
     it("has the everyday qualities but no lossless one", async () => {
         // 模拟器上先切到 320K（要成功、接着播），再选无损（要失败、保持 320K 接着播）
         const plugin = mountE2EPlugin("e2e-source-a.js");
