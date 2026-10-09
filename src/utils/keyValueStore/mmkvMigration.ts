@@ -31,11 +31,22 @@ export function shouldMigrate(target: IKeyValueStore): boolean {
  * 把源里的键逐个搬到目标。
  *
  * 目标里已存在的键**不覆盖**：那说明新存储已经有更新的值（比如迁移后用户
- * 改过设置，而某次异常又让标记没写上），用旧数据盖掉是净损失。
+ * 改过设置，而某次异常又让标记没写上），用旧数据盖掉是净损失。传了
+ * `mergeExisting` 的 store（歌单、附加信息）对这类键做合并：两边的字符串交给
+ * 它，返回合并结果；返回 undefined 时保留目标不动。
+ *
+ * `wasRemoved` 为 true 的键整个跳过：迁移进行期间用户删掉（或清空）了它，
+ * 之后即使又写了新值，也不能把旧数据搬回来或合并进去。
  */
 export function migrateEntries(
     source: IMigrationSource,
     target: IKeyValueStore,
+    mergeExisting?: (
+        key: string,
+        legacy: string,
+        current: string,
+    ) => string | undefined,
+    wasRemoved?: (key: string) => boolean,
 ): IMigrationResult {
     let keys = 0;
     let skipped = 0;
@@ -61,7 +72,28 @@ export function migrateEntries(
         if (key === MIGRATION_FLAG_KEY) {
             continue;
         }
+        if (wasRemoved?.(key)) {
+            skipped += 1;
+            continue;
+        }
         if (target.contains(key)) {
+            const current = target.getString(key);
+            if (mergeExisting && current !== undefined) {
+                try {
+                    const legacy = source.getString(key);
+                    const merged =
+                        legacy === undefined
+                            ? undefined
+                            : mergeExisting(key, legacy, current);
+                    if (merged !== undefined && merged !== current) {
+                        target.set(key, merged);
+                        keys += 1;
+                        continue;
+                    }
+                } catch {
+                    // 合并失败就保留新存储里的值
+                }
+            }
             skipped += 1;
             continue;
         }

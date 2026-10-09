@@ -11,6 +11,15 @@ export interface IKeyValueStore {
     getBoolean(key: string): boolean | undefined;
     /** 写入。number/boolean 会按各自类型存储，其余按字符串。 */
     set(key: string, value: string | number | boolean): void;
+    /**
+     * 读出当前字符串、算出新值再写回（返回 undefined 表示删除）。局部更新要用它：
+     * 读盘完成前 get 拿不到磁盘上的值，get 后 set 会盖掉同一个键的其他字段。
+     * updater 可能被调用两次（读盘后用磁盘上的值重算），必须是纯函数。
+     */
+    updateString(
+        key: string,
+        updater: (current: string | undefined) => string | undefined,
+    ): void;
     delete(key: string): void;
     /** 与 delete 同义，兼容 MMKV 的 remove。 */
     remove(key: string): void;
@@ -21,6 +30,11 @@ export interface IKeyValueStore {
     readonly size: number;
     /** MMKV 的碎片整理，对本实现是空操作。 */
     trim(): void;
+    /**
+     * 立刻把调用之前的变更写到磁盘并等待完成，返回是否写成功。平时的写入是
+     * 合并延迟的；不可逆的操作（删文件）之前用它确认状态已经落盘。
+     */
+    flush(): Promise<boolean>;
     addOnValueChangedListener(
         listener: (key: string) => void,
     ): { remove(): void };

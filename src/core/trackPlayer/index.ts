@@ -59,6 +59,7 @@ import { normalizeMusicState } from "@/utils/trackUtils";
 import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
 import {
     isStaleManualSkipIntent,
+    MediaSourceTimeoutError,
     withMediaSourceTimeout,
 } from "./mediaSourceTimeoutPolicy";
 import {
@@ -595,12 +596,14 @@ class TrackPlayer
             track.userAgent = track.userAgent || getAppUserAgent();
 
             // 异步
-            this.pluginManagerService
-                .getByMedia(track)
-                ?.methods.getMediaSource(track, quality)
-                .then(async newSource => {
-                    newSource = await this.createPlayableSource(
-                        newSource ?? null,
+            this.requestPluginMediaSource(
+                this.pluginManagerService.getByMedia(track),
+                track,
+                quality,
+            )
+                .then(async pluginSource => {
+                    const newSource = await this.createPlayableSource(
+                        pluginSource,
                         track,
                         quality,
                         "plugin",
@@ -611,7 +614,8 @@ class TrackPlayer
                     track.url = newSource?.url || track.url;
                     track.headers = newSource?.headers || track.headers;
                     track.playbackSource =
-                        newSource?.playbackSource || track.playbackSource;
+                        (newSource as Pick<IMusic.IMusicItem, "playbackSource">)
+                            .playbackSource || track.playbackSource;
                     track.userAgent = track.userAgent || getAppUserAgent();
 
                     if (isSameMediaItem(this.currentMusic, track)) {
@@ -1549,21 +1553,18 @@ class TrackPlayer
                         quality,
                     });
                     let candidate: IPlugin.IMediaSourceResult | null = null;
+                    let timedOut = false;
                     try {
-                        // 硬超时：插件 Promise 永不 settle 时，这次切歌会一直挂着，
-                        // 并占住手动切歌的串行队列，用户点通知栏就像没反应。
-                        // 超时后走下面的失败分支继续推进；迟到的结果由
-                        // isPlayRequestActive() 挡住，不会回写状态。
-                        const sourceTask = plugin?.methods?.getMediaSource(
+                        // 有期限地等插件（见 requestPluginMediaSource）。超时后走
+                        // 下面的失败分支继续推进；迟到的结果由 isPlayRequestActive()
+                        // 挡住，不会回写状态。
+                        candidate = await this.requestPluginMediaSource(
+                            plugin,
                             musicItem,
                             quality,
                         );
-                        candidate = sourceTask
-                            ? (await withMediaSourceTimeout(
-                                Promise.resolve(sourceTask),
-                            )) ?? null
-                            : null;
                     } catch (error) {
+                        timedOut = error instanceof MediaSourceTimeoutError;
                         rememberSourceFailure(
                             classifyMediaSourceFailure(error, {
                                 mediaKey: getMediaUniqueKey(musicItem),
@@ -1593,7 +1594,11 @@ class TrackPlayer
                         );
                     }
                     // Access rejection is shared by all qualities of this provider.
-                    if (!candidate?.url && isProviderAccessFailure(sourceResolutionFailure)) {
+                    // 没回应也一样：不再逐个音质各等一遍。
+                    if (
+                        !candidate?.url &&
+                        (timedOut || isProviderAccessFailure(sourceResolutionFailure))
+                    ) {
                         break;
                     }
                     // 5.3.1 获取到真实源
@@ -3092,10 +3097,11 @@ class TrackPlayer
         const plugin = this.pluginManagerService.getByMedia(sourceItem);
         let newSource: IPlugin.IMediaSourceResult | null = null;
         try {
-            newSource = (await plugin?.methods?.getMediaSource(
+            newSource = await this.requestPluginMediaSource(
+                plugin,
                 sourceItem,
                 newQuality,
-            )) ?? null;
+            );
         } catch (error) {
             return fail(
                 classifyMediaSourceFailure(error, failureContext),
@@ -4631,6 +4637,70 @@ class TrackPlayer
     }
 
 
+    /**
+     * 向插件要播放地址，最多等 mediaSourceTimeoutMs，超时以
+     * MediaSourceTimeoutError 拒绝。
+     *
+     * 插件的 Promise 可能永远不完成。所有取源入口（播放、手动切歌预取、预解析
+     * 后面几首、地址过期后重取、换音质、备用来源、恢复上次播放）都走这里：
+     * 以前只有 play() 有期限，MPV 手动切歌的预取直接 await 插件，挂住时当前
+     * 歌曲已经暂停，后面的切歌都排在串行队列里等它。迟到的结果由各调用方
+     * 自己的事务 / generation 守卫挡住。
+     *
+     * 计时用 BackgroundTimer：通知栏、锁屏切歌时 App 在后台，RN 的普通定时器
+     * 要等回到前台才触发。
+     */
+    private async requestPluginMediaSource(
+        plugin: ReturnType<IPluginManager["getByName"]> | null | undefined,
+        musicItem: IMusic.IMusicItem,
+        quality: IMusic.IQualityKey,
+    ): Promise<IPlugin.IMediaSourceResult | null> {
+        const task = plugin?.methods?.getMediaSource(musicItem, quality);
+        if (!task) {
+            return null;
+        }
+        return (
+            (await withMediaSourceTimeout(Promise.resolve(task), {
+                setTimer: (handler, delayMs) =>
+                    BackgroundTimer.setTimeout(handler, delayMs),
+                clearTimer: handle => BackgroundTimer.clearTimeout(handle),
+            })) ?? null
+        );
+    }
+
+    /**
+     * 预取、重取用：插件没回应时返回 "timed-out"，调用方不再逐个音质各等一遍，
+     * 直接去试歌曲自带的地址和记住的其他来源。插件报错照旧抛出。
+     */
+    private async requestPluginMediaSourceOrStop(
+        plugin: ReturnType<IPluginManager["getByName"]> | null | undefined,
+        musicItem: IMusic.IMusicItem,
+        quality: IMusic.IQualityKey,
+    ): Promise<IPlugin.IMediaSourceResult | null | "timed-out"> {
+        try {
+            return await this.requestPluginMediaSource(
+                plugin,
+                musicItem,
+                quality,
+            );
+        } catch (error) {
+            if (!(error instanceof MediaSourceTimeoutError)) {
+                throw error;
+            }
+            trace(
+                "插件取源超时，不再尝试其他音质",
+                {
+                    musicId: musicItem.id,
+                    platform: musicItem.platform,
+                    quality,
+                    timeoutMs: error.timeoutMs,
+                },
+                "error",
+            );
+            return "timed-out";
+        }
+    }
+
     private async resolveDirectMediaSource(
         musicItem: IMusic.IMusicItem,
     ): Promise<IPlugin.IMediaSourceResult | null> {
@@ -4638,9 +4708,14 @@ class TrackPlayer
         const qualityOrder = this.getPlayQualityOrder();
 
         for (let quality of qualityOrder) {
-            const candidate =
-                (await plugin?.methods?.getMediaSource(musicItem, quality)) ??
-                null;
+            const candidate = await this.requestPluginMediaSourceOrStop(
+                plugin,
+                musicItem,
+                quality,
+            );
+            if (candidate === "timed-out") {
+                break;
+            }
             if (candidate?.failure && isProviderAccessFailure(mediaSourceFailureFromPluginResult(candidate.failure, {
                 mediaKey: getMediaUniqueKey(musicItem), pluginName: plugin?.name ?? musicItem.platform, quality,
             }))) {
@@ -4724,9 +4799,14 @@ class TrackPlayer
         const qualityOrder = this.getPlayQualityOrder();
 
         for (let quality of qualityOrder) {
-            const candidate =
-                (await plugin?.methods?.getMediaSource(musicItem, quality)) ??
-                null;
+            const candidate = await this.requestPluginMediaSourceOrStop(
+                plugin,
+                musicItem,
+                quality,
+            );
+            if (candidate === "timed-out") {
+                break;
+            }
             if (candidate?.failure && isProviderAccessFailure(mediaSourceFailureFromPluginResult(candidate.failure, {
                 mediaKey: getMediaUniqueKey(musicItem), pluginName: plugin?.name ?? musicItem.platform, quality,
             }))) {
@@ -5318,9 +5398,15 @@ class TrackPlayer
             };
             let candidate: IPlugin.IMediaSourceResult | null = null;
             let attemptFailure: MediaSourceFailure | null = null;
+            let timedOut = false;
             try {
-                candidate = (await plugin.methods.getMediaSource(alternate, quality)) ?? null;
+                candidate = await this.requestPluginMediaSource(
+                    plugin,
+                    alternate,
+                    quality,
+                );
             } catch (error) {
+                timedOut = error instanceof MediaSourceTimeoutError;
                 attemptFailure = classifyMediaSourceFailure(error, attemptContext);
             }
             if (!candidate?.url) {
@@ -5329,7 +5415,8 @@ class TrackPlayer
                     getMediaSourceResultFailure(candidate, attemptContext, "unavailable"),
                 );
                 rememberSourceFailure?.(attemptFailure, "similar");
-                if (isProviderAccessFailure(attemptFailure)) {
+                // 这个来源拒绝访问或没回应：换下一个候选，不再逐个音质等
+                if (timedOut || isProviderAccessFailure(attemptFailure)) {
                     return null;
                 }
                 continue;

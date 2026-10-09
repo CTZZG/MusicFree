@@ -97,7 +97,10 @@ export function setupKeyValueStores(): Promise<void> {
 /** 退出前尽力落盘，避免最后一批变更丢失。 */
 export async function shutdownKeyValueStores() {
     try {
-        await flushKeyValueStores();
+        const saved = await flushKeyValueStores();
+        if (!saved) {
+            emitErrorLog("退出前落盘失败", { error: "write-failed" }, true, false);
+        }
     } catch (error) {
         emitErrorLog(
             "退出前落盘失败",

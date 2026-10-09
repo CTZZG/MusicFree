@@ -1,17 +1,19 @@
-import getOrCreateMMKV, { hydrateKeyValueStore } from "@/utils/getOrCreateMMKV.ts";
+import getOrCreateMMKV, { prepareKeyValueStore } from "@/utils/getOrCreateMMKV.ts";
+import { sheetStoreMerge } from "@/utils/keyValueStore/legacyMerge";
 import { InteractionManager } from "react-native";
 import { SortType } from "@/constants/commonConst.ts";
 import { safeParse, safeStringify } from "@/utils/jsonUtil";
 
 /**
- * 确保某个歌单 store 已从磁盘载入。
+ * 确保某个歌单 store 已从磁盘载入，并且旧 MMKV 里的数据已经搬过来。
  *
  * 键值存储改为文件支撑后，读取不再像 MMKV 那样构造即可用（mmap 是同步的）。
  * 歌单 store 是按 id 动态创建的，不在启动预载列表里，因此**首次**读取前必须
- * 显式 hydrate——否则会读到空表，表现为歌单凭空消失。
+ * 显式载入——否则会读到空表，表现为歌单凭空消失。从 MMKV 时代升级上来的
+ * 用户，歌单还在旧 MMKV 里，这里一并迁移，和升级后新存储里已有的合并。
  */
 export async function ensureSheetStorageReady(key: string) {
-    await hydrateKeyValueStore(`LocalSheet.${key}`);
+    await prepareKeyValueStore(`LocalSheet.${key}`, sheetStoreMerge(key));
 }
 
 function getStorageData(key: string) {

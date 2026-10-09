@@ -61,9 +61,11 @@ jest.mock("@/core/mediaCache", () => ({
 jest.mock("@/utils/getOrCreateMMKV", () => ({
     __esModule: true,
     hydrateKeyValueStore: jest.fn(async () => undefined),
+    prepareKeyValueStore: jest.fn(async () => undefined),
     default: () => ({
         getString: jest.fn(),
         set: jest.fn(),
+        updateString: jest.fn(),
         remove: jest.fn(),
         delete: jest.fn(),
         getAllKeys: jest.fn(() => []),

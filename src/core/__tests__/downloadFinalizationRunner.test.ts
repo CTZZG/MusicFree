@@ -1,5 +1,6 @@
 import type { IDownloadFinalizationJournal } from "../downloadFinalizationJournal";
 import {
+    DownloadJournalCommitError,
     type IDownloadFinalizationOperations,
     runDownloadFinalizationTransaction,
 } from "../downloadFinalizationRunner";
@@ -54,6 +55,10 @@ function createOperations(cancelAfter?: (typeof awaitedOperations)[number]) {
             persisted.push(journal);
             return journal;
         },
+        commitJournal: jest.fn(async () => {
+            calls.push("commitJournal");
+            return true;
+        }),
         cleanupCache: operation("cleanupCache", undefined),
         releaseReservation: jest.fn(() => calls.push("releaseReservation")),
         publishCompletion: operation("publishCompletion", undefined),
@@ -91,17 +96,58 @@ describe("runDownloadFinalizationTransaction", () => {
             "completed",
         ]);
         expect(fixture.calls).toEqual([
+            "commitJournal",
             "prepareArtifact",
             "writeMetadata",
             "writeLyric",
             "indexLocalMusic",
             "commitMediaExtra",
             "verifyFinalArtifact",
+            "commitJournal",
             "cleanupCache",
             "releaseReservation",
             "publishCompletion",
             "removeNativeTask",
         ]);
+        expect(fixture.completeTask).toHaveBeenCalledTimes(1);
+    });
+
+    // 复核 1ec0114c（P2）：“准备收尾”没落盘就开始写最终文件，崩溃后没有日志兜底
+    it("does not touch any file when the prepared journal cannot be written", async () => {
+        const fixture = createOperations();
+        fixture.operations.commitJournal = jest.fn(async () => false);
+
+        await expect(
+            runDownloadFinalizationTransaction(
+                initialJournal(),
+                fixture.operations,
+            ),
+        ).rejects.toBeInstanceOf(DownloadJournalCommitError);
+
+        expect(fixture.calls).toEqual([]);
+        expect(fixture.persisted).toEqual([]);
+        expect(fixture.completeTask).not.toHaveBeenCalled();
+    });
+
+    it("keeps the cache when the completed journal cannot be written", async () => {
+        const fixture = createOperations();
+        fixture.operations.reportCacheKept = jest.fn();
+        let commits = 0;
+        fixture.operations.commitJournal = jest.fn(async () => {
+            commits += 1;
+            // 第一次（准备收尾）写成功，第二次（已完成）写失败
+            return commits === 1;
+        });
+
+        await expect(
+            runDownloadFinalizationTransaction(
+                initialJournal(),
+                fixture.operations,
+            ),
+        ).resolves.toMatchObject({ stage: "completed" });
+
+        expect(fixture.calls).not.toContain("cleanupCache");
+        expect(fixture.operations.reportCacheKept).toHaveBeenCalledTimes(1);
         expect(fixture.completeTask).toHaveBeenCalledTimes(1);
     });
 
@@ -206,6 +252,7 @@ describe("runDownloadFinalizationTransaction", () => {
 
         expect(fixture.calls).toEqual([
             "verifyFinalArtifact",
+            "commitJournal",
             "cleanupCache",
             "releaseReservation",
             "publishCompletion",

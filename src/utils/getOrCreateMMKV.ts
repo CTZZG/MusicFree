@@ -1,6 +1,7 @@
 import pathConst from "@/constants/pathConst";
 import { getKeyValueStore, hydrateKeyValueStore } from "./keyValueStore";
 import type { IKeyValueStore } from "./keyValueStore";
+import type { LegacyMerge } from "./keyValueStore/legacyMerge";
 import { migrateEntries, shouldMigrate } from "./keyValueStore/mmkvMigration";
 
 /**
@@ -37,13 +38,27 @@ const getOrCreateMMKV = (
 export async function migrateLegacyMMKVStore(
     dbName: string,
     cachePath = false,
+    mergeExisting?: LegacyMerge,
 ): Promise<{ migrated: boolean; keys: number } | null> {
     const target = getKeyValueStore(dbName);
-    await target.hydrate();
-    if (!shouldMigrate(target)) {
-        return null;
+    target.beginLegacyMigration();
+    try {
+        await target.hydrate();
+        if (!shouldMigrate(target)) {
+            return null;
+        }
+        return migrateFromLegacy(target, dbName, cachePath, mergeExisting);
+    } finally {
+        target.endLegacyMigration();
     }
+}
 
+function migrateFromLegacy(
+    target: ReturnType<typeof getKeyValueStore>,
+    dbName: string,
+    cachePath: boolean,
+    mergeExisting?: LegacyMerge,
+) {
     try {
         // 延迟 require：只有真正需要迁移时才加载 MMKV，迁移完成后的正常启动
         // 完全不碰它。
@@ -60,6 +75,8 @@ export async function migrateLegacyMMKVStore(
                 getBoolean: (key: string) => legacy.getBoolean(key),
             },
             target,
+            mergeExisting,
+            key => target.wasRemovedDuringLegacyMigration(key),
         );
         return { migrated: result.migrated, keys: result.keys };
     } catch {
@@ -69,7 +86,45 @@ export async function migrateLegacyMMKVStore(
         target.set(MIGRATION_FLAG_KEY, "legacy-unavailable");
         return { migrated: false, keys: 0 };
     }
-};
+}
+
+const preparedStores = new Map<string, Promise<void>>();
+
+/**
+ * 按需创建的 store（某个歌单、某个插件的附加信息）第一次使用前调用：读盘，
+ * 并把旧 MMKV 里同名 store 的数据搬过来（每个 store 只搬一次，标记写在新存储
+ * 里）。
+ *
+ * 启动时的迁移只覆盖固定的那几个 store。这些按需创建的以前只读盘不迁移，
+ * 从 MMKV 时代升级上来的用户，歌单、收藏、下载标记、歌词偏移都读不到了。
+ * 新存储里已经有同一个键时（升级后建的默认歌单、新加的歌）按 `mergeExisting`
+ * 合并，不拿旧数据覆盖新数据。
+ */
+export function prepareKeyValueStore(
+    dbName: string,
+    mergeExisting?: LegacyMerge,
+): Promise<void> {
+    let prepared = preparedStores.get(dbName);
+    if (!prepared) {
+        // 同步地开始记录删除：调用方拿到 store 后马上删的键（第一次访问就删除、
+        // 卸载插件清空平台）也要算在迁移期间
+        const store = getKeyValueStore(dbName);
+        store.beginLegacyMigration();
+        prepared = (async () => {
+            try {
+                await hydrateKeyValueStore(dbName);
+                await migrateLegacyMMKVStore(dbName, false, mergeExisting);
+            } catch {
+                // 迁移失败不能挡住正常读写；migrateLegacyMMKVStore 自己会记下
+                // “旧数据不可用”，下次不再重试
+            } finally {
+                store.endLegacyMigration();
+            }
+        })();
+        preparedStores.set(dbName, prepared);
+    }
+    return prepared;
+}
 
 /**
  * 从此模块再导出，而不是让调用方直接 import keyValueStore：动态 store 的
