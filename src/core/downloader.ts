@@ -87,7 +87,10 @@ import {
     isDownloadFinalizationJournal,
     resolveDownloadFinalizationRecovery,
 } from "./downloadFinalizationJournal";
-import { runDownloadFinalizationTransaction } from "./downloadFinalizationRunner";
+import {
+    DownloadJournalCommitError,
+    runDownloadFinalizationTransaction,
+} from "./downloadFinalizationRunner";
 import { withTimeout } from "@/utils/promiseTimeout";
 import DownloadPathReservation from "./downloadPathReservation";
 import { Platform } from "react-native";
@@ -1161,7 +1164,25 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         attemptId: string,
         journal: IDownloadFinalizationJournal,
         error: Error,
+        options: { resumed?: boolean } = {},
     ) {
+        if (error instanceof DownloadJournalCommitError && !options.resumed) {
+            // 收尾没有开始（“准备收尾”没能落盘）：最终路径和歌词文件上即使有
+            // 文件也不是这次建的，不能按回滚删，本地歌单和附加信息也没动过。
+            // 只删这次下载自己的缓存、放掉预留的路径，任务标为失败，可以重试。
+            // 缓存不留：重试会重新下载、用不上它，下载缓存目录也没有别的清理，
+            // 写盘失败又多半是空间不够。
+            // 启动时接着做的收尾（resumed）不走这里：上次可能已经写了一半最终
+            // 文件，照常回滚。
+            errorLog("下载收尾日志没能落盘，没有开始收尾", {
+                attemptId,
+                cachePath: journal.cachePath,
+            });
+            await this.unlinkFinalizationPath(journal.cachePath);
+            this.releaseReservedDownloadPath(journal.targetPath);
+            this.settleFailedFinalization(musicItem, attemptId, error);
+            return;
+        }
         const logicalKey = getMediaUniqueKey(musicItem);
         const taskBeforeRollback = downloadTasks.get(logicalKey);
         const latestJournal = isSameDownloadAttempt(taskBeforeRollback, {
@@ -1205,6 +1226,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             }
             return;
         }
+        this.settleFailedFinalization(musicItem, attemptId, error);
+    }
+
+    /** 收尾失败、该清的已经清掉之后：取消的按取消收场，其余标为失败。 */
+    private settleFailedFinalization(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+        error: Error,
+    ) {
+        const logicalKey = getMediaUniqueKey(musicItem);
         const currentTask = downloadTasks.get(logicalKey);
         if (!isSameDownloadAttempt(currentTask, { logicalKey, attemptId })) {
             return;
@@ -1478,6 +1509,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     task.attemptId,
                     recoveryJournal,
                     error instanceof Error ? error : new Error(String(error)),
+                    { resumed: true },
                 );
             }
         }

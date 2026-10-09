@@ -1,5 +1,6 @@
 import type { IDownloadFinalizationJournal } from "../downloadFinalizationJournal";
 import {
+    DownloadJournalCommitError,
     type IDownloadFinalizationOperations,
     runDownloadFinalizationTransaction,
 } from "../downloadFinalizationRunner";
@@ -109,6 +110,23 @@ describe("runDownloadFinalizationTransaction", () => {
             "removeNativeTask",
         ]);
         expect(fixture.completeTask).toHaveBeenCalledTimes(1);
+    });
+
+    // 复核 1ec0114c（P2）：“准备收尾”没落盘就开始写最终文件，崩溃后没有日志兜底
+    it("does not touch any file when the prepared journal cannot be written", async () => {
+        const fixture = createOperations();
+        fixture.operations.commitJournal = jest.fn(async () => false);
+
+        await expect(
+            runDownloadFinalizationTransaction(
+                initialJournal(),
+                fixture.operations,
+            ),
+        ).rejects.toBeInstanceOf(DownloadJournalCommitError);
+
+        expect(fixture.calls).toEqual([]);
+        expect(fixture.persisted).toEqual([]);
+        expect(fixture.completeTask).not.toHaveBeenCalled();
     });
 
     it("keeps the cache when the completed journal cannot be written", async () => {

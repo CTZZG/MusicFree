@@ -33,6 +33,18 @@ export interface IDownloadFinalizationOperations {
     completeTask(): void;
 }
 
+/**
+ * “准备收尾”没能写到磁盘，收尾没有开始：最终文件、歌词文件、本地歌单、附加
+ * 信息都还没动过。调用方据此只清理这次下载自己的缓存，不走回滚（回滚按日志
+ * 删最终路径和歌词文件，那些不是这次创建的）。
+ */
+export class DownloadJournalCommitError extends Error {
+    constructor() {
+        super("Download finalization journal could not be saved");
+        this.name = "DownloadJournalCommitError";
+    }
+}
+
 export async function runDownloadFinalizationTransaction(
     initialJournal: IDownloadFinalizationJournal,
     operations: IDownloadFinalizationOperations,
@@ -42,8 +54,11 @@ export async function runDownloadFinalizationTransaction(
     operations.assertCanContinue();
     if (!hasReachedDownloadFinalizationStage(journal.stage, "artifact-ready")) {
         // 开始写最终文件之前，让“准备收尾”（含最终路径）先落盘：进程在这之后
-        // 被杀，重启时才知道有这个文件要接着做或回滚，不会留下没人管的文件
-        await operations.commitJournal();
+        // 被杀，重启时才知道有这个文件要接着做或回滚，不会留下没人管的文件。
+        // 写不进去就不开始：没有日志兜底的最终文件，崩溃后没人知道要接着做还是删
+        if (!(await operations.commitJournal())) {
+            throw new DownloadJournalCommitError();
+        }
         operations.assertCanContinue();
         await operations.prepareArtifact();
         operations.assertCanContinue();
