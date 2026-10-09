@@ -1,18 +1,23 @@
 /**
  * 媒体资源的附加属性
  */
-import getOrCreateMMKV, { hydrateKeyValueStore } from "@/utils/getOrCreateMMKV";
+import getOrCreateMMKV, { prepareKeyValueStore } from "@/utils/getOrCreateMMKV";
+import { mediaExtraStoreMerge } from "@/utils/keyValueStore/legacyMerge";
 import { getMediaUniqueKey } from "@/utils/mediaIdentity";
 import type { DownloadWriteResult } from "@/core/downloadFinalizationPolicy";
 import { useEffect, useState } from "react";
 import { safeParse } from "./jsonUtil";
 
 /**
- * 已触发过 hydrate 的插件 store，避免重复挂 then。
+ * 已触发过载入的插件 store，避免重复挂 then。
  *
  * 附加属性 store 按插件动态创建，不在启动预载列表里。文件存储的读取需要先
- * 异步读盘，所以首次同步读会拿到空值——对本模块而言那只是降级（歌曲显示为
- * 未下载、歌词偏移为 0），不是丢数据。读盘完成后通知观察者重渲染即可自愈。
+ * 异步读盘，所以首次同步读会拿到空值——显示上只是降级（歌曲显示为未下载、
+ * 歌词偏移为 0），载入完成后通知观察者重渲染即可自愈。载入时把旧 MMKV 里的
+ * 附加信息一并搬过来，和升级后新写的逐字段合并。
+ *
+ * 写入不受影响：读盘完成前的修改由存储层记下，读盘后重放到磁盘内容上，
+ * 局部更新用 updateString，不会盖掉同一首歌的其他字段。
  */
 const hydratedPluginStores = new Set<string>();
 
@@ -21,7 +26,7 @@ const getPluginStore = (pluginName: string) => {
     const store = getOrCreateMMKV(`MediaExtra.${pluginName}`);
     if (!hydratedPluginStores.has(pluginName)) {
         hydratedPluginStores.add(pluginName);
-        void hydrateKeyValueStore(`MediaExtra.${pluginName}`)
+        void prepareKeyValueStore(`MediaExtra.${pluginName}`, mediaExtraStoreMerge)
             .then(emitMediaExtraChanged)
             .catch(() => undefined);
     }
@@ -114,13 +119,20 @@ function patchMediaExtra(mediaItem: ICommon.IMediaBase, extra: Partial<IMediaExt
         return null;
     }
 
-    const originalMeta = getMediaExtra(mediaItem);
     const store = getPluginStore(mediaItem.platform);
-    const newMeta = {
-        ...originalMeta,
-        ...extra,
-    };
-    store.set(`${mediaItem.id}`, JSON.stringify(newMeta));
+    let newMeta: IMediaExtraProperties = { ...extra };
+    // 读出、合并、写回放在一次 updateString 里：读盘完成前也只改这几个字段，
+    // 不会把同一首歌已有的下载标记、本地路径盖掉
+    store.updateString(`${mediaItem.id}`, current => {
+        const originalMeta = current
+            ? normalizeMediaExtraProperties(safeParse(current))
+            : null;
+        newMeta = {
+            ...originalMeta,
+            ...extra,
+        };
+        return JSON.stringify(newMeta);
+    });
 
     // 发送事件更新
     const callbacks = observerCallbacks.get(getMediaUniqueKey(mediaItem));

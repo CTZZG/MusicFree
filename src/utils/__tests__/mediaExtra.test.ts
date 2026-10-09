@@ -3,6 +3,7 @@ const mockStores = new Map<string, Map<string, string>>();
 jest.mock("@/utils/getOrCreateMMKV", () => ({
     __esModule: true,
     hydrateKeyValueStore: jest.fn(async () => undefined),
+    prepareKeyValueStore: jest.fn(async () => undefined),
     default: jest.fn((namespace: string) => {
         if (!mockStores.has(namespace)) {
             mockStores.set(namespace, new Map());
@@ -13,6 +14,16 @@ jest.mock("@/utils/getOrCreateMMKV", () => ({
             set: jest.fn((key: string, value: string) => {
                 store.set(key, value);
             }),
+            updateString: jest.fn(
+                (key: string, updater: (current?: string) => string | undefined) => {
+                    const next = updater(store.get(key));
+                    if (next === undefined) {
+                        store.delete(key);
+                    } else {
+                        store.set(key, next);
+                    }
+                },
+            ),
             delete: jest.fn((key: string) => {
                 store.delete(key);
             }),
