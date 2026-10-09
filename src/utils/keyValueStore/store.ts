@@ -1,3 +1,4 @@
+import { MIGRATION_FLAG_KEY } from "./mmkvMigration";
 import { decodeSnapshot, encodeSnapshot, toStoredValue } from "./snapshotCodec";
 import {
     DEFAULT_RETRY_DELAYS_MS,
@@ -35,6 +36,12 @@ export interface IKeyValueStoreOptions extends IWriteSchedulerOptions {
  * 必须先 `await hydrate()` 才能读到磁盘上的既有数据。这是这套方案唯一比
  * MMKV 多出的约束（MMKV 构造即同步 mmap 完成），所以 bootstrap 里要在读取
  * 任何配置之前完成 hydrate。
+ *
+ * hydrate 完成之前的写入（set / delete / clearAll / updateString）先作用在内存，
+ * 同时记下来，读盘完成后按顺序重放到磁盘内容上：等价于它们发生在读盘之后。
+ * 以前是「整个键以内存为准」，于是读盘前的局部更新会盖掉磁盘上同一个键的其他
+ * 字段，读盘前的删除也会被磁盘上的旧值复活。落盘同样要等读盘完成，否则会把只有
+ * 这几个早到的键的快照写下去，覆盖掉整份文件。
  */
 export default class KeyValueStore implements IKeyValueStore {
     private entries: Record<string, StoredValue> = {};
@@ -48,6 +55,10 @@ export default class KeyValueStore implements IKeyValueStore {
     private retryAttempt = 0;
     private hydrated = false;
     private hydratePromise: Promise<void> | null = null;
+    /** 读盘完成前的写入，读盘后按顺序重放；读盘后为 null。 */
+    private pendingOps: Array<() => void> | null = [];
+    /** 正在进行的落盘；flush 要等它，再把之后的变更写出去。 */
+    private inflight: Promise<boolean> | null = null;
 
     private readonly now: () => number;
     private readonly setTimer: (handler: () => void, delayMs: number) => any;
@@ -73,6 +84,7 @@ export default class KeyValueStore implements IKeyValueStore {
     /** 从磁盘载入。重复调用共享同一个 promise，多次调用是安全的。 */
     hydrate(): Promise<void> {
         this.hydratePromise ??= (async () => {
+            let base: Record<string, StoredValue> = {};
             try {
                 const raw = await this.persistence.read(this.storeId);
                 const decoded = decodeSnapshot(raw);
@@ -82,9 +94,7 @@ export default class KeyValueStore implements IKeyValueStore {
                         reason: decoded.reason,
                     });
                 }
-                // 已经通过 set 写入内存的值优先于磁盘：hydrate 之前发生的写入
-                // 是更新的，不能被旧快照覆盖。
-                this.entries = { ...decoded.entries, ...this.entries };
+                base = decoded.entries;
             } catch (error) {
                 // 读不到就当空表起步，并上报。抛出会让应用起不来。
                 this.options.onRecover?.({
@@ -94,6 +104,12 @@ export default class KeyValueStore implements IKeyValueStore {
                     )}`,
                 });
             } finally {
+                // 读盘之前（以及读盘期间）的写入是更新的：按发生顺序重放到磁盘
+                // 内容上，而不是整个键以内存为准。
+                const ops = this.pendingOps ?? [];
+                this.pendingOps = null;
+                this.entries = { ...base };
+                ops.forEach(op => op());
                 this.hydrated = true;
             }
         })();
@@ -130,12 +146,64 @@ export default class KeyValueStore implements IKeyValueStore {
             // 值没变就不落盘也不通知，避免热路径（播放进度）产生无谓的写与重渲染。
             return;
         }
-        this.entries[key] = stored;
+        const apply = () => {
+            this.entries[key] = stored;
+        };
+        apply();
+        this.recordBeforeHydrate(apply);
         this.markDirty();
         this.notify(key);
     }
 
+    /**
+     * 读出当前字符串、算出新值再写回（返回 undefined 表示删除）。
+     *
+     * 局部更新（例如只改一首歌的歌词偏移）要用它而不是先 get 再 set：读盘完成
+     * 之前 get 拿不到磁盘上的值，set 回去的局部对象会盖掉其他字段。这里在读盘
+     * 完成后会用磁盘上的值再算一遍，所以 updater 必须是纯函数。
+     */
+    updateString(
+        key: string,
+        updater: (current: string | undefined) => string | undefined,
+    ) {
+        const apply = () => {
+            const next = updater(this.getString(key));
+            if (next === undefined) {
+                delete this.entries[key];
+            } else {
+                this.entries[key] = { t: "s", v: next };
+            }
+        };
+        const before = this.entries[key];
+        apply();
+        this.recordBeforeHydrate(apply);
+        const after = this.entries[key];
+        const changed =
+            before?.t !== after?.t || before?.v !== after?.v;
+        if (changed || !this.hydrated) {
+            this.markDirty();
+        }
+        if (changed) {
+            this.notify(key);
+        }
+    }
+
     delete(key: string) {
+        if (!this.hydrated) {
+            // 磁盘上可能有这个键，内存里还没有：删除也要记下来，读盘后重放，
+            // 否则旧值会被读盘复活。
+            const existed = key in this.entries;
+            const apply = () => {
+                delete this.entries[key];
+            };
+            apply();
+            this.recordBeforeHydrate(apply);
+            this.markDirty();
+            if (existed) {
+                this.notify(key);
+            }
+            return;
+        }
         if (!(key in this.entries)) {
             return;
         }
@@ -157,11 +225,20 @@ export default class KeyValueStore implements IKeyValueStore {
     }
 
     clearAll() {
-        const keys = Object.keys(this.entries);
-        if (!keys.length) {
+        // 迁移标记是存储自己的元数据，不是用户数据：清掉它，下次启动会再从旧
+        // MMKV 迁移一遍，把刚清空的旧数据又搬回来。
+        const keys = Object.keys(this.entries).filter(
+            key => key !== MIGRATION_FLAG_KEY,
+        );
+        if (!keys.length && this.hydrated) {
             return;
         }
-        this.entries = {};
+        const apply = () => {
+            const flag = this.entries[MIGRATION_FLAG_KEY];
+            this.entries = flag ? { [MIGRATION_FLAG_KEY]: flag } : {};
+        };
+        apply();
+        this.recordBeforeHydrate(apply);
         this.markDirty();
         keys.forEach(key => this.notify(key));
     }
@@ -190,13 +267,29 @@ export default class KeyValueStore implements IKeyValueStore {
         };
     }
 
-    /** 立刻落盘并等待完成。用于应用退出前确保不丢数据。 */
-    async flush(): Promise<void> {
+    /**
+     * 立刻落盘并等待完成，返回调用之前的变更是否都已写到磁盘。
+     *
+     * 正在进行的那次写入用的是它开始时的快照，可能早于调用前的修改，所以要先
+     * 等它写完，再把剩下的变更写出去；以前遇到正在写就直接返回，最新的修改只
+     * 留在内存里。写失败返回 false（之后仍按退避重试），不抛出。
+     */
+    async flush(): Promise<boolean> {
         this.cancelTimer();
-        if (!this.dirty || this.writing) {
-            return;
+        while (this.writing && this.inflight) {
+            await this.inflight;
         }
-        await this.performWrite();
+        if (!this.dirty) {
+            return true;
+        }
+        this.cancelTimer();
+        return this.performWrite();
+    }
+
+    private recordBeforeHydrate(op: () => void) {
+        if (!this.hydrated) {
+            this.pendingOps?.push(op);
+        }
     }
 
     private notify(key: string) {
@@ -269,11 +362,21 @@ export default class KeyValueStore implements IKeyValueStore {
         }
     }
 
-    private async performWrite(): Promise<void> {
-        if (this.writing) {
-            return;
+    private performWrite(): Promise<boolean> {
+        if (this.writing && this.inflight) {
+            return this.inflight;
         }
         this.writing = true;
+        const run = this.writeOnce();
+        this.inflight = run;
+        return run;
+    }
+
+    private async writeOnce(): Promise<boolean> {
+        // 读盘完成前不能落盘：那时内存里只有早到的几个键，写下去会覆盖整份文件。
+        if (!this.hydrated) {
+            await this.hydrate();
+        }
         // 先取快照再清脏标记：写入期间到来的新变更会重新置脏，写完后再落一次，
         // 不会被这一轮的成功掩盖掉。
         const payload = encodeSnapshot({ ...this.entries });
@@ -291,9 +394,10 @@ export default class KeyValueStore implements IKeyValueStore {
             failure = error;
         }
         // writing 必须在任何重排之前落回 false，否则重试定时器触发的
-        // performWrite 会被开头的 `if (this.writing) return` 直接吞掉，
-        // 重试链就断在这里，数据永远留在内存。
+        // performWrite 会直接拿到这一轮（已结束）的结果，重试链就断在这里，
+        // 数据永远留在内存。
         this.writing = false;
+        this.inflight = null;
 
         if (failed) {
             const delayMs = resolveRetryDelayMs(
@@ -317,11 +421,11 @@ export default class KeyValueStore implements IKeyValueStore {
                     error: failure,
                 });
                 // 已上报并放弃这一轮；等下一次 set 再触发，避免无限重试。
-                return;
+                return false;
             }
             this.retryAttempt += 1;
             this.armRetryTimer(delayMs);
-            return;
+            return false;
         }
 
         // 写入成功。若期间又产生了变更（快照是写入前取的，这些新值还没落盘），
@@ -330,5 +434,6 @@ export default class KeyValueStore implements IKeyValueStore {
         if (this.dirty) {
             this.schedule();
         }
+        return true;
     }
 }

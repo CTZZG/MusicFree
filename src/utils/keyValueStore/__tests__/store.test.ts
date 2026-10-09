@@ -346,3 +346,196 @@ describe("KeyValueStore", () => {
         expect(store.contains("bad")).toBe(false);
     });
 });
+
+/** 读盘、写盘都由测试放行的后端，用来卡在指定的时间点。 */
+function createGatedPersistence(initial: Record<string, string> = {}) {
+    const files = new Map(Object.entries(initial));
+    const reads: Array<() => void> = [];
+    const writes: Array<{ contents: string; release: () => void }> = [];
+    let gateWrites = false;
+    const persistence: IStorePersistence = {
+        read(id) {
+            return new Promise(resolve => {
+                reads.push(() => resolve(files.has(id) ? files.get(id)! : null));
+            });
+        },
+        write(id, contents) {
+            if (!gateWrites) {
+                files.set(id, contents);
+                return Promise.resolve();
+            }
+            return new Promise(resolve => {
+                writes.push({
+                    contents,
+                    release: () => {
+                        files.set(id, contents);
+                        resolve();
+                    },
+                });
+            });
+        },
+        async remove(id) {
+            files.delete(id);
+        },
+    };
+    return {
+        persistence,
+        files,
+        reads,
+        writes,
+        gateWrites(on: boolean) {
+            gateWrites = on;
+        },
+    };
+}
+
+describe("KeyValueStore before it has read the disk", () => {
+    // 复核 4b4b833b：读盘完成前改一首歌的歌词偏移，整条附加信息只剩偏移，
+    // 下载标记和本地路径丢了。
+    it("applies a partial update on top of what is on disk", async () => {
+        const g = createGatedPersistence({
+            extra: encodeSnapshot({
+                song: {
+                    t: "s",
+                    v: JSON.stringify({
+                        downloaded: true,
+                        localPath: "file:///music/saved.mp3",
+                        lyricOffset: 200,
+                    }),
+                },
+            }),
+        });
+        const store = new KeyValueStore("extra", g.persistence);
+        const hydrated = store.hydrate();
+        store.updateString("song", current =>
+            JSON.stringify({ ...JSON.parse(current ?? "{}"), lyricOffset: 500 }),
+        );
+
+        g.reads.forEach(release => release());
+        await hydrated;
+        await store.flush();
+
+        const expected = {
+            downloaded: true,
+            localPath: "file:///music/saved.mp3",
+            lyricOffset: 500,
+        };
+        expect(JSON.parse(store.getString("song")!)).toEqual(expected);
+        const onDisk = decodeSnapshot(g.files.get("extra")!).entries.song;
+        expect(JSON.parse((onDisk as { v: string }).v)).toEqual(expected);
+    });
+
+    it("does not bring back a key deleted before the disk was read", async () => {
+        const g = createGatedPersistence({
+            s: encodeSnapshot({ gone: { t: "s", v: "old" }, kept: { t: "s", v: "1" } }),
+        });
+        const store = new KeyValueStore("s", g.persistence);
+        const hydrated = store.hydrate();
+        store.delete("gone");
+
+        g.reads.forEach(release => release());
+        await hydrated;
+
+        expect(store.contains("gone")).toBe(false);
+        expect(store.getString("kept")).toBe("1");
+    });
+
+    it("does not bring back data cleared before the disk was read", async () => {
+        const g = createGatedPersistence({
+            s: encodeSnapshot({ a: { t: "s", v: "1" } }),
+        });
+        const store = new KeyValueStore("s", g.persistence);
+        const hydrated = store.hydrate();
+        store.clearAll();
+        store.set("b", "2");
+
+        g.reads.forEach(release => release());
+        await hydrated;
+
+        expect(store.getAllKeys()).toEqual(["b"]);
+    });
+
+    it("never writes a snapshot before the disk has been read", async () => {
+        const g = createGatedPersistence({
+            s: encodeSnapshot({ old: { t: "s", v: "keep me" } }),
+        });
+        const store = new KeyValueStore("s", g.persistence, { debounceMs: 1, maxDelayMs: 1 });
+        const hydrated = store.hydrate();
+        store.set("early", "1");
+
+        // 远超去抖和硬上限，读盘还没完成：不能写
+        await new Promise(resolve => setTimeout(resolve, 30));
+        expect(decodeSnapshot(g.files.get("s")!).entries.early).toBeUndefined();
+
+        g.reads.forEach(release => release());
+        await hydrated;
+        await store.flush();
+
+        const onDisk = decodeSnapshot(g.files.get("s")!).entries;
+        expect(onDisk.old).toEqual({ t: "s", v: "keep me" });
+        expect(onDisk.early).toEqual({ t: "s", v: "1" });
+    });
+});
+
+describe("KeyValueStore.flush", () => {
+    // 复核 4b4b833b：一次写入还没完成时把音量从 0.5 改成 1 再 flush，两次 flush
+    // 都结束了，磁盘上还是 0.5。
+    it("waits for the write in progress and then writes what changed since", async () => {
+        const g = createGatedPersistence();
+        const store = new KeyValueStore("cfg", g.persistence, { debounceMs: 1, maxDelayMs: 1 });
+        const hydrated = store.hydrate();
+        g.reads.forEach(release => release());
+        await hydrated;
+
+        g.gateWrites(true);
+        store.set("volume", 0.5);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(g.writes).toHaveLength(1); // 写着 0.5
+        store.set("volume", 1);
+
+        const first = store.flush();
+        const second = store.flush();
+        g.gateWrites(false);
+        g.writes[0].release();
+        await expect(first).resolves.toBe(true);
+        await expect(second).resolves.toBe(true);
+
+        expect(decodeSnapshot(g.files.get("cfg")!).entries.volume).toEqual({ t: "n", v: 1 });
+    });
+
+    it("reports a failed write instead of pretending it was saved", async () => {
+        const h = createHarness();
+        const store = new KeyValueStore("s", h.persistence, h.options);
+        await store.hydrate();
+        store.set("a", "1");
+        h.failWrites(1);
+
+        await expect(store.flush()).resolves.toBe(false);
+        expect(store.getString("a")).toBe("1");
+        await expect(store.flush()).resolves.toBe(true);
+        expect(decodeSnapshot(h.files.get("s")!).entries.a).toEqual({ t: "s", v: "1" });
+    });
+
+    it("has nothing to do when everything is already on disk", async () => {
+        const h = createHarness();
+        const store = new KeyValueStore("s", h.persistence, h.options);
+        await store.hydrate();
+        await expect(store.flush()).resolves.toBe(true);
+        expect(h.writes).toHaveLength(0);
+    });
+});
+
+describe("KeyValueStore.clearAll and the migration marker", () => {
+    // 标记被清掉，下次启动会再从旧 MMKV 迁移一遍，把刚清空的数据搬回来
+    it("keeps the marker so cleared data is not migrated back", async () => {
+        const h = createHarness();
+        const store = new KeyValueStore("s", h.persistence, h.options);
+        await store.hydrate();
+        store.set("$migratedFromMMKV", "2026-10-09");
+        store.set("a", "1");
+
+        store.clearAll();
+
+        expect(store.getAllKeys()).toEqual(["$migratedFromMMKV"]);
+    });
+});
