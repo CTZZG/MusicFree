@@ -59,6 +59,13 @@ export default class KeyValueStore implements IKeyValueStore {
     private pendingOps: Array<() => void> | null = [];
     /** 正在进行的落盘；flush 要等它，再把之后的变更写出去。 */
     private inflight: Promise<boolean> | null = null;
+    /**
+     * 从旧 MMKV 迁移进行期间删掉的键（cleared：清空过）。读盘、迁移都是异步的，
+     * 这期间删掉的附加信息、清空的平台数据不能被迁移从旧数据里再搬回来。只在
+     * 迁移进行时记录，结束就丢掉。
+     */
+    private legacyRemovals: { cleared: boolean; keys: Set<string> } | null =
+        null;
 
     private readonly now: () => number;
     private readonly setTimer: (handler: () => void, delayMs: number) => any;
@@ -189,6 +196,7 @@ export default class KeyValueStore implements IKeyValueStore {
     }
 
     delete(key: string) {
+        this.legacyRemovals?.keys.add(key);
         if (!this.hydrated) {
             // 磁盘上可能有这个键，内存里还没有：删除也要记下来，读盘后重放，
             // 否则旧值会被读盘复活。
@@ -227,6 +235,9 @@ export default class KeyValueStore implements IKeyValueStore {
     clearAll() {
         // 迁移标记是存储自己的元数据，不是用户数据：清掉它，下次启动会再从旧
         // MMKV 迁移一遍，把刚清空的旧数据又搬回来。
+        if (this.legacyRemovals) {
+            this.legacyRemovals.cleared = true;
+        }
         const keys = Object.keys(this.entries).filter(
             key => key !== MIGRATION_FLAG_KEY,
         );
@@ -241,6 +252,23 @@ export default class KeyValueStore implements IKeyValueStore {
         this.recordBeforeHydrate(apply);
         this.markDirty();
         keys.forEach(key => this.notify(key));
+    }
+
+    /** 开始从旧 MMKV 迁移：从这一刻起记下删除和清空，见 legacyRemovals。 */
+    beginLegacyMigration() {
+        this.legacyRemovals ??= { cleared: false, keys: new Set() };
+    }
+
+    endLegacyMigration() {
+        this.legacyRemovals = null;
+    }
+
+    /** 迁移开始后这个键被删过（或整个 store 被清空过），旧数据不该再搬进来。 */
+    wasRemovedDuringLegacyMigration(key: string) {
+        return (
+            !!this.legacyRemovals &&
+            (this.legacyRemovals.cleared || this.legacyRemovals.keys.has(key))
+        );
     }
 
     /**

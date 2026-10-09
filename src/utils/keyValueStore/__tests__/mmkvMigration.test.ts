@@ -137,4 +137,50 @@ describe("MMKV migration", () => {
         expect(result.keys).toBe(2);
         expect(result.skipped).toBe(1);
     });
+
+    // 复核 1ec0114c：迁移进行期间删掉、清空的，旧数据不能再搬回来
+    describe("removals made while the migration is running", () => {
+        const source = () => createSource({ a: "old-a", b: "old-b" });
+        const migrate = (target: KeyValueStore) =>
+            migrateEntries(source(), target, (_key, legacy, current) =>
+                `${legacy}+${current}`,
+            key => target.wasRemovedDuringLegacyMigration(key),
+            );
+
+        it("skips a key deleted during the migration, even if written again", () => {
+            const target = createTarget();
+            target.beginLegacyMigration();
+            target.delete("a");
+            target.set("a", "new-a");
+
+            migrate(target);
+            target.endLegacyMigration();
+
+            expect(target.getString("a")).toBe("new-a");
+            expect(target.getString("b")).toBe("old-b");
+        });
+
+        it("skips everything after the store was cleared", () => {
+            const target = createTarget();
+            target.beginLegacyMigration();
+            target.clearAll();
+
+            migrate(target);
+
+            expect(target.getString("a")).toBeUndefined();
+            expect(target.getString("b")).toBeUndefined();
+            expect(shouldMigrate(target)).toBe(false);
+        });
+
+        it("forgets the removals once the migration is over", () => {
+            const target = createTarget();
+            target.beginLegacyMigration();
+            target.delete("a");
+            target.endLegacyMigration();
+            target.delete("b");
+
+            expect(target.wasRemovedDuringLegacyMigration("a")).toBe(false);
+            expect(target.wasRemovedDuringLegacyMigration("b")).toBe(false);
+        });
+    });
 });

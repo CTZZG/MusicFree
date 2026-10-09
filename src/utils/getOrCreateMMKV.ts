@@ -41,11 +41,24 @@ export async function migrateLegacyMMKVStore(
     mergeExisting?: LegacyMerge,
 ): Promise<{ migrated: boolean; keys: number } | null> {
     const target = getKeyValueStore(dbName);
-    await target.hydrate();
-    if (!shouldMigrate(target)) {
-        return null;
+    target.beginLegacyMigration();
+    try {
+        await target.hydrate();
+        if (!shouldMigrate(target)) {
+            return null;
+        }
+        return migrateFromLegacy(target, dbName, cachePath, mergeExisting);
+    } finally {
+        target.endLegacyMigration();
     }
+}
 
+function migrateFromLegacy(
+    target: ReturnType<typeof getKeyValueStore>,
+    dbName: string,
+    cachePath: boolean,
+    mergeExisting?: LegacyMerge,
+) {
     try {
         // 延迟 require：只有真正需要迁移时才加载 MMKV，迁移完成后的正常启动
         // 完全不碰它。
@@ -63,6 +76,7 @@ export async function migrateLegacyMMKVStore(
             },
             target,
             mergeExisting,
+            key => target.wasRemovedDuringLegacyMigration(key),
         );
         return { migrated: result.migrated, keys: result.keys };
     } catch {
@@ -72,7 +86,7 @@ export async function migrateLegacyMMKVStore(
         target.set(MIGRATION_FLAG_KEY, "legacy-unavailable");
         return { migrated: false, keys: 0 };
     }
-};
+}
 
 const preparedStores = new Map<string, Promise<void>>();
 
@@ -92,13 +106,19 @@ export function prepareKeyValueStore(
 ): Promise<void> {
     let prepared = preparedStores.get(dbName);
     if (!prepared) {
+        // 同步地开始记录删除：调用方拿到 store 后马上删的键（第一次访问就删除、
+        // 卸载插件清空平台）也要算在迁移期间
+        const store = getKeyValueStore(dbName);
+        store.beginLegacyMigration();
         prepared = (async () => {
-            await hydrateKeyValueStore(dbName);
             try {
+                await hydrateKeyValueStore(dbName);
                 await migrateLegacyMMKVStore(dbName, false, mergeExisting);
             } catch {
                 // 迁移失败不能挡住正常读写；migrateLegacyMMKVStore 自己会记下
                 // “旧数据不可用”，下次不再重试
+            } finally {
+                store.endLegacyMigration();
             }
         })();
         preparedStores.set(dbName, prepared);

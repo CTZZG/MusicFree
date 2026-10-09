@@ -205,6 +205,60 @@ describe("upgrading from the MMKV storage", () => {
         expect(second.storage.getMusicList("road-trip").map(item => item.id)).toEqual(["trip-2"]);
     });
 
+    // 复核 1ec0114c（P2）：读盘、迁移是异步的。第一次访问就删掉附加信息（或卸载
+    // 插件清空整个平台），删除先生效，迁移随后又把旧数据搬了回来。
+    describe("removing media extras while the migration is still running", () => {
+        async function settle(
+            modules: ReturnType<typeof boot>,
+        ) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await modules.getKeyValueStore("MediaExtra.kuwo").flush();
+        }
+
+        async function afterRestart(disk: Map<string, string>) {
+            const reloaded = boot(disk);
+            reloaded.mediaExtra.getMediaExtra(song("old-1"));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            return reloaded.mediaExtra.getMediaExtra(song("old-1"));
+        }
+
+        it("keeps a removed song's extras removed", async () => {
+            const disk = new Map<string, string>();
+            const modules = boot(disk);
+
+            modules.mediaExtra.removeMediaExtra(song("old-1"));
+            await settle(modules);
+
+            expect(modules.mediaExtra.getMediaExtra(song("old-1"))).toBeNull();
+            expect(await afterRestart(disk)).toBeNull();
+        });
+
+        it("keeps a cleared platform cleared", async () => {
+            const disk = new Map<string, string>();
+            const modules = boot(disk);
+
+            modules.mediaExtra.removeAllMediaExtra("kuwo");
+            await settle(modules);
+
+            expect(modules.mediaExtra.getMediaExtra(song("old-1"))).toBeNull();
+            expect(await afterRestart(disk)).toBeNull();
+        });
+
+        it("does not merge the old extras into what was written after the removal", async () => {
+            const disk = new Map<string, string>();
+            const modules = boot(disk);
+
+            modules.mediaExtra.removeMediaExtra(song("old-1"));
+            modules.mediaExtra.patchMediaExtra(song("old-1"), { lyricOffset: 5 });
+            await settle(modules);
+
+            expect(modules.mediaExtra.getMediaExtra(song("old-1"))).toEqual({
+                lyricOffset: 5,
+            });
+            expect(await afterRestart(disk)).toEqual({ lyricOffset: 5 });
+        });
+    });
+
     // 复核 4b4b833b（P2）：读盘完成前改歌词偏移，同一首歌的下载标记和本地路径丢了
     it("keeps the other fields when a media extra is patched before its store has loaded", async () => {
         mockLegacy.clear();

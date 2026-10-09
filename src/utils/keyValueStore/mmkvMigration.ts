@@ -34,6 +34,9 @@ export function shouldMigrate(target: IKeyValueStore): boolean {
  * 改过设置，而某次异常又让标记没写上），用旧数据盖掉是净损失。传了
  * `mergeExisting` 的 store（歌单、附加信息）对这类键做合并：两边的字符串交给
  * 它，返回合并结果；返回 undefined 时保留目标不动。
+ *
+ * `wasRemoved` 为 true 的键整个跳过：迁移进行期间用户删掉（或清空）了它，
+ * 之后即使又写了新值，也不能把旧数据搬回来或合并进去。
  */
 export function migrateEntries(
     source: IMigrationSource,
@@ -43,6 +46,7 @@ export function migrateEntries(
         legacy: string,
         current: string,
     ) => string | undefined,
+    wasRemoved?: (key: string) => boolean,
 ): IMigrationResult {
     let keys = 0;
     let skipped = 0;
@@ -66,6 +70,10 @@ export function migrateEntries(
 
     for (const key of sourceKeys) {
         if (key === MIGRATION_FLAG_KEY) {
+            continue;
+        }
+        if (wasRemoved?.(key)) {
+            skipped += 1;
             continue;
         }
         if (target.contains(key)) {
