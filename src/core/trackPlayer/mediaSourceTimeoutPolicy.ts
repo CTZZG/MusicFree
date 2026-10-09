@@ -13,11 +13,39 @@ export const manualSkipIntentTtlMs = 8000;
 
 export class MediaSourceTimeoutError extends Error {
     readonly timeoutMs: number;
+    /** 没有真的再等：同一次切歌里这个来源已经等满过一次期限（见 TimedOutSources） */
+    readonly earlierAttempt: boolean;
 
-    constructor(timeoutMs: number) {
+    constructor(timeoutMs: number, earlierAttempt = false) {
         super(`media source resolution timed out after ${timeoutMs}ms`);
         this.name = "MediaSourceTimeoutError";
         this.timeoutMs = timeoutMs;
+        this.earlierAttempt = earlierAttempt;
+    }
+}
+
+/**
+ * 一次切歌里已经等满期限、没有回应的取源（来源插件 + 歌曲）。
+ *
+ * MPV 手动切歌先预取目标的地址，取不到再交给 play() 兜底。兜底不知道预取已经
+ * 超时，会向同一个来源再要一次、再等一轮，一次失败的切歌要等两轮。预取和兜底
+ * 共用这一份记录：记下的来源不再重问，直接按超时处理，歌曲自带的地址、其他来源
+ * 照常试。只属于这一次切歌，下一次切歌（包括用户点重试）用新的，超时不会让来源
+ * 一直被跳过。别的失败（没给地址、报错、拒绝访问）不记，兜底照旧再问。
+ */
+export class TimedOutSources {
+    private readonly keys = new Set<string>();
+
+    private static key(pluginName: string, mediaKey: string) {
+        return `${pluginName}\n${mediaKey}`;
+    }
+
+    has(pluginName: string, mediaKey: string) {
+        return this.keys.has(TimedOutSources.key(pluginName, mediaKey));
+    }
+
+    add(pluginName: string, mediaKey: string) {
+        this.keys.add(TimedOutSources.key(pluginName, mediaKey));
     }
 }
 

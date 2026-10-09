@@ -384,4 +384,44 @@ if flow "打开资料库里的播放历史" library-history.yaml; then
     expect_dock_clear "从二级页面返回后马上切后台，回来换个标签，迷你播放器不盖住标签栏"
 fi
 
+# 14. 插件一直不回应：从 C 按下一首切到取播放地址时插件一直不回应的 Hang。切歌先暂停 C，
+#     等一轮取源期限（15 秒）就放弃、回到 C 接着播；以前预取等 15 秒、兜底再向同一个来源
+#     要一次又等 15 秒。之后按上一首照常切到 B，切歌没有被卡住。
+#     前提（C 在播）没满足时，两项检查都要记失败，不能悄悄跳过
+HANG_BACK="插件不回应时只等一轮就回到原来那首"
+HANG_NEXT="之后按上一首照常切到 B"
+open_link "musicfree://search?keyword=e2e%20hang%20$REF"
+if ! flow "点播不回应那首前面的 C" hang-song.yaml; then
+    fail "$HANG_BACK" "没能点播 C，没有执行"
+    fail "$HANG_NEXT" "没能点播 C，没有执行"
+elif ! wait_for_song "E2E Tone C" 30; then
+    fail "$HANG_BACK" "点了 C 但 C 没开始播，没有执行：$(session)"
+    fail "$HANG_NEXT" "点了 C 但 C 没开始播，没有执行"
+else
+    adb shell input keyevent KEYCODE_MEDIA_NEXT
+    started=$SECONDS
+    if ! wait_for_state PAUSED "E2E Tone C" 10; then
+        fail "$HANG_BACK" "按下一首后 C 没有暂停等 Hang 的地址：$(session)"
+    elif ! wait_for_song "E2E Tone C" 45; then
+        fail "$HANG_BACK" "45 秒内没回到 C：$(session)"
+    else
+        waited=$((SECONDS - started))
+        if [ "$waited" -gt 25 ]; then
+            fail "$HANG_BACK" "等了 ${waited} 秒才回到 C（一轮取源期限是 15 秒）"
+        else
+            # 回到 C 之后进度真的在走，不只是状态写着在播
+            first=$(session)
+            sleep 4
+            second=$(session)
+            if problem=$(python3 -I "$SESSION" playing "E2E Tone C" "$first" "$second"); then
+                pass "$HANG_BACK" "按下一首后 ${waited} 秒回到 C，$(python3 -I -c 'import json,sys; a,b=(json.loads(x)["position"] for x in sys.argv[1:]); print(f"进度 {a/1000:.1f}s → {b/1000:.1f}s")' "$first" "$second")"
+            else
+                fail "$HANG_BACK" "${waited} 秒回到 C，但没接着播：$problem"
+            fi
+        fi
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PREVIOUS
+    expect_playing "$HANG_NEXT" "E2E Tone B"
+fi
+
 finish
