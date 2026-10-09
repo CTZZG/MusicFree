@@ -250,7 +250,8 @@ it("times the wait with a timer that keeps running in the background", async () 
 
 // 复核 1ec0114c：上面几个用例把 play() 换成了成功的假实现，只覆盖了预取超时和
 // 队列衔接。这里保留真实的 play() 兜底：不换来源时预取等 15 秒，play() 再向同一
-// 首要一次、再等 15 秒，然后切歌事务结束、回到原来那首，切歌队列放开。
+// 首要一次、再等 15 秒，然后切歌事务结束、回到原来那首，切歌队列放开，前后正好
+// 30 秒。
 it("gives up and goes back to the old song through the real play() fallback", async () => {
     (trackPlayer.play as jest.Mock).mockRestore();
     let settled = false;
@@ -262,8 +263,10 @@ it("gives up and goes back to the old song through the real play() fallback", as
     expect(settled).toBe(false);
     expect(requests.map(request => request.id)).toEqual(["B", "B"]);
 
-    await jest.advanceTimersByTimeAsync(15_000);
-    await jest.advanceTimersByTimeAsync(5_000);
+    // 第二次也是 15 秒：差 1 毫秒时还在等，到点就结束，不多等
+    await jest.advanceTimersByTimeAsync(14_999);
+    expect(settled).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
     expect(settled).toBe(true);
     await skip;
     expect(player.manualSkipGate.pendingCount).toBe(0);
