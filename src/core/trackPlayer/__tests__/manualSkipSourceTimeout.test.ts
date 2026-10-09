@@ -85,8 +85,27 @@ jest.mock("@/core/localMusicArtworkManager", () => ({
 }));
 jest.mock("@/utils/log", () => mockAutoStub());
 jest.mock("react-native-fs", () => mockAutoStub());
-jest.mock("@/utils/getOrCreateMMKV", () => mockAutoStub());
-jest.mock("@/utils/network", () => mockAutoStub());
+jest.mock("@/utils/getOrCreateMMKV", () => {
+    const store = () => ({
+        getString: () => undefined,
+        set: () => undefined,
+        updateString: () => undefined,
+        delete: () => undefined,
+        contains: () => false,
+        getAllKeys: () => [],
+        clearAll: () => undefined,
+    });
+    return {
+        __esModule: true,
+        default: store,
+        prepareKeyValueStore: async () => undefined,
+        hydrateKeyValueStore: async () => undefined,
+    };
+});
+jest.mock("@/utils/network", () => ({
+    __esModule: true,
+    default: { isOffline: false, isCellular: false },
+}));
 jest.mock("@/utils/persistStatus", () => mockAutoStub());
 jest.mock("@/core/localMusicSheet", () => mockAutoStub());
 jest.mock("@/core/dislikeMusic", () => mockAutoStub());
@@ -227,6 +246,29 @@ it("times the wait with a timer that keeps running in the background", async () 
 
     await jest.advanceTimersByTimeAsync(15_000);
     await skip;
+});
+
+// 复核 1ec0114c：上面几个用例把 play() 换成了成功的假实现，只覆盖了预取超时和
+// 队列衔接。这里保留真实的 play() 兜底：不换来源时预取等 15 秒，play() 再向同一
+// 首要一次、再等 15 秒，然后切歌事务结束、回到原来那首，切歌队列放开。
+it("gives up and goes back to the old song through the real play() fallback", async () => {
+    (trackPlayer.play as jest.Mock).mockRestore();
+    let settled = false;
+    const skip = trackPlayer.skipToNext().then(() => {
+        settled = true;
+    });
+
+    await jest.advanceTimersByTimeAsync(15_000);
+    expect(settled).toBe(false);
+    expect(requests.map(request => request.id)).toEqual(["B", "B"]);
+
+    await jest.advanceTimersByTimeAsync(15_000);
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(settled).toBe(true);
+    await skip;
+    expect(player.manualSkipGate.pendingCount).toBe(0);
+    expect(player.mpvManualSkipTransition).toBeNull();
+    expect(trackPlayer.currentMusic.id).toBe("A");
 });
 
 describe("other ways of asking a plugin for a source are bounded too", () => {
