@@ -433,3 +433,136 @@ describe("a pause while the skip is waiting", () => {
         expect(await mockBackend.getState()).toBe("paused");
     });
 });
+
+// 复核 4185ffd9（P2）：暂停意图只能作用在它所属的那次装载上
+describe("a pause and the loads around it", () => {
+    let calls: string[];
+    let state: string;
+
+    beforeEach(() => {
+        calls = [];
+        state = "playing";
+        mockBackend.getState.mockImplementation(async () => state);
+        mockBackend.pause = jest.fn(async () => {
+            calls.push("pause");
+            state = "paused";
+        });
+        mockBackend.play = jest.fn(async () => {
+            calls.push("play");
+            state = "playing";
+        });
+    });
+
+    afterEach(() => {
+        mockBackend.getState.mockImplementation(async () => "playing");
+        delete mockBackend.pause;
+        delete mockBackend.play;
+        delete mockBackend.skipToIndex;
+        delete mockBackend.loadQueue;
+    });
+
+    it("does not let a cancelled skip pause the song picked after it", async () => {
+        // 等 B 的地址时暂停；B 开始装载、还没返回时，用户点了 D 并开始播放。
+        // B 那次装载迟到返回时，事务早就作废了，不能去暂停 D
+        let finishLoadingB: () => void = () => undefined;
+        mockBackend.skipToIndex = jest.fn(
+            (index: number) =>
+                new Promise<boolean>(resolve => {
+                    calls.push(`skipTo(${songs[index].id})`);
+                    finishLoadingB = () => resolve(true);
+                }),
+        );
+        let deliverB: (value: unknown) => void = () => undefined;
+        answer = item =>
+            item.id === "B"
+                ? new Promise(resolve => {
+                    deliverB = resolve;
+                })
+                : Promise.resolve({ url: `https://test.example/${item.id}.mp3` });
+        (player.setTrackSource as jest.Mock).mockImplementation(
+            async (track: any, autoPlay: boolean) => {
+                calls.push(`load(${track.id}, autoPlay=${autoPlay})`);
+                nativeIsPlaying(track.id);
+                state = autoPlay ? "playing" : "paused";
+            },
+        );
+        const skip = settledAfter(trackPlayer.skipToNext());
+        await jest.advanceTimersByTimeAsync(2_000);
+        await trackPlayer.pause();
+        deliverB({ url: "https://test.example/B.mp3" });
+        await jest.advanceTimersByTimeAsync(100);
+        expect(calls).toContain("skipTo(B)");
+
+        const picked = settledAfter(trackPlayer.play(songs[3], true));
+        await jest.advanceTimersByTimeAsync(3_000);
+        expect(picked.settled).toBe(true);
+        expect(trackPlayer.currentMusic.id).toBe("D");
+        expect(state).toBe("playing");
+
+        calls.length = 0;
+        finishLoadingB();
+        await jest.advanceTimersByTimeAsync(5_000);
+
+        expect(skip.settled || skip.error !== undefined).toBe(true);
+        expect(trackPlayer.currentMusic.id).toBe("D");
+        expect(calls).not.toContain("pause");
+        expect(state).toBe("playing");
+    });
+
+    describe("with the real track loading", () => {
+        let finishLoading: () => void;
+
+        beforeEach(() => {
+            (player.setTrackSource as jest.Mock).mockRestore();
+            finishLoading = () => undefined;
+            mockBackend.loadQueue = jest.fn(
+                (tracks: any[], startIndex: number, options: { autoPlay?: boolean }) =>
+                    new Promise<void>(resolve => {
+                        calls.push(`load(${tracks[startIndex].id}, autoPlay=${options?.autoPlay})`);
+                        finishLoading = () => {
+                            nativeIsPlaying(tracks[startIndex].id);
+                            resolve();
+                        };
+                    }),
+            );
+            mockBackend.getActiveTrack.mockImplementation(
+                async () => mockBackend.active?.track ?? null,
+            );
+        });
+
+        it("does not start playing when the user paused while the song was loading", async () => {
+            answer = async item => ({ url: `https://test.example/${item.id}.mp3` });
+            const picked = settledAfter(trackPlayer.play(songs[3], true));
+            await jest.advanceTimersByTimeAsync(500);
+            expect(calls).toContain("load(D, autoPlay=true)");
+
+            await trackPlayer.pause();
+            calls.length = 0;
+            finishLoading();
+            // 自动播放补偿在 180、520、1100 毫秒后各查一次
+            await jest.advanceTimersByTimeAsync(5_000);
+
+            expect(picked.settled || picked.error !== undefined).toBe(true);
+            expect(calls).not.toContain("play");
+            expect(state).toBe("paused");
+        });
+
+        it("keeps a song that finished loading paused when the user pauses before the autoplay check", async () => {
+            answer = async item => ({ url: `https://test.example/${item.id}.mp3` });
+            const picked = settledAfter(trackPlayer.play(songs[3], true));
+            await jest.advanceTimersByTimeAsync(500);
+            finishLoading();
+            await jest.advanceTimersByTimeAsync(50);
+            expect(calls).toContain("play");
+
+            // 装好、开始放了，补偿还没查：用户暂停之后补偿不能再把它放出来
+            await trackPlayer.pause();
+            calls.length = 0;
+            await jest.advanceTimersByTimeAsync(5_000);
+
+            expect(picked.settled || picked.error !== undefined).toBe(true);
+            expect(calls).not.toContain("play");
+            expect(state).toBe("paused");
+        });
+    });
+});

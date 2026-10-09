@@ -1197,11 +1197,11 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         await this.playIndex(previousIndex, "manual");
     }
 
-    async skipToIndex(index: number) {
+    async skipToIndex(index: number, options?: { autoPlay?: boolean }) {
         if (index < 0 || index >= this.queue.length) {
             return false;
         }
-        await this.playIndex(index, "manual");
+        await this.playIndex(index, "manual", options?.autoPlay ?? true);
         return true;
     }
 

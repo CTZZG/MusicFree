@@ -366,6 +366,11 @@ class TrackPlayer
     private queueRevision = 0;
     private queueEditIntent = 0;
     private queuePlaybackIntent = 0;
+    /**
+     * 用户暂停的次数。装载开始时记下，装好后、自动播放补偿时比对：中途暂停过就
+     * 不再自动播，迟到的装载和补偿不能盖掉用户的暂停。
+     */
+    private userPauseSerial = 0;
     private queueUndoSequence = 0;
     private queueUndoRecord: IQueueUndoRecord | null = null;
     // 底层播放器桥接由配置选择，默认 Nitro Player，可选 MPV。
@@ -2001,6 +2006,7 @@ class TrackPlayer
 
     async pause(): Promise<void> {
         this.beginQueuePlaybackIntent();
+        this.userPauseSerial += 1;
         const transition = this.mpvManualSkipTransition;
         if (transition && this.isMpvManualSkipTransitionActive(transition)) {
             // 切歌还在等目标的地址：切歌开始时已经把原来那首暂停了，这里的暂停
@@ -2380,7 +2386,9 @@ class TrackPlayer
             } else if (mpvManualTransition && expectedMpvNext) {
                 const expectedIndex =
                     this.getMusicIndexInPlayList(expectedMpvNext);
-                const started = await this.backend.skipToIndex(expectedIndex);
+                const started = await this.backend.skipToIndex(expectedIndex, {
+                    autoPlay: !mpvManualTransition.pausedDuringTransition,
+                });
                 if (!started) {
                     throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
                 }
@@ -2506,7 +2514,10 @@ class TrackPlayer
             buffered: 0,
         });
         try {
-            const started = await this.backend.skipToIndex(previousIndexForSkip);
+            const started = await this.backend.skipToIndex(
+                previousIndexForSkip,
+                { autoPlay: !mpvManualTransition.pausedDuringTransition },
+            );
             if (!started) {
                 throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
             }
@@ -2792,11 +2803,18 @@ class TrackPlayer
         await this.backend.pause().catch(() => undefined);
     }
 
-    /** 新歌已经开始装载：等待期间用户暂停过的话，让它停在暂停（见 pause()） */
+    /**
+     * 新歌已经开始装载：等待期间用户暂停过的话，让它停在暂停（见 pause()）。
+     * 只对仍然有效的事务生效：装载迟到返回时事务可能已经被新的点歌取消，
+     * 这时暂停的是别人的歌。
+     */
     private async keepPausedAfterTransitionLoad(
         transition?: IMpvManualSkipTransition | null,
     ) {
-        if (transition?.pausedDuringTransition) {
+        if (
+            transition?.pausedDuringTransition &&
+            this.isMpvManualSkipTransitionActive(transition)
+        ) {
             await this.backend.pause().catch(() => undefined);
         }
     }
@@ -2867,15 +2885,14 @@ class TrackPlayer
         if (!this.isMpvManualSkipTransitionActive(transition)) {
             return false;
         }
+        if (transition.pausedDuringTransition) {
+            // 确认切歌期间才暂停的，装载时没赶上，这里补一次。趁事务还有效时
+            // 发出去：之后的点歌、切歌发的命令都排在它后面
+            this.backend.pause().catch(() => undefined);
+        }
         this.mpvTrackTransitionGate.clear(transition.token);
         this.mpvManualSkipTransition = null;
         this.mpvActiveTrackSyncSerial += 1;
-        if (transition.pausedDuringTransition) {
-            // 确认切歌期间才暂停的，装载时没赶上，这里补一次
-            this.keepPausedAfterTransitionLoad(transition).catch(
-                () => undefined,
-            );
-        }
         trace("MPV 手动切歌事务完成", {
             id: transition.token.id,
             reason,
@@ -3734,10 +3751,15 @@ class TrackPlayer
         };
     }
 
-    private async ensureNitroAutoPlay(targetKey: string) {
+    private async ensureNitroAutoPlay(targetKey: string, pauseSerial: number) {
         const retryDelays = [180, 520, 1100];
         for (let retryDelay of retryDelays) {
             await delay(retryDelay);
+
+            if (this.userPauseSerial !== pauseSerial) {
+                trace("自动播放补偿取消：用户暂停了", { targetKey });
+                return;
+            }
 
             const currentMusic = this.currentMusic;
             if (
@@ -3835,6 +3857,8 @@ class TrackPlayer
         if (!clonedTrack) {
             return;
         }
+        // 装载期间用户暂停的话，装好后不再自动播（见 userPauseSerial）
+        const pauseSerial = this.userPauseSerial;
         const initialProgress = this.normalizeProgress(seekTo) ?? 0;
         clonedTrack.userAgent = clonedTrack.userAgent || getAppUserAgent();
         const nitroTargetKey = getMediaUniqueKey(
@@ -3872,10 +3896,10 @@ class TrackPlayer
             await delay(100);
             await this.seekTo(initialProgress);
         }
-        if (autoPlay) {
+        if (autoPlay && this.userPauseSerial === pauseSerial) {
             await this.backend.play();
             if (nitroTargetKey) {
-                this.ensureNitroAutoPlay(nitroTargetKey).catch(error => {
+                this.ensureNitroAutoPlay(nitroTargetKey, pauseSerial).catch(error => {
                     errorLog("自动播放补偿失败", error?.message ?? error);
                 });
             }

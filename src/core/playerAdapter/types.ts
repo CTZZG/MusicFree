@@ -184,7 +184,11 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
 
     skipToPrevious(): Promise<void>;
 
-    skipToIndex(index: number): Promise<boolean>;
+    /** autoPlay 默认 true；切歌等待期间用户暂停过时传 false，装好不自动播 */
+    skipToIndex(
+        index: number,
+        options?: { autoPlay?: boolean },
+    ): Promise<boolean>;
 
     /**
      * 放弃尚未确认的切歌目标，并重新加载最后一次原生确认的 active track。
