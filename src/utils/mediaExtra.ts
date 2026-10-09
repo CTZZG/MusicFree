@@ -13,7 +13,8 @@ import { safeParse } from "./jsonUtil";
  *
  * 附加属性 store 按插件动态创建，不在启动预载列表里。文件存储的读取需要先
  * 异步读盘，所以首次同步读会拿到空值——显示上只是降级（歌曲显示为未下载、
- * 歌词偏移为 0），载入完成后通知观察者重渲染即可自愈。载入时把旧 MMKV 里的
+ * 歌词偏移为 0），载入完成后通知观察者重渲染即可自愈：全局订阅者，以及订阅
+ * 了这个平台歌曲的单曲 hook（见 emitPlatformLoaded）。载入时把旧 MMKV 里的
  * 附加信息一并搬过来，和升级后新写的逐字段合并。
  *
  * 写入不受影响：读盘完成前的修改由存储层记下，读盘后重放到磁盘内容上，
@@ -27,7 +28,7 @@ const getPluginStore = (pluginName: string) => {
     if (!hydratedPluginStores.has(pluginName)) {
         hydratedPluginStores.add(pluginName);
         void prepareKeyValueStore(`MediaExtra.${pluginName}`, mediaExtraStoreMerge)
-            .then(emitMediaExtraChanged)
+            .then(() => emitPlatformLoaded(pluginName))
             .catch(() => undefined);
     }
     return store;
@@ -52,6 +53,8 @@ interface IMediaExtraProperties {
 
 const observerCallbacks = new Map<string, Set<(extra: IMediaExtraProperties | null) => void>>();
 const globalObserverCallbacks = new Set<() => void>();
+/** 按平台登记的单曲 hook：该平台载入完成后各自重新读一次。 */
+const platformLoadedCallbacks = new Map<string, Set<() => void>>();
 
 function normalizeMediaExtraProperties(
     meta: unknown,
@@ -74,6 +77,33 @@ function emitMediaExtraChanged() {
     for (const callback of globalObserverCallbacks) {
         callback();
     }
+}
+
+/**
+ * 某个平台的附加信息载入完成。单曲 hook 订阅的是各自歌曲的变更，载入不是
+ * 某首歌的变更，只通知全局订阅者的话，已挂载的单曲 hook 会一直停在载入前
+ * 读到的空值。
+ */
+function emitPlatformLoaded(platform: string) {
+    for (const callback of platformLoadedCallbacks.get(platform) ?? []) {
+        callback();
+    }
+    emitMediaExtraChanged();
+}
+
+function onPlatformLoaded(platform: string, callback: () => void) {
+    let callbacks = platformLoadedCallbacks.get(platform);
+    if (!callbacks) {
+        callbacks = new Set();
+        platformLoadedCallbacks.set(platform, callbacks);
+    }
+    callbacks.add(callback);
+    return () => {
+        callbacks.delete(callback);
+        if (callbacks.size === 0) {
+            platformLoadedCallbacks.delete(platform);
+        }
+    };
 }
 
 /**
@@ -242,9 +272,10 @@ function useMediaExtra(mediaItem: ICommon.IMediaBase | null | undefined) {
             setMediaExtraState(mediaExtra);
         };
         const mediaKey = getMediaExtraObserverKey(mediaItem);
+        let stopWatchingLoad: (() => void) | undefined;
 
 
-        if (!mediaKey) {
+        if (!mediaKey || !mediaItem) {
             setMediaExtraState(null);
         } else {
             setMediaExtraState(getMediaExtra(mediaItem));
@@ -256,10 +287,14 @@ function useMediaExtra(mediaItem: ICommon.IMediaBase | null | undefined) {
             if (callbacks) {
                 callbacks.add(callback);
             }
+            stopWatchingLoad = onPlatformLoaded(mediaItem.platform, () =>
+                setMediaExtraState(getMediaExtra(mediaItem)),
+            );
         }
 
 
         return () => {
+            stopWatchingLoad?.();
             if (mediaKey && observerCallbacks.has(mediaKey)) {
                 const callbacks = observerCallbacks.get(mediaKey);
                 if (callbacks) {
@@ -285,8 +320,9 @@ function useMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem:
             setMediaExtraPropertyState(mediaExtra ? mediaExtra[key] : null);
         };
         const mediaKey = getMediaExtraObserverKey(mediaItem);
+        let stopWatchingLoad: (() => void) | undefined;
 
-        if (!mediaKey) {
+        if (!mediaKey || !mediaItem) {
             setMediaExtraPropertyState(null);
         } else {
             setMediaExtraPropertyState(getMediaExtraProperty(mediaItem, key));
@@ -298,10 +334,14 @@ function useMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem:
             if (callbacks) {
                 callbacks.add(callback);
             }
+            stopWatchingLoad = onPlatformLoaded(mediaItem.platform, () =>
+                setMediaExtraPropertyState(getMediaExtraProperty(mediaItem, key)),
+            );
         }
 
 
         return () => {
+            stopWatchingLoad?.();
             if (mediaKey && observerCallbacks.has(mediaKey)) {
                 const callbacks = observerCallbacks.get(mediaKey);
                 if (callbacks) {
