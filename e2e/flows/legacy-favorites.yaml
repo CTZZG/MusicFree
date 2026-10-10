@@ -1,0 +1,16 @@
+# 从 0.7.3 覆盖安装后：资料库 → 我喜欢 里是 0.7.3 留下的三首（storage.sh 写进旧版 MMKV 的）。
+# 这一页显示测试源 A 的歌，会第一次用到测试源 A 的附加信息，把它从旧版迁移过来
+appId: fun.upup.musicfree
+---
+- tapOn: "资料库"
+- tapOn: "我喜欢.*"
+- extendedWaitUntil:
+    visible: "E2E Tone A"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "E2E Tone B"
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "E2E Tone C"
+    timeout: 5000
+- takeScreenshot: legacy-favorites

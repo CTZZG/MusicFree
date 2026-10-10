@@ -21,6 +21,14 @@ on:
                 required: false
                 default: ''
                 type: string
+            e2e_suite:
+                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入'
+                required: false
+                default: 'all'
+                type: choice
+                options:
+                    - all
+                    - storage
 
 jobs:
     check-version:
@@ -272,7 +280,7 @@ jobs:
             !cancelled() && inputs.e2e &&
             (needs.build-beta.result == 'success' || inputs.e2e_apk_run_id != '')
         runs-on: ubuntu-latest
-        timeout-minutes: 45
+        timeout-minutes: 60
         permissions:
             # 下载别的运行里的 APK；把截图推到 refs/e2e/latest
             actions: read
@@ -320,7 +328,9 @@ jobs:
                   python3 -I e2e/lib/media_session.py --self-test
                   python3 -I e2e/lib/dock.py --self-test
                   python3 -I e2e/lib/audio_focus.py --self-test
+                  python3 -I e2e/lib/kvstore.py --self-test
                   bash e2e/lib/pause_checks_test.sh
+                  bash e2e/lib/storage_checks_test.sh
 
             - name: Enable KVM
               run: |
@@ -342,6 +352,21 @@ jobs:
                   bash e2e/focus-app/build.sh "$RUNNER_TEMP/e2e-focus.apk"
                   echo "E2E_FOCUS_APK=$RUNNER_TEMP/e2e-focus.apk" >> "$GITHUB_ENV"
 
+            # 端到端第 18 步：从 0.7.3（MMKV 时代的最后一版）覆盖安装。下载它的 x86_64 APK（核对 SHA-256），
+            # 编出往它的 MMKV 写测试数据的 mmkv-seed（见 e2e/mmkv-seed）。准备不好也接着跑其他检查，
+            # 第 18 步会逐项记失败
+            - name: Prepare the 0.7.3 upgrade test
+              continue-on-error: true
+              env:
+                  LEGACY_APK_URL: https://github.com/CTZZG/MusicFree/releases/download/v0.7.3/MusicFree-0.7.3-c35e6ba-app-x86_64-release.apk
+                  LEGACY_APK_SHA256: 945708e24c651158ac7607eedaa97d6e1e5f9d5a4057d9ed896d37ea037de5c6
+              run: |
+                  curl -fsSL --retry 3 -o "$RUNNER_TEMP/legacy-0.7.3.apk" "$LEGACY_APK_URL"
+                  echo "$LEGACY_APK_SHA256  $RUNNER_TEMP/legacy-0.7.3.apk" | sha256sum -c -
+                  bash e2e/mmkv-seed/build.sh "$RUNNER_TEMP/mmkv-seed"
+                  echo "E2E_LEGACY_APK=$RUNNER_TEMP/legacy-0.7.3.apk" >> "$GITHUB_ENV"
+                  echo "E2E_MMKV_SEED=$RUNNER_TEMP/mmkv-seed" >> "$GITHUB_ENV"
+
             - name: Install Maestro
               run: |
                   curl -fsSL "https://get.maestro.mobile.dev" | bash
@@ -351,6 +376,8 @@ jobs:
             # 不加 -noaudio：mpv 要有音频输出才会往前播
             - name: Run E2E on the emulator
               uses: reactivecircus/android-emulator-runner@v2
+              env:
+                  E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
               with:
                   api-level: 34
                   target: google_apis
