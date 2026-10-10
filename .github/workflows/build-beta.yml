@@ -320,6 +320,7 @@ jobs:
                   python3 -I e2e/lib/media_session.py --self-test
                   python3 -I e2e/lib/dock.py --self-test
                   python3 -I e2e/lib/audio_focus.py --self-test
+                  bash e2e/lib/pause_checks_test.sh
 
             - name: Enable KVM
               run: |

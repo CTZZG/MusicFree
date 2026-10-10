@@ -31,6 +31,9 @@ log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 pass() { printf 'PASS\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "PASS $1 ${2:-}"; }
 fail() { printf 'FAIL\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "FAIL $1 ${2:-}"; FAILED=$((FAILED + 1)); }
 shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; }
+# 播放会话、暂停、“视频”打断的判断（session、stays_paused、held_until_video_ends……）
+# shellcheck source=lib/pause_checks.sh
+source "$HERE/lib/pause_checks.sh"
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
 print_screen_text() {
@@ -56,10 +59,6 @@ flow() {
     shot "failed-${file%.yaml}"
     print_screen_text
     return 1
-}
-
-session() {
-    adb shell dumpsys media_session | python3 -I "$SESSION" parse "$PKG"
 }
 
 # 每 2 秒记一次播放状态，失败时看歌是怎么切的
@@ -140,33 +139,7 @@ expect_resumed() {
     return 1
 }
 
-# stays_paused <标题> <秒>：这段时间里每秒看一次，一直是暂停的这首；最后进度和开始时比没往前走
-#   （见 media_session.py still-paused）。没问题时输出停在哪里、返回 0；中途被什么东西放出来过，
-#   输出原因、返回 1
-stays_paused() {
-    local title=$1 seconds=$2 start now problem i
-    start=$(session)
-    if ! problem=$(python3 -I "$SESSION" still-paused "$title" "$start" "$start"); then
-        echo "开始时就不对：$problem"
-        return 1
-    fi
-    now=$start
-    for ((i = 1; i <= seconds; i++)); do
-        sleep 1
-        now=$(session)
-        if ! python3 -I "$SESSION" is-state PAUSED "$title" "$now"; then
-            echo "第 $i 秒不是暂停的「$title」：$(python3 -I "$SESSION" still-paused "$title" "$start" "$now")"
-            return 1
-        fi
-    done
-    if ! problem=$(python3 -I "$SESSION" still-paused "$title" "$start" "$now"); then
-        echo "$problem"
-        return 1
-    fi
-    echo "$seconds 秒里一直停在 $(python3 -I -c 'import json,sys; p = json.loads(sys.argv[1])["position"]; print(f"{p / 1000:.1f}s")' "$start")"
-}
-
-# expect_stays_paused <检查名> <标题> <秒>：见 stays_paused
+# expect_stays_paused <检查名> <标题> <秒>：见 lib/pause_checks.sh 的 stays_paused
 expect_stays_paused() {
     local name=$1 detail
     if detail=$(stays_paused "$2" "$3"); then
@@ -175,33 +148,6 @@ expect_stays_paused() {
     fi
     fail "$name" "$detail"
     return 1
-}
-
-# expect_held_by_video <检查名> <标题> <秒>：看视频期间音乐一直停着，最后焦点还在视频那边
-#   （自动播放补偿、切歌回滚没有把焦点抢回来）
-expect_held_by_video() {
-    local name=$1 detail owner
-    if ! detail=$(stays_paused "$2" "$3"); then
-        fail "$name" "$detail"
-        return 1
-    fi
-    owner=$(focus_owner)
-    if [ "$owner" != "$FOCUS_PKG" ]; then
-        fail "$name" "$detail，但焦点在 $owner：$(adb shell dumpsys audio | tr -d '\r' | python3 -I "$FOCUS" entry "$PKG")"
-        return 1
-    fi
-    pass "$name" "$detail，焦点一直在视频那边"
-    return 0
-}
-
-# focus_owner：现在拿着音频焦点的应用（焦点栈最上面）
-focus_owner() {
-    adb shell dumpsys audio | tr -d '\r' | python3 -I "$FOCUS" top
-}
-
-# watch_video <transient|full> <秒>：打开“视频”替身，占用音频焦点这么多秒后自己关掉
-watch_video() {
-    adb shell am start -n "$FOCUS_PKG/.HoldFocusActivity" --es mode "$1" --ei seconds "$2" > /dev/null
 }
 
 # set_network on|off：模拟器只用 Wi-Fi 上网（移动数据在开头关掉了），关掉 Wi-Fi 就是断网。
@@ -531,7 +477,9 @@ fi
 
 # 16. 看视频：视频临时占用音频焦点（短视频、来电也一样），音乐要停，看的时候自动播放补偿、切歌
 #     回滚都不能把焦点抢回来；看完系统还回焦点，音乐自动接着放。看之前、看的时候主动暂停过的，
-#     看完仍停着。切歌等地址时来了视频，切歌自己的暂停不算用户暂停，看完也接着放
+#     看完仍停着。切歌等地址时来了视频，切歌自己的暂停不算用户暂停，看完也接着放。
+#     以替身打出的“放下焦点”日志为界（lib/pause_checks.sh）：之前每秒核对音乐停着、焦点在视频那边，
+#     之后才看音乐有没有接着放。视频没结束音乐就放了，记失败
 VIDEO_RESUME="看完视频自动接着放"
 VIDEO_HELD="看视频期间焦点一直在视频那边，音乐停着"
 VIDEO_PAUSED_BEFORE="看视频前暂停，看完仍停着"
@@ -539,6 +487,23 @@ VIDEO_PAUSED_DURING="看视频时按暂停，看完仍停着"
 VIDEO_SKIP_HELD="切歌等地址时来了视频，回滚后不抢焦点"
 VIDEO_SKIP_RESUME="切歌等地址时来了视频，看完接着放原来那首"
 VIDEO_CHECKS=("$VIDEO_RESUME" "$VIDEO_HELD" "$VIDEO_PAUSED_BEFORE" "$VIDEO_PAUSED_DURING" "$VIDEO_SKIP_HELD" "$VIDEO_SKIP_RESUME")
+
+# expect_paused_through_video <检查名> <标题> <视频标记> <最多等几秒>：视频期间停着、焦点在视频那边，
+#   视频放下焦点之后 8 秒里也仍停着（用户暂停过，系统还回焦点也不接着放）
+expect_paused_through_video() {
+    local name=$1 title=$2 tag=$3 max=$4 during after
+    if ! during=$(held_until_video_ends "$title" "$tag" "$max"); then
+        fail "$name" "$during"
+        return 1
+    fi
+    if ! after=$(stays_paused "$title" 8); then
+        fail "$name" "视频放下焦点后：$after"
+        return 1
+    fi
+    pass "$name" "$during；视频放下焦点后 $after"
+    return 0
+}
+
 if [ -z "$FOCUS_APK" ] || ! adb install -r "$FOCUS_APK" > "$OUT/install-focus.log" 2>&1; then
     for check in "${VIDEO_CHECKS[@]}"; do
         fail "$check" "没装上“视频”替身（E2E_FOCUS_APK=${FOCUS_APK:-未设置}），没有执行"
@@ -549,33 +514,27 @@ elif ! wait_for_song "E2E Tone B" 10; then
     done
 else
     # 16a. 在放 B 时看一段 12 秒的视频
-    watch_video transient 12
-    started=$SECONDS
+    watch_video transient 12 video-a
     if ! wait_for_state PAUSED "E2E Tone B" 5; then
         fail "$VIDEO_HELD" "视频开始后音乐没停：$(session)"
         fail "$VIDEO_RESUME" "视频开始后音乐没停，没有执行"
+    elif ! detail=$(held_until_video_ends "E2E Tone B" video-a 25); then
+        fail "$VIDEO_HELD" "$detail"
+        fail "$VIDEO_RESUME" "视频期间没停住，没有执行"
     else
-        expect_held_by_video "$VIDEO_HELD" "E2E Tone B" 5
-        if wait_for_song "E2E Tone B" 25; then
-            waited=$((SECONDS - started))
-            first=$(session)
-            sleep 4
-            second=$(session)
-            if problem=$(python3 -I "$SESSION" playing "E2E Tone B" "$first" "$second"); then
-                pass "$VIDEO_RESUME" "12 秒的视频，开始后 ${waited} 秒接着放，$(python3 -I -c 'import json,sys; a,b=(json.loads(x)["position"] for x in sys.argv[1:]); print(f"进度 {a/1000:.1f}s → {b/1000:.1f}s")' "$first" "$second")"
-            else
-                fail "$VIDEO_RESUME" "接着放了但进度没走：$problem"
-            fi
+        pass "$VIDEO_HELD" "12 秒的视频：$detail"
+        if detail=$(resumes_after_video "E2E Tone B" 15); then
+            pass "$VIDEO_RESUME" "$detail"
         else
-            fail "$VIDEO_RESUME" "视频结束后没接着放：$(session)，焦点在 $(focus_owner)"
+            fail "$VIDEO_RESUME" "$detail"
         fi
     fi
 
     # 16b. 先暂停，再看 6 秒视频：看完仍停着
     adb shell input keyevent KEYCODE_MEDIA_PAUSE
     if wait_for_state PAUSED "E2E Tone B" 10; then
-        watch_video transient 6
-        expect_stays_paused "$VIDEO_PAUSED_BEFORE" "E2E Tone B" 12
+        watch_video transient 6 video-b
+        expect_paused_through_video "$VIDEO_PAUSED_BEFORE" "E2E Tone B" video-b 20
     else
         fail "$VIDEO_PAUSED_BEFORE" "看视频前没能暂停：$(session)"
     fi
@@ -583,11 +542,11 @@ else
     wait_for_song "E2E Tone B" 15 > /dev/null
 
     # 16c. 看 10 秒视频，看到第 3 秒按暂停（耳机、蓝牙上的暂停键）：看完仍停着
-    watch_video transient 10
+    watch_video transient 10 video-c
     if wait_for_state PAUSED "E2E Tone B" 5; then
         sleep 3
         adb shell input keyevent KEYCODE_MEDIA_PAUSE
-        expect_stays_paused "$VIDEO_PAUSED_DURING" "E2E Tone B" 12
+        expect_paused_through_video "$VIDEO_PAUSED_DURING" "E2E Tone B" video-c 20
     else
         fail "$VIDEO_PAUSED_DURING" "视频开始后音乐没停：$(session)"
     fi
@@ -605,21 +564,18 @@ else
             fail "$VIDEO_SKIP_HELD" "按下一首后 C 没有停下等 Hang 的地址：$(session)"
             fail "$VIDEO_SKIP_RESUME" "C 没有停下等地址，没有执行"
         else
-            watch_video transient 25
-            started=$SECONDS
-            # 切歌 15 秒放弃，回滚在视频的第 13 秒左右；看到第 20 秒
-            expect_held_by_video "$VIDEO_SKIP_HELD" "E2E Tone C" 20
-            if wait_for_song "E2E Tone C" 25; then
-                first=$(session)
-                sleep 4
-                second=$(session)
-                if problem=$(python3 -I "$SESSION" playing "E2E Tone C" "$first" "$second"); then
-                    pass "$VIDEO_SKIP_RESUME" "视频开始后 $((SECONDS - started)) 秒，$(python3 -I -c 'import json,sys; a,b=(json.loads(x)["position"] for x in sys.argv[1:]); print(f"进度 {a/1000:.1f}s → {b/1000:.1f}s")' "$first" "$second")"
-                else
-                    fail "$VIDEO_SKIP_RESUME" "接着放了但进度没走：$problem"
-                fi
+            watch_video transient 25 video-d
+            # 切歌 15 秒放弃、回到 C，在视频的第 13 秒左右
+            if ! detail=$(held_until_video_ends "E2E Tone C" video-d 40); then
+                fail "$VIDEO_SKIP_HELD" "$detail"
+                fail "$VIDEO_SKIP_RESUME" "视频期间没停住，没有执行"
             else
-                fail "$VIDEO_SKIP_RESUME" "视频结束后没接着放：$(session)，焦点在 $(focus_owner)"
+                pass "$VIDEO_SKIP_HELD" "25 秒的视频：$detail"
+                if detail=$(resumes_after_video "E2E Tone C" 15); then
+                    pass "$VIDEO_SKIP_RESUME" "$detail"
+                else
+                    fail "$VIDEO_SKIP_RESUME" "$detail"
+                fi
             fi
         fi
     fi

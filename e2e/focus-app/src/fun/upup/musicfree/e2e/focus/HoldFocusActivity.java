@@ -17,10 +17,13 @@ import android.widget.TextView;
  * 过 seconds 秒放下焦点、自己关掉。
  *
  *   adb shell am start -n fun.upup.musicfree.e2e.focus/.HoldFocusActivity \
- *       --es mode transient --ei seconds 10
+ *       --es mode transient --ei seconds 10 --es tag video-a
  *
  * mode=transient 是临时占用（短视频、来电），放下后系统把焦点还给音乐；
  * mode=full 是长期占用（长视频），音乐会永久失去焦点。
+ *
+ * 放下焦点之前先打一行 "releasing focus tag=<tag>"（标签 E2EFocus）：测试看到这行之前，
+ * 音乐要一直停着，看到之后才算视频结束。
  */
 public class HoldFocusActivity extends Activity {
     private static final String TAG = "E2EFocus";
@@ -30,6 +33,7 @@ public class HoldFocusActivity extends Activity {
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
     private AudioTrack tone;
+    private String tag = "";
     private boolean released;
 
     @Override
@@ -37,6 +41,8 @@ public class HoldFocusActivity extends Activity {
         super.onCreate(savedInstanceState);
         String mode = getIntent().getStringExtra("mode");
         int seconds = getIntent().getIntExtra("seconds", 10);
+        String requestedTag = getIntent().getStringExtra("tag");
+        tag = requestedTag == null ? "" : requestedTag;
         boolean full = "full".equals(mode);
 
         TextView label = new TextView(this);
@@ -61,7 +67,7 @@ public class HoldFocusActivity extends Activity {
                 .build();
         int result = audioManager.requestAudioFocus(focusRequest);
         Log.i(TAG, "requested " + (full ? "GAIN" : "GAIN_TRANSIENT") + " for " + seconds
-                + "s, result=" + result);
+                + "s, tag=" + tag + ", result=" + result);
         startTone(attributes);
 
         handler.postDelayed(new Runnable() {
@@ -104,6 +110,8 @@ public class HoldFocusActivity extends Activity {
             return;
         }
         released = true;
+        // 先打日志再放下：测试看到这行时，音乐最早也只能是在这之后接着放的
+        Log.i(TAG, "releasing focus tag=" + tag);
         if (tone != null) {
             try {
                 tone.stop();
@@ -113,7 +121,7 @@ public class HoldFocusActivity extends Activity {
             tone = null;
         }
         audioManager.abandonAudioFocusRequest(focusRequest);
-        Log.i(TAG, "abandoned focus");
+        Log.i(TAG, "abandoned focus tag=" + tag);
     }
 
     @Override

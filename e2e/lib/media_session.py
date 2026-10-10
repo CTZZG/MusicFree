@@ -10,6 +10,9 @@
   adb shell dumpsys media_session | media_session.py brief [包名]
       输出一行简要状态，例如 "PLAYING E2E Tone A 12.3s"，用来记时间线
 
+  media_session.py brief-sample <JSON>
+      把一次采样（parse 的输出）写成一行简要状态，和 brief 一样
+
   media_session.py is-playing <标题> <JSON>
       这次采样正在播这首歌才返回 0
 
@@ -31,6 +34,8 @@
 
   media_session.py --self-test
 """
+import contextlib
+import io
 import json
 import re
 import sys
@@ -217,6 +222,10 @@ def self_test():
     assert "应该还停在" in check_still_paused("E2E Tone A", paused, dict(paused, state="PLAYING"))
     assert "应该还停在" in check_still_paused("E2E Tone B", paused, paused)
     assert brief({"found": False}) == "-"
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        assert main(["", "brief-sample", json.dumps(new)]) == 0
+    assert printed.getvalue().strip() == "PLAYING E2E Tone C 12.3s", printed.getvalue()
     assert main(["", "is-playing", "E2E Tone C", json.dumps(new)]) == 0
     assert main(["", "is-playing", "E2E Tone A", json.dumps(new)]) == 1
     assert main(["", "is-playing", "E2E Tone A", json.dumps(old)]) == 1
@@ -236,6 +245,9 @@ def main(argv):
     if argv[1:2] == ["brief"]:
         package = argv[2] if len(argv) > 2 else DEFAULT_PACKAGE
         print(brief(parse(sys.stdin.read(), package)))
+        return 0
+    if argv[1:2] == ["brief-sample"] and len(argv) == 3:
+        print(brief(json.loads(argv[2])))
         return 0
     if argv[1:2] == ["is-playing"] and len(argv) == 4:
         return main(["", "is-state", "PLAYING", argv[2], argv[3]])
