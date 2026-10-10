@@ -21,6 +21,11 @@ on:
                 required: false
                 default: ''
                 type: string
+            build_ref:
+                description: '对照用：打包这个提交（完整提交号）的代码，自动测试脚本仍用触发的分支。留空打包触发的分支'
+                required: false
+                default: ''
+                type: string
             e2e_suite:
                 description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入'
                 required: false
@@ -76,6 +81,9 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v5
+              with:
+                  # 留空时就是触发的分支
+                  ref: ${{ inputs.build_ref }}
 
             - name: Setup Java
               uses: actions/setup-java@v5
@@ -378,6 +386,8 @@ jobs:
               uses: reactivecircus/android-emulator-runner@v2
               env:
                   E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
+                  # 测的 APK 不是按这次的提交打包时，写进结果
+                  E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}
               with:
                   api-level: 34
                   target: google_apis

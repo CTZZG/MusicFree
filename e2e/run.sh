@@ -213,6 +213,12 @@ write_summary() {
         echo "## 模拟器自动测试"
         echo
         echo "- 提交：\`$REF\`"
+        if [ -n "${E2E_APK_SOURCE:-}" ]; then
+            echo "- 测的 APK：$E2E_APK_SOURCE（测试脚本、测试音源用上面的提交）"
+        fi
+        if [ "$E2E_SUITE" != all ]; then
+            echo "- 只跑了：$E2E_SUITE"
+        fi
         echo "- 设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
         echo "- 结果：$passed 项通过，$FAILED 项失败"
         echo
