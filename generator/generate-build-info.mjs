@@ -79,7 +79,11 @@ function getMpvVersion() {
     }
 }
 
-const gitSha = process.env.GITHUB_SHA || run('git rev-parse HEAD', 'unknown');
+// 打包的源码提交。Beta 构建指定 build_ref 时它和触发工作流的提交（GITHUB_SHA）不同
+const gitSha =
+    process.env.BUILD_SOURCE_SHA ||
+    process.env.GITHUB_SHA ||
+    run('git rev-parse HEAD', 'unknown');
 const shortSha = process.env.SHORT_SHA || gitSha.slice(0, 7);
 const gitRef =
     process.env.BUILD_REF_NAME ||

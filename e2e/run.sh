@@ -212,10 +212,8 @@ write_summary() {
     {
         echo "## 模拟器自动测试"
         echo
-        echo "- 提交：\`$REF\`"
-        if [ -n "${E2E_APK_SOURCE:-}" ]; then
-            echo "- 测的 APK：$E2E_APK_SOURCE（测试脚本、测试音源用上面的提交）"
-        fi
+        echo "- 测试脚本、测试音源的提交：\`$REF\`"
+        echo "- 测的 APK：$(basename "$APK")，打包的源码提交：\`${E2E_APK_COMMIT:-未知}\`${E2E_APK_SOURCE:+（$E2E_APK_SOURCE）}"
         if [ "$E2E_SUITE" != all ]; then
             echo "- 只跑了：$E2E_SUITE"
         fi

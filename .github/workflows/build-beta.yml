@@ -153,15 +153,22 @@ jobs:
 
             - name: Generate build metadata
               run: |
+                  # 打包的源码提交。指定 build_ref 时是那个提交，不是触发工作流的提交（GITHUB_SHA）；
+                  # APK 文件名、构建信息、应用里的“构建信息”都记它，版本号也按它的 package.json
+                  SOURCE_SHA="$(git rev-parse HEAD)"
                   APP_VERSION="${{ needs.check-version.outputs.version }}"
                   PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-                  SHORT_SHA="${GITHUB_SHA::7}"
+                  if [ "$SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                    APP_VERSION="$PACKAGE_VERSION"
+                  fi
+                  SHORT_SHA="${SOURCE_SHA::7}"
                   BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
                   BUILD_REF_NAME="${GITHUB_REF_NAME:-unknown}"
                   BUILD_REF_TYPE="${GITHUB_REF_TYPE:-unknown}"
                   BUILD_RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
                   {
+                    echo "BUILD_SOURCE_SHA=$SOURCE_SHA"
                     echo "APP_VERSION=$APP_VERSION"
                     echo "PACKAGE_VERSION=$PACKAGE_VERSION"
                     echo "SHORT_SHA=$SHORT_SHA"
@@ -174,8 +181,11 @@ jobs:
                   {
                     echo "App version: $APP_VERSION"
                     echo "Package version: $PACKAGE_VERSION"
-                    echo "Commit: $GITHUB_SHA"
+                    echo "Commit: $SOURCE_SHA"
                     echo "Short SHA: $SHORT_SHA"
+                    if [ "$SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                      echo "Workflow commit: $GITHUB_SHA"
+                    fi
                     echo "Build branch: $BUILD_REF_NAME"
                     echo "Ref type: $BUILD_REF_TYPE"
                     echo "Ref: $GITHUB_REF"
@@ -257,7 +267,7 @@ jobs:
             - name: Upload Beta APKs
               uses: actions/upload-artifact@v7
               with:
-                  name: beta-apks-${{ needs.check-version.outputs.version }}-${{ env.SIGNING_STATUS }}
+                  name: beta-apks-${{ env.APP_VERSION }}-${{ env.SIGNING_STATUS }}
                   path: dist/*
                   if-no-files-found: error
                   retention-days: 30
@@ -269,7 +279,10 @@ jobs:
                     echo
                     echo "- App version: ${APP_VERSION}"
                     echo "- Package version: ${PACKAGE_VERSION}"
-                    echo "- Commit: ${GITHUB_SHA}"
+                    echo "- Commit: ${BUILD_SOURCE_SHA}"
+                    if [ "$BUILD_SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                      echo "- Workflow commit: ${GITHUB_SHA} (build_ref)"
+                    fi
                     echo "- Ref: ${BUILD_REF_NAME} (${BUILD_REF_TYPE})"
                     echo "- Build date: ${BUILD_DATE}"
                     echo "- Signing: ${SIGNING_STATUS:-unknown}"
@@ -330,6 +343,10 @@ jobs:
                   fi
                   echo "E2E_APK=${apks[0]}" >> "$GITHUB_ENV"
                   echo "Testing ${apks[0]}"
+                  # 这个 APK 打包的源码提交（和 APK 一起上传的构建信息里的 Commit），写进测试结果
+                  commit=$(sed -n 's/^Commit: //p' apk/android-build-info.txt 2>/dev/null | head -n 1)
+                  echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
+                  echo "APK source commit: ${commit:-unknown}"
 
             - name: Self-test E2E helpers
               run: |
