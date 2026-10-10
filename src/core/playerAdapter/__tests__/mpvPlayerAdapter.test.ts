@@ -801,3 +801,42 @@ describe("MpvPlayerAdapter external play and pause commands", () => {
         expect(mockNativeMpvPlayer.claimPlayback).toHaveBeenCalledTimes(1);
     });
 });
+
+// 复核 62c468b0（P2）：装载还没完成时，只有原生还在按自动播放缓冲，才能省掉恢复请求
+describe("MpvPlayerAdapter play() while a load is still pending", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it("leaves a load that is still buffering to start by itself", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")], 0);
+        mockListeners.state?.({ state: "buffering" });
+
+        await adapter.play();
+
+        expect(mockNativeMpvPlayer.resume).not.toHaveBeenCalled();
+    });
+
+    it("asks the native player to resume once the pending load was paused", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")], 0);
+        mockListeners.state?.({ state: "buffering" });
+        // 装载途中被暂停或被系统打断：原生撤销了装好后的自动出声，报了 paused
+        mockListeners.state?.({ state: "paused" });
+
+        await adapter.play();
+
+        expect(mockNativeMpvPlayer.resume).toHaveBeenCalledTimes(1);
+    });
+
+    it("resumes a load that was started paused", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")], 0, { autoPlay: false });
+        mockListeners.state?.({ state: "paused" });
+
+        await adapter.play();
+
+        expect(mockNativeMpvPlayer.resume).toHaveBeenCalledTimes(1);
+    });
+});

@@ -1086,7 +1086,15 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     async play() {
         if (this.pendingActivation) {
-            if (!this.pendingActivation.autoPlay) {
+            // 装载还没完成。按自动播放装载、原生也还在缓冲的，装好会自己出声，不用
+            // 再发。按暂停装载的，或者装载途中被暂停、被系统打断过的，原生已经撤销
+            // 了装好后的自动取消暂停（并报了 paused），只看当初的 autoPlay 会把恢复
+            // 请求吞掉：歌装好了也一直停着
+            const startsByItself =
+                this.pendingActivation.autoPlay &&
+                (this.currentState === "buffering" ||
+                    this.currentState === "playing");
+            if (!startsByItself) {
                 await NativeMpvPlayer.resume();
             }
             return;
