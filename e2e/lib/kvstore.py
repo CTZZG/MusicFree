@@ -5,7 +5,8 @@
 见 src/utils/keyValueStore/snapshotCodec.ts。端到端测试用 adb root 读出来交给这里。
 
   kvstore.py file-name <store id>
-      store 在 kvstore 目录里的文件名（和应用一样用 encodeURIComponent 编码）
+      store 在 kvstore 目录里的文件名（和应用一样：encodeURIComponent 编码后把 % 换成 +，
+      见 src/utils/keyValueStore/filePersistence.ts）
 
   adb shell cat <文件> | kvstore.py check
       能按应用的格式解析：输出键的个数；解析不了输出原因、返回 1
@@ -31,7 +32,7 @@ MIGRATION_FLAG_KEY = "$migratedFromMMKV"
 
 def file_name(store_id):
     # encodeURIComponent 不编码的字符：字母数字和 - _ . ! ~ * ' ( )
-    return urllib.parse.quote(store_id, safe="-_.!~*'()") + ".json"
+    return urllib.parse.quote(store_id, safe="-_.!~*'()").replace("%", "+") + ".json"
 
 
 def decode(text):
@@ -76,7 +77,8 @@ SAMPLE = json.dumps({
 
 def self_test():
     assert file_name("music.DownloadTasks") == "music.DownloadTasks.json"
-    assert file_name("MediaExtra.E2E 测试源 A") == "MediaExtra.E2E%20%E6%B5%8B%E8%AF%95%E6%BA%90%20A.json", file_name("MediaExtra.E2E 测试源 A")
+    assert file_name("MediaExtra.E2E 测试源 A") == "MediaExtra.E2E+20+E6+B5+8B+E8+AF+95+E6+BA+90+20A.json", file_name("MediaExtra.E2E 测试源 A")
+    assert file_name("MediaExtra.a+b") == "MediaExtra.a+2Bb.json"
     assert file_name("LocalSheet.favorite") == "LocalSheet.favorite.json"
     entries = decode(SAMPLE)
     assert len(entries) == 4

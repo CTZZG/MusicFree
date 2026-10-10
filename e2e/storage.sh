@@ -107,10 +107,13 @@ download_settled() {
     [ "$first" = "$second" ]
 }
 
-# store_write_failures：错误日志里 music.DownloadTasks 落盘失败的条数
+# store_write_failures：错误日志里 music.DownloadTasks 落盘失败的条数。日志把对象排成多行 JSON，
+#   一条从 "键值存储落盘失败" 到下一条的 "desc" 为止
 store_write_failures() {
-    adb shell "cat '$EXT_FILES'/log/error-log-*.log 2>/dev/null" | tr -d '\r' |
-        grep -F "键值存储落盘失败" | grep -cF "music.DownloadTasks"
+    adb shell "cat '$EXT_FILES'/log/error-log-*.log 2>/dev/null" | tr -d '\r' | python3 -I -c '
+import sys
+entries = sys.stdin.read().split("键值存储落盘失败")[1:]
+print(sum(1 for entry in entries if "music.DownloadTasks" in entry.split("\"desc\"")[0]))'
 }
 
 # store_write_failures_above <条数>

@@ -55,7 +55,7 @@ snapshot() {
 # ---- 键值存储 ----
 legacy='{\"lyricOffset\":1.5,\"e2eLegacy\":\"e2e-legacy-0.7.3\"}'
 snapshot "{\"\$migratedFromMMKV\": {\"t\": \"s\", \"v\": \"x\"}, \"tone-b\": {\"t\": \"s\", \"v\": \"$legacy\"}, \"tone-a\": {\"t\": \"s\", \"v\": \"$legacy\"}, \"new\": {\"t\": \"s\", \"v\": \"{}\"}}" \
-    > "$KV_DIR/MediaExtra.E2E%20%E6%B5%8B%E8%AF%95%E6%BA%90%20A.json"
+    > "$KV_DIR/MediaExtra.E2E+20+E6+B5+8B+E8+AF+95+E6+BA+90+20A.json"
 ok "store id 编码成文件名，读得到" kv_exists "MediaExtra.E2E 测试源 A"
 ok "没有的 store" not kv_exists "MediaExtra.E2E 测试源 B"
 ok "带旧版标记的键，排好序" equals "$(legacy_left "MediaExtra.E2E 测试源 A")" "tone-a tone-b"
@@ -108,8 +108,36 @@ printf '%s\n' \
     '10:00:02 | ERROR : {"desc":"下载收尾回滚未完成","message":{"storeId":"music.DownloadTasks"}}' \
     > "$EXT_FILES/log/error-log-10-10-2026.log"
 ok "只数 music.DownloadTasks 的落盘失败" equals "$(store_write_failures)" "1"
+# 应用实际写的格式：对象排成多行 JSON
+cat >> "$EXT_FILES/log/error-log-10-10-2026.log" <<'LOG'
+10:00:03 | ERROR :
+{
+  "desc": "键值存储落盘失败",
+  "message": {
+    "storeId": "music.DownloadTasks",
+    "attempts": 3,
+    "error": "Error: ENOENT"
+  }
+}
+10:00:04 | ERROR :
+{
+  "desc": "键值存储落盘失败",
+  "message": {
+    "storeId": "LocalSheet.favorite",
+    "attempts": 3
+  }
+}
+10:00:05 | ERROR :
+{
+  "desc": "下载收尾日志没能落盘，没有开始收尾",
+  "message": {
+    "attemptId": "music.DownloadTasks"
+  }
+}
+LOG
+ok "多行 JSON 的日志也数得对" equals "$(store_write_failures)" "2"
 ok "比之前多" store_write_failures_above 0
-ok "不比之前多" not store_write_failures_above 1
+ok "不比之前多" not store_write_failures_above 2
 
 if [ "$FAILURES" -gt 0 ]; then
     echo "storage_checks_test.sh: $FAILURES 项没通过"
