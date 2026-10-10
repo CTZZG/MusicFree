@@ -1121,6 +1121,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         await NativeMpvPlayer.pause();
     }
 
+    async claimPlayback() {
+        await NativeMpvPlayer.claimPlayback();
+    }
+
     async stop() {
         await NativeMpvPlayer.stop().catch(() => undefined);
         this.hasLoaded = false;
@@ -1903,6 +1907,18 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
         if (command === "playFromId") {
             if (typeof mediaId === "string" && mediaId.length > 0) {
+                // 在 Android Auto 等处点的歌：先让上层把意图记成要播（原生已经
+                // 解除了外部暂停的拦截），再由这里直接装载
+                this.remoteListeners.remotePlayFromId?.forEach(listener => {
+                    try {
+                        listener({ mediaId, enqueuedAt });
+                    } catch (error: any) {
+                        errorLog(
+                            "MpvPlayer 远程点播监听处理失败",
+                            error?.message ?? error,
+                        );
+                    }
+                });
                 runRemoteTask(this.playTrack(mediaId), "点播");
             }
             return;
@@ -1920,6 +1936,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             seek: "remoteSeek",
             duck: "remoteDuck",
             unduck: "remoteDuck",
+            noisy: "remotePause",
+            focusLoss: "remotePause",
+            interruptionBegan: "remoteInterruption",
+            interruptionEnded: "remoteInterruption",
         };
         const event = eventMap[command];
         const listeners = this.remoteListeners[event];
@@ -1933,6 +1953,16 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                         // 原生入队时间：上层据此判断这条意图在队列里等太久后是否作废
                         enqueuedAt,
                         ducking: command === "duck",
+                        // 暂停是谁发起的：用户按的、拔耳机、系统永久收回焦点
+                        reason:
+                            command === "noisy"
+                                ? "noisy"
+                                : command === "focusLoss"
+                                    ? "focus-loss"
+                                    : "remote",
+                        // 系统临时打断开始还是结束
+                        phase:
+                            command === "interruptionEnded" ? "ended" : "began",
                     });
                     Promise.resolve(result).catch(error => {
                         errorLog(
@@ -1956,7 +1986,15 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             runRemoteTask(this.play(), "播放");
             break;
         case "pause":
+        case "noisy":
+        case "focusLoss":
             runRemoteTask(this.pause(), "暂停");
+            break;
+        case "interruptionBegan":
+            // 原生已经停下
+            break;
+        case "interruptionEnded":
+            runRemoteTask(this.play(), "打断后恢复");
             break;
         case "next":
             runRemoteTask(this.skipToNext(), "下一首");
