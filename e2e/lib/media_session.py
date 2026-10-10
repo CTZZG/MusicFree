@@ -25,6 +25,10 @@
   media_session.py paused-at <标题> <暂停时的 JSON> <现在的 JSON>
       现在还停在暂停的那首、暂停的地方（前后 3 秒内）才返回 0，否则打印原因并返回 1
 
+  media_session.py still-paused <标题> <开始时的 JSON> <现在的 JSON>
+      一直停着：现在还是暂停的这首，进度和开始时相比没动（0.5 秒内）才返回 0，
+      否则打印原因并返回 1。用来确认暂停没有被别的东西悄悄放出来
+
   media_session.py --self-test
 """
 import json
@@ -123,6 +127,19 @@ def check_paused_at(title, paused, now):
     return None
 
 
+# 暂停时上报的进度可能比最后一次进度事件晚一点点
+STILL_PAUSED_DRIFT_MS = 500
+
+
+def check_still_paused(title, start, now):
+    if not now.get("found") or now.get("title") != title or now.get("state") != "PAUSED":
+        return f"现在是 {brief(now)}，应该还停在「{title}」"
+    moved = now.get("position", 0) - start.get("position", 0)
+    if abs(moved) > STILL_PAUSED_DRIFT_MS:
+        return f"进度从 {start.get('position', 0) / 1000:.1f}s 变成了 {now.get('position', 0) / 1000:.1f}s，中间放过"
+    return None
+
+
 def check_resumed(title, paused, playing):
     if not paused.get("found") or paused.get("title") != title or paused.get("state") != "PAUSED":
         return f"暂停时的采样不对：{brief(paused)}"
@@ -195,6 +212,10 @@ def self_test():
     assert check_paused_at("E2E Tone A", paused, dict(paused, position=61000)) is None
     assert "现在停在 0.0s" in check_paused_at("E2E Tone A", paused, dict(paused, position=0))
     assert "应该是暂停的" in check_paused_at("E2E Tone A", paused, dict(paused, state="PLAYING"))
+    assert check_still_paused("E2E Tone A", paused, dict(paused, position=60300)) is None
+    assert "中间放过" in check_still_paused("E2E Tone A", paused, dict(paused, position=62000))
+    assert "应该还停在" in check_still_paused("E2E Tone A", paused, dict(paused, state="PLAYING"))
+    assert "应该还停在" in check_still_paused("E2E Tone B", paused, paused)
     assert brief({"found": False}) == "-"
     assert main(["", "is-playing", "E2E Tone C", json.dumps(new)]) == 0
     assert main(["", "is-playing", "E2E Tone A", json.dumps(new)]) == 1
@@ -230,6 +251,12 @@ def main(argv):
         return 0
     if argv[1:2] == ["paused-at"] and len(argv) == 5:
         problem = check_paused_at(argv[2], json.loads(argv[3]), json.loads(argv[4]))
+        if problem:
+            print(problem)
+            return 1
+        return 0
+    if argv[1:2] == ["still-paused"] and len(argv) == 5:
+        problem = check_still_paused(argv[2], json.loads(argv[3]), json.loads(argv[4]))
         if problem:
             print(problem)
             return 1

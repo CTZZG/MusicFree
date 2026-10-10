@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 端到端测试用的“视频”替身：像短视频一样占用音频焦点，见 HoldFocusActivity -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="fun.upup.musicfree.e2e.focus">
+
+    <application android:label="E2E Video" android:allowBackup="false">
+        <activity
+            android:name=".HoldFocusActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault" />
+    </application>
+</manifest>

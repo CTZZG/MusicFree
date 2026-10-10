@@ -26,9 +26,14 @@
 | 网络恢复后重试 | 打开 Wi-Fi，在失败提示里点“重试”：B 在播 |
 | 迷你播放器不盖住标签栏 | 从资料库的播放历史返回、播放条刚升上去就按 Home 切到后台，5 秒后回来换到搜索标签：读屏树里迷你播放器在标签栏上方（`lib/dock.py`） |
 | 插件一直不回应时的切歌 | 搜 `e2e hang <提交号>` 点 C，按“下一首”切到取地址时插件一直不回应的 Hang：C 先暂停，25 秒内回到 C 接着播（一轮取源期限 15 秒，不再等两轮）；再按“上一首”切到 B 在播 |
+| 外部暂停一直作数 | 媒体键（和通知栏、锁屏、耳机走同一条路）：切到 Hang、C 停下等地址时按“暂停”，超时回滚后 20 秒里 C 一直停着；按“上一首”后 0.3 秒按“暂停”，B 装好后 8 秒里一直停着；两次之后按“播放”都照常接着放 |
+| 看完视频自动接着放 | 打开“视频”替身（`focus-app/`，临时占用音频焦点 12 秒）：音乐停下，期间焦点一直在视频那边；视频结束后自动接着放、进度在走 |
+| 看视频前后主动暂停过的不自己放 | 先暂停再看 6 秒视频，看完 12 秒内仍停着；看视频时按“暂停”，看完仍停着 |
+| 切歌等地址时来了视频 | 从 C 切到 Hang、C 停下等地址时看 25 秒视频：切歌放弃回到 C 时音乐仍停着、焦点不被抢回；看完 C 接着放（切歌自己的暂停不算用户暂停） |
 
 “在播”和“进度在走”都看系统媒体会话（`dumpsys media_session`），那里的进度是 mpv 直接上报的，
-不是界面上的数字。断网用的是关掉模拟器的 Wi-Fi（移动数据在开头就关了），等系统的默认网络
+不是界面上的数字。“一直停着”每秒看一次媒体会话，中间出现过在播、或者进度往前走了都算失败
+（`expect_stays_paused`）。谁拿着音频焦点看 `dumpsys audio` 的焦点栈（`lib/audio_focus.py`）。断网用的是关掉模拟器的 Wi-Fi（移动数据在开头就关了），等系统的默认网络
 变成 none 再点歌。
 
 测的 APK 比 GitHub 上最新发布的版本旧时，启动后会弹“发现新版本”，测试会勾上“跳过此版本”再关掉
@@ -65,6 +70,10 @@ e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-
 - `plugins/e2e-source-b.js`：第二个测试音源，正常搜索时不返回歌（只记下提交号），应用替测试源 A
   找其他来源时才返回同一首 Fallback 和一首 Live 版。
 - `fixtures/*.mp3`：几段纯音，由 `fixtures/generate.sh` 用 ffmpeg 生成。
+- `focus-app/`：“视频”替身。`am start -n fun.upup.musicfree.e2e.focus/.HoldFocusActivity --es mode transient --ei seconds 10`
+  打开后像短视频一样临时占用音频焦点（`mode full` 是长期占用）、放一段很轻的声音，到时间放下焦点、自己关掉。
+  CI 用 `focus-app/build.sh` 直接调 Android SDK 的命令行工具打包（不用 Gradle），路径通过 `E2E_FOCUS_APK`
+  传给 `run.sh`；本地跑时同样先打好再设这个变量。
 - 插件在 Jest 里也会用应用自己的加载代码跑一遍（`src/core/pluginManager/__tests__/e2eTestPlugin.test.ts`），
   写错了在 `npm run verify` 就能发现，不用等模拟器。
 
