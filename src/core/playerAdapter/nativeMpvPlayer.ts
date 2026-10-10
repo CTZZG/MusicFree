@@ -18,6 +18,12 @@ export type MpvPlayerState =
     | "ended"
     | "error";
 
+/**
+ * 原生转给 JS 的外部控制。play、pause 是用户在通知栏、锁屏、耳机、蓝牙上按的；
+ * 其余是系统发起的：noisy 是拔了耳机，focusLoss 是其他应用永久拿走了音频焦点，
+ * interruptionBegan / interruptionEnded 是临时打断（来电、短视频）开始和系统
+ * 还回焦点。原生收到这些暂停类命令时已经先停下，并拦住自动出声。
+ */
 export type MpvRemoteCommand =
     | "play"
     | "pause"
@@ -27,7 +33,11 @@ export type MpvRemoteCommand =
     | "seek"
     | "playFromId"
     | "duck"
-    | "unduck";
+    | "unduck"
+    | "noisy"
+    | "focusLoss"
+    | "interruptionBegan"
+    | "interruptionEnded";
 
 /** 初始化参数 */
 export interface MpvInitializeOptions {
@@ -133,6 +143,8 @@ interface MpvPlayerNativeModule {
     prepareNextBatch(payloads: MpvLoadPayload[]): Promise<void>;
     pause(): Promise<void>;
     resume(): Promise<void>;
+    /** 用户明确要播：解除外部暂停、系统打断对自动出声的拦截 */
+    claimPlayback?(): Promise<void>;
     stop(): Promise<void>;
     seekTo(seconds: number): Promise<void>;
     /** 0-1 */
@@ -250,6 +262,10 @@ const NativeMpvPlayer = {
         assertAvailable().prepareNextBatch(payloads),
     pause: () => assertAvailable().pause(),
     resume: () => assertAvailable().resume(),
+    claimPlayback: () => {
+        const module = assertAvailable();
+        return module.claimPlayback ? module.claimPlayback() : Promise.resolve();
+    },
     stop: () => assertAvailable().stop(),
     seekTo: (seconds: number) => assertAvailable().seekTo(seconds),
     setVolume: (volume: number) => assertAvailable().setVolume(volume),

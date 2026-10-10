@@ -378,6 +378,7 @@ describe("a pause while the skip is waiting", () => {
         delete mockBackend.pause;
         delete mockBackend.play;
         delete mockBackend.skipToIndex;
+        delete mockBackend.loadQueue;
         mockBackend.restoreActiveTrack = jest.fn(async () => true);
     });
 
@@ -398,18 +399,27 @@ describe("a pause while the skip is waiting", () => {
 
     it("loads another source without playing it when the fallback finds one", async () => {
         changeSourceOnFailure = true;
+        // 真实的装载：要不要自动播放由它按当时的播放意图决定
+        (player.setTrackSource as jest.Mock).mockRestore();
+        mockBackend.loadQueue = jest.fn(
+            async (tracks: any[], startIndex: number, options: { autoPlay?: boolean }) => {
+                calls.push(`load(${tracks[startIndex].url}, autoPlay=${options?.autoPlay})`);
+                nativeIsPlaying(tracks[startIndex].id);
+            },
+        );
         const skip = settledAfter(trackPlayer.skipToNext());
         await jest.advanceTimersByTimeAsync(5_000);
 
         await trackPlayer.pause();
+        calls.length = 0;
         await jest.advanceTimersByTimeAsync(10_000);
         await jest.advanceTimersByTimeAsync(5_000);
 
         expect(skip.settled).toBe(true);
-        expect(player.setTrackSource).toHaveBeenCalledTimes(1);
-        const [track, autoPlay] = player.setTrackSource.mock.calls[0];
-        expect(track).toMatchObject({ url: "https://other.example/B-other.mp3" });
-        expect(autoPlay).toBe(false);
+        expect(calls).toContain(
+            "load(https://other.example/B-other.mp3, autoPlay=false)",
+        );
+        expect(calls).not.toContain("play");
     });
 
     it("keeps the new song paused when its source arrives after the pause", async () => {

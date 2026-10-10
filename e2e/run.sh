@@ -15,7 +15,11 @@ PKG=fun.upup.musicfree
 ACTIVITY="$PKG/.MainActivity"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SESSION="$HERE/lib/media_session.py"
+FOCUS="$HERE/lib/audio_focus.py"
 PLUGIN_BASE="https://raw.githubusercontent.com/CTZZG/MusicFree/$REF/e2e/plugins"
+# “视频”替身（e2e/focus-app）：像视频应用一样占用音频焦点。CI 先用 focus-app/build.sh 打好
+FOCUS_APK=${E2E_FOCUS_APK:-}
+FOCUS_PKG=fun.upup.musicfree.e2e.focus
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
 RESULTS="$OUT/results.tsv"
@@ -27,6 +31,9 @@ log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 pass() { printf 'PASS\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "PASS $1 ${2:-}"; }
 fail() { printf 'FAIL\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "FAIL $1 ${2:-}"; FAILED=$((FAILED + 1)); }
 shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; }
+# 播放会话、暂停、“视频”打断的判断（session、stays_paused、held_until_video_ends……）
+# shellcheck source=lib/pause_checks.sh
+source "$HERE/lib/pause_checks.sh"
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
 print_screen_text() {
@@ -52,10 +59,6 @@ flow() {
     shot "failed-${file%.yaml}"
     print_screen_text
     return 1
-}
-
-session() {
-    adb shell dumpsys media_session | python3 -I "$SESSION" parse "$PKG"
 }
 
 # 每 2 秒记一次播放状态，失败时看歌是怎么切的
@@ -133,6 +136,17 @@ expect_resumed() {
         return 0
     fi
     fail "$name" "$problem"
+    return 1
+}
+
+# expect_stays_paused <检查名> <标题> <秒>：见 lib/pause_checks.sh 的 stays_paused
+expect_stays_paused() {
+    local name=$1 detail
+    if detail=$(stays_paused "$2" "$3"); then
+        pass "$name" "$detail"
+        return 0
+    fi
+    fail "$name" "$detail"
     return 1
 }
 
@@ -422,6 +436,149 @@ else
     fi
     adb shell input keyevent KEYCODE_MEDIA_PREVIOUS
     expect_playing "$HANG_NEXT" "E2E Tone B"
+fi
+
+# 15. 外部暂停（通知栏、锁屏、耳机按键都走系统媒体会话，和这里的媒体键同一条路）是用户主动暂停：
+#     切歌取源超时回滚、新歌装好、自动播放补偿都不能把它放出来；之后按播放照常接着放。
+#     队列还是上一步搜出来的 B、C、Hang
+EXT_ROLLBACK="切歌等地址时按暂停，超时回滚后仍停在 C"
+EXT_ROLLBACK_PLAY="之后按播放，C 接着放"
+EXT_LOAD="按上一首后马上暂停，B 装好后仍停着"
+EXT_LOAD_PLAY="之后按播放，B 接着放"
+adb shell input keyevent KEYCODE_MEDIA_NEXT
+if ! wait_for_song "E2E Tone C" 30; then
+    for check in "$EXT_ROLLBACK" "$EXT_ROLLBACK_PLAY" "$EXT_LOAD" "$EXT_LOAD_PLAY"; do
+        fail "$check" "按下一首没切到 C，没有执行：$(session)"
+    done
+else
+    # 切到一直不回应的 Hang：C 先停下等地址，这时按暂停；取源期限 15 秒，多等一会儿
+    adb shell input keyevent KEYCODE_MEDIA_NEXT
+    if ! wait_for_state PAUSED "E2E Tone C" 10; then
+        fail "$EXT_ROLLBACK" "按下一首后 C 没有停下等 Hang 的地址：$(session)"
+    else
+        sleep 2
+        adb shell input keyevent KEYCODE_MEDIA_PAUSE
+        expect_stays_paused "$EXT_ROLLBACK" "E2E Tone C" 20
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PLAY
+    expect_playing "$EXT_ROLLBACK_PLAY" "E2E Tone C"
+
+    # 按上一首切到 B，0.3 秒后暂停：B 可能还在装、也可能刚装好，原生的取消暂停重试和
+    # JS 的自动播放补偿（2 秒内）都不能再把它放出来
+    adb shell "input keyevent KEYCODE_MEDIA_PREVIOUS; sleep 0.3; input keyevent KEYCODE_MEDIA_PAUSE"
+    if ! wait_for_state PAUSED "E2E Tone B" 15; then
+        fail "$EXT_LOAD" "没停在 B：$(session)"
+    else
+        expect_stays_paused "$EXT_LOAD" "E2E Tone B" 8
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PLAY
+    expect_playing "$EXT_LOAD_PLAY" "E2E Tone B"
+fi
+
+# 16. 看视频：视频临时占用音频焦点（短视频、来电也一样），音乐要停，看的时候自动播放补偿、切歌
+#     回滚都不能把焦点抢回来；看完系统还回焦点，音乐自动接着放。看之前、看的时候主动暂停过的，
+#     看完仍停着。切歌等地址时来了视频，切歌自己的暂停不算用户暂停，看完也接着放。
+#     以替身打出的“放下焦点”日志为界（lib/pause_checks.sh）：之前每秒核对音乐停着、焦点在视频那边，
+#     之后才看音乐有没有接着放。视频没结束音乐就放了，记失败
+VIDEO_RESUME="看完视频自动接着放"
+VIDEO_HELD="看视频期间焦点一直在视频那边，音乐停着"
+VIDEO_PAUSED_BEFORE="看视频前暂停，看完仍停着"
+VIDEO_PAUSED_DURING="看视频时按暂停，看完仍停着"
+VIDEO_SKIP_HELD="切歌等地址时来了视频，回滚后不抢焦点"
+VIDEO_SKIP_RESUME="切歌等地址时来了视频，看完接着放原来那首"
+VIDEO_CHECKS=("$VIDEO_RESUME" "$VIDEO_HELD" "$VIDEO_PAUSED_BEFORE" "$VIDEO_PAUSED_DURING" "$VIDEO_SKIP_HELD" "$VIDEO_SKIP_RESUME")
+
+# expect_paused_through_video <检查名> <标题> <视频标记> <最多等几秒>：视频期间停着、焦点在视频那边，
+#   视频放下焦点之后 8 秒里也仍停着（用户暂停过，系统还回焦点也不接着放）
+expect_paused_through_video() {
+    local name=$1 title=$2 tag=$3 max=$4 during after
+    if ! during=$(held_until_video_ends "$title" "$tag" "$max"); then
+        fail "$name" "$during"
+        return 1
+    fi
+    if ! after=$(stays_paused "$title" 8); then
+        fail "$name" "视频放下焦点后：$after"
+        return 1
+    fi
+    pass "$name" "$during；视频放下焦点后 $after"
+    return 0
+}
+
+if [ -z "$FOCUS_APK" ] || ! adb install -r "$FOCUS_APK" > "$OUT/install-focus.log" 2>&1; then
+    for check in "${VIDEO_CHECKS[@]}"; do
+        fail "$check" "没装上“视频”替身（E2E_FOCUS_APK=${FOCUS_APK:-未设置}），没有执行"
+    done
+elif ! wait_for_song "E2E Tone B" 10; then
+    for check in "${VIDEO_CHECKS[@]}"; do
+        fail "$check" "B 没在放，没有执行：$(session)"
+    done
+else
+    # 16a. 在放 B 时看一段 12 秒的视频
+    watch_video transient 12 video-a
+    if ! wait_for_state PAUSED "E2E Tone B" 5; then
+        fail "$VIDEO_HELD" "视频开始后音乐没停：$(session)"
+        fail "$VIDEO_RESUME" "视频开始后音乐没停，没有执行"
+    elif ! detail=$(held_until_video_ends "E2E Tone B" video-a 25); then
+        fail "$VIDEO_HELD" "$detail"
+        fail "$VIDEO_RESUME" "视频期间没停住，没有执行"
+    else
+        pass "$VIDEO_HELD" "12 秒的视频：$detail"
+        if detail=$(resumes_after_video "E2E Tone B" 15); then
+            pass "$VIDEO_RESUME" "$detail"
+        else
+            fail "$VIDEO_RESUME" "$detail"
+        fi
+    fi
+
+    # 16b. 先暂停，再看 6 秒视频：看完仍停着
+    adb shell input keyevent KEYCODE_MEDIA_PAUSE
+    if wait_for_state PAUSED "E2E Tone B" 10; then
+        watch_video transient 6 video-b
+        expect_paused_through_video "$VIDEO_PAUSED_BEFORE" "E2E Tone B" video-b 20
+    else
+        fail "$VIDEO_PAUSED_BEFORE" "看视频前没能暂停：$(session)"
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PLAY
+    wait_for_song "E2E Tone B" 15 > /dev/null
+
+    # 16c. 看 10 秒视频，看到第 3 秒按暂停（耳机、蓝牙上的暂停键）：看完仍停着
+    watch_video transient 10 video-c
+    if wait_for_state PAUSED "E2E Tone B" 5; then
+        sleep 3
+        adb shell input keyevent KEYCODE_MEDIA_PAUSE
+        expect_paused_through_video "$VIDEO_PAUSED_DURING" "E2E Tone B" video-c 20
+    else
+        fail "$VIDEO_PAUSED_DURING" "视频开始后音乐没停：$(session)"
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PLAY
+
+    # 16d. 从 C 按下一首切到 Hang，C 停下等地址时开始看 25 秒视频。15 秒后切歌放弃、回到 C：
+    #      视频还在放，C 要停着、焦点不能被抢回来；看完 C 接着放
+    adb shell input keyevent KEYCODE_MEDIA_NEXT
+    if ! wait_for_song "E2E Tone C" 30; then
+        fail "$VIDEO_SKIP_HELD" "没切到 C，没有执行：$(session)"
+        fail "$VIDEO_SKIP_RESUME" "没切到 C，没有执行"
+    else
+        adb shell input keyevent KEYCODE_MEDIA_NEXT
+        if ! wait_for_state PAUSED "E2E Tone C" 10; then
+            fail "$VIDEO_SKIP_HELD" "按下一首后 C 没有停下等 Hang 的地址：$(session)"
+            fail "$VIDEO_SKIP_RESUME" "C 没有停下等地址，没有执行"
+        else
+            watch_video transient 25 video-d
+            # 切歌 15 秒放弃、回到 C，在视频的第 13 秒左右
+            if ! detail=$(held_until_video_ends "E2E Tone C" video-d 40); then
+                fail "$VIDEO_SKIP_HELD" "$detail"
+                fail "$VIDEO_SKIP_RESUME" "视频期间没停住，没有执行"
+            else
+                pass "$VIDEO_SKIP_HELD" "25 秒的视频：$detail"
+                if detail=$(resumes_after_video "E2E Tone C" 15); then
+                    pass "$VIDEO_SKIP_RESUME" "$detail"
+                else
+                    fail "$VIDEO_SKIP_RESUME" "$detail"
+                fi
+            fi
+        fi
+    fi
 fi
 
 finish

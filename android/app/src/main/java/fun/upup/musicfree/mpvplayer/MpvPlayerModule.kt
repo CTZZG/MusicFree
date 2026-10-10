@@ -547,6 +547,23 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private fun isCurrentGeneration(generation: Long): Boolean =
         generation == currentLoadGeneration
 
+    /**
+     * 外部暂停、系统打断着（见 [PlaybackHold]）：撤销排着的自动取消暂停，停在暂停。
+     * 装载完成、恢复播放、播放服务收到外部暂停时都可能走到这里。
+     */
+    private fun keepHeldPaused(reason: String) {
+        pendingUnpause.cancel()
+        try {
+            MPVLib.setPropertyBoolean("pause", true)
+        } catch (e: Exception) {
+            Log.w(TAG, "keepHeldPaused failed", e)
+        }
+        if (currentState == "playing" || currentState == "buffering") {
+            emitState("paused")
+        }
+        Log.d(TAG, "autoplay held ($reason): ${MpvServiceBridge.playbackHold}")
+    }
+
     private fun forceUnpause(generation: Long) {
         // 排着的重试在明确暂停之后照样会到点执行：撤销过就什么都不做（见 PendingUnpause）
         if (
@@ -554,6 +571,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             stopRequested ||
             !pendingUnpause.isArmedFor(generation)
         ) {
+            return
+        }
+        // 外部暂停、系统打断着：这一代就算还排着自动播放，也不能放出来
+        if (MpvServiceBridge.playbackHold.blocksAutoPlay) {
+            keepHeldPaused("unpause")
             return
         }
         val identity = loadingTrackIdentity
@@ -848,6 +870,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         loadingGeneration = -1L
         pendingUnpause.cancel()
         MpvServiceBridge.onCommand = null
+        MpvServiceBridge.pauseNow = null
         unregisterAndroidAutoConnectionDetector(notifyJs = false)
         try {
             reactContext.stopService(
@@ -960,6 +983,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
                 startPlaybackService(foreground = false)
 
+                // 新的播放会话：上一次的外部暂停、打断不再作数
+                MpvServiceBridge.playbackHold.claim()
+                MpvServiceBridge.pauseNow = {
+                    runMpvCallbackOnMain { keepHeldPaused("external") }
+                }
                 MpvServiceBridge.onCommand = { command, position, mediaId ->
                     if (!invalidated.get()) {
                         sendEvent(
@@ -1017,6 +1045,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
         isInitialized.set(false)
         MpvServiceBridge.onCommand = null
+        MpvServiceBridge.pauseNow = null
         androidAutoConnectionDetector?.onConnectionChanged = null
         pendingMainTasks.toList().forEach { it.cancel() }
         activePromises.toList().forEach { it.cancel() }
@@ -1113,7 +1142,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     ?.let { MPVLib.setOptionString("user-agent", it) }
 
                 durationSecs = validDuration(readDouble(payload, "duration"))
-                val autoPlay = readBoolean(payload, "autoPlay") ?: true
+                // 外部暂停、系统打断着：按暂停装载，等用户明确要播或系统还回焦点
+                val requestedAutoPlay = readBoolean(payload, "autoPlay") ?: true
+                val autoPlay =
+                    requestedAutoPlay && !MpvServiceBridge.playbackHold.blocksAutoPlay
+                if (requestedAutoPlay && !autoPlay) {
+                    Log.d(TAG, "loadAndPlay held: ${MpvServiceBridge.playbackHold}")
+                }
                 positionSecs = 0.0
                 cacheAheadSecs = 0.0
                 cachedTitle = readString(payload, "title") ?: ""
@@ -1430,6 +1465,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 return@postPromise
             }
             try {
+                // JS 的自动播放（补偿、回滚、打断结束）在外部暂停、系统打断之后不能
+                // 出声；用户明确要播时 JS 先调 claimPlayback 解除
+                if (MpvServiceBridge.playbackHold.blocksAutoPlay) {
+                    keepHeldPaused("resume")
+                    operationPromise.resolve(null)
+                    return@postPromise
+                }
                 startPlaybackService(foreground = true)
                 val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
                 if (idle || currentState == "ended") {
@@ -1443,6 +1485,15 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             } catch (e: Exception) {
                 operationPromise.reject("E_RESUME", e.message, e)
             }
+        }
+    }
+
+    /** 用户明确要播：解除外部暂停、系统打断对自动出声的拦截（见 [PlaybackHold]）。 */
+    @ReactMethod
+    fun claimPlayback(promise: Promise) {
+        postPromise(promise, "E_CLAIM") { operationPromise ->
+            MpvServiceBridge.playbackHold.claim()
+            operationPromise.resolve(null)
         }
     }
 

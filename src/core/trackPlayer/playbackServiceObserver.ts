@@ -101,6 +101,33 @@ function setupPlaybackObserver() {
             errorLog("远程上一首处理失败", error?.message ?? error);
         });
     });
+    // 通知栏、锁屏、耳机、蓝牙的播放/暂停，拔耳机，音频焦点：以前由适配器直接
+    // 停、直接放，TrackPlayer 不知道，切歌回滚、装载完成、自动播放补偿会把外部
+    // 暂停盖掉。现在统一交给 TrackPlayer，分成用户主动暂停和系统临时打断
+    TrackPlayer.playerAdapter.addEventListener("remotePlay", () => {
+        TrackPlayer.play().catch(error => {
+            errorLog("远程播放处理失败", error?.message ?? error);
+        });
+    });
+    TrackPlayer.playerAdapter.addEventListener("remotePause", event => {
+        TrackPlayer.pauseByExternalRequest(event?.reason ?? "remote").catch(
+            error => {
+                errorLog("远程暂停处理失败", error?.message ?? error);
+            },
+        );
+    });
+    TrackPlayer.playerAdapter.addEventListener("remoteInterruption", event => {
+        if (event?.phase === "ended") {
+            TrackPlayer.handleSystemInterruptionEnded().catch(error => {
+                errorLog("系统打断结束处理失败", error?.message ?? error);
+            });
+        } else {
+            TrackPlayer.handleSystemInterruptionBegan();
+        }
+    });
+    TrackPlayer.playerAdapter.addEventListener("remotePlayFromId", () => {
+        TrackPlayer.notePlayRequestedFromOutside();
+    });
 }
 
 export default { setupPlaybackObserver };

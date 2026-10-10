@@ -64,6 +64,7 @@ import {
     TimedOutSources,
     withMediaSourceTimeout,
 } from "./mediaSourceTimeoutPolicy";
+import { PlaybackIntent } from "./playbackIntent";
 import {
     findNextPlayableQueueItem,
     getSafeUnresolvedQueueUrl,
@@ -145,10 +146,11 @@ interface IMpvManualSkipTransition {
     /** 这次切歌里已经超时的取源：预取超时后 play() 兜底不再重问同一个来源 */
     timedOutSources: TimedOutSources;
     /**
-     * 等待期间用户暂停过（应用里的暂停、睡眠定时、musicfree://pause）：回滚回
-     * 原来那首、或者新歌装好，都保持暂停，不按切歌前的播放状态自动接着放
+     * 等待期间用户又明确要播（暂停后点了播放），或者系统还回了音频焦点：新歌
+     * 可能已经按暂停装好，收场时要接着放。用户暂停、系统打断本身记在
+     * playbackIntent 上（见 PlaybackIntent）
      */
-    pausedDuringTransition?: boolean;
+    resumeWhenSettled?: boolean;
 }
 
 interface IPlaybackDiagnosticMusicIdentity {
@@ -367,10 +369,11 @@ class TrackPlayer
     private queueEditIntent = 0;
     private queuePlaybackIntent = 0;
     /**
-     * 用户暂停的次数。装载开始时记下，装好后、自动播放补偿时比对：中途暂停过就
-     * 不再自动播，迟到的装载和补偿不能盖掉用户的暂停。
+     * 用户想不想听、系统让不让出声（见 PlaybackIntent）。装载完成后的自动播放、
+     * 自动播放补偿、切歌回滚和收场都先问它：用户主动暂停不能被盖掉，系统打断
+     * 期间不能自己出声。
      */
-    private userPauseSerial = 0;
+    private playbackIntent = new PlaybackIntent();
     private queueUndoSequence = 0;
     private queueUndoRecord: IQueueUndoRecord | null = null;
     // 底层播放器桥接由配置选择，默认 Nitro Player，可选 MPV。
@@ -1026,6 +1029,8 @@ class TrackPlayer
 
         this.setPlayLaterQueue(nextQueue);
         if (!this.currentMusic && nextQueue.length) {
+            // 什么都没在放时加稍后播放，就是让它开始放
+            this.notePlayByUser();
             this.playNextLaterQueue().catch(error => {
                 errorLog("稍后播放启动失败", error?.message ?? error);
             });
@@ -1278,7 +1283,46 @@ class TrackPlayer
         await this.play(musicItem, true, null, quality);
     }
 
+    /**
+     * 播放：不传歌曲是接着放当前这首，传了就点这首。应用里、通知栏、锁屏的播放
+     * 和点歌都走这里，算用户明确要播；切歌事务自己的装载（带 mpvTransitionOwner）
+     * 不算，等待期间的暂停要留着。自动接着放（播完下一首、稍后播放、跳过不喜欢）
+     * 用 startPlayback，不改用户意图。
+     */
     async play(
+        musicItem?: IMusic.IMusicItem | null,
+        forcePlay?: boolean,
+        mpvTransitionOwner?: IMpvManualSkipTransition | null,
+        requestedQuality?: IMusic.IQualityKey,
+    ): Promise<void> {
+        if (!mpvTransitionOwner) {
+            this.notePlayByUser();
+            const transition = this.mpvManualSkipTransition;
+            if (
+                !musicItem &&
+                transition &&
+                this.isMpvManualSkipTransitionActive(transition)
+            ) {
+                // 切歌还在等目标的地址时点了播放：接着等，不另起一次取源。新歌
+                // 装好后接着放；等不到回到原来那首，也接着放
+                this.beginQueuePlaybackIntent();
+                transition.resumeOnRollback = true;
+                transition.resumeWhenSettled = true;
+                trace("切歌等待期间点了播放，收场后接着放", {
+                    id: transition.token.id,
+                });
+                return;
+            }
+        }
+        return this.startPlayback(
+            musicItem,
+            forcePlay,
+            mpvTransitionOwner,
+            requestedQuality,
+        );
+    }
+
+    private async startPlayback(
         musicItem?: IMusic.IMusicItem | null,
         forcePlay?: boolean,
         mpvTransitionOwner?: IMpvManualSkipTransition | null,
@@ -1519,8 +1563,12 @@ class TrackPlayer
                         );
                         loadingSource = false;
                     }
-                    if (currentState !== "playing") {
-                        // 2.1.2 恢复播放
+                    if (
+                        currentState !== "playing" &&
+                        this.playbackIntent.mayAutoPlay()
+                    ) {
+                        // 2.1.2 恢复播放。自动接着放（单曲循环重播等）时用户
+                        // 暂停着、或系统打断着就不放；用户点的播放已经记成要播
                         loadingSource = true;
                         await this.backend.play();
                         loadingSource = false;
@@ -1835,12 +1883,12 @@ class TrackPlayer
                 encrypted: Boolean(source.ekey && source.cek),
                 backend: this.backend.name,
             });
-            // 9. 设置音源。切歌兜底等待期间用户暂停过的话，装好不自动播
+            // 9. 设置音源。等待期间用户暂停过、或者系统打断着，装好不自动播
+            //    （setTrackSource 里问 playbackIntent）
             loadingSource = true;
             await this.setTrackSource(
                 track as MusicFreePlayerTrack,
-                !(mpvTransitionOwner ?? ownedMpvTransition)
-                    ?.pausedDuringTransition,
+                true,
                 seekToTime,
             );
             loadingSource = false;
@@ -1934,7 +1982,7 @@ class TrackPlayer
                 "The player is not initialized. Call setupPlayer first."
             ) {
                 await this.backend.setup();
-                this.play(musicItem, forcePlay, null, requestedQuality);
+                this.startPlayback(musicItem, forcePlay, null, requestedQuality);
             } else if (message === PlayFailReason.FORBID_CELLUAR_NETWORK_PLAY) {
                 this.emit(TrackPlayerEvents.CellularPlayForbidden);
             } else if (message === PlayFailReason.MISSING_AUDIO_PERMISSION) {
@@ -2005,18 +2053,112 @@ class TrackPlayer
     }
 
     async pause(): Promise<void> {
+        this.notePauseByUser();
+        this.crossfade.onPause();
+        LastfmScrobbler.onPaused();
+        await this.backend.pause();
+    }
+
+    /**
+     * 记下用户主动暂停。切歌还在等目标的地址时，切歌开始时已经把原来那首暂停
+     * 了，这次暂停后端看不出来：回滚回原来那首不再接着放，之前要求的“收场后
+     * 接着放”也作废。新歌装好保持暂停由 playbackIntent 管。
+     */
+    private notePauseByUser() {
         this.beginQueuePlaybackIntent();
-        this.userPauseSerial += 1;
+        this.playbackIntent.pause();
         const transition = this.mpvManualSkipTransition;
         if (transition && this.isMpvManualSkipTransitionActive(transition)) {
-            // 切歌还在等目标的地址：切歌开始时已经把原来那首暂停了，这里的暂停
-            // 后端看不出来，要记在事务上，收场时不能再自动接着放
-            transition.pausedDuringTransition = true;
             transition.resumeOnRollback = false;
+            transition.resumeWhenSettled = false;
+        }
+    }
+
+    /**
+     * 通知栏、锁屏、耳机、蓝牙上的暂停，拔耳机，系统永久收回音频焦点。原生已经
+     * 先停下，并拦住了自动出声；这里同样记成用户主动暂停。没在放的话只记意图：
+     * 闲置时再发暂停，会把已经关掉的播放通知拉回来。
+     */
+    async pauseByExternalRequest(reason: "remote" | "noisy" | "focus-loss") {
+        this.notePauseByUser();
+        const state = await this.backend.getState().catch(() => null);
+        trace("外部暂停", { reason, state });
+        if (
+            !this.hasActiveMpvManualSkipTransition() &&
+            (state === null ||
+                state === "idle" ||
+                state === "stopped" ||
+                state === "ended" ||
+                state === "error")
+        ) {
+            return;
         }
         this.crossfade.onPause();
         LastfmScrobbler.onPaused();
         await this.backend.pause();
+    }
+
+    /**
+     * 系统临时收回音频焦点（来电、短视频等）。原生已经停下，打断期间拦住一切
+     * 自动出声；这里记下来，自动播放、补偿、回滚都先问 playbackIntent。
+     */
+    handleSystemInterruptionBegan() {
+        this.playbackIntent.interrupt();
+        trace("系统临时打断开始", {
+            pausedByUser: this.playbackIntent.isPausedByUser,
+            skipping: this.hasActiveMpvManualSkipTransition(),
+        });
+    }
+
+    /**
+     * 系统还回音频焦点：打断前、打断期间都没有主动暂停的接着放。切歌还没收场
+     * 的交给切歌：新歌装好，或者回滚回原来那首之后接着放。
+     */
+    async handleSystemInterruptionEnded() {
+        if (!this.playbackIntent.endInterruption()) {
+            trace("系统打断结束，保持暂停", {
+                pausedByUser: this.playbackIntent.isPausedByUser,
+            });
+            return;
+        }
+        const transition = this.mpvManualSkipTransition;
+        if (transition && this.isMpvManualSkipTransitionActive(transition)) {
+            transition.resumeWhenSettled = true;
+            trace("系统打断结束，切歌收场后接着放", {
+                id: transition.token.id,
+            });
+            return;
+        }
+        if (!this.currentMusic) {
+            return;
+        }
+        const state = await this.backend.getState().catch(() => null);
+        if (
+            (state !== "paused" && state !== "buffering" && state !== "ready") ||
+            !this.playbackIntent.mayAutoPlay() ||
+            this.hasActiveMpvManualSkipTransition()
+        ) {
+            trace("系统打断结束，不用接着放", { state });
+            return;
+        }
+        trace("系统打断结束，接着放", { state });
+        await this.backend.play();
+    }
+
+    /** 用户明确要播：记下意图，并让原生解除外部暂停、系统打断对自动出声的拦截 */
+    private notePlayByUser() {
+        this.playbackIntent.play();
+        Promise.resolve(this.backend.claimPlayback?.()).catch(error => {
+            errorLog("解除播放拦截失败", error?.message ?? error);
+        });
+    }
+
+    /**
+     * Android Auto 等在原生里直接点了歌（不经过 play()）：原生已经解除拦截，
+     * 这里把意图也记成要播。
+     */
+    notePlayRequestedFromOutside() {
+        this.playbackIntent.play();
     }
 
     async prepareForAppExit(): Promise<void> {
@@ -2085,6 +2227,9 @@ class TrackPlayer
 
     async skipToNext(intentEnqueuedAt?: number): Promise<void> {
         this.beginQueuePlaybackIntent();
+        // 上一首、下一首都是要播：暂停时按下一首会放下一首。按的时候就记下，
+        // 排在后面的暂停照样作数
+        this.notePlayByUser();
         return this.manualSkipGate.run(token => {
             if (this.shouldDropStaleSkipIntent(intentEnqueuedAt, "next")) {
                 return Promise.resolve();
@@ -2387,7 +2532,7 @@ class TrackPlayer
                 const expectedIndex =
                     this.getMusicIndexInPlayList(expectedMpvNext);
                 const started = await this.backend.skipToIndex(expectedIndex, {
-                    autoPlay: !mpvManualTransition.pausedDuringTransition,
+                    autoPlay: this.playbackIntent.mayAutoPlay(),
                 });
                 if (!started) {
                     throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
@@ -2437,6 +2582,7 @@ class TrackPlayer
 
     async skipToPrevious(intentEnqueuedAt?: number): Promise<void> {
         this.beginQueuePlaybackIntent();
+        this.notePlayByUser();
         return this.manualSkipGate.run(token => {
             if (this.shouldDropStaleSkipIntent(intentEnqueuedAt, "previous")) {
                 return Promise.resolve();
@@ -2516,7 +2662,7 @@ class TrackPlayer
         try {
             const started = await this.backend.skipToIndex(
                 previousIndexForSkip,
-                { autoPlay: !mpvManualTransition.pausedDuringTransition },
+                { autoPlay: this.playbackIntent.mayAutoPlay() },
             );
             if (!started) {
                 throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
@@ -2804,15 +2950,16 @@ class TrackPlayer
     }
 
     /**
-     * 新歌已经开始装载：等待期间用户暂停过的话，让它停在暂停（见 pause()）。
-     * 只对仍然有效的事务生效：装载迟到返回时事务可能已经被新的点歌取消，
-     * 这时暂停的是别人的歌。
+     * 新歌已经开始装载：等待期间用户暂停过、或者系统打断着，让它停在暂停（见
+     * PlaybackIntent）。只对仍然有效的事务生效：装载迟到返回时事务可能已经被
+     * 新的点歌取消，这时暂停的是别人的歌。
      */
     private async keepPausedAfterTransitionLoad(
         transition?: IMpvManualSkipTransition | null,
     ) {
         if (
-            transition?.pausedDuringTransition &&
+            transition &&
+            !this.playbackIntent.mayAutoPlay() &&
             this.isMpvManualSkipTransitionActive(transition)
         ) {
             await this.backend.pause().catch(() => undefined);
@@ -2885,10 +3032,16 @@ class TrackPlayer
         if (!this.isMpvManualSkipTransitionActive(transition)) {
             return false;
         }
-        if (transition.pausedDuringTransition) {
-            // 确认切歌期间才暂停的，装载时没赶上，这里补一次。趁事务还有效时
-            // 发出去：之后的点歌、切歌发的命令都排在它后面
+        // 趁事务还有效时发出去：之后的点歌、切歌发的命令都排在它后面
+        if (!this.playbackIntent.mayAutoPlay()) {
+            // 确认切歌期间才暂停（或系统才打断）的，装载时没赶上，这里补一次
             this.backend.pause().catch(() => undefined);
+        } else if (transition.resumeWhenSettled) {
+            // 等待期间暂停后又点了播放，或者系统打断后还回了焦点：新歌可能是
+            // 按暂停装好的，接着放
+            this.backend.play().catch(error => {
+                errorLog("MPV 切歌收场后接着放失败", error?.message ?? error);
+            });
         }
         this.mpvTrackTransitionGate.clear(transition.token);
         this.mpvManualSkipTransition = null;
@@ -2946,6 +3099,9 @@ class TrackPlayer
             !!activeMusic &&
             isSameMediaItem(activeMusic, transition.expectedMusic);
         let backendRestored = false;
+        // 切歌前在放、而且现在用户没暂停、系统没打断，才接着放原来那首
+        const autoPlayOnRestore =
+            transition.resumeOnRollback && this.playbackIntent.mayAutoPlay();
         if (
             restoredMusic &&
             !targetAlreadyActive &&
@@ -2953,7 +3109,7 @@ class TrackPlayer
         ) {
             backendRestored = await this.backend
                 .restoreActiveTrack({
-                    autoPlay: transition.resumeOnRollback,
+                    autoPlay: autoPlayOnRestore,
                 })
                 .catch(error => {
                     errorLog(
@@ -2979,10 +3135,13 @@ class TrackPlayer
         if (!this.isMpvManualSkipTransitionActive(transition)) {
             return false;
         }
+        // 重新装载期间可能又暂停了，或者系统还回了焦点：按现在的意图收尾
+        const resumeRestored =
+            transition.resumeOnRollback && this.playbackIntent.mayAutoPlay();
         if (
-            transition.resumeOnRollback &&
+            resumeRestored &&
             restoredMusic &&
-            (!backendRestored || targetAlreadyActive)
+            (!backendRestored || targetAlreadyActive || !autoPlayOnRestore)
         ) {
             await this.backend.play().catch(error => {
                 errorLog(
@@ -2990,7 +3149,7 @@ class TrackPlayer
                     error?.message ?? error,
                 );
             });
-        } else if (!transition.resumeOnRollback && restoredMusic) {
+        } else if (!resumeRestored && restoredMusic) {
             await this.backend.pause().catch(() => undefined);
         }
         if (!this.isMpvManualSkipTransitionActive(transition)) {
@@ -3751,13 +3910,17 @@ class TrackPlayer
         };
     }
 
-    private async ensureNitroAutoPlay(targetKey: string, pauseSerial: number) {
+    private async ensureNitroAutoPlay(targetKey: string) {
         const retryDelays = [180, 520, 1100];
         for (let retryDelay of retryDelays) {
             await delay(retryDelay);
 
-            if (this.userPauseSerial !== pauseSerial) {
-                trace("自动播放补偿取消：用户暂停了", { targetKey });
+            if (!this.playbackIntent.mayAutoPlay()) {
+                trace("自动播放补偿取消：用户暂停了或系统打断着", {
+                    targetKey,
+                    pausedByUser: this.playbackIntent.isPausedByUser,
+                    interrupted: this.playbackIntent.isInterrupted,
+                });
                 return;
             }
 
@@ -3857,8 +4020,8 @@ class TrackPlayer
         if (!clonedTrack) {
             return;
         }
-        // 装载期间用户暂停的话，装好后不再自动播（见 userPauseSerial）
-        const pauseSerial = this.userPauseSerial;
+        // 用户暂停着、或者系统打断着，按暂停装载（见 PlaybackIntent）
+        const shouldAutoPlay = autoPlay && this.playbackIntent.mayAutoPlay();
         const initialProgress = this.normalizeProgress(seekTo) ?? 0;
         clonedTrack.userAgent = clonedTrack.userAgent || getAppUserAgent();
         const nitroTargetKey = getMediaUniqueKey(
@@ -3868,7 +4031,7 @@ class TrackPlayer
             clonedTrack as unknown as IMusic.IMusicItem,
         );
         await this.backend.loadQueue(nitroQueue.tracks, nitroQueue.startIndex, {
-            autoPlay,
+            autoPlay: shouldAutoPlay,
         });
         await this.syncBackendRepeatMode();
         const startIndex = nitroQueue.startIndex;
@@ -3896,10 +4059,12 @@ class TrackPlayer
             await delay(100);
             await this.seekTo(initialProgress);
         }
-        if (autoPlay && this.userPauseSerial === pauseSerial) {
+        // 按装好时的意图：装载途中暂停了就不播；装载开始时系统打断着、途中还回了
+        // 焦点（或用户又点了播放），照样接着播
+        if (autoPlay && this.playbackIntent.mayAutoPlay()) {
             await this.backend.play();
             if (nitroTargetKey) {
-                this.ensureNitroAutoPlay(nitroTargetKey, pauseSerial).catch(error => {
+                this.ensureNitroAutoPlay(nitroTargetKey).catch(error => {
                     errorLog("自动播放补偿失败", error?.message ?? error);
                 });
             }
@@ -4083,7 +4248,7 @@ class TrackPlayer
                 this.currentIndex >= 0 ? this.currentIndex + 1 : undefined,
             );
         }
-        await this.play(nextMusic, true, mpvTransitionOwner);
+        await this.startPlayback(nextMusic, true, mpvTransitionOwner);
         return true;
     }
 
@@ -4189,7 +4354,7 @@ class TrackPlayer
 
             // 3. 单曲循环明确重载，禁止 prepared 同一首。
             if (this.repeatMode === MusicRepeatMode.SINGLE) {
-                await this.play(currentMusic, true);
+                await this.startPlayback(currentMusic, true);
                 return;
             }
 
@@ -4220,7 +4385,7 @@ class TrackPlayer
                 ) {
                     const attemptKey = getMediaUniqueKey(nextCandidate);
                     this.lastInvalidSourceKey = null;
-                    await this.play(nextCandidate, true);
+                    await this.startPlayback(nextCandidate, true);
                     if (this.lastInvalidSourceKey !== attemptKey) {
                         return;
                     }
@@ -4275,7 +4440,7 @@ class TrackPlayer
         );
         if (candidate) {
             this.emit(TrackPlayerEvents.AutoSkipDislikedMusic);
-            await this.play(candidate, true);
+            await this.startPlayback(candidate, true);
             return true;
         }
 

@@ -9,6 +9,7 @@ const mockNativeMpvPlayer = {
     prepareNextBatch: jest.fn(async () => undefined),
     pause: jest.fn(async () => undefined),
     resume: jest.fn(async () => undefined),
+    claimPlayback: jest.fn(async () => undefined),
     stop: jest.fn(async () => undefined),
     seekTo: jest.fn(async () => undefined),
     setVolume: jest.fn(async () => undefined),
@@ -714,5 +715,128 @@ describe("MpvPlayerAdapter batch runway (prepareNextTracks)", () => {
         );
 
         expect(mockNativeMpvPlayer.prepareNext).toHaveBeenCalledWith(null);
+    });
+});
+
+// 外部播放／暂停统一交给 TrackPlayer：适配器只按来源把原生命令分好类往上送
+describe("MpvPlayerAdapter external play and pause commands", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    async function listen(event: any) {
+        const adapter = await createAdapter();
+        const received: any[] = [];
+        adapter.addEventListener(event, payload => received.push(payload));
+        return { adapter, received };
+    }
+
+    it("hands a lock-screen pause to the upper layer instead of pausing itself", async () => {
+        const { received } = await listen("remotePause");
+        mockListeners.remote?.({ command: "pause", enqueuedAt: Date.now() });
+
+        expect(received).toEqual([expect.objectContaining({ reason: "remote" })]);
+        expect(mockNativeMpvPlayer.pause).not.toHaveBeenCalled();
+    });
+
+    it("tells unplugged headphones and a permanent focus loss apart from a user pause", async () => {
+        const { received } = await listen("remotePause");
+        mockListeners.remote?.({ command: "noisy", enqueuedAt: Date.now() });
+        mockListeners.remote?.({ command: "focusLoss", enqueuedAt: Date.now() });
+
+        expect(received.map(payload => payload.reason)).toEqual([
+            "noisy",
+            "focus-loss",
+        ]);
+    });
+
+    it("reports when a temporary interruption begins and ends", async () => {
+        const { received } = await listen("remoteInterruption");
+        mockListeners.remote?.({
+            command: "interruptionBegan",
+            enqueuedAt: Date.now(),
+        });
+        mockListeners.remote?.({
+            command: "interruptionEnded",
+            enqueuedAt: Date.now(),
+        });
+
+        expect(received.map(payload => payload.phase)).toEqual([
+            "began",
+            "ended",
+        ]);
+        expect(mockNativeMpvPlayer.resume).not.toHaveBeenCalled();
+    });
+
+    it("keeps an interruption end that arrives late", async () => {
+        // JS 被冻结后迟到的“打断结束”不能当过期命令丢掉，否则音乐再也不会接着放
+        const { received } = await listen("remoteInterruption");
+        mockListeners.remote?.({
+            command: "interruptionEnded",
+            enqueuedAt: Date.now() - 60_000,
+        });
+
+        expect(received).toHaveLength(1);
+    });
+
+    it("records a song picked in Android Auto as a request to play before loading it", async () => {
+        const { adapter, received } = await listen("remotePlayFromId");
+        await adapter.loadQueue([track("a"), track("b")], 0);
+        const mediaId = lastLoadPayload()?.mediaId;
+        expect(mediaId).toEqual(expect.any(String));
+
+        mockListeners.remote?.({
+            command: "playFromId",
+            mediaId,
+            enqueuedAt: Date.now(),
+        });
+
+        expect(received).toEqual([expect.objectContaining({ mediaId })]);
+    });
+
+    it("lifts the native hold when the user asks to play", async () => {
+        const adapter = await createAdapter();
+        await adapter.claimPlayback();
+
+        expect(mockNativeMpvPlayer.claimPlayback).toHaveBeenCalledTimes(1);
+    });
+});
+
+// 复核 62c468b0（P2）：装载还没完成时，只有原生还在按自动播放缓冲，才能省掉恢复请求
+describe("MpvPlayerAdapter play() while a load is still pending", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it("leaves a load that is still buffering to start by itself", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")], 0);
+        mockListeners.state?.({ state: "buffering" });
+
+        await adapter.play();
+
+        expect(mockNativeMpvPlayer.resume).not.toHaveBeenCalled();
+    });
+
+    it("asks the native player to resume once the pending load was paused", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")], 0);
+        mockListeners.state?.({ state: "buffering" });
+        // 装载途中被暂停或被系统打断：原生撤销了装好后的自动出声，报了 paused
+        mockListeners.state?.({ state: "paused" });
+
+        await adapter.play();
+
+        expect(mockNativeMpvPlayer.resume).toHaveBeenCalledTimes(1);
+    });
+
+    it("resumes a load that was started paused", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")], 0, { autoPlay: false });
+        mockListeners.state?.({ state: "paused" });
+
+        await adapter.play();
+
+        expect(mockNativeMpvPlayer.resume).toHaveBeenCalledTimes(1);
     });
 });

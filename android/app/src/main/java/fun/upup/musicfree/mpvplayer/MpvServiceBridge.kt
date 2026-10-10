@@ -92,4 +92,18 @@ object MpvServiceBridge {
      */
     @Volatile
     var onCommand: ((command: String, position: Double?, mediaId: String?) -> Unit)? = null
+
+    /**
+     * 外部暂停、系统打断之后不许自动出声（见 [PlaybackHold]）。播放服务（通知栏、
+     * 锁屏、耳机、音频焦点）写，[MpvPlayerModule] 的自动取消暂停读。只在主线程用。
+     */
+    internal val playbackHold = PlaybackHold()
+
+    /**
+     * 马上停下 mpv，并撤销排着的自动取消暂停。外部暂停、拔耳机、失去音频焦点时
+     * 播放服务先调它，再把命令转给 JS：不等 JS 处理，声音先停。
+     * 由 [MpvPlayerModule] 在 initialize 时设置。只在主线程调用。
+     */
+    @Volatile
+    var pauseNow: (() -> Unit)? = null
 }

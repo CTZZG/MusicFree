@@ -122,7 +122,6 @@ class MpvPlaybackService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockReleaseScheduled = false
     private var noisyReceiverRegistered = false
-    private var pausedForTransientFocusLoss = false
     private var duckedForFocusLoss = false
     private var lastNotificationUpdateMs = 0L
     private var cachedPositionUpdatedAtMs = 0L
@@ -165,13 +164,29 @@ class MpvPlaybackService : Service() {
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (
-                intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY &&
-                cachedState == PlaybackStateCompat.STATE_PLAYING
-            ) {
-                MpvServiceBridge.onCommand?.invoke("pause", null, null)
+            // 拔耳机按用户暂停处理，不看现在的状态：切歌等新歌地址时当前这首是
+            // 暂停的，新歌装好后也不能从外放出声
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                pauseFromOutside("noisy")
             }
         }
+    }
+
+    /**
+     * 用户在外部暂停（通知栏、锁屏、耳机、蓝牙），拔耳机，其他应用永久拿走音频
+     * 焦点：先记下、马上停下，再转给 JS 记成用户主动暂停。之后的自动出声都会被
+     * 拦下，直到用户明确要播（见 [PlaybackHold]）。
+     */
+    private fun pauseFromOutside(command: String) {
+        MpvServiceBridge.playbackHold.pauseByUser()
+        MpvServiceBridge.pauseNow?.invoke()
+        MpvServiceBridge.onCommand?.invoke(command, null, null)
+    }
+
+    /** 用户在通知栏、锁屏上按了播放、点了歌：解除拦截再转给 JS。 */
+    private fun playFromOutside(command: String, mediaId: String? = null) {
+        MpvServiceBridge.playbackHold.claim()
+        MpvServiceBridge.onCommand?.invoke(command, null, mediaId)
     }
 
     override fun onCreate() {
@@ -208,9 +223,9 @@ class MpvPlaybackService : Service() {
                     cachedState == PlaybackStateCompat.STATE_PLAYING ||
                     cachedState == PlaybackStateCompat.STATE_BUFFERING
                 ) {
-                    MpvServiceBridge.onCommand?.invoke("pause", null, null)
+                    pauseFromOutside("pause")
                 } else {
-                    MpvServiceBridge.onCommand?.invoke("play", null, null)
+                    playFromOutside("play")
                 }
             }
             ACTION_NEXT -> MpvServiceBridge.onCommand?.invoke("next", null, null)
@@ -559,11 +574,11 @@ class MpvPlaybackService : Service() {
             setCallback(
                 object : MediaSessionCompat.Callback() {
                     override fun onPlay() {
-                        MpvServiceBridge.onCommand?.invoke("play", null, null)
+                        playFromOutside("play")
                     }
 
                     override fun onPause() {
-                        MpvServiceBridge.onCommand?.invoke("pause", null, null)
+                        pauseFromOutside("pause")
                     }
 
                     override fun onSkipToNext() {
@@ -584,7 +599,7 @@ class MpvPlaybackService : Service() {
 
                     override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
                         if (!mediaId.isNullOrBlank()) {
-                            MpvServiceBridge.onCommand?.invoke("playFromId", null, mediaId)
+                            playFromOutside("playFromId", mediaId)
                         }
                     }
                 },
@@ -1003,39 +1018,32 @@ class MpvPlaybackService : Service() {
                     TAG,
                     "audio focus $focusName: state=$cachedState " +
                         "playing=${cachedState == PlaybackStateCompat.STATE_PLAYING} " +
-                        "pausedForTransient=$pausedForTransientFocusLoss " +
+                        "hold=${MpvServiceBridge.playbackHold} " +
                         "ducked=$duckedForFocusLoss " +
                         "duckMode=${MpvServiceBridge.remoteDuckMode}",
                 )
                 when (change) {
                     AudioManager.AUDIOFOCUS_LOSS -> {
-                        pausedForTransientFocusLoss = false
+                        // 其他应用永久拿走了焦点，系统不会再还回来：按用户暂停处理，
+                        // 等用户明确要播
                         if (duckedForFocusLoss) {
                             duckedForFocusLoss = false
                             MpvServiceBridge.onCommand?.invoke("unduck", null, null)
                         }
-                        MpvServiceBridge.onCommand?.invoke("pause", null, null)
+                        pauseFromOutside("focusLoss")
                         abandonAudioFocus()
                     }
-                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                        if (cachedState == PlaybackStateCompat.STATE_PLAYING) {
-                            pausedForTransientFocusLoss = true
-                            MpvServiceBridge.onCommand?.invoke("pause", null, null)
-                        }
-                    }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> interruptPlayback()
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                        if (cachedState == PlaybackStateCompat.STATE_PLAYING) {
-                            if (MpvServiceBridge.remoteDuckMode == "lowerVolume") {
-                                duckedForFocusLoss = true
-                                MpvServiceBridge.onCommand?.invoke(
-                                    "duck",
-                                    MpvServiceBridge.remoteDuckVolume,
-                                    null,
-                                )
-                            } else {
-                                pausedForTransientFocusLoss = true
-                                MpvServiceBridge.onCommand?.invoke("pause", null, null)
-                            }
+                        if (MpvServiceBridge.remoteDuckMode == "lowerVolume") {
+                            duckedForFocusLoss = true
+                            MpvServiceBridge.onCommand?.invoke(
+                                "duck",
+                                MpvServiceBridge.remoteDuckVolume,
+                                null,
+                            )
+                        } else {
+                            interruptPlayback()
                         }
                     }
                     AudioManager.AUDIOFOCUS_GAIN -> {
@@ -1043,9 +1051,14 @@ class MpvPlaybackService : Service() {
                             duckedForFocusLoss = false
                             MpvServiceBridge.onCommand?.invoke("unduck", null, null)
                         }
-                        if (pausedForTransientFocusLoss) {
-                            pausedForTransientFocusLoss = false
-                            MpvServiceBridge.onCommand?.invoke("play", null, null)
+                        // 要不要接着放由 JS 按用户意图决定：打断前、打断期间暂停过的
+                        // 不放；切歌等待中的交给切歌收场
+                        if (MpvServiceBridge.playbackHold.endInterruption()) {
+                            MpvServiceBridge.onCommand?.invoke(
+                                "interruptionEnded",
+                                null,
+                                null,
+                            )
                         }
                     }
                 }
@@ -1058,10 +1071,20 @@ class MpvPlaybackService : Service() {
         )
     }
 
+    /**
+     * 系统临时收回音频焦点（来电、短视频）。不看现在的状态：切歌等新歌地址时当前
+     * 这首是暂停的，但用户要听，打断期间新歌装好也不能出声、不能把焦点抢回来；
+     * 之前就暂停着的，系统还回焦点后 JS 也不会接着放。
+     */
+    private fun interruptPlayback() {
+        MpvServiceBridge.playbackHold.interrupt()
+        MpvServiceBridge.pauseNow?.invoke()
+        MpvServiceBridge.onCommand?.invoke("interruptionBegan", null, null)
+    }
+
     private fun abandonAudioFocus() {
         audioFocusListener?.let { audioManager?.abandonAudioFocus(it) }
         audioFocusListener = null
-        pausedForTransientFocusLoss = false
         if (duckedForFocusLoss) {
             duckedForFocusLoss = false
             MpvServiceBridge.onCommand?.invoke("unduck", null, null)

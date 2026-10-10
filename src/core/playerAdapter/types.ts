@@ -38,7 +38,9 @@ export type PlayerAdapterEvent =
     | "remotePrevious"
     | "remoteSeek"
     | "remoteStop"
-    | "remoteDuck";
+    | "remoteDuck"
+    | "remoteInterruption"
+    | "remotePlayFromId";
 
 export interface PlayerAdapterSubscription {
     remove(): void;
@@ -184,7 +186,7 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
 
     skipToPrevious(): Promise<void>;
 
-    /** autoPlay 默认 true；切歌等待期间用户暂停过时传 false，装好不自动播 */
+    /** autoPlay 默认 true；用户暂停着、或者系统打断着时传 false，装好不自动播 */
     skipToIndex(
         index: number,
         options?: { autoPlay?: boolean },
@@ -195,6 +197,13 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
      * 仅供拥有“目标/已确认 active”双状态的后端实现失败回滚。
      */
     restoreActiveTrack?(options?: {autoPlay?: boolean}): Promise<boolean>;
+
+    /**
+     * 用户明确要播（点播放、点歌、上一首、下一首）。外部暂停（通知栏、锁屏、
+     * 耳机、拔耳机）和系统收回音频焦点之后，原生会拦住一切自动出声，只有这里
+     * 能解除。
+     */
+    claimPlayback?(): Promise<void>;
 
     seekTo(position: number): Promise<void>;
 

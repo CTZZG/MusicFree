@@ -319,6 +319,8 @@ jobs:
               run: |
                   python3 -I e2e/lib/media_session.py --self-test
                   python3 -I e2e/lib/dock.py --self-test
+                  python3 -I e2e/lib/audio_focus.py --self-test
+                  bash e2e/lib/pause_checks_test.sh
 
             - name: Enable KVM
               run: |
@@ -331,6 +333,14 @@ jobs:
               with:
                   java-version: '17'
                   distribution: 'temurin'
+
+            # 端到端第 16 步用的“视频”替身：像视频应用一样占用音频焦点（见 e2e/focus-app）。
+            # 打不出来也接着跑其他检查，第 16 步会逐项记失败
+            - name: Build the video stand-in
+              continue-on-error: true
+              run: |
+                  bash e2e/focus-app/build.sh "$RUNNER_TEMP/e2e-focus.apk"
+                  echo "E2E_FOCUS_APK=$RUNNER_TEMP/e2e-focus.apk" >> "$GITHUB_ENV"
 
             - name: Install Maestro
               run: |
