@@ -55,10 +55,11 @@ function project(t, dirName) {
     return {root, write};
 }
 
-function generate(root) {
+function generate(root, env = {}) {
     const result = spawnSync(process.execPath, [path.join(root, 'generator', 'generate-build-info.mjs')], {
         cwd: root,
         encoding: 'utf8',
+        env: {...process.env, ...env},
     });
     assert.equal(result.status, 0, result.stderr);
     const output = fs.readFileSync(path.join(root, 'src', 'constants', 'buildInfo.generated.ts'), 'utf8');
@@ -83,4 +84,26 @@ test('records unknown when the AAR is missing', t => {
     const {root} = project(t, 'MusicFree-$review');
 
     assert.equal(generate(root).player, 'unknown');
+});
+
+// Beta 构建指定 build_ref 时，打包的是另一个提交：构建信息要记打包的源码，不是触发工作流的提交
+test('records the built source commit, not the workflow commit', t => {
+    const {root} = project(t, 'MusicFree');
+    const source = '1ec0114cbe7aa5163c7b2a702d0891884807c180';
+    const workflow = '2c33aab6a186098fdc24d95f8e1a8d14833da9e5';
+
+    const info = generate(root, {BUILD_SOURCE_SHA: source, GITHUB_SHA: workflow, SHORT_SHA: ''});
+
+    assert.equal(info.gitSha, source);
+    assert.equal(info.shortSha, '1ec0114');
+});
+
+test('falls back to the workflow commit when no source commit is given', t => {
+    const {root} = project(t, 'MusicFree');
+    const workflow = '2c33aab6a186098fdc24d95f8e1a8d14833da9e5';
+
+    const info = generate(root, {BUILD_SOURCE_SHA: '', GITHUB_SHA: workflow, SHORT_SHA: ''});
+
+    assert.equal(info.gitSha, workflow);
+    assert.equal(info.shortSha, '2c33aab');
 });

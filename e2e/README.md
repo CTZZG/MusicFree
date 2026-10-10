@@ -30,6 +30,8 @@
 | 看完视频自动接着放 | 打开“视频”替身（`focus-app/`，临时占用音频焦点 12 秒）：替身打出“放下焦点”日志之前，每次采样音乐都停着、焦点都在视频那边；之后 15 秒内接着放、进度在走。视频没结束音乐就放了算失败 |
 | 看视频前后主动暂停过的不自己放 | 先暂停再看 6 秒视频、看视频时按“暂停”：视频期间停着，放下焦点后 8 秒里仍停着 |
 | 切歌等地址时来了视频 | 从 C 切到 Hang、C 停下等地址时看 25 秒视频：切歌放弃回到 C 时（视频的第 13 秒左右）音乐仍停着、焦点不被抢回；视频放下焦点后 C 接着放（切歌自己的暂停不算用户暂停） |
+| 下载记录写不进去时的下载 | 先正常下载 C 作对照，在 B 要下载到的位置放一个用户自己的同名文件，再让下载记录写不进去（见下面“故障注入”）后下载 B：下载列表里 B 标为“未知错误”；错误日志里有 `music.DownloadTasks` 落盘失败（故障确实生效）；没写出 B 的最终文件；C 和用户的同名文件逐字节不变；下载记录文件和故障前逐字节相同；下载缓存清空。去掉故障、重启后文件和下载记录都完好；重新下载 B 写到新文件名，已有的文件仍不变 |
+| 从 0.7.3 升级，迁移中、迁移后删掉的数据不回来 | 装 0.7.3 启动一次，往它的 MMKV 写入我喜欢（A、B、C）和测试源 A、B 的附加信息（带旧版标记），覆盖安装新版：我喜欢、测试源 A 的附加信息迁移过来（对照）；删掉我喜欢里的 B；卸载全部插件时测试源 B 的附加信息才第一次用到（之前新存储里没有它），清空和迁移同时进行，迁移跑完后没有旧数据；测试源 A 的（已迁移）清空后也没有。重启、再显示测试源 A 的歌之后，B 不在我喜欢里，两个平台都没有带旧版标记的键、迁移标记都在 |
 
 “在播”和“进度在走”都看系统媒体会话（`dumpsys media_session`），那里的进度是 mpv 直接上报的，
 不是界面上的数字。“一直停着”大约每秒采样一次媒体会话，采到在播、或者最后进度往前走了都算失败；
@@ -37,6 +39,31 @@
 焦点栈（`lib/audio_focus.py`）。这些判断在 `lib/pause_checks.sh`，`lib/pause_checks_test.sh` 用假的
 adb 和时钟自检：视频没结束就接着放、视频结束后一直不放都要判失败，CI 跑模拟器之前先跑这个自检。断网用的是关掉模拟器的 Wi-Fi（移动数据在开头就关了），等系统的默认网络
 变成 none 再点歌。
+
+## 故障注入（第 17、18 步，`storage.sh`）
+
+应用里没有任何测试开关，故障都在设备上用 `adb root`（google_apis 模拟器镜像可以）直接做，结果也直接看
+应用的私有文件（`/data/data/<包名>/files/kvstore/*.json`，格式见 `lib/kvstore.py`）和下载目录：
+
+- **下载记录写不进去**：键值存储每次落盘都先写 `<store>.json.tmp` 再改名。在 `music.DownloadTasks.json.tmp`
+  的位置放一个 root 的目录（里面有文件，应用删不掉），下载记录就一次也写不进去，下载收尾第一次提交日志
+  （“准备收尾”）就失败。这是存储满了、文件系统出错时的样子。
+- **迁移进行期间清空**：旧版数据要是 0.7.3 自己的格式。CI 下载 0.7.3 的 x86_64 APK（核对 SHA-256）装上
+  启动一次，让它建出自己的 MMKV 目录和文件；再用 `mmkv-seed`（`mmkv-seed/`，用 0.7.3 和现在的应用都在用的
+  MMKV 2.4.0 核心编出来）往里写测试数据，按 0.7.3 自己文件的属主、权限、SELinux 标签放回去
+  （`lib/device_place.sh`），然后覆盖安装要测的 APK。测试源 B 的歌不出现在任何列表里，它的附加信息一直
+  用不到，卸载插件时才第一次用到：清空和从旧版迁移在同一时刻开始。
+
+判断文件和存储的函数由 `lib/storage_checks_test.sh` 用假的 adb 在本机自检（CI 跑模拟器之前先跑）。
+第 18 步会先卸载应用，所以放在最后。手动运行 Beta 构建时 `e2e_suite` 选 `storage`，只装应用和测试源、
+跑这两步；配合 `e2e_apk_run_id` 可以拿旧的 APK 跑，确认这些检查在修复前确实会失败。本地跑要先编出
+`mmkv-seed`、下载 0.7.3 的 APK，再设 `E2E_MMKV_SEED`、`E2E_LEGACY_APK`：
+
+```bash
+e2e/mmkv-seed/build.sh /tmp/mmkv-seed
+E2E_SUITE=storage E2E_MMKV_SEED=/tmp/mmkv-seed E2E_LEGACY_APK=path/to/MusicFree-0.7.3-…-x86_64-release.apk \
+    e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-results
+```
 
 测的 APK 比 GitHub 上最新发布的版本旧时，启动后会弹“发现新版本”，测试会勾上“跳过此版本”再关掉
 （`flows/dismiss-update.yaml`）。
@@ -48,6 +75,10 @@ Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这�
 
 - 只改了测试、不想重新打包：手动运行 Beta 构建，`e2e_apk_run_id` 填之前某次 Beta 构建的运行 ID，
   会直接测那次打出的 APK（30 天内的都在）。
+- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`。
+- 拿修复前的代码对照：`build_ref` 填那个提交的完整提交号，打包那份代码，测试脚本和测试音源仍用触发的分支。
+  APK 文件名、构建信息（`android-build-info.txt`、应用里的构建信息）记的是打包的源码提交和它的版本号，
+  触发工作流的提交另记为 `Workflow commit`。测试结果里分开写测试脚本的提交和 APK 打包的源码提交。
 - 不想跑测试：取消勾选 `e2e`。
 
 每次的截图和结果还会推到 `refs/e2e/latest`（不在分支列表里，每次覆盖）：
@@ -72,6 +103,8 @@ e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-
 - `plugins/e2e-source-b.js`：第二个测试音源，正常搜索时不返回歌（只记下提交号），应用替测试源 A
   找其他来源时才返回同一首 Fallback 和一首 Live 版。
 - `fixtures/*.mp3`：几段纯音，由 `fixtures/generate.sh` 用 ffmpeg 生成。
+- `mmkv-seed/`：往 0.7.3 的 MMKV 存储里写测试数据的小工具（`mmkv-seed set|get|keys <目录> <store id> …`），
+  `mmkv-seed/build.sh` 取 Tencent/MMKV 的 v2.4.0（按提交号核对）用 cmake 编。
 - `focus-app/`：“视频”替身。`am start -n fun.upup.musicfree.e2e.focus/.HoldFocusActivity --es mode transient --ei seconds 10 --es tag video-a`
   打开后像短视频一样临时占用音频焦点（`mode full` 是长期占用）、放一段很轻的声音，到时间放下焦点、自己关掉。
   放下之前先打一行日志 `E2EFocus: releasing focus tag=<tag>`，测试以它为视频结束的界线。
@@ -87,4 +120,6 @@ e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-
   Maestro 点完默认要等十几秒界面才算静止；点完要马上看播放状态的，给 `tapOn` 加 `waitToSettleTimeoutMs`。
 - 判断播放状态：用 `run.sh` 里的 `expect_playing "<检查名>" "<歌名>"`、`wait_for_song`、`wait_for_state`；
   接着之前的进度播用 `expect_continued`，暂停后接着播用 `expect_resumed`。断网、联网用 `set_network off|on`。
+- 流程要参数时写成 `${名字}`，调用时 `flow "<检查名>" <文件> -e 名字=值`。同一个流程跑第二次，日志另起
+  一个名字（`<流程>-2.log`）。
 - 流程没通过时，日志里会打出当时界面上的所有文字，并截一张 `failed-<流程>.png`。

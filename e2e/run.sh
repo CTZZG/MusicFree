@@ -6,6 +6,8 @@
 # 提交号必须已经推到 GitHub：测试插件和测试音频都从这个提交的 raw.githubusercontent.com 地址读取
 # （应用只允许从公网 https 地址装插件、取音频）。需要 adb、maestro、python3。
 # 结果目录里有 summary.md（每项检查的结果）、截图、Maestro 日志和 logcat。
+#
+# E2E_SUITE=storage 时装好应用和测试源后只跑第 17、18 步（下载、旧版数据迁移的故障注入，见 storage.sh）。
 set -uo pipefail
 
 APK=${1:?用法：e2e/run.sh <APK> <提交号> <结果目录>}
@@ -20,6 +22,10 @@ PLUGIN_BASE="https://raw.githubusercontent.com/CTZZG/MusicFree/$REF/e2e/plugins"
 # “视频”替身（e2e/focus-app）：像视频应用一样占用音频焦点。CI 先用 focus-app/build.sh 打好
 FOCUS_APK=${E2E_FOCUS_APK:-}
 FOCUS_PKG=fun.upup.musicfree.e2e.focus
+# 第 18 步：0.7.3 的 x86_64 APK，和往它的 MMKV 写测试数据的 mmkv-seed（e2e/mmkv-seed）
+E2E_LEGACY_APK=${E2E_LEGACY_APK:-}
+E2E_MMKV_SEED=${E2E_MMKV_SEED:-}
+E2E_SUITE=${E2E_SUITE:-all}
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
 RESULTS="$OUT/results.tsv"
@@ -42,21 +48,27 @@ print_screen_text() {
         grep -E 'text=|accessibilityText=' | cut -c1-220 | head -n 80
 }
 
-# flow <检查名> <流程文件>：跑一个 Maestro 流程，截图存在结果目录里
+# flow <检查名> <流程文件> [Maestro 参数…]：跑一个 Maestro 流程，截图存在结果目录里。
+#   后面可以跟 -e 名字=值，传给流程里的 ${名字}。同一个流程跑第二次时，日志和截图另起一个名字
 flow() {
-    local name=$1 file=$2
-    local args=(test --test-output-dir "$OUT/maestro/${file%.yaml}")
+    local name=$1 file=$2 tag=${2%.yaml} n=1
+    shift 2
+    while [ -e "$OUT/maestro/$tag.log" ]; do
+        n=$((n + 1))
+        tag="${file%.yaml}-$n"
+    done
+    local args=(test --test-output-dir "$OUT/maestro/$tag" "$@")
     if [ "$DRIVER_INSTALLED" -eq 1 ]; then
         args+=(--no-reinstall-driver)
     fi
     DRIVER_INSTALLED=1
-    if maestro "${args[@]}" "$HERE/flows/$file" > "$OUT/maestro/${file%.yaml}.log" 2>&1; then
+    if maestro "${args[@]}" "$HERE/flows/$file" > "$OUT/maestro/$tag.log" 2>&1; then
         pass "$name"
         return 0
     fi
     fail "$name" "Maestro 流程 $file 没通过"
-    tail -n 25 "$OUT/maestro/${file%.yaml}.log"
-    shot "failed-${file%.yaml}"
+    tail -n 25 "$OUT/maestro/$tag.log"
+    shot "failed-$tag"
     print_screen_text
     return 1
 }
@@ -200,7 +212,11 @@ write_summary() {
     {
         echo "## 模拟器自动测试"
         echo
-        echo "- 提交：\`$REF\`"
+        echo "- 测试脚本、测试音源的提交：\`$REF\`"
+        echo "- 测的 APK：$(basename "$APK")，打包的源码提交：\`${E2E_APK_COMMIT:-未知}\`${E2E_APK_SOURCE:+（$E2E_APK_SOURCE）}"
+        if [ "$E2E_SUITE" != all ]; then
+            echo "- 只跑了：$E2E_SUITE"
+        fi
         echo "- 设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
         echo "- 结果：$passed 项通过，$FAILED 项失败"
         echo
@@ -260,6 +276,19 @@ install_plugin() {
 }
 install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
+
+# 17、18 步：下载、旧版数据迁移的故障注入（storage.sh）
+# shellcheck source=storage.sh
+source "$HERE/storage.sh"
+run_storage_checks() {
+    run_download_fault_checks
+    run_legacy_upgrade_checks
+}
+if [ "$E2E_SUITE" = storage ]; then
+    log "E2E_SUITE=storage：只跑下载、旧版数据迁移的故障注入"
+    run_storage_checks
+    finish
+fi
 
 # 3. 搜索并依次播放三首，确认系统媒体会话里的进度真的在走。新装的应用点搜索结果时，
 #    用整页结果替换播放队列（旧版配置迁移时设的默认值），所以队列就是测试源 A 的那 7 首
@@ -580,5 +609,9 @@ else
         fi
     fi
 fi
+
+# 17. 下载收尾时下载记录写不进去；18. 从 0.7.3 覆盖安装，迁移期间清空、迁移后删除的数据不回来。
+#     见 storage.sh。第 18 步会先卸载应用，所以放在最后
+run_storage_checks
 
 finish

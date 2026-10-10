@@ -21,6 +21,19 @@ on:
                 required: false
                 default: ''
                 type: string
+            build_ref:
+                description: '对照用：打包这个提交（完整提交号）的代码，自动测试脚本仍用触发的分支。留空打包触发的分支'
+                required: false
+                default: ''
+                type: string
+            e2e_suite:
+                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入'
+                required: false
+                default: 'all'
+                type: choice
+                options:
+                    - all
+                    - storage
 
 jobs:
     check-version:
@@ -68,6 +81,9 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v5
+              with:
+                  # 留空时就是触发的分支
+                  ref: ${{ inputs.build_ref }}
 
             - name: Setup Java
               uses: actions/setup-java@v5
@@ -137,15 +153,22 @@ jobs:
 
             - name: Generate build metadata
               run: |
+                  # 打包的源码提交。指定 build_ref 时是那个提交，不是触发工作流的提交（GITHUB_SHA）；
+                  # APK 文件名、构建信息、应用里的“构建信息”都记它，版本号也按它的 package.json
+                  SOURCE_SHA="$(git rev-parse HEAD)"
                   APP_VERSION="${{ needs.check-version.outputs.version }}"
                   PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-                  SHORT_SHA="${GITHUB_SHA::7}"
+                  if [ "$SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                    APP_VERSION="$PACKAGE_VERSION"
+                  fi
+                  SHORT_SHA="${SOURCE_SHA::7}"
                   BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
                   BUILD_REF_NAME="${GITHUB_REF_NAME:-unknown}"
                   BUILD_REF_TYPE="${GITHUB_REF_TYPE:-unknown}"
                   BUILD_RUN_URL="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
                   {
+                    echo "BUILD_SOURCE_SHA=$SOURCE_SHA"
                     echo "APP_VERSION=$APP_VERSION"
                     echo "PACKAGE_VERSION=$PACKAGE_VERSION"
                     echo "SHORT_SHA=$SHORT_SHA"
@@ -158,8 +181,11 @@ jobs:
                   {
                     echo "App version: $APP_VERSION"
                     echo "Package version: $PACKAGE_VERSION"
-                    echo "Commit: $GITHUB_SHA"
+                    echo "Commit: $SOURCE_SHA"
                     echo "Short SHA: $SHORT_SHA"
+                    if [ "$SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                      echo "Workflow commit: $GITHUB_SHA"
+                    fi
                     echo "Build branch: $BUILD_REF_NAME"
                     echo "Ref type: $BUILD_REF_TYPE"
                     echo "Ref: $GITHUB_REF"
@@ -241,7 +267,7 @@ jobs:
             - name: Upload Beta APKs
               uses: actions/upload-artifact@v7
               with:
-                  name: beta-apks-${{ needs.check-version.outputs.version }}-${{ env.SIGNING_STATUS }}
+                  name: beta-apks-${{ env.APP_VERSION }}-${{ env.SIGNING_STATUS }}
                   path: dist/*
                   if-no-files-found: error
                   retention-days: 30
@@ -253,7 +279,10 @@ jobs:
                     echo
                     echo "- App version: ${APP_VERSION}"
                     echo "- Package version: ${PACKAGE_VERSION}"
-                    echo "- Commit: ${GITHUB_SHA}"
+                    echo "- Commit: ${BUILD_SOURCE_SHA}"
+                    if [ "$BUILD_SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                      echo "- Workflow commit: ${GITHUB_SHA} (build_ref)"
+                    fi
                     echo "- Ref: ${BUILD_REF_NAME} (${BUILD_REF_TYPE})"
                     echo "- Build date: ${BUILD_DATE}"
                     echo "- Signing: ${SIGNING_STATUS:-unknown}"
@@ -272,7 +301,7 @@ jobs:
             !cancelled() && inputs.e2e &&
             (needs.build-beta.result == 'success' || inputs.e2e_apk_run_id != '')
         runs-on: ubuntu-latest
-        timeout-minutes: 45
+        timeout-minutes: 60
         permissions:
             # 下载别的运行里的 APK；把截图推到 refs/e2e/latest
             actions: read
@@ -314,13 +343,19 @@ jobs:
                   fi
                   echo "E2E_APK=${apks[0]}" >> "$GITHUB_ENV"
                   echo "Testing ${apks[0]}"
+                  # 这个 APK 打包的源码提交（和 APK 一起上传的构建信息里的 Commit），写进测试结果
+                  commit=$(sed -n 's/^Commit: //p' apk/android-build-info.txt 2>/dev/null | head -n 1)
+                  echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
+                  echo "APK source commit: ${commit:-unknown}"
 
             - name: Self-test E2E helpers
               run: |
                   python3 -I e2e/lib/media_session.py --self-test
                   python3 -I e2e/lib/dock.py --self-test
                   python3 -I e2e/lib/audio_focus.py --self-test
+                  python3 -I e2e/lib/kvstore.py --self-test
                   bash e2e/lib/pause_checks_test.sh
+                  bash e2e/lib/storage_checks_test.sh
 
             - name: Enable KVM
               run: |
@@ -342,6 +377,21 @@ jobs:
                   bash e2e/focus-app/build.sh "$RUNNER_TEMP/e2e-focus.apk"
                   echo "E2E_FOCUS_APK=$RUNNER_TEMP/e2e-focus.apk" >> "$GITHUB_ENV"
 
+            # 端到端第 18 步：从 0.7.3（MMKV 时代的最后一版）覆盖安装。下载它的 x86_64 APK（核对 SHA-256），
+            # 编出往它的 MMKV 写测试数据的 mmkv-seed（见 e2e/mmkv-seed）。准备不好也接着跑其他检查，
+            # 第 18 步会逐项记失败
+            - name: Prepare the 0.7.3 upgrade test
+              continue-on-error: true
+              env:
+                  LEGACY_APK_URL: https://github.com/CTZZG/MusicFree/releases/download/v0.7.3/MusicFree-0.7.3-c35e6ba-app-x86_64-release.apk
+                  LEGACY_APK_SHA256: 945708e24c651158ac7607eedaa97d6e1e5f9d5a4057d9ed896d37ea037de5c6
+              run: |
+                  curl -fsSL --retry 3 -o "$RUNNER_TEMP/legacy-0.7.3.apk" "$LEGACY_APK_URL"
+                  echo "$LEGACY_APK_SHA256  $RUNNER_TEMP/legacy-0.7.3.apk" | sha256sum -c -
+                  bash e2e/mmkv-seed/build.sh "$RUNNER_TEMP/mmkv-seed"
+                  echo "E2E_LEGACY_APK=$RUNNER_TEMP/legacy-0.7.3.apk" >> "$GITHUB_ENV"
+                  echo "E2E_MMKV_SEED=$RUNNER_TEMP/mmkv-seed" >> "$GITHUB_ENV"
+
             - name: Install Maestro
               run: |
                   curl -fsSL "https://get.maestro.mobile.dev" | bash
@@ -351,6 +401,10 @@ jobs:
             # 不加 -noaudio：mpv 要有音频输出才会往前播
             - name: Run E2E on the emulator
               uses: reactivecircus/android-emulator-runner@v2
+              env:
+                  E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
+                  # 测的 APK 不是按这次的提交打包时，写进结果
+                  E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}
               with:
                   api-level: 34
                   target: google_apis
