@@ -63,9 +63,22 @@ jest.mock("react-native-fs", () => {
     };
 });
 
+import RNFS from "react-native-fs";
 import { createFilePersistence, KV_STORE_DIR } from "../filePersistence";
 
 const files: Map<string, string> = jest.requireMock("react-native-fs").mockFiles;
+
+/**
+ * 文件名还带 % 的版本（1ec0114c 到 e46616da 之前）怎么写：路径是
+ * encodeURIComponent 编码的，先写临时文件再改名（atomicWrite）。在 Android 的
+ * react-native-fs 上内容落到还原后的名字，临时文件也留在那里。
+ */
+async function writeLikeOldVersion(storeId: string, contents: string) {
+    const filePath = `${KV_STORE_DIR}/${encodeURIComponent(storeId)}.json`;
+    const tempPath = `${filePath}.tmp`;
+    await RNFS.writeFile(tempPath, contents, "utf8");
+    await RNFS.moveFile(tempPath, filePath);
+}
 
 function names() {
     return [...files.keys()]
@@ -114,6 +127,34 @@ describe("文件存储（Android 的 react-native-fs）", () => {
         ]);
         expect(await createFilePersistence().read("MediaExtra.E2E 测试源 A")).toBe(
             "now",
+        );
+    });
+
+    it.each([
+        // 加号在新文件名里只会以 +XX 转义出现：末尾单独的 +、+ 后面不是两位
+        // 十六进制、转义了不需要转义的字符，都不可能是哪个 store 的新文件名
+        ["MediaExtra.LXD+", "MediaExtra.LXD+.json"],
+        ["MediaExtra.Source+Pro", "MediaExtra.Source+Pro.json"],
+        ["MediaExtra.a+41", "MediaExtra.a+41.json"],
+    ])("插件名带加号（%s）：接过旧版本写下的内容，重启后读新文件", async (storeId, legacyName) => {
+        await writeLikeOldVersion(storeId, "last session");
+        expect(names()).toEqual([legacyName, `${legacyName}.tmp`]);
+
+        const persistence = createFilePersistence();
+        expect(await persistence.read(storeId)).toBe("last session");
+        await persistence.write(storeId, "now");
+
+        expect(names()).toEqual([
+            `${encodeURIComponent(storeId).replace(/%/g, "+")}.json`,
+        ]);
+        expect(await createFilePersistence().read(storeId)).toBe("now");
+    });
+
+    it("用旧版本的写法写下的中文插件名，同样接得回来", async () => {
+        await writeLikeOldVersion("MediaExtra.E2E 测试源 A", "last session");
+
+        expect(await createFilePersistence().read("MediaExtra.E2E 测试源 A")).toBe(
+            "last session",
         );
     });
 

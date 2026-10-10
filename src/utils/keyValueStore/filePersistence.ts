@@ -33,12 +33,30 @@ export const KV_STORE_DIR = `${RNFS.DocumentDirectoryPath}/kvstore`;
  * 每次都重新迁移一遍）。所以 encodeURIComponent 之后把 `%` 换成 `+`；
  * encodeURIComponent 本身会转义 `+`，两个不同的 id 不会得到同一个文件名。
  */
-function storePath(storeId: string) {
-    return `${KV_STORE_DIR}/${encodeURIComponent(storeId).replace(/%/g, "+")}.json`;
+function storeFileName(storeId: string) {
+    return encodeURIComponent(storeId).replace(/%/g, "+");
 }
 
-/** 新文件名只会由这些字符组成（encodeURIComponent 不转义的字符，加上 `+`）。 */
-const STORE_FILE_NAME_CHARS = /^[A-Za-z0-9\-_.!~*'()+]*$/;
+function storePath(storeId: string) {
+    return `${KV_STORE_DIR}/${storeFileName(storeId)}.json`;
+}
+
+/**
+ * 这个名字（不带 .json）是不是某个 store 按 storeFileName 编出来的文件名：
+ * 把 `+` 换回 `%` 能解码，再编一遍还是它自己。只由新文件名字符组成还不够，
+ * 比如 `LXD+`、`Source+Pro` 解不出来，`a+41` 编回去是 `aA`，都不会是谁的
+ * 新文件名；`a+20b` 才是（"a b" 的新文件名）。
+ */
+function isStoreFileName(name: string) {
+    if (!/^[A-Za-z0-9\-_.!~*'()+]*$/.test(name)) {
+        return false;
+    }
+    try {
+        return storeFileName(decodeURIComponent(name.replace(/\+/g, "%"))) === name;
+    } catch {
+        return false;
+    }
+}
 
 interface ILegacyLocation {
     /** 用来读旧文件的路径：Android 上会被还原成实际写到的名字，其他平台按字面读。 */
@@ -52,8 +70,8 @@ interface ILegacyLocation {
  * 时文件名没变过，返回 null。
  *
  * - Android 上实际写到了还原后的名字，也就是 store id 原样。id 里有 `/` 的写不
- *   出来（目录不存在），不去看；只由新文件名字符组成的 id，原样的名字可能正好是
- *   另一个 store 的新文件，也不去看，免得读错、删错。
+ *   出来（目录不存在），不去看；原样的名字正好是另一个 store 的新文件名时
+ *   （isStoreFileName），也不去看，免得读错、删错。
  * - 其他平台按字面写到了 encodeURIComponent 的名字。
  */
 function legacyLocation(storeId: string): ILegacyLocation | null {
@@ -63,7 +81,7 @@ function legacyLocation(storeId: string): ILegacyLocation | null {
     }
     const readPath = `${KV_STORE_DIR}/${encoded}.json`;
     const paths = [readPath];
-    if (!storeId.includes("/") && !STORE_FILE_NAME_CHARS.test(storeId)) {
+    if (!storeId.includes("/") && !isStoreFileName(storeId)) {
         paths.push(`${KV_STORE_DIR}/${storeId}.json`);
     }
     return { readPath, paths };
