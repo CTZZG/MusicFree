@@ -27,13 +27,14 @@ on:
                 default: ''
                 type: string
             e2e_suite:
-                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入'
+                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电'
                 required: false
                 default: 'all'
                 type: choice
                 options:
                     - all
                     - storage
+                    - power
 
 jobs:
     check-version:
@@ -199,7 +200,8 @@ jobs:
                   } > android-build-info.txt
 
             - name: Generate app build info
-              run: npm run generate-build-info
+              # 指定 build_ref 时跑的是那个提交里的生成器，旧的只认 GITHUB_SHA：把打包的源码提交按它传进去
+              run: GITHUB_SHA="$BUILD_SOURCE_SHA" npm run generate-build-info
 
             - name: Make gradlew executable
               run: chmod +x android/gradlew
@@ -354,8 +356,13 @@ jobs:
                   python3 -I e2e/lib/dock.py --self-test
                   python3 -I e2e/lib/audio_focus.py --self-test
                   python3 -I e2e/lib/kvstore.py --self-test
+                  python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/pause_checks_test.sh
                   bash e2e/lib/storage_checks_test.sh
+                  bash e2e/lib/power_checks_test.sh
+                  bash e2e/lib/power_environment_test.sh
+                  bash e2e/lib/power_controls_test.sh
+                  bash e2e/lib/power_scenario_test.sh
 
             - name: Enable KVM
               run: |
@@ -369,8 +376,8 @@ jobs:
                   java-version: '17'
                   distribution: 'temurin'
 
-            # 端到端第 16 步用的“视频”替身：像视频应用一样占用音频焦点（见 e2e/focus-app）。
-            # 打不出来也接着跑其他检查，第 16 步会逐项记失败
+            # 端到端第 16 步用的“视频”替身：像视频应用一样占用音频焦点（见 e2e/focus-app），第 19 步验证锁屏时的临时焦点打断。
+            # 打不出来也接着跑其他检查，这两步会逐项记失败
             - name: Build the video stand-in
               continue-on-error: true
               run: |

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """从 `adb shell dumpsys media_session` 里读出 MusicFree 播放会话的状态。
 
-通知栏、锁屏和耳机按键都通过这个系统媒体会话控制播放；会话里的进度由 mpv
-直接上报，所以它能说明歌是不是真的在往前播，而不只是界面上显示在播。
+通知栏、锁屏和耳机按键都通过这个系统媒体会话控制播放。这里解析 dumpsys 记录的
+会话进度，不自行推算；原生通知服务更新会话时仍可能估算进度，Android 16 的
+Live Update 每秒刷新尤其如此。会话前进不能独自证明 mpv 原始进度或音频输出。
 
   adb shell dumpsys media_session | media_session.py parse [包名]
       输出一行 JSON：found / state / position(毫秒) / title / artist / album

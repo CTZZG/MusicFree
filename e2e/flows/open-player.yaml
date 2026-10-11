@@ -1,0 +1,13 @@
+# 第 19 步解锁回到应用后：从播放条打开播放页，看在放的是 ${TITLE}、播放/暂停按钮是 ${BUTTON}。
+# 进度由 run.sh 读界面后和系统媒体会话比
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "歌曲: ${TITLE} 歌手: E2E Artist"
+    timeout: 15000
+- tapOn: "歌曲: ${TITLE} 歌手: E2E Artist"
+- extendedWaitUntil:
+    visible: "播放进度"
+    timeout: 15000
+- assertVisible: "${BUTTON}"
+- takeScreenshot: 31-player-after-unlock

@@ -1,0 +1,8 @@
+# 第 19 步：确认系统锁屏控件并截图。实际点击由 power.sh 从读屏树定位当前按钮中心，再 adb tap。
+# Maestro tap 等待动态进度条静止可能耗时超过歌曲长度（Beta #121 每次约 105 秒），不能据此证明点击切歌。
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "Next track|下一曲|下一首"
+    timeout: 15000
+- takeScreenshot: 30-lock-screen-controls
