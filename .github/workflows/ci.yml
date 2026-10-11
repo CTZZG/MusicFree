@@ -34,6 +34,7 @@ jobs:
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/power_checks_test.sh
                   bash e2e/lib/power_environment_test.sh
+                  bash e2e/lib/power_controls_test.sh
                   bash e2e/lib/power_scenario_test.sh
 
     # 原生单元测试：只在改到原生代码、原生依赖或这项检查本身时跑 Gradle。

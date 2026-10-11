@@ -1,20 +1,8 @@
-# 第 19 步：亮屏但没解锁，停在系统锁屏界面上。点锁屏界面上媒体控件的“下一曲”（和用户在锁屏上点的
-# 是同一个按钮，经系统媒体会话交给应用）。按钮的读屏标签是系统给的，跟系统语言走。
-# 锁屏界面会把一部分模拟点击当成误触吞掉（Beta #117 点了没反应，#115、#116 一次就切过去了）：
-# 媒体控件上还是 B 就再点，最多点 3 次。切没切过去由 run.sh 看媒体会话
+# 第 19 步：确认系统锁屏控件并截图。实际点击由 power.sh 从读屏树定位当前按钮中心，再 adb tap。
+# Maestro tap 等待动态进度条静止可能耗时超过歌曲长度（Beta #121 每次约 105 秒），不能据此证明点击切歌。
 appId: fun.upup.musicfree
 ---
 - extendedWaitUntil:
     visible: "Next track|下一曲|下一首"
     timeout: 15000
 - takeScreenshot: 30-lock-screen-controls
-- repeat:
-    times: 3
-    while:
-      visible: "E2E Tone B"
-    commands:
-      - tapOn: "Next track|下一曲|下一首"
-      - extendedWaitUntil:
-          notVisible: "E2E Tone B"
-          timeout: 8000
-          optional: true

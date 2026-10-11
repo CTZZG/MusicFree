@@ -361,6 +361,7 @@ jobs:
                   bash e2e/lib/storage_checks_test.sh
                   bash e2e/lib/power_checks_test.sh
                   bash e2e/lib/power_environment_test.sh
+                  bash e2e/lib/power_controls_test.sh
                   bash e2e/lib/power_scenario_test.sh
 
             - name: Enable KVM

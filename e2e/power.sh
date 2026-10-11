@@ -106,8 +106,8 @@ restore_power() {
 # ---- 播放的判断 ----
 
 # expect_progress_for <检查名> <标题> <秒>：这段时间里每 5 秒看一次，一直在播这首，最后比开始至少多播了
-#   （秒数 - 5）秒。这套 E2E 使用 Android 14，未启用 Android 16 Live Update 的通知进度估算；
-#   这里只验证媒体会话进度，不能证明扬声器实际输出或 CPU 真正休眠
+#   （秒数 - 5）秒。这套 E2E 使用 Android 14，不运行 Android 16 Live Update 的秒级通知刷新；
+#   会话仍可能含有服务估算；这里只验证会话进度，不能证明扬声器实际输出或 CPU 真正休眠
 expect_progress_for() {
     local name=$1 title=$2 seconds=$3 start now deadline problem samples=0
     start=$(session)
@@ -161,6 +161,46 @@ expect_hang_rollback() {
         return 1
     fi
     pass "$name" "按下一首后 ${waited} 秒回到「$title」，$(progress_text "$first" "$second")；$(device_summary)"
+}
+
+# tap_lock_screen_next <原歌> <新歌>：按系统读屏标签解析本次按钮位置，adb 点屏幕上的按钮。
+# 不用固定坐标，也不等锁屏进度条静止；仍在原歌时最多重试三次，出现新歌就停止，避免多点到 Hang。
+tap_lock_screen_next() {
+    local before=$1 target=$2 attempt tree point x y now
+    for attempt in 1 2 3; do
+        now=$(session)
+        if [ "$attempt" -gt 1 ] && python3 -I "$SESSION" is-playing "$target" "$now"; then
+            echo "前一次点击后已切到「$target」"
+            return 0
+        fi
+        if ! python3 -I "$SESSION" is-playing "$before" "$now"; then
+            echo "点击前不是在播「$before」：$(sample_text "$now")"
+            return 1
+        fi
+        if ! tree=$(maestro hierarchy --compact --no-reinstall-driver 2> "$OUT/lock-controls-$attempt.log"); then
+            echo "无法读取锁屏控件"
+            return 1
+        fi
+        if ! point=$(printf '%s\n' "$tree" | python3 -I "$DEVICE_STATE" media-next-point 2>&1); then
+            echo "$point"
+            return 1
+        fi
+        if ! screen_on || ! keyguard_showing || ! python3 -I "$SESSION" is-playing "$before" "$(session)"; then
+            echo "定位后不再是亮屏锁屏界面上的「$before」：$(device_summary)"
+            return 1
+        fi
+        read -r x y <<< "$point"
+        if ! adb shell input tap "$x" "$y"; then
+            echo "无法点击当前下一曲控件"
+            return 1
+        fi
+        if wait_for_song "$target" 8 > /dev/null; then
+            echo "第 $attempt 次点击系统下一曲控件后切到「$target」"
+            return 0
+        fi
+    done
+    echo "点击三次系统下一曲控件后没有切到「$target」：$(sample_text "$(session)")"
+    return 1
 }
 
 # tapped_next <原来那首> <点之前的采样> <切过去之后的采样> <两次采样隔了几秒> <原来那首的长度（秒）>：
@@ -389,8 +429,10 @@ run_lock_screen_checks() {
     else
         before=$(session)
         started=$(clock)
-        if ! flow "锁屏界面上有媒体控件，点下一曲" lockscreen-next.yaml; then
+        if ! flow "锁屏界面上有媒体控件" lockscreen-next.yaml; then
             fail "$LOCK_BUTTON" "锁屏界面上没找到媒体控件的下一曲"
+        elif ! detail=$(tap_lock_screen_next "E2E Tone B" "E2E Tone C"); then
+            fail "$LOCK_BUTTON" "$detail"
         elif ! wait_for_song "E2E Tone C" 20 || ! keyguard_showing; then
             fail "$LOCK_BUTTON" "点了下一曲：$(sample_text "$(session)")；$(device_summary)"
         else

@@ -92,8 +92,12 @@ reset; FAULT=doze FAULT_UNTIL=10
 expect FAIL "退出 Doze 后又恢复，失败不会丢失" check_progress
 reset; FAULT=screen
 expect FAIL "播放期间屏幕亮起" check_progress
-reset; FAULT=guard
+reset; MODE=locked FAULT=guard
 expect FAIL "播放期间锁屏解除" check_progress
+reset; FAULT=guard FAULT_FROM=0
+expect PASS "Doze 要求灭屏与 IDLE，不要求锁屏界面显示" check_progress
+reset; MODE=saver FAULT=guard FAULT_FROM=0
+expect PASS "独立省电要求灭屏与省电开启，不要求锁屏界面显示" check_progress
 reset; FAULT=unknown
 expect FAIL "播放期间无法解析设备状态" check_progress
 reset; MODE=locked
@@ -140,4 +144,4 @@ reset; SPEED=0
 expect FAIL "恢复后会话在播但进度停住" power_check doze 恢复 expect_power_resumed 恢复 "E2E Tone C" '{"found":true,"title":"E2E Tone C","state":"PAUSED","position":10000}'
 
 if [ "$FAILURES" -ne 0 ]; then echo "power_environment_test.sh: $FAILURES 项失败"; exit 1; fi
-echo 'power_environment_test.sh: 25 项全部通过'
+echo 'power_environment_test.sh: 27 项全部通过'

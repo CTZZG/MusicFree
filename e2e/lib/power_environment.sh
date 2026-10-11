@@ -5,13 +5,18 @@
 power_environment() {
     local mode=$1 screen guard idle saver
     screen=$(screen_state 2>/dev/null) || screen=?
-    guard=$(keyguard_state 2>/dev/null) || guard=?
-    case "$screen:$guard" in
-        Asleep:showing|Dozing:showing) ;;
-        *) echo "要求灭屏且锁屏，实际屏幕 $screen、锁屏 $guard"; return 1 ;;
+    case "$screen" in
+        Asleep|Dozing) ;;
+        *) echo "要求灭屏，实际屏幕 $screen"; return 1 ;;
     esac
     case "$mode" in
-        locked) ;;
+        locked)
+            guard=$(keyguard_state 2>/dev/null) || guard=?
+            if [ "$guard" != showing ]; then
+                echo "要求锁屏，实际 $guard"
+                return 1
+            fi
+            ;;
         doze)
             idle=$(deep_idle_state 2>/dev/null) || idle=?
             if [ "$idle" != IDLE ]; then
