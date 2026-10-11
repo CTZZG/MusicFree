@@ -154,6 +154,64 @@ function getMediaSource(
 const fixture = (file: string) =>
     `https://raw.githubusercontent.com/CTZZG/MusicFree/${ref}/e2e/fixtures/${file}`;
 
+describe("API36 real-JS source", () => {
+    let logSpy: jest.SpyInstance;
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockGetMediaCache.mockReturnValue(null);
+        jest.useFakeTimers();
+        logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+        logSpy.mockRestore();
+        jest.useRealTimers();
+    });
+
+    it("keeps the seed queue isolated and requires a pinned source commit", async () => {
+        const plugin = mountE2EPlugin("e2e-source-js-flow.js");
+        expect(plugin.instance.cacheControl).toBe("no-store");
+        await expect(plugin.methods.search("js-flow latest seed", 1, "music")).resolves.toMatchObject({ data: [] });
+        const seed = await plugin.methods.search(`js-flow ${ref} seed`, 1, "music");
+        const queue = await plugin.methods.search(`js-flow ${ref} queue`, 1, "music");
+        expect(seed.data.map(x => x.title)).toEqual(["JS Flow B"]);
+        expect(queue.data.map(x => x.title)).toEqual(["JS Flow B", "JS Flow C", "JS Flow Hang"]);
+        await expect(getMediaSource(plugin, seed.data[0] as IMusic.IMusicItem)).resolves.toMatchObject({ url: fixture("tone-b.mp3") + "?jsFlowQuality=192k" });
+    });
+
+    it("delays C for nine seconds and marks a real quality-specific address", async () => {
+        const plugin = mountE2EPlugin("e2e-source-js-flow.js");
+        const result = await plugin.methods.search(`js-flow ${ref} queue`, 1, "music");
+        let settled = false;
+        const loading = getMediaSource(plugin, result.data[1] as IMusic.IMusicItem, "320k").then(x => {
+            settled = true;
+            return x;
+        });
+        await jest.advanceTimersByTimeAsync(8999);
+        expect(settled).toBe(false);
+        await jest.advanceTimersByTimeAsync(1);
+        await expect(loading).resolves.toMatchObject({ url: fixture("tone-c.mp3") + "?jsFlowQuality=320k" });
+        const events = logSpy.mock.calls.map(x => String(x[0])).filter(x => x.startsWith("E2E_JS_FLOW ")).map(x => JSON.parse(x.slice(12)));
+        expect(events.map(x => x.event)).toEqual(["begin", "resolved"]);
+        expect(events[1].wallMs - events[0].wallMs).toBe(9000);
+        expect(events[1].requestId).toBe(events[0].requestId);
+    });
+
+    it("leaves Hang unanswered and rejects unsupported qualities", async () => {
+        const plugin = mountE2EPlugin("e2e-source-js-flow.js");
+        const result = await plugin.methods.search(`js-flow ${ref} queue`, 1, "music");
+        let settled = false;
+        getMediaSource(plugin, result.data[2] as IMusic.IMusicItem).then(() => {
+            settled = true;
+        }).catch(() => {
+            settled = true;
+        });
+        await jest.advanceTimersByTimeAsync(30000);
+        expect(settled).toBe(false);
+        await expect(getMediaSource(plugin, result.data[1] as IMusic.IMusicItem, "flac")).resolves.toMatchObject({ failure: { code: "unavailable" } });
+        expect(logSpy.mock.calls.filter(x => String(x[0]).includes("\"event\":\"resolved\""))).toHaveLength(0);
+    });
+});
+
 describe("e2e test source A", () => {
     beforeEach(() => {
         jest.clearAllMocks();

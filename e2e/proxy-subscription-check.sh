@@ -37,7 +37,7 @@ if export_engine_progress_samples "$OUT/missing-sample-probe.jsonl"; then
 fi
 test ! -e "$OUT/missing-sample-probe.jsonl"
 echo 'Missing sample export rejected without creating a JSONL artifact.'
-TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest"
+TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.JsFlowProbePolicyTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest"
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
     > "$OUT/instrumentation.log" 2>&1
@@ -117,5 +117,6 @@ wait "$RECORD_PID" || true
 RECORD_PID=""
 adb pull /sdcard/subscription-transition.mp4 "$OUT/subscription-transition.mp4"
 maestro hierarchy --compact --no-reinstall-driver > "$OUT/final-hierarchy.txt"
+bash e2e/android16-js-flow-check.sh "$OUT/real-js"
 echo 'Native proxy and real-engine Live Update tests passed; subscription entry/back flow passed with animations enabled.' \
     | tee "$OUT/summary.txt"
