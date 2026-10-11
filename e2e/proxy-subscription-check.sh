@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Debug app + Metro on a disposable emulator. No release/tag is published.
 set -euo pipefail
+source "$(dirname "$0")/lib/engine_progress_artifact.sh"
 
 OUT="$PWD/proxy-subscription-results"
 mkdir -p "$OUT"
@@ -8,12 +9,7 @@ METRO_PID=""
 RECORD_PID=""
 cleanup() {
     # Keep partial raw samples even when an instrumentation assertion fails.
-    if adb exec-out run-as fun.upup.musicfree cat files/engine-progress-samples.jsonl \
-        > "$OUT/engine-progress-samples.partial" 2>/dev/null; then
-        mv "$OUT/engine-progress-samples.partial" "$OUT/engine-progress-samples.jsonl"
-    else
-        rm -f "$OUT/engine-progress-samples.partial"
-    fi
+    export_engine_progress_samples "$OUT/engine-progress-samples.jsonl" || true
     if [ -n "$RECORD_PID" ]; then
         adb shell pkill -2 screenrecord 2>/dev/null || true
         wait "$RECORD_PID" 2>/dev/null || true
@@ -29,6 +25,18 @@ adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-andr
 # Raw engine samples are written by instrumentation, independently of the
 # service's projected clock. Do not retain samples from a previous installation.
 adb shell run-as fun.upup.musicfree rm -f files/engine-progress-samples.jsonl
+# Record this adb version's actual missing-file behavior as text, never JSONL.
+# The exporter must reject it regardless of whether exec-out returns zero.
+MISSING_SAMPLE_STATUS=0
+adb exec-out run-as fun.upup.musicfree cat files/engine-progress-samples.jsonl \
+    > "$OUT/missing-sample-exec-out.txt" 2>&1 || MISSING_SAMPLE_STATUS=$?
+echo "Missing sample exec-out probe: status=$MISSING_SAMPLE_STATUS bytes=$(wc -c < "$OUT/missing-sample-exec-out.txt")"
+if export_engine_progress_samples "$OUT/missing-sample-probe.jsonl"; then
+    echo 'Missing-file sample export unexpectedly succeeded' >&2
+    exit 1
+fi
+test ! -e "$OUT/missing-sample-probe.jsonl"
+echo 'Missing sample export rejected without creating a JSONL artifact.'
 TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest"
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
@@ -69,8 +77,7 @@ Path(sys.argv[1]).with_name('instrumentation-summary.json').write_text(json.dump
 print(json.dumps({'passed': passed, 'expected': expected, 'completed': len(completed)}))
 sys.exit(0 if passed else 1)
 PY
-adb exec-out run-as fun.upup.musicfree cat files/engine-progress-samples.jsonl \
-    > "$OUT/engine-progress-samples.jsonl"
+export_engine_progress_samples "$OUT/engine-progress-samples.jsonl"
 python3 - "$OUT/engine-progress-samples.jsonl" <<'PY'
 import json, sys
 from collections import Counter

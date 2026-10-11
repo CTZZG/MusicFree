@@ -64,7 +64,7 @@ JNI 句柄通过测试侧反射读取，没有给产品增加调试端口或缓�
 和 `MediaControllerCompat.playbackState`，并确认通知确实采用 `ProgressStyle`。
 播放和恢复要求每段原始进度前进、曲目正确、不在暂停/空闲/缓冲，估算进度与原始进度差不超过 1.5 秒；
 暂停要求两个时钟都保持不变。纯 JVM 的 `EngineProgressProbeTest` 覆盖缺失读数、单段停滞、错误曲目、
-窗口不足、跳跃、状态不符和投影漂移。
+窗口不足、间隔过短/逆序、间隔过长、跳跃、状态不符和投影漂移。
 
 负面对照先真正暂停引擎、卸下模块观察器，再仅在测试中给服务注入过期的“playing”状态。
 确认 Live Update 估算进度仍前进至少 2.5 秒，但同一个播放检查必须以 `RAW_STALLED` 拒绝；
@@ -74,6 +74,10 @@ JNI 句柄通过测试侧反射读取，没有给产品增加调试端口或缓�
 工作流除了检查每个仪器测试的完成状态，还要求五个阶段各五条原始样本。
 `proxy-subscription-<run_id>` 附件包含 `instrumentation-summary.json` 和
 `engine-progress-samples.jsonl`；后者的原始读数不从媒体会话推算。
+导出前用 `adb shell` 确认文件存在，临时副本通过 JSONL 校验后才替换已保存的证据；
+缺文件、断连或 `exec-out` 返回错误文本时，清理不会覆盖之前的有效副本。
+`e2e/lib/engine_progress_artifact_test.sh` 在该工作流运行，覆盖导出的失败路径；
+每次设备运行另记录缺文件时 `exec-out` 的实际返回码和输出，附件为 `missing-sample-exec-out.txt`。
 这是 API 36 原生层的独立补充，没有把 Android 14 的锁屏、省电、切歌网络测试搬到 API 36。
 
 ## 故障注入（第 17、18 步，`storage.sh`）

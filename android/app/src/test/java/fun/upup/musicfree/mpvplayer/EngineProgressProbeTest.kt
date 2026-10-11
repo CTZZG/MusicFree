@@ -9,6 +9,10 @@ class EngineProgressProbeTest {
         EngineProgressSample(n * 1000L, 10.0 + n, false, false, false, "tone.wav", 10000L + n * 1000, 3)
     }
 
+    private fun samplesAt(vararg times: Long) = times.map { elapsed ->
+        EngineProgressSample(elapsed, 10.0 + elapsed / 1000.0, false, false, false, "tone.wav", 10000L + elapsed, 3)
+    }
+
     private fun rejects(code: String, action: () -> Unit) {
         val error = assertThrows(AssertionError::class.java, action)
         assertTrue(error.message, error.message!!.startsWith("$code:"))
@@ -40,6 +44,17 @@ class EngineProgressProbeTest {
         rejects("TRACK") { EngineProgressProbe.assertPlaying(playing(), "other.wav") }
         rejects("WINDOW") { EngineProgressProbe.assertPlaying(playing().take(4), "tone.wav") }
         rejects("WINDOW") { EngineProgressProbe.assertPlaying(playing().map { it.copy(elapsedMs = it.elapsedMs / 2) }, "tone.wav") }
+    }
+
+    @Test fun rejectsIntervalsTooCloseOrReversed() {
+        EngineProgressProbe.assertPlaying(samplesAt(0, 750, 1500, 2250, 5000), "tone.wav")
+        rejects("WINDOW") { EngineProgressProbe.assertPlaying(samplesAt(0, 500, 1500, 2500, 4100), "tone.wav") }
+        rejects("WINDOW") { EngineProgressProbe.assertPlaying(samplesAt(0, 2000, 1000, 3000, 4100), "tone.wav") }
+    }
+
+    @Test fun rejectsExcessiveGapsInsideASufficientWindow() {
+        EngineProgressProbe.assertPlaying(samplesAt(0, 1000, 2000, 3000, 8000), "tone.wav")
+        rejects("WINDOW") { EngineProgressProbe.assertPlaying(samplesAt(0, 1000, 2000, 3000, 9000), "tone.wav") }
     }
 
     @Test fun rejectsEngineAndSessionStateMismatch() {
