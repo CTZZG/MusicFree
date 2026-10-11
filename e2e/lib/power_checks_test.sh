@@ -122,6 +122,16 @@ ROLLBACK=16
 STALL_AFTER_ROLLBACK=1
 expect FAIL "回到 C 但没接着播" expect_hang_rollback 回滚 "E2E Tone C"
 
+# ---- 锁屏界面上点下一曲：是点出来的，不是原来那首播完自动接的 ----
+check_tap() {
+    if detail=$(tapped_next "E2E Tone B" "$1" "$2" "$3" 180); then pass 点下一曲 "$detail"; else fail 点下一曲 "$detail"; fi
+}
+b_at_31='{"found": true, "state": "PLAYING", "title": "E2E Tone B", "position": 31500}'
+c_at_55='{"found": true, "state": "PLAYING", "title": "E2E Tone C", "position": 55800}'
+expect PASS "点的时候 B 在约 120 秒" check_tap "$b_at_31" "$c_at_55" 145
+expect FAIL "隔了 200 秒、C 才放 5 秒：B 是播完自动接的" check_tap "$b_at_31" "${c_at_55/55800/5000}" 200
+expect FAIL "点之前 B 就没在播" check_tap "${b_at_31/PLAYING/PAUSED}" "$c_at_55" 145
+
 # ---- 解锁后播放页和媒体会话一致 ----
 before='{"found": true, "state": "PLAYING", "title": "E2E Tone B", "position": 41200}'
 after='{"found": true, "state": "PLAYING", "title": "E2E Tone B", "position": 45900}'

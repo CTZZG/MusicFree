@@ -6,4 +6,7 @@ appId: fun.upup.musicfree
     visible: "Next track|下一曲|下一首"
     timeout: 15000
 - takeScreenshot: 30-lock-screen-controls
-- tapOn: "Next track|下一曲|下一首"
+# 锁屏界面上的进度条一直在动，点完不等界面静下来
+- tapOn:
+    text: "Next track|下一曲|下一首"
+    waitToSettleTimeoutMs: 1000

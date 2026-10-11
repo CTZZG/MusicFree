@@ -156,6 +156,23 @@ expect_hang_rollback() {
     pass "$name" "按下一首后 ${waited} 秒回到「$title」，$(progress_text "$first" "$second")；$(device_summary)"
 }
 
+# tapped_next <原来那首> <点之前的采样> <切过去之后的采样> <两次采样隔了几秒> <原来那首的长度（秒）>：
+#   切过去的那一刻原来那首播到了哪里（点之前的进度 + 隔的时间 - 新歌已经播的）。离播完不到 5 秒时，
+#   分不清是点出来的还是播完自动接的：输出原因、返回 1
+tapped_next() {
+    local title=$1 before=$2 after=$3 elapsed=$4 length=$5 at
+    if ! python3 -I "$SESSION" is-playing "$title" "$before"; then
+        echo "点之前没在播「$title」：$(sample_text "$before")"
+        return 1
+    fi
+    at=$(python3 -I -c 'import json,sys; b,a=(json.loads(x)["position"] for x in sys.argv[1:3]); print(int(b / 1000 + int(sys.argv[3]) - a / 1000))' "$before" "$after" "$elapsed")
+    if [ "$at" -ge $((length - 5)) ]; then
+        echo "切歌时「$title」已经播到约 ${at}s（共 ${length} 秒），分不清是点出来的还是播完自动接的"
+        return 1
+    fi
+    echo "切歌时「$title」播到约 ${at}s（共 ${length} 秒，不是播完自动接的）"
+}
+
 # expect_paused_resume <检查名> <标题> <停多少秒>：先暂停，这段时间里一直停着，再按播放从暂停处接着播
 expect_paused_resume() {
     local name=$1 title=$2 seconds=$3 paused detail
@@ -239,7 +256,7 @@ LOCK_UNLOCK="解锁后播放页和系统媒体会话一致"
 run_lock_screen_checks() {
     local all=("$LOCK_PLAY" "$LOCK_BUTTON" "$LOCK_HANG" "$LOCK_PAUSE_HANG" "$LOCK_PAUSE_LONG" \
         "$LOCK_HANG_NEXT" "$LOCK_FOCUS_HELD" "$LOCK_FOCUS_RESUME" "$LOCK_UNLOCK")
-    local check paused detail
+    local check paused detail before started switched problem
     # 锁屏方式是“滑动”时灭屏再亮屏就有锁屏界面；之前被关掉的话打开
     adb shell locksettings set-disabled false > /dev/null 2>&1 || true
     unlock || true
@@ -265,18 +282,31 @@ run_lock_screen_checks() {
     fi
     expect_progress_for "$LOCK_PLAY" "E2E Tone B" 30
 
-    # 19b. 亮屏，停在锁屏界面，点锁屏界面上媒体控件的“下一曲”
+    # 19b. 亮屏，停在锁屏界面，点锁屏界面上媒体控件的“下一曲”。B 只有 180 秒，播完也会自己接着放 C：
+    #      算出切到 C 时 B 播到了哪里，B 快播完了就分不清是不是点出来的，记失败
     if ! wake_to_lock_screen; then
         log_raw_device_state
         fail "$LOCK_BUTTON" "亮屏后没有锁屏界面：$(device_summary)"
-    elif flow "锁屏界面上有媒体控件，点下一曲" lockscreen-next.yaml; then
-        if wait_for_song "E2E Tone C" 20 && keyguard_showing; then
-            expect_playing "$LOCK_BUTTON" "E2E Tone C"
-        else
-            fail "$LOCK_BUTTON" "点了下一曲：$(sample_text "$(session)")；$(device_summary)"
-        fi
     else
-        fail "$LOCK_BUTTON" "锁屏界面上没找到媒体控件的下一曲"
+        before=$(session)
+        started=$(clock)
+        if ! flow "锁屏界面上有媒体控件，点下一曲" lockscreen-next.yaml; then
+            fail "$LOCK_BUTTON" "锁屏界面上没找到媒体控件的下一曲"
+        elif ! wait_for_song "E2E Tone C" 20 || ! keyguard_showing; then
+            fail "$LOCK_BUTTON" "点了下一曲：$(sample_text "$(session)")；$(device_summary)"
+        else
+            switched=$(session)
+            if ! detail=$(tapped_next "E2E Tone B" "$before" "$switched" $(( $(clock) - started )) 180); then
+                fail "$LOCK_BUTTON" "$detail"
+            else
+                sleep 4
+                if problem=$(python3 -I "$SESSION" playing "E2E Tone C" "$switched" "$(session)"); then
+                    pass "$LOCK_BUTTON" "$detail；锁屏界面还在"
+                else
+                    fail "$LOCK_BUTTON" "$detail，但 C 没接着播：$problem"
+                fi
+            fi
+        fi
     fi
     shot 30-lock-screen
     lock_screen || true
