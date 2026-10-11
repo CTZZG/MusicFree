@@ -87,7 +87,9 @@ def instrumentation_result(text, control=False):
     require(completed == [(CLASS, METHOD, -2 if control else 0)], f"missing/skipped/failed test: {completed}")
     require(re.search(r"^INSTRUMENTATION_CODE: -1\s*$", text, re.M), "instrumentation did not complete")
     if control:
-        require("RAW_STALLED:" in text, "control must reject raw stall, not fail setup or another assertion")
+        require(re.search(r"^INSTRUMENTATION_STATUS: stack=java\.lang\.AssertionError: RAW_STALLED:", text, re.M),
+                "control must reject raw stall, not fail setup or another assertion")
+        require("MultipleFailureException" not in text, "control cleanup also failed")
     return {"passed": True, "control": control, "completed": completed}
 
 
@@ -164,8 +166,13 @@ def self_test():
         else: raise AssertionError("bad instrumentation accepted")
     control = [dict(r, paused=True, rawSeconds=12) for r in rows if r["phase"] == "baseline"]
     validate_samples(control, True)
-    instrumentation_result(normal.replace("CODE: 0", "CODE: -2") + "RAW_STALLED: frozen\n", True)
-    for bad in [normal.replace("CODE: 0", "CODE: -2") + "setup failed", normal.replace("CODE: 0", "CODE: -3") + "RAW_STALLED:"]:
+    stalled = normal.replace("INSTRUMENTATION_STATUS_CODE: 0", "INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: RAW_STALLED: frozen\nINSTRUMENTATION_STATUS_CODE: -2")
+    instrumentation_result(stalled, True)
+    for bad in [normal.replace("CODE: 0", "CODE: -2") + "setup failed",
+                normal.replace("CODE: 0", "CODE: -3") + "RAW_STALLED:",
+                stalled.replace("stack=java.lang.AssertionError: RAW_STALLED:", "stack=org.junit.internal.runners.model.MultipleFailureException: RAW_STALLED:"),
+                stalled + "MultipleFailureException: cleanup also failed",
+                normal.replace("CODE: 0", "CODE: -2") + "unrelated log mentions RAW_STALLED:"]:
         try: instrumentation_result(bad, True)
         except ValueError: checks += 1
         else: raise AssertionError("control accepted a setup failure/skip")

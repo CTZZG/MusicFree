@@ -65,7 +65,8 @@ class RealJsEngineProgressTest {
         onMain { host = (context.applicationContext as ReactApplication).reactHost }
         await("ReactHost-owned native module", 30000) {
             onMain {
-                val actual = host?.currentReactContext?.getNativeModule(MpvPlayerModule::class.java)
+                // RN's class overload requires @ReactModule; this legacy module is registered by name.
+                val actual = host?.currentReactContext?.getNativeModule("MpvPlayer") as? MpvPlayerModule
                 val field = MpvPlayerModule::class.java.getDeclaredField("mpvInstance").apply { isAccessible = true }
                 val handle = actual?.let { field.get(it) as? MPVLib }
                 if (actual != null && handle != null) { module = actual; engine = handle; true } else false
@@ -180,7 +181,7 @@ class RealJsEngineProgressTest {
             if (index > 0) Thread.sleep(1100)
             val sample = onMain {
                 // Never acquire a new module or another engine to repair a missing read.
-                assertTrue("same ReactHost module", host?.currentReactContext?.getNativeModule(MpvPlayerModule::class.java) === module)
+                assertTrue("same ReactHost module", host?.currentReactContext?.getNativeModule("MpvPlayer") === module)
                 val state = requireNotNull(controller.playbackState)
                 val notifications = context.getSystemService(NotificationManager::class.java)
                 val notification = requireNotNull(notifications.activeNotifications.firstOrNull { it.id == 3001 }?.notification)
