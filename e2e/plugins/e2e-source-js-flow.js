@@ -40,7 +40,7 @@ module.exports = {
         const id = ++requestId;
         event("begin", item, quality, id);
         if (item.id === "hang") return new Promise(() => undefined);
-        if (item.id === "c") await new Promise(resolve => setTimeout(resolve, 9000));
+        if (item.id === "c") await new Promise(resolve => setTimeout(resolve, 12000));
         event("resolved", item, quality, id);
         // The query distinguishes a real HQ/MQ source replacement of the same recording.
         return { url: `${BASE}/${item.e2eRef}/e2e/fixtures/${item.e2eFile}?jsFlowQuality=${quality}` };

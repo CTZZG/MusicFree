@@ -178,7 +178,7 @@ describe("API36 real-JS source", () => {
         await expect(getMediaSource(plugin, seed.data[0] as IMusic.IMusicItem)).resolves.toMatchObject({ url: fixture("tone-b.mp3") + "?jsFlowQuality=192k" });
     });
 
-    it("delays C for nine seconds and marks a real quality-specific address", async () => {
+    it("delays C for twelve seconds and marks a real quality-specific address", async () => {
         const plugin = mountE2EPlugin("e2e-source-js-flow.js");
         const result = await plugin.methods.search(`js-flow ${ref} queue`, 1, "music");
         let settled = false;
@@ -186,13 +186,13 @@ describe("API36 real-JS source", () => {
             settled = true;
             return x;
         });
-        await jest.advanceTimersByTimeAsync(8999);
+        await jest.advanceTimersByTimeAsync(11999);
         expect(settled).toBe(false);
         await jest.advanceTimersByTimeAsync(1);
         await expect(loading).resolves.toMatchObject({ url: fixture("tone-c.mp3") + "?jsFlowQuality=320k" });
         const events = logSpy.mock.calls.map(x => String(x[0])).filter(x => x.startsWith("E2E_JS_FLOW ")).map(x => JSON.parse(x.slice(12)));
         expect(events.map(x => x.event)).toEqual(["begin", "resolved"]);
-        expect(events[1].wallMs - events[0].wallMs).toBe(9000);
+        expect(events[1].wallMs - events[0].wallMs).toBe(12000);
         expect(events[1].requestId).toBe(events[0].requestId);
     });
 

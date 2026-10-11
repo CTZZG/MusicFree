@@ -117,7 +117,7 @@ def source_events(text):
         require((row["id"], row["quality"]) == (begin["id"], begin["quality"]), "source request mismatch")
         require(row["id"] != "hang", "Hang unexpectedly returned an address")
         if row["id"] == "c":
-            require(row["wallMs"] - begin["wallMs"] >= 8500, "slow fixture did not actually wait")
+            require(row["wallMs"] - begin["wallMs"] >= 11500, "slow fixture did not actually wait")
     require({("c", "192k"), ("c", "320k")} <= {(r["id"], r["quality"]) for r in resolved}, "quality sources did not complete")
     return {"begin": len(begins), "resolved": len(resolved)}
 
@@ -196,9 +196,9 @@ def self_test():
     events = [
         {"event": "begin", "id": "b", "quality": "192k", "requestId": 1, "wallMs": 0},
         {"event": "begin", "id": "c", "quality": "192k", "requestId": 2, "wallMs": 0},
-        {"event": "resolved", "id": "c", "quality": "192k", "requestId": 2, "wallMs": 9000},
+        {"event": "resolved", "id": "c", "quality": "192k", "requestId": 2, "wallMs": 12000},
         {"event": "begin", "id": "c", "quality": "320k", "requestId": 3, "wallMs": 0},
-        {"event": "resolved", "id": "c", "quality": "320k", "requestId": 3, "wallMs": 9000},
+        {"event": "resolved", "id": "c", "quality": "320k", "requestId": 3, "wallMs": 12000},
         {"event": "begin", "id": "hang", "quality": "192k", "requestId": 4, "wallMs": 0},
     ]
     def trace(items): return "\n".join("E2E_JS_FLOW " + json.dumps(x) for x in items)
