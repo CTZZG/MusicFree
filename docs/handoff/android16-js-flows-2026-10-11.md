@@ -29,7 +29,7 @@ AppConfig 未读到开关。后续修正配置编码，不把这个运行算作 
 | baseline | 真实 JS 点播 B，JNI 与会话都持续前进 |
 | slow-skip-wait / slow-skip-playing | C 取源九秒期间旧曲暂停，随后确实加载并播放 C |
 | timeout-wait / timeout-rollback | Hang 插件不回应，旧曲暂停等待，在一次期限内回到 C 并保持非零进度 |
-| quality-interrupted-old / quality-interrupted-new | C 慢速换到 320K，外部应用持有临时焦点时，旧源和新源均不出声 |
+| quality-interrupted-old / quality-interrupted-new | C 慢速换到 320K，外部应用持有临时焦点时，旧源和新源的引擎均保持暂停 |
 | quality-focus-resumed | 辅助应用明确释放焦点后，新源实际恢复并前进 |
 | user-pause-old / user-pause-new / user-pause-after-focus | 再慢速换回 192K，打断期间主动按暂停，源切换与焦点返回都不能覆盖暂停 |
 | explicit-play | 用户再按播放，新源恢复，JNI 实际前进 |
@@ -37,6 +37,8 @@ AppConfig 未读到开关。后续修正配置编码，不把这个运行算作 
 每阶段五次采样、约 4.4 秒，正常流程六十条 JSONL，读取原始 time-pos、pause、idle-active、paused-for-cache、path，
 同时读取媒体会话进度和状态。窗口和逐段进度使用 #27 的 EngineProgressProbe；额外断言非零进度锚点、
 完整阶段集合、曲目标题，受打断阶段每个样本都检查焦点所有者。
+焦点恢复和主动播放还要与前一暂停窗口的最后一条 JNI 进度比较，拒绝从零重新播放或向前跳跃。
+证据自检分别注入两种恢复错误；即使恢复后的窗口正常前进、媒体会话也一致，仍必须失败。
 
 C 的预取不能提前完成：初始搜索只返回 B，再通过真实搜索替换队列，检查 C 的请求刚开始才切歌。
 插件声明 no-store，每次 C 请求延迟九秒并记录开始和结束；192K/320K 地址查询参数不同，JNI path 必须换源。
@@ -53,6 +55,9 @@ API36 #32 的可见标签显示进入了完整播放页，确认按 B 标题点�
 插件的普通 JS setTimeout 在应用退后台时可能暂停。因此辅助应用取得音频焦点后，测试把 MusicFree 界面
 重新置前，每个受打断样本都断言 MusicFree 前台、辅助应用仍持有焦点。这验证界面操作期间的外部打断，
 不是后台计时或模拟实际视频界面一直显示。辅助应用使用自身原生计时器，二十五秒后明确记录释放焦点。
+API36 #33 已实际通过前五个完整窗口，随后在音质打断的前台检查失败：辅助应用在 onCreate 中先取得
+焦点，窗口稍后才显示，测试此前过早把旧 MusicFree 窗口认作已重新置前。现在先等辅助应用窗口真正
+到前台且持有焦点，再启动 MusicFree，保留每条样本的前台和焦点检查；没有放宽检查或改变产品实现。
 
 每次仪器运行从清空数据后的应用开始。测试结束销毁真实 ReactHost，等待回调成功和播放服务释放，
 恢复测试前配置；脚本 EXIT 无论成功失败都强制停止应用和辅助应用。旧的原生样本在清数据前已保存到 runner，

@@ -279,7 +279,13 @@ class RealJsEngineProgressTest {
     private fun startVideo(tag: String) {
         context.startActivity(Intent().setClassName(focusPackage, "$focusPackage.HoldFocusActivity")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("mode", "transient").putExtra("seconds", 25).putExtra("tag", tag))
-        await("video acquired transient focus", 5000) { JsFlowProbePolicy.focusOwner(shell("dumpsys audio")) == focusPackage }
+        // Focus is requested in onCreate, before the helper's window reaches the foreground.
+        // Wait for that window too, otherwise the old MusicFree root can satisfy the next wait
+        // just before the helper becomes visible and suspends the fixture's ordinary JS timer.
+        await("video foreground and acquired transient focus", 5000) {
+            automation.rootInActiveWindow?.packageName?.toString() == focusPackage &&
+                JsFlowProbePolicy.focusOwner(shell("dumpsys audio")) == focusPackage
+        }
         // Plugin setTimeout is a foreground JS fixture, not a background-timer test.
         // Showing MusicFree must not reclaim the other app's still-held audio focus.
         context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

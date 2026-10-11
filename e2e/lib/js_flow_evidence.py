@@ -15,6 +15,10 @@ PAUSED = {
 PLAYING = {"baseline", "slow-skip-playing", "timeout-rollback", "quality-focus-resumed", "explicit-play"}
 HELD = {"quality-interrupted-old", "quality-interrupted-new", "user-pause-old", "user-pause-new"}
 ANCHORED = {"timeout-rollback", "quality-interrupted-new", "user-pause-new"}
+RESUMES = {
+    "quality-focus-resumed": "quality-interrupted-new",
+    "explicit-play": "user-pause-after-focus",
+}
 CLASS = "fun.upup.musicfree.mpvplayer.RealJsEngineProgressTest"
 METHOD = "realJsFlowsPreserveEngineAndPauseIntent"
 FOCUS = "fun.upup.musicfree.e2e.focus"
@@ -68,6 +72,10 @@ def validate_samples(rows, control=False):
             require(all(s["paused"] is False and s["sessionState"] == 3 for s in samples), f"{phase}: wrong playing state")
         if not control:
             require(all(abs(s["rawSeconds"] - s["sessionMs"]/1000) <= 1.5 for s in samples), f"{phase}: projection drift")
+    if not control:
+        for resumed, paused in RESUMES.items():
+            advance = groups[resumed][0]["rawSeconds"] - groups[paused][-1]["rawSeconds"]
+            require(-.15 <= advance <= 2, f"{resumed}: resume reset/jumped from paused source")
     return {phase: len(samples) for phase, samples in groups.items()}
 
 
@@ -155,6 +163,15 @@ def self_test():
             altered = copy.deepcopy(rows)
             for row in altered:
                 if row["phase"] == phase: row["resumeAnchor"] = anchor
+            rejects(altered)
+    # These windows still move normally and match the media session after a reset/jump.
+    # Only comparing to the preceding paused source catches the lost resume position.
+    for phase in RESUMES:
+        for start in [0, 30]:
+            altered = copy.deepcopy(rows)
+            for n, row in enumerate(r for r in altered if r["phase"] == phase):
+                row["rawSeconds"] = start+n*1.1
+                row["sessionMs"] = (start+n*1.1)*1000
             rejects(altered)
     for field, value in [("sameTrack", False), ("sameTitle", False), ("rawSeconds", None), ("rawSeconds", float("nan")), ("idle", True), ("buffering", True)]:
         altered = copy.deepcopy(rows); altered[0][field] = value; rejects(altered)
