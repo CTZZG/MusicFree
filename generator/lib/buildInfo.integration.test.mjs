@@ -107,3 +107,64 @@ test('falls back to the workflow commit when no source commit is given', t => {
     assert.equal(info.gitSha, workflow);
     assert.equal(info.shortSha, '2c33aab');
 });
+
+// Beta 工作流里生成构建信息那一步的命令
+function workflowGenerateCommand() {
+    const workflow = fs.readFileSync(
+        fileURLToPath(new URL('../../.github/workflows/build-beta.yml', import.meta.url)),
+        'utf8',
+    );
+    const step = workflow.match(/- name: Generate app build info\n(?:[ \t]*#.*\n)*[ \t]*run: (.+)\n/);
+    assert.ok(step, 'build-beta.yml 里找不到 Generate app build info 这一步');
+    return step[1];
+}
+
+// 指定 build_ref 时，这一步跑的是那个提交里的生成器。没有 BUILD_SOURCE_SHA 之前的生成器只认 GITHUB_SHA
+function oldGenerator() {
+    const current = fs.readFileSync(generator, 'utf8');
+    const old = current.replace('process.env.BUILD_SOURCE_SHA ||', '');
+    assert.notEqual(old, current, '生成器读 BUILD_SOURCE_SHA 的写法变了，这里要跟着改');
+    return old;
+}
+
+function generateLikeBetaWorkflow(t, generatorSource, env) {
+    const {root, write} = project(t, 'MusicFree');
+    const scripts = JSON.parse(
+        fs.readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8'),
+    ).scripts;
+    write('package.json', JSON.stringify({
+        version: '1.2.3',
+        dependencies: {},
+        scripts: {'generate-build-info': scripts['generate-build-info']},
+    }));
+    write('generator/generate-build-info.mjs', generatorSource);
+    const result = spawnSync('bash', ['-c', workflowGenerateCommand()], {
+        cwd: root,
+        encoding: 'utf8',
+        env: {...process.env, ...env},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const output = fs.readFileSync(path.join(root, 'src', 'constants', 'buildInfo.generated.ts'), 'utf8');
+    return JSON.parse(output.match(/export const buildInfo = (\{[\s\S]*?\}) as const;/)[1]);
+}
+
+// 工作流在“Generate build metadata”里设好的变量
+const builtOldCommit = {
+    BUILD_SOURCE_SHA: '1ec0114cbe7aa5163c7b2a702d0891884807c180',
+    GITHUB_SHA: '0e0d19dfd6a99e3b6221da211677fea86921bd93',
+    SHORT_SHA: '1ec0114',
+};
+
+test('Beta workflow: an old generator from build_ref records the built source commit', t => {
+    const info = generateLikeBetaWorkflow(t, oldGenerator(), builtOldCommit);
+
+    assert.equal(info.gitSha, builtOldCommit.BUILD_SOURCE_SHA);
+    assert.equal(info.shortSha, '1ec0114');
+});
+
+test('Beta workflow: the current generator records the built source commit', t => {
+    const info = generateLikeBetaWorkflow(t, fs.readFileSync(generator), builtOldCommit);
+
+    assert.equal(info.gitSha, builtOldCommit.BUILD_SOURCE_SHA);
+    assert.equal(info.shortSha, '1ec0114');
+});

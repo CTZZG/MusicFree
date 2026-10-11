@@ -199,7 +199,8 @@ jobs:
                   } > android-build-info.txt
 
             - name: Generate app build info
-              run: npm run generate-build-info
+              # 指定 build_ref 时跑的是那个提交里的生成器，旧的只认 GITHUB_SHA：把打包的源码提交按它传进去
+              run: GITHUB_SHA="$BUILD_SOURCE_SHA" npm run generate-build-info
 
             - name: Make gradlew executable
               run: chmod +x android/gradlew
