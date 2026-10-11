@@ -17,6 +17,10 @@ PR 依赖 #27，评审时比较这个基线到本轮提交即可。CI 的实际�
 
 首次启动前写入当前 App.config 的现有存储格式，让真实 JS 配置 Live Update、默认 192K、搜索替换队列，
 关闭自动换源。每个样本检查真实通知模板是 ProgressStyle。这不等于验收用户点击 Live Update 设置开关。
+注意：AppConfig.setConfig 将配置值 JSON.stringify 后存为字符串，布尔配置也必须是 `t=s, v="true"`，
+字符串配置的 v 中必须保留 JSON 引号。`$schema` 和迁移标记是存储层专用字段，按其原始字符串格式写入。
+API36 回归 #30 已经通过真实 JS 点播 B，但发现通知为 MediaStyle；原因是测试最初把配置按存储原始类型写入，
+AppConfig 未读到开关。后续修正配置编码，不把这个运行算作 Live Update 场景通过。
 
 ## 正常场景
 

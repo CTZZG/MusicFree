@@ -239,10 +239,18 @@ class RealJsEngineProgressTest {
         val entries = data.getJSONObject("entries")
         entries.put("\$schema", JSONObject().put("t", "s").put("v", "3"))
         entries.put("\$migratedFromMMKV", JSONObject().put("t", "s").put("v", "E2E JS flow"))
-        entries.put("lyric.showLiveUpdateLyric", JSONObject().put("t", "b").put("v", true))
-        entries.put("basic.tryChangeSourceWhenPlayFail", JSONObject().put("t", "b").put("v", false))
-        entries.put("basic.defaultPlayQuality", JSONObject().put("t", "s").put("v", "192k"))
-        entries.put("basic.clickMusicInSearch", JSONObject().put("t", "s").put("v", "playMusicAndReplace"))
+        // AppConfig.setConfig stores JSON.stringify(value) as a string, even
+        // for booleans. Raw key-value booleans are not AppConfig values.
+        val settings = mapOf(
+            "lyric.showLiveUpdateLyric" to true,
+            "basic.tryChangeSourceWhenPlayFail" to false,
+            "basic.defaultPlayQuality" to "192k",
+            "basic.clickMusicInSearch" to "playMusicAndReplace",
+        )
+        for ((key, value) in settings) {
+            val encoded = if (value is String) JSONObject.quote(value) else value.toString()
+            entries.put(key, JSONObject().put("t", "s").put("v", encoded))
+        }
         configFile.writeText(data.toString())
     }
 
