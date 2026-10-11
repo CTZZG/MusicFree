@@ -141,7 +141,7 @@ Beta #122、#126 是被最新脚本取代的全量运行，已取消，不计入
 复核范围：`a3253ae9..ac10234b` 的全部改动（power.sh、power_environment.sh、device_state.py、三个新自检、
 ci.yml、build-beta.yml、README、media_session.py 说明）和引用的设备运行。
 
-本地：device_state、power_checks、power_environment（27）、power_controls（11）、power_scenario（3）、
+本地：device_state、power_checks、power_environment（27）、power_controls（11）、power_scenario（3，补上锁屏后 5）、
 pause_checks、storage_checks 自检全部通过；shellcheck 只有样式提示（`screen=?` 这类赋值的 SC2125，
 赋值里不展开通配符，行为不变）。
 
@@ -149,13 +149,13 @@ pause_checks、storage_checks 自检全部通过；shellcheck 只有样式提示
 
 - [Beta #129](https://github.com/CTZZG/MusicFree/actions/runs/38121709775)：脚本 `97825a05`，APK 源码 `0e0d19df`，
   Android 14，96 项通过、0 项失败；锁屏按钮在 B 约 36 秒时切到 C，锁屏、Doze 的期限都是 16 秒；省电两项通过，
-  深度休眠状态 QUICK_DOZE_DELAY。
+  深度休眠状态 QUICK_DOZE_DELAY。核对环境的 13 项，说明都以“环境采样符合 locked / doze / saver”结尾，调用点在设备上没有漏接。
 - [Beta #130](https://github.com/CTZZG/MusicFree/actions/runs/38121711743)：脚本 `97825a05`，APK 源码 `828fb854`
   （普通 RN 定时器的对照包），Emulator E2E 失败，符合对照预期。
 - `ac10234b` 相对 `97825a05` 只改了注释和说明（power.sh 一行注释、media_session.py 文档字符串、README、本文档），
-  上面的结果对本 PR 的脚本成立。
+  上面的结果对本 PR 的脚本成立。后面补的 `e1242db4` 只改自检和 README，不改设备上跑的脚本。
 
-结论：没有发现阻塞问题。
+结论：没有发现阻塞问题；找到一处自检缺口，已在本 PR 补上（见“补上的自检缺口”）。
 
 - `power_check`：子 shell 里换掉 session、pass、fail，环境失效写进文件，命令替换里的失败不会丢；结果的行数、
   检查名、退出码都核对。锁屏、Doze、省电里的等待、暂停、恢复、焦点打断都经过 session 采样，都在环境核对之内。
@@ -167,6 +167,27 @@ pause_checks、storage_checks 自检全部通过；shellcheck 只有样式提示
 - 会话进度：核对了 MpvPlaybackService。updatePlaybackState 用 currentNotificationPosition()；mpv 每次进度事件
   先把缓存进度设成 mpv 的值再更新，所以 Android 14 上会话进度基本就是 mpv 的进度，但别的事件触发更新时会按
   时间推算。我原来写的“会话进度就是 mpv 报的、歌停了就不动”说过头了，Codex 的改法是对的。
+
+### 补上的自检缺口
+
+用变异检验自检：在 power.sh 里每次只去掉一个调用点的 `power_check <环境> "$名字"`，原检查照样跑，看 PR CI 跑的
+四个 power 自检能不能发现。13 个调用点（锁屏 7、Doze 4、省电 2）：
+
+- `ac10234b` 原有的自检只发现 2 个（Doze 中照常播放、Doze 中按下一首），其余 11 个去掉也照样全过。锁屏 7 个
+  全部发现不了：power_scenario_test 只跑第 20 步，锁屏没有完整流程的自检。Doze 后两项、省电两项也发现不了：
+  省电流程只数失败个数，环境一失效，前提失败会连带后面几项一起失败，某一项漏接时失败数不变。
+- 设备上没有漏接（上面 #129 的 13 项都有“环境采样符合 …”），所以这是以后改 power.sh 时缺回归保护，不影响本次结果。
+
+补法（`e1242db4`，只改 power_scenario_test.sh 和 README）：
+
+- 加锁屏第 19 步完整流程的替身：亮屏、锁屏界面在、仍在 B 时 adb tap 系统“下一曲”才切到 C；视频替身占焦点、
+  `dumpsys audio` 焦点栈、`logcat` 放下焦点；解锁。
+- 正常场景要求核对环境的 13 项都通过，而且说明以“环境采样符合 <对应环境>”结尾（只有 power_check 写这句话），
+  漏接或接错环境都会失败。
+- 新场景：点过锁屏按钮后再灭屏没有锁屏界面，七项锁屏检查必须全部失败，之后恢复亮屏、解锁。
+- 替身修了一处：切歌等地址时按暂停，进度会倒退；现在从实际开始播放的时刻算。
+
+用新自检重做同样的变异：13 个调用点去掉哪一个，自检都会失败，失败信息直接指出哪一项没经 power_check 记录。
 
 不阻塞、留给后续的观察：
 
