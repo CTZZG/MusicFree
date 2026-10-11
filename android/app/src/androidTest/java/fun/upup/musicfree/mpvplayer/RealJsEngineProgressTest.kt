@@ -257,7 +257,10 @@ class RealJsEngineProgressTest {
     private fun audioUrl(file: String, quality: String) = "https://raw.githubusercontent.com/CTZZG/MusicFree/$ref/e2e/fixtures/$file?jsFlowQuality=$quality"
     private fun search(mode: String) {
         openLink("musicfree://search?keyword=" + Uri.encode("js-flow $ref $mode"))
-        awaitText { label(it) == "JS Flow B" }
+        // B is also visible in the old seed result. Wait for a queue-only row
+        // before clicking it, so route delivery cannot select the old result.
+        val marker = if (mode == "queue") "JS Flow Hang" else "JS Flow B"
+        awaitText { label(it) == marker }
     }
     private fun openLink(url: String) {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url), context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -336,7 +339,12 @@ class RealJsEngineProgressTest {
     private fun shell(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).bufferedReader().use { it.readText() }
     private fun await(what: String, timeout: Long = 15000, deadline: Long = SystemClock.elapsedRealtime() + timeout, condition: () -> Boolean) {
         while (!condition()) {
-            if (SystemClock.elapsedRealtime() >= deadline) throw AssertionError("$what timed out")
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                val labels = mutableListOf<String>()
+                findNode { labels.add(label(it)); false }
+                android.util.Log.e("E2EJSFlow", "$what timed out; visible=${labels.filter { it.isNotBlank() }.distinct().take(40)}")
+                throw AssertionError("$what timed out")
+            }
             Thread.sleep(100)
         }
     }
