@@ -2,6 +2,13 @@
 # power.sh 的环境断言。每次媒体会话采样前后及检查边界都核对；第一次失效写到文件，
 # 让 session/stays_paused 的命令替换也能保留失败。采样之间的短暂变化不能保证被抓到。
 
+is_outside_deep_doze() {
+    case "$1" in
+        ACTIVE|INACTIVE|IDLE_PENDING|SENSING|LOCATING|QUICK_DOZE_DELAY) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 power_environment() {
     local mode=$1 screen guard idle saver
     screen=$(screen_state 2>/dev/null) || screen=?
@@ -29,10 +36,10 @@ power_environment() {
             saver=$(adb shell settings get global low_power 2>/dev/null | tr -d '\r')
             # 再次灭屏可能立即变成 INACTIVE 等准备状态，这时尚未进入深度 Doze。
             # IDLE_MAINTENANCE 仍属于 Doze 周期，不能当成独立省电环境；未知状态也拒绝。
-            case "$idle" in
-                ACTIVE|INACTIVE|IDLE_PENDING|SENSING|LOCATING|QUICK_DOZE_DELAY) ;;
-                *) echo "要求退出深度 Doze，实际 ${idle:-?}"; return 1 ;;
-            esac
+            if ! is_outside_deep_doze "$idle"; then
+                echo "要求退出深度 Doze，实际 ${idle:-?}"
+                return 1
+            fi
             if [ "$saver" != 1 ]; then
                 echo "要求退出 Doze 并打开省电模式，实际 Doze ${idle:-?}、low_power ${saver:-?}"
                 return 1

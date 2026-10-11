@@ -89,7 +89,9 @@ OUT
         "shell dumpsys window policy") echo "  mKeyguardShowing=$([ "$GUARD" = showing ] && echo true || echo false)" ;;
         "shell dumpsys deviceidle") echo "  mState=$(deep_mode)" ;;
         "shell dumpsys deviceidle force-idle deep") echo "$NOW" > "$DEEP_STATE_FILE" ;;
-        "shell dumpsys deviceidle unforce") [ "$STICKY_IDLE" -eq 1 ] || printf '%s\n' -1 > "$DEEP_STATE_FILE" ;;
+        "shell dumpsys deviceidle unforce") : ;;
+        "shell dumpsys deviceidle get force") echo false ;;
+        "shell dumpsys deviceidle motion") [ "$STICKY_IDLE" -eq 1 ] || printf '%s\n' -1 > "$DEEP_STATE_FILE" ;;
         "shell input keyevent KEYCODE_SLEEP") SCREEN=Asleep; GUARD=showing ;;
         "shell input keyevent KEYCODE_WAKEUP") SCREEN=Awake ;;
         "shell wm dismiss-keyguard") GUARD=hidden ;;
@@ -140,6 +142,6 @@ run_case() {
 }
 run_case 'Doze 保持，独立省电测试正常' 0 0 0
 run_case 'Doze 第五秒退出，四项 Doze 行为检查必须失败' 1 0 4
-run_case 'unforce 后仍 IDLE，独立省电两项不能报通过' 0 1 2
+run_case '模拟运动后仍 IDLE，独立省电两项不能报通过' 0 1 2
 if [ "$FAILURES" -ne 0 ]; then exit 1; fi
 printf '%s\n' 'power_scenario_test.sh: 3 项全部通过'

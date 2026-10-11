@@ -48,8 +48,8 @@ deep_idle() {
     [ "$(deep_idle_state 2>/dev/null)" = IDLE ]
 }
 
-deep_idle_active() {
-    [ "$(deep_idle_state 2>/dev/null)" = ACTIVE ]
+outside_deep_doze() {
+    is_outside_deep_doze "$(deep_idle_state 2>/dev/null)"
 }
 
 power_saver_on() {
@@ -579,11 +579,13 @@ run_power_saving_checks() {
         fail "$DOZE_HANG" "C 没在放或 Doze 环境失效，没有执行"
         fail "$DOZE_PAUSE_LONG" "C 没在放，没有执行"
     fi
-    # 20e–f. unforce 只取消强制状态，不保证已经离开 IDLE；亮屏使设备退出并核对 ACTIVE，再灭屏。
-    adb shell dumpsys deviceidle unforce > /dev/null 2>&1 || true
-    if ! { adb shell input keyevent KEYCODE_WAKEUP; wait_until 10 screen_on; } ||
-        ! wait_until 10 deep_idle_active || ! lock_screen; then
-        fail "$SAVER_SKIP" "无法确认已退出 Doze 并再次灭屏：$(device_summary)"
+    # 20e–f. Android 14 的 unforce 在灭屏、未充电时只清 mForceIdle，不改变 IDLE。
+    # 显式模拟运动退出深度休眠，核对 force=false 和非 Doze 状态，保持灭屏再开省电。
+    if ! adb shell dumpsys deviceidle unforce > /dev/null 2>&1 ||
+        [ "$(adb shell dumpsys deviceidle get force | tr -d '\r')" != false ] ||
+        ! adb shell dumpsys deviceidle motion > /dev/null 2>&1 ||
+        ! wait_until 10 outside_deep_doze; then
+        fail "$SAVER_SKIP" "无法确认已退出强制 Doze：$(device_summary)"
         fail "$SAVER_PLAY" "省电模式的独立环境未准备好，没有执行"
         restore_power
         return 1

@@ -30,7 +30,7 @@ Codex 不改产品的播放、焦点、通知进度估算，也不改变版本�
    子 shell 内替换采样和记录函数，原 run.sh 的计数与其他步骤保持原有语义。
 2. **等待过程也采样。** 取地址、超时回滚、暂停、恢复、焦点打断都在环境检查内执行，不能只检查最终播放结果。
    重新灭屏失败会把依赖这项前提的后续检查记失败，并恢复设备；不会把没有执行的检查漏掉。
-3. **Doze 与省电分开。** `unforce` 后先亮屏确认 ACTIVE，再灭屏开启省电模式；再次灭屏后的 INACTIVE 等准备状态尚未进入深度 Doze，允许通过；IDLE、维护窗口与未知状态拒绝。后续采样也核对休眠状态和 low_power。
+3. **Doze 与省电分开。** `unforce` 后确认 force=false，再发送 `deviceidle motion` 模拟运动并核对已经退出深度休眠；保持灭屏时的 INACTIVE 等准备状态尚未进入深度 Doze，允许通过；IDLE、维护窗口与未知状态拒绝。后续采样也核对休眠状态和 low_power。
 4. **恢复后还要继续播。** 原 expect_resumed 只核对状态和暂停位置，新增 expect_power_resumed 再观察四秒进度，防止
    “会话写着在播，实际上没有前进”被算作成功。
 5. **描述不超出证据。** 暂停一分钟没有直接查询唤醒锁，删除“已放下唤醒锁”的结论。焦点替身用 USAGE_MEDIA，
@@ -45,7 +45,7 @@ IDLE：环境中途丢失属于没有完成要求的验证，必须在结果里�
   解锁、省电关闭、状态不可解析、暂停命令替换内的失效、结果报告错误、恢复后进度停住。
 - `power_controls_test.sh`：11 项，真实解析和点击循环，替换设备 I/O。覆盖吞掉点击、每次重新定位、最多三次、成功后不再点、读屏失败、歧义、禁用及定位后解锁。
 - `power_scenario_test.sh`：三种完整省电流程，防止只写了装饰器却漏接调用点。正常应七项通过；第 5 秒退出 Doze
-  应四项失败；不能退出 IDLE 应独立省电两项失败。检查失败后的屏幕、省电恢复。
+  应四项失败；模拟运动后仍不能退出 IDLE 应独立省电两项失败。检查失败后的屏幕、省电恢复。
 - 保留 Claude 的 17 项 power_checks_test、pause_checks_test 与设备解析自检。
 - PR CI 和 Beta E2E 都执行这些自检；CI 绿色不能只证明装饰器文件可加载。
 
@@ -71,6 +71,18 @@ Android 14 上 15 PASS / 8 FAIL。两次 Maestro tap 的 commands.json 分别记
 同一次运行中 Doze 已进入 IDLE，屏幕 Dozing，但 keyguard 还 hidden；初版把所有模式都要求 keyguard showing，
 使七项省电检查没有执行。这是额外的测试前提，修正为只在 locked 模式要求 keyguard；Doze 和省电仍严格要求灭屏
 和相应电源状态。27 项自检补上“Doze/省电不要求锁屏界面显示”的对照，锁屏解除仍会失败。
+
+## 独立省电准备的第二次设备反馈
+
+[Beta #125](https://github.com/CTZZG/MusicFree/actions/runs/38120298975) 使用 4d121c79：21 PASS / 2 FAIL。
+锁屏按钮在 B 约 65 秒时切到 C，排除了自然播完；锁屏和 Doze 的超时均为 16 秒；两个一分钟暂停后的恢复都有四秒进度。
+剩下两项因退出 Doze 的准备失败没有执行：unforce 加亮屏按键后仍 Dozing/IDLE。
+
+核对 Android 14 [DeviceIdleController 源码](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-14.0.0_r1/apex/jobscheduler/service/java/com/android/server/DeviceIdleController.java)：
+exitForceIdleLocked 只在 mScreenOn 或 mCharging 时调用 becomeActiveLocked。灭屏、未充电时 unforce 只清 mForceIdle。
+修正为 unforce 后确认 get force=false，再发送 motion 显式走退出路径，仍要求离开 IDLE/维护窗口并持续采样。
+完整流程的假设备也改为 unforce 不改变 IDLE：漏掉 motion 会使正常对照失败，motion 后仍 IDLE 仍会使两项省电失败。
+没有关闭 Doze 或降低判断标准；先完成 Doze 组，再模拟运动进入独立省电组。
 
 ## 当前验证与复核重点
 
