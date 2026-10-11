@@ -4,6 +4,7 @@
 
 用户把后续推进交给 Codex，完成后由 Claude 复核。目标是补齐锁屏、省电的设备证据，同时先修正测试自身的误报。
 这次不合并、不发 Release。工作分支为 `codex/power-validation-20261011`，目标分支 `feat/mpv-only`。
+之后按用户安排由 Claude 接到 `claude/sharp-planck-xtfenm` 上开 PR 接替 #25，见文末“Claude 复核”。
 
 基线：PR #24 合并提交 `9e300936`；接续 Claude 的最新提交 `a3253ae9`。
 Claude 的待合入工作原样保留：
@@ -129,6 +130,54 @@ Beta #122、#126 是被最新脚本取代的全量运行，已取消，不计入
 - 环境解析失败、界面亮屏/解锁、IDLE 退出后恢复能否误报；省电阶段是否确实独立于 Doze。
 - 真实设备结果的脚本 SHA、APK SHA、API 和逐项说明，不能只看 job 颜色。
 - 旧生成器 full gitSha 修复及 Claude 的锁屏按钮判断，本 PR 一并带入，不要只看 Codex 的最后几项改动。
+
+## Claude 复核（ac10234b）
+
+用户安排：由 Claude 接到 #25 上，在 `claude/sharp-planck-xtfenm` 开一个 PR 接替 #25，交 Codex 复核。
+接手时 Codex 已经解决了我原本要补的两处（锁屏按钮点不中、进 Doze 时要求锁屏界面显示），所以这个 PR 的
+代码就是 `ac10234b`，只加了这一节复核记录。我在 `a3253ae9` 之后的 `3ea5f154`（锁屏界面只看控件、切歌改用
+媒体键）没有带进来：按当前读屏树定位后 adb tap 真正经过了系统锁屏按钮这条路，比改用媒体键更好。
+
+复核范围：`a3253ae9..ac10234b` 的全部改动（power.sh、power_environment.sh、device_state.py、三个新自检、
+ci.yml、build-beta.yml、README、media_session.py 说明）和引用的设备运行。
+
+本地：device_state、power_checks、power_environment（27）、power_controls（11）、power_scenario（3）、
+pause_checks、storage_checks 自检全部通过；shellcheck 只有样式提示（`screen=?` 这类赋值的 SC2125，
+赋值里不展开通配符，行为不变）。
+
+设备运行，我自己从 job 日志核对了：
+
+- [Beta #129](https://github.com/CTZZG/MusicFree/actions/runs/38121709775)：脚本 `97825a05`，APK 源码 `0e0d19df`，
+  Android 14，96 项通过、0 项失败；锁屏按钮在 B 约 36 秒时切到 C，锁屏、Doze 的期限都是 16 秒；省电两项通过，
+  深度休眠状态 QUICK_DOZE_DELAY。
+- [Beta #130](https://github.com/CTZZG/MusicFree/actions/runs/38121711743)：脚本 `97825a05`，APK 源码 `828fb854`
+  （普通 RN 定时器的对照包），Emulator E2E 失败，符合对照预期。
+- `ac10234b` 相对 `97825a05` 只改了注释和说明（power.sh 一行注释、media_session.py 文档字符串、README、本文档），
+  上面的结果对本 PR 的脚本成立。
+
+结论：没有发现阻塞问题。
+
+- `power_check`：子 shell 里换掉 session、pass、fail，环境失效写进文件，命令替换里的失败不会丢；结果的行数、
+  检查名、退出码都核对。锁屏、Doze、省电里的等待、暂停、恢复、焦点打断都经过 session 采样，都在环境核对之内。
+  没找到“环境记录失效仍报 PASS”的路径。
+- 锁屏按钮：每次重读控件位置、要求亮屏且锁屏界面在、仍在 B 才点，切到 C 就停；`tapped_next` 仍防住“B 播完
+  自动接 C”。
+- Doze 退出：Android 14 灭屏、未充电时 unforce 只清标志（DeviceIdleController 源码），先确认 force=false
+  再 motion，再要求离开 IDLE，做法对。
+- 会话进度：核对了 MpvPlaybackService。updatePlaybackState 用 currentNotificationPosition()；mpv 每次进度事件
+  先把缓存进度设成 mpv 的值再更新，所以 Android 14 上会话进度基本就是 mpv 的进度，但别的事件触发更新时会按
+  时间推算。我原来写的“会话进度就是 mpv 报的、歌停了就不动”说过头了，Codex 的改法是对的。
+
+不阻塞、留给后续的观察：
+
+1. 省电组的 quick doze：开省电模式、灭屏后系统进入 QUICK_DOZE_DELAY，默认约 60 秒后进入 IDLE，而 saver 环境
+   拒绝 IDLE。#129 里从退出 Doze 到省电两项做完约 26 秒（07:53:41–07:54:07），余量约 34 秒；取 B 的地址变慢时
+   可能把环境判失效。这只会误报失败，不会误报通过。需要时可在省电组前用 device_config 把 quick_doze_delay_to
+   调长、做完还原，或在失败说明里点明是 quick doze。
+2. Doze 中期限不到的对照，除了 #127、#130，`a3253ae9` 脚本的 [Beta #120](https://github.com/CTZZG/MusicFree/actions/runs/38118412908)
+   也复现过：对照包在 Doze 里切到 Hang 后 C 停在 3.5 秒，直到这一步结束都没回滚；同一脚本测现行 APK 的
+   [Beta #119](https://github.com/CTZZG/MusicFree/actions/runs/38118411786) 是 16 秒回来。
+3. 环境是采样核对，两次采样之间的短暂变化抓不到（上文已写明）。
 
 ## 后续方向
 
