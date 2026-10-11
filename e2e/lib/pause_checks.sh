@@ -1,7 +1,7 @@
 # 播放会话、暂停和“视频”打断的判断，run.sh 和 pause_checks_test.sh 都 source 这个文件。
 #
 # 用到的变量：SESSION（media_session.py）、FOCUS（audio_focus.py）、PKG（应用包名）、
-# FOCUS_PKG（“视频”替身的包名）。返回结果的函数只输出说明、用返回值表示通过与否，
+# FOCUS_PKG（“视频”替身的包名）；函数 log。返回结果的函数只输出说明、用返回值表示通过与否，
 # 记 PASS/FAIL 由调用方决定。
 #
 # “一直停着”是每秒左右采样一次媒体会话：持续的误播（放了一秒以上，或者进度往前走了）
@@ -12,6 +12,26 @@ clock() { date +%s; }
 
 session() {
     adb shell dumpsys media_session | python3 -I "$SESSION" parse "$PKG"
+}
+
+# wait_for_state <状态> <标题> <秒>：等到系统媒体会话里这首歌是这个状态（PLAYING、PAUSED……）
+wait_for_state() {
+    local state=$1 title=$2 deadline now=""
+    deadline=$(( $(clock) + $3 ))
+    while [ "$(clock)" -lt "$deadline" ]; do
+        now=$(session)
+        if python3 -I "$SESSION" is-state "$state" "$title" "$now"; then
+            return 0
+        fi
+        sleep 1
+    done
+    log "等了 $3 秒，「$title」还不是 $state，最后一次：$now"
+    return 1
+}
+
+# wait_for_song <标题> <秒>：等到系统媒体会话在播这首歌
+wait_for_song() {
+    wait_for_state PLAYING "$1" "$2"
 }
 
 # position_text <JSON>：采样里的进度，例如 8.6s

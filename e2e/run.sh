@@ -7,7 +7,8 @@
 # （应用只允许从公网 https 地址装插件、取音频）。需要 adb、maestro、python3。
 # 结果目录里有 summary.md（每项检查的结果）、截图、Maestro 日志和 logcat。
 #
-# E2E_SUITE=storage 时装好应用和测试源后只跑第 17、18 步（下载、旧版数据迁移的故障注入，见 storage.sh）。
+# E2E_SUITE=storage 时装好应用和测试源后只跑第 17、18 步（下载、旧版数据迁移的故障注入，见 storage.sh）；
+# E2E_SUITE=power 时只跑第 19、20 步（锁屏和省电，见 power.sh）。
 set -uo pipefail
 
 APK=${1:?用法：e2e/run.sh <APK> <提交号> <结果目录>}
@@ -84,25 +85,6 @@ start_timeline() {
         done
     ) > "$OUT/session-timeline.txt" 2>&1 &
     TIMELINE_PID=$!
-}
-
-# wait_for_state <状态> <标题> <秒>：等到系统媒体会话里这首歌是这个状态（PLAYING、PAUSED……）
-wait_for_state() {
-    local state=$1 title=$2 deadline=$((SECONDS + $3)) now=""
-    while [ $SECONDS -lt $deadline ]; do
-        now=$(session)
-        if python3 -I "$SESSION" is-state "$state" "$title" "$now"; then
-            return 0
-        fi
-        sleep 1
-    done
-    log "等了 $3 秒，「$title」还不是 $state，最后一次：$now"
-    return 1
-}
-
-# wait_for_song <标题> <秒>：等到系统媒体会话在播这首歌
-wait_for_song() {
-    wait_for_state PLAYING "$1" "$2"
 }
 
 # expect_playing <检查名> <标题>：在播这首歌，而且 4 秒里进度真的往前走了
@@ -287,6 +269,16 @@ run_storage_checks() {
 if [ "$E2E_SUITE" = storage ]; then
     log "E2E_SUITE=storage：只跑下载、旧版数据迁移的故障注入"
     run_storage_checks
+    finish
+fi
+
+# 19、20 步：锁屏和省电（power.sh）
+# shellcheck source=power.sh
+source "$HERE/power.sh"
+if [ "$E2E_SUITE" = power ]; then
+    log "E2E_SUITE=power：只跑锁屏和省电"
+    run_lock_screen_checks
+    run_power_saving_checks
     finish
 fi
 
@@ -610,8 +602,14 @@ else
     fi
 fi
 
+# 19. 锁屏：锁屏 30 秒照常播放；锁屏界面上点下一曲；锁屏时切歌等地址，期限照常到、回滚后按过的暂停不被
+#     放出来；暂停 1 分钟后接着播；锁屏时来电；解锁后播放页和系统媒体会话一致。
+# 20. 省电：Doze 中播放、切歌取地址、等地址的期限、暂停后接着播；省电模式下切歌、播放。见 power.sh
+run_lock_screen_checks
+run_power_saving_checks
+
 # 17. 下载收尾时下载记录写不进去；18. 从 0.7.3 覆盖安装，迁移期间清空、迁移后删除的数据不回来。
-#     见 storage.sh。第 18 步会先卸载应用，所以放在最后
+#     见 storage.sh。第 18 步会先卸载应用，所以放在最后（在第 19、20 步之后）
 run_storage_checks
 
 finish

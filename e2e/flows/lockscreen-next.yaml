@@ -1,0 +1,9 @@
+# 第 19 步：亮屏但没解锁，停在系统锁屏界面上。点锁屏界面上媒体控件的“下一曲”（和用户在锁屏上点的
+# 是同一个按钮，经系统媒体会话交给应用）。按钮的读屏标签是系统给的，跟系统语言走
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "Next track|下一曲|下一首"
+    timeout: 15000
+- takeScreenshot: 30-lock-screen-controls
+- tapOn: "Next track|下一曲|下一首"
