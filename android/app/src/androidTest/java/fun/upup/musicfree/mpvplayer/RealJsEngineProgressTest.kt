@@ -139,7 +139,7 @@ class RealJsEngineProgressTest {
         awaitEngine(mq, true, "JS Flow C")
         observe("timeout-wait", mq, true)
         awaitEngine(mq, false, "JS Flow C", anchor = rollbackAnchor, deadline = timeoutStarted + 25000)
-        observe("timeout-rollback", mq, false)
+        observe("timeout-rollback", mq, false, anchor = rollbackAnchor)
 
         // Real quality UI, slow plugin, and another app holding transient focus.
         openPlayer()
@@ -150,7 +150,7 @@ class RealJsEngineProgressTest {
         awaitEngine(mq, true, "JS Flow C")
         observe("quality-interrupted-old", mq, true, held = true)
         awaitEngine(hq, true, "JS Flow C", anchor = anchor)
-        observe("quality-interrupted-new", hq, true, held = true)
+        observe("quality-interrupted-new", hq, true, held = true, anchor = anchor)
         awaitVideoReleased("quality-auto-resume")
         awaitEngine(hq, false, "JS Flow C")
         observe("quality-focus-resumed", hq, false)
@@ -165,7 +165,7 @@ class RealJsEngineProgressTest {
         onMain { controller.transportControls.pause() }
         observe("user-pause-old", hq, true, held = true)
         awaitEngine(mq, true, "JS Flow C", anchor = pausedAnchor)
-        observe("user-pause-new", mq, true, held = true)
+        observe("user-pause-new", mq, true, held = true, anchor = pausedAnchor)
         awaitVideoReleased("quality-user-pause")
         observe("user-pause-after-focus", mq, true)
         onMain { controller.transportControls.play() }
@@ -175,7 +175,7 @@ class RealJsEngineProgressTest {
         JsFlowProbePolicy.assertComplete(completed)
     }
 
-    private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false) {
+    private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false, anchor: Double? = null) {
         val samples = (0..4).map { index ->
             if (index > 0) Thread.sleep(1100)
             val sample = onMain {
@@ -202,6 +202,7 @@ class RealJsEngineProgressTest {
                 put("sameTitle", sameTitle)
                 put("focusOwner", owner ?: JSONObject.NULL)
                 put("foregroundPackage", foreground ?: JSONObject.NULL)
+                put("resumeAnchor", anchor ?: JSONObject.NULL)
             }
             samplesFile.appendText("$row\n")
             assertTrue("$phase: matching media title", sameTitle)

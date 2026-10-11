@@ -14,6 +14,7 @@ PAUSED = {
 }
 PLAYING = {"baseline", "slow-skip-playing", "timeout-rollback", "quality-focus-resumed", "explicit-play"}
 HELD = {"quality-interrupted-old", "quality-interrupted-new", "user-pause-old", "user-pause-new"}
+ANCHORED = {"timeout-rollback", "quality-interrupted-new", "user-pause-new"}
 CLASS = "fun.upup.musicfree.mpvplayer.RealJsEngineProgressTest"
 METHOD = "realJsFlowsPreserveEngineAndPauseIntent"
 FOCUS = "fun.upup.musicfree.e2e.focus"
@@ -42,6 +43,12 @@ def validate_samples(rows, control=False):
                 require(row["foregroundPackage"] == "fun.upup.musicfree", f"{phase}: foreground fixture suspended")
         span = samples[-1]["elapsedMs"] - samples[0]["elapsedMs"]
         require(span >= 4000, f"{phase}: insufficient window")
+        if phase in ANCHORED:
+            anchor = samples[0]["resumeAnchor"]
+            require(isinstance(anchor, (int, float)) and not isinstance(anchor, bool)
+                    and math.isfinite(anchor) and anchor >= 3, f"{phase}: missing/nonzero resume anchor")
+            require(all(s["resumeAnchor"] == anchor for s in samples), f"{phase}: inconsistent resume anchor")
+            require(abs(samples[0]["rawSeconds"] - anchor) <= 2, f"{phase}: resume jumped/reset")
         for a, b in zip(samples, samples[1:]):
             gap = (b["elapsedMs"] - a["elapsedMs"]) / 1000
             require(.75 <= gap <= 5, f"{phase}: invalid interval")
@@ -113,7 +120,8 @@ def self_test():
             rows.append({"phase": phase, "elapsedMs": n*1100, "rawSeconds": 12 if paused else 12+n*1.1,
                          "paused": paused, "idle": False, "buffering": False, "sessionMs": 12000 if paused else 12000+n*1100,
                          "sessionState": 2 if paused else 3, "sameTrack": True, "sameTitle": True,
-                         "focusOwner": FOCUS if phase in HELD else None, "foregroundPackage": "fun.upup.musicfree"})
+                         "focusOwner": FOCUS if phase in HELD else None, "foregroundPackage": "fun.upup.musicfree",
+                         "resumeAnchor": 12 if phase in ANCHORED else None})
     validate_samples(rows)
     checks = 1
     def rejects(value):
@@ -140,6 +148,12 @@ def self_test():
         altered = copy.deepcopy(rows)
         next(r for r in altered if r["phase"] == phase)["foregroundPackage"] = FOCUS
         rejects(altered)
+    for phase in ANCHORED:
+        for anchor in [None, 0, 30]:
+            altered = copy.deepcopy(rows)
+            for row in altered:
+                if row["phase"] == phase: row["resumeAnchor"] = anchor
+            rejects(altered)
     for field, value in [("sameTrack", False), ("sameTitle", False), ("rawSeconds", None), ("rawSeconds", float("nan")), ("idle", True), ("buffering", True)]:
         altered = copy.deepcopy(rows); altered[0][field] = value; rejects(altered)
     normal = f"INSTRUMENTATION_STATUS: numtests=1\nINSTRUMENTATION_STATUS: class={CLASS}\nINSTRUMENTATION_STATUS: test={METHOD}\nINSTRUMENTATION_STATUS_CODE: 0\nINSTRUMENTATION_CODE: -1\n"
