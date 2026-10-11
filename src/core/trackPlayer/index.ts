@@ -4898,9 +4898,9 @@ class TrackPlayer
         try {
             return (
                 (await withMediaSourceTimeout(Promise.resolve(task), {
-                    setTimer: (handler, delayMs) =>
-                        BackgroundTimer.setTimeout(handler, delayMs),
-                    clearTimer: handle => BackgroundTimer.clearTimeout(handle),
+                    // 对照构建：故意换回 RN 的普通定时器，看锁屏测试能不能测出来
+                    setTimer: (handler, delayMs) => setTimeout(handler, delayMs),
+                    clearTimer: handle => clearTimeout(handle),
                 })) ?? null
             );
         } catch (error) {

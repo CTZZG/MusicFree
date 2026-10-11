@@ -117,7 +117,7 @@ jest.mock("@/core/lastfm", () => mockAutoStub());
 jest.mock("@/utils/androidMediaPermission", () => mockAutoStub());
 jest.mock("@/utils/userAgentHelper", () => mockAutoStub());
 
-const BackgroundTimer = require("react-native-background-timer").default;
+// 对照构建：不再看 BackgroundTimer
 const trackPlayer = require("@/core/trackPlayer").default;
 const player = trackPlayer as any;
 
@@ -237,7 +237,8 @@ it("ignores a source that arrives after the skip has moved on", async () => {
 });
 
 it("times the wait with a timer that keeps running in the background", async () => {
-    const setTimer = jest.spyOn(BackgroundTimer, "setTimeout");
+    // 对照构建：计时换成了 RN 的普通定时器
+    const setTimer = jest.spyOn(global, "setTimeout");
     const skip = trackPlayer.skipToNext();
     await jest.advanceTimersByTimeAsync(0);
 
