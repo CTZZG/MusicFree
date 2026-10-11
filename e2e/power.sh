@@ -243,8 +243,8 @@ expect_player_matches() {
 
 # ---- 第 19 步：锁屏 ----
 
+LOCK_BUTTON="锁屏界面上点下一曲：从 B 切到 C"
 LOCK_PLAY="锁屏 30 秒照常播放"
-LOCK_BUTTON="锁屏界面上点下一曲：在播 C"
 LOCK_HANG="锁屏时切到不回应的歌：15 秒期限照常到，回到 C 接着播"
 LOCK_PAUSE_HANG="锁屏时切歌等地址按暂停：超时回滚后仍停着"
 LOCK_PAUSE_LONG="锁屏暂停 1 分钟（播放器已放下唤醒锁）后按播放：从暂停处接着播"
@@ -253,25 +253,31 @@ LOCK_FOCUS_HELD="锁屏时来电（临时占用音频焦点）：通话期间停
 LOCK_FOCUS_RESUME="锁屏时来电结束：接着放"
 LOCK_UNLOCK="解锁后播放页和系统媒体会话一致"
 
+# start_b：队列换成 B、C、Hang，从头放 B（点播 C 再按上一首）。应用要在前台
+start_b() {
+    open_link "musicfree://search?keyword=e2e%20hang%20$REF"
+    flow "$1" hang-song.yaml &&
+        adb shell input keyevent KEYCODE_MEDIA_PREVIOUS &&
+        wait_for_song "E2E Tone B" 20
+}
+
 run_lock_screen_checks() {
-    local all=("$LOCK_PLAY" "$LOCK_BUTTON" "$LOCK_HANG" "$LOCK_PAUSE_HANG" "$LOCK_PAUSE_LONG" \
+    local all=("$LOCK_BUTTON" "$LOCK_PLAY" "$LOCK_HANG" "$LOCK_PAUSE_HANG" "$LOCK_PAUSE_LONG" \
         "$LOCK_HANG_NEXT" "$LOCK_FOCUS_HELD" "$LOCK_FOCUS_RESUME" "$LOCK_UNLOCK")
     local check paused detail before started switched problem
     # 锁屏方式是“滑动”时灭屏再亮屏就有锁屏界面；之前被关掉的话打开
     adb shell locksettings set-disabled false > /dev/null 2>&1 || true
     unlock || true
     adb shell am start -W -n "$ACTIVITY" > /dev/null
-    # 队列换成 B、C、Hang，在播 C；按上一首从头放 B
-    open_link "musicfree://search?keyword=e2e%20hang%20$REF"
-    if ! flow "锁屏前：点播 C（队列是 B、C、Hang）" hang-song.yaml ||
-        ! { adb shell input keyevent KEYCODE_MEDIA_PREVIOUS; wait_for_song "E2E Tone B" 20; }; then
+    if ! start_b "锁屏前：从头放 B（队列是 B、C、Hang）"; then
         for check in "${all[@]}"; do
             fail "$check" "没能从头放 B，没有执行：$(session)"
         done
         return 1
     fi
 
-    # 19a. 放着 B 锁屏
+    # 19a. 放着 B 锁屏，亮屏停在锁屏界面，点锁屏界面上媒体控件的“下一曲”。B 刚开始放，B 只有 180 秒、
+    #      播完也会自己接着放 C：算出切到 C 时 B 播到了哪里，B 快播完了就分不清是不是点出来的，记失败
     if ! lock_screen; then
         log_raw_device_state
         for check in "${all[@]}"; do
@@ -280,10 +286,6 @@ run_lock_screen_checks() {
         restore_power
         return 1
     fi
-    expect_progress_for "$LOCK_PLAY" "E2E Tone B" 30
-
-    # 19b. 亮屏，停在锁屏界面，点锁屏界面上媒体控件的“下一曲”。B 只有 180 秒，播完也会自己接着放 C：
-    #      算出切到 C 时 B 播到了哪里，B 快播完了就分不清是不是点出来的，记失败
     if ! wake_to_lock_screen; then
         log_raw_device_state
         fail "$LOCK_BUTTON" "亮屏后没有锁屏界面：$(device_summary)"
@@ -309,7 +311,15 @@ run_lock_screen_checks() {
         fi
     fi
     shot 30-lock-screen
+
+    # 19b. 放着 C 灭屏锁着 30 秒。锁屏界面上没切过去时用媒体键切到 C，后面的检查照常做
     lock_screen || true
+    if ! wait_for_song "E2E Tone C" 3; then
+        log "锁屏界面上没切到 C，用媒体键切过去：$(sample_text "$(session)")"
+        adb shell input keyevent KEYCODE_MEDIA_NEXT
+        wait_for_song "E2E Tone C" 20 || true
+    fi
+    expect_progress_for "$LOCK_PLAY" "E2E Tone C" 30
 
     # 19c. 灭屏锁着，从 C 切到一直不回应的 Hang：期限到了回到 C
     if ! wait_for_song "E2E Tone C" 10; then
@@ -405,10 +415,11 @@ SAVER_PLAY="省电模式下灭屏照常播放"
 run_power_saving_checks() {
     local all=("$DOZE_ENTER" "$DOZE_PLAY" "$DOZE_SKIP" "$DOZE_HANG" "$DOZE_PAUSE_LONG" "$SAVER_SKIP" "$SAVER_PLAY")
     local check
-    # 队列还是第 19 步的 B、C、Hang，在播 B。回到桌面，应用在后台
-    if ! wait_for_song "E2E Tone B" 20; then
+    # 队列还是第 19 步的 B、C、Hang，在播 B。第 19 步没走到这里（比如切歌卡住了）时自己从头放 B，
+    # 省电的检查不跟着前面的失败一起作废。然后回到桌面，应用在后台
+    if ! wait_for_song "E2E Tone B" 5 && ! start_b "省电前：从头放 B（队列是 B、C、Hang）"; then
         for check in "${all[@]}"; do
-            fail "$check" "B 没在放，没有执行：$(session)"
+            fail "$check" "没能放 B，没有执行：$(session)"
         done
         return 1
     fi
