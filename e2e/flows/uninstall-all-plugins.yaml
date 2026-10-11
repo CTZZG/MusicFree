@@ -1,0 +1,37 @@
+# 设置 → 插件管理 → 卸载全部插件。卸载时会清空各插件的附加信息：测试源 B 的附加信息这时才第一次
+# 用到，清空和从旧版迁移同时进行
+appId: fun.upup.musicfree
+---
+# 从二级页面（我喜欢）退回到有标签栏的页面
+- runFlow:
+    when:
+      notVisible: "设置"
+    commands:
+      - back
+- runFlow:
+    when:
+      notVisible: "设置"
+    commands:
+      - back
+- tapOn: "设置"
+- scrollUntilVisible:
+    element: "插件管理"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "插件管理"
+- extendedWaitUntil:
+    visible: "E2E 测试源 B"
+    timeout: 15000
+- scrollUntilVisible:
+    element: "卸载全部插件"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "卸载全部插件"
+- extendedWaitUntil:
+    visible: "确认卸载全部插件吗？.*"
+    timeout: 10000
+- tapOn: "确认"
+- extendedWaitUntil:
+    notVisible: "E2E 测试源 B"
+    timeout: 15000
+- takeScreenshot: plugins-uninstalled

@@ -1,0 +1,14 @@
+# 下载 ${TITLE} 时下载记录写不进去（storage.sh 注入的故障）：资料库 → 下载列表里，这首要标成失败
+# （原因归为“未知错误”）。下载列表里只有这首会失败（之前下载的 C 是“下载完成”）。收尾第一次提交
+# 日志就失败，是很快的事，最多等 90 秒
+appId: fun.upup.musicfree
+---
+- tapOn: "资料库"
+- tapOn: "下载列表"
+- extendedWaitUntil:
+    visible: "${TITLE}"
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "未知错误"
+    timeout: 90000
+- takeScreenshot: download-failed

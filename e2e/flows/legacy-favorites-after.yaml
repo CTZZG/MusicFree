@@ -1,0 +1,13 @@
+# 重启后：我喜欢里只有 A、C，删掉的 B 没回来。这一页又会用到测试源 A 的附加信息（新进程里第一次）
+appId: fun.upup.musicfree
+---
+- tapOn: "资料库"
+- tapOn: "我喜欢.*"
+- extendedWaitUntil:
+    visible: "E2E Tone A"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "E2E Tone C"
+    timeout: 5000
+- assertNotVisible: "E2E Tone B"
+- takeScreenshot: legacy-favorites-after-restart

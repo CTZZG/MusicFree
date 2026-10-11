@@ -1,0 +1,37 @@
+# 在我喜欢里删掉 B（这首是从 0.7.3 迁移过来的）
+appId: fun.upup.musicfree
+---
+- runFlow:
+    when:
+      visible: "资料库"
+    commands:
+      - tapOn: "资料库"
+      - tapOn: "我喜欢.*"
+- extendedWaitUntil:
+    visible: "E2E Tone B 更多操作"
+    timeout: 15000
+- tapOn: "E2E Tone B 更多操作"
+- extendedWaitUntil:
+    visible: "ID: .*@tone-b"
+    timeout: 10000
+# “删除”在面板下面，一屏放不下：在面板里往上滑，直到它出来，再多滑一次免得只露出一半
+- repeat:
+    while:
+      notVisible: "删除"
+    times: 6
+    commands:
+      - swipe:
+          start: "50%, 90%"
+          end: "50%, 65%"
+          duration: 400
+- swipe:
+    start: "50%, 90%"
+    end: "50%, 75%"
+    duration: 400
+- tapOn: "删除"
+- extendedWaitUntil:
+    notVisible: "E2E Tone B"
+    timeout: 10000
+- assertVisible: "E2E Tone A"
+- assertVisible: "E2E Tone C"
+- takeScreenshot: legacy-favorite-deleted

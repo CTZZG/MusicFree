@@ -1,0 +1,20 @@
+# run.sh 已经打开了搜索结果。打开 ${TITLE} 的“更多操作”，点“下载”，选“普通音质 128K”。
+# 下载出来的文件、下载缓存和下载记录由 run.sh 用 adb root 去看（见 storage.sh）
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "${TITLE} 更多操作"
+    timeout: 45000
+- tapOn: "${TITLE} 更多操作"
+- extendedWaitUntil:
+    visible: "下载"
+    timeout: 10000
+- tapOn: "下载"
+- extendedWaitUntil:
+    visible: "设置下载音质"
+    timeout: 10000
+- takeScreenshot: download-quality
+- tapOn: "普通音质 128K.*"
+- extendedWaitUntil:
+    notVisible: "设置下载音质"
+    timeout: 10000
