@@ -28,6 +28,14 @@ jobs:
             - name: Quality gate
               uses: ./.github/actions/quality-gate
 
+            # 纯 shell/Python 自检，无需模拟器。即使不跑 Beta，也防止省电检查重新出现误报。
+            - name: Power-check self-tests
+              run: |
+                  python3 -I e2e/lib/device_state.py --self-test
+                  bash e2e/lib/power_checks_test.sh
+                  bash e2e/lib/power_environment_test.sh
+                  bash e2e/lib/power_scenario_test.sh
+
     # 原生单元测试：只在改到原生代码、原生依赖或这项检查本身时跑 Gradle。
     # 没改到时这个任务照样以成功结束，不会让必需检查一直挂着。
     android-unit-tests:

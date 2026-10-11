@@ -8,6 +8,8 @@
 # 计时器停走、厂商自己的省电和杀后台都测不到，要在真机上另外看。
 
 DEVICE_STATE="$HERE/lib/device_state.py"
+# shellcheck source=lib/power_environment.sh
+source "$HERE/lib/power_environment.sh"
 
 # ---- 设备状态 ----
 
@@ -46,11 +48,15 @@ deep_idle() {
     [ "$(deep_idle_state 2>/dev/null)" = IDLE ]
 }
 
+deep_idle_active() {
+    [ "$(deep_idle_state 2>/dev/null)" = ACTIVE ]
+}
+
 power_saver_on() {
     [ "$(adb shell settings get global low_power 2>/dev/null | tr -d '\r')" = 1 ]
 }
 
-# device_summary：一行设备状态，写进检查结果，说明当时确实是灭屏、锁屏、休眠
+# device_summary：末尾的一次设备状态，供排查；整段期间的环境由 power_check 采样核对
 device_summary() {
     local screen keyguard idle saver
     screen=$(screen_state 2>/dev/null || echo ?)
@@ -100,7 +106,8 @@ restore_power() {
 # ---- 播放的判断 ----
 
 # expect_progress_for <检查名> <标题> <秒>：这段时间里每 5 秒看一次，一直在播这首，最后比开始至少多播了
-#   （秒数 - 5）秒。会话里的进度是 mpv 报上来的，不是按时间推算的，歌停了它就不动
+#   （秒数 - 5）秒。这套 E2E 使用 Android 14，未启用 Android 16 Live Update 的通知进度估算；
+#   这里只验证媒体会话进度，不能证明扬声器实际输出或 CPU 真正休眠
 expect_progress_for() {
     local name=$1 title=$2 seconds=$3 start now deadline problem samples=0
     start=$(session)
@@ -187,7 +194,96 @@ expect_paused_resume() {
         return 1
     fi
     adb shell input keyevent KEYCODE_MEDIA_PLAY
-    expect_resumed "$name" "$title" "$paused"
+    expect_power_resumed "$name" "$title" "$paused"
+}
+
+# 恢复不仅要回到暂停处，还要继续前进；run.sh 的 expect_resumed 只检查恢复位置。
+expect_power_resumed() {
+    local name=$1 title=$2 paused=$3 first second problem
+    if ! wait_for_song "$title" 30; then
+        fail "$name" "按播放后没恢复：$(session)"
+        return 1
+    fi
+    first=$(session)
+    if ! problem=$(python3 -I "$SESSION" resumed "$title" "$paused" "$first"); then
+        fail "$name" "$problem"
+        return 1
+    fi
+    sleep 4
+    second=$(session)
+    if ! problem=$(python3 -I "$SESSION" playing "$title" "$first" "$second"); then
+        fail "$name" "恢复后进度没继续走：$problem"
+        return 1
+    fi
+    pass "$name" "从 $(position_text "$paused") 恢复，$(progress_text "$first" "$second")"
+}
+
+resume_after_power_pause() {
+    local name=$1 title=$2 paused=$3 detail
+    if ! detail=$(stays_paused "$title" "$4"); then
+        fail "$name" "$detail"
+        return 1
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PLAY
+    expect_power_resumed "$name" "$title" "$paused"
+}
+
+expect_power_skip() {
+    local name=$1 title=$2 key=$3
+    adb shell input keyevent "$key"
+    expect_playing "$name" "$title"
+}
+
+expect_power_pause_skip() {
+    local name=$1 title=$2
+    adb shell input keyevent KEYCODE_MEDIA_NEXT
+    if ! wait_for_state PAUSED "$title" 10; then
+        fail "$name" "按下一首后没有停下等地址：$(session)"
+        return 1
+    fi
+    sleep 2
+    adb shell input keyevent KEYCODE_MEDIA_PAUSE
+    expect_power_paused "$name" "$title" 20
+}
+
+expect_power_paused() {
+    local name=$1 detail
+    if detail=$(stays_paused "$2" "$3"); then
+        pass "$name" "$detail"
+        return 0
+    fi
+    fail "$name" "$detail"
+    return 1
+}
+
+expect_power_focus_start() {
+    local name=$1 title=$2 tag=$3
+    watch_video transient 12 "$tag"
+    if ! wait_for_state PAUSED "$title" 5; then
+        fail "$name" "焦点打断后音乐没停：$(session)；焦点在 $(focus_owner)"
+        return 1
+    fi
+    expect_power_focus_held "$name" "$title" "$tag" 25
+}
+
+expect_power_focus_held() {
+    local name=$1 detail
+    if detail=$(held_until_video_ends "$2" "$3" "$4"); then
+        pass "$name" "$detail"
+        return 0
+    fi
+    fail "$name" "$detail"
+    return 1
+}
+
+expect_power_focus_resume() {
+    local name=$1 detail
+    if detail=$(resumes_after_video "$2" "$3"); then
+        pass "$name" "$detail"
+        return 0
+    fi
+    fail "$name" "$detail"
+    return 1
 }
 
 # player_matches_session <播放页上的“已播放 剩余”秒数> <读界面前的采样> <读界面后的采样>：播放页上的已播放时间
@@ -247,10 +343,10 @@ LOCK_BUTTON="锁屏界面上点下一曲：从 B 切到 C"
 LOCK_PLAY="锁屏 30 秒照常播放"
 LOCK_HANG="锁屏时切到不回应的歌：15 秒期限照常到，回到 C 接着播"
 LOCK_PAUSE_HANG="锁屏时切歌等地址按暂停：超时回滚后仍停着"
-LOCK_PAUSE_LONG="锁屏暂停 1 分钟（播放器已放下唤醒锁）后按播放：从暂停处接着播"
+LOCK_PAUSE_LONG="锁屏暂停 1 分钟后按播放：从暂停处接着播"
 LOCK_HANG_NEXT="锁屏时两次切歌超时之后，按上一首照常切到 B"
-LOCK_FOCUS_HELD="锁屏时来电（临时占用音频焦点）：通话期间停着"
-LOCK_FOCUS_RESUME="锁屏时来电结束：接着放"
+LOCK_FOCUS_HELD="锁屏时临时占用音频焦点：打断期间停着"
+LOCK_FOCUS_RESUME="锁屏时临时音频焦点打断结束：接着放"
 LOCK_UNLOCK="解锁后播放页和系统媒体会话一致"
 
 # start_b：队列换成 B、C、Hang，从头放 B（点播 C 再按上一首）。应用要在前台
@@ -276,8 +372,7 @@ run_lock_screen_checks() {
         return 1
     fi
 
-    # 19a. 放着 B 锁屏，亮屏停在锁屏界面，点锁屏界面上媒体控件的“下一曲”。B 刚开始放，B 只有 180 秒、
-    #      播完也会自己接着放 C：算出切到 C 时 B 播到了哪里，B 快播完了就分不清是不是点出来的，记失败
+    # 19a. 从头放 B 后先试锁屏按钮，避免长时间采样后 B 已接近播完
     if ! lock_screen; then
         log_raw_device_state
         for check in "${all[@]}"; do
@@ -286,6 +381,8 @@ run_lock_screen_checks() {
         restore_power
         return 1
     fi
+    # 19b. 亮屏，停在锁屏界面，点锁屏界面上媒体控件的“下一曲”。B 只有 180 秒，播完也会自己接着放 C：
+    #      算出切到 C 时 B 播到了哪里，B 快播完了就分不清是不是点出来的，记失败
     if ! wake_to_lock_screen; then
         log_raw_device_state
         fail "$LOCK_BUTTON" "亮屏后没有锁屏界面：$(device_summary)"
@@ -302,7 +399,9 @@ run_lock_screen_checks() {
                 fail "$LOCK_BUTTON" "$detail"
             else
                 sleep 4
-                if problem=$(python3 -I "$SESSION" playing "E2E Tone C" "$switched" "$(session)"); then
+                if ! screen_on || ! keyguard_showing; then
+                    fail "$LOCK_BUTTON" "C 开始播放后不在亮屏锁屏界面：$(device_summary)"
+                elif problem=$(python3 -I "$SESSION" playing "E2E Tone C" "$switched" "$(session)"); then
                     pass "$LOCK_BUTTON" "$detail；锁屏界面还在"
                 else
                     fail "$LOCK_BUTTON" "$detail，但 C 没接着播：$problem"
@@ -311,15 +410,22 @@ run_lock_screen_checks() {
         fi
     fi
     shot 30-lock-screen
+    if ! lock_screen; then
+        for check in "$LOCK_PLAY" "$LOCK_HANG" "$LOCK_PAUSE_HANG" "$LOCK_PAUSE_LONG" "$LOCK_HANG_NEXT" \
+            "$LOCK_FOCUS_HELD" "$LOCK_FOCUS_RESUME" "$LOCK_UNLOCK"; do
+            fail "$check" "点锁屏按钮后没能再次灭屏，没有执行：$(device_summary)"
+        done
+        restore_power
+        return 1
+    fi
 
-    # 19b. 放着 C 灭屏锁着 30 秒。锁屏界面上没切过去时用媒体键切到 C，后面的检查照常做
-    lock_screen || true
+    # 19b. 锁屏按钮失败仍保留失败记录，再用媒体键准备 C，后面的独立检查继续。
     if ! wait_for_song "E2E Tone C" 3; then
         log "锁屏界面上没切到 C，用媒体键切过去：$(sample_text "$(session)")"
         adb shell input keyevent KEYCODE_MEDIA_NEXT
         wait_for_song "E2E Tone C" 20 || true
     fi
-    expect_progress_for "$LOCK_PLAY" "E2E Tone C" 30
+    power_check locked "$LOCK_PLAY" expect_progress_for "$LOCK_PLAY" "E2E Tone C" 30
 
     # 19c. 灭屏锁着，从 C 切到一直不回应的 Hang：期限到了回到 C
     if ! wait_for_song "E2E Tone C" 10; then
@@ -327,37 +433,21 @@ run_lock_screen_checks() {
             fail "$check" "C 没在放，没有执行：$(session)"
         done
     else
-        expect_hang_rollback "$LOCK_HANG" "E2E Tone C"
+        power_check locked "$LOCK_HANG" expect_hang_rollback "$LOCK_HANG" "E2E Tone C"
 
         # 19d. 再切到 Hang，C 停下等地址时按暂停（锁屏上的暂停键、耳机）：回滚后仍停着。
-        #      接着停够 1 分钟（播放器暂停 45 秒后放下唤醒锁），再按播放
-        adb shell input keyevent KEYCODE_MEDIA_NEXT
-        if ! wait_for_state PAUSED "E2E Tone C" 10; then
-            fail "$LOCK_PAUSE_HANG" "按下一首后 C 没有停下等 Hang 的地址：$(session)"
-            fail "$LOCK_PAUSE_LONG" "没能暂停在 C，没有执行"
-        else
-            sleep 2
-            adb shell input keyevent KEYCODE_MEDIA_PAUSE
+        #      接着停够 1 分钟再按播放；这里没有直接查询播放器的唤醒锁
+        if power_check locked "$LOCK_PAUSE_HANG" expect_power_pause_skip "$LOCK_PAUSE_HANG" "E2E Tone C"; then
             paused=$(session)
-            if detail=$(stays_paused "E2E Tone C" 20); then
-                pass "$LOCK_PAUSE_HANG" "$detail；$(device_summary)"
-                if detail=$(stays_paused "E2E Tone C" 40); then
-                    adb shell input keyevent KEYCODE_MEDIA_PLAY
-                    expect_resumed "$LOCK_PAUSE_LONG" "E2E Tone C" "$paused"
-                else
-                    fail "$LOCK_PAUSE_LONG" "暂停期间：$detail；$(device_summary)"
-                fi
-            else
-                fail "$LOCK_PAUSE_HANG" "$detail；$(device_summary)"
-                fail "$LOCK_PAUSE_LONG" "暂停没停住，没有执行"
-            fi
+            power_check locked "$LOCK_PAUSE_LONG" resume_after_power_pause "$LOCK_PAUSE_LONG" "E2E Tone C" "$paused" 40
+        else
+            fail "$LOCK_PAUSE_LONG" "暂停或锁屏环境没保持住，没有执行"
         fi
     fi
     # 两次切歌都超时放弃了，切歌没被卡住
-    adb shell input keyevent KEYCODE_MEDIA_PREVIOUS
-    expect_playing "$LOCK_HANG_NEXT" "E2E Tone B"
+    power_check locked "$LOCK_HANG_NEXT" expect_power_skip "$LOCK_HANG_NEXT" "E2E Tone B" KEYCODE_MEDIA_PREVIOUS
 
-    # 19e. 锁着屏来电：用“视频”替身临时占用焦点 12 秒（来电、语音消息一样）。只跑这两步时第 16 步没装它
+    # 19e. 锁着屏临时打断：用 USAGE_MEDIA 的“视频”替身占用焦点 12 秒；不模拟 Telecom 来电。
     if [ -n "$FOCUS_APK" ] && ! adb shell pm path "$FOCUS_PKG" > /dev/null 2>&1; then
         adb install -r "$FOCUS_APK" > "$OUT/install-focus-lock.log" 2>&1 || true
     fi
@@ -368,20 +458,10 @@ run_lock_screen_checks() {
         fail "$LOCK_FOCUS_HELD" "B 没在放，没有执行：$(session)"
         fail "$LOCK_FOCUS_RESUME" "B 没在放，没有执行"
     else
-        watch_video transient 12 call-locked
-        if ! wait_for_state PAUSED "E2E Tone B" 5; then
-            fail "$LOCK_FOCUS_HELD" "来电后音乐没停：$(session)；焦点在 $(focus_owner)"
-            fail "$LOCK_FOCUS_RESUME" "来电后音乐没停，没有执行"
-        elif ! detail=$(held_until_video_ends "E2E Tone B" call-locked 25); then
-            fail "$LOCK_FOCUS_HELD" "$detail"
-            fail "$LOCK_FOCUS_RESUME" "通话期间没停住，没有执行"
+        if power_check locked "$LOCK_FOCUS_HELD" expect_power_focus_start "$LOCK_FOCUS_HELD" "E2E Tone B" focus-locked; then
+            power_check locked "$LOCK_FOCUS_RESUME" expect_power_focus_resume "$LOCK_FOCUS_RESUME" "E2E Tone B" 15
         else
-            pass "$LOCK_FOCUS_HELD" "$detail；$(device_summary)"
-            if detail=$(resumes_after_video "E2E Tone B" 15); then
-                pass "$LOCK_FOCUS_RESUME" "$detail"
-            else
-                fail "$LOCK_FOCUS_RESUME" "$detail"
-            fi
+            fail "$LOCK_FOCUS_RESUME" "打断或锁屏环境没保持住，没有执行"
         fi
     fi
 
@@ -414,9 +494,8 @@ SAVER_PLAY="省电模式下灭屏照常播放"
 
 run_power_saving_checks() {
     local all=("$DOZE_ENTER" "$DOZE_PLAY" "$DOZE_SKIP" "$DOZE_HANG" "$DOZE_PAUSE_LONG" "$SAVER_SKIP" "$SAVER_PLAY")
-    local check
-    # 队列还是第 19 步的 B、C、Hang，在播 B。第 19 步没走到这里（比如切歌卡住了）时自己从头放 B，
-    # 省电的检查不跟着前面的失败一起作废。然后回到桌面，应用在后台
+    local check detail
+    # 第 19 步可能没有完成，单独准备 B，避免省电检查被前面的失败全部牵连。
     if ! wait_for_song "E2E Tone B" 5 && ! start_b "省电前：从头放 B（队列是 B、C、Hang）"; then
         for check in "${all[@]}"; do
             fail "$check" "没能放 B，没有执行：$(session)"
@@ -425,7 +504,13 @@ run_power_saving_checks() {
     fi
     adb shell input keyevent KEYCODE_HOME
     adb shell dumpsys battery unplug
-    lock_screen || true
+    if ! lock_screen; then
+        for check in "${all[@]}"; do
+            fail "$check" "省电测试前没能灭屏，没有执行：$(device_summary)"
+        done
+        restore_power
+        return 1
+    fi
     adb shell dumpsys deviceidle enable deep > /dev/null 2>&1 || true
     log "$(adb shell dumpsys deviceidle force-idle deep 2>&1 | tr -d '\r')"
     if ! wait_until 15 deep_idle; then
@@ -436,26 +521,31 @@ run_power_saving_checks() {
         restore_power
         return 1
     fi
+    if ! detail=$(power_environment doze); then
+        for check in "${all[@]}"; do fail "$check" "进入 Doze 时环境不满足：$detail"; done
+        restore_power
+        return 1
+    fi
     pass "$DOZE_ENTER" "$(device_summary)"
 
     # 20a–d. Doze 中：照常播放；切歌要联网取地址；切到 Hang 要按时回滚；暂停 1 分钟再接着播
-    expect_progress_for "$DOZE_PLAY" "E2E Tone B" 20
-    adb shell input keyevent KEYCODE_MEDIA_NEXT
-    if wait_for_song "E2E Tone C" 30; then
-        expect_playing "$DOZE_SKIP" "E2E Tone C"
-        expect_hang_rollback "$DOZE_HANG" "E2E Tone C"
-        expect_paused_resume "$DOZE_PAUSE_LONG" "E2E Tone C" 60
+    power_check doze "$DOZE_PLAY" expect_progress_for "$DOZE_PLAY" "E2E Tone B" 20
+    if power_check doze "$DOZE_SKIP" expect_power_skip "$DOZE_SKIP" "E2E Tone C" KEYCODE_MEDIA_NEXT; then
+        power_check doze "$DOZE_HANG" expect_hang_rollback "$DOZE_HANG" "E2E Tone C"
+        power_check doze "$DOZE_PAUSE_LONG" expect_paused_resume "$DOZE_PAUSE_LONG" "E2E Tone C" 60
     else
-        fail "$DOZE_SKIP" "30 秒内没放出 C：$(sample_text "$(session)")；$(device_summary)"
-        fail "$DOZE_HANG" "C 没在放，没有执行"
+        fail "$DOZE_HANG" "C 没在放或 Doze 环境失效，没有执行"
         fail "$DOZE_PAUSE_LONG" "C 没在放，没有执行"
     fi
-    if ! deep_idle; then
-        log "Doze 中的检查做完时已经不在深度休眠：$(device_summary)"
-    fi
-
-    # 20e–f. 退出 Doze，打开省电模式（还是拔着电、灭着屏）
+    # 20e–f. unforce 只取消强制状态，不保证已经离开 IDLE；亮屏使设备退出并核对 ACTIVE，再灭屏。
     adb shell dumpsys deviceidle unforce > /dev/null 2>&1 || true
+    if ! { adb shell input keyevent KEYCODE_WAKEUP; wait_until 10 screen_on; } ||
+        ! wait_until 10 deep_idle_active || ! lock_screen; then
+        fail "$SAVER_SKIP" "无法确认已退出 Doze 并再次灭屏：$(device_summary)"
+        fail "$SAVER_PLAY" "省电模式的独立环境未准备好，没有执行"
+        restore_power
+        return 1
+    fi
     adb shell cmd power set-mode 1
     if ! wait_until 10 power_saver_on; then
         log_raw_device_state
@@ -464,13 +554,10 @@ run_power_saving_checks() {
         restore_power
         return 1
     fi
-    adb shell input keyevent KEYCODE_MEDIA_PREVIOUS
-    if wait_for_song "E2E Tone B" 30; then
-        pass "$SAVER_SKIP" "$(sample_text "$(session)")；$(device_summary)"
-        expect_progress_for "$SAVER_PLAY" "E2E Tone B" 20
+    if power_check saver "$SAVER_SKIP" expect_power_skip "$SAVER_SKIP" "E2E Tone B" KEYCODE_MEDIA_PREVIOUS; then
+        power_check saver "$SAVER_PLAY" expect_progress_for "$SAVER_PLAY" "E2E Tone B" 20
     else
-        fail "$SAVER_SKIP" "30 秒内没放出 B：$(sample_text "$(session)")；$(device_summary)"
-        fail "$SAVER_PLAY" "B 没在放，没有执行"
+        fail "$SAVER_PLAY" "B 没在放或省电环境失效，没有执行"
     fi
     restore_power
 }

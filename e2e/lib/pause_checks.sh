@@ -10,9 +10,11 @@
 # 时钟（秒）。自检里换成假的
 clock() { date +%s; }
 
-session() {
+read_session() {
     adb shell dumpsys media_session | python3 -I "$SESSION" parse "$PKG"
 }
+
+session() { read_session; }
 
 # wait_for_state <状态> <标题> <秒>：等到系统媒体会话里这首歌是这个状态（PLAYING、PAUSED……）
 wait_for_state() {
