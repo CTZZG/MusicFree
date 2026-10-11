@@ -32,7 +32,7 @@ Codex 不改产品的播放、焦点、通知进度估算，也不改变版本�
    重新灭屏失败会把依赖这项前提的后续检查记失败，并恢复设备；不会把没有执行的检查漏掉。
 3. **Doze 与省电分开。** `unforce` 后确认 force=false，再发送 `deviceidle motion` 模拟运动并核对已经退出深度休眠；保持灭屏时的 INACTIVE 等准备状态尚未进入深度 Doze，允许通过；IDLE、维护窗口与未知状态拒绝。后续采样也核对休眠状态和 low_power。
 4. **恢复后还要继续播。** 原 expect_resumed 只核对状态和暂停位置，新增 expect_power_resumed 再观察四秒进度，防止
-   “会话写着在播，实际上没有前进”被算作成功。
+   “会话写着在播，记录的进度却没有前进”被算作成功；这不等于独立验证音频输出。
 5. **描述不超出证据。** 暂停一分钟没有直接查询唤醒锁，删除“已放下唤醒锁”的结论。焦点替身用 USAGE_MEDIA，
    改称临时焦点打断，不声称模拟了 Telecom 来电。README 说明 Android 16 Live Update 有原生进度估算。
 
@@ -84,12 +84,42 @@ exitForceIdleLocked 只在 mScreenOn 或 mCharging 时调用 becomeActiveLocked�
 完整流程的假设备也改为 unforce 不改变 IDLE：漏掉 motion 会使正常对照失败，motion 后仍 IDLE 仍会使两项省电失败。
 没有关闭 Doze 或降低判断标准；先完成 Doze 组，再模拟运动进入独立省电组。
 
+## 最新脚本的负对照与运行隔离
+
+[Beta #127](https://github.com/CTZZG/MusicFree/actions/runs/38120412659) 用 4d121c79 脚本测普通 RN 定时器 APK 828fb854。
+锁屏和 Doze 的 Hang 超时各自执行，均在 45 秒内没有回到 C，媒体会话仍是 PAUSED；解锁后出现恢复。
+省电组独立重置 B，所以锁屏失败没有阻止 Doze 的第二次复现。其余多项因超时事务未完成连带失败，不能当成独立产品缺陷；独立省电仍被当时的退出步骤阻止。
+
+Beta #122、#126 是被最新脚本取代的全量运行，已取消，不计入通过证据。最终产品树与 0e0d19df 相同；
+负对照 828fb854 与该产品树只差取源超时换成普通 RN 定时器及对应单元测试期望。负对照失败是期望结果，不能写成现行产品失败。
+
+## Codex 提交与验证结果
+
+- `d6a5f97e`：环境采样和首次失败锁定、恢复进度检查、完整流程负对照、自检接入 CI。
+- `4d121c79`：按当前控件标签定位锁屏按钮，避免 Maestro 等动态界面稳定；Doze/省电不额外要求 keyguard 显示，补 11 项控件回归。
+- `97825a05`：依据 Android 14 实际运行和源码，显式退出强制 Doze 后独立验证省电；整流程替身模拟 unforce 不改变 IDLE。
+- 最终文档提交：原生 XML 和三组设备证据、采样/会话估算限制、下一轮实现建议。
+
 ## 当前验证与复核重点
 
 本地 `npm run verify` 通过：1318 个 Jest、43 个生成器、1257 个布局用例，ESLint 0 错误/216 警告。
 环境自检 27 项、控件自检 11 项、完整省电自检 3 项通过；同样的整流程用例放到 `91bb7f16` 的旧脚本上，两种故障场景都失败，正常对照通过。
-[CI #72](https://github.com/CTZZG/MusicFree/actions/runs/38118671284) 在 d6a5f97e 上通过，原生 XML 报告为 17 个 suite / 89 个测试，错误、失败、跳过均为零；这份 CI 早于上述两项脚本修正。
-修正后脚本的设备运行结果在完成后补入此处。源码构建与测试脚本提交必须分开记，复用 APK 不等于
+[CI #74](https://github.com/CTZZG/MusicFree/actions/runs/38121699413) 在 97825a05 上通过，质量门和全部脚本自检执行成功；原生 XML 报告为 17 个 suite / 89 个测试，错误、失败、跳过均为零，Gradle 为实际 testDebugUnitTest（2 分 55 秒），没有按路径跳过。
+[Beta #128](https://github.com/CTZZG/MusicFree/actions/runs/38121708179) 用 97825a05 脚本测 0e0d19df APK，在 Android 14 上 23 PASS / 0 FAIL。
+系统锁屏按钮在 B 约 58 秒时切到 C（总长 180 秒），锁屏 Hang 超时 15 秒、Doze Hang 超时 16 秒；
+锁屏和 Doze 的一分钟暂停后恢复均有四秒会话进度。独立省电按上一首及随后 20 秒播放均通过，
+灭屏、low_power=1、深度休眠为 QUICK_DOZE_DELAY（未进入 IDLE）；持续采样符合 saver 要求。
+同脚本的 [Beta #130](https://github.com/CTZZG/MusicFree/actions/runs/38121711743) 测普通定时器 APK 828fb854：13 PASS / 10 FAIL（预期负对照红色）。
+锁屏与 Doze 的 Hang 超时各自在 45 秒内未回到 C，状态仍 PAUSED，而正常 APK 分别是 15、16 秒。
+独立省电环境准备已经完成，但原超时事务仍挂着，上一首没能播放；不能把这些连带结果算成十个独立缺陷。
+负对照里“暂停保持 20 秒”通过只说明会话保持暂停；由于超时回滚已经失败，不能用这一项证明回滚完成或暂停意图已被回滚尊重。
+[Beta #129](https://github.com/CTZZG/MusicFree/actions/runs/38121709775) 全量完成：Android 14，96 PASS / 0 FAIL，
+脚本同为 97825a05，APK 同为 0e0d19df。包括锁屏、省电、切歌超时、外部暂停、临时焦点打断、
+下载首次写盘失败与既有文件保护、从 0.7.3 升级迁移删除/清空和重启后的结果。96 是报告中的检查行数，包含 UI 操作及前提准备，不能理解为 96 个独立功能或 96 个原生仪器测试。
+全量中的锁屏与 Doze 超时均 16 秒，锁屏按钮在 B 约 36 秒时切到 C，独立省电两项再次通过。
+
+专项、全量、负对照分别下载 artifact 并核对 summary.md 的脚本/APK SHA 和逐项结果。
+最终交接提交只修改验证记录、README、解析器说明与脚本注释，没有更改 97825a05 的测试行为，因此不为纯说明改动重新跑设备。源码构建与测试脚本提交必须分开记，复用 APK 不等于
 在新提交重新编译。只改测试时复用 Beta #112 是因为最终产品代码树与该 APK 源码一致。
 
 请 Claude 重点复核：
@@ -108,6 +138,12 @@ exitForceIdleLocked 只在 mScreenOn 或 mCharging 时调用 becomeActiveLocked�
 下一步建议：Android 16 Live Update 用 mpv 原始进度或音频输出作独立观测，再扩展锁屏省电设备矩阵。Android 14
 当前检查不运行 Live Update 秒级刷新，但 currentNotificationPosition 在更新会话时仍可估算。
 Android 16 启用 Live Update 后服务每秒刷新会话，估算更容易被误认为 mpv 持续前进；会话进度不能独自证明 mpv 还在播放。不要为了测试删除产品正常使用的通知进度平滑。
+`media_session.py` 的解析逻辑没有增加估算，但原先文件说明称“进度由 mpv 直接上报、能证明真的在播”，本次一并修正这段说明。
+
+后续这项可从 `MpvPlayerModule.kt` 已有的 `MPVLib.getPropertyDouble("time-pos")` 读取路径入手，
+在测试侧分别记录原始 time-pos、暂停属性和媒体会话进度。Android 16 要真实加载测试音频并打开 Live Update；
+加一个“引擎停住、会话仍被估算推进”的负对照，确认新判断能失败。现有 `LiveUpdateNotificationStyleTest`
+直接驱动服务的 metadata/state 回调，证明通知样式切换，不能代替真实引擎播放验证。
 
 仍需真机证据：CPU 实际挂起、厂商省电/后台杀进程、后台受限、密码/指纹锁屏、真实蓝牙耳机、真实视频和来电。
 慢速换音质期间被临时打断、音频焦点永久丢失也应单独做端到端场景。下载和迁移故障注入已在 PR #24 处理，
