@@ -84,7 +84,7 @@ class RealJsEngineProgressTest {
             } == true
         }
         search("seed")
-        clickText("JS Flow B")
+        clickSearchSong("JS Flow B")
         awaitEngine(audioUrl("tone-b.mp3", "192k"), false, "JS Flow B")
     }
 
@@ -122,7 +122,7 @@ class RealJsEngineProgressTest {
         observe("baseline", audioUrl("tone-b.mp3", "192k"), false)
         // The initial queue contains only B, so lookahead cannot quietly warm C beforehand.
         search("queue")
-        clickText("JS Flow B")
+        clickSearchSong("JS Flow B")
         await("queue replaced through search UI", 15000) { MpvServiceBridge.getQueueSnapshot().size == 3 }
         awaitEngine(audioUrl("tone-b.mp3", "192k"), false, "JS Flow B")
         Thread.sleep(1200)
@@ -255,6 +255,9 @@ class RealJsEngineProgressTest {
     }
 
     private fun audioUrl(file: String, quality: String) = "https://raw.githubusercontent.com/CTZZG/MusicFree/$ref/e2e/fixtures/$file?jsFlowQuality=$quality"
+    // MusicItem labels a row as "title, artist". The floating bar also exposes
+    // its title text; clicking that text would open the player instead.
+    private fun clickSearchSong(title: String) = clickText("$title, E2E Artist")
     private fun search(mode: String) {
         openLink("musicfree://search?keyword=" + Uri.encode("js-flow $ref $mode"))
         // B is also visible in the old seed result. Wait for a queue-only row
