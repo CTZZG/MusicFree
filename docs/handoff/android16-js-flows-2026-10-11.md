@@ -48,6 +48,12 @@ C 的预取不能提前完成：初始搜索只返回 B，再通过真实搜索�
 恢复测试前配置；脚本 EXIT 无论成功失败都强制停止应用和辅助应用。旧的原生样本在清数据前已保存到 runner，
 共享导出函数支持显式文件路径，存在性和 JSONL 校验失败不会覆盖之前有效的证据。
 
+Maestro 订阅流程结束后，它的 driver instrumentation 仍占用 UiAutomation。脚本先停止两个 Maestro driver
+包，并检查 `dumpsys activity instrumentation` 中已无该 owner，再启动真实 JS 仪器测试。
+首次 API36 回归 #29 实际碰到 `UiAutomationService already registered`，新流程没进入点播；原来的38项原生
+测试已通过。这个运行不是播放失败或正常场景通过证据。启动失败的仪器日志现在也直接输出到 job log，
+即使没有原始样本仍能看见原因。
+
 ## 故障对照和自检
 
 第二次独立仪器运行经真实 JS 点播 B。启动补播完成后，卸下同一模块观察器、暂停同一引擎，给服务注入

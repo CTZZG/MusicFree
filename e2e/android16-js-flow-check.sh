@@ -13,6 +13,20 @@ cleanup_js() {
 }
 trap cleanup_js EXIT
 adb install -r "$FOCUS_APK" > "$OUT/install-focus.log" 2>&1
+# Maestro keeps its driver instrumentation alive after a flow; UiAutomation has
+# one owner. Finish that owner before starting our instrumented UI test.
+for driver in dev.mobile.maestro dev.mobile.maestro.test; do
+    adb shell am force-stop "$driver"
+done
+for attempt in $(seq 1 20); do
+    adb shell dumpsys activity instrumentation > "$OUT/ui-automation-handoff.txt"
+    if ! grep -Fq 'dev.mobile.maestro' "$OUT/ui-automation-handoff.txt"; then break; fi
+    sleep 0.25
+done
+if grep -Fq 'dev.mobile.maestro' "$OUT/ui-automation-handoff.txt"; then
+    echo 'Maestro instrumentation did not release UiAutomation' >&2
+    exit 1
+fi
 
 run_js() {
     local name=$1 control=$2
@@ -26,10 +40,15 @@ run_js() {
         -e jsFlowRef "$REF" -e jsFlowFreezeControl "$control" \
         fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/$name-instrumentation.log" 2>&1
     adb logcat -d > "$OUT/$name-logcat.txt"
-    export_engine_progress_samples "$OUT/$name-samples.jsonl" files/js-flow-engine-samples.jsonl
+    local exported=false
+    if export_engine_progress_samples "$OUT/$name-samples.jsonl" files/js-flow-engine-samples.jsonl; then exported=true; fi
     local args=()
     if [ "$control" = true ]; then args+=(--control); fi
+    # A setup failure may produce no samples. Always show the actual assertion
+    # before rejecting missing evidence, rather than just returning exit 1.
+    cat "$OUT/$name-instrumentation.log"
     python3 -I "$VALIDATOR" instrumentation "$OUT/$name-instrumentation.log" "${args[@]}"
+    test "$exported" = true
     python3 -I "$VALIDATOR" samples "$OUT/$name-samples.jsonl" "${args[@]}"
 }
 
