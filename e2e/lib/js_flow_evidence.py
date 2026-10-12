@@ -48,11 +48,12 @@ def validate_source_continuity(groups, pairs=SOURCE_CHANGES):
             require(isinstance(transition, dict), "TRANSITION_WINDOW: missing early source read")
             require(all(s.get("sourceTransition") == transition for s in groups[new]),
                     "TRANSITION_WINDOW: inconsistent early source read")
-            for key in ["oldElapsedMs", "firstNewElapsedMs", "pollGapMs"]:
+            for key in ["oldElapsedMs", "firstNewElapsedMs", "pollGapMs", "maxPollGapMs"]:
                 require(type(transition.get(key)) is int, f"TRANSITION_WINDOW: invalid {key}")
             old_ms, new_ms, gap = (transition[k] for k in ["oldElapsedMs", "firstNewElapsedMs", "pollGapMs"])
+            max_gap = transition["maxPollGapMs"]
             require(groups[old][-1]["elapsedMs"] <= old_ms <= new_ms <= first["elapsedMs"]
-                    and 0 <= gap <= 250 and gap <= new_ms-old_ms,
+                    and 0 <= gap <= max_gap <= 250 and max_gap <= new_ms-old_ms,
                     "TRANSITION_WINDOW: late/reversed/missing polling interval")
             raw = transition.get("firstNewRawSeconds")
             require(isinstance(raw, (int, float)) and not isinstance(raw, bool) and math.isfinite(raw) and raw >= 3,
@@ -173,7 +174,7 @@ def self_test():
                          "focusOwner": FOCUS if phase in HELD else None, "foregroundPackage": "fun.upup.musicfree",
                          "resumeAnchor": start if phase in ANCHORED else None,
                          "sourceTransition": {"oldElapsedMs": index*10000-100, "firstNewElapsedMs": index*10000,
-                                              "firstNewRawSeconds": start, "pollGapMs": 100}
+                                              "firstNewRawSeconds": start, "pollGapMs": 100, "maxPollGapMs": 100}
                          if phase == "quality-playing-new" else None})
     validate_samples(rows)
     checks = 1
@@ -255,8 +256,29 @@ def self_test():
         checks += 1
     else:
         raise AssertionError("early rewind hidden by playback accepted")
+    # The final gap is fresh, but an earlier unload poll was delayed. Checking
+    # only the final gap accepts this otherwise-valid evidence.
+    altered = copy.deepcopy(rows)
+    for row in altered:
+        if row["phase"] == "quality-playing-new":
+            row["sourceTransition"].update(oldElapsedMs=129400, maxPollGapMs=400)
+    try:
+        validate_samples(altered)
+    except ValueError as error:
+        require(str(error).startswith("TRANSITION_WINDOW:"), "intermediate gap rejected for the wrong reason")
+        checks += 1
+    else:
+        raise AssertionError("intermediate polling stall accepted")
+    altered = copy.deepcopy(rows)
+    for row in altered:
+        if row["phase"] == "quality-playing-new":
+            row["sourceTransition"].update(oldElapsedMs=129000, maxPollGapMs=250)
+    validate_samples(altered)
+    checks += 1
     for key, value in [("firstNewRawSeconds", None), ("firstNewRawSeconds", float("nan")),
                        ("firstNewRawSeconds", True), ("pollGapMs", 251), ("pollGapMs", -1),
+                       ("maxPollGapMs", None), ("maxPollGapMs", True), ("maxPollGapMs", 99),
+                       ("maxPollGapMs", -1), ("maxPollGapMs", 251), ("maxPollGapMs", 101),
                        ("oldElapsedMs", 0), ("firstNewElapsedMs", 999999), ("firstNewElapsedMs", "130000")]:
         altered = copy.deepcopy(rows)
         for row in altered:

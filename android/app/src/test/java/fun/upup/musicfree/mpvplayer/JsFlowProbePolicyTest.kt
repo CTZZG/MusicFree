@@ -60,6 +60,7 @@ class JsFlowProbePolicyTest {
         assertEquals(100.0, oldPosition, 0.0)
         assertEquals(99.6, firstPosition, 0.0)
         assertEquals(100L, first.pollGapMs)
+        assertEquals(100L, first.maxPollGapMs)
         for (ms in 700L..1200L step 100L) {
             org.junit.Assert.assertTrue(probe.observe(sample(ms, "new", 99.6 + (ms - 600) / 1000.0)))
         }
@@ -73,5 +74,40 @@ class JsFlowProbePolicyTest {
         val slow = JsFlowProbePolicy.SourceTransitionProbe("old", "new")
         slow.observe(sample(0, "old", 100.0))
         assertThrows(IllegalStateException::class.java) { slow.observe(sample(251, "new", 100.0)) }
+    }
+
+    @Test fun everyPollSinceTheLatestValidOldReadMustBeFresh() {
+        fun sample(ms: Long, path: String?, raw: Double?, buffering: Boolean = false) =
+            EngineProgressSample(ms, raw, false, false, buffering, path, ((raw ?: 0.0) * 1000).toLong(), 3)
+        val stalled = JsFlowProbePolicy.SourceTransitionProbe("old", "new")
+        stalled.observe(sample(0, "old", 100.0))
+        stalled.observe(sample(400, null, null))
+        stalled.observe(sample(500, "new", 0.0))
+        val failure = assertThrows(IllegalStateException::class.java) {
+            stalled.observe(sample(600, "new", 100.0))
+        }
+        org.junit.Assert.assertTrue(failure.message!!.startsWith("TRANSITION_WINDOW:"))
+
+        // A long unload/load is valid if it is continuously observed. Invalid
+        // positions and mixed paths must not reset the interval history.
+        val continuous = JsFlowProbePolicy.SourceTransitionProbe("old", "new")
+        continuous.observe(sample(0, "old", 100.0))
+        continuous.observe(sample(250, "old", 0.0))
+        continuous.observe(sample(500, null, 100.0))
+        continuous.observe(sample(750, "new", 100.0, buffering = true))
+        org.junit.Assert.assertTrue(continuous.observe(sample(850, "new", 100.0)))
+        assertEquals(0L, requireNotNull(continuous.result).old.elapsedMs)
+        assertEquals(100L, requireNotNull(continuous.result).pollGapMs)
+        assertEquals(250L, requireNotNull(continuous.result).maxPollGapMs)
+
+        // A later valid old reading refreshes the anchor. A gap before that
+        // reading is outside the interval being measured.
+        val refreshed = JsFlowProbePolicy.SourceTransitionProbe("old", "new")
+        refreshed.observe(sample(0, "old", 99.0))
+        refreshed.observe(sample(400, null, null))
+        refreshed.observe(sample(500, "old", 100.0))
+        org.junit.Assert.assertTrue(refreshed.observe(sample(600, "new", 100.0)))
+        assertEquals(500L, requireNotNull(refreshed.result).old.elapsedMs)
+        assertEquals(100L, requireNotNull(refreshed.result).maxPollGapMs)
     }
 }
