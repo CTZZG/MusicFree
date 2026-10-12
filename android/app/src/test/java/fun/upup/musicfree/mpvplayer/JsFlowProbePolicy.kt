@@ -6,6 +6,7 @@ object JsFlowProbePolicy {
         "baseline", "slow-skip-wait", "slow-skip-playing", "timeout-wait", "timeout-rollback",
         "quality-interrupted-old", "quality-interrupted-new", "quality-focus-resumed",
         "user-pause-old", "user-pause-new", "user-pause-after-focus", "explicit-play",
+        "quality-playing-old", "quality-playing-new",
     )
 
     fun assertComplete(completed: Set<String>) {
@@ -15,6 +16,13 @@ object JsFlowProbePolicy {
     fun assertResumeAnchor(anchor: Double, actual: Double) {
         check(anchor.isFinite() && actual.isFinite() && anchor >= 3.0 && actual >= 0.0) { "ANCHOR: invalid positions" }
         check(kotlin.math.abs(actual - anchor) <= 2.0) { "ANCHOR: expected around $anchor, got $actual" }
+    }
+
+    fun assertSourceContinuity(oldStop: Double, newStart: Double) {
+        check(oldStop.isFinite() && oldStop >= 3.0 && newStart.isFinite() && newStart >= 0.0) {
+            "SOURCE_REWIND: invalid positions"
+        }
+        check(newStart >= oldStop - 0.25) { "SOURCE_REWIND: old source stopped at $oldStop, new started at $newStart" }
     }
 
     fun focusOwner(text: String): String? {

@@ -12,9 +12,15 @@ PAUSED = {
     "slow-skip-wait", "timeout-wait", "quality-interrupted-old", "quality-interrupted-new",
     "user-pause-old", "user-pause-new", "user-pause-after-focus",
 }
-PLAYING = {"baseline", "slow-skip-playing", "timeout-rollback", "quality-focus-resumed", "explicit-play"}
+PLAYING = {"baseline", "slow-skip-playing", "timeout-rollback", "quality-focus-resumed", "explicit-play",
+           "quality-playing-old", "quality-playing-new"}
 HELD = {"quality-interrupted-old", "quality-interrupted-new", "user-pause-old", "user-pause-new"}
-ANCHORED = {"timeout-rollback", "quality-interrupted-new", "user-pause-new"}
+ANCHORED = {"timeout-rollback", "quality-interrupted-new", "user-pause-new", "quality-playing-new"}
+SOURCE_CHANGES = {
+    "quality-interrupted-new": "quality-interrupted-old",
+    "user-pause-new": "user-pause-old",
+    "quality-playing-new": "quality-playing-old",
+}
 RESUMES = {
     "quality-focus-resumed": "quality-interrupted-new",
     "explicit-play": "user-pause-after-focus",
@@ -27,6 +33,16 @@ FOCUS = "fun.upup.musicfree.e2e.focus"
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def validate_source_continuity(groups, pairs=SOURCE_CHANGES):
+    for new, old in pairs.items():
+        first = groups[new][0]
+        # Paused windows end at the actual old stop. In the playing case,
+        # resumeAnchor additionally records the last valid JNI read at unload.
+        for old_stop in [groups[old][-1]["rawSeconds"], first["resumeAnchor"]]:
+            require(first["rawSeconds"] >= old_stop - .25,
+                    f"SOURCE_REWIND: {new} started at {first['rawSeconds']}, old stopped at {old_stop}")
 
 
 def validate_samples(rows, control=False):
@@ -73,6 +89,7 @@ def validate_samples(rows, control=False):
         if not control:
             require(all(abs(s["rawSeconds"] - s["sessionMs"]/1000) <= 1.5 for s in samples), f"{phase}: projection drift")
     if not control:
+        validate_source_continuity(groups)
         for resumed, paused in RESUMES.items():
             advance = groups[resumed][0]["rawSeconds"] - groups[paused][-1]["rawSeconds"]
             require(-.15 <= advance <= 2, f"{resumed}: resume reset/jumped from paused source")
@@ -127,11 +144,13 @@ def self_test():
     for phase in sorted(PLAYING | PAUSED):
         for n in range(5):
             paused = phase in PAUSED
-            rows.append({"phase": phase, "elapsedMs": n*1100, "rawSeconds": 12 if paused else 12+n*1.1,
-                         "paused": paused, "idle": False, "buffering": False, "sessionMs": 12000 if paused else 12000+n*1100,
+            start = 16.4 if phase == "quality-playing-new" else 12
+            raw = start if paused else start+n*1.1
+            rows.append({"phase": phase, "elapsedMs": n*1100, "rawSeconds": raw,
+                         "paused": paused, "idle": False, "buffering": False, "sessionMs": raw*1000,
                          "sessionState": 2 if paused else 3, "sameTrack": True, "sameTitle": True,
                          "focusOwner": FOCUS if phase in HELD else None, "foregroundPackage": "fun.upup.musicfree",
-                         "resumeAnchor": 12 if phase in ANCHORED else None})
+                         "resumeAnchor": start if phase in ANCHORED else None})
     validate_samples(rows)
     checks = 1
     def rejects(value):
@@ -173,6 +192,32 @@ def self_test():
                 row["rawSeconds"] = start+n*1.1
                 row["sessionMs"] = (start+n*1.1)*1000
             rejects(altered)
+    # Preserve all per-window rates/states and the loose +/-2s anchor check.
+    # Only cross-source continuity can reject these one-second rewinds.
+    for phase in SOURCE_CHANGES:
+        for rewind in [.25, .251, 1.0]:
+            altered = copy.deepcopy(rows)
+            for row in altered:
+                if row["phase"] == phase:
+                    row["rawSeconds"] -= rewind
+                    row["sessionMs"] -= rewind*1000
+            if rewind == .25:
+                validate_samples(altered)
+                checks += 1
+            else:
+                try:
+                    validate_samples(altered)
+                except ValueError as error:
+                    require(str(error).startswith("SOURCE_REWIND:"), "rewind failed for the wrong reason")
+                    checks += 1
+                else:
+                    raise AssertionError("source rewind accepted")
+    # The old playing window ends several seconds before unload. Checking only
+    # that window would miss a rewind from the actual transition position.
+    altered = copy.deepcopy(rows)
+    for row in altered:
+        if row["phase"] == "quality-playing-new": row["resumeAnchor"] += 1
+    rejects(altered)
     for field, value in [("sameTrack", False), ("sameTitle", False), ("rawSeconds", None), ("rawSeconds", float("nan")), ("idle", True), ("buffering", True)]:
         altered = copy.deepcopy(rows); altered[0][field] = value; rejects(altered)
     normal = f"INSTRUMENTATION_STATUS: numtests=1\nINSTRUMENTATION_STATUS: class={CLASS}\nINSTRUMENTATION_STATUS: test={METHOD}\nINSTRUMENTATION_STATUS_CODE: 0\nINSTRUMENTATION_CODE: -1\n"

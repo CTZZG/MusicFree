@@ -232,15 +232,17 @@ const songA = {
     duration: 200,
 };
 const songs = [songA, { ...songA, id: "B", title: "Song B" }];
+const qualitySpies: jest.SpyInstance[] = [];
+
+async function mockSource(item: { id: string }, quality: string) {
+    return { url: `https://test.example/${item.id}-${quality}.mp3`, quality };
+}
 
 /** 插件：每个音质给不同的地址 */
 const plugin = {
     name: "test",
     methods: {
-        getMediaSource: jest.fn(async (item: { id: string }, quality: string) => ({
-            url: `https://test.example/${item.id}-${quality}.mp3`,
-            quality,
-        })),
+        getMediaSource: jest.fn(mockSource),
     },
 };
 
@@ -312,6 +314,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
     jest.useFakeTimers();
+    mockNativeMpvPlayer.getPosition.mockReset().mockResolvedValue(30);
+    plugin.methods.getMediaSource.mockReset().mockImplementation(mockSource);
     mockNative.hold.pausedByUser = false;
     mockNative.hold.interrupted = false;
     player.playbackIntent.play();
@@ -326,9 +330,12 @@ beforeEach(async () => {
     expect(mockNative.state).toBe("playing");
     expect(mockNative.active?.url).toBe("https://test.example/A-192k.mp3");
     mockNative.calls.length = 0;
+    mockNativeMpvPlayer.seekTo.mockClear();
+    mockNativeMpvPlayer.loadAndPlay.mockClear();
 });
 
 afterEach(async () => {
+    qualitySpies.splice(0).forEach(spy => spy.mockRestore());
     await jest.advanceTimersByTimeAsync(10_000);
     player.qualityChangeCoordinator?.begin?.();
     jest.useRealTimers();
@@ -389,4 +396,115 @@ it("plays again when the user pauses and plays while the new file is loading", a
     await changing;
 
     expect(mockNative.state).toBe("playing");
+});
+
+describe("quality reload uses the current position when committing", () => {
+    async function finishChange(changing: Promise<unknown>) {
+        await jest.advanceTimersByTimeAsync(200);
+        await fileLoaded();
+        await expect(changing).resolves.toMatchObject({ success: true });
+    }
+
+    function slowSource() {
+        plugin.methods.getMediaSource.mockImplementation(async (item, quality) => {
+            if (item.id === "A" && quality === "320k") {
+                await new Promise(resolve => setTimeout(resolve, 5_000));
+            }
+            return mockSource(item, quality);
+        });
+    }
+
+    it("keeps the five seconds played while the plugin fetches the new address", async () => {
+        slowSource();
+        const changing = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(4_999);
+        expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
+        mockNativeMpvPlayer.getPosition.mockResolvedValue(35);
+        await jest.advanceTimersByTimeAsync(1);
+        await finishChange(changing);
+        expect(mockNativeMpvPlayer.seekTo).toHaveBeenLastCalledWith(35);
+        expect(mockNative.active.url).toBe("https://test.example/A-320k.mp3");
+    });
+
+    it("keeps the position reached before a pause during the fetch", async () => {
+        slowSource();
+        const changing = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(2_000);
+        mockNativeMpvPlayer.getPosition.mockResolvedValue(32);
+        await trackPlayer.pause();
+        await jest.advanceTimersByTimeAsync(3_000);
+        await finishChange(changing);
+        expect(mockNativeMpvPlayer.seekTo).toHaveBeenLastCalledWith(32);
+        expect(mockNative.state).toBe("paused");
+    });
+
+    it.each([0, 10])("honors a user seek back to %p while fetching", async position => {
+        slowSource();
+        const source = jest.spyOn(player, "setTrackSource");
+        qualitySpies.push(source);
+        const changing = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(4_999);
+        mockNativeMpvPlayer.getPosition.mockResolvedValue(position);
+        await jest.advanceTimersByTimeAsync(1);
+        await finishChange(changing);
+        expect(source).toHaveBeenLastCalledWith(expect.anything(), true, position);
+    });
+
+    it.each([NaN, Infinity, -1, undefined])("uses the request-time position if the latest read is %p", async position => {
+        const progress = jest.spyOn(mockAdapter, "getProgress")
+            .mockResolvedValueOnce({ position: 30, duration: 200, buffered: 30 })
+            .mockResolvedValueOnce({ position, duration: 200, buffered: 30 });
+        qualitySpies.push(progress);
+        await finishChange(trackPlayer.changeQualityWithResult("320k"));
+        expect(mockNativeMpvPlayer.seekTo).toHaveBeenLastCalledWith(30);
+    });
+
+    it("uses the request-time position if the latest query rejects", async () => {
+        const progress = jest.spyOn(mockAdapter, "getProgress")
+            .mockResolvedValueOnce({ position: 30, duration: 200, buffered: 30 })
+            .mockRejectedValueOnce(new Error("position unavailable"));
+        qualitySpies.push(progress);
+        await finishChange(trackPlayer.changeQualityWithResult("320k"));
+        expect(mockNativeMpvPlayer.seekTo).toHaveBeenLastCalledWith(30);
+    });
+
+    it("does not load the old song if it changes during the latest progress query", async () => {
+        let release!: (value: unknown) => void;
+        const progress = jest.spyOn(mockAdapter, "getProgress")
+            .mockResolvedValueOnce({ position: 30, duration: 200, buffered: 30 })
+            .mockImplementationOnce(() => new Promise(resolve => {
+                release = resolve;
+            }));
+        qualitySpies.push(progress);
+        const changing = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(0);
+        player.setCurrentMusic(songs[1]);
+        if (release) release({ position: 35, duration: 200, buffered: 35 });
+        await jest.advanceTimersByTimeAsync(200);
+        await expect(changing).resolves.toMatchObject({ superseded: true });
+        expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
+    });
+
+    it("reads again after an earlier source commit leaves the serial queue", async () => {
+        let release!: () => void;
+        const source = jest.spyOn(player, "setTrackSource")
+            .mockImplementationOnce(async () => {
+                await new Promise<void>(resolve => {
+                    release = resolve;
+                });
+                mockNativeMpvPlayer.getPosition.mockResolvedValue(40);
+            });
+        qualitySpies.push(source);
+        const first = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(0);
+        expect(source).toHaveBeenCalledTimes(1);
+        mockNativeMpvPlayer.getPosition.mockResolvedValue(35);
+        const latest = trackPlayer.changeQualityWithResult("128k");
+        await jest.advanceTimersByTimeAsync(0);
+        release();
+        await finishChange(latest);
+        await expect(first).resolves.toMatchObject({ superseded: true });
+        expect(mockNativeMpvPlayer.seekTo).toHaveBeenLastCalledWith(40);
+        expect(mockNative.active.url).toBe("https://test.example/A-128k.mp3");
+    });
 });

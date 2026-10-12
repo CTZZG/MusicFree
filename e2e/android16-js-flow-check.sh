@@ -55,5 +55,5 @@ run_js() {
 run_js real-js false
 python3 -I "$VALIDATOR" sources "$OUT/real-js-logcat.txt"
 run_js freeze-control true
-echo 'Real JS source/skip/quality/focus flows passed with 60 JNI samples; stale projection control rejected RAW_STALLED with five samples.' \
+echo 'Real JS source/skip/quality/focus flows passed with 70 JNI samples; stale projection control rejected RAW_STALLED with five samples.' \
     | tee "$OUT/summary.txt"
