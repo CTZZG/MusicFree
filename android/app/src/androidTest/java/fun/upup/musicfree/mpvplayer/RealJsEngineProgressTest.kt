@@ -144,9 +144,10 @@ class RealJsEngineProgressTest {
 
         // Real quality UI, slow plugin, and another app holding transient focus.
         openPlayer()
-        val anchor = onMain { requireNotNull(engine.getPropertyDouble("time-pos")) }
         val requestAt = selectQuality("高清音质 320K")
         awaitSource("c", "320k", requestAt)
+        // The product snapshots progress when requesting the source, not before opening its menu.
+        val anchor = onMain { requireNotNull(engine.getPropertyDouble("time-pos")) }
         startVideo("quality-auto-resume")
         awaitEngine(mq, true, "JS Flow C")
         observe("quality-interrupted-old", mq, true, held = true)
@@ -158,9 +159,9 @@ class RealJsEngineProgressTest {
         awaitText { label(it).contains("音质：HQ") }
 
         // Repeat while paused explicitly during the interruption: focus return must not play.
-        val pausedAnchor = onMain { requireNotNull(engine.getPropertyDouble("time-pos")) }
         val secondRequestAt = selectQuality("标准音质 192K")
         awaitSource("c", "192k", secondRequestAt)
+        val pausedAnchor = onMain { requireNotNull(engine.getPropertyDouble("time-pos")) }
         startVideo("quality-user-pause")
         awaitEngine(hq, true, "JS Flow C")
         onMain { controller.transportControls.pause() }
@@ -177,8 +178,10 @@ class RealJsEngineProgressTest {
     }
 
     private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false, anchor: Double? = null) {
-        val samples = (0..4).map { index ->
-            if (index > 0) Thread.sleep(1100)
+        var nextSampleAt = SystemClock.elapsedRealtime()
+        val samples = List(5) {
+            val remaining = nextSampleAt - SystemClock.elapsedRealtime()
+            if (remaining > 0) Thread.sleep(remaining)
             val sample = onMain {
                 // Never acquire a new module or another engine to repair a missing read.
                 assertTrue("same ReactHost module", host?.currentReactContext?.getNativeModule("MpvPlayer") === module)
@@ -190,6 +193,7 @@ class RealJsEngineProgressTest {
                     engine.getPropertyBoolean("pause"), engine.getPropertyBoolean("idle-active"),
                     engine.getPropertyBoolean("paused-for-cache"), engine.getPropertyString("path"), state.position, state.state)
             }
+            nextSampleAt = sample.elapsedMs + 1100
             val owner = if (held) JsFlowProbePolicy.focusOwner(shell("dumpsys audio")) else null
             val foreground = automation.rootInActiveWindow?.packageName?.toString()
             val sameTitle = onMain { controller.metadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE) ==
@@ -217,16 +221,28 @@ class RealJsEngineProgressTest {
 
     private fun awaitEngine(path: String, paused: Boolean, title: String, anchor: Double? = null,
                             deadline: Long = SystemClock.elapsedRealtime() + 30000) {
-        await("engine $title ${if (paused) "paused" else "playing"} $path", deadline = deadline) {
-            onMain {
-                val raw = engine.getPropertyDouble("time-pos")
-                engine.getPropertyString("path") == path && raw != null && raw.isFinite() &&
-                    (if (anchor != null) kotlin.math.abs(raw - anchor) <= 2.0 else paused || raw >= 1.0) &&
-                    engine.getPropertyBoolean("pause") == paused && engine.getPropertyBoolean("idle-active") == false &&
-                    engine.getPropertyBoolean("paused-for-cache") == false &&
-                    controller.playbackState?.state == (if (paused) 2 else 3) &&
-                    controller.metadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE) == title
+        var lastRead = "no engine read"
+        try {
+            await("engine $title ${if (paused) "paused" else "playing"} $path", deadline = deadline) {
+                onMain {
+                    val raw = engine.getPropertyDouble("time-pos")
+                    val actualPath = engine.getPropertyString("path")
+                    val actualPause = engine.getPropertyBoolean("pause")
+                    val idle = engine.getPropertyBoolean("idle-active")
+                    val buffering = engine.getPropertyBoolean("paused-for-cache")
+                    val state = controller.playbackState?.state
+                    val actualTitle = controller.metadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE)
+                    lastRead = "path=$actualPath raw=$raw pause=$actualPause idle=$idle buffering=$buffering " +
+                        "sessionState=$state title=$actualTitle expectedAnchor=$anchor"
+                    actualPath == path && raw != null && raw.isFinite() &&
+                        (if (anchor != null) kotlin.math.abs(raw - anchor) <= 2.0 else paused || raw >= 1.0) &&
+                        actualPause == paused && idle == false && buffering == false &&
+                        state == (if (paused) 2 else 3) && actualTitle == title
+                }
             }
+        } catch (error: AssertionError) {
+            android.util.Log.e("E2EJSFlow", "awaitEngine failed: $lastRead")
+            throw error
         }
         if (anchor != null) onMain { JsFlowProbePolicy.assertResumeAnchor(anchor, requireNotNull(engine.getPropertyDouble("time-pos"))) }
         Thread.sleep(300) // Let final progress/seek callbacks settle, without changing the player.
