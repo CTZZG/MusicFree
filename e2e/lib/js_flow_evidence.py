@@ -219,7 +219,12 @@ if __name__ == "__main__":
         else:
             text = Path(sys.argv[2]).read_text()
             control = "--control" in sys.argv[3:]
-            if command == "samples": result = validate_samples([json.loads(line) for line in text.splitlines()], control)
+            if command == "samples":
+                rows = [json.loads(line) for line in text.splitlines()]
+                result = validate_samples(rows, control)
+                # Keep the validated raw evidence reviewable when artifact storage is unreachable.
+                for row in rows:
+                    print("REAL_JS_SAMPLE " + json.dumps(dict(row, control=control), ensure_ascii=False))
             elif command == "instrumentation": result = instrumentation_result(text, control)
             elif command == "sources": result = source_events(text)
             else: raise ValueError(f"unknown command: {command}")
