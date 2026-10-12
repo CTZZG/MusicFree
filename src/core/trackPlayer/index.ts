@@ -3378,6 +3378,30 @@ class TrackPlayer
                     if (!this.isCurrentMusic(musicItem)) {
                         return superseded();
                     }
+                    const requestPosition = progress?.position;
+                    let commitPosition = typeof requestPosition === "number" &&
+                        Number.isFinite(requestPosition) && requestPosition >= 0
+                        ? requestPosition
+                        : 0;
+                    try {
+                        // Fetching and waiting for an earlier commit can take seconds.
+                        // Read again inside the commit queue, before replacing the old source.
+                        const latestPosition = (await this.backend.getProgress())?.position;
+                        if (
+                            typeof latestPosition === "number" &&
+                            Number.isFinite(latestPosition) && latestPosition >= 0
+                        ) {
+                            commitPosition = latestPosition;
+                        }
+                    } catch {
+                        // Keep the request-time position if the backend cannot read it now.
+                    }
+                    if (
+                        !this.qualityChangeCoordinator.isActive(requestToken) ||
+                        !this.isCurrentMusic(musicItem)
+                    ) {
+                        return superseded();
+                    }
                     const playingState = await this.backend.getState();
                     if (
                         !this.qualityChangeCoordinator.isActive(requestToken) ||
@@ -3387,7 +3411,7 @@ class TrackPlayer
                     }
                     const sourceAndQualityCommitted =
                         await commitQualitySourcePair({
-                            resumePosition: progress.position ?? 0,
+                            resumePosition: commitPosition,
                             applySource: resumePosition =>
                                 this.setTrackSource(
                                     this.mergeTrackSource(
