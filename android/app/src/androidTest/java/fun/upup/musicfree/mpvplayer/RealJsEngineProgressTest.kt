@@ -175,17 +175,18 @@ class RealJsEngineProgressTest {
         // The old source keeps playing throughout this twelve-second request.
         val playingRequestAt = selectQuality("高清音质 320K")
         awaitSource("c", "320k", playingRequestAt)
-        observe("quality-playing-old", mq, false)
-        val oldStop = awaitSourceReplacement(mq, hq)
+        val oldWindowLast = observe("quality-playing-old", mq, false)
+        val transition = awaitSourceReplacement(mq, hq, oldWindowLast)
         // Do not wait for the new position to catch up to the anchor: a rewind
         // must fail on its first ready sample, even if it would catch up later.
         awaitEngine(hq, false, "JS Flow C")
-        observe("quality-playing-new", hq, false, anchor = oldStop)
+        observe("quality-playing-new", hq, false, anchor = requireNotNull(transition.old.rawSeconds), transition = transition)
         awaitText { label(it).contains("音质：HQ") }
         JsFlowProbePolicy.assertComplete(completed)
     }
 
-    private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false, anchor: Double? = null): EngineProgressSample {
+    private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false, anchor: Double? = null,
+                        transition: JsFlowProbePolicy.SourceTransition? = null): EngineProgressSample {
         var nextSampleAt = SystemClock.elapsedRealtime()
         val samples = List(5) {
             val remaining = nextSampleAt - SystemClock.elapsedRealtime()
@@ -216,6 +217,12 @@ class RealJsEngineProgressTest {
                 put("focusOwner", owner ?: JSONObject.NULL)
                 put("foregroundPackage", foreground ?: JSONObject.NULL)
                 put("resumeAnchor", anchor ?: JSONObject.NULL)
+                put("sourceTransition", transition?.let {
+                    JSONObject().put("oldElapsedMs", it.old.elapsedMs)
+                        .put("firstNewElapsedMs", it.firstNew.elapsedMs)
+                        .put("firstNewRawSeconds", it.firstNew.rawSeconds)
+                        .put("pollGapMs", it.pollGapMs)
+                } ?: JSONObject.NULL)
             }
             samplesFile.appendText("$row\n")
             assertTrue("$phase: matching media title", sameTitle)
@@ -227,28 +234,37 @@ class RealJsEngineProgressTest {
         if (anchor != null && phase in setOf("quality-interrupted-new", "user-pause-new", "quality-playing-new")) {
             JsFlowProbePolicy.assertResumeAnchor(anchor, requireNotNull(samples.first().rawSeconds))
             JsFlowProbePolicy.assertSourceContinuity(anchor, requireNotNull(samples.first().rawSeconds))
+            if (transition != null) {
+                JsFlowProbePolicy.assertSourceContinuity(anchor, requireNotNull(transition.firstNew.rawSeconds))
+            }
         }
         completed.add(phase)
         return samples.last()
     }
 
-    private fun awaitSourceReplacement(oldPath: String, newPath: String): Double {
-        var lastOldPosition: Double? = null
+    private fun awaitSourceReplacement(oldPath: String, newPath: String,
+                                       oldWindowLast: EngineProgressSample): JsFlowProbePolicy.SourceTransition {
+        val probe = JsFlowProbePolicy.SourceTransitionProbe(oldPath, newPath)
+        probe.observe(oldWindowLast)
         await("quality source replacement", 20000) {
-            onMain {
-                val path = engine.getPropertyString("path")
+            val sample = onMain {
+                assertTrue("same ReactHost module", host?.currentReactContext?.getNativeModule("MpvPlayer") === module)
+                val state = requireNotNull(controller.playbackState)
+                val pathBefore = engine.getPropertyString("path")
                 val raw = engine.getPropertyDouble("time-pos")
-                // Unload can briefly reset time-pos to zero while path still
-                // names the old file. This scenario is already past 3 seconds.
-                if (path == oldPath && raw != null && raw.isFinite() && raw >= 3.0 &&
-                    engine.getPropertyBoolean("idle-active") == false &&
-                    engine.getPropertyBoolean("paused-for-cache") == false) {
-                    lastOldPosition = raw
-                }
-                path == newPath
+                val elapsed = SystemClock.elapsedRealtime()
+                val paused = engine.getPropertyBoolean("pause")
+                val idle = engine.getPropertyBoolean("idle-active")
+                val buffering = engine.getPropertyBoolean("paused-for-cache")
+                val pathAfter = engine.getPropertyString("path")
+                // Do not attribute an old position to a new path if loadfile
+                // changed the source between these JNI property reads.
+                EngineProgressSample(elapsed, raw, paused, idle, buffering,
+                    if (pathBefore == pathAfter) pathAfter else null, state.position, state.state)
             }
+            probe.observe(sample)
         }
-        return requireNotNull(lastOldPosition) { "SOURCE_REWIND: missing old-source stop position" }
+        return requireNotNull(probe.result)
     }
 
     private fun awaitEngine(path: String, paused: Boolean, title: String, anchor: Double? = null,

@@ -43,6 +43,23 @@ def validate_source_continuity(groups, pairs=SOURCE_CHANGES):
         for old_stop in [groups[old][-1]["rawSeconds"], first["resumeAnchor"]]:
             require(first["rawSeconds"] >= old_stop - .25,
                     f"SOURCE_REWIND: {new} started at {first['rawSeconds']}, old stopped at {old_stop}")
+        if new == "quality-playing-new":
+            transition = first.get("sourceTransition")
+            require(isinstance(transition, dict), "TRANSITION_WINDOW: missing early source read")
+            require(all(s.get("sourceTransition") == transition for s in groups[new]),
+                    "TRANSITION_WINDOW: inconsistent early source read")
+            for key in ["oldElapsedMs", "firstNewElapsedMs", "pollGapMs"]:
+                require(type(transition.get(key)) is int, f"TRANSITION_WINDOW: invalid {key}")
+            old_ms, new_ms, gap = (transition[k] for k in ["oldElapsedMs", "firstNewElapsedMs", "pollGapMs"])
+            require(groups[old][-1]["elapsedMs"] <= old_ms <= new_ms <= first["elapsedMs"]
+                    and 0 <= gap <= 250 and gap <= new_ms-old_ms,
+                    "TRANSITION_WINDOW: late/reversed/missing polling interval")
+            raw = transition.get("firstNewRawSeconds")
+            require(isinstance(raw, (int, float)) and not isinstance(raw, bool) and math.isfinite(raw) and raw >= 3,
+                    "TRANSITION_WINDOW: missing restored JNI position")
+            require(raw >= first["resumeAnchor"] - .25,
+                    f"SOURCE_REWIND: first restored read {raw}, old stopped at {first['resumeAnchor']}")
+            require(first["rawSeconds"] >= raw - .15, "SOURCE_REWIND: source moved backwards after early read")
 
 
 def validate_samples(rows, control=False):
@@ -141,16 +158,23 @@ def source_events(text):
 
 def self_test():
     rows = []
-    for phase in sorted(PLAYING | PAUSED):
+    order = ["baseline", "slow-skip-wait", "slow-skip-playing", "timeout-wait", "timeout-rollback",
+             "quality-interrupted-old", "quality-interrupted-new", "quality-focus-resumed",
+             "user-pause-old", "user-pause-new", "user-pause-after-focus", "explicit-play",
+             "quality-playing-old", "quality-playing-new"]
+    for index, phase in enumerate(order):
         for n in range(5):
             paused = phase in PAUSED
             start = 16.4 if phase == "quality-playing-new" else 12
             raw = start if paused else start+n*1.1
-            rows.append({"phase": phase, "elapsedMs": n*1100, "rawSeconds": raw,
+            rows.append({"phase": phase, "elapsedMs": index*10000+500+n*1100, "rawSeconds": raw,
                          "paused": paused, "idle": False, "buffering": False, "sessionMs": raw*1000,
                          "sessionState": 2 if paused else 3, "sameTrack": True, "sameTitle": True,
                          "focusOwner": FOCUS if phase in HELD else None, "foregroundPackage": "fun.upup.musicfree",
-                         "resumeAnchor": start if phase in ANCHORED else None})
+                         "resumeAnchor": start if phase in ANCHORED else None,
+                         "sourceTransition": {"oldElapsedMs": index*10000-100, "firstNewElapsedMs": index*10000,
+                                              "firstNewRawSeconds": start, "pollGapMs": 100}
+                         if phase == "quality-playing-new" else None})
     validate_samples(rows)
     checks = 1
     def rejects(value):
@@ -201,6 +225,7 @@ def self_test():
                 if row["phase"] == phase:
                     row["rawSeconds"] -= rewind
                     row["sessionMs"] -= rewind*1000
+                    if phase == "quality-playing-new": row["sourceTransition"]["firstNewRawSeconds"] -= rewind
             if rewind == .25:
                 validate_samples(altered)
                 checks += 1
@@ -217,6 +242,28 @@ def self_test():
     altered = copy.deepcopy(rows)
     for row in altered:
         if row["phase"] == "quality-playing-new": row["resumeAnchor"] += 1
+    rejects(altered)
+    # A 0.4s rewind hidden by the later playing window passed the old checker.
+    # Preserve that window and mutate only the captured early position.
+    altered = copy.deepcopy(rows)
+    for row in altered:
+        if row["phase"] == "quality-playing-new": row["sourceTransition"]["firstNewRawSeconds"] -= .4
+    try:
+        validate_samples(altered)
+    except ValueError as error:
+        require(str(error).startswith("SOURCE_REWIND:"), "early rewind rejected for the wrong reason")
+        checks += 1
+    else:
+        raise AssertionError("early rewind hidden by playback accepted")
+    for key, value in [("firstNewRawSeconds", None), ("firstNewRawSeconds", float("nan")),
+                       ("firstNewRawSeconds", True), ("pollGapMs", 251), ("pollGapMs", -1),
+                       ("oldElapsedMs", 0), ("firstNewElapsedMs", 999999), ("firstNewElapsedMs", "130000")]:
+        altered = copy.deepcopy(rows)
+        for row in altered:
+            if row["phase"] == "quality-playing-new": row["sourceTransition"][key] = value
+        rejects(altered)
+    altered = copy.deepcopy(rows)
+    next(r for r in altered if r["phase"] == "quality-playing-new")["sourceTransition"] = None
     rejects(altered)
     for field, value in [("sameTrack", False), ("sameTitle", False), ("rawSeconds", None), ("rawSeconds", float("nan")), ("idle", True), ("buffering", True)]:
         altered = copy.deepcopy(rows); altered[0][field] = value; rejects(altered)
