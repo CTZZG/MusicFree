@@ -250,9 +250,9 @@ class RealJsEngineProgressTest {
             val sample = onMain {
                 assertTrue("same ReactHost module", host?.currentReactContext?.getNativeModule("MpvPlayer") === module)
                 val state = requireNotNull(controller.playbackState)
-                val elapsed = SystemClock.elapsedRealtime()
                 val pathBefore = engine.getPropertyString("path")
                 val raw = engine.getPropertyDouble("time-pos")
+                val elapsed = SystemClock.elapsedRealtime()
                 val paused = engine.getPropertyBoolean("pause")
                 val idle = engine.getPropertyBoolean("idle-active")
                 val buffering = engine.getPropertyBoolean("paused-for-cache")
