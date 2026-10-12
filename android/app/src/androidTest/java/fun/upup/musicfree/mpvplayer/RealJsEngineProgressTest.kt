@@ -146,11 +146,9 @@ class RealJsEngineProgressTest {
         openPlayer()
         val requestAt = selectQuality("高清音质 320K")
         awaitSource("c", "320k", requestAt)
-        // The product snapshots progress when requesting the source, not before opening its menu.
-        val anchor = onMain { requireNotNull(engine.getPropertyDouble("time-pos")) }
         startVideo("quality-auto-resume")
         awaitEngine(mq, true, "JS Flow C")
-        observe("quality-interrupted-old", mq, true, held = true)
+        val anchor = requireNotNull(observe("quality-interrupted-old", mq, true, held = true).rawSeconds)
         awaitEngine(hq, true, "JS Flow C", anchor = anchor)
         observe("quality-interrupted-new", hq, true, held = true, anchor = anchor)
         awaitVideoReleased("quality-auto-resume")
@@ -161,11 +159,10 @@ class RealJsEngineProgressTest {
         // Repeat while paused explicitly during the interruption: focus return must not play.
         val secondRequestAt = selectQuality("标准音质 192K")
         awaitSource("c", "192k", secondRequestAt)
-        val pausedAnchor = onMain { requireNotNull(engine.getPropertyDouble("time-pos")) }
         startVideo("quality-user-pause")
         awaitEngine(hq, true, "JS Flow C")
         onMain { controller.transportControls.pause() }
-        observe("user-pause-old", hq, true, held = true)
+        val pausedAnchor = requireNotNull(observe("user-pause-old", hq, true, held = true).rawSeconds)
         awaitEngine(mq, true, "JS Flow C", anchor = pausedAnchor)
         observe("user-pause-new", mq, true, held = true, anchor = pausedAnchor)
         awaitVideoReleased("quality-user-pause")
@@ -174,10 +171,21 @@ class RealJsEngineProgressTest {
         awaitEngine(mq, false, "JS Flow C")
         observe("explicit-play", mq, false)
         awaitText { label(it).contains("音质：MQ") }
+
+        // The old source keeps playing throughout this twelve-second request.
+        val playingRequestAt = selectQuality("高清音质 320K")
+        awaitSource("c", "320k", playingRequestAt)
+        observe("quality-playing-old", mq, false)
+        val oldStop = awaitSourceReplacement(mq, hq)
+        // Do not wait for the new position to catch up to the anchor: a rewind
+        // must fail on its first ready sample, even if it would catch up later.
+        awaitEngine(hq, false, "JS Flow C")
+        observe("quality-playing-new", hq, false, anchor = oldStop)
+        awaitText { label(it).contains("音质：HQ") }
         JsFlowProbePolicy.assertComplete(completed)
     }
 
-    private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false, anchor: Double? = null) {
+    private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false, anchor: Double? = null): EngineProgressSample {
         var nextSampleAt = SystemClock.elapsedRealtime()
         val samples = List(5) {
             val remaining = nextSampleAt - SystemClock.elapsedRealtime()
@@ -216,7 +224,31 @@ class RealJsEngineProgressTest {
             sample
         }
         if (paused) EngineProgressProbe.assertPaused(samples, path) else EngineProgressProbe.assertPlaying(samples, path)
+        if (anchor != null && phase in setOf("quality-interrupted-new", "user-pause-new", "quality-playing-new")) {
+            JsFlowProbePolicy.assertResumeAnchor(anchor, requireNotNull(samples.first().rawSeconds))
+            JsFlowProbePolicy.assertSourceContinuity(anchor, requireNotNull(samples.first().rawSeconds))
+        }
         completed.add(phase)
+        return samples.last()
+    }
+
+    private fun awaitSourceReplacement(oldPath: String, newPath: String): Double {
+        var lastOldPosition: Double? = null
+        await("quality source replacement", 20000) {
+            onMain {
+                val path = engine.getPropertyString("path")
+                val raw = engine.getPropertyDouble("time-pos")
+                // Unload can briefly reset time-pos to zero while path still
+                // names the old file. This scenario is already past 3 seconds.
+                if (path == oldPath && raw != null && raw.isFinite() && raw >= 3.0 &&
+                    engine.getPropertyBoolean("idle-active") == false &&
+                    engine.getPropertyBoolean("paused-for-cache") == false) {
+                    lastOldPosition = raw
+                }
+                path == newPath
+            }
+        }
+        return requireNotNull(lastOldPosition) { "SOURCE_REWIND: missing old-source stop position" }
     }
 
     private fun awaitEngine(path: String, paused: Boolean, title: String, anchor: Double? = null,

@@ -29,4 +29,16 @@ class JsFlowProbePolicyTest {
         assertEquals(null, JsFlowProbePolicy.focusOwner("not a focus stack"))
         assertEquals(null, JsFlowProbePolicy.focusOwner(stack + "\nAudio Focus stack entries:\n"))
     }
+
+    @Test fun aNewQualitySourceMustNotRewindPastTheOldStop() {
+        JsFlowProbePolicy.assertSourceContinuity(12.0, 11.75)
+        JsFlowProbePolicy.assertSourceContinuity(12.0, 12.3)
+        for (actual in listOf(11.749, 0.0, Double.NaN, Double.POSITIVE_INFINITY)) {
+            val failure = assertThrows(IllegalStateException::class.java) {
+                JsFlowProbePolicy.assertSourceContinuity(12.0, actual)
+            }
+            org.junit.Assert.assertTrue(failure.message!!.startsWith("SOURCE_REWIND:"))
+        }
+        assertThrows(IllegalStateException::class.java) { JsFlowProbePolicy.assertSourceContinuity(Double.NaN, 12.0) }
+    }
 }
