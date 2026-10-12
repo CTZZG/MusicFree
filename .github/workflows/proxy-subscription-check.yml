@@ -8,11 +8,13 @@ on:
             - 'android/app/src/androidTest/**'
             # 播放服务发的通知（Live Update 样式）也在这里的 Android 16 模拟器上测
             - 'android/app/src/main/java/fun/upup/musicfree/mpvplayer/**'
+            - 'android/app/src/test/java/fun/upup/musicfree/mpvplayer/**'
             - 'android/app/src/main/java/fun/upup/musicfree/lyricUtil/**'
             - 'src/components/base/appBar.tsx'
             - 'src/pages/setting/settingTypes/pluginSetting/**'
             - 'e2e/flows/plugin-*.yaml'
             - 'e2e/proxy-subscription-check.sh'
+            - 'e2e/lib/engine_progress_artifact*.sh'
             - '.github/workflows/proxy-subscription-check.yml'
     workflow_dispatch:
 
@@ -44,6 +46,8 @@ jobs:
                   java-version: '17'
                   cache: gradle
             - run: npm ci --no-audit --no-fund
+            - name: Check raw sample export failure paths
+              run: bash e2e/lib/engine_progress_artifact_test.sh
             - name: Restore native test APKs
               id: native-apks
               uses: actions/cache/restore@v4
@@ -78,7 +82,7 @@ jobs:
                   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
                   sudo udevadm control --reload-rules
                   sudo udevadm trigger --name-match=kvm
-            - name: Check native proxy routing and record subscription transition
+            - name: Check proxy routing, real-engine Live Update progress and subscription transition
               uses: reactivecircus/android-emulator-runner@v2
               with:
                   api-level: 36

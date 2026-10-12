@@ -45,12 +45,40 @@
 “在播”和“进度在走”都看系统媒体会话（`dumpsys media_session`）。Beta E2E 固定用 Android 14，
 不运行 Android 16 Live Update 的秒级通知刷新；这套检查验证的是会话进度，不直接验证音频输出。
 原生 `currentNotificationPosition()` 在更新会话时仍可估算进度。Android 16 启用 Live Update 后，
-服务每秒刷新会话，估算更容易被误认为 mpv 持续前进；不能直接推广本套结论，要增加 mpv 原始进度
-或真实音频输出的独立证据。“一直停着”大约每秒采样一次媒体会话，采到在播、或者最后进度往前走了都算失败；
+服务每秒刷新会话，估算更容易被误认为 mpv 持续前进；不能直接推广本套结论。
+Android 16 的独立引擎检查见下面，尚未直接验证音频输出。
+“一直停着”大约每秒采样一次媒体会话，采到在播、或者最后进度往前走了都算失败；
 实际采样间隔还包含 adb 耗时，不能保证捕捉所有一秒或更短的误播。谁拿着音频焦点看 `dumpsys audio` 的
 焦点栈（`lib/audio_focus.py`）。这些判断在 `lib/pause_checks.sh`，`lib/pause_checks_test.sh` 用假的
 adb 和时钟自检：视频没结束就接着放、视频结束后一直不放都要判失败，CI 跑模拟器之前先跑这个自检。断网用的是关掉模拟器的 Wi-Fi（移动数据在开头就关了），等系统的默认网络
 变成 none 再点歌。
+
+## Android 16：Live Update 与真实引擎进度
+
+`proxy-subscription-check.yml` 的 API 36 模拟器运行 `LiveUpdateEngineProgressTest`。
+它通过真实 `MpvPlayerModule.initialize/loadAndPlay/pause/resume` 加载现场生成的 90 秒 WAV，
+使用正常的 AudioTrack/OpenSL ES 配置。只替换 JS 事件接收器，不启动 Metro 或歌曲插件。
+JNI 句柄通过测试侧反射读取，没有给产品增加调试端口或缓存回退。
+
+每个窗口五次采样、间隔 1.1 秒，分别读 JNI `time-pos/pause/idle-active/paused-for-cache/path`
+和 `MediaControllerCompat.playbackState`，并确认通知确实采用 `ProgressStyle`。
+播放和恢复要求每段原始进度前进、曲目正确、不在暂停/空闲/缓冲，估算进度与原始进度差不超过 1.5 秒；
+暂停要求两个时钟都保持不变。纯 JVM 的 `EngineProgressProbeTest` 覆盖缺失读数、单段停滞、错误曲目、
+窗口不足、间隔过短/逆序、间隔过长、跳跃、状态不符和投影漂移。
+
+负面对照先真正暂停引擎、卸下模块观察器，再仅在测试中给服务注入过期的“playing”状态。
+确认 Live Update 估算进度仍前进至少 2.5 秒，但同一个播放检查必须以 `RAW_STALLED` 拒绝；
+随后重新挂回观察器、恢复真实播放，也要通过检查。这个对照验证投影不能冒充引擎前进，
+没有模拟 CPU 真正挂起、网络阻塞或物理音频输出。
+
+工作流除了检查每个仪器测试的完成状态，还要求五个阶段各五条原始样本。
+`proxy-subscription-<run_id>` 附件包含 `instrumentation-summary.json` 和
+`engine-progress-samples.jsonl`；后者的原始读数不从媒体会话推算。
+导出前用 `adb shell` 确认文件存在，临时副本通过 JSONL 校验后才替换已保存的证据；
+缺文件、断连或 `exec-out` 返回错误文本时，清理不会覆盖之前的有效副本。
+`e2e/lib/engine_progress_artifact_test.sh` 在该工作流运行，覆盖导出的失败路径；
+每次设备运行另记录缺文件时 `exec-out` 的实际返回码和输出，附件为 `missing-sample-exec-out.txt`。
+这是 API 36 原生层的独立补充，没有把 Android 14 的锁屏、省电、切歌网络测试搬到 API 36。
 
 ## 故障注入（第 17、18 步，`storage.sh`）
 

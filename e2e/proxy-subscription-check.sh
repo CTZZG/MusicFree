@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Debug app + Metro on a disposable emulator. No release/tag is published.
 set -euo pipefail
+source "$(dirname "$0")/lib/engine_progress_artifact.sh"
 
 OUT="$PWD/proxy-subscription-results"
 mkdir -p "$OUT"
 METRO_PID=""
 RECORD_PID=""
 cleanup() {
+    # Keep partial raw samples even when an instrumentation assertion fails.
+    export_engine_progress_samples "$OUT/engine-progress-samples.jsonl" || true
     if [ -n "$RECORD_PID" ]; then
         adb shell pkill -2 screenrecord 2>/dev/null || true
         wait "$RECORD_PID" 2>/dev/null || true
@@ -19,7 +22,22 @@ trap cleanup EXIT
 
 adb install -r -t android/app/build/outputs/apk/debug/app-x86_64-debug.apk
 adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest"
+# Raw engine samples are written by instrumentation, independently of the
+# service's projected clock. Do not retain samples from a previous installation.
+adb shell run-as fun.upup.musicfree rm -f files/engine-progress-samples.jsonl
+# Record this adb version's actual missing-file behavior as text, never JSONL.
+# The exporter must reject it regardless of whether exec-out returns zero.
+MISSING_SAMPLE_STATUS=0
+adb exec-out run-as fun.upup.musicfree cat files/engine-progress-samples.jsonl \
+    > "$OUT/missing-sample-exec-out.txt" 2>&1 || MISSING_SAMPLE_STATUS=$?
+echo "Missing sample exec-out probe: status=$MISSING_SAMPLE_STATUS bytes=$(wc -c < "$OUT/missing-sample-exec-out.txt")"
+if export_engine_progress_samples "$OUT/missing-sample-probe.jsonl"; then
+    echo 'Missing-file sample export unexpectedly succeeded' >&2
+    exit 1
+fi
+test ! -e "$OUT/missing-sample-probe.jsonl"
+echo 'Missing sample export rejected without creating a JSONL artifact.'
+TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest"
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
     > "$OUT/instrumentation.log" 2>&1
@@ -59,6 +77,18 @@ Path(sys.argv[1]).with_name('instrumentation-summary.json').write_text(json.dump
 print(json.dumps({'passed': passed, 'expected': expected, 'completed': len(completed)}))
 sys.exit(0 if passed else 1)
 PY
+export_engine_progress_samples "$OUT/engine-progress-samples.jsonl"
+python3 - "$OUT/engine-progress-samples.jsonl" <<'PY'
+import json, sys
+from collections import Counter
+from pathlib import Path
+rows = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()]
+phases = Counter(row['phase'] for row in rows)
+expected = {'playing', 'paused', 'resumed', 'negative-stale-projection', 'recovered-after-control'}
+if set(phases) != expected or any(n != 5 for n in phases.values()):
+    raise SystemExit(f'Incomplete raw engine evidence: {dict(phases)}')
+print('Raw JNI progress evidence:', dict(phases))
+PY
 adb reverse tcp:8081 tcp:8081
 adb shell settings put global window_animation_scale 2
 adb shell settings put global transition_animation_scale 2
@@ -87,5 +117,5 @@ wait "$RECORD_PID" || true
 RECORD_PID=""
 adb pull /sdcard/subscription-transition.mp4 "$OUT/subscription-transition.mp4"
 maestro hierarchy --compact --no-reinstall-driver > "$OUT/final-hierarchy.txt"
-echo 'Native proxy tests passed; subscription entry/back flow passed with animations enabled.' \
+echo 'Native proxy and real-engine Live Update tests passed; subscription entry/back flow passed with animations enabled.' \
     | tee "$OUT/summary.txt"
