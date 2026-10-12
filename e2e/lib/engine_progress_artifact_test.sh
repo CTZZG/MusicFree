@@ -7,14 +7,15 @@ trap 'rm -rf "$TASK_TMP"' EXIT
 DESTINATION="$TASK_TMP/samples.jsonl"
 printf '%s\n' '{"phase":"playing","rawSeconds":1}' > "$TASK_TMP/valid.jsonl"
 MODE=valid
+SOURCE=files/engine-progress-samples.jsonl
 
 adb() {
     echo "$*" >> "$TASK_TMP/calls"
     case "$*" in
-        'shell run-as fun.upup.musicfree test -f files/engine-progress-samples.jsonl')
+        "shell run-as fun.upup.musicfree test -f $SOURCE")
             case "$MODE" in missing) return 1 ;; disconnected) return 255 ;; esac
             ;;
-        'exec-out run-as fun.upup.musicfree cat files/engine-progress-samples.jsonl')
+        "exec-out run-as fun.upup.musicfree cat $SOURCE")
             case "$MODE" in
                 valid) cat "$TASK_TMP/valid.jsonl" ;;
                 missing|removed-after-check) echo 'cat: files/engine-progress-samples.jsonl: No such file or directory' ;;
@@ -63,3 +64,9 @@ for MODE in missing disconnected removed-after-check broken-json empty scalar no
     test ! -e "${DESTINATION}.partial"
     echo "PASS $MODE: earlier evidence preserved"
 done
+
+MODE=valid
+SOURCE=files/js-flow-engine-samples.jsonl
+export_engine_progress_samples "$DESTINATION" "$SOURCE"
+cmp "$TASK_TMP/valid.jsonl" "$DESTINATION"
+echo 'PASS explicit source: existence check and copy use the requested fixture file'

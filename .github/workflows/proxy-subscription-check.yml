@@ -12,9 +12,24 @@ on:
             - 'android/app/src/main/java/fun/upup/musicfree/lyricUtil/**'
             - 'src/components/base/appBar.tsx'
             - 'src/pages/setting/settingTypes/pluginSetting/**'
+            - 'src/core/trackPlayer/**'
+            - 'src/core/playerAdapter/**'
+            - 'src/core/pluginManager/**'
+            - 'src/core/lyricManager.ts'
+            - 'src/entry/bootstrap/bootstrap.ts'
+            - 'src/components/panels/types/musicQuality.tsx'
+            - 'src/pages/musicDetail/**'
+            - 'src/pages/searchPage/**'
+            - 'src/components/musicBar/**'
+            - 'src/utils/qualities.ts'
+            - 'src/core/i18n/languages/**'
             - 'e2e/flows/plugin-*.yaml'
             - 'e2e/proxy-subscription-check.sh'
             - 'e2e/lib/engine_progress_artifact*.sh'
+            - 'e2e/android16-js-flow-check.sh'
+            - 'e2e/lib/js_flow_evidence.py'
+            - 'e2e/plugins/e2e-source-js-flow.js'
+            - 'e2e/focus-app/**'
             - '.github/workflows/proxy-subscription-check.yml'
     workflow_dispatch:
 
@@ -32,6 +47,7 @@ jobs:
         env:
             HUSKY: '0'
             NODE_ENV: development
+            E2E_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         steps:
             - uses: actions/checkout@v5
               with:
@@ -47,7 +63,13 @@ jobs:
                   cache: gradle
             - run: npm ci --no-audit --no-fund
             - name: Check raw sample export failure paths
-              run: bash e2e/lib/engine_progress_artifact_test.sh
+              run: |
+                  bash e2e/lib/engine_progress_artifact_test.sh
+                  python3 -I e2e/lib/js_flow_evidence.py --self-test
+            - name: Build transient audio focus helper
+              run: |
+                  bash e2e/focus-app/build.sh "$RUNNER_TEMP/api36-focus.apk"
+                  echo "E2E_FOCUS_APK=$RUNNER_TEMP/api36-focus.apk" >> "$GITHUB_ENV"
             - name: Restore native test APKs
               id: native-apks
               uses: actions/cache/restore@v4

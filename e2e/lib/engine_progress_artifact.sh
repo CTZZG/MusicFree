@@ -5,12 +5,13 @@
 # the saved evidence. A cleanup attempt must preserve any earlier valid copy.
 export_engine_progress_samples() {
     local destination=$1
+    local source=${2:-files/engine-progress-samples.jsonl}
     local temporary="${destination}.partial"
-    if ! adb shell run-as fun.upup.musicfree test -f files/engine-progress-samples.jsonl \
+    if ! adb shell run-as fun.upup.musicfree test -f "$source" \
         > /dev/null 2>&1; then
         return 1
     fi
-    if ! adb exec-out run-as fun.upup.musicfree cat files/engine-progress-samples.jsonl \
+    if ! adb exec-out run-as fun.upup.musicfree cat "$source" \
         > "$temporary" 2>/dev/null; then
         rm -f "$temporary"
         return 1
