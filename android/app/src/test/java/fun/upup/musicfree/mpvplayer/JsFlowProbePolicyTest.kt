@@ -41,4 +41,37 @@ class JsFlowProbePolicyTest {
         }
         assertThrows(IllegalStateException::class.java) { JsFlowProbePolicy.assertSourceContinuity(Double.NaN, 12.0) }
     }
+
+    @Test fun firstRestoredNewSourceIsKeptEvenWhenLaterPlaybackCatchesUp() {
+        fun sample(ms: Long, path: String?, raw: Double?, idle: Boolean = false, buffering: Boolean = false) =
+            EngineProgressSample(ms, raw, false, idle, buffering, path, ((raw ?: 0.0) * 1000).toLong(), 3)
+        val probe = JsFlowProbePolicy.SourceTransitionProbe("old", "new")
+        org.junit.Assert.assertFalse(probe.observe(sample(0, "old", 99.9)))
+        org.junit.Assert.assertFalse(probe.observe(sample(100, "old", 100.0)))
+        org.junit.Assert.assertFalse(probe.observe(sample(200, "old", 0.0)))
+        org.junit.Assert.assertFalse(probe.observe(sample(300, "new", 0.0)))
+        org.junit.Assert.assertFalse(probe.observe(sample(400, "new", Double.NaN)))
+        org.junit.Assert.assertFalse(probe.observe(sample(450, null, 99.6)))
+        org.junit.Assert.assertFalse(probe.observe(sample(500, "new", 99.6, buffering = true)))
+        org.junit.Assert.assertTrue(probe.observe(sample(600, "new", 99.6)))
+        val first = requireNotNull(probe.result)
+        val oldPosition = requireNotNull(first.old.rawSeconds)
+        val firstPosition = requireNotNull(first.firstNew.rawSeconds)
+        assertEquals(100.0, oldPosition, 0.0)
+        assertEquals(99.6, firstPosition, 0.0)
+        assertEquals(100L, first.pollGapMs)
+        for (ms in 700L..1200L step 100L) {
+            org.junit.Assert.assertTrue(probe.observe(sample(ms, "new", 99.6 + (ms - 600) / 1000.0)))
+        }
+        assertEquals(first, probe.result)
+        // The old, delayed window check accepts 100.2; the early read rejects
+        // the 0.4-second rewind even though playback caught up afterwards.
+        JsFlowProbePolicy.assertSourceContinuity(100.0, 100.2)
+        assertThrows(IllegalStateException::class.java) {
+            JsFlowProbePolicy.assertSourceContinuity(oldPosition, firstPosition)
+        }
+        val slow = JsFlowProbePolicy.SourceTransitionProbe("old", "new")
+        slow.observe(sample(0, "old", 100.0))
+        assertThrows(IllegalStateException::class.java) { slow.observe(sample(251, "new", 100.0)) }
+    }
 }
