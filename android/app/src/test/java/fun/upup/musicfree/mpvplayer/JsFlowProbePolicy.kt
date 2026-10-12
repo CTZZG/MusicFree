@@ -29,6 +29,7 @@ object JsFlowProbePolicy {
         val old: EngineProgressSample,
         val firstNew: EngineProgressSample,
         val pollGapMs: Long,
+        val maxPollGapMs: Long,
     )
 
     /** Keep the earliest restored read, before readiness waits or settling sleeps. */
@@ -37,21 +38,30 @@ object JsFlowProbePolicy {
             private set
         private var lastOld: EngineProgressSample? = null
         private var previousElapsedMs: Long? = null
+        private var maxPollGapMs = 0L
 
         fun observe(sample: EngineProgressSample): Boolean {
             if (result != null) return true
             val gap = previousElapsedMs?.let { sample.elapsedMs - it }
             check(gap == null || gap >= 0) { "TRANSITION_WINDOW: reversed clock" }
             previousElapsedMs = sample.elapsedMs
+            // Keep gaps even for unload/restore polls without a usable position.
+            if (lastOld != null && gap != null) maxPollGapMs = maxOf(maxPollGapMs, gap)
             val raw = sample.rawSeconds
             // The scenario is already past 3 seconds. Loading can temporarily
             // show zero before the restore seek; never wait relative to oldStop.
             if (raw == null || !raw.isFinite() || raw < 3.0 || sample.idle != false || sample.buffering != false) return false
-            if (sample.path == oldPath) lastOld = sample
+            if (sample.path == oldPath) {
+                lastOld = sample
+                // This fresh old position replaces the earlier anchor; only
+                // intervals after this reading belong to the transition.
+                maxPollGapMs = 0L
+            }
             if (sample.path != newPath) return false
             val old = requireNotNull(lastOld) { "TRANSITION_WINDOW: missing old source" }
             check(gap != null && gap <= 250) { "TRANSITION_WINDOW: first new read followed a $gap ms polling gap" }
-            result = SourceTransition(old, sample, gap)
+            check(maxPollGapMs <= 250) { "TRANSITION_WINDOW: transition included a $maxPollGapMs ms polling gap" }
+            result = SourceTransition(old, sample, gap, maxPollGapMs)
             return true
         }
     }

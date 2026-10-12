@@ -222,6 +222,7 @@ class RealJsEngineProgressTest {
                         .put("firstNewElapsedMs", it.firstNew.elapsedMs)
                         .put("firstNewRawSeconds", it.firstNew.rawSeconds)
                         .put("pollGapMs", it.pollGapMs)
+                        .put("maxPollGapMs", it.maxPollGapMs)
                 } ?: JSONObject.NULL)
             }
             samplesFile.appendText("$row\n")
