@@ -440,13 +440,15 @@ describe("quality reload uses the current position when committing", () => {
             expect(mockNative.state).toBe("playing");
             oldPosition += 0.4;
             positionAtReplacement = oldPosition;
-            await originalLoad(payload);
+            return originalLoad(payload);
         });
 
         const changing = trackPlayer.changeQualityWithResult("320k");
         await jest.advanceTimersByTimeAsync(600);
+        expect(mockNativeMpvPlayer.seekTo).not.toHaveBeenCalled();
         await fileLoaded();
         await expect(changing).resolves.toMatchObject({ success: true });
+        expect(mockNativeMpvPlayer.seekTo).toHaveBeenCalledTimes(1);
         expect(positionAtReplacement).toBe(30.4);
         expect(mockNative.active?.url).toBe("https://test.example/A-320k.mp3");
         expect(mockNativeMpvPlayer.seekTo).toHaveBeenLastCalledWith(positionAtReplacement);
