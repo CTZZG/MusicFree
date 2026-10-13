@@ -85,6 +85,7 @@ import {
     getRememberedAlternate,
     rememberAlternate,
 } from "./alternateSource";
+import { resolveMediaSourceCandidate } from "../mediaSource/resolveCandidate";
 import { recordPlayAttempt } from "./playAttemptLog";
 import { shouldEvictRecoveredRemoteSourceCacheAfterFailure } from "./sourceRecoveryPolicy";
 import {
@@ -115,7 +116,6 @@ import {
     createMediaSourceFailureResult,
     MediaSourceResolutionError,
     mediaSourceFailureFromPluginResult,
-    preferMediaSourceFailure,
     preferUserFacingMediaSourceFailure,
     type MediaSourceAttemptType,
     type MediaSourceFailure,
@@ -5675,67 +5675,20 @@ class TrackPlayer
         if (!plugin || !this.pluginManagerService.isPluginEnabled(plugin)) {
             return null;
         }
-        for (const quality of qualityOrder) {
-            if (!isActive()) {
-                return "inactive";
-            }
-            const attemptContext = {
-                mediaKey: getMediaUniqueKey(alternate),
-                pluginName: plugin.name,
-                quality,
-            };
-            let candidate: IPlugin.IMediaSourceResult | null = null;
-            let attemptFailure: MediaSourceFailure | null = null;
-            let timedOut = false;
-            try {
-                candidate = await this.requestPluginMediaSource(
-                    plugin,
-                    alternate,
-                    quality,
-                    timedOutSources,
-                );
-            } catch (error) {
-                timedOut = error instanceof MediaSourceTimeoutError;
-                attemptFailure = classifyMediaSourceFailure(error, attemptContext);
-            }
-            if (!candidate?.url) {
-                attemptFailure = preferMediaSourceFailure(
-                    attemptFailure,
-                    getMediaSourceResultFailure(candidate, attemptContext, "unavailable"),
-                );
-                rememberSourceFailure?.(attemptFailure, "similar");
-                // 这个来源拒绝访问或没回应：换下一个候选，不再逐个音质等
-                if (timedOut || isProviderAccessFailure(attemptFailure)) {
-                    return null;
-                }
-                continue;
-            }
-            if (this.isUnsupportedEncryptedSource(candidate)) {
-                rememberSourceFailure?.(
-                    createMediaSourceFailure("encrypted-unsupported", attemptContext),
-                    "similar",
-                );
-                continue;
-            }
-            const source = await this.createPlayableSource(
-                candidate,
-                alternate,
-                quality,
-                "similar-plugin",
-            );
-            if (source?.url) {
-                return {
-                    musicItem: alternate,
-                    source,
-                    quality: source.quality ?? quality,
-                };
-            }
-            rememberSourceFailure?.(
-                getMediaSourceResultFailure(source, attemptContext, "source-rejected"),
-                "similar",
-            );
-        }
-        return null;
+        return resolveMediaSourceCandidate({
+            musicItem: alternate,
+            pluginName: plugin.name,
+            qualityOrder,
+            isActive,
+            isTimeout: error => error instanceof MediaSourceTimeoutError,
+            request: quality => this.requestPluginMediaSource(plugin, alternate, quality, timedOutSources),
+            prepare: (candidate, quality) => this.isUnsupportedEncryptedSource(candidate)
+                ? Promise.resolve(createMediaSourceFailureResult(createMediaSourceFailure("encrypted-unsupported", {
+                    mediaKey: getMediaUniqueKey(alternate), pluginName: plugin.name, quality,
+                })))
+                : this.createPlayableSource(candidate, alternate, quality, "similar-plugin"),
+            onFailure: failure => rememberSourceFailure?.(failure, "similar"),
+        });
     }
 
     /** 用户看得到的播放失败：留下失败提示，并记进播放统计 */

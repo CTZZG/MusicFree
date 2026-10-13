@@ -81,9 +81,9 @@ kv_sha() {
 
 # ---- 下载出来的文件 ----
 
-# downloaded_files：设备上文件名带 "E2E Tone" 的歌曲文件（不算下载缓存），每行 "sha256  路径"，按路径排序
+# downloaded_files：设备上文件名带 "E2E " 的歌曲文件（不算下载缓存），每行 "sha256  路径"，按路径排序
 downloaded_files() {
-    adb shell "find '$MEDIA_ROOT' -type f -name '*E2E Tone*' ! -path '*/cache/*' -exec sha256sum {} +" 2>/dev/null |
+    adb shell "find '$MEDIA_ROOT' -type f -name '*E2E *' ! -path '*/cache/*' -exec sha256sum {} +" 2>/dev/null |
         tr -d '\r' | sort -k2
 }
 

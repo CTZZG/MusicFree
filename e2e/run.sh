@@ -262,7 +262,13 @@ install_plugin e2e-source-b.js || finish
 # 17、18 步：下载、旧版数据迁移的故障注入（storage.sh）
 # shellcheck source=storage.sh
 source "$HERE/storage.sh"
+source "$HERE/download-source.sh"
+if [ "$E2E_SUITE" = download-source ]; then
+    run_download_source_checks
+    finish
+fi
 run_storage_checks() {
+    run_download_source_checks
     run_download_fault_checks
     run_legacy_upgrade_checks
 }

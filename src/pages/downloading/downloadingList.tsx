@@ -169,6 +169,10 @@ function DownloadingListItemImpl(props: DownloadingListItemProps) {
         description = t("downloading.downloadStatus.paused");
     }
 
+    if (taskInfo?.resolvedSource?.kind === "remembered") {
+        description += ` · ${t("downloading.actualSource", { source: taskInfo.resolvedSource.platform })}`;
+    }
+
     const canUseNativeControls = downloader.isNativeDownloadControlAvailable();
     const canPause =
         canUseNativeControls && status === DownloadStatus.Downloading;

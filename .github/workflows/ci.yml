@@ -29,8 +29,10 @@ jobs:
               uses: ./.github/actions/quality-gate
 
             # 纯 shell/Python 自检，无需模拟器。即使不跑 Beta，也防止省电检查重新出现误报。
-            - name: Power-check self-tests
+            - name: Device-check self-tests
               run: |
+                  python3 -I e2e/lib/kvstore.py --self-test
+                  bash e2e/lib/download_source_test.sh
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/power_checks_test.sh
                   bash e2e/lib/power_environment_test.sh
