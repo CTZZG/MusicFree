@@ -36,12 +36,12 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
-it("tries a remembered source after one 6-second timeout without retrying the hung source's other qualities", async () => {
+it("tries original qualities within 9 seconds while preserving the remembered source's reserved budget", async () => {
     a.methods.getMediaSource.mockImplementation(() => new Promise(() => {}));
     const loading = resolveDownloadMediaSource(options());
-    await jest.advanceTimersByTimeAsync(6000);
+    await jest.advanceTimersByTimeAsync(9000);
     expect(await loading).toMatchObject({ identity: { kind: "remembered", platform: "B" } });
-    expect(a.methods.getMediaSource).toHaveBeenCalledTimes(1);
+    expect(a.methods.getMediaSource).toHaveBeenCalledTimes(2);
 });
 
 it("bounds two hung sources within the 15-second total budget", async () => {
@@ -50,7 +50,7 @@ it("bounds two hung sources within the 15-second total budget", async () => {
     const loading = resolveDownloadMediaSource(options());
     await jest.advanceTimersByTimeAsync(15000);
     expect(await loading).toBeNull();
-    expect(a.methods.getMediaSource).toHaveBeenCalledTimes(1);
+    expect(a.methods.getMediaSource).toHaveBeenCalledTimes(2);
     expect(b.methods.getMediaSource).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
 });

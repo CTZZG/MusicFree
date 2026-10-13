@@ -45,6 +45,7 @@ export async function resolveDownloadMediaSource<T extends IPlugin.IMediaSourceR
             qualityOrder: options.qualityOrder,
             isActive: candidateActive,
             isTimeout: isTimeoutError,
+            timeoutPolicy: "try-next-quality",
             request: quality => {
                 const budget = remaining(until);
                 if (budget <= 0) {

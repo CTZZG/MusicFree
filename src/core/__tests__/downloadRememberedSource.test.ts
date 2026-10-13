@@ -319,3 +319,46 @@ it("does not call a remembered plugin uninstalled while the original request wai
     expect((await loading).status).toBe("Error");
     expect(alternateSource).not.toHaveBeenCalled();
 });
+
+it("continues to a working lower quality after the original quality times out without a remembered source", async () => {
+    jest.useFakeTimers();
+    try {
+        const { original } = pair();
+        mockConfig.set("basic.downloadQualityOrder", "desc");
+        originalSource.mockImplementation((_item: unknown, quality: string) => quality === "320k"
+            ? new Promise(() => {})
+            : Promise.resolve({ url: "https://example.com/working-192.mp3", quality: "192k" }));
+        downloader.download(original, "320k");
+        await jest.advanceTimersByTimeAsync(6000);
+        const task = downloader.getDownloadDiagnosticSnapshot().tasks.find((x: any) => x.id === original.id);
+        expect(task.status).toBe("Completed");
+        expect(task.quality).toBe("192k");
+        expect(originalSource.mock.calls.map((args: any[]) => args[1])).toEqual(["320k", "192k"]);
+        expect(RNFS.downloadFile).toHaveBeenCalledWith(expect.objectContaining({ fromUrl: "https://example.com/working-192.mp3" }));
+        expect(alternateSource).not.toHaveBeenCalled();
+    } finally {
+        jest.useRealTimers();
+    }
+});
+
+it("continues to a plain quality after the original QMC probe times out without a remembered source", async () => {
+    jest.useFakeTimers();
+    try {
+        const { original } = pair();
+        mockConfig.set("basic.downloadQualityOrder", "desc");
+        originalSource.mockImplementation(async (_item: unknown, quality: string) => quality === "flac"
+            ? { url: "https://example.com/slow.mflac", ekey: "probe-key", quality: "flac" }
+            : { url: "https://example.com/working-320.mp3", quality: "320k" });
+        inspectQmcMediaSource.mockImplementationOnce(() => new Promise(() => {}));
+        downloader.download(original, "flac");
+        await jest.advanceTimersByTimeAsync(8000);
+        const task = downloader.getDownloadDiagnosticSnapshot().tasks.find((x: any) => x.id === original.id);
+        expect(task.status).toBe("Completed");
+        expect(task.quality).toBe("320k");
+        expect(originalSource.mock.calls.map((args: any[]) => args[1])).toEqual(["flac", "320k"]);
+        expect(Qmc.decryptFile).not.toHaveBeenCalled();
+        expect(RNFS.downloadFile).toHaveBeenCalledWith(expect.objectContaining({ fromUrl: "https://example.com/working-320.mp3" }));
+    } finally {
+        jest.useRealTimers();
+    }
+});

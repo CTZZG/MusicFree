@@ -23,6 +23,8 @@ export async function resolveMediaSourceCandidate<T extends IPlugin.IMediaSource
     request: (quality: IMusic.IQualityKey) => Promise<IPlugin.IMediaSourceResult | null>;
     prepare: (source: IPlugin.IMediaSourceResult, quality: IMusic.IQualityKey) => Promise<T | null>;
     isTimeout: (error: unknown) => boolean;
+    /** Playback stops a hung source; downloads may try another quality within their existing deadline. */
+    timeoutPolicy?: "stop" | "try-next-quality";
     onFailure?: (failure: MediaSourceFailure) => void;
 }): Promise<ResolvedMediaSource<T> | "inactive" | null> {
     const { musicItem, pluginName, isActive } = options;
@@ -48,7 +50,7 @@ export async function resolveMediaSourceCandidate<T extends IPlugin.IMediaSource
                 ? mediaSourceFailureFromPluginResult(candidate.failure, context)
                 : createMediaSourceFailure("unavailable", context));
             options.onFailure?.(failure ?? createMediaSourceFailure("unavailable", context));
-            if (timedOut || isProviderAccessFailure(failure)) {
+            if ((timedOut && options.timeoutPolicy !== "try-next-quality") || isProviderAccessFailure(failure)) {
                 return null;
             }
             continue;
@@ -69,7 +71,7 @@ export async function resolveMediaSourceCandidate<T extends IPlugin.IMediaSource
         options.onFailure?.(failure ?? (source?.failure
             ? mediaSourceFailureFromPluginResult(source.failure, context)
             : createMediaSourceFailure("source-rejected", context)));
-        if (timedOut) {
+        if (timedOut && options.timeoutPolicy !== "try-next-quality") {
             return null;
         }
     }
