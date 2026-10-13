@@ -3420,6 +3420,7 @@ class TrackPlayer
                                     ) as unknown as MusicFreePlayerTrack,
                                     playingState === "playing",
                                     resumePosition,
+                                    true,
                                 ),
                             isTargetCurrent: () =>
                                 this.isCurrentMusic(musicItem),
@@ -4021,6 +4022,7 @@ class TrackPlayer
         track: MusicFreePlayerTrack,
         autoPlay = true,
         seekTo?: number,
+        preservePosition = false,
     ) {
         const queueIndex = this.getMusicIndexInPlayList(
             track as unknown as IMusic.IMusicItem,
@@ -4046,7 +4048,7 @@ class TrackPlayer
         }
         // 用户暂停着、或者系统打断着，按暂停装载（见 PlaybackIntent）
         const shouldAutoPlay = autoPlay && this.playbackIntent.mayAutoPlay();
-        const initialProgress = this.normalizeProgress(seekTo) ?? 0;
+        let initialProgress = this.normalizeProgress(seekTo) ?? 0;
         clonedTrack.userAgent = clonedTrack.userAgent || getAppUserAgent();
         const nitroTargetKey = getMediaUniqueKey(
             clonedTrack as unknown as IMusic.IMusicItem,
@@ -4054,9 +4056,15 @@ class TrackPlayer
         const nitroQueue = this.getNitroQueue(
             clonedTrack as unknown as IMusic.IMusicItem,
         );
-        await this.backend.loadQueue(nitroQueue.tracks, nitroQueue.startIndex, {
+        const loadResult = await this.backend.loadQueue(nitroQueue.tracks, nitroQueue.startIndex, {
             autoPlay: shouldAutoPlay,
+            ...(preservePosition ? { preservePositionFallback: initialProgress } : {}),
         });
+        const nativeRestored = loadResult &&
+            Number.isFinite(loadResult.restoredPosition) && loadResult.restoredPosition >= 0;
+        if (nativeRestored) {
+            initialProgress = loadResult.restoredPosition;
+        }
         await this.syncBackendRepeatMode();
         const startIndex = nitroQueue.startIndex;
         const lookaheadTracks = nitroQueue.tracks.slice(
@@ -4079,7 +4087,7 @@ class TrackPlayer
         });
         this.emit(TrackPlayerEvents.ProgressChanged, currentProgress);
         // 先恢复位置再播放，避免重启恢复时短暂从 0 秒出声。
-        if (initialProgress > 0) {
+        if (initialProgress > 0 && !nativeRestored) {
             await delay(100);
             await this.seekTo(initialProgress);
         }

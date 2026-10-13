@@ -569,6 +569,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         if (
             !isCurrentGeneration(generation) ||
             stopRequested ||
+            pendingSeek.isPendingFor(generation) ||
             !pendingUnpause.isArmedFor(generation)
         ) {
             return
@@ -1126,6 +1127,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
         postPromise(promise, "E_LOAD") { operationPromise ->
             try {
+                val previousIdentity = loadingTrackIdentity ?: activeTrackIdentity
+                val previousDeferredPosition = if (loadingGeneration == currentLoadGeneration) {
+                    pendingSeek.peek(currentLoadGeneration)
+                } else null
+                val preserveFallback = readDouble(payload, "preservePositionFallback")
+                    ?.takeIf { it.isFinite() && it >= 0.0 }
                 val headers =
                     if (payload.hasKey("headers") && !payload.isNull("headers")) {
                         payload.getMap("headers")
@@ -1186,6 +1193,28 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     TAG,
                     "loadAndPlay[$generation]: source=${mediaSourceType(url)}",
                 )
+                // Run beside loadfile, after metadata work. The old engine may have
+                // advanced while the JS bridge/main looper was waiting.
+                val restoredPosition = preserveFallback?.let { fallback ->
+                    SourceReplacementPosition.capture(
+                        fallback = fallback,
+                        sameMedia = previousIdentity != null && previousIdentity.mediaId == mediaId &&
+                            (previousDeferredPosition != null || currentPathMatches(previousIdentity.url)),
+                        pause = { MPVLib.setPropertyBoolean("pause", true) },
+                        position = {
+                            // Natural advancement must not assign a different file's position.
+                            previousIdentity?.takeIf { currentPathMatches(it.url) }
+                                ?.let { MPVLib.getPropertyDouble("time-pos") }
+                        },
+                        pendingPosition = previousDeferredPosition,
+                    ).also { stopped ->
+                        MPVLib.setPropertyBoolean("pause", true)
+                        pendingSeek.defer(generation, stopped)
+                        positionSecs = stopped
+                        emitProgress(force = true)
+                        Log.d(TAG, "source replacement[$generation]: stopped=$stopped fallback=$fallback")
+                    }
+                }
                 MPVLib.command(arrayOf("loadfile", url, "replace"))
                 if (autoPlay) {
                     scheduleUnpauseRetries(generation)
@@ -1193,7 +1222,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     MPVLib.setPropertyBoolean("pause", true)
                     emitState("paused", force = true)
                 }
-                operationPromise.resolve(null)
+                operationPromise.resolve(restoredPosition)
             } catch (e: Exception) {
                 clearLoadingIdentity()
                 Log.e(TAG, "loadAndPlay failed", e)

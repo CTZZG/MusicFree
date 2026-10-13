@@ -26,9 +26,16 @@ internal class PendingSeek {
         this.seconds = seconds.coerceAtLeast(0.0)
     }
 
+    /** Automatic unpause must wait until FILE_LOADED applies the restoration. */
+    fun isPendingFor(loadingGeneration: Long): Boolean =
+        generation == loadingGeneration && seconds != null
+
+    fun peek(loadingGeneration: Long): Double? =
+        seconds?.takeIf { generation == loadingGeneration }
+
     /** 第 [loadedGeneration] 代文件加载好时取出要执行的跳转；不是这一代记下的返回 null。 */
     fun take(loadedGeneration: Long): Double? {
-        val value = seconds?.takeIf { generation == loadedGeneration }
+        val value = peek(loadedGeneration)
         reset()
         return value
     }

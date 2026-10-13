@@ -64,11 +64,22 @@ const mockNativeMpvPlayer = {
     initialize: jest.fn(async () => undefined),
     destroy: jest.fn(async () => undefined),
     loadAndPlay: jest.fn(async (payload: any) => {
+        let restoredPosition: number | undefined;
+        if (payload.preservePositionFallback !== undefined) {
+            restoredPosition = payload.preservePositionFallback;
+            try {
+                const stopped = await mockNativeMpvPlayer.getPosition();
+                if (typeof stopped === "number" && Number.isFinite(stopped) && stopped >= 0) {
+                    restoredPosition = stopped;
+                }
+            } catch {}
+        }
         const autoPlay = (payload.autoPlay ?? true) && !mockHoldBlocks();
         mockNative.calls.push(`load(autoPlay=${autoPlay})`);
-        mockNative.loading = payload;
+        mockNative.loading = { ...payload, restoredPosition };
         mockNative.armed = autoPlay ? payload.loadGeneration : -1;
         mockEmitState(autoPlay ? "buffering" : "paused");
+        return restoredPosition;
     }),
     pause: jest.fn(async () => {
         mockNative.calls.push("pause");
@@ -252,6 +263,9 @@ async function fileLoaded() {
     expect(payload).toBeTruthy();
     mockNative.loading = null;
     mockNative.active = payload;
+    if (payload.restoredPosition !== undefined) {
+        await mockNativeMpvPlayer.seekTo(payload.restoredPosition);
+    }
     mockNative.listeners.active?.({
         mediaId: payload.mediaId,
         loadGeneration: payload.loadGeneration,
@@ -399,6 +413,45 @@ it("plays again when the user pauses and plays while the new file is loading", a
 });
 
 describe("quality reload uses the current position when committing", () => {
+    it("keeps playing when another quality replaces a source still loading", async () => {
+        const first = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(150);
+        expect(mockNative.state).toBe("buffering");
+        const latest = trackPlayer.changeQualityWithResult("128k");
+        await jest.advanceTimersByTimeAsync(150);
+        await fileLoaded();
+        await latest;
+        await first;
+        expect(mockNative.active.url).toBe("https://test.example/A-128k.mp3");
+        expect(mockNative.state).toBe("playing");
+    });
+
+    it("preserves progress while replacement waits at the native boundary", async () => {
+        let oldPosition = 30;
+        let positionAtReplacement: number | undefined;
+        mockNativeMpvPlayer.getPosition.mockImplementation(async () => oldPosition);
+        const originalLoad = mockNativeMpvPlayer.loadAndPlay.getMockImplementation()!;
+        mockNativeMpvPlayer.loadAndPlay.mockImplementationOnce(async payload => {
+            // Model a queued native replacement: the old engine still plays until
+            // the load command executes, as in the Android 16 transition trace.
+            expect(mockNative.state).toBe("playing");
+            expect(mockNative.active?.url).toBe("https://test.example/A-192k.mp3");
+            await new Promise(resolve => setTimeout(resolve, 400));
+            expect(mockNative.state).toBe("playing");
+            oldPosition += 0.4;
+            positionAtReplacement = oldPosition;
+            await originalLoad(payload);
+        });
+
+        const changing = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(600);
+        await fileLoaded();
+        await expect(changing).resolves.toMatchObject({ success: true });
+        expect(positionAtReplacement).toBe(30.4);
+        expect(mockNative.active?.url).toBe("https://test.example/A-320k.mp3");
+        expect(mockNativeMpvPlayer.seekTo).toHaveBeenLastCalledWith(positionAtReplacement);
+    });
+
     async function finishChange(changing: Promise<unknown>) {
         await jest.advanceTimersByTimeAsync(200);
         await fileLoaded();
@@ -447,7 +500,7 @@ describe("quality reload uses the current position when committing", () => {
         mockNativeMpvPlayer.getPosition.mockResolvedValue(position);
         await jest.advanceTimersByTimeAsync(1);
         await finishChange(changing);
-        expect(source).toHaveBeenLastCalledWith(expect.anything(), true, position);
+        expect(source).toHaveBeenLastCalledWith(expect.anything(), true, position, true);
     });
 
     it.each([NaN, Infinity, -1, undefined])("uses the request-time position if the latest read is %p", async position => {
