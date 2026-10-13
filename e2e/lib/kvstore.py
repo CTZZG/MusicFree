@@ -61,6 +61,25 @@ def sheet_ids(entries):
     return [f"{song.get('platform')}/{song.get('id')}" for song in songs if isinstance(song, dict)]
 
 
+def check_source(entries, title, download=False):
+    if download:
+        tasks = json.loads(entries.get("terminalTasks", {}).get("v", "[]"))
+        matches = [x for x in tasks if x.get("musicItem", {}).get("title") == title]
+        assert len(matches) == 1, f"完成记录数不为 1：{len(matches)}"
+        task = matches[0]
+        item, source = task["musicItem"], task.get("resolvedSource", {})
+        assert task["status"] == 4, f"未完成：{task['status']}"
+        assert (item["platform"], item["id"]) == ("E2E 测试源 A", "fallback"), item
+        assert (source.get("kind"), source.get("platform"), source.get("id")) == ("remembered", "E2E 测试源 B", "fallback"), source
+        assert source.get("quality") == task.get("quality") == "128k", (source, task.get("quality"))
+        assert not any(key in source for key in ("url", "headers", "cek", "ekey")), source
+        return json.dumps(source, ensure_ascii=False)
+    remembered = json.loads(entries.get("music.alternateSources", {}).get("v", "{}"))
+    record = remembered.get("E2E 测试源 A@fallback", {}).get("item", {})
+    assert (record.get("platform"), record.get("id"), record.get("title")) == ("E2E 测试源 B", "fallback", title), record
+    return json.dumps(record, ensure_ascii=False)
+
+
 SAMPLE = json.dumps({
     "version": 1,
     "entries": {
@@ -92,6 +111,25 @@ def self_test():
         except ValueError:
             continue
         raise AssertionError(f"应当解析失败：{broken!r}")
+    source = {"kind": "remembered", "platform": "E2E 测试源 B", "id": "fallback", "quality": "128k"}
+    task = {"status": 4, "quality": "128k", "musicItem": {"platform": "E2E 测试源 A", "id": "fallback", "title": "E2E Fallback"}, "resolvedSource": source}
+    def snapshot_task(value):
+        return {"terminalTasks": {"t": "s", "v": json.dumps([value])}}
+    assert json.loads(check_source(snapshot_task(task), "E2E Fallback", True)) == source
+    for field, value in (("status", 5), ("quality", "320k"), ("musicItem", {"platform": "E2E 测试源 B", "id": "fallback", "title": "E2E Fallback"}), ("resolvedSource", {**source, "platform": "E2E 测试源 A"}), ("resolvedSource", {**source, "url": "https://example.com"}), ("resolvedSource", {})):
+        try:
+            check_source(snapshot_task({**task, field: value}), "E2E Fallback", True)
+        except AssertionError:
+            continue
+        raise AssertionError(f"错误的下载记录被接受：{field}")
+    remembered = {"music.alternateSources": {"t": "s", "v": json.dumps({"E2E 测试源 A@fallback": {"item": {"platform": "E2E 测试源 B", "id": "fallback", "title": "E2E Fallback"}}})}}
+    check_source(remembered, "E2E Fallback")
+    try:
+        check_source({}, "E2E Fallback")
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("缺失的备用记录被接受")
     print("kvstore.py self-test ok")
 
 
@@ -103,7 +141,7 @@ def main(argv):
         print(file_name(argv[2]))
         return 0
     command = argv[1] if len(argv) > 1 else ""
-    if command not in ("check", "keys", "find", "sheet-ids") or (command == "find") != (len(argv) == 3):
+    if command not in ("check", "keys", "find", "sheet-ids", "remembered-source", "download-source") or (command in ("find", "remembered-source", "download-source")) != (len(argv) == 3):
         print(__doc__, file=sys.stderr)
         return 2
     try:
@@ -113,7 +151,13 @@ def main(argv):
         # 原因写到 stderr，免得被当成键
         print(f"解析不了：{error}", file=sys.stdout if command == "check" else sys.stderr)
         return 1
-    if command == "check":
+    if command in ("remembered-source", "download-source"):
+        try:
+            print(check_source(entries, argv[2], command == "download-source"))
+        except (AssertionError, ValueError, KeyError, TypeError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
+    elif command == "check":
         print(f"{len(entries)} 个键")
     elif command == "keys":
         for key in entries:

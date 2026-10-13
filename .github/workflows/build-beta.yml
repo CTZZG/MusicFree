@@ -27,13 +27,14 @@ on:
                 default: ''
                 type: string
             e2e_suite:
-                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电'
+                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载'
                 required: false
                 default: 'all'
                 type: choice
                 options:
                     - all
                     - storage
+                    - download-source
                     - power
 
 jobs:
@@ -350,6 +351,13 @@ jobs:
                   echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
                   echo "APK source commit: ${commit:-unknown}"
 
+            - name: Install audio file validation tools
+              run: |
+                  if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+                    sudo apt-get update
+                    sudo apt-get install -y ffmpeg
+                  fi
+
             - name: Self-test E2E helpers
               run: |
                   python3 -I e2e/lib/media_session.py --self-test
@@ -358,6 +366,7 @@ jobs:
                   python3 -I e2e/lib/kvstore.py --self-test
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/pause_checks_test.sh
+                  bash e2e/lib/download_source_test.sh
                   bash e2e/lib/storage_checks_test.sh
                   bash e2e/lib/power_checks_test.sh
                   bash e2e/lib/power_environment_test.sh

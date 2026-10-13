@@ -13,6 +13,7 @@ on:
             - 'src/components/base/appBar.tsx'
             - 'src/pages/setting/settingTypes/pluginSetting/**'
             - 'src/core/trackPlayer/**'
+            - 'src/core/mediaSource/**'
             - 'src/core/appConfig.ts'
             - 'src/core/playerAdapter/**'
             - 'src/core/pluginManager/**'

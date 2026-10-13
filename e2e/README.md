@@ -241,3 +241,16 @@ e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-
 - 流程要参数时写成 `${名字}`，调用时 `flow "<检查名>" <文件> -e 名字=值`。同一个流程跑第二次，日志另起
   一个名字（`<流程>-2.log`）。
 - 流程没通过时，日志里会打出当时界面上的所有文字，并截一张 `failed-<流程>.png`。
+
+
+### 已记住的备用来源下载（第 21 步）
+
+`E2E_SUITE=download-source` 只运行这一步；`storage` 和 `all` 也在升级卸载前运行。
+从测试源 A 点播 Fallback，由 B 播放后检查真实的备用来源记录，再从 A 的搜索结果点下载。
+必须得到完成记录，原歌曲 ID/平台保留 A，实际来源是 B，音质是插件包装层返回的 128k。
+测试夹具本身是 16 kbps 纯音：这里核对音质字段的传递，不把标签当作码率测量。
+用 ffmpeg 完整解码下载文件，与 B 的 tone-b.mp3 比较 PCM SHA-256，并用 ffprobe 核对
+标题、歌手和专辑。这证明文件可解码且内容一致，不验证设备的物理音频输出。
+依赖 adb root、ffmpeg 和 ffprobe；缺少前提或准备失败时逐项记失败。
+`e2e/lib/download_source_test.sh` 覆盖缺记录、下载失败、复制失败、解码失败、错误音频和错误标签；
+`kvstore.py --self-test` 拒绝身份、来源、音质错误的完成记录。

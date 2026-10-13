@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `claude/sharp-planck-xtfenm` 分支的 mpv-only 实现（`package.json` 版本 0.11.3），最后核对日期 2026-10-08。
+> 适用于 `feat/mpv-only` 主线的 mpv-only 实现（`package.json` 版本 0.11.4），最后核对日期 2026-10-13。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -19,9 +19,9 @@
 | 模块 | 入口 | 职责边界 |
 | --- | --- | --- |
 | 播放 | `src/core/trackPlayer/index.ts`（`TrackPlayer` 门面）→ `src/core/playerAdapter/mpvPlayerAdapter.ts` → `android/app/src/main/java/fun/upup/musicfree/mpvplayer/` | JS 负责用户意图、队列与播放规则；native 负责实际加载与播放、进度、通知、锁屏和媒体键 |
-| 插件与音源 | `src/core/pluginManager` | 插件按可信代码对待（提交 `c46675b0`）；插件方法经 `PluginMethodsWrapper` 包装，取源走统一的音质兼容层 |
+| 插件与音源 | `src/core/pluginManager` | 插件按可信代码对待（提交 `c46675b0`）；插件方法经 `PluginMethodsWrapper` 包装，取源走统一的音质兼容层；播放备用来源与下载候选共用 `src/core/mediaSource/resolveCandidate.ts`。原来源播放、恢复等编排仍由 TrackPlayer 负责 |
 | 搜索 | `src/core/search`（`SearchSession`）← `src/pages/searchPage/hooks/useSearchSession.ts` | 会话负责请求编排与各来源状态；页面只订阅快照、调用会话操作，见下文 |
-| 下载 | `src/core/downloader.ts`、`src/core/downloadFinalizationRunner.ts`、`src/core/downloadFinalizationJournal.ts` | 任务调度与传输；最终化按日志阶段推进（产物就绪含解密、写标签、写歌词、加入音乐库、提交附加信息），中断后从记录的阶段继续 |
+| 下载 | `src/core/downloader.ts`、`src/core/downloadFinalizationRunner.ts`、`src/core/downloadFinalizationJournal.ts` | 任务调度与传输；`src/core/mediaSource/downloadSource.ts` 负责原来源、歌曲直链和已记住来源的取源。独立开关 `basic.tryRememberedSourceWhenDownloadFail` 默认开启，只复用曾播放成功且仍通过版本匹配的记录，不发起新搜索。插件调用和 QMC 探测共用 15 秒预算，单次插件上限 6 秒；有效备用来源存在时原来源阶段最多 9 秒，为备用阶段预留 6 秒。计时沿用下载的 JS 定时器，后台定时器受系统调度影响的实际触发时刻尚未验收。任务记录保留原歌曲身份，并保存实际候选平台/歌曲 ID/插件声明的音质，不保存地址或密钥；列表和详情展示备用来源。最终化按日志阶段推进（产物就绪含解密、写标签、写歌词、加入音乐库、提交附加信息），中断后从记录的阶段继续 |
 | 本地音乐 | `src/core/localMusicSheet.ts` | 扫描、元数据缓存、匹配与提交 |
 | 存储 | `src/utils/keyValueStore` | 原子写入的文件键值存储（提交 `9bfccd41` 起替代 MMKV） |
 | 导航 | `src/core/router`、`src/pages/home/index.tsx` | 根栈加主页的底部标签（首页、搜索、资料库、设置）；搜索标签沿用 `search-page` 路由名，从其他页面跳搜索用 `navigateToSearch`，先回到主页再切标签 |
