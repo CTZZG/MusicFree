@@ -4,7 +4,7 @@ const mockNativeMpvPlayer = {
     isAvailable: jest.fn(() => true),
     initialize: jest.fn(async () => undefined),
     destroy: jest.fn(async () => undefined),
-    loadAndPlay: jest.fn(async () => undefined),
+    loadAndPlay: jest.fn(async (): Promise<number | null | undefined> => undefined),
     prepareNext: jest.fn(async () => undefined),
     prepareNextBatch: jest.fn(async () => undefined),
     pause: jest.fn(async () => undefined),
@@ -120,6 +120,29 @@ describe("MpvPlayerAdapter identity state machine", () => {
         mockNativeMpvPlayer.loadAndPlay.mockResolvedValue(undefined);
         mockNativeMpvPlayer.prepareNext.mockResolvedValue(undefined);
         mockNativeMpvPlayer.prepareNextBatch.mockResolvedValue(undefined);
+    });
+
+    it.each([0, 30.4])("returns native-restored position %p for same-song replacement", async position => {
+        const adapter = await createAdapter();
+        mockNativeMpvPlayer.loadAndPlay.mockResolvedValueOnce(position);
+        const result = await adapter.loadQueue([track("a")], 0, {
+            autoPlay: false,
+            preservePositionFallback: 30,
+        });
+        expect(lastLoadPayload()).toMatchObject({ autoPlay: false, preservePositionFallback: 30 });
+        expect(result).toEqual({ restoredPosition: position });
+    });
+
+    it.each([null, NaN, -1])("does not report an invalid native-restored position %p", async position => {
+        const adapter = await createAdapter();
+        mockNativeMpvPlayer.loadAndPlay.mockResolvedValueOnce(position);
+        expect(await adapter.loadQueue([track("a")], 0, { preservePositionFallback: 30 })).toBeUndefined();
+    });
+
+    it("ordinary song loads do not request position preservation", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")]);
+        expect(lastLoadPayload()).not.toHaveProperty("preservePositionFallback");
     });
 
     it("commits B and prepared C only after native identity confirmation", async () => {

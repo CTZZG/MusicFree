@@ -157,6 +157,13 @@ export interface PlayerAdapterConfig {
 
 export interface PlayerAdapterLoadQueueOptions {
     autoPlay?: boolean;
+    /** Same-song source replacement: capture the stopped native position, with this fallback. */
+    preservePositionFallback?: number;
+}
+
+export interface PlayerAdapterLoadQueueResult {
+    /** The backend has scheduled restoration; the caller must not seek to an older position. */
+    restoredPosition: number;
 }
 
 export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
@@ -172,7 +179,7 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
         tracks: TTrack[],
         startIndex?: number,
         options?: PlayerAdapterLoadQueueOptions,
-    ): Promise<void>;
+    ): Promise<void | PlayerAdapterLoadQueueResult>;
 
     play(): Promise<void>;
 

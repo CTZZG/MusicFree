@@ -5,6 +5,8 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.support.v4.media.session.MediaControllerCompat
 import androidx.test.platform.app.InstrumentationRegistry
@@ -75,6 +77,99 @@ class LiveUpdateEngineProgressTest {
         }
         await("playback service released") { MpvServiceBridge.service == null }
         if (::tone.isInitialized) tone.delete()
+    }
+
+    @Test
+    fun queuedSourceReplacementPreservesTheStoppedPositionAndPause() {
+        val fallback = requireNotNull(engine.getPropertyDouble("time-pos"))
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        var lastOld: Double? = null
+        var readFailure: Throwable? = null
+        Handler(Looper.getMainLooper()).post {
+            entered.countDown()
+            try { release.await(10, TimeUnit.SECONDS) } finally { finished.countDown() }
+        }
+        val releaser = Thread {
+            try {
+                check(entered.await(5, TimeUnit.SECONDS))
+                Thread.sleep(600)
+                lastOld = engine.getPropertyDouble("time-pos")
+            } catch (failure: Throwable) {
+                readFailure = failure
+            } finally {
+                release.countDown()
+            }
+        }
+        try {
+            assertTrue("main looper is held before queuing replacement", entered.await(5, TimeUnit.SECONDS))
+            releaser.start()
+            val restored = call {
+                requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                    "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 2.0,
+                    "title", "Raw engine progress fixture", "artist", "E2E", "duration", 90.0,
+                    "autoPlay", false, "preservePositionFallback", fallback,
+                ), it)
+            } as? Number ?: throw AssertionError("native restore target missing")
+            releaser.join(5000)
+            readFailure?.let { throw AssertionError("old engine reading failed", it) }
+            val stopped = restored.toDouble()
+            assertTrue("old engine advanced while replacement queued", requireNotNull(lastOld) >= fallback + 0.25)
+            assertTrue("restore target includes queued progress", stopped >= requireNotNull(lastOld) - 0.001)
+            await("replacement seek completed while paused") {
+                onMain {
+                    val activeField = MpvPlayerModule::class.java.getDeclaredField("activeTrackIdentity").apply { isAccessible = true }
+                    val active = activeField.get(requireNotNull(module))
+                    val generation = active?.javaClass?.getDeclaredField("loadGeneration")?.apply { isAccessible = true }?.get(active) as? Number
+                    generation?.toLong() == 2L &&
+                        engine.getPropertyBoolean("pause") == true &&
+                        engine.getPropertyBoolean("seeking") == false &&
+                        engine.getPropertyDouble("time-pos")?.let { kotlin.math.abs(it - stopped) <= 0.25 } == true
+                }
+            }
+            Thread.sleep(1100)
+            assertEquals(true, engine.getPropertyBoolean("pause"))
+            assertEquals(stopped, requireNotNull(engine.getPropertyDouble("time-pos")), 0.25)
+            call { requireNotNull(module).resume(it) }
+            awaitPlaying()
+        } finally {
+            release.countDown()
+            releaser.join(5000)
+            assertTrue("main released before cleanup", finished.await(5, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun transitionReadsDoNotWaitForMainLooper() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post {
+            entered.countDown()
+            try { release.await(10, TimeUnit.SECONDS) } finally { finished.countDown() }
+        }
+        try {
+            assertTrue("main looper is held", entered.await(5, TimeUnit.SECONDS))
+            assertTrue("instrumentation reads from a worker", Looper.myLooper() != Looper.getMainLooper())
+            val started = SystemClock.elapsedRealtime()
+            val sample = SourceTransitionReader.read(
+                clock = SystemClock::elapsedRealtime,
+                path = { engine.getPropertyString("path") },
+                position = { engine.getPropertyDouble("time-pos") },
+                idle = { engine.getPropertyBoolean("idle-active") },
+                buffering = { engine.getPropertyBoolean("paused-for-cache") },
+            )
+            assertEquals("main still held when real JNI reads return", 1L, finished.count)
+            assertEquals(tone.absolutePath, sample.path)
+            assertTrue("real nonzero engine reading", requireNotNull(sample.rawSeconds) >= 1.0)
+            assertEquals(false, sample.idle)
+            assertEquals(false, sample.buffering)
+            android.util.Log.i("E2ETransitionThread", "worker JNI reads completed in ${SystemClock.elapsedRealtime() - started}ms while main held")
+        } finally {
+            release.countDown()
+            assertTrue("main looper released before cleanup", finished.await(5, TimeUnit.SECONDS))
+        }
     }
 
     @Test
@@ -180,12 +275,13 @@ class LiveUpdateEngineProgressTest {
         return requireNotNull(result).getOrThrow()
     }
 
-    private fun call(action: (Promise) -> Unit) {
+    private fun call(action: (Promise) -> Unit): Any? {
         val completed = CountDownLatch(1)
         var failure: String? = null
+        var result: Any? = null
         val promise = Proxy.newProxyInstance(Promise::class.java.classLoader, arrayOf(Promise::class.java)) { _, method, args ->
             when (method.name) {
-                "resolve" -> completed.countDown()
+                "resolve" -> { result = args?.firstOrNull(); completed.countDown() }
                 "reject" -> { failure = args?.joinToString(); completed.countDown() }
                 else -> throw AssertionError("Unexpected Promise call: ${method.name}")
             }
@@ -194,6 +290,7 @@ class LiveUpdateEngineProgressTest {
         action(promise)
         assertTrue("native operation completed", completed.await(15, TimeUnit.SECONDS))
         if (failure != null) throw AssertionError("native operation failed: $failure")
+        return result
     }
 
     private fun writeTone(file: File) {
