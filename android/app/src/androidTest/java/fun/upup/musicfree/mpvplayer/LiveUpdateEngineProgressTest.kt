@@ -5,6 +5,8 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.support.v4.media.session.MediaControllerCompat
 import androidx.test.platform.app.InstrumentationRegistry
@@ -75,6 +77,38 @@ class LiveUpdateEngineProgressTest {
         }
         await("playback service released") { MpvServiceBridge.service == null }
         if (::tone.isInitialized) tone.delete()
+    }
+
+    @Test
+    fun transitionReadsDoNotWaitForMainLooper() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        Handler(Looper.getMainLooper()).post {
+            entered.countDown()
+            try { release.await(10, TimeUnit.SECONDS) } finally { finished.countDown() }
+        }
+        try {
+            assertTrue("main looper is held", entered.await(5, TimeUnit.SECONDS))
+            assertTrue("instrumentation reads from a worker", Looper.myLooper() != Looper.getMainLooper())
+            val started = SystemClock.elapsedRealtime()
+            val sample = SourceTransitionReader.read(
+                clock = SystemClock::elapsedRealtime,
+                path = { engine.getPropertyString("path") },
+                position = { engine.getPropertyDouble("time-pos") },
+                idle = { engine.getPropertyBoolean("idle-active") },
+                buffering = { engine.getPropertyBoolean("paused-for-cache") },
+            )
+            assertEquals("main still held when real JNI reads return", 1L, finished.count)
+            assertEquals(tone.absolutePath, sample.path)
+            assertTrue("real nonzero engine reading", requireNotNull(sample.rawSeconds) >= 1.0)
+            assertEquals(false, sample.idle)
+            assertEquals(false, sample.buffering)
+            android.util.Log.i("E2ETransitionThread", "worker JNI reads completed in ${SystemClock.elapsedRealtime() - started}ms while main held")
+        } finally {
+            release.countDown()
+            assertTrue("main looper released before cleanup", finished.await(5, TimeUnit.SECONDS))
+        }
     }
 
     @Test
