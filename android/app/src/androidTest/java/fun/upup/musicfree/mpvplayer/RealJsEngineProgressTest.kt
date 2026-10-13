@@ -8,6 +8,7 @@ import android.content.Intent
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
@@ -245,27 +246,35 @@ class RealJsEngineProgressTest {
 
     private fun awaitSourceReplacement(oldPath: String, newPath: String,
                                        oldWindowLast: EngineProgressSample): JsFlowProbePolicy.SourceTransition {
+        fun checkOwnerAndSession(): Int = onMain {
+            assertTrue("same ReactHost module", host?.currentReactContext?.getNativeModule("MpvPlayer") === module)
+            val field = MpvPlayerModule::class.java.getDeclaredField("mpvInstance").apply { isAccessible = true }
+            assertTrue("same module engine", field.get(module) === engine)
+            requireNotNull(controller.playbackState).state
+        }
+        val stateBefore = checkOwnerAndSession()
+        assertEquals("old source is playing before transition polling", 3, stateBefore)
         val probe = JsFlowProbePolicy.SourceTransitionProbe(oldPath, newPath)
         probe.observe(oldWindowLast)
-        await("quality source replacement", 20000) {
-            val sample = onMain {
-                assertTrue("same ReactHost module", host?.currentReactContext?.getNativeModule("MpvPlayer") === module)
-                val state = requireNotNull(controller.playbackState)
-                val pathBefore = engine.getPropertyString("path")
-                val raw = engine.getPropertyDouble("time-pos")
-                val elapsed = SystemClock.elapsedRealtime()
-                val paused = engine.getPropertyBoolean("pause")
-                val idle = engine.getPropertyBoolean("idle-active")
-                val buffering = engine.getPropertyBoolean("paused-for-cache")
-                val pathAfter = engine.getPropertyString("path")
-                // Do not attribute an old position to a new path if loadfile
-                // changed the source between these JNI property reads.
-                EngineProgressSample(elapsed, raw, paused, idle, buffering,
-                    if (pathBefore == pathAfter) pathAfter else null, state.position, state.state)
-            }
-            probe.observe(sample)
+        await("quality source replacement", 20000, pollMs = 50) {
+            probe.observe(readSourceTransitionOnWorker())
         }
+        val stateAfter = checkOwnerAndSession()
+        // Readiness and every subsequent observation require PLAYING separately.
+        // A brief queued session update must not overwrite the first raw reading.
+        android.util.Log.i("E2EJSFlow", "transition worker reads: session before=$stateBefore after=$stateAfter")
         return requireNotNull(probe.result)
+    }
+
+    private fun readSourceTransitionOnWorker(): JsFlowProbePolicy.SourceTransitionSample {
+        check(Looper.myLooper() != Looper.getMainLooper()) { "TRANSITION_THREAD: must poll off the UI thread" }
+        return SourceTransitionReader.read(
+            clock = SystemClock::elapsedRealtime,
+            path = { engine.getPropertyString("path") },
+            position = { engine.getPropertyDouble("time-pos") },
+            idle = { engine.getPropertyBoolean("idle-active") },
+            buffering = { engine.getPropertyBoolean("paused-for-cache") },
+        )
     }
 
     private fun awaitEngine(path: String, paused: Boolean, title: String, anchor: Double? = null,
@@ -411,7 +420,7 @@ class RealJsEngineProgressTest {
         }
     }
     private fun shell(command: String): String = ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).bufferedReader().use { it.readText() }
-    private fun await(what: String, timeout: Long = 15000, deadline: Long = SystemClock.elapsedRealtime() + timeout, condition: () -> Boolean) {
+    private fun await(what: String, timeout: Long = 15000, deadline: Long = SystemClock.elapsedRealtime() + timeout, pollMs: Long = 100, condition: () -> Boolean) {
         while (!condition()) {
             if (SystemClock.elapsedRealtime() >= deadline) {
                 val labels = mutableListOf<String>()
@@ -419,7 +428,7 @@ class RealJsEngineProgressTest {
                 android.util.Log.e("E2EJSFlow", "$what timed out; visible=${labels.filter { it.isNotBlank() }.distinct().take(40)}")
                 throw AssertionError("$what timed out")
             }
-            Thread.sleep(100)
+            Thread.sleep(pollMs)
         }
     }
     private fun <T> onMain(action: () -> T): T {

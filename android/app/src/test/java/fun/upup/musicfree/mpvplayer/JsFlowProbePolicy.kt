@@ -25,9 +25,18 @@ object JsFlowProbePolicy {
         check(newStart >= oldStop - 0.25) { "SOURCE_REWIND: old source stopped at $oldStop, new started at $newStart" }
     }
 
+    /** Transition polls do not read or fabricate pause/MediaSession fields. */
+    internal data class SourceTransitionSample(
+        val elapsedMs: Long,
+        val rawSeconds: Double?,
+        val idle: Boolean?,
+        val buffering: Boolean?,
+        val path: String?,
+    )
+
     internal data class SourceTransition(
-        val old: EngineProgressSample,
-        val firstNew: EngineProgressSample,
+        val old: SourceTransitionSample,
+        val firstNew: SourceTransitionSample,
         val pollGapMs: Long,
         val maxPollGapMs: Long,
     )
@@ -36,11 +45,15 @@ object JsFlowProbePolicy {
     internal class SourceTransitionProbe(private val oldPath: String, private val newPath: String) {
         var result: SourceTransition? = null
             private set
-        private var lastOld: EngineProgressSample? = null
+        private var lastOld: SourceTransitionSample? = null
         private var previousElapsedMs: Long? = null
         private var maxPollGapMs = 0L
 
-        fun observe(sample: EngineProgressSample): Boolean {
+        fun observe(sample: EngineProgressSample): Boolean = observe(SourceTransitionSample(
+            sample.elapsedMs, sample.rawSeconds, sample.idle, sample.buffering, sample.path,
+        ))
+
+        fun observe(sample: SourceTransitionSample): Boolean {
             if (result != null) return true
             val gap = previousElapsedMs?.let { sample.elapsedMs - it }
             check(gap == null || gap >= 0) { "TRANSITION_WINDOW: reversed clock" }
