@@ -10,6 +10,8 @@ import {
 } from "@/core/downloadFinalizationPolicy";
 import { localFileExistsResolver } from "@/utils/localFileStatusCache";
 
+import type { DownloadSourceIdentity } from "@/core/mediaSource/downloadSource";
+
 type TFunction = ReturnType<typeof useI18N>["t"];
 
 export type DownloadFilter = "all" | "active" | "paused" | "completed" | "error";
@@ -38,6 +40,7 @@ export type CompletedDownloadFileStatus =
 export type DownloadTaskDetailInfo = {
     filename?: string;
     completedAt?: number;
+    resolvedSource?: DownloadSourceIdentity;
 };
 
 export function areCompletedFileStatusMapsEqual(
@@ -129,6 +132,9 @@ export function getCompletedDownloadDetailText(
         `${t("downloading.detail.song")}: ${musicItem.title || t("common.unknownName")}`,
         `${t("downloading.detail.artist")}: ${musicItem.artist || t("common.unknownName")}`,
         `${t("downloading.detail.source")}: ${musicItem.platform || "-"}`,
+        ...(taskInfo?.resolvedSource?.kind === "remembered"
+            ? [t("downloading.actualSource", { source: taskInfo.resolvedSource.platform })]
+            : []),
         `${t("downloading.detail.completedAt")}: ${
             taskInfo?.completedAt
                 ? formatDownloadCompletedAt(taskInfo.completedAt)

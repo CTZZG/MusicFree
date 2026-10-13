@@ -214,6 +214,7 @@ export default function BasicSetting() {
     const playQualityOrder = useAppConfig("basic.playQualityOrder");
     const defaultDownloadQuality = useAppConfig("basic.defaultDownloadQuality");
     const downloadQualityOrder = useAppConfig("basic.downloadQualityOrder");
+    const tryRememberedSourceWhenDownloadFail = useAppConfig("basic.tryRememberedSourceWhenDownloadFail");
     const musicDetailDefault = useAppConfig("basic.musicDetailDefault");
     const musicDetailAwake = useAppConfig("basic.musicDetailAwake");
     const musicDetailImmersiveMode = useAppConfig(
@@ -611,6 +612,11 @@ export default function BasicSetting() {
                     getQualityKeys(),
                     defaultDownloadQuality ?? "standard",
                     qualityTextI18n,
+                ),
+                createSwitch(
+                    t("basicSettings.tryRememberedSourceWhenDownloadFail"),
+                    "basic.tryRememberedSourceWhenDownloadFail",
+                    tryRememberedSourceWhenDownloadFail ?? true,
                 ),
                 createRadio(
                     t("basicSettings.downloadQualityOrder"),

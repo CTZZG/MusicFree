@@ -26,6 +26,7 @@ export interface IAppConfigProperties {
     "basic.playQualityOrder": "asc" | "desc";
     "basic.defaultDownloadQuality": IMusic.IQualityKey;
     "basic.downloadQualityOrder": "asc" | "desc";
+    "basic.tryRememberedSourceWhenDownloadFail": boolean;
     "basic.musicDetailDefault": "album" | "lyric";
     "basic.musicDetailAwake": boolean;
     "basic.musicDetailImmersiveMode": boolean;

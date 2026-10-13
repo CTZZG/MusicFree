@@ -560,6 +560,7 @@ export interface ILanguageData {
     "downloading.sort.albumName": string; // 按专辑名
     "downloading.sort.sourceName": string; // 按插件来源
     "downloading.clearFilters": string; // 清除下载中心筛选
+    "downloading.actualSource": string; // 实际下载音源
     "downloading.detail.title": string; // 下载记录详情
     "downloading.detail.song": string; // 歌曲
     "downloading.detail.artist": string; // 歌手
@@ -920,6 +921,7 @@ export interface ILanguageData {
     "basicSettings.fileSelector.selectFolder": string; // 选择文件夹
     "basicSettings.maxDownload": string; // 最大同时下载数目
     "basicSettings.defaultDownloadQuality": string; // 默认下载音质
+    "basicSettings.tryRememberedSourceWhenDownloadFail": string; // 下载失败时使用已记住的备用音源
     "basicSettings.downloadQualityOrder": string; // 默认下载音质缺失时
     "basicSettings.downloadQualityOrder.asc": string; // 下载更高音质
     "basicSettings.downloadQualityOrder.desc": string; // 下载更低音质

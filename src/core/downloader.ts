@@ -98,8 +98,9 @@ import { resolveDownloadDirectory } from "@/utils/downloadStoragePolicy";
 import {
     assertQmcDecryptionOutput,
     createDownloadMediaPlan,
-    selectDownloadSourceEncryption,
 } from "./downloadMediaDecryption";
+
+import { resolveDownloadMediaSource, type DownloadSourceIdentity } from "./mediaSource/downloadSource";
 
 type IWriteResult = DownloadWriteResult;
 
@@ -178,6 +179,8 @@ interface IDownloadTaskInfo extends IDownloadAttemptIdentity {
     startedAt?: number;
     // 下载完成时间
     completedAt?: number;
+    // 实际取源身份；不保存地址、请求头或解密密钥
+    resolvedSource?: DownloadSourceIdentity;
     // 下载收尾事务日志，用于取消回滚与进程重启恢复
     finalization?: IDownloadFinalizationJournal;
 }
@@ -196,6 +199,7 @@ export interface IDownloadDiagnosticSnapshot {
         id?: string;
         filename?: string;
         quality?: IMusic.IQualityKey;
+        resolvedSource?: DownloadSourceIdentity;
         downloadedSize?: number;
         fileSize?: number;
         progressText?: string;
@@ -220,8 +224,6 @@ const downloadStorageSchemaVersion = "2";
 const maxPersistedTerminalTasks = 200;
 const NATIVE_DOWNLOAD_STATUS_POLL_MS = 15000;
 const NATIVE_DOWNLOAD_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-const DOWNLOAD_SOURCE_RESOLUTION_TIMEOUT_MS = 15_000;
-const DOWNLOAD_SOURCE_PLUGIN_CALL_TIMEOUT_MS = 6_000;
 const DOWNLOAD_SOURCE_QMC_PROBE_TIMEOUT_MS = 8_000;
 const NATIVE_DOWNLOAD_PAUSED_ERROR = "Native download paused";
 const DOWNLOAD_TASK_SNAPSHOT_THROTTLE_MS = 500;
@@ -788,6 +790,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             musicItem,
             {
                 status: DownloadStatus.Preparing,
+                resolvedSource: undefined,
                 errorReason: undefined,
                 errorMessage: undefined,
                 startedAt: Date.now(),
@@ -1934,176 +1937,69 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         // 更新下载状态
         this.markTaskAsStarted(musicItem, attemptId);
 
-        let url = musicItem.url;
-        let headers = createDownloadHeaders(
-            (musicItem as any).headers,
-            (musicItem as any).userAgent,
-        );
-        let ekey: string | undefined = musicItem.ekey;
-        let cek: string | undefined = musicItem.cek;
+        let url = "";
+        let headers: Record<string, string> | undefined;
+        let ekey: string | undefined;
+        let cek: string | undefined;
         let qmcStreamInfo: IQmcStreamInfo | undefined;
         let foundEncryptedSource = false;
-        let resolvedQuality = taskQuality;
-
-        const plugin = this.pluginManagerService.getByName(musicItem.platform);
-
         try {
-            if (plugin) {
-                const qualityOrder = getQualityOrder(
-                    taskQuality ??
-                        this.configService.getConfig(
-                            "basic.defaultDownloadQuality",
-                        ) ??
-                        "standard",
-                    this.configService.getConfig(
-                        "basic.downloadQualityOrder",
-                    ) ?? "asc",
-                );
-                let data: IPlugin.IMediaSourceResult | null = null;
-                const sourceResolutionDeadline =
-                    Date.now() + DOWNLOAD_SOURCE_RESOLUTION_TIMEOUT_MS;
-                for (let quality of qualityOrder) {
-                    const remainingSourceResolutionMs =
-                        sourceResolutionDeadline - Date.now();
-                    if (remainingSourceResolutionMs <= 0) {
-                        break;
-                    }
-                    try {
-                        data = await withTimeout(
-                            Promise.resolve().then(() =>
-                                plugin.methods.getMediaSource(
-                                    musicItem,
-                                    quality,
-                                    1,
-                                    true,
-                                ),
-                            ),
-                            Math.min(
-                                remainingSourceResolutionMs,
-                                DOWNLOAD_SOURCE_PLUGIN_CALL_TIMEOUT_MS,
-                            ),
-                            "获取下载媒体源超时",
-                        );
-                        if (!data?.url) {
-                            continue;
-                        }
-                        if (
-                            hasEncryptedMediaSource(data.url, data.ekey)
-                        ) {
-                            if (canProxyCencSource(data)) {
-                                qmcStreamInfo = undefined;
-                            } else if (canProxyQmcSource(data)) {
-                                try {
-                                    const remainingQmcProbeMs =
-                                        sourceResolutionDeadline - Date.now();
-                                    if (remainingQmcProbeMs <= 0) {
-                                        throw new Error("QMC 媒体探测超时");
-                                    }
-                                    qmcStreamInfo = await withTimeout(
-                                        inspectQmcMediaSource(data),
-                                        Math.min(
-                                            remainingQmcProbeMs,
-                                            DOWNLOAD_SOURCE_QMC_PROBE_TIMEOUT_MS,
-                                        ),
-                                        "QMC 媒体探测超时",
-                                    );
-                                } catch {
-                                    foundEncryptedSource = true;
-                                    qmcStreamInfo = undefined;
-                                    data = null;
-                                    continue;
-                                }
-                            } else {
-                                foundEncryptedSource = true;
-                                qmcStreamInfo = undefined;
-                                data = null;
-                                continue;
+            const resolved = await resolveDownloadMediaSource({
+                musicItem,
+                qualityOrder: getQualityOrder(
+                    taskQuality ?? this.configService.getConfig("basic.defaultDownloadQuality") ?? "standard",
+                    this.configService.getConfig("basic.downloadQualityOrder") ?? "asc",
+                ),
+                pluginManager: this.pluginManagerService,
+                useRemembered: this.configService.getConfig("basic.tryRememberedSourceWhenDownloadFail") ?? true,
+                isActive: () => this.isCurrentDownloadAttempt(musicItem, attemptId),
+                prepare: async (source, remainingMs) => {
+                    const sourceHeaders = createDownloadHeaders(source.headers, source.userAgent);
+                    const cencKey = canProxyCencSource(source) ? getPlayableCencKey(source) : undefined;
+                    let qmcInfo: IQmcStreamInfo | undefined;
+                    if (!cencKey && canProxyQmcSource(source)) {
+                        try {
+                            if (remainingMs <= 0) {
+                                throw new Error("QMC 媒体探测超时");
                             }
+                            qmcInfo = await withTimeout(
+                                inspectQmcMediaSource({ ...source, headers: sourceHeaders }),
+                                Math.min(remainingMs, DOWNLOAD_SOURCE_QMC_PROBE_TIMEOUT_MS),
+                                "QMC 媒体探测超时",
+                            );
+                        } catch (error) {
+                            foundEncryptedSource = true;
+                            throw error;
                         }
-                        resolvedQuality = data.quality ?? quality;
-                        break;
-                    } catch {}
-                }
-                if (!data?.url && foundEncryptedSource) {
-                    throw new Error(
-                        DownloadFailReason.EncryptedMediaUnsupported,
-                    );
-                }
-                const selectedSource = selectDownloadSourceEncryption({
-                    original: { url, ekey, cek },
-                    resolved: data,
-                });
-                url = selectedSource.url;
-                ekey = selectedSource.ekey;
-                cek = selectedSource.cek;
-                if (data?.url) {
-                    headers = createDownloadHeaders(
-                        data.headers,
-                        data.userAgent ?? (musicItem as any).userAgent,
-                    );
-                }
-            }
-            if (!url) {
-                throw new Error(
-                    foundEncryptedSource
-                        ? DownloadFailReason.EncryptedMediaUnsupported
-                        : DownloadFailReason.FailToFetchSource,
-                );
-            }
-            const cencDownloadKey = canProxyCencSource({ url, cek })
-                ? getPlayableCencKey({ url, cek })
-                : undefined;
-            if (
-                !cencDownloadKey &&
-                !qmcStreamInfo &&
-                canProxyQmcSource({ url, ekey })
-            ) {
-                try {
-                    qmcStreamInfo = await withTimeout(
-                        inspectQmcMediaSource({
-                            url,
-                            ekey,
-                            headers,
-                        }),
-                        DOWNLOAD_SOURCE_QMC_PROBE_TIMEOUT_MS,
-                        "QMC 媒体探测超时",
-                    );
-                } catch {
-                    throw new Error(
-                        `${DownloadFailReason.EncryptedMediaUnsupported}: QMC key or container validation failed`,
-                    );
-                }
-            }
-            if (
-                hasEncryptedMediaSource(url, ekey) &&
-                !cencDownloadKey &&
-                !qmcStreamInfo
-            ) {
-                const error = new Error(
-                    cek
-                        ? `${DownloadFailReason.EncryptedMediaUnsupported}: CENC key present but native decrypt proxy is not available`
-                        : DownloadFailReason.EncryptedMediaUnsupported,
-                );
-                throw error;
-            }
+                    }
+                    if (hasEncryptedMediaSource(source.url, source.ekey) && !cencKey && !qmcInfo) {
+                        foundEncryptedSource = true;
+                        return null;
+                    }
+                    return { ...source, headers: sourceHeaders, qmcInfo };
+                },
+            });
             if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
                 return;
             }
+            if (!resolved?.source.url) {
+                throw new Error(foundEncryptedSource
+                    ? DownloadFailReason.EncryptedMediaUnsupported
+                    : DownloadFailReason.FailToFetchSource);
+            }
+            url = resolved.source.url;
+            ({ headers, ekey, cek } = resolved.source);
+            qmcStreamInfo = resolved.source.qmcInfo;
+            const resolvedQuality = resolved.identity.quality ?? taskQuality;
             if (resolvedQuality && resolvedQuality !== taskQuality) {
                 taskQuality = resolvedQuality;
-                taskFilename = this.generateFilename(
-                    musicItem,
-                    resolvedQuality,
-                );
-                this.updateDownloadTask(
-                    musicItem,
-                    {
-                        quality: resolvedQuality,
-                        filename: taskFilename,
-                    },
-                    attemptId,
-                );
+                taskFilename = this.generateFilename(musicItem, resolvedQuality);
             }
+            this.updateDownloadTask(musicItem, {
+                quality: taskQuality,
+                filename: taskFilename,
+                resolvedSource: resolved.identity,
+            }, attemptId);
         } catch (e: any) {
             /** 无法下载，跳过 */
             errorLog("下载失败-无法获取下载链接", {
@@ -2329,6 +2225,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 id: task.musicItem.id,
                 filename: task.filename,
                 quality: task.quality,
+                resolvedSource: task.resolvedSource,
                 downloadedSize: task.downloadedSize,
                 fileSize: task.fileSize,
                 progressText: task.progressText,
@@ -2563,6 +2460,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             startedAt: undefined,
             completedAt: undefined,
             finalization: undefined,
+            resolvedSource: undefined,
         };
 
         try {
