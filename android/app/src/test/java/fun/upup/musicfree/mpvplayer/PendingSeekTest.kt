@@ -2,9 +2,36 @@ package `fun`.upup.musicfree.mpvplayer
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PendingSeekTest {
+    @Test fun peekingTheLatestTargetDoesNotConsumeIt() {
+        val pending = PendingSeek()
+        pending.defer(7, 30.4)
+        assertEquals(30.4, pending.peek(7)!!, 0.0)
+        assertNull(pending.peek(8))
+        pending.defer(7, 0.0)
+        assertEquals(0.0, pending.peek(7)!!, 0.0)
+        assertEquals(0.0, pending.take(7)!!, 0.0)
+        assertNull(pending.peek(7))
+    }
+
+    @Test fun loadingRestorationBlocksUnpauseUntilItIsTakenOrReset() {
+        val pending = PendingSeek()
+        assertFalse(pending.isPendingFor(7))
+        pending.defer(7, 30.4)
+        assertTrue(pending.isPendingFor(7))
+        assertFalse(pending.isPendingFor(8))
+        pending.take(7)
+        assertFalse(pending.isPendingFor(7))
+        pending.defer(8, 0.0)
+        assertTrue(pending.isPendingFor(8))
+        pending.reset()
+        assertFalse(pending.isPendingFor(8))
+    }
+
     @Test
     fun aSeekMadeWhileTheFileLoadsRunsOnceThatFileHasLoaded() {
         val pending = PendingSeek()

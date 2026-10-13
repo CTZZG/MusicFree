@@ -37,7 +37,7 @@ if export_engine_progress_samples "$OUT/missing-sample-probe.jsonl"; then
 fi
 test ! -e "$OUT/missing-sample-probe.jsonl"
 echo 'Missing sample export rejected without creating a JSONL artifact.'
-TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.JsFlowProbePolicyTest,fun.upup.musicfree.mpvplayer.SourceTransitionReaderTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest"
+TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.JsFlowProbePolicyTest,fun.upup.musicfree.mpvplayer.SourceTransitionReaderTest,fun.upup.musicfree.mpvplayer.SourceReplacementPositionTest,fun.upup.musicfree.mpvplayer.PendingSeekTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest"
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
     > "$OUT/instrumentation.log" 2>&1

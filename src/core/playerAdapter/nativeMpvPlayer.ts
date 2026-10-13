@@ -102,6 +102,8 @@ export interface MpvLoadPayload {
     duration?: number;
     /** 是否在加载后立即播放；false 用于恢复队列但不自动出声 */
     autoPlay?: boolean;
+    /** Preserve this media's stopped engine position at replacement; fallback if unavailable. */
+    preservePositionFallback?: number;
 }
 
 export interface MpvQueueSnapshotTrack {
@@ -126,12 +128,14 @@ export type MpvMetadataPayload = Omit<
     | "loadGeneration"
     | "prepareToken"
     | "queueRevision"
+    | "preservePositionFallback"
 >;
 
 interface MpvPlayerNativeModule {
     initialize(options: MpvInitializeOptions): Promise<void>;
     destroy(): Promise<void>;
-    loadAndPlay(payload: MpvLoadPayload): Promise<void>;
+    /** A numeric result means native scheduled position restoration for this load. */
+    loadAndPlay(payload: MpvLoadPayload): Promise<number | null>;
     prepareNext(
         payload?: MpvLoadPayload | MpvPrepareSkipPayload | null,
     ): Promise<void>;

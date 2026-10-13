@@ -419,7 +419,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             }
             return;
         }
-        await this.playIndex(target, "playStart", options?.autoPlay ?? true);
+        return this.playIndex(target, "playStart", options?.autoPlay ?? true, options?.preservePositionFallback);
     }
 
     /** 加载并播放指定下标；URL 未就绪时发 tracksNeedUpdate 并挂起 */
@@ -427,6 +427,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         index: number,
         reason: TrackChangeReason,
         autoPlay = true,
+        preservePositionFallback?: number,
     ) {
         if (index < 0 || index >= this.queue.length) {
             await this.stop();
@@ -463,24 +464,33 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         };
         this.pendingActivation = activation;
         try {
-            await NativeMpvPlayer.loadAndPlay(
-                toLoadPayload(
-                    track,
-                    {
-                        mediaId,
-                        loadGeneration,
-                        prepareToken: 0,
-                        queueRevision: this.queueRevision,
-                    },
-                    autoPlay,
-                ),
+            const payload = toLoadPayload(
+                track,
+                {
+                    mediaId,
+                    loadGeneration,
+                    prepareToken: 0,
+                    queueRevision: this.queueRevision,
+                },
+                autoPlay,
             );
+            if (preservePositionFallback !== undefined) {
+                payload.preservePositionFallback = preservePositionFallback;
+            }
+            const restoredPosition = await NativeMpvPlayer.loadAndPlay(payload);
+            const hasRestoredPosition =
+                preservePositionFallback !== undefined &&
+                typeof restoredPosition === "number" &&
+                Number.isFinite(restoredPosition) && restoredPosition >= 0;
             this.hasLoaded = true;
             this.currentProgress = {
-                position: 0,
+                position: hasRestoredPosition ? restoredPosition : 0,
                 duration: Number(track.duration) || 0,
                 buffered: 0,
             };
+            if (hasRestoredPosition) {
+                return { restoredPosition };
+            }
         } catch (error: any) {
             if (this.pendingActivation?.loadGeneration === loadGeneration) {
                 this.pendingActivation = null;
