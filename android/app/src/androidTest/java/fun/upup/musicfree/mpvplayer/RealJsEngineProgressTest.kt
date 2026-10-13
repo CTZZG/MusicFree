@@ -257,7 +257,22 @@ class RealJsEngineProgressTest {
         val probe = JsFlowProbePolicy.SourceTransitionProbe(oldPath, newPath)
         probe.observe(oldWindowLast)
         await("quality source replacement", 20000, pollMs = 50) {
-            probe.observe(readSourceTransitionOnWorker())
+            val seekingBefore = engine.getPropertyBoolean("seeking")
+            val sample = readSourceTransitionOnWorker()
+            val seekingAfter = engine.getPropertyBoolean("seeking")
+            // Diagnostic evidence only. Do not discard a rewind or change the
+            // acceptance rules based on an unverified explanation of this flag.
+            val row = JSONObject().apply {
+                put("elapsedMs", sample.elapsedMs)
+                put("rawSeconds", sample.rawSeconds ?: JSONObject.NULL)
+                put("source", when (sample.path) { oldPath -> "old"; newPath -> "new"; else -> "other" })
+                put("idle", sample.idle ?: JSONObject.NULL)
+                put("buffering", sample.buffering ?: JSONObject.NULL)
+                put("seekingBefore", seekingBefore ?: JSONObject.NULL)
+                put("seekingAfter", seekingAfter ?: JSONObject.NULL)
+            }
+            android.util.Log.i("E2ETransitionPoll", row.toString())
+            probe.observe(sample)
         }
         val stateAfter = checkOwnerAndSession()
         // Readiness and every subsequent observation require PLAYING separately.
