@@ -236,9 +236,11 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 
 | 指标 | 起点 | 终点 |
 | --- | --- | --- |
-| 冷启动到主页可见 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 开屏页收起（`splash-hidden`，启动初始化做完后）和主页标签栏（含“资料库”）排好版（`first-screen`）中较晚的那个 |
+| 冷启动到主页可见 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 应用界面第一次真正画出来（`first-draw`，原生）：开屏页撑着的时候界面不画，所以这就是用户看到主页的时刻；同时不早于主页标签栏排好版、JS 叫开屏页收起 |
 | 冷启动：主页在开屏页下排好版 | 同上 | `first-screen`（这时开屏页还盖着，用户看不到） |
-| 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime |
+| 冷启动：JS 叫开屏页收起 | 同上 | `splash-hidden`（启动初始化做完后） |
+| 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime，和上面互相核对 |
+| 冷启动：启动请求到进程起来 / 进程起来到主页可见 | 同上 / `process-start`（原生 Application.onCreate） | `process-start` / 主页可见 |
 | 搜索到第一个结果 / 到全部返回 | `SearchSession.start`（`search-start`） | 第一个有结果的来源返回 / 所有来源的第一页都返回 |
 | 点歌到引擎开始推进 | `TrackPlayer.play`（`play-request`，用户点的那次） | 这次装载后 mpv 的 time-pos 第一次自然往前走（`engine-progress`） |
 | 其中：取地址 | 同上 | 交给播放器装载（`track-load`） |

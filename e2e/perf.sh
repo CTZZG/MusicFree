@@ -50,6 +50,8 @@ perf_cold_start() {
             log "冷启动 #$i：60 秒内没有 first-screen 或 splash-hidden"
             continue
         fi
+        # 界面第一次画出来（first-draw）在开屏页收起之后；旧版 APK 没有这个时间点
+        wait_until 10 perf_has first-draw || log "冷启动 #$i：没有 first-draw（旧版 APK？），主页可见按 JS 时间点算"
         if result=$(perf_logcat | python3 -I "$PERF_STATS" cold "$PKG"); then
             if [ -n "$frame" ]; then
                 result=$(python3 -I -c 'import json,sys; r=json.loads(sys.argv[1]); r["cold_first_frame_ms"]=int(sys.argv[2]); print(json.dumps(r))' "$result" "$frame")

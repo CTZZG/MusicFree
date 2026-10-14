@@ -2,8 +2,10 @@
 """性能基线（e2e/perf.sh）用的解析和统计。只记录，不设门限。
 
 应用把时间点写到 logcat（标签 MusicFreePerf），每行 “名字 at=<墙钟毫秒> 键=值 …”：
+  process-start       应用进程起来（原生 Application.onCreate 的开头）
   first-screen        冷启动后主页标签栏第一次排好版（JS；这时开屏页可能还盖着）
-  splash-hidden       启动初始化做完、开屏页收起（JS）
+  splash-hidden       启动初始化做完、JS 叫开屏页收起（JS）
+  first-draw          应用界面第一次真正画出来（原生；开屏页撑着时不画，所以这是用户看到主页的时刻）
   play-request        TrackPlayer.play 被调用（JS，skip=true 是切歌流程自己发起的）
   track-load          取到地址、交给播放器装载（JS）
   engine-load         原生发出 loadfile（gen=装载代次）
@@ -38,9 +40,12 @@ EPOCH_LINE = re.compile(r"^\s*(\d+)\.(\d{3})\d*\s")
 
 # 指标的中文名和顺序（summary 按这个顺序输出）
 METRICS = [
-    ("cold_home_visible_ms", "冷启动：到主页可见（开屏页收起、标签栏含“资料库”已排好版）"),
+    ("cold_home_visible_ms", "冷启动：到主页可见（界面第一次画出来，标签栏含“资料库”已排好版）"),
     ("cold_first_screen_ms", "冷启动：主页标签栏在开屏页下面排好版"),
+    ("cold_splash_hidden_ms", "冷启动：JS 叫开屏页收起"),
     ("cold_first_frame_ms", "冷启动：系统报告的启动完成（am start -W TotalTime）"),
+    ("cold_launch_to_process_ms", "冷启动：启动请求到应用进程起来"),
+    ("cold_process_to_home_ms", "冷启动：应用进程起来到主页可见"),
     ("search_first_result_ms", "搜索：开始到第一个有结果的来源返回"),
     ("search_done_ms", "搜索：开始到所有来源第一页都返回"),
     ("online_engine_start_ms", "在线点歌：点歌到引擎开始推进（time-pos 前进）"),
@@ -105,8 +110,18 @@ def cold(events, start_ms):
         if event["at"] < start_ms:
             raise ValueError(f"{name}（{event['at']}）早于开始（{start_ms}）：读到了上一次启动的")
         marks[name] = event["at"]
-    result["cold_home_visible_ms"] = max(marks.values()) - start_ms
     result["cold_first_screen_ms"] = marks["first-screen"] - start_ms
+    result["cold_splash_hidden_ms"] = marks["splash-hidden"] - start_ms
+    # 界面第一次真正画出来（新版 APK 才有）；没有时退回 JS 的两个时间点
+    draw = first(events, "first-draw")
+    if draw is not None and draw["at"] >= start_ms:
+        marks["first-draw"] = draw["at"]
+    result["cold_home_visible_ms"] = max(marks.values()) - start_ms
+    # 进程起点用来核对起点：系统的启动请求和应用自己的时钟对不对得上
+    process = first(events, "process-start")
+    if process is not None and process["at"] >= start_ms:
+        result["cold_launch_to_process_ms"] = process["at"] - start_ms
+        result["cold_process_to_home_ms"] = max(marks.values()) - process["at"]
     return result
 
 
@@ -210,8 +225,10 @@ def describe(summary, key):
 
 def self_test():
     log = "\n".join([
+        "1760000000.090  1  1 I MusicFreePerf: process-start at=1760000000300",
         "1760000000.100  1  1 I MusicFreePerf: first-screen at=1760000001900",
         "1760000000.150  1  1 I MusicFreePerf: splash-hidden at=1760000002300",
+        "1760000000.160  1  1 I MusicFreePerf: first-draw at=1760000003300",
         "1760000002.000  1  1 I MusicFreePerf: play-request at=1760000002000 key=E2E_测试源_A@tone-a skip=false",
         "1760000002.010  1  1 I MusicFreePerf: play-request at=1760000002010 key=E2E_测试源_A@tone-a skip=true",
         "1760000002.040  1  1 I MusicFreePerf: track-load at=1760000002040 key=x autoPlay=true",
@@ -224,9 +241,22 @@ def self_test():
         "1760000003.090  1  1 I MusicFreePerf: search-done at=1760000003090 session=4 anyResults=true",
     ])
     events = parse(log)
-    assert len(events) == 11, events
-    assert events[2]["detail"]["key"] == "E2E_测试源_A@tone-a"
-    assert cold(events, 1760000000000) == {"cold_home_visible_ms": 2300, "cold_first_screen_ms": 1900}
+    assert len(events) == 13, events
+    assert events[4]["detail"]["key"] == "E2E_测试源_A@tone-a"
+    assert cold(events, 1760000000000) == {
+        "cold_home_visible_ms": 3300,
+        "cold_first_screen_ms": 1900,
+        "cold_splash_hidden_ms": 2300,
+        "cold_launch_to_process_ms": 300,
+        "cold_process_to_home_ms": 3000,
+    }
+    # 旧版 APK 没有进程起点和第一次绘制：主页可见退回 JS 的两个时间点中较晚的
+    old_apk = [e for e in events if e["name"] not in ("process-start", "first-draw")]
+    assert cold(old_apk, 1760000000000) == {
+        "cold_home_visible_ms": 2300,
+        "cold_first_screen_ms": 1900,
+        "cold_splash_hidden_ms": 2300,
+    }
     try:
         cold([e for e in events if e["name"] != "splash-hidden"], 1760000000000)
     except ValueError:

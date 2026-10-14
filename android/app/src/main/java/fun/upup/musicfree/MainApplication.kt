@@ -21,6 +21,7 @@ import `fun`.upup.musicfree.mpvplayer.MpvPlayerPackage
 import `fun`.upup.musicfree.qmc.QmcPackage
 import `fun`.upup.musicfree.securecredential.SecureCredentialPackage
 import `fun`.upup.musicfree.storageuri.StorageUriPackage
+import `fun`.upup.musicfree.utils.PerfMarks
 import `fun`.upup.musicfree.utils.UtilsPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -60,6 +61,8 @@ class MainApplication : Application(), ReactApplication {
     )
 
   override fun onCreate() {
+    // 性能基线：应用进程起来（见 utils/PerfMarks、e2e/perf.sh）
+    PerfMarks.mark("process-start")
     super.onCreate()
     SoLoader.init(this, OpenSourceMergedSoMapping)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
