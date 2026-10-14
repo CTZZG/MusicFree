@@ -15,6 +15,7 @@ import {
     TAB_BAR_HORIZONTAL_MARGIN,
 } from "@/components/musicBar/layout";
 import { useMusicBarLayoutState } from "@/components/musicBar/layoutState";
+import { perfMarkOnce } from "@/utils/perfMark";
 
 const TAB_BAR_RADIUS = TAB_BAR_HEIGHT / 2;
 const TAB_BAR_PADDING = 6;
@@ -34,6 +35,11 @@ interface IHomeTabBarProps {
 }
 
 /** iOS 悬浮标签栏：毛玻璃胶囊，选中的标签用强调色加一层浅色胶囊底 */
+// 性能基线：冷启动后标签栏第一次排好版，就是主页（含“资料库”标签）出来了
+function markFirstScreen() {
+    perfMarkOnce("first-screen");
+}
+
 export default function HomeTabBar(props: IHomeTabBarProps) {
     const { state, navigation, blurTarget } = props;
     const colors = useColors();
@@ -58,6 +64,7 @@ export default function HomeTabBar(props: IHomeTabBarProps) {
     return (
         <View
             accessibilityRole="tablist"
+            onLayout={markFirstScreen}
             style={[
                 styles.bar,
                 dark ? styles.barShadowDark : styles.barShadowLight,

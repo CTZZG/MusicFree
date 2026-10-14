@@ -1,5 +1,6 @@
 import { RequestStateCode } from "@/constants/commonConst";
 import { devLog, errorLog, trace } from "@/utils/log";
+import { perfMark } from "@/utils/perfMark";
 import { isTimeoutError, withTimeout } from "@/utils/promiseTimeout";
 import {
     getSearchRequestKey,
@@ -220,6 +221,12 @@ export class SearchSession {
         phase: "idle",
         results: createEmptySearchResults(),
     };
+    /** 性能基线：这次搜索第一页还没返回的来源，和有没有记过“第一个结果” */
+    private perfProgress: {
+        id: number;
+        pending: Set<string>;
+        firstResultMarked: boolean;
+    } | null = null;
 
     constructor(
         provider: ISearchSourceProvider,
@@ -265,6 +272,26 @@ export class SearchSession {
             phase: sources.length ? "pending" : "no-source",
             results: createEmptySearchResults(),
         });
+        this.perfProgress = sources.length
+            ? {
+                id: this.snapshot.id,
+                pending: new Set(
+                    sources.map(source =>
+                        getSearchRequestKey(
+                            options.type ?? source.defaultSearchType ?? "music",
+                            source.hash,
+                        ),
+                    ),
+                ),
+                firstResultMarked: false,
+            }
+            : null;
+        if (sources.length) {
+            perfMark("search-start", {
+                session: this.snapshot.id,
+                sources: sources.length,
+            });
+        }
         sources.forEach(source => {
             this.request(
                 options.type ?? source.defaultSearchType ?? "music",
@@ -416,6 +443,35 @@ export class SearchSession {
                     : toFailedResult(previous, query, outcome.failure),
             true,
         );
+        if (page === 1) {
+            this.markSearchProgress(
+                getSearchRequestKey(type, source.hash),
+                outcome.ok && outcome.result.data.length > 0,
+            );
+        }
+    }
+
+    /** 性能基线：第一个有结果的来源返回、所有来源的第一页都返回（成功或失败） */
+    private markSearchProgress(requestKey: string, hasResults: boolean) {
+        const progress = this.perfProgress;
+        if (
+            !progress ||
+            progress.id !== this.snapshot.id ||
+            !progress.pending.delete(requestKey)
+        ) {
+            return;
+        }
+        if (hasResults && !progress.firstResultMarked) {
+            progress.firstResultMarked = true;
+            perfMark("search-first-result", { session: progress.id });
+        }
+        if (!progress.pending.size) {
+            perfMark("search-done", {
+                session: progress.id,
+                anyResults: progress.firstResultMarked,
+            });
+            this.perfProgress = null;
+        }
     }
 
     private async fetchPage(

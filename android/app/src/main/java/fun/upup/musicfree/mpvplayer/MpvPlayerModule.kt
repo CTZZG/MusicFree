@@ -18,6 +18,7 @@ import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter
 import dev.jdtech.mpv.MPVLib as NativeMPVLib
 import `fun`.upup.musicfree.bridge.CancelablePromise
+import `fun`.upup.musicfree.utils.PerfMarks
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
@@ -234,6 +235,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var currentState = "idle"
 
     private var currentLoadGeneration = 0L
+    private val engineProgressMarker = EngineProgressMarker()
     private var activeTrackIdentity: TrackIdentity? = null
     private var loadingTrackIdentity: TrackIdentity? = null
     private var loadingGeneration = -1L
@@ -1215,6 +1217,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         Log.d(TAG, "source replacement[$generation]: stopped=$stopped fallback=$fallback")
                     }
                 }
+                engineProgressMarker.onLoad(generation)
+                PerfMarks.mark("engine-load", "gen=$generation source=${mediaSourceType(url)}")
                 MPVLib.command(arrayOf("loadfile", url, "replace"))
                 if (autoPlay) {
                     scheduleUnpauseRetries(generation)
@@ -1686,11 +1690,20 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     override fun eventProperty(property: String) {
     }
 
+    /** 性能基线：这次装载后 time-pos 第一次自然往前走（见 EngineProgressMarker） */
+    private fun markEngineProgress(position: Double) {
+        val paused = currentState == "paused"
+        if (engineProgressMarker.onPosition(currentLoadGeneration, position, paused)) {
+            PerfMarks.mark("engine-progress", "gen=$currentLoadGeneration pos=$position")
+        }
+    }
+
     override fun eventProperty(property: String, value: Long) {
         runMpvCallbackOnMain {
             when (property) {
                 "time-pos" -> {
                     positionSecs = value.toDouble()
+                    markEngineProgress(positionSecs)
                     emitProgress()
                 }
                 "duration" -> {
@@ -1764,6 +1777,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 "time-pos" -> {
                     if (!value.isNaN() && value >= 0) {
                         positionSecs = value
+                        markEngineProgress(value)
                         emitProgress()
                     }
                 }
@@ -1852,6 +1866,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     if (loadingGeneration == generation) {
                         loadingGeneration = -1L
                     }
+                    PerfMarks.mark("engine-file-loaded", "gen=$generation")
                     // 加载期间收到的跳转在开始出声前补上
                     val deferredSeek = pendingSeek.take(generation)
                     if (deferredSeek != null) {

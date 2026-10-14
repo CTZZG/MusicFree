@@ -189,6 +189,12 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
         }
     }
 
+    /** JS 侧的性能时间点（见 PerfMarks），时间用 JS 记下的墙钟毫秒 */
+    @ReactMethod
+    fun perfMark(name: String, atMs: Double, detail: String) {
+        PerfMarks.mark(name, detail, atMs.toLong())
+    }
+
     @ReactMethod(isBlockingSynchronousMethod = true)
     fun getWindowDimensions(): WritableMap {
         val windowManager = reactApplicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
