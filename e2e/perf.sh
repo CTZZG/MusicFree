@@ -5,7 +5,8 @@
 # restart_app，library.sh 的 make_library_track、lib_push、lib_wait_media、lib_scan、lib_row。
 #
 # 时间点由应用写到 logcat（标签 MusicFreePerf，见 lib/perf_stats.py），都是设备上的墙钟毫秒；
-# 冷启动的起点是系统 ActivityTaskManager 记下的启动请求。点歌的终点是引擎 time-pos 第一次往前走，
+# 冷启动的起点是系统 ActivityTaskManager 记下的启动请求，主页出现在屏幕上以系统日志里开屏页移除为准
+# （SplashScreenView “remove starting view”，见 lib/perf_stats.py）。点歌的终点是引擎 time-pos 第一次往前走，
 # 不等于扬声器出声。测试源的搜索是本地数据，不走网络；在线点歌要从 raw.githubusercontent.com 下载音频。
 # 模拟器（固定配置，见 build-beta.yml）上的数字只能和同一配置的数字比，不能当真机耗时。
 
@@ -14,12 +15,17 @@ PERF_RUNS=${E2E_PERF_RUNS:-10}
 PERF_JSONL="$OUT/perf.jsonl"
 
 perf_logcat() {
-    adb logcat -d -v epoch -s ActivityTaskManager:I MusicFreePerf:I 2>/dev/null
+    adb logcat -d -v epoch -s ActivityTaskManager:I MusicFreePerf:I SplashScreenView:V 2>/dev/null
 }
 
 # perf_has <时间点>：logcat 里有这个时间点
 perf_has() {
     perf_logcat | grep -q "MusicFreePerf.*: $1 at="
+}
+
+# perf_splash_removed：开屏页已经移除（系统日志）
+perf_splash_removed() {
+    perf_logcat | grep -q "SplashScreenView.*remove starting view"
 }
 
 # perf_record <阶段> <第几次> <JSON>：记一行结果；第 0 次是预热，不进统计
@@ -51,7 +57,9 @@ perf_cold_start() {
             continue
         fi
         # 界面第一次画出来（first-draw）在开屏页收起之后；旧版 APK 没有这个时间点
-        wait_until 10 perf_has first-draw || log "冷启动 #$i：没有 first-draw（旧版 APK？），主页可见按 JS 时间点算"
+        wait_until 10 perf_has first-draw || log "冷启动 #$i：没有 first-draw（旧版 APK？）"
+        # 开屏页移除才是用户看到主页；没有这行就不报“主页出现在屏幕上”
+        wait_until 10 perf_splash_removed || log "冷启动 #$i：10 秒内系统日志里没有开屏页移除"
         if result=$(perf_logcat | python3 -I "$PERF_STATS" cold "$PKG"); then
             if [ -n "$frame" ]; then
                 result=$(python3 -I -c 'import json,sys; r=json.loads(sys.argv[1]); r["cold_first_frame_ms"]=int(sys.argv[2]); print(json.dumps(r))' "$result" "$frame")
@@ -64,8 +72,9 @@ perf_cold_start() {
 }
 
 # perf_cold_trace：冷启动统计之后再冷启动一次（不进统计），启动过程中连续截屏，记下每张截屏的时刻和
-# 窗口管理的日志，看主页实际什么时候出现在屏幕上。Beta #143 里应用界面第一次画出来（first-draw）到系统
-# 报告启动完成（TotalTime）每次都稳定差约 1 秒，原因未明。结果写到 perf-cold-trace.txt 和 screens/cold-trace-*.png
+# 窗口管理的日志，核对主页实际什么时候出现在屏幕上。Beta #144 用它查明：first-draw 之后开屏页还盖着，
+# 主窗口的同步等满 1000 ms 超时（SurfaceSyncGroup）系统才报 Displayed，之后开屏页才交给应用移除。
+# 截屏有开销，这一次的时刻比统计里的慢；只看先后。结果写到 perf-cold-trace.txt 和 screens/cold-trace-*.png
 perf_cold_trace() {
     local device_dir=/data/local/tmp/perf-shots raw_dir loop
     raw_dir=$(mktemp -d)

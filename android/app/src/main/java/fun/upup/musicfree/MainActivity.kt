@@ -36,7 +36,8 @@ class MainActivity : ReactActivity() {
 
   /**
    * 性能基线：开屏页撑着的时候界面不画（见 SplashScreenManager 的 OnPreDrawListener），
-   * 所以内容第一次真正画出来就是用户看到主页的时刻（见 utils/PerfMarks、e2e/perf.sh）
+   * 这里记下内容第一次画出来的时刻。这时开屏页还盖着：系统等这一帧同步完（Displayed）才把开屏页
+   * 交给应用移除，用户看到主页以开屏页移除为准（见 utils/PerfMarks、e2e/perf.sh、e2e/lib/perf_stats.py）
    */
   private fun markFirstDraw() {
       val content = findViewById<View>(android.R.id.content) ?: return

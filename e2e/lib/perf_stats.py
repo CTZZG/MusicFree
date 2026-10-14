@@ -5,7 +5,8 @@
   process-start       应用进程起来（原生 Application.onCreate 的开头）
   first-screen        冷启动后主页标签栏第一次排好版（JS；这时开屏页可能还盖着）
   splash-hidden       启动初始化做完、JS 叫开屏页收起（JS）
-  first-draw          应用界面第一次真正画出来（原生；开屏页撑着时不画，所以这是用户看到主页的时刻）
+  first-draw          应用界面第一次画出来（原生；开屏页撑着时不画）。这时开屏页还盖在上面：系统要等这一帧
+                      同步完（Displayed）才把开屏页交给应用移除，见 Beta #144 的冷启动追踪
   play-request        TrackPlayer.play 被调用（JS，skip=true 是切歌流程自己发起的）
   track-load          取到地址、交给播放器装载（JS）
   engine-load         原生发出 loadfile（gen=装载代次）
@@ -15,7 +16,10 @@
 
   adb logcat -d -v epoch -s ActivityTaskManager:I MusicFreePerf:I | perf_stats.py cold <包名>
       冷启动：从系统收到启动请求（ActivityTaskManager 的 “START u0 … cmp=<包名>/…” 那一行的时间）
-      到主页可见（first-screen 和 splash-hidden 中较晚的那个）、到 first-screen 的毫秒数，输出一行 JSON
+      到各时间点的毫秒数，输出一行 JSON。主页出现在屏幕上以开屏页移除为准（系统日志
+      “SplashScreenView: remove starting view”）；系统认为画好以 “Displayed <包名>/…” 那一行为准。
+      这两行是系统写的，要 logcat 带上 SplashScreenView 标签（开屏页移除是系统的调试日志，模拟器的 userdebug
+      系统里有，user 版系统可能没有）
   adb logcat -d -s MusicFreePerf:I | perf_stats.py play
       点歌：play-request 到各阶段的毫秒数，输出一行 JSON
   adb logcat -d -s MusicFreePerf:I | perf_stats.py search
@@ -48,12 +52,14 @@ EPOCH_LINE = re.compile(r"^\s*(\d+)\.(\d{3})\d*\s")
 
 # 指标的中文名和顺序（summary 按这个顺序输出）
 METRICS = [
-    ("cold_home_visible_ms", "冷启动：到主页可见（界面第一次画出来，标签栏含“资料库”已排好版）"),
+    ("cold_home_visible_ms", "冷启动：到主页出现在屏幕上（开屏页移除，标签栏含“资料库”）"),
+    ("cold_first_frame_ms", "冷启动：系统报告的启动完成（am start -W TotalTime）"),
+    ("cold_first_draw_ms", "冷启动：应用画出主页（开屏页还盖着）"),
     ("cold_first_screen_ms", "冷启动：主页标签栏在开屏页下面排好版"),
     ("cold_splash_hidden_ms", "冷启动：JS 叫开屏页收起"),
-    ("cold_first_frame_ms", "冷启动：系统报告的启动完成（am start -W TotalTime）"),
     ("cold_launch_to_process_ms", "冷启动：启动请求到应用进程起来"),
-    ("cold_process_to_home_ms", "冷启动：应用进程起来到主页可见"),
+    ("cold_draw_to_displayed_ms", "冷启动：应用画出主页到系统认为画好（Displayed）"),
+    ("cold_displayed_to_visible_ms", "冷启动：系统认为画好到开屏页移除"),
     ("search_first_result_ms", "搜索：开始到第一个有结果的来源返回"),
     ("search_done_ms", "搜索：开始到所有来源第一页都返回"),
     ("online_engine_start_ms", "在线点歌：点歌到引擎开始推进（time-pos 前进）"),
@@ -119,7 +125,25 @@ def launch_start(text, package):
     return start
 
 
-def cold(events, start_ms):
+def system_times(text, package, start_ms):
+    """启动请求之后系统日志里的两个时刻：Displayed（系统认为应用窗口画好）、开屏页移除"""
+    times = {}
+    for line in text.splitlines():
+        match = EPOCH_LINE.match(line)
+        if not match:
+            continue
+        at = int(match.group(1)) * 1000 + int(match.group(2))
+        if at < start_ms:
+            continue
+        if "ActivityTaskManager" in line and f"Displayed {package}/" in line:
+            times.setdefault("displayed", at)
+        elif "SplashScreenView" in line and "remove starting view" in line:
+            times.setdefault("splash-removed", at)
+    return times
+
+
+def cold(events, start_ms, system=None):
+    system = system or {}
     result = {}
     marks = {}
     for name in ("first-screen", "splash-hidden"):
@@ -131,16 +155,27 @@ def cold(events, start_ms):
         marks[name] = event["at"]
     result["cold_first_screen_ms"] = marks["first-screen"] - start_ms
     result["cold_splash_hidden_ms"] = marks["splash-hidden"] - start_ms
-    # 界面第一次真正画出来（新版 APK 才有）；没有时退回 JS 的两个时间点
+    # 应用界面第一次画出来（新版 APK 才有）；这时开屏页还盖着
     draw = first(events, "first-draw")
-    if draw is not None and draw["at"] >= start_ms:
-        marks["first-draw"] = draw["at"]
-    result["cold_home_visible_ms"] = max(marks.values()) - start_ms
+    if draw is not None and draw["at"] < start_ms:
+        draw = None
+    if draw is not None:
+        result["cold_first_draw_ms"] = draw["at"] - start_ms
     # 进程起点用来核对起点：系统的启动请求和应用自己的时钟对不对得上
     process = first(events, "process-start")
     if process is not None and process["at"] >= start_ms:
         result["cold_launch_to_process_ms"] = process["at"] - start_ms
-        result["cold_process_to_home_ms"] = max(marks.values()) - process["at"]
+    # 用户看到主页：开屏页移除。它不会早于 JS 叫开屏页收起，早了说明读错了行
+    removed = system.get("splash-removed")
+    if removed is not None:
+        if removed < marks["splash-hidden"]:
+            raise ValueError(f"开屏页移除（{removed}）早于 JS 叫收起（{marks['splash-hidden']}）")
+        result["cold_home_visible_ms"] = removed - start_ms
+    displayed = system.get("displayed")
+    if displayed is not None and draw is not None:
+        result["cold_draw_to_displayed_ms"] = displayed - draw["at"]
+    if displayed is not None and removed is not None:
+        result["cold_displayed_to_visible_ms"] = removed - displayed
     return result
 
 
@@ -322,20 +357,45 @@ def self_test():
     events = parse(log)
     assert len(events) == 13, events
     assert events[4]["detail"]["key"] == "E2E_测试源_A@tone-a"
-    assert cold(events, 1760000000000) == {
-        "cold_home_visible_ms": 3300,
+    system_log = "\n".join([
+        "1759999999.000  9  9 I ActivityTaskManager: Displayed fun.upup.musicfree/.MainActivity for user 0: +2s0ms",
+        "1760000004.300  9  9 I ActivityTaskManager: Displayed fun.upup.musicfree/.MainActivity for user 0: +4s300ms",
+        "1760000004.400  9  9 I ActivityTaskManager: Displayed com.other/.Main for user 0: +1s",
+        "1760000004.900  7  7 D SplashScreenView: remove starting view",
+        "1760000005.000  7  7 D SplashScreenView: remove starting view",
+    ])
+    system = system_times(system_log, "fun.upup.musicfree", 1760000000000)
+    assert system == {"displayed": 1760000004300, "splash-removed": 1760000004900}, system
+    assert cold(events, 1760000000000, system) == {
+        "cold_home_visible_ms": 4900,
+        "cold_first_draw_ms": 3300,
         "cold_first_screen_ms": 1900,
         "cold_splash_hidden_ms": 2300,
         "cold_launch_to_process_ms": 300,
-        "cold_process_to_home_ms": 3000,
+        "cold_draw_to_displayed_ms": 1000,
+        "cold_displayed_to_visible_ms": 600,
     }
-    # 旧版 APK 没有进程起点和第一次绘制：主页可见退回 JS 的两个时间点中较晚的
-    old_apk = [e for e in events if e["name"] not in ("process-start", "first-draw")]
-    assert cold(old_apk, 1760000000000) == {
-        "cold_home_visible_ms": 2300,
+    # 没有系统那两行（logcat 没带上）：不报主页出现在屏幕上，不拿应用自己的时间点顶替
+    assert cold(events, 1760000000000) == {
+        "cold_first_draw_ms": 3300,
         "cold_first_screen_ms": 1900,
         "cold_splash_hidden_ms": 2300,
+        "cold_launch_to_process_ms": 300,
     }
+    # 旧版 APK 没有进程起点和第一次绘制：只缺跟它们有关的
+    old_apk = [e for e in events if e["name"] not in ("process-start", "first-draw")]
+    assert cold(old_apk, 1760000000000, system) == {
+        "cold_home_visible_ms": 4900,
+        "cold_first_screen_ms": 1900,
+        "cold_splash_hidden_ms": 2300,
+        "cold_displayed_to_visible_ms": 600,
+    }
+    try:
+        cold(events, 1760000000000, {"splash-removed": 1760000002000})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("早于 JS 叫收起的开屏页移除被接受")
     try:
         cold([e for e in events if e["name"] != "splash-hidden"], 1760000000000)
     except ValueError:
@@ -452,7 +512,8 @@ def main(argv):
             self_test()
         elif command == "cold" and len(argv) == 3:
             text = sys.stdin.read()
-            print(json.dumps(cold(parse(text), launch_start(text, argv[2]))))
+            start = launch_start(text, argv[2])
+            print(json.dumps(cold(parse(text), start, system_times(text, argv[2], start))))
         elif command == "play" and len(argv) == 3 and argv[2] in ("online", "local"):
             print(json.dumps(play(parse(sys.stdin.read()), argv[2])))
         elif command == "search" and len(argv) == 2:

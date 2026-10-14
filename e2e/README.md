@@ -236,11 +236,14 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 
 | 指标 | 起点 | 终点 |
 | --- | --- | --- |
-| 冷启动到主页可见 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 应用界面第一次真正画出来（`first-draw`，原生；开屏页撑着的时候界面不画）；同时不早于主页标签栏排好版、JS 叫开屏页收起。屏幕上是否同一时刻换成主页，见下面的冷启动追踪 |
-| 冷启动：主页在开屏页下排好版 | 同上 | `first-screen`（这时开屏页还盖着，用户看不到） |
+| 冷启动到主页出现在屏幕上 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 开屏页移除：系统日志 `SplashScreenView: remove starting view`（系统的调试日志，模拟器的 userdebug 系统里有，user 版系统可能没有）。冷启动追踪的截屏核对过：这之前屏幕上一直是开屏页 |
+| 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime |
+| 冷启动：应用画出主页 | 同上 | 应用界面第一次画出来（`first-draw`，原生；开屏页撑着的时候界面不画）。这时开屏页还盖着 |
+| 冷启动：主页在开屏页下排好版 | 同上 | `first-screen`（用户看不到） |
 | 冷启动：JS 叫开屏页收起 | 同上 | `splash-hidden`（启动初始化做完后） |
-| 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime，和上面互相核对 |
-| 冷启动：启动请求到进程起来 / 进程起来到主页可见 | 同上 / `process-start`（原生 Application.onCreate） | `process-start` / 主页可见 |
+| 冷启动：启动请求到进程起来 | 同上 | `process-start`（原生 Application.onCreate 开头），用来核对起点 |
+| 冷启动：画出主页到系统认为画好 | `first-draw` | 系统日志 `Displayed fun.upup.musicfree/…`（ActivityTaskManager） |
+| 冷启动：系统认为画好到开屏页移除 | `Displayed` | 开屏页移除 |
 | 搜索到第一个结果 / 到全部返回 | `SearchSession.start`（`search-start`） | 第一个有结果的来源返回 / 所有来源的第一页都返回 |
 | 点歌到引擎开始推进 | `TrackPlayer.play`（`play-request`，用户点的那次） | 这次装载后 mpv 的 time-pos 第一次自然往前走（`engine-progress`） |
 | 其中：取地址 | 同上 | 交给播放器装载（`track-load`） |
@@ -256,11 +259,15 @@ ffmpeg 现做的两首，扫进本地音乐后轮流点（不走网络）。轮�
 - 模拟器配置固定（见 `build-beta.yml`：API 34、pixel_6、3 核、4 GB），数字只能和同一配置比，不能当真机耗时；
   GitHub 托管的机器之间也有差异，看趋势时要看多次运行。
 - 冷启动是进程被杀后的启动，系统的文件缓存是热的。
+- Beta 的模拟器关了动画（`disable-animations: true`）：开屏页的淡出（expo-splash-screen 默认 400 ms）和窗口切换动画
+  不在数字里。真机上主页完全显示还要再晚一些。
 
 冷启动追踪（诊断，不进统计）：冷启动测完后再冷启动一次，启动过程中在设备上连续截屏（screencap 原始格式，最多 5 秒、
 24 张，每张前后写一行日志 `MusicFreeShot b<n>/e<n>` 记时刻），同时留下窗口管理、同步超时、焦点切换和性能时间点的日志。
 结果是 `perf.md` 末尾的时间线（相对启动请求的毫秒数）和 `screens/cold-trace-<n>-<起>-<止>ms.png`（缩小 4 倍）。
-起因：Beta #143 里 `first-draw` 到 TotalTime 每次都稳定差约 1 秒（1006–1033 ms），要看屏幕上主页实际在哪个时刻出现。
+截屏本身有开销，这一次比统计里的慢，只看先后。Beta #144 用它查明了 `first-draw` 和 TotalTime 之间稳定约 1 秒的差：
+`first-draw` 之后开屏页还盖着，主窗口的同步等满 1000 ms 超时（`SurfaceSyncGroup: Failed to receive transaction ready
+in 1000ms`）系统才报 Displayed，之后开屏页才交给应用移除（见 `docs/handoff/perf-baseline-2026-10-14.md`）。
 
 `lib/perf_stats.py --self-test` 在 PR CI 和 Beta 都跑：缺时间点、顺序不对、读到上一次启动的时间点都要判测不出；
 追踪的时间线和截屏转换也在里面。
