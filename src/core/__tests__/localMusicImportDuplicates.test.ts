@@ -248,6 +248,32 @@ describe("local music library: one entry per file", () => {
         expect(LocalMusicSheet.getMusicList()).toEqual(before);
     });
 
+    it("does not add a third entry when older versions already left two", async () => {
+        // 设备回归（Beta #138，修复前）：已有两条相同的 One 时，按文件认不出是哪一条，
+        // 选择文件夹再导入时又加了第三条
+        const legacy = [mediaUri(1), mediaUri(2)].map(uri => {
+            const item = audioFile(uri, "E2E Lib One");
+            return {
+                id: `legacy-${uri.slice(-1)}`,
+                platform: "本地",
+                title: item.title,
+                artist: "E2E Library",
+                album: "E2E Library Album",
+                duration: item.duration / 1000,
+                $: { localPath: uri },
+            };
+        });
+        mockStorage.set("local-music-sheet", legacy);
+        await LocalMusicSheet.setup();
+        expect(entries("E2E Lib One")).toHaveLength(2);
+
+        mockFolder = [audioFile(folderUri("E2ELibOne.mp3"), "E2E Lib One")];
+        await LocalMusicSheet.importAndroidDirectory("content://tree");
+
+        expect(entries("E2E Lib One").map((item: IMusic.IMusicItem) => item.id))
+            .toEqual(["legacy-1", "legacy-2"]);
+    });
+
     it("does not add a renamed file again through the folder picker", async () => {
         // 系统音乐库里改名（FUSE 改名）保留同一行：URI 不变，文件名变了
         const two = audioFile(mediaUri(2), "E2E Lib Two");
