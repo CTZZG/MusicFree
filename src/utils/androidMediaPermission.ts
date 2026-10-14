@@ -1,4 +1,5 @@
 import { Linking, PermissionsAndroid, Platform } from "react-native";
+import StorageUri from "@/native/storageUri";
 
 export function getAndroidAudioReadPermission(apiLevel: number) {
     return apiLevel >= 33
@@ -18,6 +19,47 @@ export function requiresAudioReadPermission(localPath: string | null | undefined
         return false;
     }
     return !localPath.startsWith("content://");
+}
+
+/**
+ * 系统音乐库（MediaStore）给的 URI。和 SAF 的 URI 不同，它不带授权：读别的应用
+ * 放进来的文件要有音频读取权限。
+ */
+export function isMediaStoreUri(localPath: string | null | undefined) {
+    return !!localPath && localPath.startsWith("content://media/");
+}
+
+/**
+ * 这个 content URI 现在读不读得到。读不到的系统音乐库 URI 在没有音频读取权限时
+ * 返回 null：文件可能还在，只是没权限，不能说它不存在。
+ */
+export async function resolveContentUriReadable(
+    uri: string,
+): Promise<boolean | null> {
+    const readable = await StorageUri.exists(uri).catch(() => false);
+    if (readable || !isMediaStoreUri(uri)) {
+        return readable;
+    }
+    return (await checkAndroidAudioReadPermission()) ? false : null;
+}
+
+/**
+ * 播放前要不要先拿音频读取权限：裸文件路径要；系统音乐库的 URI 在读不到、而且
+ * 没有权限时要（应用自己放进媒体库的文件没有权限也读得到）；SAF 的 URI 不要。
+ */
+export async function needsAudioReadPermissionToPlay(
+    localPath: string | null | undefined,
+) {
+    if (Platform.OS !== "android" || !localPath) {
+        return false;
+    }
+    if (requiresAudioReadPermission(localPath)) {
+        return true;
+    }
+    return (
+        isMediaStoreUri(localPath) &&
+        (await resolveContentUriReadable(localPath)) === null
+    );
 }
 
 function getRuntimeAudioReadPermission() {

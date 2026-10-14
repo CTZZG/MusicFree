@@ -25,6 +25,7 @@ import {
     resolveLocalFileCheckItem,
 } from "@/utils/localMusicStatus";
 import { localFileExistsResolver } from "@/utils/localFileStatusCache";
+import { resolveContentUriReadable } from "@/utils/androidMediaPermission";
 import { invalidateLocalMusicArtworkCache } from "./localMusicArtworkManager";
 import { errorLog, trace } from "@/utils/log";
 import SerializedStateRepository from "@/utils/serializedStateRepository";
@@ -1741,8 +1742,9 @@ function useLocalFileExists(musicItem: IMusic.IMusicItem | null) {
         }
         if (fsPath.startsWith("content://")) {
             setFileStatus({ path: fsPath, value: null });
-            StorageUri.exists(fsPath)
-                .catch(() => false)
+            // 没有音频读取权限时读不到系统音乐库的文件，但文件还在：保持未知，
+            // 不显示“文件不存在”，点歌时由播放流程申请权限
+            resolveContentUriReadable(fsPath)
                 .then(result => {
                     if (
                         requestGeneration.current === generation &&
