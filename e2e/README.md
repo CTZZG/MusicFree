@@ -261,3 +261,12 @@ e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-
 依赖 adb root、ffmpeg 和 ffprobe；缺少前提或准备失败时逐项记失败。
 `e2e/lib/download_source_test.sh` 覆盖缺记录、下载失败、复制失败、解码失败、错误音频和错误标签；
 `kvstore.py --self-test` 拒绝身份、来源、音质错误的完成记录。
+
+## 慢音频文件换源状态（Android 16 原生仪器）
+
+`SlowQualityLoadingTest` 在同媒体换源时用本机服务器暂不返回文件响应，观察内部暂停、
+真实通知动作、焦点打断和打断中明确暂停。它使用真实JNI/服务/MediaSession，观察发往JS的
+事件，但没有React页面运行时；焦点归还后的原生resume由测试显式调用。
+`quality-loading-state.jsonl` 保留状态、按钮、命令与原始引擎读数；缺少四个场景或任一等待窗口，
+`quality_loading_evidence.py` 必须拒绝。新用例不改变旧250ms/0.25s采样门限，
+也不代表物理音频输出验证。基线与后续修复证据见慢换源交接文档和对应PR。

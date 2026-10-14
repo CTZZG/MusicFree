@@ -5,17 +5,24 @@ import com.facebook.react.bridge.*;
 import com.facebook.react.turbomodule.core.interfaces.CallInvokerHolder;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.function.BiConsumer;
 
 /** Only the JS event sink is replaced; the player, JNI and service are real. */
 final class NativePlaybackTestContext extends ReactApplicationContext {
-    NativePlaybackTestContext(Context context) { super(context); }
+    private final BiConsumer<String, Object> events;
+
+    NativePlaybackTestContext(Context context) { this(context, (name, payload) -> {}); }
+    NativePlaybackTestContext(Context context, BiConsumer<String, Object> events) {
+        super(context);
+        this.events = events;
+    }
 
     @Override public <T extends JavaScriptModule> T getJSModule(Class<T> type) {
         if (type != com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter.class) {
             throw new AssertionError("Unexpected JS dependency: " + type.getName());
         }
         return type.cast((com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter)
-            (name, payload) -> {});
+            (name, payload) -> events.accept(name, payload));
     }
     @Override public <T extends NativeModule> boolean hasNativeModule(Class<T> type) { return false; }
     @Override public Collection<NativeModule> getNativeModules() { return Collections.emptyList(); }

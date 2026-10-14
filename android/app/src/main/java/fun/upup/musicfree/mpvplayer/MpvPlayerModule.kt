@@ -1714,7 +1714,16 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 "pause" -> {
                     val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
                     if (value) {
-                        if (!idle && currentState != "ended") emitState("paused")
+                        if (!idle && currentState != "ended") {
+                            // Same-track replacement stops the old file to capture its
+                            // position. That stop is buffering, not a user pause.
+                            val restoringWhileLoading =
+                                loadingGeneration == currentLoadGeneration &&
+                                    pendingSeek.isPendingFor(currentLoadGeneration) &&
+                                    pendingUnpause.isArmedFor(currentLoadGeneration) &&
+                                    !MpvServiceBridge.playbackHold.blocksAutoPlay
+                            emitState(if (restoringWhileLoading) "buffering" else "paused")
+                        }
                     } else if (!idle || loadingGeneration == currentLoadGeneration) {
                         emitState("playing")
                     }

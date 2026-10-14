@@ -10,6 +10,7 @@ RECORD_PID=""
 cleanup() {
     # Keep partial raw samples even when an instrumentation assertion fails.
     export_engine_progress_samples "$OUT/engine-progress-samples.jsonl" || true
+    export_engine_progress_samples "$OUT/quality-loading-state.jsonl" files/quality-loading-state.jsonl || true
     if [ -n "$RECORD_PID" ]; then
         adb shell pkill -2 screenrecord 2>/dev/null || true
         wait "$RECORD_PID" 2>/dev/null || true
@@ -22,9 +23,10 @@ trap cleanup EXIT
 
 adb install -r -t android/app/build/outputs/apk/debug/app-x86_64-debug.apk
 adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb install -r -t "$E2E_FOCUS_APK"
 # Raw engine samples are written by instrumentation, independently of the
 # service's projected clock. Do not retain samples from a previous installation.
-adb shell run-as fun.upup.musicfree rm -f files/engine-progress-samples.jsonl
+adb shell run-as fun.upup.musicfree rm -f files/engine-progress-samples.jsonl files/quality-loading-state.jsonl
 # Record this adb version's actual missing-file behavior as text, never JSONL.
 # The exporter must reject it regardless of whether exec-out returns zero.
 MISSING_SAMPLE_STATUS=0
@@ -37,7 +39,7 @@ if export_engine_progress_samples "$OUT/missing-sample-probe.jsonl"; then
 fi
 test ! -e "$OUT/missing-sample-probe.jsonl"
 echo 'Missing sample export rejected without creating a JSONL artifact.'
-TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.JsFlowProbePolicyTest,fun.upup.musicfree.mpvplayer.SourceTransitionReaderTest,fun.upup.musicfree.mpvplayer.SourceReplacementPositionTest,fun.upup.musicfree.mpvplayer.PendingSeekTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest"
+TEST_CLASSES="fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.JsFlowProbePolicyTest,fun.upup.musicfree.mpvplayer.SourceTransitionReaderTest,fun.upup.musicfree.mpvplayer.SourceReplacementPositionTest,fun.upup.musicfree.mpvplayer.PendingSeekTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest,fun.upup.musicfree.mpvplayer.SlowQualityLoadingTest"
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
     > "$OUT/instrumentation.log" 2>&1
@@ -78,6 +80,8 @@ print(json.dumps({'passed': passed, 'expected': expected, 'completed': len(compl
 sys.exit(0 if passed else 1)
 PY
 export_engine_progress_samples "$OUT/engine-progress-samples.jsonl"
+export_engine_progress_samples "$OUT/quality-loading-state.jsonl" files/quality-loading-state.jsonl
+python3 -I e2e/lib/quality_loading_evidence.py "$OUT/quality-loading-state.jsonl"
 python3 - "$OUT/engine-progress-samples.jsonl" <<'PY'
 import json, sys
 from collections import Counter
