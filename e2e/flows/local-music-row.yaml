@@ -1,0 +1,7 @@
+# 打开本地音乐，等「${TITLE}」这一行出来（读屏标签是“歌名, 歌手”，文件缺失时后面再加“, 文件不存在”）
+appId: fun.upup.musicfree
+---
+- runFlow: local-music.yaml
+- extendedWaitUntil:
+    visible: "${TITLE}, .*"
+    timeout: 15000

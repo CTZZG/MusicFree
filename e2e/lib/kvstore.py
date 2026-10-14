@@ -21,6 +21,9 @@
   adb shell cat <文件> | kvstore.py sheet-ids
       歌单 store（LocalSheet.<id>）里的歌，每行一个 "平台/id"
 
+  adb shell cat <文件> | kvstore.py sheet-paths
+      歌单 store 里的歌和它记的本地文件位置，每行 "平台/id<Tab>位置"（没有本地文件的位置为空）
+
   kvstore.py --self-test
 """
 import json
@@ -59,6 +62,24 @@ def sheet_ids(entries):
         return []
     songs = json.loads(data["v"])
     return [f"{song.get('platform')}/{song.get('id')}" for song in songs if isinstance(song, dict)]
+
+
+def sheet_paths(entries):
+    data = entries.get("data")
+    if not data or data["t"] != "s":
+        return []
+    result = []
+    for song in json.loads(data["v"]):
+        if not isinstance(song, dict):
+            continue
+        url = song.get("url")
+        internal = song.get("$") if isinstance(song.get("$"), dict) else {}
+        if isinstance(url, str) and url.startswith(("file://", "content://")):
+            path = url
+        else:
+            path = internal.get("localPath") if isinstance(internal.get("localPath"), str) else ""
+        result.append(f"{song.get('platform')}/{song.get('id')}\t{path}")
+    return result
 
 
 def check_source(entries, title, download=False):
@@ -104,6 +125,12 @@ def self_test():
     assert find(entries, "旧版种子") == ["tone-a"]
     assert find(entries, "没有这段") == []
     assert sheet_ids(entries) == ["E2E 测试源 A/tone-a", "E2E 测试源 A/tone-c"]
+    assert sheet_paths(entries) == ["E2E 测试源 A/tone-a\t", "E2E 测试源 A/tone-c\t"]
+    local_songs = {"data": {"t": "s", "v": json.dumps([
+        {"id": "a", "platform": "本地", "$": {"localPath": "content://media/external/audio/media/31"}},
+        {"id": "b", "platform": "本地", "url": "content://media/external/audio/media/32", "$": {"localPath": "content://old"}},
+    ], ensure_ascii=False)}}
+    assert sheet_paths(local_songs) == ["本地/a\tcontent://media/external/audio/media/31", "本地/b\tcontent://media/external/audio/media/32"]
     for broken in ("", "{", "[]", '{"version": 2, "entries": {}}', '{"version": 1}',
                    '{"version": 1, "entries": {"k": {"t": "x", "v": 1}}}'):
         try:
@@ -141,7 +168,7 @@ def main(argv):
         print(file_name(argv[2]))
         return 0
     command = argv[1] if len(argv) > 1 else ""
-    if command not in ("check", "keys", "find", "sheet-ids", "remembered-source", "download-source") or (command in ("find", "remembered-source", "download-source")) != (len(argv) == 3):
+    if command not in ("check", "keys", "find", "sheet-ids", "sheet-paths", "remembered-source", "download-source") or (command in ("find", "remembered-source", "download-source")) != (len(argv) == 3):
         print(__doc__, file=sys.stderr)
         return 2
     try:
@@ -165,6 +192,9 @@ def main(argv):
     elif command == "find":
         for key in find(entries, argv[2]):
             print(key)
+    elif command == "sheet-paths":
+        for line in sheet_paths(entries):
+            print(line)
     else:
         for song in sheet_ids(entries):
             print(song)

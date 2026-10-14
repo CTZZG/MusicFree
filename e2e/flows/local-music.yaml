@@ -1,0 +1,10 @@
+# 资料库 → 本地音乐（列表可以是空的）。重启应用后用，先等首页出来
+appId: fun.upup.musicfree
+---
+- runFlow: home.yaml
+- tapOn: "资料库"
+- tapOn: "本地音乐"
+# 本地音乐页左上角的菜单按钮（读屏标签是图标名）
+- extendedWaitUntil:
+    visible: "bars-3"
+    timeout: 15000

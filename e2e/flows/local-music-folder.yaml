@@ -1,0 +1,28 @@
+# 本地音乐 → 菜单 → 选择文件夹扫描：在系统的文件夹选择器里选 Music/${FOLDER}，允许访问，等扫描结果页出来。
+# 选择器是系统界面，语言跟系统（模拟器是英文），按钮文字中英文都认
+appId: fun.upup.musicfree
+---
+- runFlow: local-music.yaml
+- tapOn: "bars-3"
+- tapOn: "选择文件夹扫描"
+- extendedWaitUntil:
+    visible: "USE THIS FOLDER|Use this folder|使用此文件夹|Music"
+    timeout: 20000
+# 选择器没停在内部存储的根目录时，从侧边栏进去
+- runFlow:
+    when:
+      notVisible: "Music"
+    commands:
+      - tapOn: "Show roots|显示根目录"
+      - tapOn: "sdk_gphone.*|Internal storage|内部存储.*"
+- tapOn: "Music"
+- tapOn: "${FOLDER}"
+- tapOn: "USE THIS FOLDER|Use this folder|使用此文件夹"
+- tapOn: "ALLOW|Allow|允许"
+- extendedWaitUntil:
+    visible: "扫描结果"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "发现 .*"
+    timeout: 10000
+- takeScreenshot: local-music-folder

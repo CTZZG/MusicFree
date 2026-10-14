@@ -12,7 +12,7 @@ import {
 } from "@/utils/mediaUtils";
 import {
     ensureAndroidAudioReadPermission,
-    requiresAudioReadPermission,
+    needsAudioReadPermissionToPlay,
 } from "@/utils/androidMediaPermission";
 import Network from "@/utils/network";
 import PersistStatus from "@/utils/persistStatus";
@@ -1498,9 +1498,10 @@ class TrackPlayer
             // targetSdk 36 下 READ_MEDIA_AUDIO 是新的运行时权限，不会从旧版的
             // READ_EXTERNAL_STORAGE 自动继承；此前只有本地音乐页的「扫描」按钮
             // 申请过，所以从旧版升级的用户点播本地歌曲只会拿到一个没有任何解释的
-            // Source error。这里在真正取源之前补一次授权检查。
+            // Source error。这里在真正取源之前补一次授权检查。系统音乐库扫进来的
+            // content://media URI 同样要这个权限（撤销后列表里的歌点了要能重新授权）。
             if (
-                requiresAudioReadPermission(localPath) &&
+                (await needsAudioReadPermissionToPlay(localPath)) &&
                 !(await ensureAndroidAudioReadPermission())
             ) {
                 await this.backend.reset();

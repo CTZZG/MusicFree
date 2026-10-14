@@ -12,15 +12,26 @@ jest.mock("react-native", () => ({
     Platform: { OS: "android", Version: 33 },
 }));
 
+jest.mock("@/native/storageUri", () => ({
+    __esModule: true,
+    default: { exists: jest.fn() },
+}));
+
 import {
     checkAndroidAudioReadPermission,
     ensureAndroidAudioReadPermission,
     getAndroidAudioReadPermission,
+    needsAudioReadPermissionToPlay,
     requiresAudioReadPermission,
+    resolveContentUriReadable,
     toggleAndroidAudioReadPermission,
 } from "../androidMediaPermission";
 
 const { Linking, PermissionsAndroid } = jest.requireMock("react-native");
+const StorageUri = jest.requireMock("@/native/storageUri").default;
+const mediaStoreUri = "content://media/external/audio/media/42";
+const safUri =
+    "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fa.mp3";
 
 describe("androidMediaPermission", () => {
     beforeEach(() => {
@@ -119,6 +130,60 @@ describe("androidMediaPermission", () => {
                 expect(requiresAudioReadPermission(value as any)).toBe(false);
             },
         );
+    });
+
+    // 设备回归 2026-10-14（模拟器 API 34，e2e/library.sh）：pm revoke 撤销音频读取
+    // 权限后，系统音乐库扫进来的歌读不到，列表把它们都标成“文件不存在”，点了只提示
+    // 去重新定位文件，没有地方重新授权。文件其实都在。
+    describe("MediaStore URIs without the audio permission", () => {
+        it("reports an unreadable MediaStore URI as unknown, not missing", async () => {
+            StorageUri.exists.mockResolvedValue(false);
+            PermissionsAndroid.check.mockResolvedValue(false);
+            await expect(resolveContentUriReadable(mediaStoreUri)).resolves.toBeNull();
+        });
+
+        it("treats a revoked-permission error the same way", async () => {
+            StorageUri.exists.mockRejectedValue(
+                Object.assign(new Error("revoked"), {
+                    code: "E_URI_PERMISSION_REVOKED",
+                }),
+            );
+            PermissionsAndroid.check.mockResolvedValue(false);
+            await expect(resolveContentUriReadable(mediaStoreUri)).resolves.toBeNull();
+        });
+
+        it("still reports a deleted file as missing while permission is granted", async () => {
+            StorageUri.exists.mockResolvedValue(false);
+            PermissionsAndroid.check.mockResolvedValue(true);
+            await expect(resolveContentUriReadable(mediaStoreUri)).resolves.toBe(false);
+        });
+
+        it("reports an unreadable SAF URI as missing (it carries its own grant)", async () => {
+            StorageUri.exists.mockResolvedValue(false);
+            await expect(resolveContentUriReadable(safUri)).resolves.toBe(false);
+            expect(PermissionsAndroid.check).not.toHaveBeenCalled();
+        });
+
+        it("asks for the permission before playing an unreadable MediaStore URI", async () => {
+            StorageUri.exists.mockResolvedValue(false);
+            PermissionsAndroid.check.mockResolvedValue(false);
+            await expect(needsAudioReadPermissionToPlay(mediaStoreUri)).resolves.toBe(true);
+        });
+
+        it("plays a readable MediaStore URI without asking (e.g. the app's own files)", async () => {
+            StorageUri.exists.mockResolvedValue(true);
+            PermissionsAndroid.check.mockResolvedValue(false);
+            await expect(needsAudioReadPermissionToPlay(mediaStoreUri)).resolves.toBe(false);
+        });
+
+        it("keeps the existing rules for bare paths, SAF URIs and remote tracks", async () => {
+            StorageUri.exists.mockResolvedValue(false);
+            await expect(
+                needsAudioReadPermissionToPlay("/storage/emulated/0/Music/a.mp3"),
+            ).resolves.toBe(true);
+            await expect(needsAudioReadPermissionToPlay(safUri)).resolves.toBe(false);
+            await expect(needsAudioReadPermissionToPlay(null)).resolves.toBe(false);
+        });
     });
 });
 

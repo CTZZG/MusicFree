@@ -1,0 +1,13 @@
+# 本地音乐里把「${TITLE}」加入“我喜欢”：行尾的更多操作 → 加入歌单 → 我喜欢
+appId: fun.upup.musicfree
+---
+- runFlow: local-music.yaml
+- tapOn: "${TITLE} 更多操作"
+- tapOn: "加入歌单"
+- extendedWaitUntil:
+    visible: "添加到歌单.*"
+    timeout: 10000
+- tapOn: "我喜欢"
+- extendedWaitUntil:
+    notVisible: "添加到歌单.*"
+    timeout: 10000

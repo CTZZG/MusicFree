@@ -1,0 +1,75 @@
+# 本地音乐库：模拟器测试与修复（2026-10-14）
+
+## 目的与做法
+
+按“测试先行，复现后再修”推进计划中的音乐库设备测试：重扫、文件移动、权限撤销与恢复、重复导入。
+先只加测试、在修复前的 APK 上跑出对照，确认复现后再改产品代码。工作分支 `claude/sharp-planck-xtfenm`，
+基线 `feat/mpv-only` 的 `b513a487`（PR #36 合并后）。不合并、不发 Release。
+
+## 测试（端到端第 22 步，`e2e/library.sh`）
+
+手动运行 Beta 构建时 `e2e_suite` 选 `library`。测试音频用 ffmpeg 现做（One、Two、Three，带 ID3 标签，时长不同），
+推到 `/sdcard/Music/E2E-*`；推、改名、复制、删除都走 FUSE，每一步先用 `content query` 等 MediaStore 跟上。
+扫描、加入我喜欢、选择文件夹、点歌都走界面。本地音乐列表从 RKStorage（AsyncStorage 的 SQLite）读，
+连读两次一样才算；我喜欢从键值存储读。判断在 `e2e/lib/local_library.py`（`--self-test`，PR CI 与 Beta 都跑），
+`kvstore.py` 新增 `sheet-paths`。场景和预期见 `e2e/README.md` 的“本地音乐库”一节。
+
+按用户决定，这一步保持单独跑、不进 `all`：`all` 在 #136/#137 分别用了约 40、32 分钟，e2e 任务期限 60 分钟；
+第 22 步单独跑约 12 分钟（含开机）。
+
+## 修复前的对照：Beta #138
+
+[Beta #138](https://github.com/CTZZG/MusicFree/actions/runs/38532122823)：测试脚本 `ac6b982d`，APK 是 Beta #136 按
+`08700739` 打的（产品代码与当时的主线 `0fd41f78` 相同）。29 项通过、5 项失败：
+
+| 失败的检查 | 设备上的结果 |
+| --- | --- |
+| One 后来又多出两份相同的文件：重扫后仍是一条 | 两条 One（第二份副本被加进来） |
+| Three 的两份相同文件同一次扫进来：只有一条 | 两条 Three |
+| 选择文件夹再导入已在库里的文件：不多出条目 | 多了一条 SAF 的 One |
+| 撤销音频权限后：不把 Two 显示成文件不存在 | 带“文件不存在” |
+| 撤销音频权限后点 Two：弹出系统授权框 | 8 秒内没有授权框，界面上全是“文件不存在” |
+
+其余通过：首次扫描、原样重扫（我喜欢不变）、Two 改名移动后键不变并指向新文件、One 复制后删原文件时
+重扫前显示文件不存在、重扫后键不变且我喜欢跟随、移动后能播放；撤销期间条目不删不改；`pm grant` 后不用重扫，
+Two 不显示缺失且能播放。
+
+选择文件夹那一项不是独立的问题：前一步已经留下两条文件信息相同的 One，按文件认不出是哪一条，于是又加了一条。
+
+## 修了什么
+
+1. **同一个文件只算一首**（`5fb82acc`，`src/core/localMusicSheet.ts`）。规则：文件名、大小、时长、标题、歌手、专辑
+   都相同的文件在本地音乐里只留一条。应用分不清“同一个文件从两条途径进来”和“两份完全一样的副本”：系统音乐库和
+   选择文件夹给的 URI 不同，系统音乐库的 URI 也看不出真实路径。合并时记下已有着落的文件（已有条目指向的文件还在，
+   或这次刚收下、接回的），后面再遇到就跳过；原来那份删掉后，下次扫描照旧接到还在的那份。原地改名
+   （MediaStore 保留同一行、URI 不变）时同时更新记下的文件信息。已有的重复条目不删（不动用户数据），只是不再增加。
+2. **撤销音频权限后不说“文件不存在”，点歌时要权限**（`37fbc9f2`）。系统音乐库的 `content://media` URI 不带授权，
+   读别的应用放进去的文件要 READ_MEDIA_AUDIO。`resolveContentUriReadable`：读不到且没有权限时返回未知，
+   列表不再标缺失；有权限时读不到仍是不存在。`needsAudioReadPermissionToPlay`：裸路径照旧要权限，系统音乐库 URI
+   读不到且没有权限时要，SAF URI 不要。`TrackPlayer.play` 用它判断；只在点歌、切歌时问，冷启动恢复不经过 `play`。
+
+## 本地验证
+
+- `npm run verify` 通过：1378 项 Jest、生成器与布局测试、ESLint 警告不超基线、TypeScript。
+- `localMusicImportDuplicates` 7 项走真实的 LocalMusicSheet 导入（存储、MediaStore、SAF 列表、元数据是内存假实现）；
+  换回修复前的 `localMusicSheet.ts` 时 5 项失败。`androidMediaPermission` 新增 7 项。
+
+## 修复后的设备结果：Beta #139
+
+[Beta #139](https://github.com/CTZZG/MusicFree/actions/runs/38534008814)：APK 按 `10d22a5a` 实际打包（含两项修复），
+测试脚本同一提交，只跑 `library`。34 项全部通过，修复前失败的 5 项都过了：
+
+- 后来多出两份相同的 One、同一次扫到两份 Three：都只有一条；
+- 选择文件夹再导入 E2E-Moved：3 条，键和路径都没变；
+- 撤销权限后 Two 这一行不带“文件不存在”；点 Two 弹出系统授权框（截图 `library-permission-dialog.png`：
+  “Allow MusicFree to access music and audio on this device?”，背后列表 3 首都没有缺失标记）；
+- 撤销期间、`pm grant` 后条目都不变，恢复后点 Two 能播放。
+
+其余检查和修复前一样通过（首次扫描、原样重扫、改名移动、复制后删原文件、我喜欢跟随、移动后能播放）。
+PR CI（质量门、Android 单元测试、emulator）在 `25ee3b64`、`66c441c8` 上都通过。
+
+## 没有覆盖的
+
+真机厂商文件管理器的移动方式（这里模拟了 FUSE 改名和复制后删除两种）；SD 卡、USB 存储；系统文件夹选择器在
+别的语言和版本上的按钮；先改名、不重扫系统音乐库就直接从选择文件夹导入改名后的文件（记下的文件信息还是旧名字，
+会再加一条，要每次扫描都重读所有条目的文件信息才能避免，这次没有做）。
