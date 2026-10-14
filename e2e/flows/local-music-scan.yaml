@@ -1,0 +1,13 @@
+# 本地音乐 → 菜单 → 扫描系统音乐库，等扫描结果页出来（结果页第一行是“发现 N 个音频，新增 N 首，修复 N 首……”）
+appId: fun.upup.musicfree
+---
+- runFlow: local-music.yaml
+- tapOn: "bars-3"
+- tapOn: "扫描系统音乐库"
+- extendedWaitUntil:
+    visible: "扫描结果"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "发现 .*"
+    timeout: 10000
+- takeScreenshot: local-music-scan

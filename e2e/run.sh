@@ -8,7 +8,9 @@
 # 结果目录里有 summary.md（每项检查的结果）、截图、Maestro 日志和 logcat。
 #
 # E2E_SUITE=storage 时装好应用和测试源后只跑第 17、18 步（下载、旧版数据迁移的故障注入，见 storage.sh）；
-# E2E_SUITE=power 时只跑第 19、20 步（锁屏和省电，见 power.sh）。
+# E2E_SUITE=power 时只跑第 19、20 步（锁屏和省电，见 power.sh）；
+# E2E_SUITE=library 时只跑第 22 步（本地音乐库：重扫、移动、重复文件、权限撤销和恢复，见 library.sh）。
+# 第 22 步要单独选：all 已经用掉 e2e 任务 60 分钟期限的大半。
 set -uo pipefail
 
 APK=${1:?用法：e2e/run.sh <APK> <提交号> <结果目录>}
@@ -285,6 +287,15 @@ if [ "$E2E_SUITE" = power ]; then
     log "E2E_SUITE=power：只跑锁屏和省电"
     run_lock_screen_checks
     run_power_saving_checks
+    finish
+fi
+
+# 22 步：本地音乐库（library.sh）
+# shellcheck source=library.sh
+source "$HERE/library.sh"
+if [ "$E2E_SUITE" = library ]; then
+    log "E2E_SUITE=library：只跑本地音乐库"
+    run_library_checks
     finish
 fi
 
