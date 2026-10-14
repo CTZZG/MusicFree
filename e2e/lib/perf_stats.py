@@ -25,14 +25,22 @@
       统计结果的 JSON 写到 stderr
   perf_stats.py describe <统计结果 JSON 文件> <指标>
       一行说明（“中位数 … ms，P95 … ms（n 次，最小 …，最大 …）”）；这个指标没有样本时什么也不输出
+  adb logcat -d -v epoch -b main -b system -b events | perf_stats.py trace <包名> <截屏目录> <输出目录>
+      冷启动追踪（诊断，不进统计）：启动请求前后的相关日志（窗口管理、同步超时、焦点、性能时间点），
+      每行前面是相对启动请求的毫秒数；截屏目录里的 <n>.raw（screencap 原始格式，设备上截屏前后各写一行
+      “MusicFreeShot b<n>/e<n>”）缩小 4 倍转成 cold-trace-<n>-<起>-<止>ms.png 写到输出目录
   perf_stats.py --self-test
 
 解析不出（缺时间点、顺序不对）时输出原因、返回 1。
 """
 import json
 import math
+import os
 import re
+import struct
 import sys
+import tempfile
+import zlib
 
 MARK = re.compile(r"MusicFreePerf\s*:\s*(\S+) at=(\d+)(.*)$")
 # logcat -v epoch：行首是 “秒.毫秒”
@@ -86,6 +94,17 @@ def first(events, name, after=None, **detail):
     return None
 
 
+# logcat -v epoch 的一行：“秒.毫秒 进程 线程 级别 标签: 内容”（events 缓冲区也是这个格式）
+LOG_LINE = re.compile(r"^\s*(\d+)\.(\d{3})\d*\s+\d+\s+\d+\s+[VDIWEF]\s+(.*)$")
+SHOT_LINE = re.compile(r"MusicFreeShot\s*:\s*([be])(\d+)\s*$")
+# 冷启动追踪要留下的日志：系统启动记录、窗口管理、同步超时、焦点切换、应用自己的性能时间点
+TRACE_WORDS = re.compile(
+    r"ActivityTaskManager|MusicFreePerf|SurfaceSyncGroup|[Tt]imed out|[Tt]imeout|Displayed|[Ss]plash|"
+    r"[Ss]tarting ?[Ww]indow|BLAST|DrawFinished|finishDrawing|wm_activity_launch_time|input_focus|"
+    r"wm_set_resumed_activity|wm_on_resume_called|[Tt]ransition"
+)
+
+
 def launch_start(text, package):
     """系统收到这个包的启动请求的时间（毫秒）；有多行时取最后一行"""
     start = None
@@ -123,6 +142,66 @@ def cold(events, start_ms):
         result["cold_launch_to_process_ms"] = process["at"] - start_ms
         result["cold_process_to_home_ms"] = max(marks.values()) - process["at"]
     return result
+
+
+def timeline(text, package, before_ms=500, after_ms=6000):
+    """冷启动追踪：启动请求前后的相关日志行（相对启动请求的毫秒数，内容）和每张截屏的起止"""
+    start = launch_start(text, package)
+    lines, shots = [], {}
+    for line in text.splitlines():
+        match = LOG_LINE.match(line)
+        if not match:
+            continue
+        offset = int(match.group(1)) * 1000 + int(match.group(2)) - start
+        if not -before_ms <= offset <= after_ms:
+            continue
+        message = match.group(3).strip()
+        shot = SHOT_LINE.search(message)
+        if shot:
+            shots.setdefault(int(shot.group(2)), {})[shot.group(1)] = offset
+        elif TRACE_WORDS.search(message):
+            lines.append((offset, message))
+    return lines, {n: s for n, s in shots.items() if "b" in s and "e" in s}
+
+
+def raw_to_png(raw, scale=4):
+    """screencap 原始格式（宽、高、像素格式，Android 12 起多一个色彩空间，然后每像素 4 字节）转成缩小的 RGB PNG。
+    像素格式 1 是 RGBA_8888，2 是 RGBX_8888，前 3 个字节都是 RGB"""
+    width, height, pixel_format = struct.unpack_from("<III", raw)
+    header = len(raw) - width * height * 4
+    if header not in (12, 16) or pixel_format not in (1, 2):
+        raise ValueError(f"不是 RGBA/RGBX 的 screencap 原始截屏（{width}x{height}，格式 {pixel_format}，文件头 {header} 字节）")
+    columns = range(0, width, scale)
+    rows = []
+    for y in range(0, height, scale):
+        row = raw[header + y * width * 4:header + (y + 1) * width * 4]
+        rows.append(b"\0" + b"".join(row[x * 4:x * 4 + 3] for x in columns))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    header_chunk = struct.pack(">IIBBBBB", len(columns), len(rows), 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header_chunk) +
+            chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b""))
+
+
+def trace(text, package, shot_dir, out_dir):
+    """冷启动追踪的文字结果；截屏转成 PNG 写到 out_dir"""
+    lines, shots = timeline(text, package)
+    entries = list(lines)
+    for number, window in sorted(shots.items()):
+        path = os.path.join(shot_dir, f"{number}.raw")
+        name = f"cold-trace-{number:02d}-{window['b']}-{window['e']}ms.png"
+        try:
+            with open(path, "rb") as file:
+                png = raw_to_png(file.read())
+            with open(os.path.join(out_dir, name), "wb") as file:
+                file.write(png)
+        except (OSError, ValueError, struct.error) as error:
+            name = f"（没转成：{error}）"
+        entries.append((window["b"], f"截屏 {number} 开始（到 +{window['e']} ms 截完）{name}"))
+    entries.sort(key=lambda entry: entry[0])
+    return "\n".join(f"{offset:+6d} ms  {message}" for offset, message in entries)
 
 
 def play(events, prefix):
@@ -325,6 +404,44 @@ def self_test():
     assert describe(summary, "search_done_ms") == ""
     table = markdown(summary)
     assert "冷启动：主页标签栏在开屏页下面排好版" in table and "| 3 | 1100 | 1200 |" in table, table
+    trace_log = "\n".join([
+        "1760000009.000  9  9 I ActivityTaskManager: START u0 {cmp=fun.upup.musicfree/.MainActivity} from uid 2000",
+        "1760000010.000  9  9 I ActivityTaskManager: START u0 {cmp=fun.upup.musicfree/.MainActivity} from uid 2000",
+        "1760000009.950  5  5 I MusicFreeShot: b1",
+        "1760000010.120  5  5 I MusicFreeShot: e1",
+        "1760000010.130  5  5 I MusicFreeShot: b2",
+        "1760000010.900  7  7 I MusicFreePerf: first-draw at=1760000010900",
+        "1760000011.910  9  9 E SurfaceSyncGroup: Failed to receive transaction ready in 1000ms",
+        "1760000011.920  9  9 I ActivityTaskManager: Displayed fun.upup.musicfree/.MainActivity for user 0: +1s920ms",
+        "1760000011.921  9  9 I wm_activity_launch_time: [0,1,fun.upup.musicfree/.MainActivity,1920]",
+        "1760000011.930  9  9 D Unrelated: noise",
+        "1760000020.000  9  9 I ActivityTaskManager: Displayed com.other/.Main",
+    ])
+    lines, shots = timeline(trace_log, "fun.upup.musicfree")
+    assert [offset for offset, _ in lines] == [0, 900, 1910, 1920, 1921], lines
+    assert shots == {1: {"b": -50, "e": 120}}, shots
+    # 3x2 的 RGBA 原始截屏（16 字节文件头），缩小 2 倍是 2x1，取第 0、2 列
+    pixels = bytes(range(1, 25))
+    raw = struct.pack("<IIII", 3, 2, 1, 0) + pixels
+    png = raw_to_png(raw, scale=2)
+    assert png.startswith(b"\x89PNG\r\n\x1a\n") and struct.unpack_from(">II", png, 16) == (2, 1)
+    idat = png.index(b"IDAT")
+    size = struct.unpack_from(">I", png, idat - 4)[0]
+    assert zlib.decompress(png[idat + 4:idat + 4 + size]) == b"\0" + pixels[0:3] + pixels[8:11]
+    try:
+        raw_to_png(struct.pack("<III", 3, 2, 5) + pixels)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("不是 RGBA 的截屏被接受")
+    with tempfile.TemporaryDirectory() as shot_dir, tempfile.TemporaryDirectory() as out_dir:
+        with open(os.path.join(shot_dir, "1.raw"), "wb") as file:
+            file.write(raw)
+        text = trace(trace_log + "\n1760000010.300  5  5 I MusicFreeShot: e2", "fun.upup.musicfree", shot_dir, out_dir)
+        assert os.listdir(out_dir) == ["cold-trace-01--50-120ms.png"], os.listdir(out_dir)
+        assert text.splitlines()[0] == "   -50 ms  截屏 1 开始（到 +120 ms 截完）cold-trace-01--50-120ms.png", text
+        assert "截屏 2 开始（到 +300 ms 截完）（没转成：" in text and "+1910 ms  E SurfaceSyncGroup" not in text, text
+        assert "+1910 ms  SurfaceSyncGroup: Failed" in text, text
     print("perf_stats.py self-test ok")
 
 
@@ -340,6 +457,8 @@ def main(argv):
             print(json.dumps(play(parse(sys.stdin.read()), argv[2])))
         elif command == "search" and len(argv) == 2:
             print(json.dumps(search(parse(sys.stdin.read()))))
+        elif command == "trace" and len(argv) == 5:
+            print(trace(sys.stdin.read(), argv[2], argv[3], argv[4]))
         elif command == "describe" and len(argv) == 4:
             with open(argv[2], encoding="utf-8") as file:
                 print(describe(json.load(file), argv[3]))

@@ -63,6 +63,34 @@ perf_cold_start() {
     done
 }
 
+# perf_cold_trace：冷启动统计之后再冷启动一次（不进统计），启动过程中连续截屏，记下每张截屏的时刻和
+# 窗口管理的日志，看主页实际什么时候出现在屏幕上。Beta #143 里应用界面第一次画出来（first-draw）到系统
+# 报告启动完成（TotalTime）每次都稳定差约 1 秒，原因未明。结果写到 perf-cold-trace.txt 和 screens/cold-trace-*.png
+perf_cold_trace() {
+    local device_dir=/data/local/tmp/perf-shots raw_dir loop
+    raw_dir=$(mktemp -d)
+    adb shell am force-stop "$PKG"
+    adb shell "rm -rf $device_dir; mkdir -p $device_dir"
+    sleep 3
+    adb logcat -b main -b system -b events -c
+    # 原始格式截屏（不压 PNG：快，也少抢启动时的 CPU），每张前后各写一行日志记时刻；最多 5 秒、24 张
+    adb shell "i=0; end=\$((\$(date +%s) + 5)); while [ \$i -lt 24 ] && [ \$(date +%s) -lt \$end ]; do i=\$((i + 1)); log -t MusicFreeShot b\$i; screencap $device_dir/\$i.raw; log -t MusicFreeShot e\$i; done" &
+    loop=$!
+    adb shell am start -W -n "$ACTIVITY" | tr -d '\r' | sed -n 's/^TotalTime: */冷启动追踪：TotalTime /p'
+    wait "$loop"
+    # 本地目录已存在，adb pull 把设备目录整个放进去：$raw_dir/perf-shots
+    adb pull "$device_dir" "$raw_dir" > /dev/null
+    adb shell "rm -rf $device_dir"
+    log "冷启动追踪：取回 $(find "$raw_dir" -name '*.raw' | wc -l) 张截屏"
+    if adb logcat -d -v epoch -b main -b system -b events |
+        python3 -I "$PERF_STATS" trace "$PKG" "$raw_dir/perf-shots" "$OUT/screens" > "$OUT/perf-cold-trace.txt"; then
+        cat "$OUT/perf-cold-trace.txt"
+    else
+        log "冷启动追踪：$(cat "$OUT/perf-cold-trace.txt")"
+    fi
+    rm -rf "$raw_dir"
+}
+
 perf_search() {
     local i result
     restart_app
@@ -147,6 +175,7 @@ run_perf_checks() {
     ensure_root || log "拿不到 adb root，插件状态记不下来"
     perf_plugin_state "装好插件后"
     perf_cold_start
+    perf_cold_trace
     perf_plugin_state "冷启动测完后"
     perf_search
     perf_online_play
@@ -159,6 +188,16 @@ run_perf_checks() {
         echo "每项 1 次预热（不计）+ $PERF_RUNS 次，P95 用最近秩。原始数据在 perf.jsonl。"
         echo
         printf '%s\n' "$summary"
+        if [ -s "$OUT/perf-cold-trace.txt" ]; then
+            echo
+            echo "### 冷启动追踪（诊断，不进统计）"
+            echo
+            echo "相对启动请求的毫秒数；截屏在 screens/cold-trace-*.png（文件名是截屏的起止时刻）。"
+            echo
+            echo '```'
+            cat "$OUT/perf-cold-trace.txt"
+            echo '```'
+        fi
     } > "$OUT/perf.md"
     cat "$OUT/perf.md"
 
