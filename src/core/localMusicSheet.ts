@@ -1117,7 +1117,11 @@ async function mergeImportedMusicItems(
         const usedWeakMatchKeys = new Set<string>();
         const usedFileIdentityMatchKeys = new Set<string>();
         const availableFileIdentityMatchKeys = new Set<string>();
-        context.fileIdentityCandidates.forEach(candidateKeys => {
+        // 同一个文件（文件名、大小、时长、标签都相同）在本地音乐里只算一首：两条途径
+        // 给的 URI 不同，也分不清是同一个文件还是完全一样的副本。已有条目指向的文件
+        // 还在，或者这次扫描已经收下了一份，后面再遇到就跳过
+        const claimedFileIdentities = new Set<string>();
+        context.fileIdentityCandidates.forEach((candidateKeys, fileIdentity) => {
             candidateKeys.forEach(candidateKey => {
                 const currentIndex = existingIndexByKey.get(candidateKey);
                 if (
@@ -1128,9 +1132,20 @@ async function mergeImportedMusicItems(
                     )
                 ) {
                     availableFileIdentityMatchKeys.add(candidateKey);
+                    if (
+                        context.localPathStatusByKey.get(candidateKey) ===
+                        "exists"
+                    ) {
+                        claimedFileIdentities.add(fileIdentity);
+                    }
                 }
             });
         });
+        const claimFileIdentity = (fileIdentity: string | null) => {
+            if (fileIdentity) {
+                claimedFileIdentities.add(fileIdentity);
+            }
+        };
         const availableWeakMatchKeys = new Set(
             context.weakCandidates
                 .filter(candidate => {
@@ -1158,6 +1173,7 @@ async function mergeImportedMusicItems(
                 )
                 : undefined;
             if (samePathIndex !== undefined) {
+                claimFileIdentity(importedFileIdentity);
                 const fallback = getLocalMetadataFallbackSnapshot(
                     nextSheet[samePathIndex],
                 );
@@ -1176,12 +1192,30 @@ async function mergeImportedMusicItems(
                     });
                     report.metadataEnrichedCount += 1;
                     changed = true;
+                } else if (
+                    importedFileIdentity &&
+                    getStoredLocalFileIdentity(nextSheet[samePathIndex]) !==
+                        importedFileIdentity
+                ) {
+                    // 原地改名（系统音乐库保留同一行，URI 不变）：记下现在的文件，
+                    // 之后从别的途径导入同一个文件时才认得出
+                    nextSheet[samePathIndex] = {
+                        ...nextSheet[samePathIndex],
+                        [internalSerializeKey]: {
+                            ...(nextSheet[samePathIndex][
+                                internalSerializeKey
+                            ] ?? {}),
+                            [localFileIdentityKey]: importedFileIdentity,
+                        },
+                    };
+                    changed = true;
                 }
                 return;
             }
             const exactMatchIndex = existingIndexByKey.get(importedKey);
 
             if (exactMatchIndex !== undefined) {
+                claimFileIdentity(importedFileIdentity);
                 const existingMusicItem = nextSheet[exactMatchIndex];
                 if (
                     importedLocalPath &&
@@ -1242,6 +1276,13 @@ async function mergeImportedMusicItems(
                     changed = true;
                 }
                 usedFileIdentityMatchKeys.add(fileIdentityMatchKey);
+                claimFileIdentity(importedFileIdentity);
+                return;
+            }
+            if (
+                importedFileIdentity &&
+                claimedFileIdentities.has(importedFileIdentity)
+            ) {
                 return;
             }
 
@@ -1266,6 +1307,7 @@ async function mergeImportedMusicItems(
                 );
                 nextSheet[weakMatchIndex] = updatedMusicItem;
                 usedWeakMatchKeys.add(weakMatchKey);
+                claimFileIdentity(importedFileIdentity);
                 referenceUpdates.set(weakMatchKey, updatedMusicItem);
                 report.weakMatchedCount += 1;
                 changed = true;
@@ -1280,6 +1322,7 @@ async function mergeImportedMusicItems(
                 );
             }
             nextSheet.push(importedMusicItem);
+            claimFileIdentity(importedFileIdentity);
             report.addedCount += 1;
             changed = true;
         });
