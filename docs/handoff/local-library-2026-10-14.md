@@ -54,9 +54,19 @@ Two 不显示缺失且能播放。
 - `localMusicImportDuplicates` 7 项走真实的 LocalMusicSheet 导入（存储、MediaStore、SAF 列表、元数据是内存假实现）；
   换回修复前的 `localMusicSheet.ts` 时 5 项失败。`androidMediaPermission` 新增 7 项。
 
-## 修复后的设备结果
+## 修复后的设备结果：Beta #139
 
-待 Beta #139（按 `10d22a5a` 打包，只跑 `library`）结束后补上。
+[Beta #139](https://github.com/CTZZG/MusicFree/actions/runs/38534008814)：APK 按 `10d22a5a` 实际打包（含两项修复），
+测试脚本同一提交，只跑 `library`。34 项全部通过，修复前失败的 5 项都过了：
+
+- 后来多出两份相同的 One、同一次扫到两份 Three：都只有一条；
+- 选择文件夹再导入 E2E-Moved：3 条，键和路径都没变；
+- 撤销权限后 Two 这一行不带“文件不存在”；点 Two 弹出系统授权框（截图 `library-permission-dialog.png`：
+  “Allow MusicFree to access music and audio on this device?”，背后列表 3 首都没有缺失标记）；
+- 撤销期间、`pm grant` 后条目都不变，恢复后点 Two 能播放。
+
+其余检查和修复前一样通过（首次扫描、原样重扫、改名移动、复制后删原文件、我喜欢跟随、移动后能播放）。
+PR CI（质量门、Android 单元测试、emulator）在 `25ee3b64`、`66c441c8` 上都通过。
 
 ## 没有覆盖的
 
