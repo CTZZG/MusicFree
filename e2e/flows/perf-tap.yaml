@@ -1,0 +1,7 @@
+# 性能基线：在已经打开的列表（搜索结果、本地音乐）里点「${TITLE}」开始播放（TITLE 是要点的元素的文字或读屏标签）。
+# 点完马上返回，耗时从应用记下的 play-request 时间点算，和 Maestro 点得快慢无关
+appId: fun.upup.musicfree
+---
+- tapOn:
+    text: "${TITLE}"
+    waitToSettleTimeoutMs: 500

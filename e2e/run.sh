@@ -11,6 +11,8 @@
 # E2E_SUITE=power 时只跑第 19、20 步（锁屏和省电，见 power.sh）；
 # E2E_SUITE=library 时只跑第 22 步（本地音乐库：重扫、移动、重复文件、权限撤销和恢复，见 library.sh）。
 # 第 22 步要单独选：all 已经用掉 e2e 任务 60 分钟期限的大半。
+# E2E_SUITE=perf 时只跑第 23 步（性能基线：冷启动、搜索、在线和本地点歌，只记录不设门限，见 perf.sh），
+# 同样要单独选。E2E_PERF_RUNS 改每项的次数（默认 10，另有 1 次预热）。
 set -uo pipefail
 
 APK=${1:?用法：e2e/run.sh <APK> <提交号> <结果目录>}
@@ -296,6 +298,15 @@ source "$HERE/library.sh"
 if [ "$E2E_SUITE" = library ]; then
     log "E2E_SUITE=library：只跑本地音乐库"
     run_library_checks
+    finish
+fi
+
+# 23 步：性能基线（perf.sh，用到 library.sh 的函数）
+# shellcheck source=perf.sh
+source "$HERE/perf.sh"
+if [ "$E2E_SUITE" = perf ]; then
+    log "E2E_SUITE=perf：只跑性能基线"
+    run_perf_checks
     finish
 fi
 

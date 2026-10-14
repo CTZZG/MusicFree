@@ -225,6 +225,37 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 这一步不在 `all` 里（`all` 已经用掉 e2e 任务 60 分钟期限的大半）：手动运行 Beta 构建时 `e2e_suite` 选
 `library`，只装应用和测试源、跑这一步。
 
+## 性能基线（第 23 步，`perf.sh`）
+
+只记录，不设门限：手动运行 Beta 构建时 `e2e_suite` 选 `perf`（不在 `all` 里）。每项先跑 1 次预热（不计），再跑
+`E2E_PERF_RUNS` 次（默认 10），记中位数、P95（最近秩）、最小、最大。检查项“失败”只表示没测出来（样本少于次数减 2），
+不表示慢。结果写进 summary（每个指标一行）、`perf.md`、`perf.jsonl`，也推到 `refs/e2e/latest`。
+
+应用把时间点写到 logcat（标签 `MusicFreePerf`，每行 “名字 at=<墙钟毫秒> …”，JS 侧经 `NativeUtils.perfMark`），
+不改变任何行为。时间点和指标：
+
+| 指标 | 起点 | 终点 |
+| --- | --- | --- |
+| 冷启动到主页 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 主页标签栏（含“资料库”）第一次排好版（`first-screen`） |
+| 冷启动第一帧 | 同上 | `am start -W` 的 TotalTime（系统报告的第一帧，那时 JS 还没画出主页） |
+| 搜索到第一个结果 / 到全部返回 | `SearchSession.start`（`search-start`） | 第一个有结果的来源返回 / 所有来源的第一页都返回 |
+| 点歌到引擎开始推进 | `TrackPlayer.play`（`play-request`，用户点的那次） | 这次装载后 mpv 的 time-pos 第一次自然往前走（`engine-progress`） |
+| 其中：取地址 | 同上 | 交给播放器装载（`track-load`） |
+| 其中：装载 | 原生发出 loadfile（`engine-load`） | mpv 报告文件装好（`engine-file-loaded`） |
+| 其中：开始推进 | 文件装好 | `engine-progress` |
+
+在线点歌在测试源 A 的搜索结果里轮流点 A、B（音频从 raw.githubusercontent.com 下载，含网络时间）；本地点歌用
+ffmpeg 现做的两首，扫进本地音乐后轮流点（不走网络）。轮流点是因为点正在放的那首不会重新装载。
+
+注意：
+- “引擎开始推进”是 time-pos 前进，不是扬声器出声；没有测物理音频输出。
+- 测试源的搜索是本地数据，不走网络，测的是应用和插件运行时本身的开销；真实插件还要加上网络。
+- 模拟器配置固定（见 `build-beta.yml`：API 34、pixel_6、3 核、4 GB），数字只能和同一配置比，不能当真机耗时；
+  GitHub 托管的机器之间也有差异，看趋势时要看多次运行。
+- 冷启动是进程被杀后的启动，系统的文件缓存是热的。
+
+`lib/perf_stats.py --self-test` 在 PR CI 和 Beta 都跑：缺时间点、顺序不对、读到上一次启动的时间点都要判测不出。
+
 ## 怎么跑
 
 Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这次运行的 Summary 里，
@@ -232,7 +263,7 @@ Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这�
 
 - 只改了测试、不想重新打包：手动运行 Beta 构建，`e2e_apk_run_id` 填之前某次 Beta 构建的运行 ID，
   会直接测那次打出的 APK（30 天内的都在）。
-- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`。
+- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`；只跑性能基线：选 `perf`。
 - 拿修复前的代码对照：`build_ref` 填那个提交的完整提交号，打包那份代码，测试脚本和测试音源仍用触发的分支。
   APK 文件名、构建信息（`android-build-info.txt`、应用里的构建信息）记的是打包的源码提交和它的版本号，
   触发工作流的提交另记为 `Workflow commit`。测试结果里分开写测试脚本的提交和 APK 打包的源码提交。
