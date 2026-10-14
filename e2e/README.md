@@ -236,8 +236,9 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 
 | 指标 | 起点 | 终点 |
 | --- | --- | --- |
-| 冷启动到主页 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 主页标签栏（含“资料库”）第一次排好版（`first-screen`） |
-| 冷启动第一帧 | 同上 | `am start -W` 的 TotalTime（系统报告的第一帧，那时 JS 还没画出主页） |
+| 冷启动到主页可见 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 开屏页收起（`splash-hidden`，启动初始化做完后）和主页标签栏（含“资料库”）排好版（`first-screen`）中较晚的那个 |
+| 冷启动：主页在开屏页下排好版 | 同上 | `first-screen`（这时开屏页还盖着，用户看不到） |
+| 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime |
 | 搜索到第一个结果 / 到全部返回 | `SearchSession.start`（`search-start`） | 第一个有结果的来源返回 / 所有来源的第一页都返回 |
 | 点歌到引擎开始推进 | `TrackPlayer.play`（`play-request`，用户点的那次） | 这次装载后 mpv 的 time-pos 第一次自然往前走（`engine-progress`） |
 | 其中：取地址 | 同上 | 交给播放器装载（`track-load`） |

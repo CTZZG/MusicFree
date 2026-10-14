@@ -29,6 +29,15 @@ perf_record() {
     log "性能 $1 #$2：$3"
 }
 
+# perf_plugin_state <时刻>：记下插件文件、插件缓存和元数据的键、错误日志的最后几行（查搜索测不出的原因）
+perf_plugin_state() {
+    log "插件状态（$1）：插件文件 $(adb shell "ls -1 '$EXT_FILES/plugins' 2>/dev/null" | tr -d '\r' | tr '\n' ' ')"
+    log "插件状态（$1）：plugin.cache 的键 $(kv plugin.cache keys 2>&1 | tr '\n' ' ')"
+    log "插件状态（$1）：plugin-meta 的键 $(kv plugin-meta keys 2>&1 | tr '\n' ' ')"
+    log "插件状态（$1）：错误日志最后几行："
+    adb shell "cat '$EXT_FILES'/log/error-log-*.log 2>/dev/null" | tr -d '\r' | tail -n 15
+}
+
 perf_cold_start() {
     local i output frame result
     for i in $(seq 0 "$PERF_RUNS"); do
@@ -37,8 +46,8 @@ perf_cold_start() {
         adb logcat -c
         output=$(adb shell am start -W -n "$ACTIVITY" | tr -d '\r')
         frame=$(printf '%s\n' "$output" | sed -n 's/^TotalTime: *//p')
-        if ! wait_until 60 perf_has first-screen; then
-            log "冷启动 #$i：60 秒内没有 first-screen"
+        if ! wait_until 60 perf_has first-screen || ! wait_until 60 perf_has splash-hidden; then
+            log "冷启动 #$i：60 秒内没有 first-screen 或 splash-hidden"
             continue
         fi
         if result=$(perf_logcat | python3 -I "$PERF_STATS" cold "$PKG"); then
@@ -62,6 +71,7 @@ perf_search() {
         open_link "musicfree://search?keyword=e2e%20$REF%20p$i"
         if ! wait_until 30 perf_has search-done; then
             log "搜索 #$i：30 秒内没有 search-done"
+            [ "$i" -eq 0 ] && print_screen_text
             continue
         fi
         if result=$(perf_logcat | python3 -I "$PERF_STATS" search); then
@@ -132,7 +142,10 @@ run_perf_checks() {
     local summary label key count wanted=$((PERF_RUNS - 2))
     : > "$PERF_JSONL"
     log "性能基线：每项 1 次预热 + $PERF_RUNS 次；设备 $(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')，CPU $(adb shell nproc | tr -d '\r') 核，$(adb shell "sed -n 's/^MemTotal: *//p' /proc/meminfo" | tr -d '\r')"
+    ensure_root || log "拿不到 adb root，插件状态记不下来"
+    perf_plugin_state "装好插件后"
     perf_cold_start
+    perf_plugin_state "冷启动测完后"
     perf_search
     perf_online_play
     perf_local_play
@@ -151,7 +164,7 @@ run_perf_checks() {
     while IFS=$'\t' read -r key label; do
         count=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], {}).get("n", 0))' "$OUT/perf-summary.json" "$key" 2>/dev/null || echo 0)
         if [ "$count" -ge "$wanted" ]; then
-            pass "基线：$label" "$(python3 -I -c 'import json,sys; s=json.load(open(sys.argv[1]))[sys.argv[2]]; print(f"中位数 {s[\"median\"]:.0f} ms，P95 {s[\"p95\"]:.0f} ms（{s[\"n\"]} 次，最小 {s[\"min\"]:.0f}，最大 {s[\"max\"]:.0f}）")' "$OUT/perf-summary.json" "$key")"
+            pass "基线：$label" "$(python3 -I "$PERF_STATS" describe "$OUT/perf-summary.json" "$key")"
         else
             fail "基线：$label" "只测出 $count 次（要至少 $wanted 次），见日志里的原因"
         fi
