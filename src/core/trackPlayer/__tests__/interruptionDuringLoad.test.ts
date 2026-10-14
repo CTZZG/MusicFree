@@ -178,8 +178,32 @@ jest.mock("react-native-reanimated", () => ({
         quad: () => 0,
     },
     makeMutable: (value: unknown) => ({ value }),
+    useSharedValue: (value: unknown) =>
+        require("react").useRef({ value }).current,
+    useAnimatedStyle: () => ({}),
     cancelAnimation: () => {},
     withTiming: (value: unknown) => value,
+}));
+// Render the real page controls; animations, icons and orientation are incidental.
+jest.mock("@/components/base/icon", () => ({
+    __esModule: true,
+    default: () => null,
+}));
+jest.mock("@/hooks/useOrientation", () => ({
+    __esModule: true,
+    default: () => "horizontal",
+}));
+jest.mock("@/core/i18n", () => ({
+    useI18N: () => ({ t: (key: string) => key }),
+}));
+jest.mock("react-native-gesture-handler", () => ({
+    Gesture: {
+        Pan: () => {
+            const gesture: any = new Proxy({}, { get: () => () => gesture });
+            return gesture;
+        },
+    },
+    GestureDetector: "GestureDetector",
 }));
 jest.mock("immer", () => ({
     __esModule: true,
@@ -232,6 +256,41 @@ jest.mock("@/utils/userAgentHelper", () => mockAutoStub());
 
 const trackPlayer = require("@/core/trackPlayer").default;
 const player = trackPlayer as any;
+const React = require("react");
+const { act, create } = require("react-test-renderer");
+const { ActivityIndicator } = require("react-native");
+const PlayControl = require("@/pages/musicDetail/components/bottom/playControl").default;
+let controlTree: import("react-test-renderer").ReactTestRenderer | undefined;
+let exposedState: string;
+
+function ControlProbe() {
+    exposedState = require("@/core/trackPlayer").useMusicState();
+    return React.createElement(PlayControl, { swipeProgress: { value: 0 } });
+}
+
+async function renderControls() {
+    await act(async () => {
+        controlTree = create(React.createElement(ControlProbe));
+        await jest.advanceTimersByTimeAsync(0);
+    });
+}
+
+function mainButtons(label: string) {
+    return controlTree!.root.findAll(node =>
+        node.props.accessibilityRole === "button" &&
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    );
+}
+
+async function pressMainButton(label: string) {
+    // Pressable and its host can share props; invoke the displayed action once.
+    expect(mainButtons(label).length).toBeGreaterThan(0);
+    await act(async () => {
+        mainButtons(label)[0].props.onPress();
+        await jest.advanceTimersByTimeAsync(0);
+    });
+}
 
 const songA = {
     id: "A",
@@ -349,10 +408,86 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+    if (controlTree) {
+        act(() => controlTree!.unmount());
+        controlTree = undefined;
+    }
     qualitySpies.splice(0).forEach(spy => spy.mockRestore());
     await jest.advanceTimersByTimeAsync(10_000);
     player.qualityChangeCoordinator?.begin?.();
     jest.useRealTimers();
+});
+
+describe("real page controls during a quality file load", () => {
+    beforeAll(async () => {
+        require("@/core/lastfm").default.flush.mockResolvedValue(undefined);
+        require("@/core/dislikeMusic").default.onUpdated.mockReturnValue(() => {});
+        player.musicHistoryService = { addMusic: jest.fn() };
+        await trackPlayer.setupTrackPlayer();
+    });
+    afterAll(() => player.disposeServiceListeners());
+
+    it("exposes native paused as a play action without inventing a user pause", async () => {
+        await startQualityReload();
+        await renderControls();
+        // Replay the erroneous native callback observed on Android16 #50.
+        await act(async () => {
+            mockEmitState("paused");
+            await jest.advanceTimersByTimeAsync(0);
+        });
+        expect(exposedState).toBe("paused");
+        expect(player.playbackIntent.isPausedByUser).toBe(false);
+        expect(mainButtons("musicDetail.playControl.pause.a11y")).toHaveLength(0);
+        mockNative.calls.length = 0;
+        await pressMainButton("common.play");
+        expect(mockNative.calls).toContain("resume");
+        expect(mockNative.calls).not.toContain("pause");
+        expect(player.playbackIntent.isPausedByUser).toBe(false);
+        await act(async () => {
+            await fileLoaded();
+        });
+    });
+
+    it("keeps the existing spinner while buffering and allows pause and play once loaded", async () => {
+        await startQualityReload();
+        await renderControls();
+        expect(exposedState).toBe("buffering");
+        expect(player.playbackIntent.isPausedByUser).toBe(false);
+        expect(controlTree!.root.findAll(node => node.type === (ActivityIndicator as unknown))).not.toHaveLength(0);
+        expect(mainButtons("common.play")).toHaveLength(0);
+        expect(mainButtons("musicDetail.playControl.pause.a11y")).toHaveLength(0);
+        await act(async () => {
+            await fileLoaded();
+        });
+        expect(exposedState).toBe("playing");
+        await pressMainButton("musicDetail.playControl.pause.a11y");
+        expect(player.playbackIntent.isPausedByUser).toBe(true);
+        expect(exposedState).toBe("paused");
+        await pressMainButton("common.play");
+        expect(player.playbackIntent.isPausedByUser).toBe(false);
+        expect(exposedState).toBe("playing");
+    });
+
+    it("honors the actual pause action during loading through FILE_LOADED", async () => {
+        await startQualityReload();
+        await renderControls();
+        // A resume callback can expose the pause control before FILE_LOADED.
+        await act(async () => {
+            mockEmitState("playing");
+            await jest.advanceTimersByTimeAsync(0);
+        });
+        expect(mockNative.loading).not.toBeNull();
+        expect(player.playbackIntent.isPausedByUser).toBe(false);
+        await pressMainButton("musicDetail.playControl.pause.a11y");
+        expect(player.playbackIntent.isPausedByUser).toBe(true);
+        await act(async () => {
+            await fileLoaded();
+            await jest.advanceTimersByTimeAsync(3_000);
+        });
+        expect(exposedState).toBe("paused");
+        expect(mockNative.state).toBe("paused");
+        expect(player.playbackIntent.isPausedByUser).toBe(true);
+    });
 });
 
 describe("changing the quality while a temporary interruption comes and goes", () => {

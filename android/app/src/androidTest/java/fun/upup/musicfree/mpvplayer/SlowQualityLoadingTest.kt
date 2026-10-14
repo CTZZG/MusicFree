@@ -77,7 +77,14 @@ class SlowQualityLoadingTest {
                 }
             })
         }
-        call { requireNotNull(module).initialize(JavaOnlyMap.of("progressIntervalMs", 250.0), it) }
+        // Fixture headroom only: neither server nor mpv should time out during
+        // the focus/pause windows. Production's 15-second setting is unchanged.
+        call {
+            requireNotNull(module).initialize(JavaOnlyMap.of(
+                "progressIntervalMs", 250.0,
+                "mpvOptions", JavaOnlyMap.of("network-timeout", "60"),
+            ), it)
+        }
         call { requireNotNull(module).loadAndPlay(payload(tone.absolutePath, 1.0), it) }
         await("service and real initial playback") {
             onMain {
@@ -129,7 +136,7 @@ class SlowQualityLoadingTest {
     @Test fun theNotificationPauseDuringSlowLoadingSurvivesFileLoaded() {
         startSlowReplacement()
         // Send the actual notification PendingIntent, not an explicit pause command.
-        // A false PAUSED state turns this same button into PLAY and loses the user's stop.
+        // Detect a stale PAUSED state turning this button into PLAY instead of PAUSE.
         await("notification update") { notificationAction()?.title?.toString() in setOf("播放", "暂停") }
         Thread.sleep(1300)
         record("notification-before-click")
@@ -137,6 +144,7 @@ class SlowQualityLoadingTest {
         await("notification command handled") { commands.contains("pause") || commands.contains("play") }
         record("notification-command")
         assertTrue("notification must request pause, not play: $commands", commands.contains("pause"))
+        assertTrue("notification must not also request play: $commands", !commands.contains("play"))
         await("explicit pause is visible") { controller.playbackState?.state == 2 }
         observeHeld("user-paused-loading", setOf(2), "播放")
         releaseAndAwaitLoaded(paused = true)
@@ -177,7 +185,7 @@ class SlowQualityLoadingTest {
         controlled.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 requestStarted.countDown()
-                if (!releaseResponse.await(15, TimeUnit.SECONDS)) return MockResponse().setResponseCode(503)
+                if (!releaseResponse.await(45, TimeUnit.SECONDS)) return MockResponse().setResponseCode(503)
                 val range = request.getHeader("Range")
                 val offset = range?.removePrefix("bytes=")?.substringBefore('-')?.toIntOrNull() ?: 0
                 if (offset !in bytes.indices) return MockResponse().setResponseCode(416)
