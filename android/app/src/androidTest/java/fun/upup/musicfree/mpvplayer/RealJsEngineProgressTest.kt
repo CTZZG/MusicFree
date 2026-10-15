@@ -232,7 +232,8 @@ class RealJsEngineProgressTest {
         fun exercise(prefix: String, loadingLabel: String, playLabel: String) {
             // RN appends the localized busy state to this button's native contentDescription.
             // Match the complete native label, including busy, rather than a loose substring.
-            val nativeLoadingLabel = "$loadingLabel, ${context.getString(com.facebook.react.R.string.state_busy_description)}"
+            val busyDescription = context.getString(com.facebook.react.R.string.state_busy_description)
+            val nativeLoadingLabel = "$loadingLabel, $busyDescription"
             onMain { module.eventProperty("paused-for-cache", true) }
             awaitText { label(it) == nativeLoadingLabel }
             val screenshot = requireNotNull(automation.takeScreenshot()) { "spinner screenshot unavailable" }
@@ -246,7 +247,10 @@ class RealJsEngineProgressTest {
             // A cache-ready event arriving after the user pause must not restart the engine.
             onMain { module.eventProperty("paused-for-cache", false) }
             recordWindow("$prefix-paused", true)
-            clickText(playLabel)
+            // RN 0.85 setViewState(null) can retain the prior native busy state after
+            // React has rendered the ordinary play button. Match either complete
+            // native description; never a substring or the old loading label.
+            click { label(it) == playLabel || label(it) == "$playLabel, $busyDescription" }
             awaitEngine(hq, false, "JS Flow C")
             recordWindow("$prefix-resumed", false)
         }

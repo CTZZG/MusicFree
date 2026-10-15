@@ -80,6 +80,16 @@ aa4d2774 的 CI #142 全部通过，Debug `:app:testDebugUnitTest` 实际执行�
 
 81a23aae 的 Android 16 #73 在 `:app:compileDebugAndroidTestKotlin` 失败，`RealJsEngineProgressTest.kt:225` 的 `assertFalse` 没有静态导入。这是本轮测试修改引入的遗漏；整次运行尚未进入模拟器仪器检查，不能说 #72 的 UI 窗口已经通过。补上 `org.junit.Assert.assertFalse` 导入，不改变断言、观察窗口或产品代码，后续仍须真实编译和完整设备验收。同提交 CI #143 的质量门和原生 JVM 单测通过，不能代替 androidTest APK 编译。
 
+### #74 的实际结果与恢复按钮定位
+
+af201c87 的 CI #144 全部通过：1397 Jest /48 generator /1257 layout，ESLint 0 错误 /216 警告，实际执行 Debug Gradle，独立下载 XML 25 套件 /138 项，失败、错误、跳过全零。Android 16 #74 重新编译 app/test APK，71 项原生用例全部 code 0，原生 25 条、慢文件 73 条和原 JS 70 条完整且独立校验通过，来源时序为 12 begin /7 resolved。
+
+本次真实播放页缓冲按钮已点击，五条 `page-paused` 读数跨 5,490 ms：原始引擎位置均为 121.758956441 秒，媒体会话位置均为 121,743 ms、状态均为 PAUSED，外部 hold 均为 false。之后寻找恢复按钮超时；实际可见完整标签是“播放, busy”，测试只查“播放”。整次正常仪器仍失败，恢复/迷你窗口、最终截图导出与后续冻结对照尚未完成，不能用这些部分读数报通过。
+
+RN 0.85 的 BaseViewManager.setViewState 遇到 null 直接返回；缓冲分支的 Pressable 带 busy=true，普通分支没有 accessibilityState，原生可残留先前的 busy。测试恢复定位现在仅接受精确的普通标签或“普通标签, 本地化 busy 描述”这两个完整形式，不接受任意子串、旧加载标签或其他按钮；实际点击、恢复后引擎前进、暂停窗口与连续性要求不变。加载按钮仍要求完整 busy 标签。产品固定为 30517fda，不为本次定位修正重打 Beta。
+
+原生 busy 残留作为已知无障碍问题记录，尚未修复，也未进行 TalkBack 验收；允许测试定位两种完整描述不等于证明 busy 状态已经清除。后续若处理，可评估普通分支显式清除 busy，并独立验证原生状态迁移。本轮先完成当前固定产品的按钮行为验收，不扩散产品改动。
+
 ### Beta #157 最终附件核对
 
 固定产品源码完整 30517fdac02d8df28f968a6db120c7c343b64207 的构建和 Android 14 全量 E2E 已成功。下载本次附件 11961404358 后，results.tsv 是 105 个唯一检查、105 PASS /0 FAIL，APK 和脚本均为 30517fda，锁屏/Doze/省电、下载/迁移故障注入与备用下载均实际完成。这是通知修补后的实际运行，区别于 #156 的 a0b98a21。
