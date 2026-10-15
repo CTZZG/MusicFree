@@ -5,7 +5,7 @@ import android.graphics.drawable.ColorDrawable
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.facebook.react.bridge.ReactApplicationContext
+import `fun`.upup.musicfree.mpvplayer.NativePlaybackTestContext
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,7 +17,7 @@ class LyricColorsInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {
             val context = instrumentation.targetContext.applicationContext
-            val view = LyricView(ReactApplicationContext(context))
+            val view = LyricView(NativePlaybackTestContext(context))
             val text = TextView(context)
             val field = LyricView::class.java.getDeclaredField("tv").apply { isAccessible = true }
             field.set(view, text)

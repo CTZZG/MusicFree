@@ -1,6 +1,6 @@
 # PR #39 后续小修与验收（2026-10-15）
 
-用户授权 Codex 接手 #39 收尾、三个小问题和发版前验收。版本号保持 0.11.4 /400030；本轮不创建正式 Release。#39 的合并需要最终 9cc926ca 的 all/perf 都实际完成。本文件记录本轮后续代码，准确运行结果随后补在独立 PR 描述里。
+用户授权 Codex 接手 #39 收尾、三个小问题和发版前验收。版本号保持 0.11.4 /400030；本轮不创建正式 Release。#39 的最终 9cc926ca all/perf 已完成，最后 7d03d458 仅文档变化，已普通合并为 59b6919d。本文件记录本轮后续代码，准确运行结果随后补在独立 PR 描述里。
 
 ## 三个问题及修复
 
@@ -37,6 +37,12 @@ MediaCache.clearLocalCaches 只删除原文和翻译，漏掉 $localLyric.romani
 - 完整 npm run verify：1397 Jest /48 generator /1257 layout，ESLint 0 错误 /216 警告，类型检查、静态审计和补丁回放通过。
 - 独立 JVM 编译本轮纯容器/颜色逻辑和测试：10 项通过；两个回退 mutant 合计 4 项失败（内存 1、颜色 3）。没有本地完整 Android SDK 编译。
 - 实际 Android 编译、原生单测和四项新增设备用例等待本 PR 的 CI/Android 16 结果；不按投影数量报通过。
+
+### Android 16 #69 编译失败与修正
+
+当前 d040e7ec 的 CI #139 已实际执行 Debug Gradle 单元测试；下载 XML 后是 24 套件、133 项，失败、错误、跳过均为 0。Beta #156 固定产品源码 a0b98a21 的 Release XML 也是 24 套件、133 项全零。它们没有编译或运行 Android 仪器用例，不能代替设备结果。
+
+Android 16 #69 在 `:app:compileDebugAndroidTestKotlin` 失败：新增 LyricColorsInstrumentedTest 直接实例化了 React Native 0.85 已为抽象类的 ReactApplicationContext，尚未进入模拟器检查。这是新增测试夹具的编译错误，保留该失败记录。修正后复用已有、实现完整抽象方法的 NativePlaybackTestContext，并公开该测试类和构造器供歌词测试使用；颜色设置、真实 TextView/Android Color、清理与所有断言都不变。仅修改仪器夹具和文档，不改变产品代码，也不重复 Beta 大打包。实际设备验收仍待修正后的 Android 16 运行。
 
 ## 发版前验收范围
 
