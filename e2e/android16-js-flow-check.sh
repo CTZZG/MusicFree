@@ -54,6 +54,12 @@ run_js() {
 
 run_js real-js false
 python3 -I "$VALIDATOR" sources "$OUT/real-js-logcat.txt"
+export_engine_progress_samples "$OUT/loading-spinner-ui.jsonl" files/loading-spinner-ui.jsonl
+python3 -I "$HERE/lib/loading_spinner_evidence.py" "$OUT/loading-spinner-ui.jsonl"
+for name in page mini; do
+    adb exec-out run-as fun.upup.musicfree cat "files/loading-spinner-$name.png" > "$OUT/loading-spinner-$name.png"
+    python3 -I -c 'from pathlib import Path; import sys; b=Path(sys.argv[1]).read_bytes(); assert b.startswith(b"\x89PNG\r\n\x1a\n") and len(b)>100, "missing/invalid spinner screenshot"' "$OUT/loading-spinner-$name.png"
+done
 run_js freeze-control true
-echo 'Real JS source/skip/quality/focus flows passed with 70 JNI samples; stale projection control rejected RAW_STALLED with five samples.' \
+echo 'Real JS source/skip/quality/focus flows passed with 70 JNI samples, buffering buttons with 20 separate UI samples; stale projection control rejected RAW_STALLED with five samples.' \
     | tee "$OUT/summary.txt"

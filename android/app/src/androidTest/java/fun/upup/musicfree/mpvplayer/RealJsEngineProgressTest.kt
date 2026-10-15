@@ -48,6 +48,7 @@ class RealJsEngineProgressTest {
     private var previousConfig: ByteArray? = null
     private val completed = mutableSetOf<String>()
     private val samplesFile get() = File(context.filesDir, "js-flow-engine-samples.jsonl")
+    private val spinnerSamplesFile get() = File(context.filesDir, "loading-spinner-ui.jsonl")
     private val mq get() = audioUrl("tone-c.mp3", "192k")
     private val hq get() = audioUrl("tone-c.mp3", "320k")
 
@@ -57,6 +58,8 @@ class RealJsEngineProgressTest {
         check(Regex("[0-9a-f]{40}").matches(ref)) { "Pin the fixture source SHA" }
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         samplesFile.delete()
+        spinnerSamplesFile.delete()
+        for (name in listOf("page", "mini")) File(context.filesDir, "loading-spinner-$name.png").delete()
         configFile = File(context.filesDir, "kvstore/App.config.json")
         previousConfig = configFile.takeIf { it.exists() }?.readBytes()
         seedConfig()
@@ -184,6 +187,66 @@ class RealJsEngineProgressTest {
         observe("quality-playing-new", hq, false, anchor = requireNotNull(transition.old.rawSeconds), transition = transition)
         awaitText { label(it).contains("音质：HQ") }
         JsFlowProbePolicy.assertComplete(completed)
+        exerciseActualBufferingButtons()
+    }
+
+    /**
+     * UI acceptance of #39: inject the native buffering event, then tap actual React controls.
+     * The engine is real; the buffering event is controlled, not a real network outage/load.
+     * Separate evidence keeps the existing source/focus/transition windows unchanged.
+     */
+    private fun exerciseActualBufferingButtons() {
+        fun recordWindow(phase: String, paused: Boolean) {
+            val samples = List(5) {
+                val sample = onMain {
+                    assertTrue("spinner uses the ReactHost module", host?.currentReactContext?.getNativeModule("MpvPlayer") === module)
+                    assertEquals("spinner target remains C", "JS Flow C", controller.metadata?.getString(MediaMetadataCompat.METADATA_KEY_TITLE))
+                    val state = requireNotNull(controller.playbackState)
+                    EngineProgressSample(SystemClock.elapsedRealtime(), engine.getPropertyDouble("time-pos"),
+                        engine.getPropertyBoolean("pause"), engine.getPropertyBoolean("idle-active"),
+                        engine.getPropertyBoolean("paused-for-cache"), engine.getPropertyString("path"), state.position, state.state)
+                }
+                val row = JSONObject().apply {
+                    put("phase", phase); put("elapsedMs", sample.elapsedMs)
+                    put("rawSeconds", sample.rawSeconds ?: JSONObject.NULL)
+                    put("paused", sample.paused ?: JSONObject.NULL)
+                    put("sessionMs", sample.sessionMs); put("sessionState", sample.sessionState)
+                    put("sameTrack", sample.path == hq)
+                    put("nativeHold", onMain { MpvServiceBridge.playbackHold.blocksAutoPlay })
+                    put("foregroundPackage", automation.rootInActiveWindow?.packageName?.toString())
+                    put("bufferingEventInjected", true)
+                }
+                spinnerSamplesFile.appendText("$row\n")
+                android.util.Log.i("E2ELoadingSpinner", row.toString())
+                assertEquals("spinner MusicFree stays foreground", context.packageName, row.getString("foregroundPackage"))
+                assertEquals("explicit pause intent reaches native", paused, row.getBoolean("nativeHold"))
+                Thread.sleep(1100)
+                sample
+            }
+            if (paused) EngineProgressProbe.assertPaused(samples, hq) else EngineProgressProbe.assertPlaying(samples, hq)
+        }
+        fun exercise(prefix: String, loadingLabel: String, playLabel: String) {
+            onMain { module.eventProperty("paused-for-cache", true) }
+            awaitText { label(it) == loadingLabel }
+            val screenshot = requireNotNull(automation.takeScreenshot()) { "spinner screenshot unavailable" }
+            try {
+                File(context.filesDir, "loading-spinner-$prefix.png").outputStream().use { output ->
+                    assertTrue("save actual spinner screenshot", screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                }
+            } finally { screenshot.recycle() }
+            clickText(loadingLabel)
+            awaitEngine(hq, true, "JS Flow C")
+            // A cache-ready event arriving after the user pause must not restart the engine.
+            onMain { module.eventProperty("paused-for-cache", false) }
+            recordWindow("$prefix-paused", true)
+            clickText(playLabel)
+            awaitEngine(hq, false, "JS Flow C")
+            recordWindow("$prefix-resumed", false)
+        }
+        exercise("page", "正在加载，暂停", "播放")
+        assertTrue("back from player", automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
+        awaitText { label(it) == "歌曲: JS Flow C 歌手: E2E Artist" }
+        exercise("mini", "正在加载，暂停歌曲", "播放或暂停歌曲")
     }
 
     private fun observe(phase: String, path: String, paused: Boolean, held: Boolean = false, anchor: Double? = null,
