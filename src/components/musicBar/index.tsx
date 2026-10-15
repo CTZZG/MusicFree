@@ -5,13 +5,7 @@ import React, {
     useEffect,
     useState,
 } from "react";
-import {
-    ActivityIndicator,
-    AppState,
-    Pressable,
-    StyleSheet,
-    View,
-} from "react-native";
+import { AppState, Pressable, StyleSheet, View } from "react-native";
 import Animated, {
     Easing,
     useAnimatedStyle,
@@ -22,17 +16,21 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { showPanel } from "../panels/usePanel";
 import useColors from "@/hooks/useColors";
-import TrackPlayer, { useCurrentMusic, useMusicState } from "@/core/trackPlayer";
+import { useCurrentMusic } from "@/core/trackPlayer";
 import Theme from "@/core/theme";
 import { useAppConfig } from "@/core/appConfig";
-import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 import GlassBackdrop from "@/components/base/glassBackdrop";
 import LiquidGlassBackdrop, {
     isLiquidGlassAvailable,
 } from "@/components/base/liquidGlassBackdrop";
 import MusicInfo from "./musicInfo";
+import MiniPlayButton from "./playButton";
 import Icon from "@/components/base/icon.tsx";
-import { MUSIC_BAR_HEIGHT, MUSIC_BAR_HORIZONTAL_MARGIN } from "./layout";
+import {
+    MUSIC_BAR_BUTTON_SIZE,
+    MUSIC_BAR_HEIGHT,
+    MUSIC_BAR_HORIZONTAL_MARGIN,
+} from "./layout";
 import { useMusicBarLayoutState } from "./layoutState";
 import { useI18N } from "@/core/i18n";
 
@@ -42,44 +40,6 @@ const MOVE_TIMING = {
     duration: 220,
     easing: Easing.out(Easing.cubic),
 };
-
-function MiniPlayButton() {
-    const musicState = useMusicState();
-    const colors = useColors();
-    const { t } = useI18N();
-
-    if (musicIsBuffering(musicState)) {
-        return (
-            <View style={styles.barButton}>
-                <ActivityIndicator size="small" color={colors.musicBarText} />
-            </View>
-        );
-    }
-
-    const isPaused = musicIsPaused(musicState);
-    return (
-        <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("musicBar.playPause.a11y")}
-            style={({ pressed }) => [
-                styles.barButton,
-                pressed ? styles.pressed : null,
-            ]}
-            onPress={async () => {
-                if (isPaused) {
-                    await TrackPlayer.play();
-                } else {
-                    await TrackPlayer.pause();
-                }
-            }}>
-            <Icon
-                name={isPaused ? "play" : "pause"}
-                size={26}
-                color={colors.musicBarText}
-            />
-        </Pressable>
-    );
-}
 
 interface IMusicBarProps {
     /** 包着根栈的 BlurTargetView，迷你播放器模糊的就是它 */
@@ -246,8 +206,8 @@ const styles = StyleSheet.create({
         boxShadow: "0 4px 16px rgba(0, 0, 0, 0.45)",
     },
     barButton: {
-        width: 48,
-        height: 48,
+        width: MUSIC_BAR_BUTTON_SIZE,
+        height: MUSIC_BAR_BUTTON_SIZE,
         alignItems: "center",
         justifyContent: "center",
     },

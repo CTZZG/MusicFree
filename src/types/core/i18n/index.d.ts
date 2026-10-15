@@ -394,9 +394,11 @@ export interface ILanguageData {
     "musicList.item.moreOptions.a11y": string; // {title} 更多操作
     "musicList.locateHighlight.a11y": string; // 定位到当前播放
     "musicBar.playPause.a11y": string; // 播放或暂停歌曲
+    "musicBar.pauseWhileLoading.a11y": string; // 正在加载，暂停歌曲
     "musicBar.playlist.a11y": string; // 播放列表
     "musicBar.nowPlaying.a11y": string; // 歌曲: {title} 歌手: {artist}
     "musicDetail.playControl.pause.a11y": string; // 暂停
+    "musicDetail.playControl.pauseWhileLoading.a11y": string; // 正在加载，暂停
     "musicDetail.playControl.previous.a11y": string; // 上一首
     "musicDetail.playControl.next.a11y": string; // 下一首
     "musicDetail.seekBar.a11y": string; // 播放进度

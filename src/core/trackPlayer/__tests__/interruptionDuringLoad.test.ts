@@ -448,24 +448,58 @@ describe("real page controls during a quality file load", () => {
         });
     });
 
-    it("keeps the existing spinner while buffering and allows pause and play once loaded", async () => {
+    it("offers pause on the buffering spinner and keeps the loading file paused", async () => {
         await startQualityReload();
         await renderControls();
         expect(exposedState).toBe("buffering");
         expect(player.playbackIntent.isPausedByUser).toBe(false);
+        // 加载中：还在转圈，同时是一个能按的暂停。读屏标签和平常的暂停分开（“正在加载，暂停”），
+        // 端到端测试按“暂停”判断在播时也不会把加载中当成在播
         expect(controlTree!.root.findAll(node => node.type === (ActivityIndicator as unknown))).not.toHaveLength(0);
         expect(mainButtons("common.play")).toHaveLength(0);
         expect(mainButtons("musicDetail.playControl.pause.a11y")).toHaveLength(0);
-        await act(async () => {
-            await fileLoaded();
-        });
-        expect(exposedState).toBe("playing");
-        await pressMainButton("musicDetail.playControl.pause.a11y");
+        const loadingPause = mainButtons("musicDetail.playControl.pauseWhileLoading.a11y");
+        expect(loadingPause.length).toBeGreaterThan(0);
+        expect(loadingPause[0].props.accessibilityState).toEqual({ busy: true });
+
+        mockNative.calls.length = 0;
+        await pressMainButton("musicDetail.playControl.pauseWhileLoading.a11y");
+        expect(mockNative.calls).toContain("pause");
         expect(player.playbackIntent.isPausedByUser).toBe(true);
         expect(exposedState).toBe("paused");
+        expect(controlTree!.root.findAll(node => node.type === (ActivityIndicator as unknown))).toHaveLength(0);
+
+        // 文件装好也不自己出声
+        await act(async () => {
+            await fileLoaded();
+            await jest.advanceTimersByTimeAsync(3_000);
+        });
+        expect(exposedState).toBe("paused");
+        expect(mockNative.state).toBe("paused");
+        expect(player.playbackIntent.isPausedByUser).toBe(true);
+
+        // 再按播放就接着放
         await pressMainButton("common.play");
         expect(player.playbackIntent.isPausedByUser).toBe(false);
         expect(exposedState).toBe("playing");
+    });
+
+    it("pauses from the spinner while a playing song stalls on the network", async () => {
+        await startQualityReload();
+        await act(async () => {
+            await fileLoaded();
+        });
+        await renderControls();
+        expect(exposedState).toBe("playing");
+        // 网络卡住（mpv paused-for-cache）：原生报 buffering
+        await act(async () => {
+            mockEmitState("buffering");
+            await jest.advanceTimersByTimeAsync(0);
+        });
+        await pressMainButton("musicDetail.playControl.pauseWhileLoading.a11y");
+        expect(player.playbackIntent.isPausedByUser).toBe(true);
+        expect(exposedState).toBe("paused");
+        expect(mockNative.state).toBe("paused");
     });
 
     it("honors the actual pause action during loading through FILE_LOADED", async () => {

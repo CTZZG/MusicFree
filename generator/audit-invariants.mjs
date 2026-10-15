@@ -15,11 +15,13 @@
  *   2. 明文 opt-in 白名单——防止有人在新文件里悄悄加 `allowHttp: true`。
  *   3. 构建产物检查——merged release manifest 的 targetSdk 与权限。
  *   4. 已回退组件的「保持删除」守卫——防止被重新引入。
+ *   6. 打了 Android 补丁的 expo 模块必须从源码编译，不然补丁白打。
  */
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { dexUnsafeBacktickNames } from "./lib/dexNames.mjs";
+import { ignoredPrebuiltPatches } from "./lib/prebuiltPatches.mjs";
 
 const root = process.cwd();
 const failures = [];
@@ -251,6 +253,29 @@ expect(
     `native test names with spaces or punctuation break the androidTest DEX build: ${dexUnsafeTestNames.join(", ")}`,
 );
 
+// --- 6. 打了 Android 补丁的 expo 模块必须从源码编译 ----------------------------
+// 带预编译 AAR 的 expo 模块默认直接链接 AAR，不编译 node_modules 里的源码：补丁装得上，
+// 却不进 APK（expo-splash-screen 的补丁在 Beta #148 里就这样白打了）。规则和用例见
+// generator/lib/prebuiltPatches.mjs。
+const patchesDir = path.join(root, "patches");
+const ignoredPatches = ignoredPrebuiltPatches({
+    patches: fs.existsSync(patchesDir)
+        ? fs
+              .readdirSync(patchesDir)
+              .filter(name => name.endsWith(".patch"))
+              .map(fileName => ({
+                  fileName,
+                  text: fs.readFileSync(path.join(patchesDir, fileName), "utf8"),
+              }))
+        : [],
+    moduleConfigOf: packageName => {
+        const config = path.join(root, "node_modules", packageName, "expo-module.config.json");
+        return fs.existsSync(config) ? JSON.parse(fs.readFileSync(config, "utf8")) : null;
+    },
+    buildFromSource: JSON.parse(read("package.json")).expo?.autolinking?.android?.buildFromSource,
+});
+expect(ignoredPatches.length === 0, ignoredPatches.join("; "));
+
 // --- 结果 --------------------------------------------------------------------
 if (failures.length) {
     console.error("Structural invariant audit failed:");
@@ -258,5 +283,5 @@ if (failures.length) {
     process.exit(1);
 }
 console.log(
-    "Structural invariant audit passed: no restricted-transport bypass, cleartext opt-in confined, release manifest hardened with WorkManager initialization, reverted components stay deleted, native test names are DEX-safe.",
+    "Structural invariant audit passed: no restricted-transport bypass, cleartext opt-in confined, release manifest hardened with WorkManager initialization, reverted components stay deleted, native test names are DEX-safe, patched expo modules build from source.",
 );
