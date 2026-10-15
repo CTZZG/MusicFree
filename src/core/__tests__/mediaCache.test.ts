@@ -117,6 +117,7 @@ describe("MediaCache", () => {
                 $localLyric: {
                     rawLrc: "/cache/raw.lrc",
                     translation: "file:///cache/translation.lrc",
+                    romanization: "/cache/romanization.lrc",
                 },
             }),
         );
@@ -127,9 +128,77 @@ describe("MediaCache", () => {
         expect(mockUnlink).toHaveBeenCalledWith(
             "file:///cache/translation.lrc",
         );
+        expect(mockUnlink).toHaveBeenCalledWith("file:///cache/romanization.lrc");
         expect(getMockStores().get("cache.MediaCache")!.has("test@track-1")).toBe(
             false,
         );
+    });
+
+    it("clears files from entries that only cache romanization", async () => {
+        mockExists.mockResolvedValue(true);
+        setRawCache(JSON.stringify({
+            ...mediaItem,
+            $localLyric: { romanization: "/cache/romanization-only.lrc" },
+        }));
+
+        await MediaCache.clearAllMediaCache();
+
+        expect(mockUnlink).toHaveBeenCalledWith("file:///cache/romanization-only.lrc");
+        expect(MediaCache.getMediaCache(mediaItem)).toBeNull();
+    });
+
+    it("cleans romanization during automatic eviction", async () => {
+        mockExists.mockResolvedValue(true);
+        setRawCache(JSON.stringify({
+            ...mediaItem,
+            $localLyric: { romanization: "/cache/evicted-romanization.lrc" },
+        }));
+        const store = getMockStores().get("cache.MediaCache")!;
+        for (let index = 0; index < 1498; index++) {
+            store.set(`test@old-${index}`, JSON.stringify({
+                ...mediaItem,
+                id: `old-${index}`,
+            }));
+        }
+
+        MediaCache.setMediaCache({ ...mediaItem, id: "newest" });
+        await MediaCache.waitForPendingEviction();
+
+        expect(mockUnlink).toHaveBeenCalledWith("file:///cache/evicted-romanization.lrc");
+        expect(MediaCache.getMediaCache({ ...mediaItem, id: "newest" })).not.toBeNull();
+    });
+
+    it("keeps romanization when the entry changes during its file check", async () => {
+        let resolveExists!: (value: boolean) => void;
+        let markChecking!: () => void;
+        const checking = new Promise<void>(resolve => {
+            markChecking = resolve;
+        });
+        mockExists.mockImplementationOnce(() => {
+            markChecking();
+            return new Promise<boolean>(resolve => {
+                resolveExists = resolve;
+            });
+        });
+        setRawCache(JSON.stringify({
+            ...mediaItem,
+            $localLyric: { romanization: "/cache/old-romanization.lrc" },
+        }));
+        const removal = MediaCache.removeMediaCacheEntry("test@track-1");
+        await Promise.race([checking, removal.then(() => {
+            throw new Error("Entry removed without checking its romanization file");
+        })]);
+        expect(mockExists).toHaveBeenCalledWith("file:///cache/old-romanization.lrc");
+        MediaCache.setMediaCache({
+            ...mediaItem,
+            title: "Updated",
+            $localLyric: { romanization: "/cache/new-romanization.lrc" },
+        } as IMusic.IMusicItemCache);
+        resolveExists(true);
+        await removal;
+
+        expect(mockUnlink).not.toHaveBeenCalled();
+        expect(MediaCache.getMediaCache(mediaItem)).toMatchObject({ title: "Updated" });
     });
 
     it("does not evict a cache entry that changed while cleanup was pending", async () => {
