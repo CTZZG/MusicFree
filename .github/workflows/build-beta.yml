@@ -27,7 +27,7 @@ on:
                 default: ''
                 type: string
             e2e_suite:
-                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载；library 只跑本地音乐库'
+                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载；library 只跑本地音乐库；perf 只跑性能基线（只记录，不设门限）'
                 required: false
                 default: 'all'
                 type: choice
@@ -37,6 +37,7 @@ on:
                     - download-source
                     - power
                     - library
+                    - perf
 
 jobs:
     check-version:
@@ -366,6 +367,7 @@ jobs:
                   python3 -I e2e/lib/audio_focus.py --self-test
                   python3 -I e2e/lib/kvstore.py --self-test
                   python3 -I e2e/lib/local_library.py --self-test
+                  python3 -I e2e/lib/perf_stats.py --self-test
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/pause_checks_test.sh
                   bash e2e/lib/download_source_test.sh
@@ -460,6 +462,10 @@ jobs:
                   publish_dir="$(mktemp -d)"
                   mkdir -p "$publish_dir/screens"
                   cp e2e-results/summary.md e2e-results/results.tsv "$publish_dir/"
+                  # 性能基线的原始数据（只有 e2e_suite=perf 时有）
+                  for extra in perf.md perf.jsonl perf-summary.json; do
+                    if [ -f "e2e-results/$extra" ]; then cp "e2e-results/$extra" "$publish_dir/"; fi
+                  done
                   find e2e-results -name '*.png' -exec cp {} "$publish_dir/screens/" \;
                   cd "$publish_dir"
                   git init -q

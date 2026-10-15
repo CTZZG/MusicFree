@@ -25,6 +25,7 @@ import PersistStatus from "@/utils/persistStatus";
 import Toast from "@/utils/toast";
 import { getAppUserAgent } from "@/utils/userAgentHelper";
 import * as SplashScreen from "expo-splash-screen";
+import { perfMarkOnce } from "@/utils/perfMark";
 import { getDefaultStore } from "jotai";
 import { Linking } from "react-native";
 import bootstrapAtom from "./bootstrap.atom";
@@ -679,4 +680,6 @@ export default async function () {
     }
     // 隐藏开屏动画
     await SplashScreen.hideAsync();
+    // 性能基线：开屏页收起，用户看到主页（见 e2e/perf.sh）
+    perfMarkOnce("splash-hidden");
 }

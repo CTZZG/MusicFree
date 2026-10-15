@@ -15,6 +15,7 @@ import {
     needsAudioReadPermissionToPlay,
 } from "@/utils/androidMediaPermission";
 import Network from "@/utils/network";
+import { perfMark } from "@/utils/perfMark";
 import PersistStatus from "@/utils/persistStatus";
 import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
 import EventEmitter from "eventemitter3";
@@ -1295,6 +1296,10 @@ class TrackPlayer
         mpvTransitionOwner?: IMpvManualSkipTransition | null,
         requestedQuality?: IMusic.IQualityKey,
     ): Promise<void> {
+        perfMark("play-request", {
+            key: musicItem ? getMediaUniqueKey(musicItem) : "current",
+            skip: !!mpvTransitionOwner,
+        });
         if (!mpvTransitionOwner) {
             this.notePlayByUser();
             const transition = this.mpvManualSkipTransition;
@@ -4025,6 +4030,10 @@ class TrackPlayer
         seekTo?: number,
         preservePosition = false,
     ) {
+        perfMark("track-load", {
+            key: getMediaUniqueKey(track as unknown as IMusic.IMusicItem),
+            autoPlay,
+        });
         const queueIndex = this.getMusicIndexInPlayList(
             track as unknown as IMusic.IMusicItem,
         );

@@ -225,6 +225,53 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 这一步不在 `all` 里（`all` 已经用掉 e2e 任务 60 分钟期限的大半）：手动运行 Beta 构建时 `e2e_suite` 选
 `library`，只装应用和测试源、跑这一步。
 
+## 性能基线（第 23 步，`perf.sh`）
+
+只记录，不设门限：手动运行 Beta 构建时 `e2e_suite` 选 `perf`（不在 `all` 里）。每项先跑 1 次预热（不计），再跑
+`E2E_PERF_RUNS` 次（默认 10），记中位数、P95（最近秩）、最小、最大。检查项“失败”只表示没测出来（样本少于次数减 2），
+不表示慢。结果写进 summary（每个指标一行）、`perf.md`、`perf.jsonl`，也推到 `refs/e2e/latest`。
+
+应用把时间点写到 logcat（标签 `MusicFreePerf`，每行 “名字 at=<墙钟毫秒> …”，JS 侧经 `NativeUtils.perfMark`），
+不改变任何行为。时间点和指标：
+
+| 指标 | 起点 | 终点 |
+| --- | --- | --- |
+| 冷启动到主页出现在屏幕上 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 开屏页移除：系统日志 `SplashScreenView: remove starting view`（系统的调试日志，模拟器的 userdebug 系统里有，user 版系统可能没有）。冷启动追踪的截屏核对过：这之前屏幕上一直是开屏页 |
+| 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime |
+| 冷启动：应用画出主页 | 同上 | 应用界面第一次画出来（`first-draw`，原生；开屏页撑着的时候界面不画）。这时开屏页还盖着 |
+| 冷启动：主页在开屏页下排好版 | 同上 | `first-screen`（用户看不到） |
+| 冷启动：JS 叫开屏页收起 | 同上 | `splash-hidden`（启动初始化做完后） |
+| 冷启动：启动请求到进程起来 | 同上 | `process-start`（原生 Application.onCreate 开头），用来核对起点 |
+| 冷启动：画出主页到系统认为画好 | `first-draw` | 系统日志 `Displayed fun.upup.musicfree/…`（ActivityTaskManager） |
+| 冷启动：系统认为画好到开屏页移除 | `Displayed` | 开屏页移除 |
+| 搜索到第一个结果 / 到全部返回 | `SearchSession.start`（`search-start`） | 第一个有结果的来源返回 / 所有来源的第一页都返回 |
+| 点歌到引擎开始推进 | `TrackPlayer.play`（`play-request`，用户点的那次） | 这次装载后 mpv 的 time-pos 第一次自然往前走（`engine-progress`） |
+| 其中：取地址 | 同上 | 交给播放器装载（`track-load`） |
+| 其中：装载 | 原生发出 loadfile（`engine-load`） | mpv 报告文件装好（`engine-file-loaded`） |
+| 其中：开始推进 | 文件装好 | `engine-progress` |
+
+在线点歌在测试源 A 的搜索结果里轮流点 A、B（音频从 raw.githubusercontent.com 下载，含网络时间）；本地点歌用
+ffmpeg 现做的两首，扫进本地音乐后轮流点（不走网络）。轮流点是因为点正在放的那首不会重新装载。
+
+注意：
+- “引擎开始推进”是 time-pos 前进，不是扬声器出声；没有测物理音频输出。
+- 测试源的搜索是本地数据，不走网络，测的是应用和插件运行时本身的开销；真实插件还要加上网络。
+- 模拟器配置固定（见 `build-beta.yml`：API 34、pixel_6、3 核、4 GB），数字只能和同一配置比，不能当真机耗时；
+  GitHub 托管的机器之间也有差异，看趋势时要看多次运行。
+- 冷启动是进程被杀后的启动，系统的文件缓存是热的。
+- Beta 的模拟器关了动画（`disable-animations: true`）：开屏页的淡出（expo-splash-screen 默认 400 ms）和窗口切换动画
+  不在数字里。真机上主页完全显示还要再晚一些。
+
+冷启动追踪（诊断，不进统计）：冷启动测完后再冷启动一次，启动过程中在设备上连续截屏（screencap 原始格式，最多 5 秒、
+24 张，每张前后写一行日志 `MusicFreeShot b<n>/e<n>` 记时刻），同时留下窗口管理、同步超时、焦点切换和性能时间点的日志。
+结果是 `perf.md` 末尾的时间线（相对启动请求的毫秒数）和 `screens/cold-trace-<n>-<起>-<止>ms.png`（缩小 4 倍）。
+截屏本身有开销，这一次比统计里的慢，只看先后。Beta #144 用它查明了 `first-draw` 和 TotalTime 之间稳定约 1 秒的差：
+`first-draw` 之后开屏页还盖着，主窗口的同步等满 1000 ms 超时（`SurfaceSyncGroup: Failed to receive transaction ready
+in 1000ms`）系统才报 Displayed，之后开屏页才交给应用移除（见 `docs/handoff/perf-baseline-2026-10-14.md`）。
+
+`lib/perf_stats.py --self-test` 在 PR CI 和 Beta 都跑：缺时间点、顺序不对、读到上一次启动的时间点都要判测不出；
+追踪的时间线和截屏转换也在里面。
+
 ## 怎么跑
 
 Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这次运行的 Summary 里，
@@ -232,7 +279,7 @@ Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这�
 
 - 只改了测试、不想重新打包：手动运行 Beta 构建，`e2e_apk_run_id` 填之前某次 Beta 构建的运行 ID，
   会直接测那次打出的 APK（30 天内的都在）。
-- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`。
+- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`；只跑性能基线：选 `perf`。
 - 拿修复前的代码对照：`build_ref` 填那个提交的完整提交号，打包那份代码，测试脚本和测试音源仍用触发的分支。
   APK 文件名、构建信息（`android-build-info.txt`、应用里的构建信息）记的是打包的源码提交和它的版本号，
   触发工作流的提交另记为 `Workflow commit`。测试结果里分开写测试脚本的提交和 APK 打包的源码提交。
