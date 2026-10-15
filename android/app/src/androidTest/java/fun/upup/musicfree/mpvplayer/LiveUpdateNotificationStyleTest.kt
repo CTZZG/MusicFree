@@ -137,6 +137,29 @@ class LiveUpdateNotificationStyleTest {
         }
     }
 
+    @Test
+    fun aBurstOfLyricUpdatesKeepsTheFinalPausedAction() {
+        val service = bindPlaybackService()
+        instrumentation.runOnMainSync {
+            service.onLiveUpdateLyricEnabledChanged(true)
+            service.onMetadataChanged("notification burst", "E2E", "E2E", null, 200.0)
+            service.onPlaybackStateChanged("playing")
+        }
+        awaitNotification("playing before the burst") { it.playing() }
+        instrumentation.runOnMainSync {
+            repeat(30) { service.onLiveUpdateLyricChanged("burst $it") }
+            service.onPlaybackStateChanged("paused")
+        }
+        // No subsequent progress callbacks or playback changes may rescue a lost pause.
+        awaitNotification("latest lyric and paused action after the burst") {
+            it.title() == "burst 29" && it.actions?.getOrNull(1)?.title?.toString() == "播放"
+        }
+        Thread.sleep(1100)
+        val final = requireNotNull(notificationManager.activeNotifications.firstOrNull { it.id == PLAYBACK_NOTIFICATION_ID })
+        assertEquals("burst 29", final.notification.title())
+        assertEquals("播放", final.notification.actions[1].title.toString())
+    }
+
     private fun bindPlaybackService(): MpvPlaybackService {
         val connected = CountDownLatch(1)
         val connection = object : ServiceConnection {

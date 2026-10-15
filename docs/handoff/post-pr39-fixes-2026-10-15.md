@@ -44,6 +44,20 @@ MediaCache.clearLocalCaches 只删除原文和翻译，漏掉 $localLyric.romani
 
 Android 16 #69 在 `:app:compileDebugAndroidTestKotlin` 失败：新增 LyricColorsInstrumentedTest 直接实例化了 React Native 0.85 已为抽象类的 ReactApplicationContext，尚未进入模拟器检查。这是新增测试夹具的编译错误，保留该失败记录。修正后复用已有、实现完整抽象方法的 NativePlaybackTestContext，并公开该测试类和构造器供歌词测试使用；颜色设置、真实 TextView/Android Color、清理与所有断言都不变。仅修改仪器夹具和文档，不改变产品代码，也不重复 Beta 大打包。实际设备验收仍待修正后的 Android 16 运行。
 
+### #70 实际结果与通知更新修补
+
+90b53eae 的 CI #140 通过，实际执行 Debug Gradle；独立 XML 24 套件 /133 项，失败、错误、跳过全零。Android 16 #70 的第一次尝试在 settings 插件依赖解析阶段找不到 gson:2.9.1，尚未编译源码；官方 POM 当前可通过正常代理/TLS取得（HTTP 200、有效 XML），单独重跑一次。
+
+第二次尝试已真实编译 app/test APK，仪器清单 70 项全部完成，69 项通过、1 项失败。两项颜色、两项 OGG 用例均 code 0，确认 #69 编译错误已经修好。失败的是已有的 `anExplicitPauseDuringTheInterruptionWinsAfterFocusReturnsAndTheFileLoads`：13 次观察中引擎均暂停、媒体会话均为 PAUSED，但通知动作一直是“暂停”，预期应为“播放”。慢文件记录因此仅 71 条，后续真实 JS/冻结/UI 点击流程没有执行，不能写成全量通过。
+
+同一日志多次出现 NotificationService 的 `Shedding`，通知入队率约 5.4–6.7 次/秒。日志没有逐条确认每次 notify 的系统处理结果，因此不把“具体某一条必然被丢弃”当作已独立证明。代码可以确认：旧服务每次回调直接发通知、开始前台还会再发一次；系统限速之后没有最终状态重发，暂停时进度 ticker 又已停止。这一缺口可能使按钮持续滞后，不能直接把 #70 视为偶然失败后反复重跑。
+
+追加 NotificationUpdateScheduler 合并短时间内的通知更新：每次发送至少间隔 250 ms，排队时只保留一次发送任务，执行时读取最新服务状态。前台服务第一次通知立即发送且计入预算，随后所有更新走同一队列；先设置新播放状态再构造前台通知。媒体会话和实际播放/暂停仍立即更新，通知显示最多等待剩余的 250 ms；停止/销毁会取消任务，避免关闭后又出现旧通知。暂停后的最后一次更新独立于进度 ticker，不依赖后续进度来补救。
+
+新增 5 项纯 JVM 调度用例：密集更新后的最后暂停、连续更新频率和最终值、首次前台通知预算、停止取消、重建前台覆盖旧任务。独立 Kotlin 编译后 5 项通过；改成每次立即发送的 scratch mutant，5 项全部失败。这是调度逻辑的故障对照，旧产品的设备失败证据仍是 #70。另在已有 LiveUpdateNotificationStyleTest 新增真实服务的 30 次歌词突发更新后暂停用例，要求最后歌词和“播放”动作正确，期间没有后续进度回调。原 SlowQualityLoadingTest 的断言、观察窗口和 250 ms /0.25 s 引擎门限保持不变。
+
+这一追加修补改变了产品通知逻辑，Beta #156 只覆盖此前三个小修，不能据它宣称通知修补已验收。新的产品 head 需要自己的原生编译/设备回归和 Beta；版本仍保持 0.11.4，不发正式 Release。
+
 ## 发版前验收范围
 
 另补真实 React 页面按钮的 Android 16 验收：原有真实 JS 流程结束后，在同一个 ReactHost/引擎上注入 paused-for-cache 原生事件，分别截图并点击播放页与迷你播放器的缓冲暂停按钮。每次确认实际引擎暂停、后到的 cache-ready 事件不覆盖暂停、观察至少 4 秒，再从真实按钮主动恢复。独立导出 20 条 JNI/媒体会话/原生意图读数和两张截图，原有 70 条正常/5 条冻结证据保持不变。注入的是缓冲状态事件，不是真实断网或慢文件，也不宣称暂停期间新文件已经到达；后者仍由已有慢文件仪器用例和真实控件 Jest 覆盖。
