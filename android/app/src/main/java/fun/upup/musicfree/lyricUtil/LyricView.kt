@@ -50,7 +50,8 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
     private var layoutParams: WindowManager.LayoutParams? = null
     private var tv: TextView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var textColorValue = Color.parseColor("#FFE9D2")
+    private var textColorValue = LyricColors.DEFAULT_TEXT
+    private var backgroundColorValue = LyricColors.DEFAULT_BACKGROUND
     private var timedLyricState: TimedLyricState? = null
     private var lastPayloadSequence = Long.MIN_VALUE
     private val renderTimedLyricRunnable = object : Runnable {
@@ -125,13 +126,14 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
 
                 val initialFontSp = (fontSize?.toString()?.toFloat() ?: 14f)
                     .coerceIn(MIN_FONT_SP, MAX_FONT_SP)
-                textColorValue = Color.parseColor(
-                    rgba2argb(color?.toString() ?: "#FFE9D2")
+                textColorValue = LyricColors.parse(color?.toString(), LyricColors.DEFAULT_TEXT, Color::parseColor)
+                backgroundColorValue = LyricColors.parse(
+                    backgroundColor?.toString(), LyricColors.DEFAULT_BACKGROUND, Color::parseColor,
                 )
                 tv = TextView(reactContext).apply {
                     text = initText ?: ""
                     textSize = initialFontSp
-                    setBackgroundColor(Color.parseColor(rgba2argb(backgroundColor?.toString() ?: "#84888153")))
+                    setBackgroundColor(backgroundColorValue)
                     setTextColor(textColorValue)
                     setPadding(12, 6, 12, 6)
                     gravity = align?.toString()?.toInt() ?: Gravity.CENTER
@@ -178,14 +180,6 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
 
     private fun unlistenOrientationChange() {
         orientationEventListener?.disable()
-    }
-
-    private fun rgba2argb(color: String): String {
-        return if (color.length == 9) {
-            color[0] + color.substring(7, 9) + color.substring(1, 7)
-        } else {
-            color
-        }
     }
 
     // 隐藏歌词窗口
@@ -364,11 +358,12 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
     fun setColors(textColor: String?, backgroundColor: String?) {
         tv?.let {
             textColor?.let { color ->
-                textColorValue = Color.parseColor(rgba2argb(color))
+                textColorValue = LyricColors.parse(color, textColorValue, Color::parseColor)
                 it.setTextColor(textColorValue)
             }
             backgroundColor?.let { color ->
-                it.background = ColorDrawable(Color.parseColor(rgba2argb(color)))
+                backgroundColorValue = LyricColors.parse(color, backgroundColorValue, Color::parseColor)
+                it.background = ColorDrawable(backgroundColorValue)
             }
         }
         if (timedLyricState != null) {
