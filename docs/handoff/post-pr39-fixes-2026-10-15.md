@@ -76,6 +76,10 @@ aa4d2774 的 CI #142 全部通过，Debug `:app:testDebugUnitTest` 实际执行�
 
 修正仪器断言和独立 Python 校验器：本场景所有窗口都必须没有外部 hold，防止旧外部暂停掩盖损坏的 React 暂停路径。仍要求真实按钮点击、引擎与媒体会话状态正确、暂停至少 4 秒且进度不走、后到 cache-ready 不恢复、主动点播放后前进并保持原进度。校验器自测为 19 项，覆盖页面/迷你、暂停/恢复四个窗口混入外部 hold 均拒绝。未修改产品播放逻辑、时间窗口或连续性门限；完整 UI20/截图2/冻结5 仍须新设备运行证明。本地无 Android SDK，不宣称这次仪器已编译或设备已通过。
 
+### #73 编译失败：遗漏 JUnit 断言导入
+
+81a23aae 的 Android 16 #73 在 `:app:compileDebugAndroidTestKotlin` 失败，`RealJsEngineProgressTest.kt:225` 的 `assertFalse` 没有静态导入。这是本轮测试修改引入的遗漏；整次运行尚未进入模拟器仪器检查，不能说 #72 的 UI 窗口已经通过。补上 `org.junit.Assert.assertFalse` 导入，不改变断言、观察窗口或产品代码，后续仍须真实编译和完整设备验收。同提交 CI #143 的质量门和原生 JVM 单测通过，不能代替 androidTest APK 编译。
+
 ### Beta #157 最终附件核对
 
 固定产品源码完整 30517fdac02d8df28f968a6db120c7c343b64207 的构建和 Android 14 全量 E2E 已成功。下载本次附件 11961404358 后，results.tsv 是 105 个唯一检查、105 PASS /0 FAIL，APK 和脚本均为 30517fda，锁屏/Doze/省电、下载/迁移故障注入与备用下载均实际完成。这是通知修补后的实际运行，区别于 #156 的 a0b98a21。
