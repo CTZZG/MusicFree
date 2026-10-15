@@ -226,15 +226,18 @@ class RealJsEngineProgressTest {
             if (paused) EngineProgressProbe.assertPaused(samples, hq) else EngineProgressProbe.assertPlaying(samples, hq)
         }
         fun exercise(prefix: String, loadingLabel: String, playLabel: String) {
+            // RN appends the localized busy state to this button's native contentDescription.
+            // Match the complete native label, including busy, rather than a loose substring.
+            val nativeLoadingLabel = "$loadingLabel, ${context.getString(com.facebook.react.R.string.state_busy_description)}"
             onMain { module.eventProperty("paused-for-cache", true) }
-            awaitText { label(it) == loadingLabel }
+            awaitText { label(it) == nativeLoadingLabel }
             val screenshot = requireNotNull(automation.takeScreenshot()) { "spinner screenshot unavailable" }
             try {
                 File(context.filesDir, "loading-spinner-$prefix.png").outputStream().use { output ->
                     assertTrue("save actual spinner screenshot", screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
                 }
             } finally { screenshot.recycle() }
-            clickText(loadingLabel)
+            clickText(nativeLoadingLabel)
             awaitEngine(hq, true, "JS Flow C")
             // A cache-ready event arriving after the user pause must not restart the engine.
             onMain { module.eventProperty("paused-for-cache", false) }
@@ -503,7 +506,7 @@ class RealJsEngineProgressTest {
             if (SystemClock.elapsedRealtime() >= deadline) {
                 val labels = mutableListOf<String>()
                 findNode { labels.add(label(it)); false }
-                android.util.Log.e("E2EJSFlow", "$what timed out; visible=${labels.filter { it.isNotBlank() }.distinct().take(40)}")
+                android.util.Log.e("E2EJSFlow", "$what timed out; visible=${org.json.JSONArray(labels.filter { it.isNotBlank() }.distinct().take(40))}")
                 throw AssertionError("$what timed out")
             }
             Thread.sleep(pollMs)
