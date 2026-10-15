@@ -1,6 +1,6 @@
 import rpx from "@/utils/rpx";
 import React, { useEffect } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
     cancelAnimation,
@@ -14,6 +14,7 @@ import Animated, {
     withTiming,
 } from "react-native-reanimated";
 
+import BufferingPauseIcon from "@/components/base/bufferingPauseIcon";
 import Icon from "@/components/base/icon.tsx";
 import { timingConfig } from "@/constants/commonConst";
 import { maxFontScaleConst } from "@/constants/uiConst";
@@ -210,9 +211,22 @@ export default function PlayControl(props: IPlayControlProps) {
                 <Icon color="white" name="skip-left" size={36} />
             </Pressable>
             {musicIsBuffering(musicState) ? (
-                <View style={styles.mainButton}>
-                    <ActivityIndicator size="large" color="white" />
-                </View>
+                // 加载、缓冲中也能暂停：暂停后装好的文件不再自己出声（见 PlaybackIntent）
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                        "musicDetail.playControl.pauseWhileLoading.a11y",
+                    )}
+                    accessibilityState={{ busy: true }}
+                    onPress={() => {
+                        TrackPlayer.pause();
+                    }}
+                    style={({ pressed }) => [
+                        styles.mainButton,
+                        pressed ? styles.pressed : null,
+                    ]}>
+                    <BufferingPauseIcon ringSize={64} iconSize={28} color="white" />
+                </Pressable>
             ) : (
                 <Pressable
                     accessibilityRole="button"

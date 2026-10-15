@@ -3,6 +3,8 @@
 
 /** 迷你播放器高度 */
 export const MUSIC_BAR_HEIGHT = 60;
+/** 迷你播放器上按钮（播放暂停、播放列表）的点按区域边长 */
+export const MUSIC_BAR_BUTTON_SIZE = 48;
 /** 迷你播放器左右边距 */
 export const MUSIC_BAR_HORIZONTAL_MARGIN = 12;
 /** 底部悬浮栏（标签栏，或没有标签栏时的迷你播放器）离安全区底部的距离 */
