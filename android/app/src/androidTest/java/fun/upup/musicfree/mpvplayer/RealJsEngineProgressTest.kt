@@ -219,7 +219,10 @@ class RealJsEngineProgressTest {
                 spinnerSamplesFile.appendText("$row\n")
                 android.util.Log.i("E2ELoadingSpinner", row.toString())
                 assertEquals("spinner MusicFree stays foreground", context.packageName, row.getString("foregroundPackage"))
-                assertEquals("explicit pause intent reaches native", paused, row.getBoolean("nativeHold"))
+                // UI pause is recorded by JS PlaybackIntent and cancels PendingUnpause.
+                // PlaybackHold belongs to external commands that can arrive before JS.
+                // A stale external hold must not mask a broken React pause button here.
+                assertFalse("UI pause is not masked by an external hold", row.getBoolean("nativeHold"))
                 Thread.sleep(1100)
                 sample
             }
