@@ -3,13 +3,12 @@ name: Proxy and subscription regression checks
 on:
     pull_request:
         paths:
-            - 'android/app/src/main/java/fun/upup/musicfree/network/**'
-            - 'android/app/src/test/java/fun/upup/musicfree/network/**'
-            - 'android/app/src/androidTest/**'
-            # 播放服务发的通知（Live Update 样式）也在这里的 Android 16 模拟器上测
-            - 'android/app/src/main/java/fun/upup/musicfree/mpvplayer/**'
-            - 'android/app/src/test/java/fun/upup/musicfree/mpvplayer/**'
-            - 'android/app/src/main/java/fun/upup/musicfree/lyricUtil/**'
+            # 改到 debug 版 APK 原生部分的都要在 Android 16 模拟器上跑一遍：原生代码（网络层、播放服务和 Live Update
+            # 通知、MainActivity 和开屏页）、原生依赖（package.json、package-lock.json）和它们的补丁（patches/）
+            - 'android/**'
+            - 'patches/**'
+            - 'package.json'
+            - 'package-lock.json'
             - 'src/components/base/appBar.tsx'
             - 'src/pages/setting/settingTypes/pluginSetting/**'
             - 'src/core/trackPlayer/**'

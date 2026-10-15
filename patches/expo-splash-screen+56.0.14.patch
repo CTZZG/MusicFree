@@ -1,0 +1,187 @@
+diff --git a/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt b/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt
+index 0dcb89e..21bf9f0 100644
+--- a/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt
++++ b/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt
+@@ -4,19 +4,44 @@ import android.app.Activity
+ import android.app.Application.ActivityLifecycleCallbacks
+ import android.os.Build
+ import android.os.Bundle
++import android.os.Handler
++import android.os.Looper
+ import android.view.View
+-import android.view.ViewTreeObserver.OnPreDrawListener
++import android.view.ViewTreeObserver
+ import android.view.animation.AccelerateInterpolator
+ import android.window.SplashScreenView
+ import androidx.core.splashscreen.SplashScreen
+ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
++import androidx.core.splashscreen.SplashScreenViewProvider
+ import com.facebook.react.bridge.ReactMarker
+ import com.facebook.react.bridge.ReactMarkerConstants
+ 
++/**
++ * MusicFree patch: keep the splash screen without cancelling draws.
++ *
++ * Upstream keeps the splash with an OnPreDrawListener that cancels every frame until hide().
++ * While draws are cancelled, the window's first-frame sync requested by WindowManager waits out
++ * its 1000 ms SurfaceSyncGroup timeout and handing the splash view to the app waits longer still
++ * (Android 14 emulator: the home frame reached the compositor ~0.3 s later at the median, ~0.9 s
++ * at P95; see docs/handoff/cold-start-splash-2026-10-15.md).
++ *
++ * Here the window draws normally from the first frame while the content view is INVISIBLE (it
++ * neither shows nor competes with JS for CPU). The splash view handed over by the system stays on
++ * top until hide(); then the content becomes visible and the splash fades out after the content
++ * has drawn a frame, so nothing blank shows in between.
++ */
+ object SplashScreenManager {
++  // hide() can be called from the JS module queue; everything else runs on the main thread.
++  @Volatile
+   private var keepSplashScreenOnScreen = true
+   var preventAutoHideCalled: Boolean = false
+   private lateinit var splashScreen: SplashScreen
++  private var exitDuration = SplashScreenOptions().duration
++  private val mainHandler = Handler(Looper.getMainLooper())
++
++  // Main thread only: the content hidden until hide(), and the splash view held until then.
++  private var hiddenContent: View? = null
++  private var heldSplash: SplashScreenViewProvider? = null
+ 
+   private val contentAppearedListener = ReactMarker.MarkerListener { name, _, _ ->
+     if (name == ReactMarkerConstants.CONTENT_APPEARED) {
+@@ -33,43 +58,33 @@ object SplashScreenManager {
+       return
+     }
+ 
+-    val duration = options.duration
++    exitDuration = options.duration
+ 
+     splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
+-      val splashScreenView = splashScreenViewProvider.view
+-      splashScreenView
+-        .animate()
+-        .setDuration(duration)
+-        .alpha(0.0f)
+-        .setInterpolator(AccelerateInterpolator())
+-        .withEndAction {
+-          if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+-            splashScreenViewProvider.remove()
+-          } else {
+-            // Avoid calling applyThemesSystemBarAppearance
+-            (splashScreenView as SplashScreenView).remove()
+-          }
+-        }.start()
++      if (keepSplashScreenOnScreen) {
++        heldSplash = splashScreenViewProvider
++      } else {
++        // hide() may have run but its posted reveal() not yet: show the content first.
++        showContent()
++        exitAfterContentDraws(splashScreenViewProvider)
++      }
+     }
+   }
+ 
+   fun registerOnActivity(mainActivity: Activity) {
++    // A splash view still held by an earlier activity instance will never be revealed.
++    heldSplash?.let {
++      heldSplash = null
++      runCatching { removeSplashView(it) }
++    }
+     splashScreen = mainActivity.installSplashScreen()
+     ReactMarker.addListener(contentAppearedListener)
+ 
+-    // Using `splashScreen.setKeepOnScreenCondition()` does not work on apis below 33
+-    // so we need to implement this ourselves.
+-    val contentView = mainActivity.findViewById<View>(android.R.id.content)
+-    val observer = contentView.viewTreeObserver
+-    observer.addOnPreDrawListener(object : OnPreDrawListener {
+-      override fun onPreDraw(): Boolean {
+-        if (keepSplashScreenOnScreen) {
+-          return false
+-        }
+-        contentView.viewTreeObserver.removeOnPreDrawListener(this)
+-        return true
+-      }
+-    })
++    if (keepSplashScreenOnScreen) {
++      val contentView = mainActivity.findViewById<View>(android.R.id.content)
++      contentView.visibility = View.INVISIBLE
++      hiddenContent = contentView
++    }
+ 
+     configureSplashScreen()
+ 
+@@ -90,6 +105,11 @@ object SplashScreenManager {
+         override fun onActivityStopped(activity: Activity) {
+           if (activity == mainActivity) {
+             runCatching { mainActivity.splashScreen.clearOnExitAnimationListener() }
++            // A splash view held across stop has the same SurfaceControl problem: drop it now.
++            heldSplash?.let {
++              heldSplash = null
++              runCatching { removeSplashView(it) }
++            }
+             application.unregisterActivityLifecycleCallbacks(this)
+           }
+         }
+@@ -99,6 +119,62 @@ object SplashScreenManager {
+ 
+   fun hide() {
+     keepSplashScreenOnScreen = false
++    mainHandler.post { reveal() }
++  }
++
++  private fun showContent() {
++    hiddenContent?.let {
++      hiddenContent = null
++      it.visibility = View.VISIBLE
++    }
++  }
++
++  private fun reveal() {
++    showContent()
++    heldSplash?.let {
++      heldSplash = null
++      exitAfterContentDraws(it)
++    }
++  }
++
++  // Let the (now visible) content draw a frame under the splash before it starts fading out.
++  private fun exitAfterContentDraws(splashScreenViewProvider: SplashScreenViewProvider) {
++    val splashScreenView = splashScreenViewProvider.view
++    splashScreenView.viewTreeObserver.addOnDrawListener(object : ViewTreeObserver.OnDrawListener {
++      private var drawn = false
++
++      override fun onDraw() {
++        if (drawn) {
++          return
++        }
++        drawn = true
++        // A draw listener cannot be removed while the window is drawing.
++        splashScreenView.post {
++          splashScreenView.viewTreeObserver.removeOnDrawListener(this)
++          animateOut(splashScreenViewProvider)
++        }
++      }
++    })
++    splashScreenView.invalidate()
++  }
++
++  private fun animateOut(splashScreenViewProvider: SplashScreenViewProvider) {
++    splashScreenViewProvider.view
++      .animate()
++      .setDuration(exitDuration)
++      .alpha(0.0f)
++      .setInterpolator(AccelerateInterpolator())
++      .withEndAction { removeSplashView(splashScreenViewProvider) }
++      .start()
++  }
++
++  private fun removeSplashView(splashScreenViewProvider: SplashScreenViewProvider) {
++    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
++      splashScreenViewProvider.remove()
++    } else {
++      // Avoid calling applyThemesSystemBarAppearance
++      (splashScreenViewProvider.view as SplashScreenView).remove()
++    }
+   }
+ 
+   fun setSplashScreenOptions(options: SplashScreenOptions) {

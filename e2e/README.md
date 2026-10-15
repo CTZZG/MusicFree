@@ -236,14 +236,17 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 
 | 指标 | 起点 | 终点 |
 | --- | --- | --- |
-| 冷启动到主页出现在屏幕上 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | 开屏页移除：系统日志 `SplashScreenView: remove starting view`（系统的调试日志，模拟器的 userdebug 系统里有，user 版系统可能没有）。冷启动追踪的截屏核对过：这之前屏幕上一直是开屏页 |
+| 冷启动到主页出现在屏幕上 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | `home-drawn`（原生，API 31 起）：开屏页（`SplashScreenView`）从窗口里拿掉之后的第一帧画好、交给系统合成（`registerFrameCommitCallback`） |
+| 冷启动到开屏页移除 | 同上 | 系统日志 `SplashScreenView: remove starting view`（系统的调试日志，模拟器的 userdebug 系统里有，user 版系统可能没有）。渲染线程还在画前面的帧时（主页第一次画），下一帧要晚一两秒才交给系统合成，这段时间屏幕上还是开屏页（Beta #150、#152 的冷启动追踪截屏） |
 | 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime |
-| 冷启动：应用画出主页 | 同上 | 应用界面第一次画出来（`first-draw`，原生；开屏页撑着的时候界面不画）。这时开屏页还盖着 |
+| 冷启动：应用窗口第一次出帧 | 同上 | `first-draw`（原生）。开屏页撑着时内容先藏着、窗口照常出帧（`patches/expo-splash-screen+56.0.14.patch`）；修之前 expo 取消绘制，这一帧要等 JS 叫收起 |
 | 冷启动：主页在开屏页下排好版 | 同上 | `first-screen`（用户看不到） |
 | 冷启动：JS 叫开屏页收起 | 同上 | `splash-hidden`（启动初始化做完后） |
 | 冷启动：启动请求到进程起来 | 同上 | `process-start`（原生 Application.onCreate 开头），用来核对起点 |
-| 冷启动：画出主页到系统认为画好 | `first-draw` | 系统日志 `Displayed fun.upup.musicfree/…`（ActivityTaskManager） |
+| 冷启动：第一次出帧到系统认为画好 | `first-draw` | 系统日志 `Displayed fun.upup.musicfree/…`（ActivityTaskManager）。修之前每次都是同步等满 1000 ms 超时 |
 | 冷启动：系统认为画好到开屏页移除 | `Displayed` | 开屏页移除 |
+| 冷启动：开屏页走后的空白 | 开屏页移除 | `first-screen`；开屏页走时主页已经排好版就是 0。不是 0 说明用户看到了空白。按日志时刻算，不是逐帧看画面，画面看冷启动追踪的截屏 |
+| 冷启动：开屏页移除到下一帧交给系统合成 | 开屏页移除 | `home-drawn`，看开屏页拿掉时渲染线程还欠着多少 |
 | 搜索到第一个结果 / 到全部返回 | `SearchSession.start`（`search-start`） | 第一个有结果的来源返回 / 所有来源的第一页都返回 |
 | 点歌到引擎开始推进 | `TrackPlayer.play`（`play-request`，用户点的那次） | 这次装载后 mpv 的 time-pos 第一次自然往前走（`engine-progress`） |
 | 其中：取地址 | 同上 | 交给播放器装载（`track-load`） |
@@ -267,7 +270,8 @@ ffmpeg 现做的两首，扫进本地音乐后轮流点（不走网络）。轮�
 结果是 `perf.md` 末尾的时间线（相对启动请求的毫秒数）和 `screens/cold-trace-<n>-<起>-<止>ms.png`（缩小 4 倍）。
 截屏本身有开销，这一次比统计里的慢，只看先后。Beta #144 用它查明了 `first-draw` 和 TotalTime 之间稳定约 1 秒的差：
 `first-draw` 之后开屏页还盖着，主窗口的同步等满 1000 ms 超时（`SurfaceSyncGroup: Failed to receive transaction ready
-in 1000ms`）系统才报 Displayed，之后开屏页才交给应用移除（见 `docs/handoff/perf-baseline-2026-10-14.md`）。
+in 1000ms`）系统才报 Displayed，之后开屏页才交给应用移除（见 `docs/handoff/perf-baseline-2026-10-14.md`）。原因是 expo
+取消绘制来撑开屏页，修法见 `docs/handoff/cold-start-splash-2026-10-15.md`。
 
 `lib/perf_stats.py --self-test` 在 PR CI 和 Beta 都跑：缺时间点、顺序不对、读到上一次启动的时间点都要判测不出；
 追踪的时间线和截屏转换也在里面。

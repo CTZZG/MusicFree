@@ -151,6 +151,13 @@
         "uuid": "11.1.1"
     },
     "expo": {
+        "autolinking": {
+            "android": {
+                "buildFromSource": [
+                    "expo-splash-screen"
+                ]
+            }
+        },
         "install": {
             "exclude": [
                 "expo-image",

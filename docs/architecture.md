@@ -196,8 +196,9 @@
   测试音源和音频按提交号从 raw.githubusercontent.com 读取，提交必须已推送。
   只改测试时可以填 `e2e_apk_run_id`，直接测以前某次 Beta 的 APK，不重新打包。结果写进运行的 Summary，截图、Maestro 日志、
   logcat 在附件里，截图和结果另外推到 `refs/e2e/latest`（不在分支列表里，每次覆盖）。
-- 代理与订阅检查（`.github/workflows/proxy-subscription-check.yml`，`e2e/proxy-subscription-check.sh`）：PR 改到原生网络层、
-  播放服务和歌词的原生代码、原生的设备测试、`appBar.tsx`、插件设置页或这项检查本身时，在 Android 16 模拟器上装 debug 版和
+- 代理与订阅检查（`.github/workflows/proxy-subscription-check.yml`，`e2e/proxy-subscription-check.sh`）：PR 改到原生代码
+  （`android/**`，含 `MainActivity` 和开屏页）、原生依赖和补丁（`package.json`、`package-lock.json`、`patches/**`）、播放相关的 JS、
+  `appBar.tsx`、插件设置页或这项检查本身时，在 Android 16 模拟器上装 debug 版和
   测试 APK：先跑原生测试（网络策略；绑定真实的 MpvPlaybackService，经系统选定的本机 HTTP 代理取封面，确认解码后进了
   MediaSession；同一个服务开着 Live Update 歌词时，当前这句变空（前奏、间奏、换歌）通知仍是进度样式、标题换回歌名，
   只有关掉开关才换回媒体样式，按钮图标带着本应用的包名；冷启动后第一首没有歌词、播放服务重建、关掉再打开时也是对的样式），再通过 Metro 打开
