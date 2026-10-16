@@ -8,11 +8,11 @@ import java.util.Collections;
 import java.util.function.BiConsumer;
 
 /** Only the JS event sink is replaced; the player, JNI and service are real. */
-final class NativePlaybackTestContext extends ReactApplicationContext {
+public class NativePlaybackTestContext extends ReactApplicationContext {
     private final BiConsumer<String, Object> events;
 
-    NativePlaybackTestContext(Context context) { this(context, (name, payload) -> {}); }
-    NativePlaybackTestContext(Context context, BiConsumer<String, Object> events) {
+    public NativePlaybackTestContext(Context context) { this(context, (name, payload) -> {}); }
+    public NativePlaybackTestContext(Context context, BiConsumer<String, Object> events) {
         super(context);
         this.events = events;
     }

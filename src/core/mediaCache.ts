@@ -94,6 +94,7 @@ async function clearLocalCaches(
     if (cacheData.$localLyric) {
         await checkPathAndRemove(cacheData.$localLyric.rawLrc, canRemove);
         await checkPathAndRemove(cacheData.$localLyric.translation, canRemove);
+        await checkPathAndRemove(cacheData.$localLyric.romanization, canRemove);
     }
 }
 

@@ -32,6 +32,7 @@ on:
             - 'e2e/android16-js-flow-check.sh'
             - 'e2e/lib/js_flow_evidence.py'
             - 'e2e/lib/quality_loading_evidence.py'
+            - 'e2e/lib/loading_spinner_evidence.py'
             - 'e2e/plugins/e2e-source-js-flow.js'
             - 'e2e/focus-app/**'
             - '.github/workflows/proxy-subscription-check.yml'
@@ -71,6 +72,7 @@ jobs:
                   bash e2e/lib/engine_progress_artifact_test.sh
                   python3 -I e2e/lib/js_flow_evidence.py --self-test
                   python3 -I e2e/lib/quality_loading_evidence.py --self-test
+                  python3 -I e2e/lib/loading_spinner_evidence.py --self-test
             - name: Build transient audio focus helper
               run: |
                   bash e2e/focus-app/build.sh "$RUNNER_TEMP/api36-focus.apk"

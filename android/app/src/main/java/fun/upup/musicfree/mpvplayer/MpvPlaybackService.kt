@@ -24,6 +24,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
@@ -124,6 +125,17 @@ class MpvPlaybackService : Service() {
     private var noisyReceiverRegistered = false
     private var duckedForFocusLoss = false
     private var lastNotificationUpdateMs = 0L
+    private val notificationUpdates = NotificationUpdateScheduler(
+        now = SystemClock::uptimeMillis,
+        post = { runnable, delay -> mainHandler.postDelayed(runnable, delay) },
+        cancel = { runnable -> mainHandler.removeCallbacks(runnable) },
+        send = {
+            if (!destroyed && cachedState != PlaybackStateCompat.STATE_STOPPED) {
+                lastNotificationUpdateMs = System.currentTimeMillis()
+                notificationManager?.notify(NOTIFICATION_ID, buildNotification())
+            }
+        },
+    )
     private var cachedPositionUpdatedAtMs = 0L
     private var liveUpdateProgressTickerScheduled = false
 
@@ -197,6 +209,8 @@ class MpvPlaybackService : Service() {
         createNotificationChannel()
         createMediaSession()
         registerNoisyReceiver()
+        // Playback can start before Android delivers service creation.
+        MpvServiceBridge.onServiceReady?.invoke(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -307,18 +321,18 @@ class MpvPlaybackService : Service() {
             "playing" -> {
                 acquireWakeLock()
                 requestAudioFocus()
-                startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_PLAYING
                 cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                startForegroundSafely()
                 artworkRetries.onPlaybackStarted()
                 updateAll()
             }
             "buffering" -> {
                 acquireWakeLock()
                 requestAudioFocus()
-                startForegroundSafely()
                 cachedState = PlaybackStateCompat.STATE_BUFFERING
                 cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                startForegroundSafely()
                 updateAll()
             }
             "paused" -> {
@@ -916,9 +930,8 @@ class MpvPlaybackService : Service() {
         // 停止播放（关闭通知、出错）后不再发通知。迟到的封面、歌词、元数据只更新
         // 缓存，否则会把用户刚关掉的通知重新弹出来；下次开始播放时由
         // startForegroundSafely 带着最新内容一起发。
-        if (cachedState == PlaybackStateCompat.STATE_STOPPED) return
-        lastNotificationUpdateMs = System.currentTimeMillis()
-        notificationManager?.notify(NOTIFICATION_ID, buildNotification())
+        if (destroyed || cachedState == PlaybackStateCompat.STATE_STOPPED) return
+        notificationUpdates.request()
         updateLiveUpdateProgressTicker()
     }
 
@@ -977,12 +990,15 @@ class MpvPlaybackService : Service() {
         try {
             startForeground(NOTIFICATION_ID, buildNotification())
             isForeground = true
+            notificationUpdates.onForegroundPosted()
+            lastNotificationUpdateMs = System.currentTimeMillis()
         } catch (_: Exception) {
-            notificationManager?.notify(NOTIFICATION_ID, buildNotification())
+            updateNotification()
         }
     }
 
     private fun stopForegroundSafely() {
+        notificationUpdates.cancel()
         if (isForeground) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
