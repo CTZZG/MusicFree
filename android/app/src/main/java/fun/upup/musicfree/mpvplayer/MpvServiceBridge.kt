@@ -28,6 +28,10 @@ object MpvServiceBridge {
     @Volatile
     var service: MpvPlaybackService? = null
 
+    /** Called after the service has created a usable media session. */
+    @Volatile
+    internal var onServiceReady: ((MpvPlaybackService) -> Unit)? = null
+
     /** 音频焦点允许 duck 时的策略：pause 或 lowerVolume。 */
     var remoteDuckMode: String = "pause"
 

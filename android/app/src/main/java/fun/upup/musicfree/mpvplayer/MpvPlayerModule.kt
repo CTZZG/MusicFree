@@ -373,14 +373,36 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         )
     }
 
-    private fun syncMetadata() {
-        MpvServiceBridge.service?.onMetadataChanged(
+    private fun syncMetadata(service: MpvPlaybackService? = MpvServiceBridge.service) {
+        service?.onMetadataChanged(
             cachedTitle,
             cachedArtist,
             cachedAlbum,
             cachedArtwork,
             durationSecs,
         )
+    }
+
+    private val serviceReadyCallback: (MpvPlaybackService) -> Unit = { service ->
+        runMpvCallbackOnMain {
+            if (MpvServiceBridge.service === service &&
+                (activeTrackIdentity != null || loadingTrackIdentity != null)
+            ) {
+                // Reconcile only the service. Do not resend a JS state event,
+                // claim an external hold, or change the engine's pause/seek state.
+                syncMetadata(service)
+                service.onProgressChanged(positionSecs, durationSecs, bufferedPositionSecs())
+                service.onPlaybackStateChanged(currentState)
+                Log.d(TAG, "playback service ready; state=$currentState")
+            }
+        }
+    }
+
+    // Normal initialization and resource release share the main looper.
+    private fun detachServiceReadyCallback() {
+        if (MpvServiceBridge.onServiceReady === serviceReadyCallback) {
+            MpvServiceBridge.onServiceReady = null
+        }
     }
 
     private fun setAndroidAutoConnected(connected: Boolean, force: Boolean = false) {
@@ -862,6 +884,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     private fun releaseMpvResources() {
         isInitialized.set(false)
+        detachServiceReadyCallback()
         stopRequested = true
         pendingPlaylistCompaction = false
         pendingNaturalEnd = null
@@ -1019,6 +1042,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 }
 
                 isInitialized.set(true)
+                MpvServiceBridge.onServiceReady = serviceReadyCallback
+                // Also cover service creation before initialization finished.
+                MpvServiceBridge.service?.let(serviceReadyCallback)
                 operationPromise.resolve(null)
             } catch (e: Throwable) {
                 Log.e(TAG, "init failed", e)

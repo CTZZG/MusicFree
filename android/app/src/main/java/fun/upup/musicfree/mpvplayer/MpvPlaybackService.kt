@@ -209,6 +209,8 @@ class MpvPlaybackService : Service() {
         createNotificationChannel()
         createMediaSession()
         registerNoisyReceiver()
+        // Playback can start before Android delivers service creation.
+        MpvServiceBridge.onServiceReady?.invoke(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
