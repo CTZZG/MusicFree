@@ -256,16 +256,16 @@ start_timeline
 flow "启动后进入首页" home.yaml || finish
 
 # 2. 用外部链接装两个测试音源（B 只在找其他来源时有结果，见 plugins/e2e-source-b.js）
-install_plugin() {
-    open_link "musicfree://install/$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PLUGIN_BASE/$1")"
-    flow "通过链接安装 $1" install-plugin.yaml
-}
+# storage.sh provides the existing root/private-store helpers, without running a scenario.
+# shellcheck source=storage.sh
+source "$HERE/storage.sh"
+# shellcheck source=lib/plugin_install.sh
+source "$HERE/lib/plugin_install.sh"
 install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 
 # 17、18 步：下载、旧版数据迁移的故障注入（storage.sh）
-# shellcheck source=storage.sh
-source "$HERE/storage.sh"
+# shellcheck source=download-source.sh
 source "$HERE/download-source.sh"
 if [ "$E2E_SUITE" = download-source ]; then
     run_download_source_checks

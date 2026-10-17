@@ -87,3 +87,22 @@ API 28 结果替代。尚未据此创建 v0.11.5 标签或正式发布。
 用户此前反馈冷启动、加载时暂停和视频打断恢复正常，范围为此前候选；不把该反馈
 冒充对这次新 AudioTrack 库的独立真机测试。物理音频、厂商后台限制和新增库的真机
 定量表现仍未系统验收。
+
+## 发布前 Beta 159–161 的实际记录
+
+- [Beta 159](https://github.com/CTZZG/MusicFree/actions/runs/38992620382) 从
+  `aafd07e5cf15cb2345fdf0eba8a0ed10a80b0872` 打包成功，但首次 Android 14 `all`
+  仅 4 项通过 / 1 项失败：搜索三首歌时超时，失败截图和读屏树显示没有搜索插件。
+  两次安装确认框关闭不能证明插件已安装。日志有 DNS 的 `ECONNREFUSED` /
+  `ENETUNREACH`，但没有保存原始安装异常；具体安装失败原因未完全确定，不能断言是
+  “两插件已装好、搜索注册有竞态”。后续播放、下载与锁屏项目当次没有执行。
+- [Beta 160](https://github.com/CTZZG/MusicFree/actions/runs/38997097645) 只复验 E2E，
+  复用 159 的同一 APK；打包 job 按设计跳过。`all` 实际 105 个唯一项目通过、0 失败，
+  包括备用源下载身份与音频校验、存储故障注入、锁屏、Doze 和省电。
+- [Beta 161](https://github.com/CTZZG/MusicFree/actions/runs/38997194790) 同样复用该 APK，
+  独立 `library` 实际 34 个唯一项目通过、0 失败。`all` 不包含 `library` / `perf`；
+  当轮性能基线未重测。这些复验没有抹掉 159 的原始失败。
+
+v0.11.5 已从 `967a6cc17be9df3996f679d23b2d3cc15d2d9297` 正式发布；上述“尚未发布”
+描述是本地验证阶段的历史状态。下一轮加强安装前提与诊断，见
+`post-release-hardening-2026-10-17.md`。

@@ -371,6 +371,7 @@ jobs:
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/pause_checks_test.sh
                   bash e2e/lib/download_source_test.sh
+                  bash e2e/lib/plugin_install_test.sh
                   bash e2e/lib/storage_checks_test.sh
                   bash e2e/lib/power_checks_test.sh
                   bash e2e/lib/power_environment_test.sh
