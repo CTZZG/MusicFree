@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -76,6 +77,8 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
     fun showLyricWindow(initText: String?, options: Map<String, Any>) {
         try {
             if (windowManager == null) {
+                // Report a missing overlay permission as such; other failures keep their own error.
+                if (!Settings.canDrawOverlays(reactContext)) throw OverlayPermissionException()
                 windowManager = reactContext.getSystemService(WINDOW_SERVICE) as WindowManager
                 layoutParams = WindowManager.LayoutParams()
 
@@ -138,7 +141,14 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
                     setPadding(12, 6, 12, 6)
                     gravity = align?.toString()?.toInt() ?: Gravity.CENTER
                 }
-                windowManager?.addView(tv, layoutParams)
+                try {
+                    windowManager?.addView(tv, layoutParams)
+                } catch (e: WindowManager.BadTokenException) {
+                    // "permission denied for window type": the permission was revoked meanwhile.
+                    throw OverlayPermissionException(e)
+                } catch (e: SecurityException) {
+                    throw OverlayPermissionException(e)
+                }
                 if (timedLyricState != null) {
                     renderTimedLyric()
                 }
@@ -159,16 +169,17 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
         if (orientationEventListener == null) {
             orientationEventListener = object : OrientationEventListener(reactContext, SensorManager.SENSOR_DELAY_NORMAL) {
                 override fun onOrientationChanged(orientation: Int) {
-                    if (windowManager != null) {
-                        val outMetrics = DisplayMetrics()
-                        windowManager?.defaultDisplay?.getMetrics(outMetrics)
-                        windowWidth = outMetrics.widthPixels.toDouble()
-                        windowHeight = outMetrics.heightPixels.toDouble()
-                        layoutParams?.width = (widthPercent * windowWidth).toInt()
-                        layoutParams?.x = (leftPercent * (windowWidth - layoutParams!!.width)).toInt()
-                        layoutParams?.y = (topPercent * (windowHeight - tv!!.height)).toInt()
-                        windowManager?.updateViewLayout(tv, layoutParams)
-                    }
+                    val manager = windowManager ?: return
+                    val view = tv ?: return
+                    val params = layoutParams ?: return
+                    val outMetrics = DisplayMetrics()
+                    manager.defaultDisplay?.getMetrics(outMetrics)
+                    windowWidth = outMetrics.widthPixels.toDouble()
+                    windowHeight = outMetrics.heightPixels.toDouble()
+                    params.width = (widthPercent * windowWidth).toInt()
+                    params.x = (leftPercent * (windowWidth - params.width)).toInt()
+                    params.y = (topPercent * (windowHeight - view.height)).toInt()
+                    relayout(view)
                 }
             }
         }
@@ -337,22 +348,36 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
         tv?.gravity = gravity
     }
 
-    fun setTopPercent(pct: Double) {
-        var percent = pct.coerceIn(0.0, 1.0)
-        tv?.let {
-            layoutParams?.y = (percent * (windowHeight - it.height)).toInt()
-            windowManager?.updateViewLayout(it, layoutParams)
+    /**
+     * Push layoutParams to WindowManager only while it holds the overlay. tv is the window's root
+     * view: addView gives it a parent (the ViewRootImpl) synchronously and removing the window
+     * clears it, whereas isAttachedToWindow only turns true on the first traversal after addView.
+     * Without a window updateViewLayout throws; the setting itself is kept for the next show.
+     */
+    private fun relayout(view: View) {
+        if (view.parent != null) {
+            windowManager?.updateViewLayout(view, layoutParams)
         }
+    }
+
+    fun setTopPercent(pct: Double) {
+        val percent = pct.coerceIn(0.0, 1.0)
         this.topPercent = percent
+        val params = layoutParams ?: return
+        tv?.let {
+            params.y = (percent * (windowHeight - it.height)).toInt()
+            relayout(it)
+        }
     }
 
     fun setLeftPercent(pct: Double) {
-        var percent = pct.coerceIn(0.0, 1.0)
-        tv?.let {
-            layoutParams?.x = (percent * (windowWidth - layoutParams!!.width)).toInt()
-            windowManager?.updateViewLayout(it, layoutParams)
-        }
+        val percent = pct.coerceIn(0.0, 1.0)
         this.leftPercent = percent
+        val params = layoutParams ?: return
+        tv?.let {
+            params.x = (percent * (windowWidth - params.width)).toInt()
+            relayout(it)
+        }
     }
 
     fun setColors(textColor: String?, backgroundColor: String?) {
@@ -372,19 +397,20 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
     }
 
     fun setWidth(pct: Double) {
-        var percent = pct.coerceIn(0.3, 1.0)
+        val percent = pct.coerceIn(0.3, 1.0)
+        this.widthPercent = percent
+        val params = layoutParams ?: return
         tv?.let {
             val width = (percent * windowWidth).toInt()
-            val originalWidth = layoutParams?.width ?: 0
-            layoutParams?.x = if (width <= originalWidth) {
-                layoutParams!!.x + (originalWidth - width) / 2
+            val originalWidth = params.width
+            params.x = if (width <= originalWidth) {
+                params.x + (originalWidth - width) / 2
             } else {
-                layoutParams!!.x - (width - originalWidth) / 2
+                params.x - (width - originalWidth) / 2
             }.coerceAtLeast(0).coerceAtMost((windowWidth - width).toInt())
-            layoutParams?.width = width
-            windowManager?.updateViewLayout(it, layoutParams)
+            params.width = width
+            relayout(it)
         }
-        this.widthPercent = percent
     }
 
     fun setFontSize(fontSize: Float) {

@@ -103,3 +103,27 @@ Google Play 服务执行 dexopt 并持有安装锁。仅取消该开机任务与
 
 提交后的 CI / Android 16 / Beta 证据待追加。API 28 软件模拟器不替代 API 36 或真机。
 物理音频、厂商省电和新 AudioTrack 库在 ARM 真机上的定量表现仍未系统验收。
+
+## 后续：桌面歌词三项小修（PR #43 合并后）
+
+PR #43 评审时留下的三项，在合并后的单独提交里修：
+
+- **设置页调用不再留下未处理的 rejection。** 设置页和歌词面板调用 setter 都不 await，
+  #43 之后 UI 异常会变成未处理的 Promise rejection。`src/native/lyricUtil/index.ts`
+  包住 `hideStatusBarLyric`、对齐、上下左右、宽度、字号和颜色这几个 setter，失败时写错误日志、
+  不再抛出。逐句的歌词文本和逐字时间表不包：每句都调，`lyricManager` 本来就接住了。
+- **只有真的缺悬浮窗权限才提示权限。** 原生在建窗口前查 `Settings.canDrawOverlays`，
+  `addView` 抛 `BadTokenException` / `SecurityException` 也算缺权限，统一以
+  `OVERLAY_PERMISSION`（`LyricErrors.kt`）reject；其他失败仍是 `Exception`。JS 只对前者提示
+  打开悬浮窗权限，其他失败提示“已关闭，详情见错误日志”，两种都照旧关掉状态栏歌词。
+  展示选项按类型读取，null 或类型不对的值直接忽略，不再让整次展示失败。
+- **没有窗口时不碰 WindowManager。** `setTopPercent` / `setLeftPercent` / `setWidth` 和
+  转屏回调先记下百分比，只在 TextView 已交给 WindowManager（`parent` 不为空；`addView`
+  同步设置，比 `isAttachedToWindow` 早）时才 `updateViewLayout`。原来的抛错路径没有了，
+  转屏回调里的 `!!` 也去掉了。
+
+因此上文“未附着 TextView 的更新应 reject”“错误的展示选项类型应 reject”两条设备用例改为：
+没有窗口时 setter resolve 并记下设置；null / 错误类型的选项被忽略、展示 resolve。另加：
+用 `appops` 拒绝悬浮窗权限后展示，必须以 `OVERLAY_PERMISSION` reject（结束后恢复 appops）；
+JVM 用例核对错误码映射；Jest 用例覆盖权限 / 非权限两种提示和 setter 失败只记日志，换回旧
+wrapper 时其中两项失败。
