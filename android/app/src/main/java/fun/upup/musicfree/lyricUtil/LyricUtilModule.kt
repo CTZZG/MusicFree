@@ -27,6 +27,13 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
 
     override fun getName() = "LyricUtil"
     private var lyricView: LyricView? = null
+    private val uiTasks = LyricUiTaskRunner { UiThreadUtil.runOnUiThread(it) }
+
+    private fun updateLyricOnUi(promise: Promise, action: () -> Unit) {
+        uiTasks.run(action, { promise.resolve(true) }, { error ->
+            promise.reject("Exception", error.message, error)
+        })
+    }
     private val liveUpdateLyricNotifier by lazy {
         LiveUpdateLyricNotifier(reactContext.applicationContext)
     }
@@ -67,72 +74,53 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
 
     @ReactMethod
     fun showStatusBarLyric(initLyric: String?, options: ReadableMap?, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                if (lyricView == null) {
-                    lyricView = LyricView(reactContext)
-                }
+        updateLyricOnUi(promise) {
+            if (lyricView == null) {
+                lyricView = LyricView(reactContext)
+            }
 
-                val mapOptions = mutableMapOf<String, Any>().apply {
-                    if (options == null) {
-                        return@apply
-                    }
-                    if (options.hasKey("topPercent")) {
-                        put("topPercent", options.getDouble("topPercent"))
-                    }
-                    if (options.hasKey("leftPercent")) {
-                        put("leftPercent", options.getDouble("leftPercent"))
-                    }
-                    if (options.hasKey("align")) {
-                        put("align", options.getInt("align"))
-                    }
-                    if (options.hasKey("color")) {
-                        options.getString("color")?.let { put("color", it) }
-                    }
-                    if (options.hasKey("backgroundColor")) {
-                        options.getString("backgroundColor")?.let { put("backgroundColor", it) }
-                    }
-                    if (options.hasKey("widthPercent")) {
-                        put("widthPercent", options.getDouble("widthPercent"))
-                    }
-                    if (options.hasKey("fontSize")) {
-                        put("fontSize", options.getDouble("fontSize"))
-                    }
+            val mapOptions = mutableMapOf<String, Any>().apply {
+                if (options == null) {
+                    return@apply
                 }
-
-                try {
-                    lyricView?.showLyricWindow(initLyric, mapOptions)
-                    promise.resolve(true)
-                } catch (e: Exception) {
-                    promise.reject("Exception", e.message)
+                if (options.hasKey("topPercent")) {
+                    put("topPercent", options.getDouble("topPercent"))
+                }
+                if (options.hasKey("leftPercent")) {
+                    put("leftPercent", options.getDouble("leftPercent"))
+                }
+                if (options.hasKey("align")) {
+                    put("align", options.getInt("align"))
+                }
+                if (options.hasKey("color")) {
+                    options.getString("color")?.let { put("color", it) }
+                }
+                if (options.hasKey("backgroundColor")) {
+                    options.getString("backgroundColor")?.let { put("backgroundColor", it) }
+                }
+                if (options.hasKey("widthPercent")) {
+                    put("widthPercent", options.getDouble("widthPercent"))
+                }
+                if (options.hasKey("fontSize")) {
+                    put("fontSize", options.getDouble("fontSize"))
                 }
             }
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+
+            lyricView?.showLyricWindow(initLyric, mapOptions)
         }
     }
 
     @ReactMethod
     fun hideStatusBarLyric(promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.hideLyricWindow()
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.hideLyricWindow()
         }
     }
 
     @ReactMethod
     fun setStatusBarLyricText(lyric: String, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.setText(lyric)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.setText(lyric)
         }
     }
 
@@ -223,20 +211,15 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
                 }
             }
 
-            UiThreadUtil.runOnUiThread {
-                try {
-                    lyricView?.setTimedText(
-                        text = text,
-                        words = words,
-                        positionMs = positionMs,
-                        isPlaying = isPlaying,
-                        playbackRate = playbackRate,
-                        sequence = sequence,
-                    )
-                    promise.resolve(true)
-                } catch (e: Exception) {
-                    promise.reject("Exception", e.message)
-                }
+            updateLyricOnUi(promise) {
+                lyricView?.setTimedText(
+                    text = text,
+                    words = words,
+                    positionMs = positionMs,
+                    isPlaying = isPlaying,
+                    playbackRate = playbackRate,
+                    sequence = sequence,
+                )
             }
         } catch (e: Exception) {
             promise.reject("Exception", e.message)
@@ -329,73 +312,43 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
 
     @ReactMethod
     fun setStatusBarLyricAlign(alignment: Int, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.setAlign(alignment)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.setAlign(alignment)
         }
     }
 
     @ReactMethod
     fun setStatusBarLyricTop(pct: Double, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.setTopPercent(pct)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.setTopPercent(pct)
         }
     }
 
     @ReactMethod
     fun setStatusBarLyricLeft(pct: Double, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.setLeftPercent(pct)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.setLeftPercent(pct)
         }
     }
 
     @ReactMethod
     fun setStatusBarLyricWidth(pct: Double, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.setWidth(pct)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.setWidth(pct)
         }
     }
 
     @ReactMethod
     fun setStatusBarLyricFontSize(fontSize: Float, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.setFontSize(fontSize)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.setFontSize(fontSize)
         }
     }
 
     @ReactMethod
     fun setStatusBarColors(textColor: String?, backgroundColor: String?, promise: Promise) {
-        try {
-            UiThreadUtil.runOnUiThread {
-                lyricView?.setColors(textColor, backgroundColor)
-            }
-            promise.resolve(true)
-        } catch (e: Exception) {
-            promise.reject("Exception", e.message)
+        updateLyricOnUi(promise) {
+            lyricView?.setColors(textColor, backgroundColor)
         }
     }
 

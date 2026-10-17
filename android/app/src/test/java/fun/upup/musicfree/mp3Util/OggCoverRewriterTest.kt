@@ -168,6 +168,68 @@ class OggCoverRewriterTest {
         }
     }
 
+    private fun apeTag(withHeader: Boolean, version: Int = 2000): ByteArray {
+        val value = "trailing title".toByteArray()
+        val key = "Title\u0000".toByteArray()
+        val item = ByteBuffer.allocate(8 + key.size + value.size).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(value.size).putInt(0).put(key).put(value).array()
+        fun descriptor(flags: Int) = ByteBuffer.allocate(32).order(ByteOrder.LITTLE_ENDIAN)
+            .put("APETAGEX".toByteArray()).putInt(version).putInt(32 + item.size)
+            .putInt(1).putInt(flags).putLong(0).array()
+        val flags = if (withHeader) Int.MIN_VALUE else 0
+        return (if (withHeader) descriptor(flags or (1 shl 29)) else byteArrayOf()) +
+            item + descriptor(flags)
+    }
+
+    @Test fun preservesId3AndApeTrailersAfterACompleteAudioStream() {
+        val audio = page(2, 44100, 4, byteArrayOf(8, 9))
+        val id3 = "TAG".toByteArray() + ByteArray(125) { 17 }
+        val layouts = listOf(headers() + audio,
+            page(0, 0, 2, identification) + page(1, 44100, 4, comment("TITLE=Track"), setup, byteArrayOf(8, 9)),
+            headers() + page(2, 44100, 0, byteArrayOf(8, 9)) + page(3, 44100, 4))
+        val tails = listOf(id3, apeTag(false), apeTag(true), apeTag(false, 1000), apeTag(false) + id3,
+            apeTag(true) + id3, id3 + apeTag(false))
+        for (tail in tails) for (layout in layouts) {
+            withFile(layout + tail) { file ->
+                OggCoverRewriter.writeCover(file, "new-picture")
+                val written = file.readBytes()
+                assertArrayEquals(tail, written.copyOfRange(written.size - tail.size, written.size))
+                withFile(written.copyOf(written.size - tail.size)) { ogg ->
+                    val result = pages(ogg)
+                    assertTrue(String(packets(result)[1]).contains("METADATA_BLOCK_PICTURE=new-picture"))
+                    assertArrayEquals(byteArrayOf(8, 9), packets(result).last())
+                    assertEquals(44100L, result.last().granule)
+                    assertEquals(4, result.last().flags)
+                }
+            }
+        }
+    }
+
+    @Test fun doesNotTreatUnfinishedAudioOrMalformedTagsAsTrailers() {
+        val id3 = "TAG".toByteArray() + ByteArray(125)
+        val audio = page(2, 44100, 4, byteArrayOf(8, 9))
+        val badApe = apeTag(false).also {
+            ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(it.size - 20, Int.MAX_VALUE)
+        }
+        val inputs = listOf(
+            headers() + page(2, 44100, 0, byteArrayOf(8, 9)) + id3,
+            headers() + rawPage(Page(serial, 2, 44100, 4, byteArrayOf(255.toByte()), ByteArray(255))) + id3,
+            headers() + rawPage(Page(serial, 2, 44100, 0, byteArrayOf(255.toByte()), ByteArray(255))) +
+                page(3, 44100, 5) + id3,
+            headers() + page(2, 44100, 0, byteArrayOf(8, 9)) +
+                page(0, 0, 6, byteArrayOf(1), stream = 987) + id3,
+            headers() + audio.dropLast(1).toByteArray() + id3,
+            headers() + audio + id3.dropLast(1).toByteArray(),
+            headers() + audio + badApe,
+            headers() + audio + apeTag(true).dropLast(1).toByteArray(),
+        )
+        for (input in inputs) withFile(input) { file ->
+            assertThrows(IOException::class.java) { OggCoverRewriter.writeCover(file, "new") }
+            assertArrayEquals(input, file.readBytes())
+            assertFalse(File("${file.path}.tmp_cover").exists())
+        }
+    }
+
     @Test fun rejectsTruncatedOrInvalidFilesWithoutReplacingTheOriginal() {
         val valid = headers() + page(2, 44100, 4, byteArrayOf(8, 9))
         for (broken in listOf(valid.dropLast(1).toByteArray(), valid + byteArrayOf(1), "not ogg".toByteArray())) {

@@ -413,10 +413,10 @@ run_legacy_upgrade_checks() {
     fi
 
     # 装上两个测试源（卸载时才会清空它们的附加信息）
-    open_link "musicfree://install/$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PLUGIN_BASE/e2e-source-a.js")"
-    flow "升级后装测试源 A" install-plugin.yaml
-    open_link "musicfree://install/$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PLUGIN_BASE/e2e-source-b.js")"
-    flow "升级后装测试源 B" install-plugin.yaml
+    if ! install_plugin e2e-source-a.js "升级后" || ! install_plugin e2e-source-b.js "升级后"; then
+        skip_rest 4 "升级后的测试插件未验证可用，没有执行后续迁移场景"
+        return 1
+    fi
 
     # 迁移之后删除：我喜欢里删掉 B
     if flow "在我喜欢里删 B" legacy-favorite-delete.yaml &&

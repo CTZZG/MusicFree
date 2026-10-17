@@ -5,6 +5,7 @@ import java.io.File
 import java.io.DataInputStream
 import java.io.EOFException
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -36,6 +37,8 @@ internal object OggCoverRewriter {
         val segmentTable: ByteArray,
         val body: ByteArray,
     ) {
+        val byteSize: Int get() = OGG_HEADER_SIZE + segmentTable.size + body.size
+
         fun toBytes(): ByteArray {
             val size = OGG_HEADER_SIZE + segmentTable.size + body.size
             val buffer = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
@@ -67,6 +70,7 @@ internal object OggCoverRewriter {
         val identificationPage: OggPage,
         val packets: List<ByteArray>,
         val audioRemainder: OggPage?,
+        val inputBytes: Long,
     )
 
     fun writeCover(file: File, pictureBase64: String) {
@@ -85,6 +89,9 @@ internal object OggCoverRewriter {
                     )
                     for (page in replacements) output.write(page.toBytes())
                     var nextSequence = 1 + replacements.size
+                    var audioEnded = false
+                    var vorbisEnded = false
+                    var vorbisPacketOpen = false
                     fun writeAudio(page: OggPage) {
                         // Other logical/chained streams keep their own sequence numbers.
                         val written = if (page.serialNumber == serial) {
@@ -93,10 +100,28 @@ internal object OggCoverRewriter {
                             page
                         }
                         output.write(written.toBytes())
+                        val lastSegment = page.segmentTable.lastOrNull()?.toInt()?.and(0xFF)
+                        val ended = page.headerType and 4 != 0 && lastSegment != SEGMENT_MAX
+                        if (page.serialNumber == serial) {
+                            if (lastSegment != null) vorbisPacketOpen = lastSegment == SEGMENT_MAX
+                            vorbisEnded = ended && !vorbisPacketOpen
+                        }
+                        audioEnded = vorbisEnded && ended
                     }
                     headers.audioRemainder?.let { writeAudio(it) }
+                    var inputOffset = headers.inputBytes
                     while (true) {
+                        // Only complete streams may have opaque trailing metadata. Inspect from
+                        // the end so an APE tag without its optional header is recognized too.
+                        if (audioEnded && isSupportedTrailer(file, inputOffset)) {
+                            val expectedBytes = file.length() - inputOffset
+                            if (input.copyTo(output) != expectedBytes) {
+                                throw IOException("Ogg file changed while copying trailing tags")
+                            }
+                            break
+                        }
                         val page = readPage(input) ?: break
+                        inputOffset += page.byteSize
                         writeAudio(page)
                     }
                 }
@@ -106,6 +131,46 @@ internal object OggCoverRewriter {
         } finally {
             temp.delete()
         }
+    }
+
+    /** Recognize a complete suffix of ID3v1 / APE tags without buffering the suffix. */
+    private fun isSupportedTrailer(file: File, offset: Long): Boolean = RandomAccessFile(file, "r").use { input ->
+        var end = input.length()
+        if (end <= offset) return@use false
+        fun bytes(at: Long, size: Int): ByteArray {
+            input.seek(at)
+            return ByteArray(size).also { input.readFully(it) }
+        }
+        val apeMagic = "APETAGEX".toByteArray(Charsets.US_ASCII)
+        while (end > offset) {
+            val footer = if (end - offset >= 32) bytes(end - 32, 32) else null
+            if (footer != null && footer.copyOfRange(0, 8).contentEquals(apeMagic)) {
+                val version = readLittleEndianInt(footer, 8)
+                val size = readLittleEndianInt(footer, 12).toLong() and 0xFFFFFFFFL
+                val flags = readLittleEndianInt(footer, 20)
+                val hasHeader = flags and Int.MIN_VALUE != 0
+                val start = end - size - if (hasHeader) 32 else 0
+                if (version !in listOf(1000, 2000) || size < 32 || start < offset ||
+                    flags and ((1 shl 29) or (1 shl 30)) != 0 ||
+                    footer.copyOfRange(24, 32).any { it != 0.toByte() }
+                ) return@use false
+                if (hasHeader) {
+                    val header = bytes(start, 32)
+                    if (!header.copyOfRange(0, 20).contentEquals(footer.copyOfRange(0, 20)) ||
+                        readLittleEndianInt(header, 20) != (flags or (1 shl 29)) ||
+                        header.copyOfRange(24, 32).any { it != 0.toByte() }
+                    ) return@use false
+                }
+                end = start
+            } else if (end - offset >= 128 &&
+                bytes(end - 128, 3).contentEquals("TAG".toByteArray(Charsets.US_ASCII))
+            ) {
+                end -= 128
+            } else {
+                return@use false
+            }
+        }
+        true
     }
 
     private fun readPage(input: DataInputStream): OggPage? {
@@ -139,6 +204,7 @@ internal object OggCoverRewriter {
         var packet = ByteArrayOutputStream()
         var headerBytes = 0
         var page = identificationPage
+        var inputBytes = page.byteSize.toLong()
         while (true) {
             if (page.serialNumber != identificationPage.serialNumber) {
                 throw IOException("Interleaved streams in Vorbis headers")
@@ -169,11 +235,12 @@ internal object OggCoverRewriter {
                                 body = page.body.copyOfRange(bodyOffset, page.body.size),
                             )
                         } else null
-                        return Headers(identificationPage, packets, remainder)
+                        return Headers(identificationPage, packets, remainder, inputBytes)
                     }
                 }
             }
             page = readPage(input) ?: throw EOFException("Incomplete Vorbis headers")
+            inputBytes += page.byteSize
         }
     }
 
