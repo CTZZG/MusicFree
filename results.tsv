@@ -1,0 +1,109 @@
+PASS	安装 APK	MusicFree-0.11.6-5007371-app-x86_64-release.apk
+PASS	启动后进入首页	
+PASS	确认外部插件安装请求 e2e-source-a.js	
+PASS	验证插件安装 e2e-source-a.js	E2E 测试源 A：已注册、启用，支持单曲搜索，SHA256符合固定源码
+PASS	确认外部插件安装请求 e2e-source-b.js	
+PASS	验证插件安装 e2e-source-b.js	E2E 测试源 B：已注册、启用，支持单曲搜索，SHA256符合固定源码
+PASS	搜索并依次点播三首歌	
+PASS	前台播放：在播 C，进度在走	进度 14.5s → 18.5s
+PASS	回到桌面后继续播放	进度 21.9s → 25.8s
+PASS	后台按上一首：切到 B	
+PASS	后台再按上一首：切到 A 并在播	进度 0.0s → 4.0s
+PASS	回到应用 6 秒后仍在播 A	进度 11.5s → 15.4s
+PASS	回到应用后播放条显示 A	
+PASS	播放失败后有提示和处理方式	
+PASS	点播一首 20 秒的短歌	
+PASS	后台播完自动接下一首（回到 A）	进度 0.0s → 3.6s
+PASS	点播只有其他来源能播的歌	
+PASS	原来源失败，自动换到测试源 B 播放	进度 13.7s → 17.8s
+PASS	播放页标出改用的来源	
+PASS	其他来源只有 Live 版时不换，留下失败提示	
+PASS	播放统计记下了换源和失败	
+PASS	播放中切到 320K，标签变成 HQ	
+PASS	切换音质后接着原来的进度播	进度 44.4s → 76.5s
+PASS	选了取不到的无损，标签保持 HQ	
+PASS	取不到新音质时照常播	进度 76.7s → 111.2s
+PASS	冷启动后通知栏停在暂停的地方	暂停在 111.7s，重开后 111.5s
+PASS	冷启动后恢复上次的歌和音质	
+PASS	冷启动后点播放，从暂停的地方接着播	暂停在 111.7s，接着从 113.3s 播
+PASS	再次打开搜索页	
+PASS	断网时点歌，提示播放未成功	
+PASS	网络恢复后在失败提示里点重试	
+PASS	网络恢复后在播 B	进度 12.5s → 16.4s
+PASS	标签页上迷你播放器在标签栏上方	迷你播放器 y=1981–2138，标签栏 y=2175–2301
+PASS	打开资料库里的播放历史	
+PASS	从二级页面返回后马上切后台，回来换个标签，迷你播放器不盖住标签栏	迷你播放器 y=1981–2138，标签栏 y=2175–2301
+PASS	点播不回应那首前面的 C	
+PASS	插件不回应时只等一轮就回到原来那首	按下一首后 16 秒回到 C，进度 4.1s → 8.1s
+PASS	之后按上一首照常切到 B	进度 0.0s → 3.3s
+PASS	切歌等地址时按暂停，超时回滚后仍停在 C	20 秒里采样 19 次，一直停在 0.6s
+PASS	之后按播放，C 接着放	进度 0.6s → 4.7s
+PASS	按上一首后马上暂停，B 装好后仍停着	8 秒里采样 8 次，一直停在 0.2s
+PASS	之后按播放，B 接着放	进度 4.0s → 8.0s
+PASS	看视频期间焦点一直在视频那边，音乐停着	12 秒的视频：视频放下焦点前采样 10 次，音乐一直停在 9.2s，焦点一直在视频那边
+PASS	看完视频自动接着放	视频放下焦点后 0 秒内接着放，进度 9.6s → 14.0s
+PASS	看视频前暂停，看完仍停着	视频放下焦点前采样 5 次，音乐一直停在 14.2s，焦点一直在视频那边；视频放下焦点后 8 秒里采样 7 次，一直停在 14.2s
+PASS	看视频时按暂停，看完仍停着	视频放下焦点前采样 6 次，音乐一直停在 14.6s，焦点一直在视频那边；视频放下焦点后 8 秒里采样 7 次，一直停在 14.6s
+PASS	切歌等地址时来了视频，回滚后不抢焦点	25 秒的视频：视频放下焦点前采样 23 次，音乐一直停在 0.4s，焦点一直在视频那边
+PASS	切歌等地址时来了视频，看完接着放原来那首	视频放下焦点后 0 秒内接着放，进度 1.2s → 5.4s
+PASS	锁屏前：从头放 B（队列是 B、C、Hang）	
+PASS	锁屏界面上有媒体控件	
+PASS	锁屏界面上点下一曲：从 B 切到 C	切歌时「E2E Tone B」播到约 58s（共 180 秒，不是播完自动接的）；锁屏界面还在
+PASS	锁屏 30 秒照常播放	30 秒里采样 6 次一直在播，进度 9.7s → 41.1s；屏幕 Asleep，锁屏 showing，深度休眠 ACTIVE，省电模式 0；环境采样符合 locked
+PASS	锁屏时切到不回应的歌：15 秒期限照常到，回到 C 接着播	按下一首后 15 秒回到「E2E Tone C」，进度 42.3s → 46.4s；屏幕 Asleep，锁屏 showing，深度休眠 ACTIVE，省电模式 0；环境采样符合 locked
+PASS	锁屏时切歌等地址按暂停：超时回滚后仍停着	20 秒里采样 16 次，一直停在 47.1s；环境采样符合 locked
+PASS	锁屏暂停 1 分钟后按播放：从暂停处接着播	从 47.1s 恢复，进度 47.3s → 51.6s；环境采样符合 locked
+PASS	锁屏时两次切歌超时之后，按上一首照常切到 B	进度 0.0s → 3.7s；环境采样符合 locked
+PASS	锁屏时临时占用音频焦点：打断期间停着	视频放下焦点前采样 9 次，音乐一直停在 4.5s，焦点一直在视频那边；环境采样符合 locked
+PASS	锁屏时临时音频焦点打断结束：接着放	视频放下焦点后 0 秒内接着放，进度 5.6s → 9.8s；环境采样符合 locked
+PASS	解锁后打开「E2E Tone B」的播放页，按钮是暂停	
+PASS	解锁后播放页和系统媒体会话一致	播放页：「E2E Tone B」、暂停按钮、已播放 49s；媒体会话 43.1s → 49.9s
+PASS	拔电、灭屏后强制进入深度休眠（Doze）	屏幕 Asleep，锁屏 showing，深度休眠 IDLE，省电模式 0
+PASS	Doze 中照常播放	20 秒里采样 4 次一直在播，进度 53.7s → 74.6s；屏幕 Asleep，锁屏 showing，深度休眠 IDLE，省电模式 0；环境采样符合 doze
+PASS	Doze 中按下一首：取到地址，C 放出来	进度 0.0s → 3.7s；环境采样符合 doze
+PASS	Doze 中切到不回应的歌：15 秒期限照常到，回到 C 接着播	按下一首后 15 秒回到「E2E Tone C」，进度 4.5s → 8.7s；屏幕 Asleep，锁屏 showing，深度休眠 IDLE，省电模式 0；环境采样符合 doze
+PASS	Doze 中暂停 1 分钟后按播放：从暂停处接着播	从 9.4s 恢复，进度 9.9s → 14.2s；环境采样符合 doze
+PASS	省电模式下灭屏按上一首：取到地址，B 放出来	进度 0.0s → 3.7s；环境采样符合 saver
+PASS	省电模式下灭屏照常播放	20 秒里采样 4 次一直在播，进度 4.5s → 25.6s；屏幕 Asleep，锁屏 showing，深度休眠 QUICK_DOZE_DELAY，省电模式 1；环境采样符合 saver
+PASS	下载换源前打开搜索结果	
+PASS	下载换源前点播 Fallback	
+PASS	只有备用来源能播的歌：播放并记住来源 B	进度 1.7s → 5.8s
+PASS	下载换源前重新打开搜索	
+PASS	下载原来源的 Fallback	
+PASS	原来源无地址：通过已记住的来源下载文件	/data/media/0/Android/data/fun.upup.musicfree/files/download/music/E2E Fallback - E2E Artist.mp3
+PASS	下载记录保留原歌曲身份和实际来源音质	{"kind": "remembered", "platform": "E2E 测试源 B", "id": "fallback", "quality": "128k"}
+PASS	备用来源下载文件能解码，音频与来源 B 的夹具一致	SHA256=f7534ef5a05f837b2e40050b6688b3012a32f088fab462951241390c5c11cbde
+PASS	备用来源下载文件的歌曲标签正确	{"title": "E2E Fallback", "artist": "E2E Artist", "album": "E2E Album"}
+PASS	下载前打开搜索结果	
+PASS	点下载 C	
+PASS	下载 C（不注入故障）：下载出文件	/data/media/0/Android/data/fun.upup.musicfree/files/download/music/E2E Tone C - E2E Artist.mp3
+PASS	注入故障后点下载 B	
+PASS	下载 B 时下载记录写不进去：任务标为失败	
+PASS	注入故障：下载记录确实写不进去	错误日志里 music.DownloadTasks 落盘失败 1 次，临时文件位置一直被占着
+PASS	下载记录没写进去时，不写出 B 的最终文件	下载目录里没有新的 B
+PASS	下载失败不碰已有的文件（下载好的 C、用户自己的同名 B）	7 个文件内容都没变
+PASS	下载记录文件保持故障前的完整内容	和故障前逐字节相同，能正常解析（6 个键）
+PASS	下载失败后不留下这次的下载缓存	下载缓存目录是空的
+PASS	去掉故障后重启	
+PASS	去掉故障、重启后已有的文件和下载记录都完好	下载文件和故障前一样，下载记录能正常解析（6 个键）
+PASS	重新下载前打开搜索结果	
+PASS	去掉故障后再点下载 B	
+PASS	去掉故障后重新下载 B：写到新文件，已有的文件不变	新文件：/data/media/0/Android/data/fun.upup.musicfree/files/download/music/E2E Tone B - E2E Artist (1).mp3；原有 7 个文件不变
+PASS	准备旧版数据：0.7.3 启动后，往它的 MMKV 写入我喜欢和附加信息	34 行目录列表在 legacy-mmkv-ls.txt；属主、标签照 0.7.3 的 LocalSheet.music-sheets
+PASS	从 0.7.3 覆盖安装新版并启动	
+PASS	打开我喜欢（旧版的三首）	
+PASS	升级后我喜欢里是旧版的 A、B、C	新存储里：tone-a tone-b tone-c
+PASS	测试源 A 的附加信息在第一次用到时从旧版迁移过来	带旧版标记的：tone-a tone-b
+PASS	确认外部插件安装请求 e2e-source-a.js（升级后）	
+PASS	升级后：验证插件安装 e2e-source-a.js	E2E 测试源 A：已注册、启用，支持单曲搜索，SHA256符合固定源码
+PASS	确认外部插件安装请求 e2e-source-b.js（升级后）	
+PASS	升级后：验证插件安装 e2e-source-b.js	E2E 测试源 B：已注册、启用，支持单曲搜索，SHA256符合固定源码
+PASS	在我喜欢里删 B	
+PASS	删掉我喜欢里的 B	新存储里：tone-a tone-c
+PASS	卸载全部插件	
+PASS	测试源 B 的附加信息迁移中被卸载插件清空：旧数据不回来	卸载前新存储里没有它；卸载时迁移跑完（有迁移标记），没有带旧版标记的键
+PASS	测试源 A 的附加信息迁移后被卸载插件清空：旧数据不回来	没有带旧版标记的键，迁移标记还在
+PASS	重启后进首页	
+PASS	重启后打开我喜欢	
+PASS	重启后我喜欢里只有 A、C，删掉的 B 没回来	新存储里：tone-a tone-c
+PASS	重启、再用到测试源 A 后，两个平台的旧附加信息都没回来	两个平台都没有带旧版标记的键，迁移标记都在（不会再迁移一遍）
