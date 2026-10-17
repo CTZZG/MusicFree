@@ -31,6 +31,13 @@ runs:
           shell: bash
           run: npm run verify
 
+        - name: Check bundled mpv startup-delay guard and payload
+          shell: bash
+          run: |
+              bash native/mpv/test-latency.sh
+              python3 -I native/mpv/verify-bundle.py
+              python3 -I native/mpv/check-seek-clock.py --self-test
+
         - name: Whitespace check
           shell: bash
           run: git diff --check
