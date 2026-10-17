@@ -80,6 +80,9 @@ interface ILyricUtil extends NativeModule {
 
 const LyricUtil: ILyricUtil = NativeModules.LyricUtil;
 
+/** Native rejection code when the app may not draw over other apps (LyricErrors.kt). */
+export const OVERLAY_PERMISSION_ERROR = "OVERLAY_PERMISSION";
+
 const originalShowStatusBarLyric = LyricUtil.showStatusBarLyric;
 
 const showStatusBarLyric: ILyricUtil["showStatusBarLyric"] = async (
@@ -90,11 +93,48 @@ const showStatusBarLyric: ILyricUtil["showStatusBarLyric"] = async (
         await originalShowStatusBarLyric(initLyric, config);
     } catch (e) {
         errorLog("状态栏歌词开启失败", e);
-        Toast.warn("状态栏歌词开启失败，请到手机系统设置打开悬浮窗权限");
+        Toast.warn(
+            (e as { code?: unknown } | null)?.code === OVERLAY_PERMISSION_ERROR
+                ? "状态栏歌词开启失败，请到手机系统设置打开悬浮窗权限"
+                : "状态栏歌词开启失败，已关闭，详情见错误日志",
+        );
         Config.setConfig("lyric.showStatusBarLyric", false);
     }
 };
 
 LyricUtil.showStatusBarLyric = showStatusBarLyric;
+
+/**
+ * Settings and panels call these without awaiting. A failed UI update is logged here instead of
+ * surfacing as an unhandled rejection. Lyric text and payload updates are not wrapped: they run on
+ * every lyric line and lyricManager already handles their rejections.
+ */
+const LOGGED_UI_SETTERS = [
+    "hideStatusBarLyric",
+    "setStatusBarLyricAlign",
+    "setStatusBarLyricTop",
+    "setStatusBarLyricLeft",
+    "setStatusBarLyricWidth",
+    "setStatusBarLyricFontSize",
+    "setStatusBarColors",
+] as const;
+
+for (const name of LOGGED_UI_SETTERS) {
+    const original = LyricUtil[name] as
+        | ((...args: unknown[]) => Promise<void>)
+        | undefined;
+    if (typeof original !== "function") {
+        continue;
+    }
+    (LyricUtil as unknown as Record<string, unknown>)[name] = async (
+        ...args: unknown[]
+    ) => {
+        try {
+            await original(...args);
+        } catch (e) {
+            errorLog(`状态栏歌词设置失败（${name}）`, e);
+        }
+    };
+}
 
 export default LyricUtil;

@@ -2,6 +2,8 @@ package `fun`.upup.musicfree.lyricUtil
 
 import android.os.Handler
 import android.os.Looper
+import android.os.ParcelFileDescriptor
+import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
@@ -26,11 +28,13 @@ class LyricUiTaskInstrumentedTest {
         val resolved = AtomicInteger()
         val rejected = AtomicInteger()
         val error = AtomicReference<Throwable?>()
+        val code = AtomicReference<String?>()
         val promise = Proxy.newProxyInstance(Promise::class.java.classLoader, arrayOf(Promise::class.java)) { _, method, args ->
             when (method.name) {
                 "resolve" -> { resolved.incrementAndGet(); done.countDown() }
                 "reject" -> {
                     error.set(args?.filterIsInstance<Throwable>()?.firstOrNull())
+                    code.set(args?.firstOrNull() as? String)
                     rejected.incrementAndGet()
                     done.countDown()
                 }
@@ -42,6 +46,14 @@ class LyricUiTaskInstrumentedTest {
 
     private fun field(target: Any, name: String, value: Any?) {
         target.javaClass.getDeclaredField(name).apply { isAccessible = true }.set(target, value)
+    }
+
+    private fun read(target: Any, name: String): Any? =
+        target.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(target)
+
+    private fun shell(command: String) {
+        val output = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
     }
 
     private fun withView(block: (LyricUtilModule, TextView) -> Unit) {
@@ -101,24 +113,50 @@ class LyricUiTaskInstrumentedTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync { assertEquals(gravity, text.gravity) }
     }
 
-    @Test fun detachedOverlayUpdatesRejectInsteadOfEscapingOnTheUiThread() = withView { module, _ ->
-        // Real WindowManager throws for this unattached TextView; no overlay permission is needed.
+    @Test fun settersWithoutAnOverlayWindowKeepTheSettingAndResolve() = withView { module, text ->
+        // The TextView was never added to WindowManager; updating its layout would throw there.
         for (call in listOf<(Promise) -> Unit>(
             { module.setStatusBarLyricWidth(.6, it) },
             { module.setStatusBarLyricTop(.4, it) },
-            { module.setStatusBarLyricLeft(.4, it) },
+            { module.setStatusBarLyricLeft(.3, it) },
         )) {
             val result = dispatch(call)
-            assertEquals(0, result.resolved.get())
-            assertEquals(1, result.rejected.get())
-            assertTrue("Expected the actual WindowManager exception", result.error.get() is IllegalArgumentException)
+            assertEquals(1, result.resolved.get())
+            assertEquals(0, result.rejected.get())
+        }
+        val view = read(module, "lyricView")!!
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            assertNull("The test view must stay without a window", text.parent)
+            assertEquals(.6, read(view, "widthPercent") as Double, 0.0)
+            assertEquals(.4, read(view, "topPercent") as Double, 0.0)
+            assertEquals(.3, read(view, "leftPercent") as Double, 0.0)
         }
     }
 
-    @Test fun invalidShowOptionsAreRejectedInsideThePostedTask() = withView { module, _ ->
-        val result = dispatch { module.showStatusBarLyric("test", JavaOnlyMap.of("topPercent", "invalid"), it) }
-        assertEquals(0, result.resolved.get())
-        assertEquals(1, result.rejected.get())
-        assertNotNull(result.error.get())
+    @Test fun invalidOrNullShowOptionsAreIgnoredInsteadOfFailingTheShow() = withView { module, _ ->
+        val options = JavaOnlyMap.of("topPercent", "invalid", "fontSize", null, "align", "center")
+        val result = dispatch { module.showStatusBarLyric("test", options, it) }
+        assertEquals(1, result.resolved.get())
+        assertEquals(0, result.rejected.get())
+    }
+
+    @Test fun showWithoutOverlayPermissionRejectsWithItsOwnCode() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext.applicationContext
+        var module: LyricUtilModule? = null
+        shell("appops set ${context.packageName} SYSTEM_ALERT_WINDOW deny")
+        try {
+            assertFalse("Precondition: overlay permission must be denied", Settings.canDrawOverlays(context))
+            instrumentation.runOnMainSync { module = LyricUtilModule(NativePlaybackTestContext(context)) }
+            val created = module!!
+            val result = dispatch { created.showStatusBarLyric("test", JavaOnlyMap.of("topPercent", .2), it) }
+            assertEquals(0, result.resolved.get())
+            assertEquals(1, result.rejected.get())
+            assertEquals(LyricErrors.OVERLAY_PERMISSION, result.code.get())
+            assertTrue(result.error.get() is OverlayPermissionException)
+        } finally {
+            shell("appops set ${context.packageName} SYSTEM_ALERT_WINDOW default")
+            instrumentation.runOnMainSync { module?.invalidate() }
+        }
     }
 }

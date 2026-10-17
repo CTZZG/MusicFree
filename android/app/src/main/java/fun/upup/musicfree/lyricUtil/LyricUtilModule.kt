@@ -31,9 +31,16 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
 
     private fun updateLyricOnUi(promise: Promise, action: () -> Unit) {
         uiTasks.run(action, { promise.resolve(true) }, { error ->
-            promise.reject("Exception", error.message, error)
+            promise.reject(LyricErrors.code(error), error.message, error)
         })
     }
+
+    // Saved lyric settings may hold null or a wrong type; ignore such a value instead of failing the show.
+    private fun ReadableMap.numberOrNull(key: String): Double? =
+        if (hasKey(key) && getType(key) == ReadableType.Number) getDouble(key) else null
+
+    private fun ReadableMap.stringOrNull(key: String): String? =
+        if (hasKey(key) && getType(key) == ReadableType.String) getString(key) else null
     private val liveUpdateLyricNotifier by lazy {
         LiveUpdateLyricNotifier(reactContext.applicationContext)
     }
@@ -83,27 +90,13 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
                 if (options == null) {
                     return@apply
                 }
-                if (options.hasKey("topPercent")) {
-                    put("topPercent", options.getDouble("topPercent"))
-                }
-                if (options.hasKey("leftPercent")) {
-                    put("leftPercent", options.getDouble("leftPercent"))
-                }
-                if (options.hasKey("align")) {
-                    put("align", options.getInt("align"))
-                }
-                if (options.hasKey("color")) {
-                    options.getString("color")?.let { put("color", it) }
-                }
-                if (options.hasKey("backgroundColor")) {
-                    options.getString("backgroundColor")?.let { put("backgroundColor", it) }
-                }
-                if (options.hasKey("widthPercent")) {
-                    put("widthPercent", options.getDouble("widthPercent"))
-                }
-                if (options.hasKey("fontSize")) {
-                    put("fontSize", options.getDouble("fontSize"))
-                }
+                options.numberOrNull("topPercent")?.let { put("topPercent", it) }
+                options.numberOrNull("leftPercent")?.let { put("leftPercent", it) }
+                options.numberOrNull("align")?.let { put("align", it.toInt()) }
+                options.stringOrNull("color")?.let { put("color", it) }
+                options.stringOrNull("backgroundColor")?.let { put("backgroundColor", it) }
+                options.numberOrNull("widthPercent")?.let { put("widthPercent", it) }
+                options.numberOrNull("fontSize")?.let { put("fontSize", it) }
             }
 
             lyricView?.showLyricWindow(initLyric, mapOptions)
