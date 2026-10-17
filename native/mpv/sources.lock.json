@@ -1,0 +1,55 @@
+{
+  "ndk": "27.1.12297006",
+  "api": 26,
+  "baseCommit": "b5a3bbcd0fd9ba0e8bde3cdb3af949d29427b214",
+  "baseAarSha256": "7ca6656ea2393e287ef36dbcd812282b58473f72927b9c32448d6fe5726e70fa",
+  "upstreamBuildRecipe": "https://github.com/CTZZG/libmpv-android/tree/cd1a92a39ae78622925351226368075932927db2",
+  "sources": {
+    "freetype": {
+      "url": "https://github.com/freetype/freetype.git",
+      "commit": "0a0221a1347e2f1e07c395263540026e9a0aa7c7"
+    },
+    "fribidi": {
+      "url": "https://github.com/fribidi/fribidi.git",
+      "commit": "68162babff4f39c4e2dc164a5e825af93bda9983"
+    },
+    "harfbuzz": {
+      "url": "https://github.com/harfbuzz/harfbuzz.git",
+      "commit": "cfb70b0b91af933a08339c7c8eef459df1098d7b"
+    },
+    "libxml2": {
+      "url": "https://github.com/GNOME/libxml2.git",
+      "commit": "3d840e17858de03a09fba8b202e3a89267d5795a"
+    },
+    "fontconfig": {
+      "url": "https://gitlab.freedesktop.org/fontconfig/fontconfig.git",
+      "commit": "6d0a98982ec351c165c9224c8b7dbdfca3010e47"
+    },
+    "libass": {
+      "url": "https://github.com/libass/libass.git",
+      "commit": "bbb3c7f1570a4a021e52683f3fbdf74fe492ae84"
+    },
+    "libplacebo": {
+      "url": "https://github.com/haasn/libplacebo.git",
+      "commit": "cee9b076f2c63104ccfd497fa79c39a867293ec4"
+    },
+    "libunibreak": {
+      "url": "https://github.com/adah1972/libunibreak.git",
+      "commit": "304585d8e2d63187507368d612c3d5fff1486368"
+    },
+    "mpv": {
+      "url": "https://github.com/mpv-player/mpv.git",
+      "commit": "41f6a645068483470267271e1d09966ca3b9f413"
+    },
+    "ffmpeg": {
+      "url": "https://github.com/FFmpeg/FFmpeg.git",
+      "commit": "9047fa1b084f76b1b4d065af2d743df1b40dfb56"
+    }
+  },
+  "lua": {
+    "url": "https://www.lua.org/ftp/lua-5.2.4.tar.gz",
+    "sha256": "b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b",
+    "sourceSha256": "9e368a9cc9e81c14af8562d79ec323a95a08822f738fa45b3a4dbdad0e375e8a"
+  },
+  "patchedDriverSha256": "03c1f9ec47e6a2e11e51b21ee0b7fd4607b36746f607ec884107d8522e9bd2fe"
+}

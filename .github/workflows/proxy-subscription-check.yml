@@ -6,6 +6,7 @@ on:
             # 改到 debug 版 APK 原生部分的都要在 Android 16 模拟器上跑一遍：原生代码（网络层、播放服务和 Live Update
             # 通知、MainActivity 和开屏页）、原生依赖（package.json、package-lock.json）和它们的补丁（patches/）
             - 'android/**'
+            - 'native/mpv/**'
             - 'patches/**'
             - 'package.json'
             - 'package-lock.json'

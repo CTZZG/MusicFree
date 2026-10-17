@@ -1,0 +1,67 @@
+diff --git a/audio/out/ao_audiotrack.c b/audio/out/ao_audiotrack.c
+index f483ccc..a8ed6f6 100644
+--- a/audio/out/ao_audiotrack.c
++++ b/audio/out/ao_audiotrack.c
+@@ -25,6 +25,7 @@
+ #include "internal.h"
+ #include "common/msg.h"
+ #include "audio/format.h"
++#include "audiotrack_latency.h"
+ #include "options/m_option.h"
+ #include "osdep/threads.h"
+ #include "osdep/timer.h"
+@@ -43,6 +44,8 @@ struct priv {
+     jobject timestamp;
+     int64_t timestamp_fetched;
+     bool timestamp_set;
++    bool latency_warmup; // AO thread only
++    atomic_bool latency_reset_pending;
+     int timestamp_stable;
+
+     uint32_t written_frames; /* requires uint32_t rollover semantics */
+@@ -472,6 +475,11 @@ static double AudioTrack_getLatency(struct ao *ao)
+     if (!p->audiotrack)
+         return 0;
+
++    // reset() can run while the AO worker finishes its previous iteration.
++    // Consume its request here so an old iteration cannot disarm a new reset.
++    if (atomic_exchange_explicit(&p->latency_reset_pending, false, memory_order_acquire))
++        p->latency_warmup = true;
++
+     uint32_t playhead = AudioTrack_getPlaybackHeadPosition(ao);
+     uint32_t diff = p->written_frames - playhead;
+     double delay = diff / (double)(ao->samplerate);
+@@ -483,6 +491,9 @@ static double AudioTrack_getLatency(struct ao *ao)
+         p->timestamp_fetched = 0;
+         return 0;
+     }
++    delay = mp_audiotrack_startup_delay(delay, p->written_frames,
++        ao->samplerate, p->timestamp_set,
++        p->format == AudioFormat.ENCODING_IEC61937, &p->latency_warmup);
+     return MPCLAMP(delay, 0.0, 2.0);
+ }
+
+@@ -647,6 +658,7 @@ static void uninit(struct ao *ao)
+ static int init(struct ao *ao)
+ {
+     struct priv *p = ao->priv;
++    atomic_init(&p->latency_reset_pending, false);
+     JNIEnv *env = MP_JNI_GET_ENV(ao);
+     if (!env)
+         return -1;
+@@ -817,6 +829,7 @@ static void stop(struct ao *ao)
+     p->written_frames = 0;
+     p->timestamp_fetched = 0;
+     p->timestamp_set = false;
++    atomic_store_explicit(&p->latency_reset_pending, true, memory_order_release);
+ }
+
+ static void start(struct ao *ao)
+@@ -846,6 +859,7 @@ const struct ao_driver audio_out_audiotrack = {
+     .priv_size = sizeof(struct priv),
+     .priv_defaults = &(const OPT_BASE_STRUCT) {
+         .cfg_pcm_float = 1,
++        .latency_warmup = true,
+     },
+     .options   = (const struct m_option[]) {
+         {"pcm-float", OPT_BOOL(cfg_pcm_float)},
