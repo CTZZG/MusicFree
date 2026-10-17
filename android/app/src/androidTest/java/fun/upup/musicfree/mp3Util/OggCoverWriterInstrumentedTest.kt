@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.MessageDigest
 import org.junit.Assert.*
 import org.junit.Test
@@ -78,5 +79,24 @@ class OggCoverWriterInstrumentedTest {
         assertFalse(OggCoverWriter.writeCover(file.path, cover, "image/png", 1, 1, 24))
         assertArrayEquals(original, file.readBytes())
         assertFalse(File("${file.path}.tmp_cover").exists())
+    }
+
+    @Test fun aCompleteTrackKeepsItsTrailingTagsWhenTheCoverIsWritten() = withTrack { file, cover ->
+        val original = file.readBytes()
+        val before = audioHash(file)
+        val id3 = "TAG".toByteArray() + ByteArray(125)
+        val ape = ByteBuffer.allocate(32).order(ByteOrder.LITTLE_ENDIAN)
+            .put("APETAGEX".toByteArray()).putInt(2000).putInt(32).putInt(0).putInt(0).putLong(0).array()
+        for (tail in listOf(id3, ape, ape + id3)) {
+            file.writeBytes(original + tail)
+            assertTrue(OggCoverWriter.writeCover(file.path, cover, "image/png", 1, 1, 24))
+            val written = file.readBytes()
+            assertArrayEquals(tail, written.copyOfRange(written.size - tail.size, written.size))
+            assertTrue(String(written, Charsets.ISO_8859_1).contains("METADATA_BLOCK_PICTURE="))
+            // Check actual Vorbis packets/timestamps independently of a platform's trailer handling.
+            // Full-file decoding with these trailers is also checked using ffmpeg on the host.
+            file.writeBytes(written.copyOf(written.size - tail.size))
+            assertEquals(before, audioHash(file))
+        }
     }
 }
