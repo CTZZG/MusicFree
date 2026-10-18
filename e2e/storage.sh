@@ -60,6 +60,36 @@ restart_app() {
 
 # ---- 键值存储（/data/data/<包名>/files/kvstore/<store id>.json）----
 
+# allow_cellular_network：只能用移动数据的模拟器上，打开设置里的“使用移动网络播放、下载”（默认关，
+# 关着时应用不放也不下载）。应用已经启动过、配置 store 已经有了；停掉应用，原地改写配置文件
+# （写进原来的文件，属主和 SELinux 标签不变），再启动
+allow_cellular_network() {
+    local name="只有移动数据：打开使用移动网络播放和下载" path updated
+    if ! ensure_root; then
+        fail "$name" "需要 adb root 才能改应用的配置"
+        return 1
+    fi
+    path=$(kv_path App.config)
+    adb shell am force-stop "$PKG"
+    updated=$(mktemp)
+    if ! adb shell cat "'$path'" 2>/dev/null |
+        python3 -I "$KVSTORE" set-strings basic.useCelluarNetworkPlay=true basic.useCelluarNetworkDownload=true > "$updated" ||
+        ! adb push "$updated" "$DEVICE_TMP/e2e-app-config.json" > /dev/null ||
+        ! adb shell "cat $DEVICE_TMP/e2e-app-config.json > '$path' && rm $DEVICE_TMP/e2e-app-config.json"; then
+        rm -f "$updated"
+        fail "$name" "读写 $path 失败"
+        return 1
+    fi
+    rm -f "$updated"
+    adb shell am start -W -n "$ACTIVITY" > /dev/null
+    if [ "$(kv App.config keys | grep -c '^basic\.useCelluarNetwork\(Play\|Download\)$')" -eq 2 ]; then
+        pass "$name"
+        return 0
+    fi
+    fail "$name" "改完后配置里没有这两项"
+    return 1
+}
+
 kv_path() {
     echo "$KV_DIR/$(python3 -I "$KVSTORE" file-name "$1")"
 }

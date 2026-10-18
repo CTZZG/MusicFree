@@ -148,14 +148,14 @@ expect_stays_paused() {
     return 1
 }
 
-# set_network on|off：模拟器只用 Wi-Fi 上网（移动数据在开头关掉了），关掉 Wi-Fi 就是断网。
+# set_network on|off：模拟器只用一种网络上网（见开头的 NETWORK），关掉它就是断网。
 # 等系统的默认网络真的断开或连上再返回
 set_network() {
     local want=$1 deadline=$((SECONDS + 60)) current=""
     if [ "$want" = on ]; then
-        adb shell svc wifi enable
+        adb shell svc "$NETWORK" enable
     else
-        adb shell svc wifi disable
+        adb shell svc "$NETWORK" disable
     fi
     while [ $SECONDS -lt $deadline ]; do
         current=$(adb shell dumpsys connectivity | tr -d '\r' | sed -n 's/^ *Active default network: *//p' | head -n 1)
@@ -236,8 +236,15 @@ finish() {
 
 log "设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
 log "测试音源：$PLUGIN_BASE/"
-# 只留 Wi-Fi：应用在移动网络下默认不播放，会弹“流量提醒”
-adb shell svc data disable || true
+# 只留 Wi-Fi：应用在移动网络下默认不播放，会弹“流量提醒”。模拟器的系统镜像从 API 25 起才有 Wi-Fi，
+# 更老的只能用移动数据：留着移动数据，装好应用后打开“使用移动网络播放、下载”（见第 2 步前）
+if [ "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" -ge 25 ]; then
+    NETWORK=wifi
+    adb shell svc data disable || true
+else
+    NETWORK=data
+    log "这个模拟器镜像没有 Wi-Fi，用移动数据上网"
+fi
 # 刚开机的模拟器上系统桌面等经常“无响应”，弹窗会盖住应用；应用自己崩溃另看 logcat
 adb shell settings put global hide_error_dialogs 1 || true
 adb shell input keyevent KEYCODE_WAKEUP || true
@@ -259,6 +266,9 @@ flow "启动后进入首页" home.yaml || finish
 # storage.sh provides the existing root/private-store helpers, without running a scenario.
 # shellcheck source=storage.sh
 source "$HERE/storage.sh"
+if [ "$NETWORK" = data ]; then
+    allow_cellular_network || finish
+fi
 # shellcheck source=lib/plugin_install.sh
 source "$HERE/lib/plugin_install.sh"
 install_plugin e2e-source-a.js || finish
