@@ -202,6 +202,19 @@ android {
         // because the app's minimum SDK predates DEX 040.
         androidTest.java.srcDirs += "src/test/java"
     }
+
+    // minSdk 24 是支持的下限：比它新的 API 要先判断系统版本再调用。CI 用
+    // `./gradlew :app:lintDebug -PmusicfreeNewApiLint` 只查这一项（NewApi）；
+    // 不传这个参数时 lint 配置不变，发布构建照常跑默认的致命检查。
+    lint {
+        if (project.hasProperty("musicfreeNewApiLint")) {
+            checkOnly.add("NewApi")
+            abortOnError = true
+            checkDependencies = false
+            textReport = true
+            textOutput = file("stdout")
+        }
+    }
 }
 
 dependencies {

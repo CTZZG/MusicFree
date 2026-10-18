@@ -89,7 +89,8 @@ jobs:
               working-directory: ./android
               run: |
                   chmod +x ./gradlew
-                  ./gradlew testDebugUnitTest \
+                  # 同时只查 NewApi：minSdk 24 是支持的下限，新 API 要先判断系统版本
+                  ./gradlew testDebugUnitTest :app:lintDebug -PmusicfreeNewApiLint \
                     --no-daemon \
                     --stacktrace \
                     --max-workers=2 \
@@ -103,6 +104,7 @@ jobs:
                   path: |
                       android/app/build/reports/tests/
                       android/app/build/test-results/
+                      android/app/build/reports/lint-results-debug.*
                   if-no-files-found: ignore
                   retention-days: 14
 
@@ -110,7 +112,7 @@ jobs:
               if: always()
               run: |
                   if [ "${{ steps.changes.outputs.native }}" = "true" ]; then
-                    echo "Android unit tests ran (testDebugUnitTest)." >> "$GITHUB_STEP_SUMMARY"
+                    echo "Android unit tests and NewApi lint ran (testDebugUnitTest, lintDebug)." >> "$GITHUB_STEP_SUMMARY"
                   else
                     echo "No native-related changes; Android unit tests skipped." >> "$GITHUB_STEP_SUMMARY"
                   fi
