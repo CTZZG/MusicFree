@@ -252,7 +252,20 @@ else
     fail "安装 APK" "$(tail -n 3 "$OUT/install.log" | tr '\n' ' ')"
     finish
 fi
-adb shell am start -W -n "$ACTIVITY" > /dev/null
+# 保留启动命令的原始输出及首次启动现场；Maestro 安装驱动时的日志可能把早期日志冲掉。
+# 没进首页且停在系统桌面，并不能仅凭空 crash buffer 判成基础设施故障。
+start_status=0
+adb shell am start -W -n "$ACTIVITY" > "$OUT/start-activity.txt" 2>&1 || start_status=$?
+printf '%s\n' "$start_status" > "$OUT/start-exit-code.txt"
+cat "$OUT/start-activity.txt"
+adb logcat -d -v threadtime > "$OUT/start-logcat.txt" 2>&1 || true
+adb shell dumpsys activity activities > "$OUT/start-activities.txt" 2>&1 || true
+adb shell dumpsys window windows > "$OUT/start-windows.txt" 2>&1 || true
+if [ "$start_status" -ne 0 ] || grep -qE '^Error(:| type [0-9]+:)|^Exception' "$OUT/start-activity.txt"; then
+    fail "启动应用命令" "am start 未成功，退出码 $start_status；见 start-activity.txt 和 start-logcat.txt"
+    shot failed-start
+    finish
+fi
 start_timeline
 flow "启动后进入首页" home.yaml || finish
 
