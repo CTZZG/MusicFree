@@ -998,7 +998,6 @@ class MpvPlaybackService : Service() {
         if (isForeground) {
             try {
                 stopForeground(STOP_FOREGROUND_REMOVE)
-
             } catch (_: Exception) {
             }
             isForeground = false
@@ -1105,7 +1104,6 @@ class MpvPlaybackService : Service() {
         }
         val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
         registerReceiver(noisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-
         noisyReceiverRegistered = true
     }
 

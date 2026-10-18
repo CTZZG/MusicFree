@@ -148,14 +148,14 @@ expect_stays_paused() {
     return 1
 }
 
-# set_network on|off：模拟器只用一种网络上网（见开头的 NETWORK），关掉它就是断网。
+# set_network on|off：模拟器只用 Wi-Fi，关掉它就是断网。
 # 等系统的默认网络真的断开或连上再返回
 set_network() {
     local want=$1 deadline=$((SECONDS + 60)) current=""
     if [ "$want" = on ]; then
-        adb shell svc "$NETWORK" enable
+        adb shell svc wifi enable
     else
-        adb shell svc "$NETWORK" disable
+        adb shell svc wifi disable
     fi
     while [ $SECONDS -lt $deadline ]; do
         current=$(adb shell dumpsys connectivity | tr -d '\r' | sed -n 's/^ *Active default network: *//p' | head -n 1)
@@ -237,7 +237,6 @@ finish() {
 log "设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
 log "测试音源：$PLUGIN_BASE/"
 # 只留 Wi-Fi，避免默认关闭的移动网络播放策略干扰测试。
-NETWORK=wifi
 adb shell svc data disable || true
 # 刚开机的模拟器上系统桌面等经常“无响应”，弹窗会盖住应用；应用自己崩溃另看 logcat
 adb shell settings put global hide_error_dialogs 1 || true

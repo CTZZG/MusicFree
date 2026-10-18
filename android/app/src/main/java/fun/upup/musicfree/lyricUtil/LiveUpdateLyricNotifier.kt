@@ -67,7 +67,6 @@ class LiveUpdateLyricNotifier(private val appContext: Context) {
     }
 
     private fun createChannel() {
-
         val channel = NotificationChannel(
             CHANNEL_ID,
             "MusicFree Live Update 歌词",

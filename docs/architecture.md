@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `feat/mpv-only` 主线的 mpv-only 实现（`package.json` 版本 0.11.6），最后核对日期 2026-10-18；Android 14 下限正在 PR #46 验收，尚未合入主线。
+> 本分支的 mpv-only 架构（`package.json` 版本 0.11.6）；Android 14 支持决定：2026-10-18。开发代码的支持下限以本分支清单为准，已发布版本以对应 tag 为准。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -12,12 +12,13 @@
 | 最低 Android 版本 | **Android 14 / API 34**，安装和播放下限一致。2026-10-18 用户明确选择停止 Android 7–13 兼容；下一版本生效，已发布 v0.11.6 不改写 | `android/build.gradle`（`minSdkVersion`）、`android/app/build.gradle`（libmpv 依赖注释）、`android/app/src/main/AndroidManifest.xml` |
 | targetSdk | 36 | `android/build.gradle` |
 | iOS | 保留 `ios/` 目录，本分支不构建、不验证，不承诺可运行 | 没有 iOS 构建流程 |
-| 应用内检查更新 | 读本仓库 GitHub Releases 的最新正式版（`api.github.com`），连不上时用 jsDelivr 取最新的版本标签。“从浏览器下载”直接下与手机 CPU 架构对应的 APK（没有就下通用版），“备用链接”是发布页；对话框里显示发布说明中“下载”以外的各节。仓库里的 `release/version.json` 是上游的更新机制，应用不读 | `src/utils/checkUpdate.ts`、`src/hooks/useCheckUpdate.ts` |
+| 应用内检查更新 | 读本仓库 GitHub Releases 的最新正式版（`api.github.com`），连不上时用 jsDelivr 取最新的版本标签。只比较应用版本，没有按 Android 版本过滤。“从浏览器下载”直接下与手机 CPU 架构对应的 APK（没有就下通用版），“备用链接”是发布页；对话框里显示发布说明中“下载”以外的各节。仓库里的 `release/version.json` 是上游的更新机制，应用不读 | `src/utils/checkUpdate.ts`、`src/hooks/useCheckUpdate.ts` |
 
 ## Android 14 支持决定（2026-10-18）
 
 - 用户选择优先降低维护成本，最低 Android 14 / API 34。不是对旧版本兼容性已通过的宣称。
 - API 33 及更早的设备不能安装下一次发布的 APK；不下调 targetSdk 36，不改写 v0.11.6 标签、发布附件或历史发布说明。
+  已发布的旧客户端仍可能提示更新；下一版发布说明必须把 Android14 要求放在最前面的“升级前请注意”，不能只写在会被更新弹窗跳过的“下载”一节。后备版本查询不提供说明，因此发布页也必须醒目标注。发布时另行递增版本名和 versionCode，本次清理不发布同版本 APK。
 - 应用只走现代通知渠道、不可变 PendingIntent、带导出标记的接收器、READ_MEDIA_AUDIO、MediaStore 写入授权和 WindowMetrics。
   已移除旧输入焦点补丁、Android 7 根证书、libmpv 强制合并及其独立 API24 链接器检查、旧 DEX 名称解析器和低版本 E2E 配置。
 - libmpv 仍使用已验收的固定 API26 构建产物；库的编译下限低于应用下限是正常依赖关系，不为此重建或修改二进制。
@@ -196,7 +197,7 @@
   - PR 和推送检查（`ci.yml` 的 Android unit tests）在改到原生代码、原生依赖或这项检查本身时运行 `testDebugUnitTest`，判断规则见 `generator/lib/nativeChanges.mjs`，拿不准时照样运行；没改到时任务直接以成功结束；
     变更路径用 NUL 分隔读取，重命名按删除＋新增检查，移出原生目录的旧路径也会触发；
   - 三处都上传测试报告，测试失败时也上传。
-  - `src/test/java` 同时编进模拟器测试 APK（`androidTest`）；保留现有驼峰测试名，但已移除只服务于旧 DEX 格式的自定义名称解析器。测试 APK 的真实 D8 构建仍必须通过。
+  - `src/test/java` 同时编进模拟器测试 APK（`androidTest`）。Android14 的 DEX 格式允许方法名含空格，但仍不允许逗号、括号和单引号等字符；提高系统下限不代表允许任意 Kotlin 反引号方法名。测试继续使用驼峰命名。已移除的自定义解析器不再维护，名称是否合法由测试 APK 的真实 D8 构建检查。
 - 模拟器端到端测试（`e2e/`，怎么跑、怎么加检查见 `e2e/README.md`）：Beta 构建打包后默认在 Android 14 模拟器（x86_64，
   GitHub Actions）上装刚打出的 APK，用 Maestro 点界面，用 `dumpsys media_session` 看实际播放（进度由 mpv 上报，不是界面
   数字）。覆盖：外部链接装插件、搜索点播、后台用媒体键切歌后回到应用不跳回旧歌、播放失败提示和处理方式、后台播完接下一首、

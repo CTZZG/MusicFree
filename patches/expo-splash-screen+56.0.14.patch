@@ -50,7 +50,7 @@ diff --git a/node_modules/expo-splash-screen/android/src/main/java/expo/modules/
 
    private val contentAppearedListener = ReactMarker.MarkerListener { name, _, _ ->
      if (name == ReactMarkerConstants.CONTENT_APPEARED) {
-@@ -33,72 +55,92 @@
+@@ -33,72 +55,91 @@
        return
      }
 
@@ -111,7 +111,7 @@ diff --git a/node_modules/expo-splash-screen/android/src/main/java/expo/modules/
 +    }
 
      configureSplashScreen()
-
+-
 -    // Mitigate race where splash exit listener may fire after activity stop,
 -    // causing SurfaceControl.checkNotReleased() crash on API 31-33
 -    // https://issuetracker.google.com/issues/242118185
