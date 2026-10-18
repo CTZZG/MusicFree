@@ -19,7 +19,7 @@
 
 ## 本分支说明
 
-这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.11.6`，不代表上游官方发布。本分支主要增强 Android 播放体验，播放内核为 mpv（libmpv），用来覆盖更多音频格式和更复杂的本地播放场景。
+这是基于上游 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) 的个人维护分支，当前版本为 `0.12.0`，不代表上游官方发布。本分支主要增强 Android 播放体验，播放内核为 mpv（libmpv），用来覆盖更多音频格式和更复杂的本地播放场景。
 
 当前架构、支持范围、质量门和核心行为的验证状态见 [docs/architecture.md](./docs/architecture.md)。历史版本的说明以对应 tag 下的文件为准。
 
@@ -40,7 +40,7 @@
 
 ### Android 支持
 
-- **当前开发分支最低支持 Android 14 / API 34**，安装与播放使用同一个下限；不再维护 Android 7–13 的兼容代码。此决定从下一次发布生效，已发布的 v0.11.6 安装包和标签保持原样。
+- **从 v0.12.0 起最低支持 Android 14 / API 34**，安装与播放使用同一个下限；不再维护 Android 7–13 的兼容代码。Android 13 及以下的设备请继续使用 v0.11.6 或更早的版本，其支持范围以对应 tag 的说明为准。
 - 普通媒体通知歌词：在支持的 Android 14 及以上使用，具体显示效果由系统通知样式决定。
 - Live Update 歌词：Android 16 / API 36 及以上可用。
 

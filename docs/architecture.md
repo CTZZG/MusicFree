@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 本分支的 mpv-only 架构（`package.json` 版本 0.11.6）；Android 14 支持决定：2026-10-18。开发代码的支持下限以本分支清单为准，已发布版本以对应 tag 为准。
+> 本分支的 mpv-only 架构（`package.json` 版本 0.12.0）；Android 14 支持决定：2026-10-18，自 v0.12.0 起生效。开发代码的支持下限以本分支清单为准，已发布版本以对应 tag 为准。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | 发布平台 | 只发布 Android APK | `.github/workflows/android-build.yml`、`build-beta.yml` |
 | 播放内核 | 只有 mpv（libmpv）；Nitro 内核及随它提供的投屏、均衡器已移除 | `src/core/playerAdapter/index.ts`；提交 `793aa1ad` |
-| 最低 Android 版本 | **Android 14 / API 34**，安装和播放下限一致。2026-10-18 用户明确选择停止 Android 7–13 兼容；下一版本生效，已发布 v0.11.6 不改写 | `android/build.gradle`（`minSdkVersion`）、`android/app/build.gradle`（libmpv 依赖注释）、`android/app/src/main/AndroidManifest.xml` |
+| 最低 Android 版本 | **Android 14 / API 34**，安装和播放下限一致。2026-10-18 用户明确选择停止 Android 7–13 兼容；自 v0.12.0 起生效，v0.11.6 及更早的标签和发布不改写 | `android/build.gradle`（`minSdkVersion`）、`android/app/build.gradle`（libmpv 依赖注释）、`android/app/src/main/AndroidManifest.xml` |
 | targetSdk | 36 | `android/build.gradle` |
 | iOS | 保留 `ios/` 目录，本分支不构建、不验证，不承诺可运行 | 没有 iOS 构建流程 |
 | 应用内检查更新 | 读本仓库 GitHub Releases 的最新正式版（`api.github.com`），连不上时用 jsDelivr 取最新的版本标签。只比较应用版本，没有按 Android 版本过滤。“从浏览器下载”直接下与手机 CPU 架构对应的 APK（没有就下通用版），“备用链接”是发布页；对话框里显示发布说明中“下载”以外的各节。仓库里的 `release/version.json` 是上游的更新机制，应用不读 | `src/utils/checkUpdate.ts`、`src/hooks/useCheckUpdate.ts` |
@@ -17,8 +17,8 @@
 ## Android 14 支持决定（2026-10-18）
 
 - 用户选择优先降低维护成本，最低 Android 14 / API 34。不是对旧版本兼容性已通过的宣称。
-- API 33 及更早的设备不能安装下一次发布的 APK；不下调 targetSdk 36，不改写 v0.11.6 标签、发布附件或历史发布说明。
-  已发布的旧客户端仍可能提示更新；下一版发布说明必须把 Android14 要求放在最前面的“升级前请注意”，不能只写在会被更新弹窗跳过的“下载”一节。后备版本查询不提供说明，因此发布页也必须醒目标注。发布时另行递增版本名和 versionCode，本次清理不发布同版本 APK。
+- API 33 及更早的设备不能安装 v0.12.0 起的 APK；不下调 targetSdk 36，不改写 v0.11.6 标签、发布附件或历史发布说明。
+  Android 13 及以下设备上的 v0.11.6 及更早客户端只比较版本号，此后每次发布都会提示更新。因此每份发布说明都要把 Android 14 要求放在最前面的“升级前请注意”（更新弹窗只显示前 40 行），不能只写在会被弹窗跳过的“下载”一节；后备版本查询不提供说明，发布页也必须醒目标注。
 - 应用只走现代通知渠道、不可变 PendingIntent、带导出标记的接收器、READ_MEDIA_AUDIO、MediaStore 写入授权和 WindowMetrics。
   已移除旧输入焦点补丁、Android 7 根证书、libmpv 强制合并及其独立 API24 链接器检查、旧 DEX 名称解析器和低版本 E2E 配置。
 - libmpv 仍使用已验收的固定 API26 构建产物；库的编译下限低于应用下限是正常依赖关系，不为此重建或修改二进制。
