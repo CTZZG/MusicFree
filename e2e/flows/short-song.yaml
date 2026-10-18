@@ -3,5 +3,5 @@ appId: fun.upup.musicfree
 ---
 # 播放中的界面一直在动，Maestro 点完默认要等很久界面才算静止，短歌可能就播完了。点完马上返回
 - tapOn:
-    text: "E2E Short"
+    text: "E2E Short, E2E Artist"
     waitToSettleTimeoutMs: 500

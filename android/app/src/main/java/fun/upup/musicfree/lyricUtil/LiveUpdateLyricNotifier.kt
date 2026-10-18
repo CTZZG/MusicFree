@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import androidx.annotation.RequiresApi
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableMap
 import `fun`.upup.musicfree.R
@@ -66,8 +67,6 @@ class LiveUpdateLyricNotifier(private val appContext: Context) {
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-
         val channel = NotificationChannel(
             CHANNEL_ID,
             "MusicFree Live Update 歌词",
@@ -82,6 +81,7 @@ class LiveUpdateLyricNotifier(private val appContext: Context) {
         notificationManager.createNotificationChannel(channel)
     }
 
+    @RequiresApi(API_LIVE_UPDATE)
     private fun buildNotification(lyric: String): Notification {
         val launchIntent = appContext.packageManager
             .getLaunchIntentForPackage(appContext.packageName)

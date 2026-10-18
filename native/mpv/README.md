@@ -34,6 +34,20 @@ checks do not establish physical audio output or audible continuity.
   `41f6a645068483470267271e1d09966ca3b9f413` (v0.41.0). It retains mpv's LGPL
   licensing; the additional helper is LGPL-2.1-or-later.
 
+## Minimum Android version
+
+The application requires Android 14 / API 34 by product decision (2026-10-18).
+The existing, pinned AAR still declares API 26 and uses API 26 build inputs; these
+are lower bounds of the dependency, not a promise to support Android 7/8.
+Normal manifest merging now enforces the app/dependency relationship. There is
+no `tools:overrideLibrary`, bundled legacy trust root or custom API24 linker gate.
+Do not rebuild the libraries just to change this app support declaration.
+
+Keep NewApi lint for APIs above 34, the payload/source consistency check, the
+startup-clock guard and Android 14/16 device checks. Do not restore old-system
+fallbacks without an explicit change to the support policy in
+`docs/architecture.md`.
+
 ## Rebuild
 
 Use Linux with Python 3.12+, git, a C compiler, pkg-config, gperf, Ninja, Meson

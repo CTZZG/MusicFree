@@ -148,7 +148,7 @@ expect_stays_paused() {
     return 1
 }
 
-# set_network on|off：模拟器只用 Wi-Fi 上网（移动数据在开头关掉了），关掉 Wi-Fi 就是断网。
+# set_network on|off：模拟器只用 Wi-Fi，关掉它就是断网。
 # 等系统的默认网络真的断开或连上再返回
 set_network() {
     local want=$1 deadline=$((SECONDS + 60)) current=""
@@ -236,7 +236,7 @@ finish() {
 
 log "设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
 log "测试音源：$PLUGIN_BASE/"
-# 只留 Wi-Fi：应用在移动网络下默认不播放，会弹“流量提醒”
+# 只留 Wi-Fi，避免默认关闭的移动网络播放策略干扰测试。
 adb shell svc data disable || true
 # 刚开机的模拟器上系统桌面等经常“无响应”，弹窗会盖住应用；应用自己崩溃另看 logcat
 adb shell settings put global hide_error_dialogs 1 || true
@@ -251,7 +251,20 @@ else
     fail "安装 APK" "$(tail -n 3 "$OUT/install.log" | tr '\n' ' ')"
     finish
 fi
-adb shell am start -W -n "$ACTIVITY" > /dev/null
+# 保留启动命令的原始输出及首次启动现场；Maestro 安装驱动时的日志可能把早期日志冲掉。
+# 没进首页且停在系统桌面，并不能仅凭空 crash buffer 判成基础设施故障。
+start_status=0
+adb shell am start -W -n "$ACTIVITY" > "$OUT/start-activity.txt" 2>&1 || start_status=$?
+printf '%s\n' "$start_status" > "$OUT/start-exit-code.txt"
+cat "$OUT/start-activity.txt"
+adb logcat -d -v threadtime > "$OUT/start-logcat.txt" 2>&1 || true
+adb shell dumpsys activity activities > "$OUT/start-activities.txt" 2>&1 || true
+adb shell dumpsys window windows > "$OUT/start-windows.txt" 2>&1 || true
+if [ "$start_status" -ne 0 ] || grep -qE '^Error(:| type [0-9]+:)|^Exception' "$OUT/start-activity.txt"; then
+    fail "启动应用命令" "am start 未成功，退出码 $start_status；见 start-activity.txt 和 start-logcat.txt"
+    shot failed-start
+    finish
+fi
 start_timeline
 flow "启动后进入首页" home.yaml || finish
 
@@ -347,6 +360,9 @@ if flow "点播一首 20 秒的短歌" short-song.yaml; then
         expect_playing "后台播完自动接下一首（回到 A）" "E2E Tone A"
     else
         fail "短歌开始播放" "$(session)"
+        # 点完流程就返回，Maestro 不会留失败截图：自己截一张、打出界面上的文字
+        shot failed-short-song
+        print_screen_text
     fi
 fi
 

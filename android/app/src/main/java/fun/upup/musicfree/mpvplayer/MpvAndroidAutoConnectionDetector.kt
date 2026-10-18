@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.database.Cursor
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 
 /**
@@ -47,11 +46,7 @@ class MpvAndroidAutoConnectionDetector(
 
         try {
             val filter = IntentFilter(ACTION_CAR_CONNECTION_UPDATED)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                context.registerReceiver(receiver, filter)
-            }
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
             isRegistered = true
             queryForState()
         } catch (error: Exception) {

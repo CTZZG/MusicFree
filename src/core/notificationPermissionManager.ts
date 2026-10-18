@@ -61,10 +61,6 @@ class NotificationPermissionManager {
         }
     };
 
-    private shouldRequestRuntimePermission() {
-        return Platform.OS === "android" && Number(Platform.Version) >= 33;
-    }
-
     async checkPermission(): Promise<boolean> {
         if (Platform.OS !== "android") {
             this.permissionState.hasPermission = true;
@@ -76,11 +72,6 @@ class NotificationPermissionManager {
                 await Mp3Util.areDownloadNotificationsEnabled?.().catch(
                     () => false,
                 );
-            if (!this.shouldRequestRuntimePermission()) {
-                this.permissionState.hasPermission = !!nativeEnabled;
-                return !!nativeEnabled;
-            }
-
             const runtimeGranted = await PermissionsAndroid.check(
                 POST_NOTIFICATIONS,
             );
@@ -110,11 +101,6 @@ class NotificationPermissionManager {
             this.permissionState.lastRequestTime &&
             now - this.permissionState.lastRequestTime < REQUEST_COOLDOWN
         ) {
-            this.showSettingsToast();
-            return false;
-        }
-
-        if (!this.shouldRequestRuntimePermission()) {
             this.showSettingsToast();
             return false;
         }

@@ -198,9 +198,20 @@ android {
     }
 
     sourceSets {
-        // Shared tests must use DEX-compatible method names (no whitespace),
-        // because the app's minimum SDK predates DEX 040.
+        // These JVM tests also run in the device suite.
         androidTest.java.srcDirs += "src/test/java"
+    }
+
+    // minSdk 34 是产品支持下限；Android 15/16 的新 API 仍需版本保护。CI 用
+    // `./gradlew :app:lintDebug -PmusicfreeNewApiLint` 只查这一项（NewApi）；
+    // 不传这个参数时 lint 配置不变，发布构建照常跑默认的致命检查。
+    lint {
+        if (project.hasProperty("musicfreeNewApiLint")) {
+            checkOnly.add("NewApi")
+            abortOnError = true
+            checkDependencies = false
+            textReport = true
+        }
     }
 }
 
@@ -232,7 +243,7 @@ dependencies {
         implementation files("libs/musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar")
     }
 
-    // libmpv 播放内核（实验性），要求 minSdk≥26
+    // libmpv 播放内核。AAR 的 minSdk 26 低于应用的 34，使用正常 manifest 合并检查。
     implementation files("libs/libmpv-release.aar")
     // MpvPlaybackService 所需的 MediaSession / 通知栏支持
     implementation 'androidx.media:media:1.7.0'

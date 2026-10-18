@@ -6,7 +6,6 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.ColorDrawable
 import android.hardware.SensorManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -87,10 +86,7 @@ class LyricView(private val reactContext: ReactContext) : Activity(), View.OnTou
                 windowWidth = outMetrics.widthPixels.toDouble()
                 windowHeight = outMetrics.heightPixels.toDouble()
 
-                layoutParams?.type = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O)
-                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
-                else
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                layoutParams?.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
                 /*
                  * topPercent: number;

@@ -1,0 +1,84 @@
+[
+  {
+    "source": "Beta #172: play-three, failed assertion hierarchy (matching nodes in original order)",
+    "flow": "play-three.yaml",
+    "title": "E2E Tone B",
+    "nodes": [
+      {
+        "attributes": {
+          "text": "E2E Tone B",
+          "class": "android.widget.TextView",
+          "clickable": "false",
+          "important-for-accessibility": "false",
+          "bounds": "[776,1951][944,1998]"
+        },
+        "ancestorLabels": [
+          "歌曲: E2E Tone A 歌手: E2E Artist"
+        ]
+      },
+      {
+        "attributes": {
+          "accessibilityText": "E2E Tone B, E2E Artist",
+          "class": "android.widget.Button",
+          "clickable": "true",
+          "important-for-accessibility": "true",
+          "bounds": "[0,714][1080,882]"
+        },
+        "ancestorLabels": []
+      },
+      {
+        "attributes": {
+          "text": "E2E Tone B",
+          "class": "android.widget.TextView",
+          "clickable": "false",
+          "important-for-accessibility": "true",
+          "bounds": "[182,741][672,790]"
+        },
+        "ancestorLabels": [
+          "E2E Tone B, E2E Artist"
+        ]
+      }
+    ]
+  },
+  {
+    "source": "Beta #171: live-only, failed assertion hierarchy (matching nodes in original order)",
+    "flow": "live-only.yaml",
+    "title": "E2E Live Only",
+    "nodes": [
+      {
+        "attributes": {
+          "text": "E2E Live Only",
+          "class": "android.widget.TextView",
+          "clickable": "false",
+          "important-for-accessibility": "false",
+          "bounds": "[776,1951][944,1998]"
+        },
+        "ancestorLabels": [
+          "歌曲: E2E Fallback 歌手: E2E Artist"
+        ]
+      },
+      {
+        "attributes": {
+          "accessibilityText": "E2E Live Only, E2E Artist",
+          "class": "android.widget.Button",
+          "clickable": "true",
+          "important-for-accessibility": "true",
+          "bounds": "[0,1386][1080,1554]"
+        },
+        "ancestorLabels": []
+      },
+      {
+        "attributes": {
+          "text": "E2E Live Only",
+          "class": "android.widget.TextView",
+          "clickable": "false",
+          "important-for-accessibility": "true",
+          "bounds": "[182,1413][672,1462]"
+        },
+        "ancestorLabels": [
+          "E2E Live Only, E2E Artist"
+        ]
+      }
+    ]
+  }
+]

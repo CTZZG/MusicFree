@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -164,25 +163,17 @@ class DownloadNotificationManager(
     fun areNotificationsEnabled(): Boolean {
         if (!canPostNotifications()) return false
         if (!notificationManagerCompat.areNotificationsEnabled()) return false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val channel = manager.getNotificationChannel(CHANNEL_ID)
-            if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
-                return false
-            }
+        val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channel = manager.getNotificationChannel(CHANNEL_ID)
+        if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
+            return false
         }
         return true
     }
 
     fun openNotificationSettings() {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, appContext.packageName)
-            }
-        } else {
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = android.net.Uri.parse("package:${appContext.packageName}")
-            }
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, appContext.packageName)
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         appContext.startActivity(intent)
@@ -335,7 +326,6 @@ class DownloadNotificationManager(
     }
 
     private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val existing = manager.getNotificationChannel(CHANNEL_ID)
         if (existing != null) return
@@ -351,7 +341,6 @@ class DownloadNotificationManager(
     }
 
     private fun canPostNotifications(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
         return ContextCompat.checkSelfPermission(
             appContext,
             Manifest.permission.POST_NOTIFICATIONS,
@@ -377,9 +366,7 @@ class DownloadNotificationManager(
         val launchIntent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
             ?: return null
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-            )
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getActivity(appContext, 0, launchIntent, flags)
     }
 

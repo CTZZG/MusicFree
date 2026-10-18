@@ -64,6 +64,8 @@ install_plugin() {
     done
     rm -rf "$scratch"
     plugin_install_diagnostics "$directory"
+    # 附件不一定下载得到：安装诊断（只有安装相关的报错，网址已替换）也打在任务日志里
+    printf '%s 的安装诊断：%s\n' "$file" "$(cat "$directory/install-errors.json")" >&2
     fail "$label" "$reason；安装诊断见 $(basename "$directory")/install-errors.json"
     return 1
 }

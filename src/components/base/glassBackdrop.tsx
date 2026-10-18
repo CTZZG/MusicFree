@@ -18,9 +18,9 @@ interface IGlassBackdropProps {
 }
 
 /**
- * 毛玻璃底层：真实 backdrop 模糊（Android 12+ 走 dimezis BlurView），上面叠一层
+ * 毛玻璃底层：真实 backdrop 模糊（Android 走 dimezis BlurView），上面叠一层
  * 磨砂色。浅色用接近 #F9F9F9 的白、深色用接近 #1C1C1E 的灰，与 iOS 的材质一致。
- * 不能模糊时（Android 12 以下，或没有模糊目标）磨砂层几乎不透明，见 glassMaterial。
+ * 没有模糊目标时磨砂层几乎不透明，见 glassMaterial。
  * 放在玻璃容器的第一个子节点，容器自身背景保持透明。
  */
 export default function GlassBackdrop(props: IGlassBackdropProps) {
@@ -29,7 +29,6 @@ export default function GlassBackdrop(props: IGlassBackdropProps) {
     const material = getGlassMaterial({
         dark,
         platform: Platform.OS,
-        platformVersion: Platform.Version,
         hasBlurTarget: !!blurTarget,
     });
 

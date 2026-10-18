@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaControllerCompat
@@ -30,7 +29,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.FixMethodOrder
 import org.junit.Test
@@ -88,10 +86,7 @@ class PlaybackServiceStartupTest {
     }
 
     @Before fun playBeforeTheServiceExists() {
-        assumeTrue(Build.VERSION.SDK_INT >= 26)
-        if (Build.VERSION.SDK_INT >= 33) {
-            instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
-        }
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         tone = File.createTempFile("service-startup-", ".wav", context.cacheDir)
         writeTone()
         onMain {

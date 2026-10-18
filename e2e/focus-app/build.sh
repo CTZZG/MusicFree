@@ -27,11 +27,11 @@ javac -source 8 -target 8 -nowarn -Xlint:-options \
     -bootclasspath "$ANDROID_JAR" \
     -d "$WORK/classes" \
     $(find "$HERE/src" -name '*.java')
-"$BUILD_TOOLS/d8" --min-api 26 --lib "$ANDROID_JAR" --output "$WORK/dex" \
+"$BUILD_TOOLS/d8" --min-api 34 --lib "$ANDROID_JAR" --output "$WORK/dex" \
     $(find "$WORK/classes" -name '*.class')
 "$BUILD_TOOLS/aapt2" link -o "$WORK/unsigned.apk" -I "$ANDROID_JAR" \
     --manifest "$HERE/AndroidManifest.xml" \
-    --min-sdk-version 26 --target-sdk-version 34 \
+    --min-sdk-version 34 --target-sdk-version 34 \
     --version-code 1 --version-name 1.0
 (cd "$WORK/dex" && zip -q "$WORK/unsigned.apk" classes.dex)
 "$BUILD_TOOLS/zipalign" -f 4 "$WORK/unsigned.apk" "$WORK/aligned.apk"

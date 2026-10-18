@@ -222,23 +222,26 @@ class SlowQualityLoadingTest {
         }
     }
 
-    private fun record(phase: String): JSONObject {
-        val row = onMain {
-            JSONObject().apply {
-                put("phase", phase)
-                put("scenario", testName.methodName)
-                put("elapsedMs", SystemClock.elapsedRealtime())
-                put("enginePaused", engine.getPropertyBoolean("pause"))
-                put("rawSeconds", engine.getPropertyDouble("time-pos") ?: JSONObject.NULL)
-                put("restoreTarget", target)
-                put("loadingGeneration", longField("loadingGeneration"))
-                put("sessionState", controller.playbackState?.state ?: -1)
-                put("action", notificationAction()?.title?.toString() ?: "missing")
-                put("jsStates", JSONArray(states.toList()))
-                put("commands", JSONArray(commands.toList()))
-                put("sessionStates", JSONArray(sessionStates.toList()))
-            }
+    private fun snapshot(phase: String): JSONObject = onMain {
+        JSONObject().apply {
+            put("phase", phase)
+            put("scenario", testName.methodName)
+            put("elapsedMs", SystemClock.elapsedRealtime())
+            put("enginePaused", engine.getPropertyBoolean("pause"))
+            put("rawSeconds", engine.getPropertyDouble("time-pos") ?: JSONObject.NULL)
+            put("restoreTarget", target)
+            put("loadingGeneration", longField("loadingGeneration"))
+            put("sessionState", controller.playbackState?.state ?: -1)
+            put("action", notificationAction()?.title?.toString() ?: "missing")
+            put("jsStates", JSONArray(states.toList()))
+            put("commands", JSONArray(commands.toList()))
+            put("sessionStates", JSONArray(sessionStates.toList()))
         }
+    }
+
+    private fun record(phase: String): JSONObject = record(snapshot(phase))
+
+    private fun record(row: JSONObject): JSONObject {
         File(context.filesDir, "quality-loading-state.jsonl").appendText("$row\n")
         android.util.Log.i("E2EQualityLoading", row.toString())
         return row
@@ -259,26 +262,38 @@ class SlowQualityLoadingTest {
         }
         if (paused) {
             Thread.sleep(1200) // Includes all native automatic unpause retries.
-            assertEquals(true, engine.getPropertyBoolean("pause"))
-            assertEquals(target, requireNotNull(engine.getPropertyDouble("time-pos")), 0.25)
-            assertEquals(2, controller.playbackState?.state)
+            val row = snapshot("loaded-paused")
+            assertEquals(true, row.getBoolean("enginePaused"))
+            assertEquals(target, row.getDouble("rawSeconds"), 0.25)
+            assertEquals(-1L, row.getLong("loadingGeneration"))
+            assertEquals(2, row.getInt("sessionState"))
+            assertEquals("播放", row.getString("action"))
+            record(row)
         } else {
-            await("replacement engine actually advances") {
-                engine.getPropertyBoolean("pause") == false &&
-                    (engine.getPropertyDouble("time-pos") ?: 0.0) > target + 0.25
-            }
+            recordAdvancingSnapshot("loaded-playing")
         }
-        record(if (paused) "loaded-paused" else "loaded-playing")
     }
 
     private fun claimAndResume() {
         call { requireNotNull(module).claimPlayback(it) }
         call { requireNotNull(module).resume(it) }
-        await("user play resumes the real engine") {
-            engine.getPropertyBoolean("pause") == false && (engine.getPropertyDouble("time-pos") ?: 0.0) > target + 0.25 &&
-                controller.playbackState?.state == 3 && notificationAction()?.title?.toString() == "暂停"
-        }
-        record("explicitly-resumed")
+        recordAdvancingSnapshot("explicitly-resumed")
+    }
+
+    private fun recordAdvancingSnapshot(phase: String) {
+        val row = AwaitedSnapshot.capture(
+            timeoutMs = 12000,
+            elapsedMs = SystemClock::elapsedRealtime,
+            delay = { Thread.sleep(50) },
+            sample = { snapshot(phase) },
+            ready = {
+                it.opt("enginePaused") == false && it.getLong("loadingGeneration") == -1L &&
+                    it.getInt("sessionState") == 3 && it.getString("action") == "暂停" &&
+                    !it.isNull("rawSeconds") && it.getDouble("rawSeconds") > target + 0.25
+            },
+        )
+        // Do not re-read after readiness: mpv may emit another cache event.
+        record(row)
     }
 
     private fun startVideo() {

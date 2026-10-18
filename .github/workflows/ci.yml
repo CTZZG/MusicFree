@@ -36,6 +36,8 @@ jobs:
                   python3 -I e2e/lib/perf_stats.py --self-test
                   bash e2e/lib/download_source_test.sh
                   bash e2e/lib/plugin_install_test.sh
+                  python3 -I e2e/lib/song_target_test.py
+                  python3 -I e2e/lib/perf_compare_test.py
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/power_checks_test.sh
                   bash e2e/lib/power_environment_test.sh
@@ -89,11 +91,19 @@ jobs:
               working-directory: ./android
               run: |
                   chmod +x ./gradlew
-                  ./gradlew testDebugUnitTest \
+                  # 同时只查 NewApi：minSdk 34 是支持的下限，新 API 要先判断系统版本。
+                  # lint 的 K2 Kotlin 前端分析 react-native-worklets 时会崩（Cannot find a
+                  # KaModule for the VirtualFile），用 K1
+                  ./gradlew testDebugUnitTest :app:lintDebug -PmusicfreeNewApiLint -Pandroid.lint.useK2Uast=false \
                     --no-daemon \
                     --stacktrace \
                     --max-workers=2 \
-                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m" || {
+                      status=$?
+                      # 失败时把 lint 查出的每一处打在日志里：附件不一定下载得到
+                      cat app/build/reports/lint-results-debug.txt 2>/dev/null || true
+                      exit $status
+                    }
 
             - name: Upload Android unit test reports
               if: always() && steps.changes.outputs.native == 'true'
@@ -103,6 +113,7 @@ jobs:
                   path: |
                       android/app/build/reports/tests/
                       android/app/build/test-results/
+                      android/app/build/reports/lint-results-debug.*
                   if-no-files-found: ignore
                   retention-days: 14
 
@@ -110,7 +121,7 @@ jobs:
               if: always()
               run: |
                   if [ "${{ steps.changes.outputs.native }}" = "true" ]; then
-                    echo "Android unit tests ran (testDebugUnitTest)." >> "$GITHUB_STEP_SUMMARY"
+                    echo "Android unit tests and NewApi lint ran (testDebugUnitTest, lintDebug)." >> "$GITHUB_STEP_SUMMARY"
                   else
                     echo "No native-related changes; Android unit tests skipped." >> "$GITHUB_STEP_SUMMARY"
                   fi

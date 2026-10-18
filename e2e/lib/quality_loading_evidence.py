@@ -112,6 +112,10 @@ def self_test():
     rows = copy.deepcopy(good)
     next(row for row in rows if row["phase"] == "explicitly-resumed")["loadingGeneration"] = 2
     bad.append(rows)
+    for phase, state in [("loaded-playing", 6), ("explicitly-resumed", 6), ("loaded-paused", 3)]:
+        rows = copy.deepcopy(good)
+        next(row for row in rows if row["phase"] == phase)["sessionState"] = state
+        bad.append(rows)
     rows = copy.deepcopy(good)
     for row in rows:
         row["elapsedMs"] //= 10
