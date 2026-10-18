@@ -38,6 +38,15 @@ on:
                     - power
                     - library
                     - perf
+            e2e_api_level:
+                description: '模拟器的 Android 版本（API 级别）：34 是 Android 14，日常都用它；24、26 用来核对最低支持版本'
+                required: false
+                default: '34'
+                type: choice
+                options:
+                    - '34'
+                    - '24'
+                    - '26'
 
 jobs:
     check-version:
@@ -427,7 +436,7 @@ jobs:
                   # 测的 APK 不是按这次的提交打包时，写进结果
                   E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}
               with:
-                  api-level: 34
+                  api-level: ${{ inputs.e2e_api_level || 34 }}
                   target: google_apis
                   arch: x86_64
                   profile: pixel_6
