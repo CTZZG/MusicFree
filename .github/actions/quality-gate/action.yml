@@ -38,6 +38,14 @@ runs:
               python3 -I native/mpv/verify-bundle.py
               python3 -I native/mpv/check-seek-clock.py --self-test
 
+        # libmpv 的 AAR 声明 minSdk 26，靠 tools:overrideLibrary 合并，合并器不再替我们查。
+        # 这里用 Runner 自带的 NDK 按应用的 minSdk 查原生库实际要的系统库和符号（先自检）
+        - name: Check bundled mpv libraries load at the app's minSdk
+          shell: bash
+          run: |
+              python3 -I native/mpv/check-api-floor.py --self-test
+              python3 -I native/mpv/check-api-floor.py
+
         - name: Whitespace check
           shell: bash
           run: git diff --check
