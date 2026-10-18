@@ -19,5 +19,17 @@
       (basic.allowPluginInsecureHttp, default off).
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <!--
+              Let's Encrypt's root, ISRG Root X1, ships with Android only from 7.1.1.
+              On Android 7.0 every HTTPS host chained to it failed with "Trust anchor
+              for certification path not found" (plugin installs from GitHub in the
+              API 24 emulator run). Bundling it is Let's Encrypt's documented fix; user
+              CAs stay untrusted, as in the platform default.
+            -->
+            <certificates src="@raw/isrg_root_x1" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>
