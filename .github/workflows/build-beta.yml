@@ -21,6 +21,11 @@ on:
                 required: false
                 default: ''
                 type: string
+            perf_baseline_apk_run_id:
+                description: '仅perf诊断：复用另一运行的旧APK，在同一模拟器按旧/新/旧测冷启动；不重新打包'
+                required: false
+                default: ''
+                type: string
             build_ref:
                 description: '对照用：打包这个提交（完整提交号）的代码，自动测试脚本仍用触发的分支。留空打包触发的分支'
                 required: false
@@ -353,6 +358,32 @@ jobs:
                   echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
                   echo "APK source commit: ${commit:-unknown}"
 
+            - name: Download cold-start comparison baseline
+              if: inputs.perf_baseline_apk_run_id != ''
+              uses: actions/download-artifact@v8
+              with:
+                  pattern: beta-apks-*
+                  path: baseline-apk
+                  merge-multiple: true
+                  run-id: ${{ inputs.perf_baseline_apk_run_id }}
+                  github-token: ${{ github.token }}
+
+            - name: Validate cold-start comparison inputs
+              if: inputs.perf_baseline_apk_run_id != ''
+              env:
+                  SELECTED_SUITE: ${{ inputs.e2e_suite }}
+              run: |
+                  test "$SELECTED_SUITE" = perf
+                  shopt -s nullglob
+                  apks=(baseline-apk/*x86_64-release.apk)
+                  test ${#apks[@]} -eq 1
+                  echo "E2E_PERF_BASELINE_APK=${apks[0]}" >> "$GITHUB_ENV"
+                  commit=$(sed -n 's/^Commit: //p' baseline-apk/android-build-info.txt | head -n 1)
+                  [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+                  [[ "$E2E_APK_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+                  test "$commit" != "$E2E_APK_COMMIT"
+                  echo "E2E_PERF_BASELINE_COMMIT=${commit}" >> "$GITHUB_ENV"
+
             - name: Install audio file validation tools
               run: |
                   if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
@@ -373,6 +404,7 @@ jobs:
                   bash e2e/lib/download_source_test.sh
                   bash e2e/lib/plugin_install_test.sh
                   python3 -I e2e/lib/song_target_test.py
+                  python3 -I e2e/lib/perf_compare_test.py
                   bash e2e/lib/storage_checks_test.sh
                   bash e2e/lib/power_checks_test.sh
                   bash e2e/lib/power_environment_test.sh
@@ -437,7 +469,8 @@ jobs:
                   ram-size: 4096M
                   disable-animations: true
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
-                  script: bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results
+                  script: >-
+                      if [ -n "${E2E_PERF_BASELINE_APK:-}" ]; then bash e2e/perf-cold-compare.sh "$E2E_PERF_BASELINE_APK" "$E2E_APK" "$GITHUB_SHA" e2e-results; else bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results; fi
 
             - name: E2E summary
               if: always()

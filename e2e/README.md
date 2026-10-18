@@ -243,6 +243,12 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 `E2E_PERF_RUNS` 次（默认 10），记中位数、P95（最近秩）、最小、最大。检查项“失败”只表示没测出来（样本少于次数减 2），
 不表示慢。结果写进 summary（每个指标一行）、`perf.md`、`perf.jsonl`，也推到 `refs/e2e/latest`。
 
+怀疑跨运行的宿主差异时，`e2e_apk_run_id` 填候选APK的既有运行、`perf_baseline_apk_run_id` 填旧APK的运行，
+`e2e_suite=perf` 会改跑同一宿主/模拟器上的旧→新→旧冷启动对照（`perf-cold-compare.sh`），不重新打包。
+每组会卸载测试应用、用相同脚本准备首页和插件，保留原有预热1次+有效10次；缺组、缺样本、两个APK相同都拒绝。
+原始数据和来源分别保存在三组目录，汇总在 `compare-summary.json`，保留宿主CPU/设备信息与APK摘要。
+此模式只测冷启动，不能拿它宣称搜索/播放或真机变快；后一次旧包用于观察运行期间的漂移。
+
 应用把时间点写到 logcat（标签 `MusicFreePerf`，每行 “名字 at=<墙钟毫秒> …”，JS 侧经 `NativeUtils.perfMark`），
 不改变任何行为。时间点和指标：
 

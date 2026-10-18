@@ -188,9 +188,12 @@ run_perf_checks() {
     perf_cold_start
     perf_cold_trace
     perf_plugin_state "冷启动测完后"
-    perf_search
-    perf_online_play
-    perf_local_play
+    # 同一设备的 A/B/A 冷启动诊断只复用原有冷启动测量，不改变指标、预热或采样次数。
+    if [ "${E2E_PERF_COLD_ONLY:-0}" != 1 ]; then
+        perf_search
+        perf_online_play
+        perf_local_play
+    fi
 
     summary=$(python3 -I "$PERF_STATS" summary "$PERF_JSONL" 2> "$OUT/perf-summary.json")
     {
@@ -220,5 +223,5 @@ run_perf_checks() {
         else
             fail "基线：$label" "只测出 $count 次（要至少 $wanted 次），见日志里的原因"
         fi
-    done < <(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import perf_stats; [print(f"{k}\t{v}") for k, v in perf_stats.METRICS]' "$HERE/lib")
+    done < <(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import perf_stats; [print(f"{k}\t{v}") for k, v in perf_stats.METRICS if sys.argv[2] != "1" or k.startswith("cold_")]' "$HERE/lib" "${E2E_PERF_COLD_ONLY:-0}")
 }
