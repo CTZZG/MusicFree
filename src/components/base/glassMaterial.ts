@@ -5,10 +5,6 @@
  * 磨砂层盖住背后的内容，必须接近不透明，否则封面、标题会从胶囊里透出来。
  */
 
-// Android 12（API 31）起 dimezis 用 RenderNode + RenderEffect 在 GPU 上模糊；
-// 更早的版本要逐帧软件截图再模糊，滚动会卡，这些设备不模糊
-export const MIN_ANDROID_BLUR_API = 31;
-
 const FROST_RGB = {
     light: "249, 249, 249",
     dark: "30, 30, 32",
@@ -27,8 +23,6 @@ export interface IGlassMaterialOptions {
     dark: boolean;
     /** Platform.OS */
     platform: string;
-    /** Platform.Version：Android 上是 API 级别 */
-    platformVersion: number | string;
     /** 是否给了要模糊的 BlurTargetView */
     hasBlurTarget: boolean;
 }
@@ -47,11 +41,7 @@ export function canBlurBackdrop(
         return true;
     }
     // Android 上 expo-blur 只能模糊 BlurTargetView 里的内容，没有目标就只剩一层半透明色
-    return (
-        options.platform === "android" &&
-        options.hasBlurTarget &&
-        Number(options.platformVersion) >= MIN_ANDROID_BLUR_API
-    );
+    return options.platform === "android" && options.hasBlurTarget;
 }
 
 export function getGlassMaterial(

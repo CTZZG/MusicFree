@@ -1,7 +1,8 @@
 buildscript {
     ext {
         buildToolsVersion = "36.0.0"
-        minSdkVersion = 24
+        // Product policy: Android 14+. See docs/architecture.md.
+        minSdkVersion = 34
         compileSdkVersion = 36
         targetSdkVersion = 36
         ndkVersion = "27.1.12297006"

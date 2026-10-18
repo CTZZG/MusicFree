@@ -7,12 +7,12 @@ import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.view.Window
+import android.window.SplashScreenView
 import `fun`.upup.musicfree.utils.PerfMarks
 
 class MainActivity : ReactActivity() {
@@ -37,7 +37,6 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
       SplashScreenManager.registerOnActivity(this)
       super.onCreate(null);
-      keepImplicitFocusOffInputs()
       markFirstDraw()
       // 重建（转屏、换深浅色等）时系统不会交开屏页过来，不用等
       if (savedInstanceState == null) {
@@ -49,30 +48,6 @@ class MainActivity : ReactActivity() {
       homeDrawnWatcher?.stop()
       homeDrawnWatcher = null
       super.onDestroy()
-  }
-
-  /**
-   * Android 9 以前，窗口里没有控件有焦点时，系统会把输入焦点交给新出现的、触摸模式下能聚焦的控件
-   * （ViewRootImpl.focusableViewAvailable），也就是输入框：搜索标签一挂上，搜索框就自己拿到焦点，
-   * 它的 onFocus 把刚开始的搜索切回搜索历史。让内容根视图在触摸模式下可聚焦、平时兜着焦点，
-   * 系统就不再替输入框抢；输入框失焦后焦点回到根视图（RN 在这些版本上失焦时不让焦点落到别的子控件，
-   * 见 ReactEditText.clearFocusAndMaybeRefocus）。Android 9 起触摸模式下系统不再自动给焦点，不用管。
-   */
-  private fun keepImplicitFocusOffInputs() {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return
-      val content = findViewById<ViewGroup>(android.R.id.content) ?: return
-      content.isFocusableInTouchMode = true
-      content.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          // 按过实体键（含媒体键）后退出触摸模式，系统会给有焦点的根视图整屏画上默认的焦点高亮
-          content.defaultFocusHighlightEnabled = false
-      }
-      content.requestFocus()
-      content.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
-          if (newFocus == null) {
-              content.post { if (!content.hasFocus()) content.requestFocus() }
-          }
-      }
   }
 
   /**
@@ -105,7 +80,7 @@ class MainActivity : ReactActivity() {
    * 性能基线：开屏页（系统交给应用的 SplashScreenView，挂在 decor 下面）从窗口里拿掉之后的第一帧，画好交给系统
    * 合成的时刻，才是用户看到主页的时刻（记 home-drawn）。主线程画完这一帧不等于它上了屏：渲染线程还在画前面的帧时
    * （比如主页第一次画，模拟器的软件渲染要一两秒），屏幕上一直是开屏页（Beta #150、#152 的冷启动追踪截屏）。
-   * 回调在主线程跑，主线程正忙时会再晚一点。只在 API 31 起记（之前的开屏页不是 SplashScreenView）。
+   * 回调在主线程跑，主线程正忙时会再晚一点。支持的 Android 14+ 均使用系统 SplashScreenView。
    *
    * 每帧画之前看一眼 decor 下面有没有开屏页。等到开屏页来了又走了就停；没有开屏页交过来时（系统这次没显示开屏页）
    * 最多等 WAIT_MS；Activity 销毁时也停（stop）
@@ -118,18 +93,15 @@ class MainActivity : ReactActivity() {
       private val giveUp = Runnable { stop() }
 
       override fun onPreDraw(): Boolean {
-          // 按类名比，不直接引用 API 31 的类
           val splashShown = (0 until decor.childCount).any {
-              decor.getChildAt(it).javaClass.name == "android.window.SplashScreenView"
+              decor.getChildAt(it) is SplashScreenView
           }
           if (splashShown) {
               sawSplash = true
           } else if (sawSplash) {
               stop()
               // 在这一帧画之前登记，系统合成拿到这一帧时回调
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                  decor.viewTreeObserver.registerFrameCommitCallback { PerfMarks.mark("home-drawn") }
-              }
+              decor.viewTreeObserver.registerFrameCommitCallback { PerfMarks.mark("home-drawn") }
           }
           return true
       }
@@ -146,7 +118,6 @@ class MainActivity : ReactActivity() {
           private const val WAIT_MS = 15_000L
 
           fun start(window: Window): HomeDrawnWatcher? {
-              if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
               val decor = window.decorView as? ViewGroup ?: return null
               return HomeDrawnWatcher(decor).also {
                   decor.viewTreeObserver.addOnPreDrawListener(it)

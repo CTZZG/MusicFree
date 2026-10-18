@@ -67,7 +67,6 @@ class LiveUpdateLyricNotifier(private val appContext: Context) {
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
         val channel = NotificationChannel(
             CHANNEL_ID,

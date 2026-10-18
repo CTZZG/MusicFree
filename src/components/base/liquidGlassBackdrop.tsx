@@ -7,9 +7,9 @@ import rpx from "@/utils/rpx";
 // 这里只把原生玻璃面当作纯背景层（childless backdrop）使用，
 // 配合补丁（patches/expo-liquid-glass-native）里的 canvas 捕获路径，
 // 背景采样会自动排除本视图及其上层内容，主树里的内容照常交互。
-// 透镜折射 shader（AGSL）需要 Android 13+。
+// 支持的 Android 14+ 均提供 AGSL；保留非 Android 平台的降级。
 let NativeLiquidGlass: React.ComponentType<any> | null = null;
-if (Platform.OS === "android" && Number(Platform.Version) >= 33) {
+if (Platform.OS === "android") {
     try {
         NativeLiquidGlass =
             require("expo-modules-core").requireNativeViewManager(

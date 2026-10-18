@@ -1,18 +1,15 @@
 import { Linking, PermissionsAndroid, Platform } from "react-native";
 import StorageUri from "@/native/storageUri";
 
-export function getAndroidAudioReadPermission(apiLevel: number) {
-    return apiLevel >= 33
-        ? "android.permission.READ_MEDIA_AUDIO"
-        : "android.permission.READ_EXTERNAL_STORAGE";
-}
+// Android 14+ uses scoped audio permission; SAF grants remain separate.
+const AUDIO_READ_PERMISSION = PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO;
 
 /**
  * 播放这个本地路径是否需要先拿到音频读取权限。
  *
  * `content://` 是用户经 SAF/MediaStore 主动授予的 URI，本身带 grant，不需要
  * 再要权限；裸文件路径（`file://` 或绝对路径）读共享存储则必须有
- * READ_MEDIA_AUDIO（API 33+）/ READ_EXTERNAL_STORAGE。
+ * READ_MEDIA_AUDIO。
  */
 export function requiresAudioReadPermission(localPath: string | null | undefined) {
     if (!localPath) {
@@ -62,24 +59,18 @@ export async function needsAudioReadPermissionToPlay(
     );
 }
 
-function getRuntimeAudioReadPermission() {
-    return getAndroidAudioReadPermission(
-        Number(Platform.Version),
-    ) as (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS];
-}
-
 export async function checkAndroidAudioReadPermission() {
     if (Platform.OS !== "android") {
         return true;
     }
-    return PermissionsAndroid.check(getRuntimeAudioReadPermission());
+    return PermissionsAndroid.check(AUDIO_READ_PERMISSION);
 }
 
 export async function ensureAndroidAudioReadPermission() {
     if (Platform.OS !== "android") {
         return true;
     }
-    const permission = getRuntimeAudioReadPermission();
+    const permission = AUDIO_READ_PERMISSION;
     if (await PermissionsAndroid.check(permission)) {
         return true;
     }
@@ -98,7 +89,7 @@ export async function toggleAndroidAudioReadPermission() {
     if (Platform.OS !== "android") {
         return true;
     }
-    const permission = getRuntimeAudioReadPermission();
+    const permission = AUDIO_READ_PERMISSION;
     if (await PermissionsAndroid.check(permission)) {
         await Linking.openSettings();
         return true;

@@ -2,14 +2,13 @@ jest.mock("react-native", () => ({
     Linking: { openSettings: jest.fn() },
     PermissionsAndroid: {
         PERMISSIONS: {
-            READ_EXTERNAL_STORAGE: "android.permission.READ_EXTERNAL_STORAGE",
             READ_MEDIA_AUDIO: "android.permission.READ_MEDIA_AUDIO",
         },
         RESULTS: { GRANTED: "granted", NEVER_ASK_AGAIN: "never_ask_again" },
         check: jest.fn(),
         request: jest.fn(),
     },
-    Platform: { OS: "android", Version: 33 },
+    Platform: { OS: "android", Version: 34 },
 }));
 
 jest.mock("@/native/storageUri", () => ({
@@ -20,7 +19,6 @@ jest.mock("@/native/storageUri", () => ({
 import {
     checkAndroidAudioReadPermission,
     ensureAndroidAudioReadPermission,
-    getAndroidAudioReadPermission,
     needsAudioReadPermissionToPlay,
     requiresAudioReadPermission,
     resolveContentUriReadable,
@@ -38,18 +36,12 @@ describe("androidMediaPermission", () => {
         jest.clearAllMocks();
     });
 
-    it.each([
-        [24, "android.permission.READ_EXTERNAL_STORAGE"],
-        [32, "android.permission.READ_EXTERNAL_STORAGE"],
-        [33, "android.permission.READ_MEDIA_AUDIO"],
-        [36, "android.permission.READ_MEDIA_AUDIO"],
-    ])("selects the API %i permission", (apiLevel, permission) => {
-        expect(getAndroidAudioReadPermission(apiLevel)).toBe(permission);
-    });
-
     it("does not prompt when permission is already granted", async () => {
         PermissionsAndroid.check.mockResolvedValue(true);
         await expect(ensureAndroidAudioReadPermission()).resolves.toBe(true);
+        expect(PermissionsAndroid.check).toHaveBeenCalledWith(
+            "android.permission.READ_MEDIA_AUDIO",
+        );
         expect(PermissionsAndroid.request).not.toHaveBeenCalled();
     });
 

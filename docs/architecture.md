@@ -1,6 +1,6 @@
 # 当前架构与支持范围
 
-> 适用于 `feat/mpv-only` 主线的 mpv-only 实现（`package.json` 版本 0.11.4），最后核对日期 2026-10-13。
+> 适用于 `feat/mpv-only` 主线的 mpv-only 实现（`package.json` 版本 0.11.6），最后核对日期 2026-10-18；Android 14 下限正在 PR #46 验收，尚未合入主线。
 > 本文与源码不一致时以源码为准，并请在同一个改动里更新本文。
 
 ## 平台与支持范围
@@ -9,10 +9,22 @@
 | --- | --- | --- |
 | 发布平台 | 只发布 Android APK | `.github/workflows/android-build.yml`、`build-beta.yml` |
 | 播放内核 | 只有 mpv（libmpv）；Nitro 内核及随它提供的投屏、均衡器已移除 | `src/core/playerAdapter/index.ts`；提交 `793aa1ad` |
-| 最低 Android 版本 | 安装包声明 API 24；播放内核 libmpv 要求 API 26，通过 `tools:overrideLibrary` 强制合并。API 24–25 设备能安装，但不在播放支持范围内，也未验证 | `android/build.gradle`（`minSdkVersion`）、`android/app/build.gradle`（libmpv 依赖注释）、`android/app/src/main/AndroidManifest.xml` |
+| 最低 Android 版本 | **Android 14 / API 34**，安装和播放下限一致。2026-10-18 用户明确选择停止 Android 7–13 兼容；下一版本生效，已发布 v0.11.6 不改写 | `android/build.gradle`（`minSdkVersion`）、`android/app/build.gradle`（libmpv 依赖注释）、`android/app/src/main/AndroidManifest.xml` |
 | targetSdk | 36 | `android/build.gradle` |
 | iOS | 保留 `ios/` 目录，本分支不构建、不验证，不承诺可运行 | 没有 iOS 构建流程 |
 | 应用内检查更新 | 读本仓库 GitHub Releases 的最新正式版（`api.github.com`），连不上时用 jsDelivr 取最新的版本标签。“从浏览器下载”直接下与手机 CPU 架构对应的 APK（没有就下通用版），“备用链接”是发布页；对话框里显示发布说明中“下载”以外的各节。仓库里的 `release/version.json` 是上游的更新机制，应用不读 | `src/utils/checkUpdate.ts`、`src/hooks/useCheckUpdate.ts` |
+
+## Android 14 支持决定（2026-10-18）
+
+- 用户选择优先降低维护成本，最低 Android 14 / API 34。不是对旧版本兼容性已通过的宣称。
+- API 33 及更早的设备不能安装下一次发布的 APK；不下调 targetSdk 36，不改写 v0.11.6 标签、发布附件或历史发布说明。
+- 应用只走现代通知渠道、不可变 PendingIntent、带导出标记的接收器、READ_MEDIA_AUDIO、MediaStore 写入授权和 WindowMetrics。
+  已移除旧输入焦点补丁、Android 7 根证书、libmpv 强制合并及其独立 API24 链接器检查、旧 DEX 名称解析器和低版本 E2E 配置。
+- libmpv 仍使用已验收的固定 API26 构建产物；库的编译下限低于应用下限是正常依赖关系，不为此重建或修改二进制。
+- Android 15/16 的新 API 仍需判断版本，特别是 Live Update 的 API36 分支；通知/媒体权限、用户暂停意图和音频焦点不能因为提高下限而绕过。
+- 设备验证：Android14 最低支持环境的完整功能与独立 library/perf 套件，Android16 的原生/真实 JS/冻结引擎控制。
+  `all` 不包含 library/perf；引擎进度、暂停和连续性门限保持原值。性能只按同条件基线报告，不把删分支当成已测提速。
+- 交接 Claude 或其他维护者时先读本节和 `docs/handoff/android-compat-takeover-2026-10-18.md`，不要继续已取消的 Android7/8 验收。
 
 ## 模块与依赖方向
 
@@ -25,7 +37,7 @@
 | 本地音乐 | `src/core/localMusicSheet.ts` | 扫描、元数据缓存、匹配与提交 |
 | 存储 | `src/utils/keyValueStore` | 原子写入的文件键值存储（提交 `9bfccd41` 起替代 MMKV） |
 | 导航 | `src/core/router`、`src/pages/home/index.tsx` | 根栈加主页的底部标签（首页、搜索、资料库、设置）；搜索标签沿用 `search-page` 路由名，从其他页面跳搜索用 `navigateToSearch`，先回到主页再切标签 |
-| 外观 | `src/core/theme.ts`、`src/core/themeAppearance.ts`、`src/components/base/glassBackdrop.tsx` | 只有 iOS 风格的浅色、深色两套配色，默认跟随系统；旧主题（液态硅胶、自定义配色）在启动时迁移为跟随系统。标签栏和迷你播放器的毛玻璃在 Android 12+ 模糊各自的 `BlurTargetView`（主页标签内容、根栈），玻璃必须放在目标外面；做不到真模糊时改用接近不透明的磨砂底（`glassMaterial.ts`） |
+| 外观 | `src/core/theme.ts`、`src/core/themeAppearance.ts`、`src/components/base/glassBackdrop.tsx` | 只有 iOS 风格的浅色、深色两套配色，默认跟随系统；旧主题（液态硅胶、自定义配色）在启动时迁移为跟随系统。标签栏和迷你播放器的毛玻璃在支持的 Android 上模糊各自的 `BlurTargetView`（主页标签内容、根栈），玻璃必须放在目标外面；做不到真模糊时改用接近不透明的磨砂底（`glassMaterial.ts`） |
 
 依赖规则：
 
@@ -184,9 +196,7 @@
   - PR 和推送检查（`ci.yml` 的 Android unit tests）在改到原生代码、原生依赖或这项检查本身时运行 `testDebugUnitTest`，判断规则见 `generator/lib/nativeChanges.mjs`，拿不准时照样运行；没改到时任务直接以成功结束；
     变更路径用 NUL 分隔读取，重命名按删除＋新增检查，移出原生目录的旧路径也会触发；
   - 三处都上传测试报告，测试失败时也上传。
-  - `src/test/java` 也编进模拟器测试 APK（`androidTest`），安装下限 API 24 的 DEX 不允许方法名里有空格和 ASCII 标点，
-    所以测试方法用普通驼峰名，不用反引号句子名。`audit-invariants.mjs` 跳过注释和字符串，拦下测试代码里所有带空格、ASCII 标点的
-    反引号名字（规则和用例见 `generator/lib/dexNames.mjs`），最终以测试 APK 的 D8 构建为准。
+  - `src/test/java` 同时编进模拟器测试 APK（`androidTest`）；保留现有驼峰测试名，但已移除只服务于旧 DEX 格式的自定义名称解析器。测试 APK 的真实 D8 构建仍必须通过。
 - 模拟器端到端测试（`e2e/`，怎么跑、怎么加检查见 `e2e/README.md`）：Beta 构建打包后默认在 Android 14 模拟器（x86_64，
   GitHub Actions）上装刚打出的 APK，用 Maestro 点界面，用 `dumpsys media_session` 看实际播放（进度由 mpv 上报，不是界面
   数字）。覆盖：外部链接装插件、搜索点播、后台用媒体键切歌后回到应用不跳回旧歌、播放失败提示和处理方式、后台播完接下一首、
@@ -267,6 +277,6 @@
 
 ## 待定事项
 
-- **minSdk**：安装下限（API 24）与播放内核要求（API 26）不一致。把 `minSdkVersion` 提到 26 会让 API 24–25 设备无法安装新版本，需要单独决定。
+- **Android 支持下限已决定**：API 34。不得为了 Android 7–13 重新加回证书、反射、权限分支或测试矩阵；要恢复支持必须先取得新的产品决定并更新本文。
 - **Nitro 遗留的原生依赖**：`android/app/build.gradle` 默认仍打包 Nitro 时期的 `musicfree-media3-ffmpeg-decoder` AAR（`musicfreeEnableNitroFfmpeg` 开关），而 `android/app/src/main/java` 中已没有 Media3 或 FFmpeg 的引用。是否移除需要构建与设备验证后再定。
 - **iOS**：是否继续支持需要单独定义。

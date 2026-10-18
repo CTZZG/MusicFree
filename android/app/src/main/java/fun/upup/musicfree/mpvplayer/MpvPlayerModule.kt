@@ -323,7 +323,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             }
         }
         try {
-            if (foreground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (foreground) {
                 reactContext.startForegroundService(intent)
             } else {
                 reactContext.startService(intent)

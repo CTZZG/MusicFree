@@ -36,30 +36,17 @@ checks do not establish physical audio output or audible continuity.
 
 ## Minimum Android version
 
-The base AAR's manifest declares minSdk 26 and the rebuild compiles against API
-26 headers, but the app's minSdk is 24 and merges the AAR with
-`tools:overrideLibrary`, which also turns off the merger's minSdk check.
-`check-api-floor.py` replaces it in the shared quality gate: using the NDK's stub
-libraries at the app's minSdk (read from `android/build.gradle`), every system
-library a bundled `.so` links against must exist, every symbol version it needs
-must be defined, and every strong import must resolve at its required version there or in another bundled
-library. Weak imports are listed, not rejected; today that is only
-`memfd_create` (API 30) on arm64, which API 26–29 lack as well. The Java classes
-only load the libraries and read the application `Context`. A rebuild that starts
-importing anything newer fails the gate; build such code against the app's minSdk
-or use weak references with a runtime check.
+The application requires Android 14 / API 34 by product decision (2026-10-18).
+The existing, pinned AAR still declares API 26 and uses API 26 build inputs; these
+are lower bounds of the dependency, not a promise to support Android 7/8.
+Normal manifest merging now enforces the app/dependency relationship. There is
+no `tools:overrideLibrary`, bundled legacy trust root or custom API24 linker gate.
+Do not rebuild the libraries just to change this app support declaration.
 
-This is a static native-linkage check, not proof of complete Android 7/8 support.
-It does not verify Java API usage, whether an optional weak call checks for null,
-or the real search/playback/network/notification paths. Keep the NewApi lint and
-device tests as separate evidence. The self-test also links an ELF requiring
-`malloc@LIBC_N`: a libc containing the `LIBC_N` node for other symbols must not
-make that invalid import bind to `malloc@@LIBC`.
-
-```sh
-python3 native/mpv/check-api-floor.py --self-test   # fixtures that must pass/fail
-python3 native/mpv/check-api-floor.py               # the bundled AAR
-```
+Keep NewApi lint for APIs above 34, the payload/source consistency check, the
+startup-clock guard and Android 14/16 device checks. Do not restore old-system
+fallbacks without an explicit change to the support policy in
+`docs/architecture.md`.
 
 ## Rebuild
 

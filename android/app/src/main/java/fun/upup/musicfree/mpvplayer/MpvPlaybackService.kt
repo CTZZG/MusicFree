@@ -88,12 +88,7 @@ class MpvPlaybackService : Service() {
             return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
         }
 
-        private fun pendingIntentFlag(): Int =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE
-            } else {
-                0
-            }
+        private fun pendingIntentFlag(): Int = PendingIntent.FLAG_IMMUTABLE
     }
 
     private lateinit var mediaSession: MediaSessionCompat
@@ -571,9 +566,6 @@ class MpvPlaybackService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
         notificationManager?.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
@@ -865,7 +857,7 @@ class MpvPlaybackService : Service() {
         cachedArtworkBitmap = bitmap
         liveUpdateLargeIcon = bitmap?.let { it.scaledToMaxSide(LIVE_UPDATE_LARGE_ICON_SIZE) }
         liveUpdateSmallIcon =
-            if (bitmap != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (bitmap != null) {
                 try {
                     Icon.createWithBitmap(bitmap.toLiveUpdateSmallIconBitmap())
                 } catch (_: Throwable) {
@@ -1005,12 +997,8 @@ class MpvPlaybackService : Service() {
         notificationUpdates.cancel()
         if (isForeground) {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
+                stopForeground(STOP_FOREGROUND_REMOVE)
+
             } catch (_: Exception) {
             }
             isForeground = false
@@ -1116,11 +1104,8 @@ class MpvPlaybackService : Service() {
             return
         }
         val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(noisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(noisyReceiver, filter)
-        }
+        registerReceiver(noisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+
         noisyReceiverRegistered = true
     }
 

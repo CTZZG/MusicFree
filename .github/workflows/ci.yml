@@ -90,7 +90,7 @@ jobs:
               working-directory: ./android
               run: |
                   chmod +x ./gradlew
-                  # 同时只查 NewApi：minSdk 24 是支持的下限，新 API 要先判断系统版本。
+                  # 同时只查 NewApi：minSdk 34 是支持的下限，新 API 要先判断系统版本。
                   # lint 的 K2 Kotlin 前端分析 react-native-worklets 时会崩（Cannot find a
                   # KaModule for the VirtualFile），用 K1
                   ./gradlew testDebugUnitTest :app:lintDebug -PmusicfreeNewApiLint -Pandroid.lint.useK2Uast=false \

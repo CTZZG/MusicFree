@@ -248,7 +248,7 @@ SD 卡、USB 存储；系统文件夹选择器在别的语言和版本上的按�
 
 | 指标 | 起点 | 终点 |
 | --- | --- | --- |
-| 冷启动到主页出现在屏幕上 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | `home-drawn`（原生，API 31 起）：开屏页（`SplashScreenView`）从窗口里拿掉之后的第一帧画好、交给系统合成（`registerFrameCommitCallback`） |
+| 冷启动到主页出现在屏幕上 | `am force-stop` 后 `am start`，系统 ActivityTaskManager 记下的启动请求 | `home-drawn`（原生；支持范围为 Android 14+）：开屏页（`SplashScreenView`）从窗口里拿掉之后的第一帧画好、交给系统合成（`registerFrameCommitCallback`） |
 | 冷启动到开屏页移除 | 同上 | 系统日志 `SplashScreenView: remove starting view`（系统的调试日志，模拟器的 userdebug 系统里有，user 版系统可能没有）。渲染线程还在画前面的帧时（主页第一次画），下一帧要晚一两秒才交给系统合成，这段时间屏幕上还是开屏页（Beta #150、#152 的冷启动追踪截屏） |
 | 冷启动：系统报告的启动完成 | 同上 | `am start -W` 的 TotalTime |
 | 冷启动：应用窗口第一次出帧 | 同上 | `first-draw`（原生）。开屏页撑着时内容先藏着、窗口照常出帧（`patches/expo-splash-screen+56.0.14.patch`）；修之前 expo 取消绘制，这一帧要等 JS 叫收起 |
@@ -307,7 +307,7 @@ Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这�
 git fetch origin refs/e2e/latest && git show FETCH_HEAD:summary.md
 ```
 
-本地开着模拟器（x86_64，Android 8 以上）也能直接跑，需要 adb、[Maestro](https://maestro.mobile.dev) 和 python3：
+本地开着模拟器（x86_64，Android 14 / API 34 以上）也能直接跑，需要 adb、[Maestro](https://maestro.mobile.dev) 和 python3：
 
 ```bash
 e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-results

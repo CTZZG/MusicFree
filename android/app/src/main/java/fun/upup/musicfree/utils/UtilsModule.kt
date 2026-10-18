@@ -2,11 +2,9 @@ package `fun`.upup.musicfree.utils; // replace your-apps-package-name with your 
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -20,7 +18,6 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
-import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import kotlin.system.exitProcess
@@ -34,7 +31,6 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod
     fun exitApp() {
-        stopMusicFreePlaybackServices()
         val activity = reactContext.currentActivity
         if (activity != null) {
             activity.runOnUiThread {
@@ -54,37 +50,6 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
         }, 450)
     }
 
-    private fun stopMusicFreePlaybackServices() {
-        getPlaybackServiceDefinitions().forEach { (className, shutdownAction) ->
-            try {
-                val serviceClass = Class.forName(className)
-                reactContext.startService(
-                    Intent(reactContext, serviceClass).apply {
-                        action = shutdownAction
-                    }
-                )
-                exitHandler.postDelayed({
-                    try {
-                        reactContext.stopService(Intent(reactContext, serviceClass))
-                    } catch (_: Throwable) {}
-                }, 150)
-            } catch (_: Throwable) {
-                // Best effort: process kill below is the hard stop.
-            }
-        }
-    }
-
-    /**
-     * 退出时需要额外广播关闭的播放服务（类名, 关闭 action）。
-     *
-     * Nitro 播放后端移除后这里为空：mpv 的前台服务由
-     * stopMusicFreePlaybackServices 之外的路径直接 stopService，不需要反射。
-     * 保留这个结构是因为退出流程的其余部分依赖它遍历，且未来若再引入
-     * 第三方播放服务可直接登记。
-     */
-    private fun getPlaybackServiceDefinitions(): List<Pair<String, String>> =
-        emptyList()
-
     private fun killCurrentProcess() {
         android.os.Process.killProcess(android.os.Process.myPid())
         exitProcess(0)
@@ -92,48 +57,20 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
 
     @ReactMethod
     fun isIgnoringBatteryOptimizations(promise: Promise) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val packageName = reactContext.packageName
-            val pm = reactContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-            promise.resolve(pm.isIgnoringBatteryOptimizations(packageName))
-        } else {
-            promise.resolve(true)
-        }
+        val packageName = reactContext.packageName
+        val pm = reactContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+        promise.resolve(pm.isIgnoringBatteryOptimizations(packageName))
     }
 
     @ReactMethod
     fun requestIgnoreBatteryOptimizations(promise: Promise) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                val packageName = reactContext.packageName
-                val pm = reactContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                    intent.data = Uri.parse("package:$packageName")
+        try {
+            val packageName = reactContext.packageName
+            val pm = reactContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent.data = Uri.parse("package:$packageName")
 
-                    if (reactContext.currentActivity != null) {
-                        reactContext.currentActivity?.startActivity(intent)
-                    } else {
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        reactContext.startActivity(intent)
-                    }
-                    promise.resolve(true)
-                } else {
-                    promise.resolve(true)
-                }
-            } catch (e: Exception) {
-                promise.reject(e)
-            }
-        } else {
-            promise.resolve(true)
-        }
-    }
-
-    @ReactMethod
-    fun openBatteryOptimizationSettings(promise: Promise) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                 if (reactContext.currentActivity != null) {
                     reactContext.currentActivity?.startActivity(intent)
                 } else {
@@ -141,11 +78,27 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
                     reactContext.startActivity(intent)
                 }
                 promise.resolve(true)
-            } catch (e: Exception) {
-                promise.reject(e)
+            } else {
+                promise.resolve(true)
             }
-        } else {
+        } catch (e: Exception) {
+            promise.reject(e)
+        }
+    }
+
+    @ReactMethod
+    fun openBatteryOptimizationSettings(promise: Promise) {
+        try {
+            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            if (reactContext.currentActivity != null) {
+                reactContext.currentActivity?.startActivity(intent)
+            } else {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                reactContext.startActivity(intent)
+            }
             promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject(e)
         }
     }
 
@@ -158,8 +111,7 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
             val packageName = reactContext.packageName
             val powerManager = reactContext.getSystemService(Context.POWER_SERVICE) as PowerManager
             val batteryOptimizationIgnored =
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-                    powerManager.isIgnoringBatteryOptimizations(packageName)
+                powerManager.isIgnoringBatteryOptimizations(packageName)
 
             promise.resolve(Arguments.createMap().apply {
                 putString("packageName", packageName)
@@ -172,7 +124,8 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
                 putBoolean("batteryOptimizationIgnored", batteryOptimizationIgnored)
                 putDouble("appImportance", processInfo.importance.toDouble())
                 putString("appImportanceLabel", appImportanceLabel(processInfo.importance))
-                putArray("playbackServices", getPlaybackServiceDiagnostics())
+                // mpv diagnostics live below; the removed Nitro service list is empty.
+                putArray("playbackServices", Arguments.createArray())
                 putMap("mediaSession", getMediaSessionDiagnostics())
                 MpvServiceBridge.artworkStatus?.let { status ->
                     putMap("artwork", Arguments.createMap().apply {
@@ -201,108 +154,27 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
         val displayMetrics: DisplayMetrics = reactApplicationContext.resources.displayMetrics
         val density = displayMetrics.density
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11 (API 30) 及以上使用新 API
-            val windowMetrics = windowManager.currentWindowMetrics
-            val insets = windowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars())
-            val bounds = windowMetrics.bounds
+        val windowMetrics = windowManager.currentWindowMetrics
+        val insets = windowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars())
+        val bounds = windowMetrics.bounds
 
-            val totalWidthPx = bounds.width()
-            val totalHeightPx = bounds.height()
+        val totalWidthPx = bounds.width()
+        val totalHeightPx = bounds.height()
 
-            val leftInsetPx = insets.left
-            val rightInsetPx = insets.right
-            val topInsetPx = insets.top
-            val bottomInsetPx = insets.bottom
+        val leftInsetPx = insets.left
+        val rightInsetPx = insets.right
+        val topInsetPx = insets.top
+        val bottomInsetPx = insets.bottom
 
-            val usableWidthPx = totalWidthPx - leftInsetPx - rightInsetPx
-            val usableHeightPx = totalHeightPx - topInsetPx - bottomInsetPx
+        val usableWidthPx = totalWidthPx - leftInsetPx - rightInsetPx
+        val usableHeightPx = totalHeightPx - topInsetPx - bottomInsetPx
 
-            val usableWidthDp = usableWidthPx / density
-            val usableHeightDp = usableHeightPx / density
+        val usableWidthDp = usableWidthPx / density
+        val usableHeightDp = usableHeightPx / density
 
-            Arguments.createMap().apply {
-                putDouble("width", usableWidthDp.toDouble())
-                putDouble("height", usableHeightDp.toDouble())
-            }
-        } else {
-            // Android 10 及以下使用旧 API
-            val display = windowManager.defaultDisplay
-            val realSize = android.graphics.Point()
-            display.getRealSize(realSize)
-
-            // 获取状态栏和导航栏高度
-            val resources = reactApplicationContext.resources
-            var statusBarHeight = 0
-            var navigationBarHeight = 0
-
-            // 状态栏高度
-            val statusBarResourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
-            if (statusBarResourceId > 0) {
-                statusBarHeight = resources.getDimensionPixelSize(statusBarResourceId)
-            }
-
-            // 导航栏高度
-            val navigationBarResourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-            if (navigationBarResourceId > 0) {
-                navigationBarHeight = resources.getDimensionPixelSize(navigationBarResourceId)
-            }
-
-            val usableWidthPx = realSize.x
-            val usableHeightPx = realSize.y - statusBarHeight - navigationBarHeight
-
-            val usableWidthDp = usableWidthPx / density
-            val usableHeightDp = usableHeightPx / density
-
-            Arguments.createMap().apply {
-                putDouble("width", usableWidthDp.toDouble())
-                putDouble("height", usableHeightDp.toDouble())
-            }
-        }
-    }
-
-    private fun getPlaybackServiceDiagnostics(): WritableArray {
-        val result = Arguments.createArray()
-        getPlaybackServiceDefinitions().forEach { (className, shutdownAction) ->
-            result.pushMap(Arguments.createMap().apply {
-                putString("className", className)
-                putString("shutdownAction", shutdownAction)
-                putBoolean("declared", isServiceDeclared(className))
-                putBoolean("running", isServiceRunning(className))
-            })
-        }
-        return result
-    }
-
-    private fun isServiceDeclared(className: String): Boolean {
-        return try {
-            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                reactContext.packageManager.getPackageInfo(
-                    reactContext.packageName,
-                    PackageManager.PackageInfoFlags.of(PackageManager.GET_SERVICES.toLong())
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                reactContext.packageManager.getPackageInfo(
-                    reactContext.packageName,
-                    PackageManager.GET_SERVICES
-                )
-            }
-            packageInfo.services?.any { it.name == className } == true
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun isServiceRunning(className: String): Boolean {
-        return try {
-            val activityManager = reactContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            activityManager.getRunningServices(Int.MAX_VALUE).any {
-                it.service.className == className
-            }
-        } catch (_: Throwable) {
-            false
+        return Arguments.createMap().apply {
+            putDouble("width", usableWidthDp.toDouble())
+            putDouble("height", usableHeightDp.toDouble())
         }
     }
 

@@ -1,12 +1,10 @@
 package `fun`.upup.musicfree.storageuri
 
 import android.app.Activity
-import android.app.RecoverableSecurityException
 import android.content.ClipData
 import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
-import android.os.Build
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
@@ -1036,24 +1034,10 @@ class StorageUriModule(
         }
 
         val intentSender = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                MediaStore.createWriteRequest(
-                    reactApplicationContext.contentResolver,
-                    listOf(uri)
-                ).intentSender
-            } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
-                try {
-                    reactApplicationContext.contentResolver
-                        .openFileDescriptor(uri, "rw")
-                        ?.close()
-                    promise.resolve(true)
-                    return
-                } catch (error: RecoverableSecurityException) {
-                    error.userAction.actionIntent.intentSender
-                }
-            } else {
-                null
-            }
+            MediaStore.createWriteRequest(
+                reactApplicationContext.contentResolver,
+                listOf(uri)
+            ).intentSender
         } catch (_: Exception) {
             null
         }

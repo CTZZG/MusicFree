@@ -24,10 +24,6 @@
   adb shell cat <文件> | kvstore.py sheet-paths
       歌单 store 里的歌和它记的本地文件位置，每行 "平台/id<Tab>位置"（没有本地文件的位置为空）
 
-  adb shell cat <文件> | kvstore.py set-strings <键=值>…
-      输出改过的整份 store：这些键设成字符串值（应用的配置 App.config 就是这样存的，
-      布尔值存成 "true"/"false"），其余键原样保留
-
   kvstore.py --self-test
 """
 import json
@@ -119,18 +115,6 @@ SAMPLE = json.dumps({
 }, ensure_ascii=False)
 
 
-def set_strings(text, pairs):
-    """返回整份 store 的 JSON，pairs 里的 "键=值" 设成字符串值。"""
-    decode(text)
-    snapshot = json.loads(text)
-    for pair in pairs:
-        key, sep, value = pair.partition("=")
-        if not sep or not key:
-            raise ValueError(f"要写成 键=值：{pair!r}")
-        snapshot["entries"][key] = {"t": "s", "v": value}
-    return json.dumps(snapshot, ensure_ascii=False)
-
-
 def self_test():
     assert file_name("music.DownloadTasks") == "music.DownloadTasks.json"
     assert file_name("MediaExtra.E2E 测试源 A") == "MediaExtra.E2E+20+E6+B5+8B+E8+AF+95+E6+BA+90+20A.json", file_name("MediaExtra.E2E 测试源 A")
@@ -173,15 +157,6 @@ def self_test():
         pass
     else:
         raise AssertionError("缺失的备用记录被接受")
-    updated = decode(set_strings(SAMPLE, ["basic.useCelluarNetworkPlay=true"]))
-    assert updated["basic.useCelluarNetworkPlay"] == {"t": "s", "v": "true"}
-    assert {k: v for k, v in updated.items() if k != "basic.useCelluarNetworkPlay"} == decode(SAMPLE)
-    for bad in (["没有等号"], ["=true"]):
-        try:
-            set_strings(SAMPLE, bad)
-        except ValueError:
-            continue
-        raise AssertionError(f"错误的写法被接受：{bad}")
     print("kvstore.py self-test ok")
 
 
@@ -193,13 +168,6 @@ def main(argv):
         print(file_name(argv[2]))
         return 0
     command = argv[1] if len(argv) > 1 else ""
-    if command == "set-strings" and len(argv) > 2:
-        try:
-            print(set_strings(sys.stdin.read(), argv[2:]))
-        except ValueError as error:
-            print(f"改不了：{error}", file=sys.stderr)
-            return 1
-        return 0
     if command not in ("check", "keys", "find", "sheet-ids", "sheet-paths", "remembered-source", "download-source") or (command in ("find", "remembered-source", "download-source")) != (len(argv) == 3):
         print(__doc__, file=sys.stderr)
         return 2

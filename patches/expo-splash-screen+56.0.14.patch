@@ -1,11 +1,13 @@
 diff --git a/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt b/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt
-index 0dcb89e..21bf9f0 100644
 --- a/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt
 +++ b/node_modules/expo-splash-screen/android/src/main/java/expo/modules/splashscreen/SplashScreenManager.kt
-@@ -4,19 +4,44 @@ import android.app.Activity
- import android.app.Application.ActivityLifecycleCallbacks
- import android.os.Build
- import android.os.Bundle
+@@ -1,22 +1,44 @@
+ package expo.modules.splashscreen
+
+ import android.app.Activity
+-import android.app.Application.ActivityLifecycleCallbacks
+-import android.os.Build
+-import android.os.Bundle
 +import android.os.Handler
 +import android.os.Looper
  import android.view.View
@@ -18,7 +20,7 @@ index 0dcb89e..21bf9f0 100644
 +import androidx.core.splashscreen.SplashScreenViewProvider
  import com.facebook.react.bridge.ReactMarker
  import com.facebook.react.bridge.ReactMarkerConstants
- 
+
 +/**
 + * MusicFree patch: keep the splash screen without cancelling draws.
 + *
@@ -45,16 +47,16 @@ index 0dcb89e..21bf9f0 100644
 +  // Main thread only: the content hidden until hide(), and the splash view held until then.
 +  private var hiddenContent: View? = null
 +  private var heldSplash: SplashScreenViewProvider? = null
- 
+
    private val contentAppearedListener = ReactMarker.MarkerListener { name, _, _ ->
      if (name == ReactMarkerConstants.CONTENT_APPEARED) {
-@@ -33,43 +58,33 @@ object SplashScreenManager {
+@@ -33,72 +55,92 @@
        return
      }
- 
+
 -    val duration = options.duration
 +    exitDuration = options.duration
- 
+
      splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
 -      val splashScreenView = splashScreenViewProvider.view
 -      splashScreenView
@@ -79,7 +81,7 @@ index 0dcb89e..21bf9f0 100644
 +      }
      }
    }
- 
+
    fun registerOnActivity(mainActivity: Activity) {
 +    // A splash view still held by an earlier activity instance will never be revealed.
 +    heldSplash?.let {
@@ -88,7 +90,7 @@ index 0dcb89e..21bf9f0 100644
 +    }
      splashScreen = mainActivity.installSplashScreen()
      ReactMarker.addListener(contentAppearedListener)
- 
+
 -    // Using `splashScreen.setKeepOnScreenCondition()` does not work on apis below 33
 -    // so we need to implement this ourselves.
 -    val contentView = mainActivity.findViewById<View>(android.R.id.content)
@@ -107,23 +109,33 @@ index 0dcb89e..21bf9f0 100644
 +      contentView.visibility = View.INVISIBLE
 +      hiddenContent = contentView
 +    }
- 
+
      configureSplashScreen()
- 
-@@ -90,6 +105,11 @@ object SplashScreenManager {
-         override fun onActivityStopped(activity: Activity) {
-           if (activity == mainActivity) {
-             runCatching { mainActivity.splashScreen.clearOnExitAnimationListener() }
-+            // A splash view held across stop has the same SurfaceControl problem: drop it now.
-+            heldSplash?.let {
-+              heldSplash = null
-+              runCatching { removeSplashView(it) }
-+            }
-             application.unregisterActivityLifecycleCallbacks(this)
-           }
-         }
-@@ -99,6 +119,62 @@ object SplashScreenManager {
- 
+
+-    // Mitigate race where splash exit listener may fire after activity stop,
+-    // causing SurfaceControl.checkNotReleased() crash on API 31-33
+-    // https://issuetracker.google.com/issues/242118185
+-    if (Build.VERSION.SDK_INT in Build.VERSION_CODES.S..Build.VERSION_CODES.TIRAMISU) {
+-      val application = mainActivity.application
+-
+-      application.registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+-        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+-        override fun onActivityDestroyed(activity: Activity) {}
+-        override fun onActivityPaused(activity: Activity) {}
+-        override fun onActivityResumed(activity: Activity) {}
+-        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+-        override fun onActivityStarted(activity: Activity) {}
+-
+-        override fun onActivityStopped(activity: Activity) {
+-          if (activity == mainActivity) {
+-            runCatching { mainActivity.splashScreen.clearOnExitAnimationListener() }
+-            application.unregisterActivityLifecycleCallbacks(this)
+-          }
+-        }
+-      })
+-    }
+   }
+
    fun hide() {
      keepSplashScreenOnScreen = false
 +    mainHandler.post { reveal() }
@@ -176,12 +188,8 @@ index 0dcb89e..21bf9f0 100644
 +  }
 +
 +  private fun removeSplashView(splashScreenViewProvider: SplashScreenViewProvider) {
-+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-+      splashScreenViewProvider.remove()
-+    } else {
-+      // Avoid calling applyThemesSystemBarAppearance
-+      (splashScreenViewProvider.view as SplashScreenView).remove()
-+    }
++    // Android 14+ always supplies a platform view. Avoid applyThemesSystemBarAppearance.
++    (splashScreenViewProvider.view as SplashScreenView).remove()
    }
- 
+
    fun setSplashScreenOptions(options: SplashScreenOptions) {

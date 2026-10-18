@@ -13,11 +13,13 @@ index 3785a8e..1d81886 100644
      }
 
 diff --git a/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt b/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt
-index e6c424b..fac8118 100644
 --- a/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt
 +++ b/node_modules/expo-liquid-glass-native/android/src/main/java/expo/modules/liquidglassnative/ExpoLiquidGlassNativeView.kt
-@@ -9,11 +9,13 @@ import android.os.Bundle
- import android.os.Build
+@@ -6,14 +6,15 @@
+ import android.graphics.Outline
+ import android.graphics.Rect
+ import android.os.Bundle
+-import android.os.Build
  import android.os.Handler
  import android.os.Looper
 +import android.os.SystemClock
@@ -30,7 +32,7 @@ index e6c424b..fac8118 100644
  import android.view.PixelCopy
  import android.widget.FrameLayout
  import android.widget.PopupWindow
-@@ -49,6 +51,8 @@ import expo.modules.kotlin.views.ExpoView
+@@ -49,6 +50,8 @@
  import kotlin.math.roundToInt
 
  private const val REALTIME_CAPTURE_SCALE = 0.5f
@@ -39,7 +41,7 @@ index e6c424b..fac8118 100644
 
  private data class GlassProps(
    val tint: Color = Color(0xFFFFFFFF),
-@@ -66,7 +70,13 @@ private data class GlassProps(
+@@ -66,7 +69,13 @@
    val captureRectX: Float? = null,
    val captureRectY: Float? = null,
    val captureRectWidth: Float? = null,
@@ -54,7 +56,7 @@ index e6c424b..fac8118 100644
  )
 
  open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
-@@ -75,31 +85,54 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -75,31 +84,54 @@
    private var cachedBackdropBitmap by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
    private var isFrameCaptureScheduled = false
    private var isPixelCopyInFlight = false
@@ -73,12 +75,15 @@ index e6c424b..fac8118 100644
 -      if (!props.useRealtimeCapture || !isAttachedToWindow) {
 -        return
 -      }
+-
+-      requestBackdropCapture()
+-      scheduleRealtimeCapture()
+-    }
+-  }
 +  private val captureScrollListener = ViewTreeObserver.OnScrollChangedListener {
 +    requestBackdropCapture()
 +  }
-
--      requestBackdropCapture()
--      scheduleRealtimeCapture()
++
 +  private val captureLayoutListener = ViewTreeObserver.OnGlobalLayoutListener {
 +    requestBackdropCapture()
 +    scheduleSettledBackdropCapture()
@@ -92,14 +97,14 @@ index e6c424b..fac8118 100644
 +    isFrameCaptureScheduled = false
 +    if (!props.useRealtimeCapture || !isAttachedToWindow) {
 +      return@Runnable
-     }
++    }
 +
 +    performBackdropCapture()
 +    lastBackdropCaptureFinishedAtMs = SystemClock.uptimeMillis()
-   }
-
-+  private var isComposeContentInstalled = false
++  }
 +
++  private var isComposeContentInstalled = false
+
    private val composeView = ComposeView(context).apply {
      layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
      isClickable = false
@@ -119,7 +124,7 @@ index e6c424b..fac8118 100644
        val backdrop = rememberLayerBackdrop(
          onDraw = {
            if (props.useRealtimeCapture) {
-@@ -153,8 +186,6 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -153,8 +185,6 @@
    init {
      clipChildren = false
      clipToPadding = false
@@ -128,7 +133,7 @@ index e6c424b..fac8118 100644
      updateOutline()
    }
 
-@@ -167,6 +198,15 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -167,6 +197,15 @@
 
    override fun onAttachedToWindow() {
      super.onAttachedToWindow()
@@ -144,7 +149,7 @@ index e6c424b..fac8118 100644
      updatePresentationHost()
      updateRealtimeCaptureLoop()
      requestBackdropCapture()
-@@ -195,8 +235,10 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -195,8 +234,10 @@
      captureRectX: Float? = null,
      captureRectY: Float? = null,
      captureRectWidth: Float? = null,
@@ -156,7 +161,7 @@ index e6c424b..fac8118 100644
      props = props.copy(
        tint = tint?.toComposeColor() ?: props.tint,
        surfaceColor = surfaceColor?.toComposeColor() ?: props.surfaceColor,
-@@ -213,17 +255,29 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -213,17 +254,29 @@
        captureRectX = captureRectX ?: props.captureRectX,
        captureRectY = captureRectY ?: props.captureRectY,
        captureRectWidth = captureRectWidth ?: props.captureRectWidth,
@@ -187,7 +192,7 @@ index e6c424b..fac8118 100644
    }
 
    private fun updateOutline() {
-@@ -241,7 +295,7 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -241,7 +294,7 @@
        val reactContext = appContext.reactContext as? ReactContext ?: return null
        val activity = reactContext.currentActivity ?: return null
        val rootView = activity.window?.decorView ?: return null
@@ -196,7 +201,7 @@ index e6c424b..fac8118 100644
 
        val width = width.coerceAtLeast(1)
        val height = height.coerceAtLeast(1)
-@@ -268,7 +322,7 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -268,7 +321,7 @@
          canvas.translate(-offsetX.toFloat(), -offsetY.toFloat())
          rootView.background?.draw(canvas)
          if (rootView is ViewGroup) {
@@ -205,7 +210,7 @@ index e6c424b..fac8118 100644
          } else if (rootView != this) {
            rootView.draw(canvas)
          }
-@@ -287,13 +341,17 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -287,13 +340,17 @@
     * Those views are foreground overlays from the glass perspective and should not become
     * part of the sampled backdrop bitmap.
     */
@@ -224,7 +229,7 @@ index e6c424b..fac8118 100644
        val currentIndex = parent.indexOfChild(current)
        if (currentIndex >= 0) {
          for (index in currentIndex + 1 until parent.childCount) {
-@@ -303,7 +361,7 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -303,7 +360,7 @@
        current = parent
      }
 
@@ -233,7 +238,7 @@ index e6c424b..fac8118 100644
    }
 
    private fun collectViewSubtree(view: View, excludedViews: MutableSet<View>) {
-@@ -318,12 +376,12 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -318,12 +375,12 @@
    private fun drawViewGroupChildren(
      parent: ViewGroup,
      canvas: Canvas,
@@ -248,7 +253,7 @@ index e6c424b..fac8118 100644
          continue
        }
 
-@@ -336,10 +394,12 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -336,10 +393,12 @@
          val saveCount = canvas.save()
          try {
            canvas.translate(childOffsetX.toFloat(), childOffsetY.toFloat())
@@ -263,7 +268,7 @@ index e6c424b..fac8118 100644
            } else {
              child.draw(canvas)
            }
-@@ -351,41 +411,155 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -351,41 +410,151 @@
      }
    }
 
@@ -276,10 +281,6 @@ index e6c424b..fac8118 100644
 +  }
 +
 +  private fun drawViewForeground(view: View, canvas: Canvas) {
-+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-+      return
-+    }
-+
 +    val foreground = view.foreground ?: return
 +    val oldBounds = Rect(foreground.bounds)
 +    foreground.setBounds(0, 0, view.width, view.height)
@@ -295,8 +296,8 @@ index e6c424b..fac8118 100644
 
 +    attachRealtimeCaptureObservers()
      scheduleRealtimeCapture()
-   }
-
++  }
++
 +  private fun attachRealtimeCaptureObservers() {
 +    val captureRoot = resolveCaptureRoot() ?: return
 +    if (observedCaptureRoot === captureRoot) {
@@ -326,8 +327,8 @@ index e6c424b..fac8118 100644
 +  private fun resolveCaptureRoot(): View? {
 +    val reactContext = appContext.reactContext as? ReactContext ?: return rootView
 +    return reactContext.currentActivity?.window?.decorView ?: rootView
-+  }
-+
+   }
+
    private fun teardownRealtimeCaptureLoop() {
      removeCallbacks(realtimeCaptureFrameRunnable)
 +    removeCallbacks(settledCaptureRunnable)
@@ -337,6 +338,8 @@ index e6c424b..fac8118 100644
 
    private fun scheduleRealtimeCapture() {
 -    if (isFrameCaptureScheduled) {
+-      return
+-    }
 +    if (
 +      isFrameCaptureScheduled ||
 +      !props.useRealtimeCapture ||
@@ -344,8 +347,8 @@ index e6c424b..fac8118 100644
 +      width <= 0 ||
 +      height <= 0
 +    ) {
-       return
-     }
++      return
++    }
 +
 +    val elapsedSinceLastCapture =
 +      SystemClock.uptimeMillis() - lastBackdropCaptureFinishedAtMs
@@ -381,20 +384,26 @@ index e6c424b..fac8118 100644
 -      if (!props.useRealtimeCapture) {
 -        cachedBackdropBitmap = null
 -      }
-       return
-     }
-
+-      return
+-    }
+-
 -    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && requestPixelCopyBackdrop()) {
+-      return
+-    }
+-
+-    cachedBackdropBitmap = captureBackdropBitmap()?.asImageBitmap()
++      return
++    }
++
 +    // PixelCopy grabs the fully composed activity window, which would include this
 +    // view's own rendering plus any sibling content drawn above it (feedback loop).
 +    // That is only safe when the glass surface lives in a separate popup window.
 +    // For the in-window (backdrop) mode, fall back to the manual canvas capture,
 +    // which excludes this view and everything rendered above it.
-+    if (props.renderInSeparateWindow && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && requestPixelCopyBackdrop()) {
-       return
-     }
-
--    cachedBackdropBitmap = captureBackdropBitmap()?.asImageBitmap()
++    if (props.renderInSeparateWindow && requestPixelCopyBackdrop()) {
++      return
++    }
++
 +    val backdropBitmap = captureBackdropBitmap()
 +    if (backdropBitmap != null && hasVisiblePixels(backdropBitmap)) {
 +      cachedBackdropBitmap = backdropBitmap.asImageBitmap()
@@ -426,7 +435,7 @@ index e6c424b..fac8118 100644
    }
 
    private fun requestPixelCopyBackdrop(): Boolean {
-@@ -535,7 +709,12 @@ open class ExpoLiquidGlassNativeView(context: Context, appContext: AppContext) :
+@@ -535,7 +704,12 @@
 
      if (composeView.parent !== this) {
        (composeView.parent as? ViewGroup)?.removeView(composeView)
