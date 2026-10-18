@@ -47,6 +47,14 @@ on:
                     - '34'
                     - '24'
                     - '26'
+            e2e_arch:
+                description: '模拟器的 CPU 架构，装同架构的 APK：日常用 x86_64；老版本的系统镜像起不来时可换 x86'
+                required: false
+                default: 'x86_64'
+                type: choice
+                options:
+                    - x86_64
+                    - x86
 
 jobs:
     check-version:
@@ -307,7 +315,7 @@ jobs:
                     ls -1 dist | sed 's/^/- /'
                   } >> "$GITHUB_STEP_SUMMARY"
 
-    # 在 Android 模拟器上装刚打出的 x86_64 APK，跑 e2e/ 里的端到端测试（说明见 e2e/README.md）
+    # 在 Android 模拟器上装刚打出的 APK（默认 x86_64），跑 e2e/ 里的端到端测试（说明见 e2e/README.md）
     e2e:
         name: Emulator E2E
         needs: [check-version, build-beta]
@@ -346,12 +354,14 @@ jobs:
                   run-id: ${{ inputs.e2e_apk_run_id }}
                   github-token: ${{ github.token }}
 
-            - name: Pick the x86_64 APK
+            - name: Pick the APK for the emulator's CPU architecture
+              env:
+                  E2E_ARCH: ${{ inputs.e2e_arch || 'x86_64' }}
               run: |
                   shopt -s nullglob
-                  apks=(apk/*x86_64-release.apk)
+                  apks=(apk/*"$E2E_ARCH"-release.apk)
                   if [ ${#apks[@]} -ne 1 ]; then
-                    echo "::error title=E2E::Expected one x86_64 APK, found ${#apks[@]}."
+                    echo "::error title=E2E::Expected one $E2E_ARCH APK, found ${#apks[@]}."
                     ls -l apk || true
                     exit 1
                   fi
@@ -437,8 +447,9 @@ jobs:
                   E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}
               with:
                   api-level: ${{ inputs.e2e_api_level || 34 }}
-                  target: google_apis
-                  arch: x86_64
+                  # API 24 的 google_apis 镜像在现在的模拟器上起不来（Beta #164 等了一小时没开机），用 default
+                  target: ${{ inputs.e2e_api_level == '24' && 'default' || 'google_apis' }}
+                  arch: ${{ inputs.e2e_arch || 'x86_64' }}
                   profile: pixel_6
                   cores: 3
                   ram-size: 4096M
