@@ -236,6 +236,11 @@ finish() {
 
 log "设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
 log "测试音源：$PLUGIN_BASE/"
+# 老系统缺较新的根证书时插件装不上：记下测试音源服务器的证书链，好对上是哪个根证书
+plugin_host=${PLUGIN_BASE#https://}
+plugin_host=${plugin_host%%/*}
+log "测试音源服务器的证书链：$(echo | timeout 20 openssl s_client -connect "$plugin_host:443" -servername "$plugin_host" -showcerts 2>/dev/null |
+    sed -n 's/^ *[0-9][0-9]* s:/证书 /p; s/^ *i:/← 签发者 /p' | tr '\n' ' ')"
 # 只留 Wi-Fi：应用在移动网络下默认不播放，会弹“流量提醒”。模拟器的系统镜像从 API 25 起才有 Wi-Fi，
 # 更老的只能用移动数据：留着移动数据，装好应用后打开“使用移动网络播放、下载”（见第 2 步前）
 if [ "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" -ge 25 ]; then
