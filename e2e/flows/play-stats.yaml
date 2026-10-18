@@ -2,7 +2,7 @@
 appId: fun.upup.musicfree
 ---
 # 再点一首能播的歌，失败提示随之消失，不挡住设置页
-- tapOn: "E2E Tone A"
+- tapOn: "E2E Tone A, E2E Artist"
 - tapOn: "设置"
 - tapOn: "基本设置"
 - scrollUntilVisible:

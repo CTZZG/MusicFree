@@ -5,7 +5,7 @@ appId: fun.upup.musicfree
 - extendedWaitUntil:
     visible: "E2E Hang"
     timeout: 45000
-- tapOn: "E2E Tone C"
+- tapOn: "E2E Tone C, E2E Artist"
 - extendedWaitUntil:
     visible: "歌曲: E2E Tone C 歌手: E2E Artist"
     timeout: 30000

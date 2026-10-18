@@ -1,7 +1,7 @@
 # 播一首取不到播放地址的歌：要留下失败提示，点开能看到处理方式
 appId: fun.upup.musicfree
 ---
-- tapOn: "E2E Broken"
+- tapOn: "E2E Broken, E2E Artist"
 - extendedWaitUntil:
     visible: "播放未成功: E2E Broken"
     timeout: 45000
