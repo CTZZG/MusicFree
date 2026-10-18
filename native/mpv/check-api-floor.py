@@ -79,7 +79,7 @@ def needed(ndk, so):
     return re.findall(r"\(NEEDED\)\s+Shared library: \[([^\]]+)\]", out)
 
 
-def symbols(ndk, so, kind):
+def symbols(ndk, so, kind, *, keep_versions=False):
     """kind: 'defined' -> {name}; 'undefined' -> {name: weak}."""
     flag = "--defined-only" if kind == "defined" else "--undefined-only"
     out = run([ndk.tool("llvm-nm"), "--dynamic", flag, str(so)])
@@ -88,7 +88,8 @@ def symbols(ndk, so, kind):
         parts = line.split()
         if len(parts) < 2:
             continue
-        name = re.split(r"@+", parts[-1], maxsplit=1)[0]
+        name = (parts[-1].replace("@@", "@") if keep_versions else
+                re.split(r"@+", parts[-1], maxsplit=1)[0])
         result[name] = parts[-2] in ("w", "v") or result.get(name, False)
     return set(result) if kind == "defined" else result
 
@@ -142,10 +143,13 @@ def check_abi(ndk, abi, libs, api):
     if not stub_dir.is_dir():
         return [f"{abi}: the NDK has no API {api} stubs at {stub_dir}"], {}
     stubs = {p.name: p for p in stub_dir.glob("*.so") if is_elf(p)}
-    stub_symbols, stub_versions = {}, {}
+    stub_symbols, stub_versions, stub_versioned_symbols = {}, {}, {}
     bundled_symbols = set()
+    bundled_versioned_symbols = set()
     for path in libs.values():
-        bundled_symbols |= symbols(ndk, path, "defined")
+        exports = symbols(ndk, path, "defined", keep_versions=True)
+        bundled_versioned_symbols |= exports
+        bundled_symbols |= {s.split("@", 1)[0] for s in exports}
     problems, weak = [], {}
     for name, path in sorted(libs.items()):
         deps = needed(ndk, path)
@@ -158,7 +162,9 @@ def check_abi(ndk, abi, libs, api):
                 continue
             system.append(dep)
             if dep not in stub_symbols:
-                stub_symbols[dep] = symbols(ndk, stubs[dep], "defined")
+                exports = symbols(ndk, stubs[dep], "defined", keep_versions=True)
+                stub_versioned_symbols[dep] = exports
+                stub_symbols[dep] = {s.split("@", 1)[0] for s in exports}
                 stub_versions[dep] = version_definitions(ndk, stubs[dep])
         for dep, versions in version_needs(ndk, path).items():
             missing = versions - stub_versions.get(dep, set()) if dep in system else set()
@@ -166,10 +172,16 @@ def check_abi(ndk, abi, libs, api):
                 problems.append(f"{abi}/{name}: needs symbol version {version} of {dep}, "
                                 f"not defined at API {api}")
         available = set(bundled_symbols)
+        versioned_available = set(bundled_versioned_symbols)
         for dep in system:
             available |= stub_symbols[dep]
-        for symbol, is_weak in sorted(symbols(ndk, path, "undefined").items()):
-            if symbol in available:
+            versioned_available |= stub_versioned_symbols[dep]
+        imports = symbols(ndk, path, "undefined", keep_versions=True)
+        for symbol, is_weak in sorted(imports.items()):
+            # A version node existing somewhere in libc does not mean every
+            # libc symbol has that version: malloc@LIBC_N cannot bind to
+            # malloc@@LIBC. Keep each imported symbol's version attached.
+            if (symbol in versioned_available if "@" in symbol else symbol in available):
                 continue
             if is_weak:
                 weak.setdefault(symbol, []).append(name)
@@ -241,10 +253,33 @@ def self_test(ndk, api):
                                     f"got {problems or 'pass'}")
                 if weak_symbol and newer and weak_symbol not in weak:
                     failures.append(f"{abi}/{name}: weak import not reported")
+            # Link against a deliberately wrong provider so the resulting ELF
+            # requires malloc@LIBC_N. Real API 24 libc has LIBC_N (for other
+            # symbols), but malloc is exported only at LIBC. Checking the node
+            # and the unversioned symbol separately used to accept this ELF.
+            folder = Path(tmp) / abi
+            provider = folder / "provider.c"
+            provider.write_text("void *malloc(__SIZE_TYPE__ n) { return (void *)0; }\n")
+            version_map = folder / "provider.map"
+            version_map.write_text("LIBC_N { global: malloc; local: *; };\n")
+            compiler = [ndk.tool("clang"), f"--target={CLANG_TARGETS[abi]}{api}",
+                        "-shared", "-fPIC", "-fno-builtin", "-nostdlib"]
+            subprocess.run([*compiler, str(provider), "-Wl,-soname,libc.so",
+                            f"-Wl,--version-script={version_map}",
+                            "-o", str(folder / "libwrong-provider.so")], check=True)
+            consumer = folder / "consumer.c"
+            consumer.write_text("extern void *malloc(__SIZE_TYPE__);\n"
+                                "void *f(void) { return malloc(1); }\n")
+            out = folder / "libwrong-version.so"
+            subprocess.run([*compiler, str(consumer), f"-L{folder}",
+                            "-l:libwrong-provider.so", "-o", str(out)], check=True)
+            problems, _ = check_abi(ndk, abi, {out.name: out}, api)
+            if not any("malloc@LIBC_N" in p for p in problems):
+                failures.append(f"{abi}/wrong-version: accepted a symbol at the wrong version")
     if failures:
         print("Self-test failed:\n  " + "\n  ".join(failures))
         return 1
-    print(f"Self-test passed: {len(FIXTURES)} fixtures x {len(TRIPLES)} ABIs at API {api}")
+    print(f"Self-test passed: {len(FIXTURES) + 1} fixtures x {len(TRIPLES)} ABIs at API {api}")
     return 0
 
 
@@ -267,7 +302,8 @@ def main():
     if problems:
         print("Problems:\n  " + "\n  ".join(problems))
         return 1
-    print("All bundled native libraries can load at the app's minSdk.")
+    print("Checked dependencies and strong symbol/version bindings are available at the app's minSdk; "
+          "runtime behavior and guarded weak calls still need device tests.")
     return 0
 
 
