@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Base application theme. -->
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
@@ -12,7 +12,8 @@
         <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_image</item>
         <item name="postSplashScreenTheme">@style/AppTheme</item>
-        <item name="android:windowSplashScreenBrandingImage">@drawable/spashscreen_branding_image</item>
+        <!-- Android 12 起才有，更早的系统不认识这个属性，直接忽略 -->
+        <item name="android:windowSplashScreenBrandingImage" tools:targetApi="31">@drawable/spashscreen_branding_image</item>
     </style>
 
 </resources>
