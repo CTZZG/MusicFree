@@ -37,6 +37,7 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
       SplashScreenManager.registerOnActivity(this)
       super.onCreate(null);
+      keepImplicitFocusOffInputs()
       markFirstDraw()
       // 重建（转屏、换深浅色等）时系统不会交开屏页过来，不用等
       if (savedInstanceState == null) {
@@ -48,6 +49,30 @@ class MainActivity : ReactActivity() {
       homeDrawnWatcher?.stop()
       homeDrawnWatcher = null
       super.onDestroy()
+  }
+
+  /**
+   * Android 9 以前，窗口里没有控件有焦点时，系统会把输入焦点交给新出现的、触摸模式下能聚焦的控件
+   * （ViewRootImpl.focusableViewAvailable），也就是输入框：搜索标签一挂上，搜索框就自己拿到焦点，
+   * 它的 onFocus 把刚开始的搜索切回搜索历史。让内容根视图在触摸模式下可聚焦、平时兜着焦点，
+   * 系统就不再替输入框抢；输入框失焦后焦点回到根视图（RN 在这些版本上失焦时不让焦点落到别的子控件，
+   * 见 ReactEditText.clearFocusAndMaybeRefocus）。Android 9 起触摸模式下系统不再自动给焦点，不用管。
+   */
+  private fun keepImplicitFocusOffInputs() {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return
+      val content = findViewById<ViewGroup>(android.R.id.content) ?: return
+      content.isFocusableInTouchMode = true
+      content.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          // 按过实体键（含媒体键）后退出触摸模式，系统会给有焦点的根视图整屏画上默认的焦点高亮
+          content.defaultFocusHighlightEnabled = false
+      }
+      content.requestFocus()
+      content.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
+          if (newFocus == null) {
+              content.post { if (!content.hasFocus()) content.requestFocus() }
+          }
+      }
   }
 
   /**
