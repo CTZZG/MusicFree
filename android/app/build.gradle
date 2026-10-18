@@ -212,7 +212,6 @@ android {
             abortOnError = true
             checkDependencies = false
             textReport = true
-            textOutput = file("stdout")
         }
     }
 }

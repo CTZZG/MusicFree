@@ -30,6 +30,8 @@ import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import androidx.annotation.ChecksSdkIntAtLeast
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import `fun`.upup.musicfree.R
 import `fun`.upup.musicfree.network.PublicHttpsNetworkPolicy
@@ -737,6 +739,7 @@ class MpvPlaybackService : Service() {
         }
     }
 
+    @ChecksSdkIntAtLeast(api = API_LIVE_UPDATE)
     private fun shouldUseLiveUpdateNotificationStyle(): Boolean =
         MpvServiceBridge.liveUpdateLyric.enabled &&
             Build.VERSION.SDK_INT >= API_LIVE_UPDATE
@@ -750,6 +753,7 @@ class MpvPlaybackService : Service() {
                     cachedState == PlaybackStateCompat.STATE_PAUSED
                 )
 
+    @RequiresApi(API_LIVE_UPDATE)
     private fun buildLiveUpdateNotification(
         isPlaying: Boolean,
         playIcon: Int,

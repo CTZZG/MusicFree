@@ -96,7 +96,12 @@ jobs:
                     --no-daemon \
                     --stacktrace \
                     --max-workers=2 \
-                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m" || {
+                      status=$?
+                      # 失败时把 lint 查出的每一处打在日志里：附件不一定下载得到
+                      cat app/build/reports/lint-results-debug.txt 2>/dev/null || true
+                      exit $status
+                    }
 
             - name: Upload Android unit test reports
               if: always() && steps.changes.outputs.native == 'true'
