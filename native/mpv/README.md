@@ -34,6 +34,26 @@ checks do not establish physical audio output or audible continuity.
   `41f6a645068483470267271e1d09966ca3b9f413` (v0.41.0). It retains mpv's LGPL
   licensing; the additional helper is LGPL-2.1-or-later.
 
+## Minimum Android version
+
+The base AAR's manifest declares minSdk 26 and the rebuild compiles against API
+26 headers, but the app's minSdk is 24 and merges the AAR with
+`tools:overrideLibrary`, which also turns off the merger's minSdk check.
+`check-api-floor.py` replaces it in the shared quality gate: using the NDK's stub
+libraries at the app's minSdk (read from `android/build.gradle`), every system
+library a bundled `.so` links against must exist, every symbol version it needs
+must be defined, and every strong import must resolve there or in another bundled
+library. Weak imports are listed, not rejected; today that is only
+`memfd_create` (API 30) on arm64, which API 26–29 lack as well. The Java classes
+only load the libraries and read the application `Context`. A rebuild that starts
+importing anything newer fails the gate; build such code against the app's minSdk
+or use weak references with a runtime check.
+
+```sh
+python3 native/mpv/check-api-floor.py --self-test   # fixtures that must pass/fail
+python3 native/mpv/check-api-floor.py               # the bundled AAR
+```
+
 ## Rebuild
 
 Use Linux with Python 3.12+, git, a C compiler, pkg-config, gperf, Ninja, Meson

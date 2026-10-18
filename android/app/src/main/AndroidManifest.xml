@@ -2,6 +2,9 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="fun.upup.musicfree">
 
+    <!-- libmpv 的 AAR 声明 minSdk 26，但里面的原生库只用到 API 24 就有的系统库和符号，
+         Java 部分只调用加载库、取应用 Context 这类老 API。这里按应用的 minSdk 合并；合并器因此不再检查它，改由质量门里的
+         native/mpv/check-api-floor.py 按应用 minSdk 检查原生库实际需要的东西。 -->
     <uses-sdk tools:overrideLibrary="dev.jdtech.mpv" />
 
     <uses-permission

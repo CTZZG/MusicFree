@@ -244,7 +244,8 @@ dependencies {
         implementation files("libs/musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar")
     }
 
-    // libmpv 播放内核（实验性），要求 minSdk≥26
+    // libmpv 播放内核。AAR 声明 minSdk 26，按应用的 minSdk 合并（见 AndroidManifest 的
+    // overrideLibrary）；原生库在应用 minSdk 上能否加载由 native/mpv/check-api-floor.py 检查
     implementation files("libs/libmpv-release.aar")
     // MpvPlaybackService 所需的 MediaSession / 通知栏支持
     implementation 'androidx.media:media:1.7.0'
