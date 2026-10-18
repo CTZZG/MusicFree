@@ -357,6 +357,9 @@ if flow "点播一首 20 秒的短歌" short-song.yaml; then
         expect_playing "后台播完自动接下一首（回到 A）" "E2E Tone A"
     else
         fail "短歌开始播放" "$(session)"
+        # 点完流程就返回，Maestro 不会留失败截图：自己截一张、打出界面上的文字
+        shot failed-short-song
+        print_screen_text
     fi
 fi
 
