@@ -11,6 +11,80 @@ HERE = Path(__file__).resolve().parents[1]
 WORKFLOW = HERE.parent / '.github/workflows/build-beta.yml'
 
 
+def check_cold_capture(source=HERE / 'perf.sh'):
+    """Exercise the real sampling loop; missing markers must retain their evidence."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        bin_dir = root / 'bin'
+        bin_dir.mkdir()
+        adb = bin_dir / 'adb'
+        adb.write_text('''#!/usr/bin/env bash
+if [ "${1:-}" = logcat ] && [ "${4:-}" = epoch ]; then cat "$TEST_MARKERS"; exit; fi
+if [ "${1:-}" = logcat ] && [ "${2:-}" = -c ]; then echo cleared; exit; fi
+if [ "${1:-}" = shell ] && [ "${3:-}" = force-stop ]; then exit; fi
+if [ "${1:-}" = shell ] && [ "${3:-}" = start ]; then
+    printf 'Status: ok\\nLaunchState: COLD\\nTotalTime: 12\\n'
+    exit
+fi
+echo "captured diagnostic: $*"
+if [ "$TEST_MODE" = diagnostics-fail ]; then exit 17; fi
+''')
+        adb.chmod(0o755)
+        events = '''1000.000 1 1 I ActivityTaskManager: START u0 cmp=fun.upup.musicfree/.MainActivity
+1000.001 42 42 I MusicFreePerf: process-start at=1000001
+1000.005 42 42 I MusicFreePerf: first-draw at=1000005
+1000.020 42 42 I MusicFreePerf: first-screen at=1000020
+1000.030 42 42 I MusicFreePerf: splash-hidden at=1000030
+1000.040 1 1 D SplashScreenView: remove starting view
+1000.060 42 42 I MusicFreePerf: home-drawn at=1000060
+'''
+        command = '''HERE=$1; OUT=$2; PKG=fun.upup.musicfree; ACTIVITY=$PKG/.MainActivity
+source "$3"
+PERF_RUNS=0
+sleep() { :; }
+log() { :; }
+wait_until() { printf '%s\\n' "$*" >> "$OUT/waits.txt"; shift; "$@"; }
+: > "$PERF_JSONL"
+perf_cold_start
+'''
+        for mode in ('normal', 'missing-home', 'missing-splash', 'diagnostics-fail'):
+            out = root / mode
+            out.mkdir()
+            text = events
+            if mode == 'missing-home': text = '\n'.join(x for x in text.splitlines() if 'home-drawn' not in x)
+            if mode in ('missing-splash', 'diagnostics-fail'): text = '\n'.join(x for x in text.splitlines() if 'splash-hidden' not in x)
+            markers = out / 'fixture.log'
+            markers.write_text(text)
+            env = {**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
+                   'TEST_MARKERS': str(markers), 'TEST_MODE': mode}
+            subprocess.run(['bash', '-u', '-c', command, 'capture', str(HERE), str(out), str(source)],
+                           env=env, check=True, capture_output=True)
+            saved = out / 'perf-cold/0'
+            assert (saved / 'start-activity.txt').is_file(), 'per-attempt launch evidence is missing'
+            assert (saved / 'start-exit-code.txt').read_text().strip() == '0'
+            assert (saved / 'clear-log.txt').read_text().strip() == 'cleared'
+            assert (saved / 'markers.txt').read_text().strip() == text.strip()
+            rows = [json.loads(line) for line in (out / 'perf.jsonl').read_text().splitlines()]
+            if mode in ('normal', 'missing-home'):
+                assert len(rows) == 1 and rows[0]['run'] == 0 and rows[0]['warmup'] is True
+                assert rows[0]['cold_first_frame_ms'] == 12
+                assert ('cold_home_drawn_ms' in rows[0]) is (mode == 'normal')
+                assert (out / 'waits.txt').read_text().splitlines() == [
+                    '60 perf_has first-screen', '60 perf_has splash-hidden', '10 perf_has first-draw',
+                    '10 perf_splash_removed', '10 perf_has home-drawn']
+            else:
+                assert rows == [], 'missing markers were replaced with a fabricated sample'
+            if mode == 'normal':
+                assert not (saved / 'failure.txt').exists()
+            else:
+                assert (saved / 'failure.txt').is_file(), 'failed-attempt reason is missing'
+                assert (saved / 'failure.txt').read_text().strip()
+                for name in ('failure-logcat.txt', 'pid.txt', 'activities.txt', 'windows.txt', 'failure.png'):
+                    assert (saved / name).is_file(), (mode, name)
+                    assert (saved / name).read_bytes(), (mode, name)
+            print('ok cold sample capture', mode)
+
+
 def workflow_command(name):
     text = WORKFLOW.read_text().split('            - name: ' + name + '\n', 1)[1]
     text = text.split('\n            - name:', 1)[0]
@@ -59,6 +133,8 @@ python3 - "$out" <<'INNER'
 import json, os, pathlib, sys
 p=pathlib.Path(sys.argv[1]); n=10 if os.environ['TEST_MODE']=='missing-sample' and p.name=='candidate' else 11
 rows=[{'phase':'cold','run':i,'warmup':i==0,'cold_home_drawn_ms':1000+i} for i in range(n)]
+if os.environ['TEST_MODE']=='missing-home-marker' and p.name=='baseline-before': del rows[9]['cold_home_drawn_ms']
+if os.environ['TEST_MODE']=='missing-warmup' and p.name=='baseline-after': rows=rows[1:]
 (p/'perf.jsonl').write_text(''.join(json.dumps(row)+'\\n' for row in rows))
 (p/'results.tsv').write_text('PASS\\tcold sample collected\\tfixture\\n')
 INNER
@@ -72,7 +148,8 @@ if [ "$TEST_MODE" = preparation-fails ]; then exit 1; fi
 if [ "${2:-}" = pm ]; then printf 'package:fun.upup.musicfree\\n'; fi
 ''')
     adb.chmod(0o755)
-    for mode in ('normal', 'candidate-fails', 'missing-sample', 'preparation-fails', 'same-apk'):
+    for mode in ('normal', 'candidate-fails', 'missing-sample', 'missing-home-marker',
+                 'missing-warmup', 'preparation-fails', 'same-apk'):
         out = root / mode
         order = root / (mode + '-order')
         local_env = {**env, **exported, 'PATH': str(bin_dir) + os.pathsep + env['PATH'],
@@ -89,3 +166,5 @@ if [ "${2:-}" = pm ]; then printf 'package:fun.upup.musicfree\\n'; fi
             assert not json.loads((out / 'compare-summary.json').read_text())['passed']
             assert 'FAIL' in (out / 'results.tsv').read_text()
         print('ok comparison', mode)
+
+check_cold_capture()

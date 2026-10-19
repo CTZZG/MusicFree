@@ -60,4 +60,23 @@ TrackPlayer 继续拥有点歌事务、队列提交、native load/seek、暂停�
 
 本地 SDK36 已实际编译两阶段 Release。软件 API34 虚拟机无 KVM，不能代表手机或硬件加速模拟器的速度。并行编译时的安装没有完成，不算应用测试通过；后续串行测量需保留失败和 A/B/A 完整数据。两份压缩实验 APK 的 1228 个运行内容条目哈希相同，仅 DEX 压缩不同，均为公开调试签名，不作为交付 APK。
 
-最终 R8 Release、启动/安装对照、整合质量门、设备回归待真实完成后填写。Debug 仪器通过不能单独证明 R8 Release 的反射、JNI、MMKV 迁移或 GIF 正常。未连接真机，不声称物理音频、真机耗电或性能提升。
+## 最终产品 `6a26eff3` 的实际验收
+
+- 本地最终组合 Release 为 ARM64 34,637,161 bytes（未签名），Release XML 28 套 / 149 项，失败、错误、跳过均 0；实际 ReleaseManifest 审计通过。
+- 软件 API34 上将该真实 R8 Release 用公共调试证书重签，未开启 debuggable。独立测试 APK 从目标包加载真实类：ID3 五类反射构造、FLAC 私有字段、CENC 空句柄 JNI 错误路径、mpv 初始化/读版本/释放、GIF 红蓝两帧 JNI 像素解码，5 项均过。`ao=null` 不证明物理音频，也没有验证真实 CENC 解密或完整 RN GIF 控件。
+- PR CI `39185518929` 实际 Debug Gradle 测试与下载 XML 28 套 / 149 项全过。Android16 `39185518919` 新编 app/test APK，89 项清单全部 code0（含辅助类测试）；native25、慢加载73、正常 JS70、按钮 UI20/两截图、冻结5完整。冻结确为 RAW_STALLED，7 暂停窗不动；最大转场间隔78ms，原门限未改。
+- [Beta182](https://github.com/CTZZG/MusicFree/actions/runs/39197303335) 真实执行 Release 单测及 R8、打包和 APK 压缩审计。五包全部通过压缩检查，ARM64 为 **34,653,230 bytes**；签名 configured/validation passed。大包标准 gh API 下载返回 exit1/0bytes/Forbidden，未独立核对 Beta APK 哈希和证书，配置检查不是 apksigner。
+- Beta182 的 Android14 `all`：**109 个唯一项 109PASS/0FAIL**，包含锁屏、Doze、省电、存储迁移与备用来源下载。四份初装/升级插件前提记录的 SHA256 与本提交源码一致；下载 PCM 完整解码为5,760,000 bytes，SHA256 `f7534ef5a05f837b2e40050b6688b3012a32f088fab462951241390c5c11cbde`，与来源B夹具相同，原歌曲标签正确。任务身份/来源是运行时 KV 检查，未另存原始任务快照；128k 是插件标签，音频约16kbps。`all` 不包括 library/perf。
+- 另观察到 RNDeviceInfo 的可选 InstallReferrer.newBuilder 被 R8 移除并被 SDK 内部捕获；src 无此 API 调用。没有为未使用的可选 SDK API 添加整包 keep，不声称所有外部库 API 均保留可调用性。
+
+## 启动对照失败与逐次留证
+
+[Beta183](https://github.com/CTZZG/MusicFree/actions/runs/39204390411) 复用182与旧 Beta177（源码332c12ca），没有打包。旧包已是API34下限，与3559的生产差异只有版本、无用import和空行。该对照不等于同payload的压缩隔离实验。
+
+对照实际 **51PASS/2FAIL**：旧包前组第9次缺 home-drawn，只有9个有效主页首帧；旧包后组第0次预热缺 first-screen/splash-hidden，只有10行、没有预热行。新包完整预热1+有效10次，中位数2712.5ms、P95 3336ms。外层完整性检查正确拒绝两组旧包，不能用新包一组或旧包残缺数据宣称提速/回退。旧包缺标记的真实原因尚未确认，不能直接归为基础设施故障或产品故障。
+
+旧脚本在下一次启动前清日志，没有逐次保留失败启动命令和现场。本次后续提交只改测试留证及本文档，产品仍是6a26eff3：每次保留启动输出/退出码、清日志输出和**同一份用于解析的标记快照**；缺标记/解析失败时，在下次 force-stop 前有界保存全日志、PID、活动/窗口和截图。诊断不替代任何指标，不补采、不重试失败样本、不增加等待、不修改统计规则；原60s/10s等待和预热1+10协议保留。
+
+本地12项比较/留证自测通过，包含实际出现的缺home字段、缺预热行，以及诊断命令自身失败；旧脚本和禁用失败留证的反证均被拒绝。带逐次留证的复验只复用现有APK，不重新大打包；即使复验通过，也不将其写成已修复旧包启动问题。最新运行结果以PR48描述为准，保留183原失败。
+
+未连接真机，不声称物理音频、真机耗电或性能提升。Debug 仪器通过不能单独证明 R8 Release 的全部运行契约。

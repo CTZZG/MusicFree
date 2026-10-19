@@ -35,6 +35,19 @@ perf_record() {
     log "性能 $1 #$2：$3"
 }
 
+# Preserve a failed attempt before the next force-stop/logcat clear destroys it.
+# Diagnostics run only after measurement; none of these values replace a sample.
+perf_cold_failure() {
+    local directory=$1 reason=$2
+    printf '%s\n' "$reason" >> "$directory/failure.txt"
+    timeout 15 adb logcat -d -v threadtime -b main -b system -b crash -t 3000 \
+        > "$directory/failure-logcat.txt" 2>&1 || true
+    timeout 15 adb shell pidof "$PKG" > "$directory/pid.txt" 2>&1 || true
+    timeout 15 adb shell dumpsys activity activities > "$directory/activities.txt" 2>&1 || true
+    timeout 15 adb shell dumpsys window windows > "$directory/windows.txt" 2>&1 || true
+    timeout 15 adb exec-out screencap -p > "$directory/failure.png" 2> "$directory/screencap-error.txt" || true
+}
+
 # perf_plugin_state <时刻>：记下插件文件、插件缓存和元数据的键、错误日志的最后几行（查搜索测不出的原因）
 perf_plugin_state() {
     log "插件状态（$1）：插件文件 $(adb shell "ls -1 '$EXT_FILES/plugins' 2>/dev/null" | tr -d '\r' | tr '\n' ' ')"
@@ -45,31 +58,43 @@ perf_plugin_state() {
 }
 
 perf_cold_start() {
-    local i output frame result
+    local i output frame result directory status snapshot missing
     for i in $(seq 0 "$PERF_RUNS"); do
+        directory="$OUT/perf-cold/$i"
+        mkdir -p "$directory"
         adb shell am force-stop "$PKG"
         sleep 3
-        adb logcat -c
-        output=$(adb shell am start -W -n "$ACTIVITY" | tr -d '\r')
+        adb logcat -c > "$directory/clear-log.txt" 2>&1
+        status=0
+        adb shell am start -W -n "$ACTIVITY" > "$directory/start-activity.txt" 2>&1 || status=$?
+        printf '%s\n' "$status" > "$directory/start-exit-code.txt"
+        output=$(tr -d '\r' < "$directory/start-activity.txt")
         frame=$(printf '%s\n' "$output" | sed -n 's/^TotalTime: *//p')
         if ! wait_until 60 perf_has first-screen || ! wait_until 60 perf_has splash-hidden; then
             log "冷启动 #$i：60 秒内没有 first-screen 或 splash-hidden"
+            perf_logcat > "$directory/markers.txt"
+            perf_cold_failure "$directory" 'missing first-screen or splash-hidden'
             continue
         fi
+        missing=
         # 应用窗口第一次出帧（first-draw）；旧版 APK 没有这个时间点
-        wait_until 10 perf_has first-draw || log "冷启动 #$i：没有 first-draw（旧版 APK？）"
+        wait_until 10 perf_has first-draw || { log "冷启动 #$i：没有 first-draw（旧版 APK？）"; missing+=' first-draw'; }
         # 开屏页移除才是用户看到主页；没有这行就不报“主页出现在屏幕上”
-        wait_until 10 perf_splash_removed || log "冷启动 #$i：10 秒内系统日志里没有开屏页移除"
+        wait_until 10 perf_splash_removed || { log "冷启动 #$i：10 秒内系统日志里没有开屏页移除"; missing+=' splash-removed'; }
         # 开屏页拿掉后的第一帧交给系统合成才是用户看到主页；旧版 APK 没有这个时间点
-        wait_until 10 perf_has home-drawn || log "冷启动 #$i：没有 home-drawn（旧版 APK？）"
-        if result=$(perf_logcat | python3 -I "$PERF_STATS" cold "$PKG"); then
+        wait_until 10 perf_has home-drawn || { log "冷启动 #$i：没有 home-drawn（旧版 APK？）"; missing+=' home-drawn'; }
+        snapshot=$(perf_logcat)
+        printf '%s\n' "$snapshot" > "$directory/markers.txt"
+        if result=$(printf '%s\n' "$snapshot" | python3 -I "$PERF_STATS" cold "$PKG"); then
             if [ -n "$frame" ]; then
                 result=$(python3 -I -c 'import json,sys; r=json.loads(sys.argv[1]); r["cold_first_frame_ms"]=int(sys.argv[2]); print(json.dumps(r))' "$result" "$frame")
             fi
             perf_record cold "$i" "$result"
         else
             log "冷启动 #$i：$result"
+            missing+=' parse-failed'
         fi
+        if [ -n "$missing" ]; then perf_cold_failure "$directory" "$missing"; fi
     done
 }
 
