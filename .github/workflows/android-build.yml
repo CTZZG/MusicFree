@@ -270,6 +270,16 @@ jobs:
                   (cd dist && sha256sum * > SHA256SUMS.txt)
                   ls -lh dist
 
+            - name: Verify APK packaging
+              run: python3 -I generator/audit-apk-packaging.py dist/*.apk --output android/app/build/reports/apk-packaging.json
+
+            - name: Upload APK packaging report
+              uses: actions/upload-artifact@v7
+              with:
+                  name: apk-packaging-release-${{ github.run_id }}
+                  path: android/app/build/reports/apk-packaging.json
+                  if-no-files-found: error
+
             - name: Verify signed release APKs
               if: github.event_name != 'pull_request'
               run: |

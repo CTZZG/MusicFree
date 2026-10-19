@@ -168,6 +168,11 @@ android {
     }
 
     packagingOptions {
+        dex {
+            // AGP stops compressing DEX by default when minSdk >= 28. Keep the
+            // Android 14 floor without silently adding ~23 MB to every APK.
+            useLegacyPackaging = true
+        }
         jniLibs {
             useLegacyPackaging = true
         }

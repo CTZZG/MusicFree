@@ -274,6 +274,21 @@ jobs:
                   (cd dist && sha256sum * > SHA256SUMS.txt)
                   ls -lh dist
 
+            - name: Verify APK packaging
+              run: |
+                  if [ ! -f generator/audit-apk-packaging.py ] && [ "$BUILD_SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                    echo "APK packaging audit is absent in the requested older source commit; no audit result is claimed."
+                  else
+                    python3 -I generator/audit-apk-packaging.py dist/*.apk --output android/app/build/reports/apk-packaging.json
+                  fi
+
+            - name: Upload APK packaging report
+              uses: actions/upload-artifact@v7
+              with:
+                  name: apk-packaging-beta-${{ github.run_id }}
+                  path: android/app/build/reports/apk-packaging.json
+                  if-no-files-found: ignore
+
             - name: Upload Beta APKs
               uses: actions/upload-artifact@v7
               with:
