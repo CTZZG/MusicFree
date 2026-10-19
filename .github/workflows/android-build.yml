@@ -281,7 +281,12 @@ jobs:
                   if-no-files-found: error
 
             - name: Verify Release tagging reflection and legacy formats
-              run: python3 -I generator/check-tagging-release.py dist/*.apk --output android/app/build/reports/tagging-release.json
+              run: |
+                  if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+                    sudo apt-get update
+                    sudo apt-get install -y ffmpeg
+                  fi
+                  python3 -I generator/check-tagging-release.py dist/*.apk --output android/app/build/reports/tagging-release.json
 
             - name: Upload Release tagging report
               if: always()

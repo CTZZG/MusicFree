@@ -20,5 +20,12 @@ to write the real song title/artist/album in the actual Release download flow.
 `cover.png` is a generated 1×1 test image. The host test writes and rereads title,
 artist, album, lyrics and exact cover bytes with the project's own R8.
 
+The host driver calls the same `MediaTagFieldWriter` as the Android module.
+The guard also reads each output with ffprobe and compares fully decoded PCM
+with its input. Library-only readback is insufficient: jaudiotagger can report
+new canonical ASF fields while stale `title`/`Author` aliases remain visible to
+other readers. Keep the WMA fixture's original aliases and Before values; they
+are the regression input, not a fixture error to normalize away.
+
 This host smoke is separate from the actual APK DEX constructor audit and the
 Android Release download checks. It does not simulate Android UI or speakers.

@@ -133,6 +133,24 @@ def inspect(apk, expected):
     return {'apk': apk.name, 'definedClasses': len(classes), 'constructorsChecked': checked, 'errors': errors}
 
 
+def independent_roundtrip(original, written):
+    # A library reading its own output can miss stale duplicate ASF fields.
+    # Require an independent reader and decode every audio packet as well.
+    probe = json.loads(run(['ffprobe', '-v', 'error', '-show_entries',
+                            'format_tags=title,artist,album', '-of', 'json', written]))
+    tags = {key.lower(): value for key, value in probe.get('format', {}).get('tags', {}).items()}
+    expected = {'title': 'After Title', 'artist': 'After Artist', 'album': 'After Album'}
+    if any(tags.get(key) != value for key, value in expected.items()):
+        raise ValueError(f'Independent tag read failed for {written.name}: {tags}')
+    command = ['ffmpeg', '-v', 'error', '-xerror', '-i']
+    options = ['-map', '0:a:0', '-f', 'hash', '-hash', 'sha256', '-']
+    original_pcm = run([*command, original, *options]).strip()
+    written_pcm = run([*command, written, *options]).strip()
+    if not original_pcm.startswith('SHA256=') or original_pcm != written_pcm:
+        raise ValueError(f'Tagging changed decoded audio in {written.name}')
+    return {'file': written.name, 'tags': tags, 'pcm': written_pcm}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('apks', nargs='+', type=Path)
@@ -164,7 +182,9 @@ def main():
         with tempfile.TemporaryDirectory(prefix='musicfree-tagging-') as tmp:
             tmp = Path(tmp)
             (tmp / 'classes').mkdir()
-            run([java / 'javac', '--release', '17', '-cp', jar, '-d', tmp / 'classes', ROOT / 'tests/native/tagging/TaggingRoundTrip.java'])
+            run([java / 'javac', '--release', '17', '-cp', jar, '-d', tmp / 'classes',
+                 ROOT / 'tests/native/tagging/TaggingRoundTrip.java',
+                 ROOT / 'android/app/src/main/java/fun/upup/musicfree/mp3Util/MediaTagFieldWriter.java'])
             run([java / 'jar', 'cf', tmp / 'driver.jar', '-C', tmp / 'classes', '.'])
             (tmp / 'driver.pro').write_text('-keep class TaggingRoundTrip { public static void main(java.lang.String[]); }\n')
             run([java / 'java', '-Xmx1024m', '-cp', builder, 'com.android.tools.r8.R8', '--classfile', '--release',
@@ -180,6 +200,7 @@ def main():
             if len([line for line in output.splitlines() if line.startswith('PASS ')]) != 3:
                 raise ValueError('Incomplete legacy-tag smoke results')
             report['hostSmoke'] = {'r8': r8version, 'passedFiles': [p.name for p in fixtures], 'output': output.strip(),
+                                   'independentFiles': [independent_roundtrip(f, tmp / f.name) for f in fixtures],
                                    'scope': 'actual project R8 classfile smoke, not Android execution'}
     report['passed'] = all(not row['errors'] for row in report['apks'])
     args.output.parent.mkdir(parents=True, exist_ok=True)

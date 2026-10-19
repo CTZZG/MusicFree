@@ -123,3 +123,17 @@ SDK36已真实编译隔离后的x86_64 screens C++源码，编译命令明确指
 - 另删除logTransport中退役nitro-player环境变量分支，trace仍由显式persist控制。没有增加产品测试入口。
 
 后续需真实新Beta全量及同一R8包的library套件。187不重跑以声称新规则带来性能收益；其提交范围与本轮新候选分开标注。新运行的实际结果继续记录在PR描述，保留此前所有失败和APK独立下载/真机限制。
+
+## Beta188：WMA 大小写别名与独立读取
+
+`ec626504` 的 [Beta188](https://github.com/CTZZG/MusicFree/actions/runs/39253626717) 实际成功执行 Release 单测、R8、打包和新构造审计：五 APK 均保留66个datatype公开构造/10个ASF无参构造，项目R8的三个host文件库内读写也过。但Android14 `all`为113个唯一项、112PASS/1FAIL，不能写成全量通过。唯一失败正是新WMA独立标签断言；锁屏/Doze/saver/存储故障/升级迁移等其余流程都执行完毕。CI175实际Debug单测XML28套149项全0；API93工作流也成功，但这些均属于旧候选，不替代下一候选的验收。
+
+下载附件独立全解码与源WMA完全一致，PCM176,128bytes / SHA256 `9acac63f1a2e4bccba3126e444792ba5ee9e1cdb817f0b62df3cf7715c6bedba`；原A身份/实际B来源的v2.3备用MP3亦完整解码相同，PCM5,760,000bytes / SHA256仍f7534ef5…c11cbde。问题不是下载字节损坏。ASF文件的Content Description中`TITLE`/`AUTHOR`已经是E2E新值，Extended Content Description却保留了`title`/`Author`的Before旧值；ffprobe优先读后者，因此标题/歌手错而专辑已更新。
+
+在原始、未R8的jaudiotagger2.2.5和同一fixture上重现：库自读返回After新值，ffprobe仍返回Before旧值。原构造规则修复有效；这是新用例暴露的既有跨读取器一致性问题。不能改成信任库自读、删除断言或把夹具旧别名去掉来变绿。
+
+`MediaTagFieldWriter`由真实Android模块和host driver共用。只在ASF写入**本次明确提供的字段**时，收集其标准ID的大小写别名，写入标准字段后删除这些别名；不清空其他字段、不改变未提供字段、不修改非ASF路径。回归测试覆盖标题、歌手多个别名、专辑单独更新时其他字段保全及普通MP3行为。真实文件反证保留旧别名后仍能通过库自读，但被ffprobe拒绝；修复后v2.3/v2.4/WMA的独立标签与全PCM都过。
+
+Release guard现在同时要求ffprobe读取三格式真实新标签和ffmpeg `-xerror`完整解码PCM相等。构建机缺工具时明确安装ffmpeg，安装/读取/解码失败均阻断审计；没有降级为跳过。实际SDK Release/JVM与新设备、Beta及同包library的最终结果记在PR描述，保留188原失败，不用旧187性能结果声称新头提速。
+
+本地最终SDK36 Release在5m36s完成，app Kotlin/Java编译、R8、`testReleaseUnitTest`均实际执行；下载XML29套153项failure/error/skipped均0，其中新增4项全部通过。相同真实JUnit字节码加载“保留旧别名”的host反证时4项中2失败，修复类4项全过。新实际x86_64未签名APK36,262,298bytes（比ec626同变体多784bytes），DEX15,315类，66/10构造契约全过；同项目R8的三格式ffprobe/完整PCM也全过。screens so与已核对的隔离修复库SHA256相同，本轮未改变原生播放输入。完整verify1394Jest/40generator/1257layout、ESLint0/215及7份patch回放通过。这些本地结果不冒充新Android设备、Beta签名或物理出声证明。
