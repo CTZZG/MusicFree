@@ -80,8 +80,6 @@ def enableProguardInReleaseBuilds = false
  * this variant is about 6MiB larger per architecture than default.
  */
 def jscFlavor = 'org.webkit:android-jsc:+'
-def media3Version = "1.9.0"
-def enableMusicFreeNitroFfmpeg = findProperty("musicfreeEnableNitroFfmpeg") != "false"
 
 // !! Add lines
 def keystoreProperties = new Properties()
@@ -244,16 +242,12 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'com.squareup.okhttp3:mockwebserver:4.10.0'
-    if (enableMusicFreeNitroFfmpeg) {
-        implementation files("libs/musicfree-media3-ffmpeg-decoder-${media3Version}+1.aar")
-    }
 
     // libmpv 播放内核。AAR 的 minSdk 26 低于应用的 34，使用正常 manifest 合并检查。
     implementation files("libs/libmpv-release.aar")
     // MpvPlaybackService 所需的 MediaSession / 通知栏支持
     implementation 'androidx.media:media:1.7.0'
 
-    logger.lifecycle("[MusicFree] Nitro Media3 FFmpeg is the only packaged audio extension path.")
 }
 
 def libmpvAarFile = file("libs/libmpv-release.aar")

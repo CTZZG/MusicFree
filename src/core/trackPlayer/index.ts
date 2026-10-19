@@ -377,9 +377,9 @@ class TrackPlayer
     private playbackIntent = new PlaybackIntent();
     private queueUndoSequence = 0;
     private queueUndoRecord: IQueueUndoRecord | null = null;
-    // 底层播放器桥接由配置选择，默认 Nitro Player，可选 MPV。
+    // 仅使用 mpv 播放桥接；队列同步与请求去重仍由本层管理。
     private backend!: PlayerAdapter<any>;
-    private nitroPendingSourceRequests = new Set<string>();
+    private pendingQueueSourceRequests = new Set<string>();
     private sourceRecoveryInFlight = new Set<string>();
     private sourceRecoveryAttemptedAt = new Map<string, number>();
     private isForceExiting = false;
@@ -661,7 +661,7 @@ class TrackPlayer
                 if (this.shouldIgnoreMpvTrackChangeDuringManualSkip(evt)) {
                     return;
                 }
-                const syncedMusic = this.syncNitroCurrentMusic(
+                const syncedMusic = this.syncAdapterCurrentMusic(
                     evt.track,
                     evt.reason,
                     evt.index,
@@ -709,7 +709,7 @@ class TrackPlayer
                 if (this.isForceExiting) {
                     return;
                 }
-                await this.resolveNitroQueuedTracks(evt?.tracks ?? []);
+                await this.resolveAdapterQueuedTracks(evt?.tracks ?? []);
             });
 
             this.addBackendListener("playbackError", async e => {
@@ -1003,7 +1003,7 @@ class TrackPlayer
         this.add(musicItems, insertIndex);
 
         if (!shouldAutoPlay && newItems.length > 0) {
-            this.syncNitroQueueInsert(newItems, insertIndex).catch(error => {
+            this.syncAdapterQueueInsert(newItems, insertIndex).catch(error => {
                 errorLog("同步下一首队列失败", error?.message ?? error);
             });
         }
@@ -1265,7 +1265,7 @@ class TrackPlayer
         } else if (shouldPlayCurrent === false) {
             completion = this.backend.reset();
         } else {
-            completion = this.syncNitroQueueRemove(musicItem).catch(error => {
+            completion = this.syncAdapterQueueRemove(musicItem).catch(error => {
                 errorLog("同步移除队列失败", error?.message ?? error);
             });
         }
@@ -2492,7 +2492,7 @@ class TrackPlayer
                     });
                 }
                 if (!mpvManualTransition) {
-                    await this.resolveNitroQueuedTracks(nextTracks).catch(
+                    await this.resolveAdapterQueuedTracks(nextTracks).catch(
                         error => {
                             errorLog(
                                 "后端下一首音源预解析失败",
@@ -3601,7 +3601,7 @@ class TrackPlayer
         const backendCapabilities = this.getBackendCapabilities();
         const preparedNextMusic = this.resolvePreparedNextMusic();
         const preparedNextTrack = preparedNextMusic
-            ? this.createNitroQueuedTrack(preparedNextMusic)
+            ? this.createAdapterQueuedTrack(preparedNextMusic)
             : null;
         const activeTrackSummary = this.getDiagnosticTrackSummary(
             activeTrack as Partial<
@@ -3941,7 +3941,7 @@ class TrackPlayer
         };
     }
 
-    private async ensureNitroAutoPlay(targetKey: string) {
+    private async ensureAdapterAutoPlay(targetKey: string) {
         const retryDelays = [180, 520, 1100];
         for (let retryDelay of retryDelays) {
             await delay(retryDelay);
@@ -4060,13 +4060,13 @@ class TrackPlayer
         const shouldAutoPlay = autoPlay && this.playbackIntent.mayAutoPlay();
         let initialProgress = this.normalizeProgress(seekTo) ?? 0;
         clonedTrack.userAgent = clonedTrack.userAgent || getAppUserAgent();
-        const nitroTargetKey = getMediaUniqueKey(
+        const adapterTargetKey = getMediaUniqueKey(
             clonedTrack as unknown as IMusic.IMusicItem,
         );
-        const nitroQueue = this.getNitroQueue(
+        const adapterQueue = this.getAdapterQueue(
             clonedTrack as unknown as IMusic.IMusicItem,
         );
-        const loadResult = await this.backend.loadQueue(nitroQueue.tracks, nitroQueue.startIndex, {
+        const loadResult = await this.backend.loadQueue(adapterQueue.tracks, adapterQueue.startIndex, {
             autoPlay: shouldAutoPlay,
             ...(preservePosition ? { preservePositionFallback: initialProgress } : {}),
         });
@@ -4076,12 +4076,12 @@ class TrackPlayer
             initialProgress = loadResult.restoredPosition;
         }
         await this.syncBackendRepeatMode();
-        const startIndex = nitroQueue.startIndex;
-        const lookaheadTracks = nitroQueue.tracks.slice(
+        const startIndex = adapterQueue.startIndex;
+        const lookaheadTracks = adapterQueue.tracks.slice(
             startIndex + 1,
             startIndex + 6,
         );
-        this.resolveNitroQueuedTracks(lookaheadTracks).catch(error => {
+        this.resolveAdapterQueuedTracks(lookaheadTracks).catch(error => {
             errorLog("预解析下一首失败", error?.message ?? error);
         });
         this.syncPreparedNextTrack("track-source");
@@ -4105,8 +4105,8 @@ class TrackPlayer
         // 焦点（或用户又点了播放），照样接着播
         if (autoPlay && this.playbackIntent.mayAutoPlay()) {
             await this.backend.play();
-            if (nitroTargetKey) {
-                this.ensureNitroAutoPlay(nitroTargetKey).catch(error => {
+            if (adapterTargetKey) {
+                this.ensureAdapterAutoPlay(adapterTargetKey).catch(error => {
                     errorLog("自动播放补偿失败", error?.message ?? error);
                 });
             }
@@ -4151,7 +4151,7 @@ class TrackPlayer
         const serial = ++this.preparedNextSyncSerial;
         const nextMusic = this.resolvePreparedNextMusic();
         const nextTrack = nextMusic
-            ? this.createNitroQueuedTrack(nextMusic)
+            ? this.createAdapterQueuedTrack(nextMusic)
             : null;
         // 空 URL 会让 adapter 下发 prepareNext(null)，而原生的 prepareNext 在判空
         // 之前就已经 clearPreparedTrack(removeFromPlaylist=true)，且判空分支不打
@@ -4197,7 +4197,7 @@ class TrackPlayer
             TrackPlayer.mpvSourceLookaheadSize,
         );
         const nextTracks = nextMusicItems.map(item =>
-            this.createNitroQueuedTrack(item),
+            this.createAdapterQueuedTrack(item),
         );
 
         if (nextMusicItems.length && !nextTracks[0]?.url) {
@@ -4250,7 +4250,7 @@ class TrackPlayer
 
         this.currentIndex = this.getMusicIndexInPlayList(this.currentMusic);
         // 把最新队列顺序同步给后端：mpv 等「JS 维护队列」的后端据此在洗牌/增删/重排后
-        // 重新对齐内部队列与当前下标，避免下一首跳错；nitro 未实现该方法，无副作用。
+        // 重新对齐适配器队列与当前下标，避免下一首跳错。
         const activeKey = this.currentMusic
             ? getMediaUniqueKey(this.currentMusic)
             : null;
@@ -4356,7 +4356,7 @@ class TrackPlayer
                     );
                 }
                 // 原生已经自己进了下一首，但「再下一首」的预载必须在这里无条件补。
-                // 以前只靠 syncNitroCurrentMusic 顺带补（它末尾会调
+                // 以前只靠 syncAdapterCurrentMusic 顺带补（它末尾会调
                 // syncPreparedNextTrack("current-music")）：如果 trackChanged 先到
                 // 并更新了 currentMusic，上面的 sync 就会在 isSameMediaItem 处直接
                 // early-return，两条路都不补，原生手里就没有下一首了。
@@ -4687,18 +4687,18 @@ class TrackPlayer
         );
     }
 
-    private createNitroQueuedTrack(musicItem: IMusic.IMusicItem) {
+    private createAdapterQueuedTrack(musicItem: IMusic.IMusicItem) {
         return this.patchMediaArtwork({
             ...musicItem,
             // Remote sources enter the native queue only after createPlayableSource
-            // has completed URL and DNS validation in resolveNitroQueuedTracks.
+            // has completed URL and DNS validation in resolveAdapterQueuedTracks.
             url: getSafeUnresolvedQueueUrl(musicItem.url),
             userAgent: getAppUserAgent(),
             musicItem,
         } as unknown as MusicFreePlayerTrack) as MusicFreePlayerTrack;
     }
 
-    private async syncNitroQueueInsert(
+    private async syncAdapterQueueInsert(
         musicItems: IMusic.IMusicItem[],
         index?: number,
     ) {
@@ -4706,21 +4706,21 @@ class TrackPlayer
             return;
         }
         await this.backend.addQueueTracks(
-            musicItems.map(item => this.createNitroQueuedTrack(item)),
+            musicItems.map(item => this.createAdapterQueuedTrack(item)),
             index,
         );
     }
 
-    private async syncNitroQueueRemove(musicItem: IMusic.IMusicItem) {
+    private async syncAdapterQueueRemove(musicItem: IMusic.IMusicItem) {
         if (!this.backend.removeQueueTrack) {
             return;
         }
         await this.backend.removeQueueTrack(
-            this.createNitroQueuedTrack(musicItem),
+            this.createAdapterQueuedTrack(musicItem),
         );
     }
 
-    private getNitroQueue(currentTrack: IMusic.IMusicItem) {
+    private getAdapterQueue(currentTrack: IMusic.IMusicItem) {
         const fallbackTrack = this.patchMediaArtwork(
             currentTrack as unknown as MusicFreePlayerTrack,
         ) as MusicFreePlayerTrack;
@@ -4751,7 +4751,7 @@ class TrackPlayer
             if (getMediaUniqueKey(musicItem) === currentKey) {
                 return fallbackTrack;
             }
-            return this.createNitroQueuedTrack(musicItem);
+            return this.createAdapterQueuedTrack(musicItem);
         });
 
         return {
@@ -4843,7 +4843,7 @@ class TrackPlayer
         if (activeMusic && isSameMediaItem(this.currentMusic, activeMusic)) {
             return this.currentMusic;
         }
-        const syncedMusic = this.syncNitroCurrentMusic(
+        const syncedMusic = this.syncAdapterCurrentMusic(
             activeTrack as Partial<IMusic.IMusicItem>,
             reason,
             preferredIndex,
@@ -5354,7 +5354,7 @@ class TrackPlayer
         }
     }
 
-    private async resolveNitroQueuedTracks(
+    private async resolveAdapterQueuedTracks(
         tracks: Array<Partial<IMusic.IMusicItem>>,
         transitionToken?: IMpvTrackTransitionToken,
     ) {
@@ -5371,11 +5371,11 @@ class TrackPlayer
             }
 
             const key = getMediaUniqueKey(musicItem);
-            if (this.nitroPendingSourceRequests.has(key)) {
+            if (this.pendingQueueSourceRequests.has(key)) {
                 continue;
             }
 
-            this.nitroPendingSourceRequests.add(key);
+            this.pendingQueueSourceRequests.add(key);
             try {
                 const [source, artwork] = await Promise.all([
                     this.resolveDirectMediaSource(musicItem),
@@ -5421,13 +5421,13 @@ class TrackPlayer
             } catch (error: any) {
                 errorLog("预解析音源失败", error?.message ?? error);
             } finally {
-                this.nitroPendingSourceRequests.delete(key);
+                this.pendingQueueSourceRequests.delete(key);
             }
         }
         this.syncPreparedNextTrack("source-resolved");
     }
 
-    private syncNitroCurrentMusic(
+    private syncAdapterCurrentMusic(
         track?: Partial<IMusic.IMusicItem> | null,
         reason?: unknown,
         preferredIndex?: number | null,
@@ -5527,9 +5527,9 @@ class TrackPlayer
             count: pending.length,
             startIndex,
         });
-        // resolveNitroQueuedTracks 末尾会调 syncPreparedNextTrack("source-resolved")，
+        // resolveAdapterQueuedTracks 末尾会调 syncPreparedNextTrack("source-resolved")，
         // URL 落地后 runway 会自动重新武装。
-        await this.resolveNitroQueuedTracks(pending);
+        await this.resolveAdapterQueuedTracks(pending);
     }
 
     private getBackendRepeatMode(

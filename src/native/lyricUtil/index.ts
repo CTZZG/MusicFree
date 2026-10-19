@@ -17,7 +17,7 @@ export enum NativeTextAlignment {
 interface ILyricUtil extends NativeModule {
     /** Select the only playback service that may receive notification lyrics. */
     setActivePlayerBackend?: (
-        backend: "nitro-player" | "mpv",
+        backend: "mpv",
     ) => Promise<void>;
     /** 显示状态栏歌词 */
     showStatusBarLyric: (
