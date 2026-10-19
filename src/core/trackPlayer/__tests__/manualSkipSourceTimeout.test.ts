@@ -268,11 +268,11 @@ describe("other ways of asking a plugin for a source are bounded too", () => {
 
     it("refreshing an expired address falls back to the song's own address", async () => {
         // 地址校验依赖原生和网络，这里原样放行
-        jest.spyOn(player, "createPlayableSource").mockImplementation(
+        jest.spyOn(player.sourceResolver, "createPlayableSource").mockImplementation(
             async (source: any) => source,
         );
         let result: any = "pending";
-        player
+        player.sourceResolver
             .resolveFreshMediaSource({ ...songs[1], url: "https://own.example/b.mp3" })
             .then((value: any) => {
                 result = value;
@@ -286,7 +286,7 @@ describe("other ways of asking a plugin for a source are bounded too", () => {
 
     it("an alternate source that does not answer is skipped", async () => {
         let result: any = "pending";
-        player
+        player.sourceResolver
             .resolveSourceFromAlternate(songs[2], ["standard", "high", "low"], () => true)
             .then((value: any) => {
                 result = value;

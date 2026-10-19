@@ -221,7 +221,7 @@ beforeEach(() => {
         setConfig: jest.fn(),
     };
     // 地址校验依赖原生和网络，这里原样放行
-    jest.spyOn(player, "createPlayableSource").mockImplementation(
+    jest.spyOn(player.sourceResolver, "createPlayableSource").mockImplementation(
         async (source: any) => source,
     );
     mockBackend.getState.mockImplementation(async () => state);

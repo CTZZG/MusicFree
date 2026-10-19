@@ -377,7 +377,7 @@ beforeAll(async () => {
         getConfig: () => undefined,
         setConfig: jest.fn(),
     };
-    jest.spyOn(player, "createPlayableSource").mockImplementation(
+    jest.spyOn(player.sourceResolver, "createPlayableSource").mockImplementation(
         async (source: any) => source,
     );
     player.lockBackend();

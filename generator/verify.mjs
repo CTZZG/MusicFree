@@ -31,6 +31,10 @@ const layoutTests = fs
 
 const checks = [
     {
+        name: 'Runtime import cycles',
+        args: [path.join(rootDir, 'generator', 'audit-runtime-cycles.mjs')],
+    },
+    {
         // 格式样本矩阵、结构不变量、依赖覆盖审计与 TypeScript
         name: 'Static audits and TypeScript',
         args: [path.join(rootDir, 'generator', 'audit-round20-static.mjs')],
