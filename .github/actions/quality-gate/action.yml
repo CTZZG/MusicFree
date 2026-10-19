@@ -38,6 +38,10 @@ runs:
               python3 -I native/mpv/verify-bundle.py
               python3 -I native/mpv/check-seek-clock.py --self-test
 
+        - name: Check screens native listener ownership and concurrent initialization
+          shell: bash
+          run: python3 -I generator/check-rnscreens-listener.py
+
         - name: Whitespace check
           shell: bash
           run: git diff --check
