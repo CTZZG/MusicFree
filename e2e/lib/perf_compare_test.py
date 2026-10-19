@@ -85,6 +85,44 @@ perf_cold_start
             print('ok cold sample capture', mode)
 
 
+def check_startup_stream():
+    run = (HERE / 'run.sh').read_text()
+    assert run.index('startup_capture_start\n') < run.index('adb shell am start -W')
+    assert run.index('startup_capture_stop\n', run.index('flow "启动后进入首页"')) > run.index('flow "启动后进入首页"')
+    assert 'trap startup_capture_stop EXIT' in run
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        adb = root / 'adb'
+        adb.write_text('''#!/usr/bin/env bash
+if [ "${2:-}" = -c ]; then : > "$OUT/ring.txt"; exit; fi
+trap 'exit 0' TERM
+echo before-driver-clear
+touch "$OUT/reader-ready"
+while [ ! -f "$OUT/driver-cleared" ]; do sleep 0.01; done
+echo after-driver-clear
+while true; do sleep 0.1; done
+''')
+        adb.chmod(0o755)
+        env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'], 'OUT': str(root)}
+        command = '''set -eu
+source "$1"
+startup_capture_start
+trap startup_capture_stop EXIT
+for i in $(seq 1 200); do [ ! -f "$OUT/reader-ready" ] || break; sleep 0.01; done
+test -f "$OUT/reader-ready"
+adb logcat -c
+touch "$OUT/driver-cleared"
+for i in $(seq 1 200); do grep -q after-driver-clear "$OUT/startup-stream-logcat.txt" && break; sleep 0.01; done
+startup_capture_stop
+startup_capture_stop
+'''
+        subprocess.run(['bash', '-c', command, 'stream', str(HERE / 'lib/startup_capture.sh')],
+                       env=env, check=True, timeout=10, capture_output=True)
+        assert (root / 'startup-stream-logcat.txt').read_text().splitlines() == [
+            'before-driver-clear', 'after-driver-clear']
+        print('ok initial startup stream survives driver logcat clear')
+
+
 def workflow_command(name):
     text = WORKFLOW.read_text().split('            - name: ' + name + '\n', 1)[1]
     text = text.split('\n            - name:', 1)[0]
@@ -168,3 +206,4 @@ if [ "${2:-}" = pm ]; then printf 'package:fun.upup.musicfree\\n'; fi
         print('ok comparison', mode)
 
 check_cold_capture()
+check_startup_stream()

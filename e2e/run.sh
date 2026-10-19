@@ -45,6 +45,8 @@ shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; 
 # 播放会话、暂停、“视频”打断的判断（session、stays_paused、held_until_video_ends……）
 # shellcheck source=lib/pause_checks.sh
 source "$HERE/lib/pause_checks.sh"
+source "$HERE/lib/startup_capture.sh"
+trap startup_capture_stop EXIT
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
 print_screen_text() {
@@ -243,6 +245,7 @@ adb shell settings put global hide_error_dialogs 1 || true
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb logcat -c || true
+startup_capture_start
 
 # 1. 安装并启动。-g 直接给通知、音频读取等运行时权限，不在系统弹窗上卡住
 if adb install -r -g "$APK" > "$OUT/install.log" 2>&1; then
@@ -267,6 +270,7 @@ if [ "$start_status" -ne 0 ] || grep -qE '^Error(:| type [0-9]+:)|^Exception' "$
 fi
 start_timeline
 flow "启动后进入首页" home.yaml || finish
+startup_capture_stop
 
 # 2. 用外部链接装两个测试音源（B 只在找其他来源时有结果，见 plugins/e2e-source-b.js）
 # storage.sh provides the existing root/private-store helpers, without running a scenario.
