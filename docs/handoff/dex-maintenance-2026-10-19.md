@@ -107,3 +107,19 @@ SDK36已真实编译隔离后的x86_64 screens C++源码，编译命令明确指
 已核对Maestro2.8.0的AndroidDriver：开始设备日志采集时会执行logcat清空。新增host持续采集在安装/第一次am start之前启动，进入首页后停止；EXIT也清理。它跨越Maestro清空操作保留已有日志，不重试、不延长等待、不补样本。比较/留证自测现13项通过。
 
 接下来候选必须重新打包并通过真实设备回归，因为screens原生产品输入已变化。性能控制包从清理前的3559b1e0构建，**也应用相同screens补丁**，保持0.12.0/400033及相同原生修复；其余仍为未优化输入。这样不让新旧两边的崩溃修复差异混入性能收益。两包生成后再做一次同机旧→新→旧、每组预热1+有效10次。它仍是整个优化组合的比较，不是DEX压缩单变量实验。新运行的实际证据以PR描述为准，不将旧182或残缺183/184结果写作新候选验收。
+
+## 外部复核后的标签反射修正
+
+`aa7e7099` 已完成CI174、API16 #92、Beta186全量和同机性能187；结果保留在PR描述。187三组各预热1+有效10，中位数2980/2976.5/2823.5ms，**没有稳定提速证据**。这些是该提交的历史验证，不覆盖下述新增R8修正；PR已重新转draft等待新候选验证，不合并、不发布、不改版本/API34。
+
+复核指出FrameBody保留不等于完整标签反射契约。已经用实际aa7的R8 Release DEX确认：`NumberHashMap(NumberHashMap)` 被删，多个ASF/WMA reader也缺无参构造器。再用本项目AGP8.12.0实际嵌入的R8 **8.12.14** 缩减原始jaudiotagger2.2.5和只调用AudioFileIO的driver：旧规则下v2.3 MP3/WMA失败、v2.4对照成功。新两条定向规则后，三文件的标题/歌手/专辑/歌词/封面完整写入回读均成功。不是根据另一个R8版本的结果直接推断。
+
+- 保留datatype家族的公开构造函数，满足旧版ID3转换时`ID3Tags.copyObject()`按真实字段类型找拷贝构造函数的调用。
+- 保留实现ChunkReader的无参构造函数，包括非公开构造函数，满足ASF容器在同包中使用Class.newInstance的调用。不整包keep，不降低缺类/签名/性能门限。
+- 新`generator/check-tagging-release.py`在Beta及正式构建中检查**实际五APK的DEX定义和方法原型**，以原始依赖JAR的javap构造函数清单为准，并核对host smoke使用的R8版本与实际Release mapping一致。host smoke不是Android执行，与真实APK检查和设备下载检查分开记录。缺文件、版本变了或案例未完成均失败。
+- 新检查能拒绝旧真实APK；本地新真实x86_64 R8 Release检查通过，核对66个datatype公开构造函数、10个ASF无参构造函数，三个host格式均过。实际DEX为15,314个class_defs；同类本地未签名包36,256,782→36,261,514 bytes。Release单测任务本地合法UP-TO-DATE，不冒充本次重新执行；新CI/Beta另核对实际XML。
+- 备用下载的tone-b改为ID3v2.3，原始音频逐字节解码相同（5,760,000 bytes，PCM SHA256仍f7534ef5…c11cbde）。旧R8读取这个实际新夹具会报NumberHashMap缺构造函数；不是仅把文件命名成v2.3。guard也检查夹具头，防止将来悄悄换回v2.4。
+- 新WMA下载用例仅用专用查询出现，不改变原搜索队列/旧流程点击位置。源文件标签故意是Before Title/Artist/Album；实际Release必须写成E2E Tagged WMA/E2E Artist/E2E Album，并完整解码比较音频。即使下载状态成功，写标签被吞也会失败。10项shell故障自测覆盖旧标签未改、缺标签、解码/复制/前提失败。
+- 另删除logTransport中退役nitro-player环境变量分支，trace仍由显式persist控制。没有增加产品测试入口。
+
+后续需真实新Beta全量及同一R8包的library套件。187不重跑以声称新规则带来性能收益；其提交范围与本轮新候选分开标注。新运行的实际结果继续记录在PR描述，保留此前所有失败和APK独立下载/真机限制。

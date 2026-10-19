@@ -24,8 +24,6 @@ const traceLoggerConfig = {
 
 export const log = logger.createLogger(errorLoggerConfig);
 const traceLogger = logger.createLogger(traceLoggerConfig);
-const forceTraceLog =
-    process.env.EXPO_PUBLIC_MUSICFREE_PLAYER_BACKEND === "nitro-player";
 
 export function emitTraceLog(
     desc: string,
@@ -36,7 +34,7 @@ export function emitTraceLog(
     if (__DEV__) {
         console.log(desc, message);
     }
-    if (forceTraceLog || persist) {
+    if (persist) {
         traceLogger[level]({
             desc,
             message,

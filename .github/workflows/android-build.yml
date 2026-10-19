@@ -280,6 +280,17 @@ jobs:
                   path: android/app/build/reports/apk-packaging.json
                   if-no-files-found: error
 
+            - name: Verify Release tagging reflection and legacy formats
+              run: python3 -I generator/check-tagging-release.py dist/*.apk --output android/app/build/reports/tagging-release.json
+
+            - name: Upload Release tagging report
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: tagging-release-stable-${{ github.run_id }}
+                  path: android/app/build/reports/tagging-release.json
+                  if-no-files-found: ignore
+
             - name: Verify signed release APKs
               if: github.event_name != 'pull_request'
               run: |

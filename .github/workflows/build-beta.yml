@@ -289,6 +289,22 @@ jobs:
                   path: android/app/build/reports/apk-packaging.json
                   if-no-files-found: ignore
 
+            - name: Verify Release tagging reflection and legacy formats
+              run: |
+                  if [ ! -f generator/check-tagging-release.py ] && [ "$BUILD_SOURCE_SHA" != "$GITHUB_SHA" ]; then
+                    echo "Tagging audit is absent in the requested older source commit; no audit result is claimed."
+                  else
+                    python3 -I generator/check-tagging-release.py dist/*.apk --output android/app/build/reports/tagging-release.json
+                  fi
+
+            - name: Upload Release tagging report
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: tagging-release-beta-${{ github.run_id }}
+                  path: android/app/build/reports/tagging-release.json
+                  if-no-files-found: ignore
+
             - name: Upload Beta APKs
               uses: actions/upload-artifact@v7
               with:
@@ -417,6 +433,7 @@ jobs:
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/pause_checks_test.sh
                   bash e2e/lib/download_source_test.sh
+                  bash e2e/lib/tagging_test.sh
                   bash e2e/lib/plugin_install_test.sh
                   python3 -I e2e/lib/song_target_test.py
                   python3 -I e2e/lib/perf_compare_test.py

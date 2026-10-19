@@ -16,6 +16,18 @@
     public <init>(...);
 }
 
+# ID3Tags.copyObject() converts older tags by reflecting on each field's exact
+# runtime type. FrameBody constructors alone do not retain these copy paths.
+-keepclassmembers class org.jaudiotagger.tag.datatype.** {
+    public <init>(...);
+}
+
+# ChunkContainerReader registers ASF/WMA readers through Class.newInstance().
+# Several no-arg constructors are package-private, so retain all visibilities.
+-keepclassmembers class * implements org.jaudiotagger.audio.asf.io.ChunkReader {
+    <init>();
+}
+
 # Mp3UtilModule sets this private FLAC cover field via getDeclaredField().
 -keepclassmembers class org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture {
     private int pictureType;
