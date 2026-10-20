@@ -49,8 +49,8 @@ run_download_source_checks() {
         fail "$TAGS" "无法复制下载文件"
         return 1
     fi
-    if reference_hash=$(ffmpeg -v error -i "$HERE/fixtures/tone-b.mp3" -map 0:a:0 -f hash -hash sha256 -) &&
-        download_hash=$(ffmpeg -v error -i "$downloaded" -map 0:a:0 -f hash -hash sha256 -) &&
+    if reference_hash=$(ffmpeg -v error -xerror -i "$HERE/fixtures/tone-b.mp3" -map 0:a:0 -f hash -hash sha256 -) &&
+        download_hash=$(ffmpeg -v error -xerror -i "$downloaded" -map 0:a:0 -f hash -hash sha256 -) &&
         [ -n "$download_hash" ] && [ "$download_hash" = "$reference_hash" ]; then
         pass "$AUDIO" "$download_hash"
     else

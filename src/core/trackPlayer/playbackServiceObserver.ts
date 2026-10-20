@@ -88,7 +88,7 @@ function setupPlaybackObserver() {
         });
     });
     // 监听 mpv 锁屏/耳机键的「上一首/下一首」，走完整 App 逻辑（稍后播放队列、自动跳过不喜欢）。
-    // 仅 mpv 后端会发这些事件；Nitro 由原生会话处理，这里订阅是无副作用的空操作。
+    // 订阅 mpv 适配器转发的外部播放命令。
     // 把原生入队时间透传下去：操作在 TrackPlayer 的串行队列里等太久就作废，
     // 避免一次挂死的取源把用户点的多次上/下一首攒住、之后一次性补跑。
     TrackPlayer.playerAdapter.addEventListener("remoteNext", event => {

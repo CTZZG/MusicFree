@@ -1,4 +1,4 @@
-export type PlayerBackendName = "nitro-player" | "mpv";
+export type PlayerBackendName = "mpv";
 
 export type PlayerBackendState =
     | "idle"

@@ -36,13 +36,13 @@ import type {
 import delay from "@/utils/delay";
 
 /**
- * mpv 播放内核适配器（实验性，仅 Android）。
+ * mpv 播放内核适配器（Android）。
  *
- * 与 NitroPlayerAdapter 不同：队列、当前下标、repeat、自动切歌全部由本适配器在 JS 侧管理，
+ * 队列、当前下标、repeat、自动切歌由本适配器在 JS 侧管理，
  * 原生 mpv 只负责「播放单个 URL + 上报进度/结束」。这样队列只有一个真相来源（本适配器），
  * 避免了老 dev-mpv1 中原生/JS 双队列对账导致的状态同步问题。
  *
- * 对上层 trackPlayer 而言，本适配器在事件契约上「装成」Nitro：
+ * 本适配器向上层 trackPlayer 提供统一的队列事件契约：
  * - trackChanged：{ track, index, reason }，reason="end" 触发上层 PlayEnd / 播放下一首逻辑
  * - progress / playbackStateChanged / playbackSeeked / playbackError / tracksNeedUpdate
  */
@@ -233,8 +233,8 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         this.setupPromise = (async () => {
             if (!NativeMpvPlayer.isAvailable()) {
                 throw new Error(
-                    "已选择 mpv 播放内核，但当前未检测到 mpv 原生模块。" +
-                        "请在 Android 上构建包含 MpvPlayer 的版本，或在设置中切回 Nitro 内核。",
+                    "当前版本未检测到 mpv 原生模块。" +
+                        "请安装包含 MpvPlayer 原生模块的完整 Android 安装包。",
                 );
             }
             this.bindNativeListeners();
@@ -1389,7 +1389,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     }
 
     async setVolume(volume: number) {
-        // 上层传入 0-1；nitro 适配器会放大到 0-100，这里 mpv 统一用 0-1
+        // 上层与 mpv 统一使用 0-1 的音量范围
         this.volume = volume <= 1 ? volume : volume / 100;
         if (this.duckedVolume == null) {
             await NativeMpvPlayer.setVolume(this.volume);

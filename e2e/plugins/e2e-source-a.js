@@ -33,6 +33,12 @@ const HANG_SONGS = [
     { id: "hang", title: "E2E Hang", file: "", duration: 180 },
 ];
 
+// Separate query keeps the normal queue/row positions unchanged. Its on-disk
+// metadata deliberately differs, so a silently failed WMA tag write is visible.
+const TAGGING_SONGS = [
+    { id: "tagged-wma", title: "E2E Tagged WMA", file: "tagged.wma", duration: 2 },
+];
+
 // 只有这几档音质，选无损之类的取不到：用来检查切换音质失败时，保持原来的音质接着播。
 // 应用先用新写法（192k）问，取不到再用旧写法（standard）问一遍
 const QUALITIES = ["128k", "192k", "320k", "low", "standard", "high"];
@@ -54,7 +60,8 @@ module.exports = {
         if (type !== "music" || page > 1 || !ref) {
             return { isEnd: true, data: [] };
         }
-        const songs = /(?:^|\s)hang(?:\s|$)/i.test(String(query)) ? HANG_SONGS : SONGS;
+        const songs = /(?:^|\s)wma(?:\s|$)/i.test(String(query)) ? TAGGING_SONGS :
+            /(?:^|\s)hang(?:\s|$)/i.test(String(query)) ? HANG_SONGS : SONGS;
         return {
             isEnd: true,
             data: songs.map(song => ({

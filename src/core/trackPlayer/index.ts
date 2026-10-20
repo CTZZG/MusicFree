@@ -1,3 +1,4 @@
+import PlaybackSourceResolver from "./playbackSourceResolver";
 import { AppState, AppStateStatus } from "react-native";
 import { localPluginPlatform, sortIndexSymbol, timeStampSymbol } from "@/constants/commonConst";
 import delay from "@/utils/delay";
@@ -51,7 +52,6 @@ import type {
     PlayerAdapterRepeatMode,
     PlayerBackendState,
     PlayerAdapterTrack,
-    PlayerAdapterTrackSourceMeta,
     PlayerAdapterTrackSourceOrigin,
     PlayerAdapterEvent,
 } from "@/core/playerAdapter";
@@ -61,9 +61,7 @@ import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
 import {
     isStaleManualSkipIntent,
     MediaSourceTimeoutError,
-    mediaSourceTimeoutMs,
     TimedOutSources,
-    withMediaSourceTimeout,
 } from "./mediaSourceTimeoutPolicy";
 import { PlaybackIntent } from "./playbackIntent";
 import {
@@ -77,16 +75,8 @@ import {
 } from "./queuePolicy";
 import { hasSameQueueOrder, moveQueueItem, moveQueueItemAfterCurrent, restoreQueueSnapshot } from "./queueEditing";
 import {
-    isUnsupportedEncryptedMediaSource,
-    resolveEncryptedMediaStreamIfNeeded,
-} from "@/service/encryptedMediaProxy";
-import {
-    findAlternateCandidates,
-    forgetAlternate,
     getRememberedAlternate,
-    rememberAlternate,
 } from "./alternateSource";
-import { resolveMediaSourceCandidate } from "../mediaSource/resolveCandidate";
 import { recordPlayAttempt } from "./playAttemptLog";
 import { shouldEvictRecoveredRemoteSourceCacheAfterFailure } from "./sourceRecoveryPolicy";
 import {
@@ -107,14 +97,9 @@ import BackendListenerLifecycle from "./backendListenerLifecycle";
 import CrossfadeController from "./crossfadeController";
 import LastfmScrobbler from "@/core/lastfm";
 import {
-    validateRemoteMediaUrlForPlayback,
-} from "@/utils/remoteMediaUrl";
-import { isMediaHttpAllowed } from "@/utils/mediaHttpCompatibilityPolicy";
-import {
     isProviderAccessFailure,
     classifyMediaSourceFailure,
     createMediaSourceFailure,
-    createMediaSourceFailureResult,
     MediaSourceResolutionError,
     mediaSourceFailureFromPluginResult,
     preferUserFacingMediaSourceFailure,
@@ -127,13 +112,6 @@ import {
 type MusicFreePlayerTrack = PlayerAdapterTrack &
     Partial<IMusic.IMusicItem> &
     Record<string, any>;
-
-interface IAlternateSourceResult {
-    /** 实际取到地址的那个来源里的同一首歌 */
-    musicItem: IMusic.IMusicItem;
-    source: IPlugin.IMediaSourceResult;
-    quality: IMusic.IQualityKey;
-}
 
 interface IMpvManualSkipTransition {
     token: IMpvTrackTransitionToken;
@@ -324,12 +302,6 @@ function setPlayerProgress(
     return normalizedProgress;
 }
 
-function hasPlayableSourceUrl(
-    source?: {url?: string | null} | null,
-): source is {url: string} {
-    return typeof source?.url === "string" && source.url.trim().length > 0;
-}
-
 function getMediaSourceResultFailure(
     source: IPlugin.IMediaSourceResult | null | undefined,
     context: MediaSourceFailureContext,
@@ -361,6 +333,11 @@ class TrackPlayer
     implements ITrackPlayer {
     // 依赖
     private configService!: IAppConfig;
+    private readonly sourceResolver = new PlaybackSourceResolver({
+        config: () => this.configService,
+        plugins: () => this.pluginManagerService,
+        onAlternateInUse: (musicItem, alternate) => this.noteAlternateInUse(musicItem, alternate),
+    });
     private musicHistoryService!: IMusicHistory;
     private pluginManagerService!: IPluginManager;
 
@@ -377,9 +354,9 @@ class TrackPlayer
     private playbackIntent = new PlaybackIntent();
     private queueUndoSequence = 0;
     private queueUndoRecord: IQueueUndoRecord | null = null;
-    // 底层播放器桥接由配置选择，默认 Nitro Player，可选 MPV。
+    // 仅使用 mpv 播放桥接；队列同步与请求去重仍由本层管理。
     private backend!: PlayerAdapter<any>;
-    private nitroPendingSourceRequests = new Set<string>();
+    private pendingQueueSourceRequests = new Set<string>();
     private sourceRecoveryInFlight = new Set<string>();
     private sourceRecoveryAttemptedAt = new Map<string, number>();
     private isForceExiting = false;
@@ -614,13 +591,13 @@ class TrackPlayer
             track.userAgent = track.userAgent || getAppUserAgent();
 
             // 异步
-            this.requestPluginMediaSource(
+            this.sourceResolver.requestPluginMediaSource(
                 this.pluginManagerService.getByMedia(track),
                 track,
                 quality,
             )
                 .then(async pluginSource => {
-                    const newSource = await this.createPlayableSource(
+                    const newSource = await this.sourceResolver.createPlayableSource(
                         pluginSource,
                         track,
                         quality,
@@ -661,7 +638,7 @@ class TrackPlayer
                 if (this.shouldIgnoreMpvTrackChangeDuringManualSkip(evt)) {
                     return;
                 }
-                const syncedMusic = this.syncNitroCurrentMusic(
+                const syncedMusic = this.syncAdapterCurrentMusic(
                     evt.track,
                     evt.reason,
                     evt.index,
@@ -709,7 +686,7 @@ class TrackPlayer
                 if (this.isForceExiting) {
                     return;
                 }
-                await this.resolveNitroQueuedTracks(evt?.tracks ?? []);
+                await this.resolveAdapterQueuedTracks(evt?.tracks ?? []);
             });
 
             this.addBackendListener("playbackError", async e => {
@@ -1003,7 +980,7 @@ class TrackPlayer
         this.add(musicItems, insertIndex);
 
         if (!shouldAutoPlay && newItems.length > 0) {
-            this.syncNitroQueueInsert(newItems, insertIndex).catch(error => {
+            this.syncAdapterQueueInsert(newItems, insertIndex).catch(error => {
                 errorLog("同步下一首队列失败", error?.message ?? error);
             });
         }
@@ -1265,7 +1242,7 @@ class TrackPlayer
         } else if (shouldPlayCurrent === false) {
             completion = this.backend.reset();
         } else {
-            completion = this.syncNitroQueueRemove(musicItem).catch(error => {
+            completion = this.syncAdapterQueueRemove(musicItem).catch(error => {
                 errorLog("同步移除队列失败", error?.message ?? error);
             });
         }
@@ -1629,7 +1606,7 @@ class TrackPlayer
                         // 有期限地等插件（见 requestPluginMediaSource）。超时后走
                         // 下面的失败分支继续推进；迟到的结果由 isPlayRequestActive()
                         // 挡住，不会回写状态。
-                        candidate = await this.requestPluginMediaSource(
+                        candidate = await this.sourceResolver.requestPluginMediaSource(
                             plugin,
                             musicItem,
                             quality,
@@ -1675,7 +1652,7 @@ class TrackPlayer
                     }
                     // 5.3.1 获取到真实源
                     if (candidate?.url) {
-                        if (this.isUnsupportedEncryptedSource(candidate)) {
+                        if (this.sourceResolver.isUnsupportedEncryptedSource(candidate)) {
                             rememberSourceFailure(
                                 createMediaSourceFailure(
                                     "encrypted-unsupported",
@@ -1691,7 +1668,7 @@ class TrackPlayer
                             );
                             continue;
                         }
-                        source = await this.createPlayableSource(
+                        source = await this.sourceResolver.createPlayableSource(
                             candidate,
                             musicItem,
                             quality,
@@ -1735,7 +1712,7 @@ class TrackPlayer
                                 : undefined);
                         if (directSource?.url) {
                             if (
-                                this.isUnsupportedEncryptedSource(directSource)
+                                this.sourceResolver.isUnsupportedEncryptedSource(directSource)
                             ) {
                                 rememberSourceFailure(
                                     createMediaSourceFailure(
@@ -1750,7 +1727,7 @@ class TrackPlayer
                                 );
                                 continue;
                             }
-                            source = await this.createPlayableSource(
+                            source = await this.sourceResolver.createPlayableSource(
                                 directSource,
                                 musicItem,
                                 quality,
@@ -1783,7 +1760,7 @@ class TrackPlayer
                         ) ?? true
                     ) {
                         // 找其他来源出了问题也不能盖掉原来源的失败原因
-                        const alternate = await this.resolveAlternateSource(
+                        const alternate = await this.sourceResolver.resolveAlternateSource(
                             musicItem,
                             qualityOrder,
                             isPlayRequestActive,
@@ -1815,7 +1792,7 @@ class TrackPlayer
                         ekey: musicItem.ekey,
                         cek: musicItem.cek,
                     };
-                    if (this.isUnsupportedEncryptedSource(directSource)) {
+                    if (this.sourceResolver.isUnsupportedEncryptedSource(directSource)) {
                         rememberSourceFailure(
                             createMediaSourceFailure(
                                 "encrypted-unsupported",
@@ -1826,7 +1803,7 @@ class TrackPlayer
                             ),
                         );
                     } else {
-                        source = await this.createPlayableSource(
+                        source = await this.sourceResolver.createPlayableSource(
                             directSource,
                             musicItem,
                             undefined,
@@ -1852,7 +1829,7 @@ class TrackPlayer
             if (!source?.url) {
                 throw createInvalidSourceError();
             }
-            if (this.isUnsupportedEncryptedSource(source)) {
+            if (this.sourceResolver.isUnsupportedEncryptedSource(source)) {
                 rememberSourceFailure(
                     createMediaSourceFailure("encrypted-unsupported", {
                         mediaKey: getMediaUniqueKey(musicItem),
@@ -2492,7 +2469,7 @@ class TrackPlayer
                     });
                 }
                 if (!mpvManualTransition) {
-                    await this.resolveNitroQueuedTracks(nextTracks).catch(
+                    await this.resolveAdapterQueuedTracks(nextTracks).catch(
                         error => {
                             errorLog(
                                 "后端下一首音源预解析失败",
@@ -3319,7 +3296,7 @@ class TrackPlayer
         const plugin = this.pluginManagerService.getByMedia(sourceItem);
         let newSource: IPlugin.IMediaSourceResult | null = null;
         try {
-            newSource = await this.requestPluginMediaSource(
+            newSource = await this.sourceResolver.requestPluginMediaSource(
                 plugin,
                 sourceItem,
                 newQuality,
@@ -3346,7 +3323,7 @@ class TrackPlayer
                 musicItem,
             );
         }
-        if (this.isUnsupportedEncryptedSource(newSource)) {
+        if (this.sourceResolver.isUnsupportedEncryptedSource(newSource)) {
             return fail(createMediaSourceFailure(
                 "encrypted-unsupported",
                 failureContext,
@@ -3354,7 +3331,7 @@ class TrackPlayer
         }
 
         try {
-            const playableSource = await this.createPlayableSource(
+            const playableSource = await this.sourceResolver.createPlayableSource(
                 newSource,
                 sourceItem,
                 newQuality,
@@ -3601,7 +3578,7 @@ class TrackPlayer
         const backendCapabilities = this.getBackendCapabilities();
         const preparedNextMusic = this.resolvePreparedNextMusic();
         const preparedNextTrack = preparedNextMusic
-            ? this.createNitroQueuedTrack(preparedNextMusic)
+            ? this.createAdapterQueuedTrack(preparedNextMusic)
             : null;
         const activeTrackSummary = this.getDiagnosticTrackSummary(
             activeTrack as Partial<
@@ -3941,7 +3918,7 @@ class TrackPlayer
         };
     }
 
-    private async ensureNitroAutoPlay(targetKey: string) {
+    private async ensureAdapterAutoPlay(targetKey: string) {
         const retryDelays = [180, 520, 1100];
         for (let retryDelay of retryDelays) {
             await delay(retryDelay);
@@ -4060,13 +4037,13 @@ class TrackPlayer
         const shouldAutoPlay = autoPlay && this.playbackIntent.mayAutoPlay();
         let initialProgress = this.normalizeProgress(seekTo) ?? 0;
         clonedTrack.userAgent = clonedTrack.userAgent || getAppUserAgent();
-        const nitroTargetKey = getMediaUniqueKey(
+        const adapterTargetKey = getMediaUniqueKey(
             clonedTrack as unknown as IMusic.IMusicItem,
         );
-        const nitroQueue = this.getNitroQueue(
+        const adapterQueue = this.getAdapterQueue(
             clonedTrack as unknown as IMusic.IMusicItem,
         );
-        const loadResult = await this.backend.loadQueue(nitroQueue.tracks, nitroQueue.startIndex, {
+        const loadResult = await this.backend.loadQueue(adapterQueue.tracks, adapterQueue.startIndex, {
             autoPlay: shouldAutoPlay,
             ...(preservePosition ? { preservePositionFallback: initialProgress } : {}),
         });
@@ -4076,12 +4053,12 @@ class TrackPlayer
             initialProgress = loadResult.restoredPosition;
         }
         await this.syncBackendRepeatMode();
-        const startIndex = nitroQueue.startIndex;
-        const lookaheadTracks = nitroQueue.tracks.slice(
+        const startIndex = adapterQueue.startIndex;
+        const lookaheadTracks = adapterQueue.tracks.slice(
             startIndex + 1,
             startIndex + 6,
         );
-        this.resolveNitroQueuedTracks(lookaheadTracks).catch(error => {
+        this.resolveAdapterQueuedTracks(lookaheadTracks).catch(error => {
             errorLog("预解析下一首失败", error?.message ?? error);
         });
         this.syncPreparedNextTrack("track-source");
@@ -4105,8 +4082,8 @@ class TrackPlayer
         // 焦点（或用户又点了播放），照样接着播
         if (autoPlay && this.playbackIntent.mayAutoPlay()) {
             await this.backend.play();
-            if (nitroTargetKey) {
-                this.ensureNitroAutoPlay(nitroTargetKey).catch(error => {
+            if (adapterTargetKey) {
+                this.ensureAdapterAutoPlay(adapterTargetKey).catch(error => {
                     errorLog("自动播放补偿失败", error?.message ?? error);
                 });
             }
@@ -4151,7 +4128,7 @@ class TrackPlayer
         const serial = ++this.preparedNextSyncSerial;
         const nextMusic = this.resolvePreparedNextMusic();
         const nextTrack = nextMusic
-            ? this.createNitroQueuedTrack(nextMusic)
+            ? this.createAdapterQueuedTrack(nextMusic)
             : null;
         // 空 URL 会让 adapter 下发 prepareNext(null)，而原生的 prepareNext 在判空
         // 之前就已经 clearPreparedTrack(removeFromPlaylist=true)，且判空分支不打
@@ -4197,7 +4174,7 @@ class TrackPlayer
             TrackPlayer.mpvSourceLookaheadSize,
         );
         const nextTracks = nextMusicItems.map(item =>
-            this.createNitroQueuedTrack(item),
+            this.createAdapterQueuedTrack(item),
         );
 
         if (nextMusicItems.length && !nextTracks[0]?.url) {
@@ -4250,7 +4227,7 @@ class TrackPlayer
 
         this.currentIndex = this.getMusicIndexInPlayList(this.currentMusic);
         // 把最新队列顺序同步给后端：mpv 等「JS 维护队列」的后端据此在洗牌/增删/重排后
-        // 重新对齐内部队列与当前下标，避免下一首跳错；nitro 未实现该方法，无副作用。
+        // 重新对齐适配器队列与当前下标，避免下一首跳错。
         const activeKey = this.currentMusic
             ? getMediaUniqueKey(this.currentMusic)
             : null;
@@ -4356,7 +4333,7 @@ class TrackPlayer
                     );
                 }
                 // 原生已经自己进了下一首，但「再下一首」的预载必须在这里无条件补。
-                // 以前只靠 syncNitroCurrentMusic 顺带补（它末尾会调
+                // 以前只靠 syncAdapterCurrentMusic 顺带补（它末尾会调
                 // syncPreparedNextTrack("current-music")）：如果 trackChanged 先到
                 // 并更新了 currentMusic，上面的 sync 就会在 isSameMediaItem 处直接
                 // early-return，两条路都不补，原生手里就没有下一首了。
@@ -4529,143 +4506,6 @@ class TrackPlayer
         return merged;
     }
 
-    private createPlaybackSourceMeta(
-        mediaItem: ICommon.IMediaBase,
-        quality: IMusic.IQualityKey | undefined,
-        origin: PlayerAdapterTrackSourceOrigin,
-        recovered = false,
-    ): PlayerAdapterTrackSourceMeta {
-        return {
-            ...(quality ? { quality } : {}),
-            origin,
-            cacheKey:
-                mediaItem.platform && mediaItem.id
-                    ? getMediaUniqueKey(mediaItem)
-                    : undefined,
-            recovered,
-            resolvedAt: Date.now(),
-        };
-    }
-
-    private withPlaybackSourceMeta<T extends IPlugin.IMediaSourceResult | null>(
-        source: T,
-        mediaItem: ICommon.IMediaBase,
-        quality: IMusic.IQualityKey | undefined,
-        origin: PlayerAdapterTrackSourceOrigin,
-        recovered = false,
-    ): T {
-        if (!source) {
-            return source;
-        }
-        return {
-            ...source,
-            playbackSource: this.createPlaybackSourceMeta(
-                mediaItem,
-                source.quality ?? quality,
-                origin,
-                recovered,
-            ),
-        } as T;
-    }
-
-    private async createPlayableSource(
-        source: IPlugin.IMediaSourceResult | null | undefined,
-        mediaItem: ICommon.IMediaBase,
-        quality: IMusic.IQualityKey | undefined,
-        origin: PlayerAdapterTrackSourceOrigin,
-        recovered = false,
-    ): Promise<IPlugin.IMediaSourceResult | null> {
-        let sourceWithMeta = this.withPlaybackSourceMeta(
-            source ?? null,
-            mediaItem,
-            quality,
-            origin,
-            recovered,
-        );
-        const failureContext: MediaSourceFailureContext = {
-            mediaKey:
-                mediaItem.platform && mediaItem.id
-                    ? getMediaUniqueKey(mediaItem)
-                    : undefined,
-            pluginName: mediaItem.platform,
-            quality,
-        };
-        if (!hasPlayableSourceUrl(sourceWithMeta)) {
-            return sourceWithMeta?.failure
-                ? sourceWithMeta
-                : createMediaSourceFailureResult(
-                    createMediaSourceFailure("unavailable", failureContext),
-                );
-        }
-        const allowInsecureHttpPlayback = isMediaHttpAllowed(
-            this.configService,
-        );
-        if (/^https?:\/\//i.test(sourceWithMeta.url)) {
-            const validation = await validateRemoteMediaUrlForPlayback(
-                sourceWithMeta.url,
-                {
-                    allowHttp: allowInsecureHttpPlayback,
-                },
-            );
-            if (!validation.ok) {
-                errorLog("远程音源策略拒绝", validation.reason);
-                return createMediaSourceFailureResult(
-                    classifyMediaSourceFailure(
-                        new Error(validation.reason),
-                        failureContext,
-                    ),
-                );
-            }
-            sourceWithMeta = {
-                ...sourceWithMeta,
-                url: validation.url,
-                allowInsecureHttpPlayback:
-                    allowInsecureHttpPlayback &&
-                    new URL(validation.url).protocol === "http:",
-            };
-        }
-        if (this.isUnsupportedEncryptedSource(sourceWithMeta)) {
-            return createMediaSourceFailureResult(
-                createMediaSourceFailure(
-                    "encrypted-unsupported",
-                    failureContext,
-                ),
-            );
-        }
-
-        try {
-            const playableSource =
-                await resolveEncryptedMediaStreamIfNeeded(sourceWithMeta);
-            return hasPlayableSourceUrl(playableSource)
-                ? playableSource
-                : createMediaSourceFailureResult(
-                    createMediaSourceFailure(
-                        "source-rejected",
-                        failureContext,
-                    ),
-                );
-        } catch (error: any) {
-            errorLog("加密音源代理失败", {
-                musicId: mediaItem.id,
-                platform: mediaItem.platform,
-                reason: error?.message ?? error,
-            });
-            return createMediaSourceFailureResult(
-                classifyMediaSourceFailure(error, failureContext),
-            );
-        }
-    }
-
-    private isUnsupportedEncryptedSource(
-        source?: {
-            url?: string | null;
-            ekey?: string | null;
-            cek?: string | null;
-        } | null,
-    ) {
-        return isUnsupportedEncryptedMediaSource(source);
-    }
-
     private sortByTimestampAndIndex(array: any[], newArray = false) {
         if (newArray) {
             array = [...array];
@@ -4679,26 +4519,18 @@ class TrackPlayer
         });
     }
 
-    private getPlayQualityOrder() {
-        return getQualityOrder(
-            this.configService.getConfig("basic.defaultPlayQuality") ??
-                "standard",
-            this.configService.getConfig("basic.playQualityOrder") ?? "asc",
-        );
-    }
-
-    private createNitroQueuedTrack(musicItem: IMusic.IMusicItem) {
+    private createAdapterQueuedTrack(musicItem: IMusic.IMusicItem) {
         return this.patchMediaArtwork({
             ...musicItem,
             // Remote sources enter the native queue only after createPlayableSource
-            // has completed URL and DNS validation in resolveNitroQueuedTracks.
+            // has completed URL and DNS validation in resolveAdapterQueuedTracks.
             url: getSafeUnresolvedQueueUrl(musicItem.url),
             userAgent: getAppUserAgent(),
             musicItem,
         } as unknown as MusicFreePlayerTrack) as MusicFreePlayerTrack;
     }
 
-    private async syncNitroQueueInsert(
+    private async syncAdapterQueueInsert(
         musicItems: IMusic.IMusicItem[],
         index?: number,
     ) {
@@ -4706,21 +4538,21 @@ class TrackPlayer
             return;
         }
         await this.backend.addQueueTracks(
-            musicItems.map(item => this.createNitroQueuedTrack(item)),
+            musicItems.map(item => this.createAdapterQueuedTrack(item)),
             index,
         );
     }
 
-    private async syncNitroQueueRemove(musicItem: IMusic.IMusicItem) {
+    private async syncAdapterQueueRemove(musicItem: IMusic.IMusicItem) {
         if (!this.backend.removeQueueTrack) {
             return;
         }
         await this.backend.removeQueueTrack(
-            this.createNitroQueuedTrack(musicItem),
+            this.createAdapterQueuedTrack(musicItem),
         );
     }
 
-    private getNitroQueue(currentTrack: IMusic.IMusicItem) {
+    private getAdapterQueue(currentTrack: IMusic.IMusicItem) {
         const fallbackTrack = this.patchMediaArtwork(
             currentTrack as unknown as MusicFreePlayerTrack,
         ) as MusicFreePlayerTrack;
@@ -4751,7 +4583,7 @@ class TrackPlayer
             if (getMediaUniqueKey(musicItem) === currentKey) {
                 return fallbackTrack;
             }
-            return this.createNitroQueuedTrack(musicItem);
+            return this.createAdapterQueuedTrack(musicItem);
         });
 
         return {
@@ -4843,7 +4675,7 @@ class TrackPlayer
         if (activeMusic && isSameMediaItem(this.currentMusic, activeMusic)) {
             return this.currentMusic;
         }
-        const syncedMusic = this.syncNitroCurrentMusic(
+        const syncedMusic = this.syncAdapterCurrentMusic(
             activeTrack as Partial<IMusic.IMusicItem>,
             reason,
             preferredIndex,
@@ -4905,253 +4737,6 @@ class TrackPlayer
                 error?.message ?? error,
             );
         });
-    }
-
-
-    /**
-     * 向插件要播放地址，最多等 mediaSourceTimeoutMs，超时以
-     * MediaSourceTimeoutError 拒绝。
-     *
-     * 插件的 Promise 可能永远不完成。所有取源入口（播放、手动切歌预取、预解析
-     * 后面几首、地址过期后重取、换音质、备用来源、恢复上次播放）都走这里：
-     * 以前只有 play() 有期限，MPV 手动切歌的预取直接 await 插件，挂住时当前
-     * 歌曲已经暂停，后面的切歌都排在串行队列里等它。迟到的结果由各调用方
-     * 自己的事务 / generation 守卫挡住。
-     *
-     * 计时用 BackgroundTimer：通知栏、锁屏切歌时 App 在后台，RN 的普通定时器
-     * 要等回到前台才触发。
-     */
-    private async requestPluginMediaSource(
-        plugin: ReturnType<IPluginManager["getByName"]> | null | undefined,
-        musicItem: IMusic.IMusicItem,
-        quality: IMusic.IQualityKey,
-        timedOutSources?: TimedOutSources,
-    ): Promise<IPlugin.IMediaSourceResult | null> {
-        const pluginName: string | undefined = plugin?.name;
-        const mediaKey = getMediaUniqueKey(musicItem);
-        if (pluginName && timedOutSources?.has(pluginName, mediaKey)) {
-            // 这次切歌里已经等满过一次期限：不再重问，按超时处理
-            throw new MediaSourceTimeoutError(mediaSourceTimeoutMs, true);
-        }
-        const task = plugin?.methods?.getMediaSource(musicItem, quality);
-        if (!task) {
-            return null;
-        }
-        try {
-            return (
-                (await withMediaSourceTimeout(Promise.resolve(task), {
-                    setTimer: (handler, delayMs) =>
-                        BackgroundTimer.setTimeout(handler, delayMs),
-                    clearTimer: handle => BackgroundTimer.clearTimeout(handle),
-                })) ?? null
-            );
-        } catch (error) {
-            if (error instanceof MediaSourceTimeoutError && pluginName) {
-                timedOutSources?.add(pluginName, mediaKey);
-            }
-            throw error;
-        }
-    }
-
-    /**
-     * 预取、重取用：插件没回应时返回 "timed-out"，调用方不再逐个音质各等一遍，
-     * 直接去试歌曲自带的地址和记住的其他来源。插件报错照旧抛出。
-     */
-    private async requestPluginMediaSourceOrStop(
-        plugin: ReturnType<IPluginManager["getByName"]> | null | undefined,
-        musicItem: IMusic.IMusicItem,
-        quality: IMusic.IQualityKey,
-        timedOutSources?: TimedOutSources,
-    ): Promise<IPlugin.IMediaSourceResult | null | "timed-out"> {
-        try {
-            return await this.requestPluginMediaSource(
-                plugin,
-                musicItem,
-                quality,
-                timedOutSources,
-            );
-        } catch (error) {
-            if (!(error instanceof MediaSourceTimeoutError)) {
-                throw error;
-            }
-            trace(
-                "插件取源超时，不再尝试其他音质",
-                {
-                    musicId: musicItem.id,
-                    platform: musicItem.platform,
-                    quality,
-                    timeoutMs: error.timeoutMs,
-                    earlierAttempt: error.earlierAttempt,
-                },
-                "error",
-            );
-            return "timed-out";
-        }
-    }
-
-    private async resolveDirectMediaSource(
-        musicItem: IMusic.IMusicItem,
-        timedOutSources?: TimedOutSources,
-    ): Promise<IPlugin.IMediaSourceResult | null> {
-        const plugin = this.pluginManagerService.getByName(musicItem.platform);
-        const qualityOrder = this.getPlayQualityOrder();
-
-        for (let quality of qualityOrder) {
-            const candidate = await this.requestPluginMediaSourceOrStop(
-                plugin,
-                musicItem,
-                quality,
-                timedOutSources,
-            );
-            if (candidate === "timed-out") {
-                break;
-            }
-            if (candidate?.failure && isProviderAccessFailure(mediaSourceFailureFromPluginResult(candidate.failure, {
-                mediaKey: getMediaUniqueKey(musicItem), pluginName: plugin?.name ?? musicItem.platform, quality,
-            }))) {
-                break;
-            }
-            if (candidate?.url) {
-                const source = await this.createPlayableSource(
-                    candidate,
-                    musicItem,
-                    quality,
-                    "plugin",
-                );
-                if (source?.url) {
-                    this.noteAlternateInUse(musicItem, null);
-                    return source;
-                }
-            }
-        }
-
-        if (musicItem.source) {
-            for (let quality of qualityOrder) {
-                const legacyQuality = convertToLegacyQuality(quality);
-                const directSource =
-                    musicItem.source[quality] ??
-                    (legacyQuality
-                        ? musicItem.source[legacyQuality]
-                        : undefined);
-                if (directSource?.url) {
-                    const source = await this.createPlayableSource(
-                        directSource,
-                        musicItem,
-                        quality,
-                        "embedded-cache",
-                    );
-                    if (source?.url) {
-                        return source;
-                    }
-                }
-            }
-        }
-
-        if (musicItem.url) {
-            return this.createPlayableSource(
-                {
-                    url: musicItem.url,
-                    ekey: musicItem.ekey,
-                    cek: musicItem.cek,
-                },
-                musicItem,
-                undefined,
-                "direct",
-            );
-        }
-
-        // 切歌、预先准备后面几首时只用记住的其他来源，不在这里搜：搜索要好几秒，
-        // 还会在后台连着发请求。没记住的交给 play() 去找。
-        const remembered =
-            (this.configService.getConfig("basic.tryChangeSourceWhenPlayFail") ?? true)
-                ? getRememberedAlternate(musicItem)
-                : null;
-        if (remembered) {
-            const alternate = await this.resolveSourceFromAlternate(
-                remembered,
-                qualityOrder,
-                () => true,
-                undefined,
-                timedOutSources,
-            );
-            if (alternate && alternate !== "inactive") {
-                this.noteAlternateInUse(musicItem, alternate.musicItem);
-                return alternate.source;
-            }
-        }
-
-        return null;
-    }
-
-    private async resolveFreshMediaSource(
-        musicItem: IMusic.IMusicItem,
-    ): Promise<IPlugin.IMediaSourceResult | null> {
-        MediaCache.removeMediaCache(musicItem);
-        const plugin = this.pluginManagerService.getByName(musicItem.platform);
-        const qualityOrder = this.getPlayQualityOrder();
-
-        for (let quality of qualityOrder) {
-            const candidate = await this.requestPluginMediaSourceOrStop(
-                plugin,
-                musicItem,
-                quality,
-            );
-            if (candidate === "timed-out") {
-                break;
-            }
-            if (candidate?.failure && isProviderAccessFailure(mediaSourceFailureFromPluginResult(candidate.failure, {
-                mediaKey: getMediaUniqueKey(musicItem), pluginName: plugin?.name ?? musicItem.platform, quality,
-            }))) {
-                break;
-            }
-            if (candidate?.url) {
-                const source = await this.createPlayableSource(
-                    candidate,
-                    musicItem,
-                    quality,
-                    "recovery",
-                    true,
-                );
-                if (source?.url) {
-                    return source;
-                }
-            }
-        }
-
-        if (musicItem.url) {
-            const directSource = {
-                url: musicItem.url,
-                ekey: musicItem.ekey,
-                cek: musicItem.cek,
-            };
-            return this.createPlayableSource(
-                directSource,
-                musicItem,
-                undefined,
-                "recovery",
-                true,
-            );
-        }
-
-        // 播放地址过期后重新取：原来源还是不行，就用记住的其他来源
-        const remembered =
-            (this.configService.getConfig("basic.tryChangeSourceWhenPlayFail") ?? true)
-                ? getRememberedAlternate(musicItem)
-                : null;
-        if (remembered) {
-            MediaCache.removeMediaCache(remembered);
-            const alternate = await this.resolveSourceFromAlternate(
-                remembered,
-                qualityOrder,
-                () => true,
-            );
-            if (alternate && alternate !== "inactive") {
-                this.noteAlternateInUse(musicItem, alternate.musicItem);
-                return alternate.source;
-            }
-        }
-
-        return null;
     }
 
     private pruneSourceRecoveryAttempts(now = Date.now()) {
@@ -5235,7 +4820,7 @@ class TrackPlayer
                 .getProgress()
                 .catch(() => getDefaultStore().get(progressAtom));
             const seekTo = this.normalizeProgress(progress?.position) ?? 0;
-            const source = await this.resolveFreshMediaSource(musicItem);
+            const source = await this.sourceResolver.resolveFreshMediaSource(musicItem);
             if (
                 playbackRecovery.currentRequest() !== recoveryRequest ||
                 !source?.url ||
@@ -5299,7 +4884,7 @@ class TrackPlayer
         }
         try {
             const [source, artwork] = await Promise.all([
-                this.resolveDirectMediaSource(
+                this.sourceResolver.resolveDirectMediaSource(
                     musicItem,
                     transition.timedOutSources,
                 ),
@@ -5354,7 +4939,7 @@ class TrackPlayer
         }
     }
 
-    private async resolveNitroQueuedTracks(
+    private async resolveAdapterQueuedTracks(
         tracks: Array<Partial<IMusic.IMusicItem>>,
         transitionToken?: IMpvTrackTransitionToken,
     ) {
@@ -5371,14 +4956,14 @@ class TrackPlayer
             }
 
             const key = getMediaUniqueKey(musicItem);
-            if (this.nitroPendingSourceRequests.has(key)) {
+            if (this.pendingQueueSourceRequests.has(key)) {
                 continue;
             }
 
-            this.nitroPendingSourceRequests.add(key);
+            this.pendingQueueSourceRequests.add(key);
             try {
                 const [source, artwork] = await Promise.all([
-                    this.resolveDirectMediaSource(musicItem),
+                    this.sourceResolver.resolveDirectMediaSource(musicItem),
                     resolveLocalMusicArtwork(musicItem).catch(() => ""),
                 ]);
                 if (
@@ -5421,13 +5006,13 @@ class TrackPlayer
             } catch (error: any) {
                 errorLog("预解析音源失败", error?.message ?? error);
             } finally {
-                this.nitroPendingSourceRequests.delete(key);
+                this.pendingQueueSourceRequests.delete(key);
             }
         }
         this.syncPreparedNextTrack("source-resolved");
     }
 
-    private syncNitroCurrentMusic(
+    private syncAdapterCurrentMusic(
         track?: Partial<IMusic.IMusicItem> | null,
         reason?: unknown,
         preferredIndex?: number | null,
@@ -5527,9 +5112,9 @@ class TrackPlayer
             count: pending.length,
             startIndex,
         });
-        // resolveNitroQueuedTracks 末尾会调 syncPreparedNextTrack("source-resolved")，
+        // resolveAdapterQueuedTracks 末尾会调 syncPreparedNextTrack("source-resolved")，
         // URL 落地后 runway 会自动重新武装。
-        await this.resolveNitroQueuedTracks(pending);
+        await this.resolveAdapterQueuedTracks(pending);
     }
 
     private getBackendRepeatMode(
@@ -5596,109 +5181,6 @@ class TrackPlayer
             return "content";
         }
         return "other";
-    }
-
-    /**
-     * 原来源取不到地址时，换到其他来源的同一个录音（规则见 alternateSource.ts）。
-     * 先试上次换成功的来源；不行再到其他已启用的来源里搜，搜到的按接近程度逐个试。
-     */
-    private async resolveAlternateSource(
-        musicItem: IMusic.IMusicItem,
-        qualityOrder: IMusic.IQualityKey[],
-        isPlayRequestActive: () => boolean,
-        rememberSourceFailure: (
-            failure?: MediaSourceFailure | null,
-            attemptType?: MediaSourceAttemptType,
-        ) => void,
-        timedOutSources?: TimedOutSources,
-    ): Promise<IAlternateSourceResult | "inactive" | null> {
-        const tried = new Set<string>();
-        const tryCandidate = async (alternate: IMusic.IMusicItem) => {
-            const key = getMediaUniqueKey(alternate);
-            if (tried.has(key)) {
-                return null;
-            }
-            tried.add(key);
-            return this.resolveSourceFromAlternate(
-                alternate,
-                qualityOrder,
-                isPlayRequestActive,
-                rememberSourceFailure,
-                timedOutSources,
-            );
-        };
-
-        const remembered = getRememberedAlternate(musicItem);
-        if (remembered) {
-            const result = await tryCandidate(remembered);
-            if (result) {
-                return result;
-            }
-            forgetAlternate(musicItem);
-        }
-
-        const sources = this.pluginManagerService
-            .getSortedSearchablePlugins("music")
-            .map(plugin => ({
-                name: plugin.name,
-                search: async (keyword: string) =>
-                    (await plugin.methods.search(keyword, 1, "music"))
-                        ?.data as IMusic.IMusicItem[] | undefined,
-            }));
-        const candidates = await findAlternateCandidates(musicItem, sources, {
-            timeoutMs: 8000,
-            isCancelled: () => !isPlayRequestActive(),
-        });
-        if (!isPlayRequestActive()) {
-            return "inactive";
-        }
-        trace("查找其他来源", {
-            musicId: musicItem.id,
-            platform: musicItem.platform,
-            candidates: candidates.length,
-        });
-        for (const candidate of candidates) {
-            const result = await tryCandidate(candidate);
-            if (result === "inactive") {
-                return result;
-            }
-            if (result) {
-                rememberAlternate(musicItem, candidate);
-                return result;
-            }
-        }
-        return null;
-    }
-
-    /** 用另一个来源的同一首歌取播放地址，按音质顺序逐个试 */
-    private async resolveSourceFromAlternate(
-        alternate: IMusic.IMusicItem,
-        qualityOrder: IMusic.IQualityKey[],
-        isActive: () => boolean,
-        rememberSourceFailure?: (
-            failure?: MediaSourceFailure | null,
-            attemptType?: MediaSourceAttemptType,
-        ) => void,
-        timedOutSources?: TimedOutSources,
-    ): Promise<IAlternateSourceResult | "inactive" | null> {
-        const plugin = this.pluginManagerService.getByMedia(alternate);
-        if (!plugin || !this.pluginManagerService.isPluginEnabled(plugin)) {
-            return null;
-        }
-        return resolveMediaSourceCandidate({
-            musicItem: alternate,
-            pluginName: plugin.name,
-            qualityOrder,
-            isActive,
-            isTimeout: error => error instanceof MediaSourceTimeoutError,
-            request: quality => this.requestPluginMediaSource(plugin, alternate, quality, timedOutSources),
-            prepare: (candidate, quality) => this.isUnsupportedEncryptedSource(candidate)
-                ? Promise.resolve(createMediaSourceFailureResult(createMediaSourceFailure("encrypted-unsupported", {
-                    mediaKey: getMediaUniqueKey(alternate), pluginName: plugin.name, quality,
-                })))
-                : this.createPlayableSource(candidate, alternate, quality, "similar-plugin"),
-            onFailure: failure => rememberSourceFailure?.(failure, "similar"),
-        });
     }
 
     /** 用户看得到的播放失败：留下失败提示，并记进播放统计 */

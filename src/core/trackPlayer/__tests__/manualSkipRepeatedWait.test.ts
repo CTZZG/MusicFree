@@ -206,7 +206,7 @@ beforeEach(() => {
         setConfig: jest.fn(),
     };
     // 地址校验依赖原生和网络，这里原样放行；装载地址就当原生开始放这首
-    jest.spyOn(player, "createPlayableSource").mockImplementation(
+    jest.spyOn(player.sourceResolver, "createPlayableSource").mockImplementation(
         async (source: any) => source,
     );
     jest.spyOn(player, "setTrackSource").mockImplementation(

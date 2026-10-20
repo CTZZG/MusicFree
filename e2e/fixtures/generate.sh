@@ -4,9 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 tone() { # 文件名 频率 秒数
+    local version=4
+    [ "$1" != tone-b.mp3 ] || version=3
     ffmpeg -hide_banner -loglevel error -y \
         -f lavfi -i "sine=frequency=$2:sample_rate=16000:duration=$3" \
-        -ac 1 -c:a libmp3lame -b:a 16k "$1"
+        -ac 1 -c:a libmp3lame -b:a 16k -id3v2_version "$version" "$1"
 }
 # 主流程里的几首要够长：歌中途播完自己切走会干扰判断。A 从播放统计一直放到冷启动续播，
 # 中间切音质不会让它从头播，所以要更长
@@ -15,3 +17,7 @@ tone tone-b.mp3 554 180
 tone tone-c.mp3 659 180
 # 20 秒就播完，用来检查在后台播完后自动接下一首（Maestro 点完歌退出要好几秒，太短会错过）
 tone short.mp3 330 20
+# A deliberately different on-disk title catches silently skipped WMA tagging.
+ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=440:duration=2' \
+    -c:a wmav2 -b:a 64k -metadata title='Before Title' \
+    -metadata artist='Before Artist' -metadata album='Before Album' tagged.wma

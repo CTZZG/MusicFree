@@ -476,7 +476,9 @@ class Mp3UtilModule(private val reactContext: ReactApplicationContext) : ReactCo
         metaKey: String,
         fieldKey: FieldKey,
     ) {
-        getOptionalString(meta, metaKey)?.let { tag.setField(fieldKey, it) }
+        getOptionalString(meta, metaKey)?.let {
+            MediaTagFieldWriter.setField(tag, fieldKey, it)
+        }
     }
 
     private fun applyMediaTagFields(tag: org.jaudiotagger.tag.Tag, meta: ReadableMap) {

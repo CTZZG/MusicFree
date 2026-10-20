@@ -112,7 +112,7 @@ beforeEach(() => {
     } as Record<string, unknown>)[key] };
     getMediaSource = jest.fn();
     player.pluginManagerService = { getByName: () => ({ name: "test", methods: { getMediaSource } }) };
-    jest.spyOn(player, "createPlayableSource").mockImplementation(async (candidate: any, _: unknown, quality: unknown) => ({ ...candidate, quality }));
+    jest.spyOn(player.sourceResolver, "createPlayableSource").mockImplementation(async (candidate: any, _: unknown, quality: unknown) => ({ ...candidate, quality }));
     jest.spyOn(player, "setTrackSource").mockImplementation(async (track: any) => {
         mockBackend.active = { track, index: songs.findIndex(song => song.id === track.id) };
     });
@@ -329,7 +329,7 @@ it("does not look for other sources when switching is turned off", async () => {
 
 it.each(["resolveDirectMediaSource", "resolveFreshMediaSource"])("%s stops requesting provider after credential rejection", async method => {
     getMediaSource.mockResolvedValue({ failure: { code: "access-denied" } });
-    await player[method](songs[1]);
+    await player.sourceResolver[method](songs[1]);
     expect(getMediaSource).toHaveBeenCalledTimes(1);
 });
 
@@ -347,7 +347,7 @@ it("native recovery does not publish quality before replacement source loads", a
     player.setCurrentMusic(originalTrack);
     player.setQuality("128k");
     mockBackend.active = { track: originalTrack, index: 0 };
-    jest.spyOn(player, "resolveFreshMediaSource").mockResolvedValue({ url: "https://example.com/replacement.flac", quality: "hires", playbackSource: { quality: "hires", origin: "recovery" } });
+    jest.spyOn(player.sourceResolver, "resolveFreshMediaSource").mockResolvedValue({ url: "https://example.com/replacement.flac", quality: "hires", playbackSource: { quality: "hires", origin: "recovery" } });
     player.setTrackSource.mockRejectedValueOnce(new Error("native load failed"));
     let tree: any;
     renderer.act(() => {
