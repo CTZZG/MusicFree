@@ -516,6 +516,9 @@ jobs:
                   profile: pixel_6
                   cores: 3
                   ram-size: 4096M
+                  # Android 17 镜像默认的数据分区装不下应用和替身（INSTALL_FAILED_INSUFFICIENT_STORAGE），
+                  # 只给它加大；留空是默认大小
+                  disk-size: ${{ inputs.e2e_android == '17' && '8G' || '' }}
                   disable-animations: true
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
                   script: >-

@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # 装 APK 的公共函数，run.sh 和 lib/audio_hardening.sh 用。
 #
-# 刚开机的模拟器（Android 17 镜像上见过）在 sys.boot_completed 之后几秒内，PackageInstaller
-# 还建不了安装会话（异常出在 PackageInstallerService.createSession），过一会儿再装就好。
+# 安装偶尔会因模拟器一时的状态失败，失败时过一会儿再试；失败原因写清楚，不只留调用栈的最后几行
+# （Android 17 镜像第一次失败时就只看到 PackageInstallerService.createSession，看不出其实是数据分区满了）。
 
 # adb_install <日志> <adb install 的参数…>：失败时等 10 秒再试，最多 3 次。每次的输出都追加到日志里，
 # 最后还失败时返回 1
