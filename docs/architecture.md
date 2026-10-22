@@ -192,6 +192,9 @@
   掉回底部、盖住标签栏。补丁改成先取出要同步的值、再清理（Reanimated 4.7 已重写这段）。升级 Reanimated 时去掉补丁，并保留
   模拟器测试里的标签栏遮挡检查。
 - 原生代码由两套构建中的 `assembleRelease` 编译；`npm run audit:round20-native` 需要本地 Android 环境，不在 CI 质量门中。
+- 打出的 APK 由 `generator/audit-apk-packaging.py` 检查（稳定版和 Beta 构建都跑，质量门里跑它的自检）：DEX 必须压缩；
+  arm64-v8a、x86_64 的每个 `.so` 的 LOAD 段至少按 16 KB 对齐，否则在 16 KB 内存页的设备上加载不了（32 位库在这类设备上本来就不用，
+  不检查）。v0.12.0 里旧 Media3 FFmpeg 和旧 Fresco GIF 的两个库只按 4 KB 对齐，v0.12.1 移除、替换后全部达标。
 - Android 单元测试（`android/app/src/test`，纯 JVM，不依赖 Android API）：
   - Beta 和稳定版构建在 `assembleRelease` 之前运行 `testReleaseUnitTest`，失败时不打包、不上传、不发布；
   - PR 和推送检查（`ci.yml` 的 Android unit tests）在改到原生代码、原生依赖或这项检查本身时运行 `testDebugUnitTest`，判断规则见 `generator/lib/nativeChanges.mjs`，拿不准时照样运行；没改到时任务直接以成功结束；
@@ -279,5 +282,4 @@
 ## 待定事项
 
 - **Android 支持下限已决定**：API 34。不得为了 Android 7–13 重新加回证书、反射、权限分支或测试矩阵；要恢复支持必须先取得新的产品决定并更新本文。
-- **Nitro 遗留的原生依赖**：`android/app/build.gradle` 默认仍打包 Nitro 时期的 `musicfree-media3-ffmpeg-decoder` AAR（`musicfreeEnableNitroFfmpeg` 开关），而 `android/app/src/main/java` 中已没有 Media3 或 FFmpeg 的引用。是否移除需要构建与设备验证后再定。
 - **iOS**：是否继续支持需要单独定义。
