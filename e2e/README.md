@@ -297,6 +297,26 @@ in 1000ms`）系统才报 Displayed，之后开屏页才交给应用移除（见
 `lib/perf_stats.py --self-test` 在 PR CI 和 Beta 都跑：缺时间点、顺序不对、读到上一次启动的时间点都要判测不出；
 追踪的时间线和截屏转换也在里面。
 
+## Android 17：后台音频加固
+
+Android 17 起，后台的应用没有可见界面、也没有前台服务时播放会被静音、焦点请求失败、音量调不动，
+不抛异常（[说明](https://developer.android.com/about/versions/17/changes/bg-audio)）；目标版本是 37 的应用在后台还要有
+带“使用期间”权限的前台服务。系统会在 logcat 和 `dumpsys audio` 里留下带包名的 `AudioHardening` 记录。
+
+手动运行 Beta 构建时 `e2e_android` 选 `17`：模拟器换成 Android 17（`system-images;android-37.0;google_apis;x86_64`），
+`run.sh` 收到 `E2E_AUDIO_HARDENING=throw`，在装应用之前执行 `cmd audio set-enable-hardening throw`
+（不管目标版本，所有应用都按最严的规则检查，焦点、音量请求被拦时直接抛 `IllegalStateException`），日志缓冲区调到 16 MB。
+
+| 检查 | 怎么判断 |
+| --- | --- |
+| 打开后台音频加固 | 命令退出码是 0，输出里没有 unknown、error、exception |
+| 对照 | 给“视频”替身发一个显式广播（`BackgroundAudioReceiver`），它在没有界面、没有前台服务时抢焦点、写一段静音：5 秒内替身打出结果，而且 logcat 或 `dumpsys audio` 里有带替身包名的 `AudioHardening` 记录。没有记录说明加固没生效或记录不写包名，后面的判断不作数 |
+| 本应用没有被拦下 | 跑完选中的检查后，logcat 和 `dumpsys audio` 里没有带 `fun.upup.musicfree` 的 `AudioHardening` 记录（包名前后不能紧挨着包名里的字符，替身 `fun.upup.musicfree.e2e.focus` 的不算）；对照没通过时也记失败。找到的记录存在 `audio-hardening-app.txt` |
+
+加固只影响后台，`all` 和 `power` 里的后台播放、媒体键切歌、看视频打断、锁屏、Doze 都在加固下跑一遍。
+Android 17 模拟器较慢，`all` 可能超过 60 分钟的期限，可以先选 `power`。判断函数由 `lib/audio_hardening_test.sh`
+用假的 adb 自检。
+
 ## 怎么跑
 
 Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这次运行的 Summary 里，
@@ -305,6 +325,7 @@ Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这�
 - 只改了测试、不想重新打包：手动运行 Beta 构建，`e2e_apk_run_id` 填之前某次 Beta 构建的运行 ID，
   会直接测那次打出的 APK（30 天内的都在）。
 - 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`；只跑性能基线：选 `perf`；只跑本机崩溃记录：选 `crash`。
+- 在 Android 17 上、打开后台音频加固跑：`e2e_android` 选 `17`（见上面“Android 17：后台音频加固”）。
 - 拿修复前的代码对照：`build_ref` 填那个提交的完整提交号，打包那份代码，测试脚本和测试音源仍用触发的分支。
   APK 文件名、构建信息（`android-build-info.txt`、应用里的构建信息）记的是打包的源码提交和它的版本号，
   触发工作流的提交另记为 `Workflow commit`。测试结果里分开写测试脚本的提交和 APK 打包的源码提交。

@@ -208,6 +208,8 @@
   （通知栏停在暂停的地方、播放条和音质恢复、点播放接着播）、断网时点歌留下失败提示和网络恢复后重试、迷你播放器不盖住
   底部标签栏（从二级页面返回后马上切后台，回来换个标签）。
   测试音源和音频按提交号从 raw.githubusercontent.com 读取，提交必须已推送。
+  `e2e_android` 选 `17` 时换成 Android 17（API 37.0）模拟器，打开后台音频加固（`set-enable-hardening throw`），
+  先用“视频”替身在后台被拦一次作对照，跑完检查本应用没有 `AudioHardening` 记录（`e2e/lib/audio_hardening.sh`）。
   只改测试时可以填 `e2e_apk_run_id`，直接测以前某次 Beta 的 APK，不重新打包。结果写进运行的 Summary，截图、Maestro 日志、
   logcat 在附件里，截图和结果另外推到 `refs/e2e/latest`（不在分支列表里，每次覆盖）。
 - 代理与订阅检查（`.github/workflows/proxy-subscription-check.yml`，`e2e/proxy-subscription-check.sh`）：PR 改到原生代码

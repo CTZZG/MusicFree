@@ -14,6 +14,8 @@
 # E2E_SUITE=perf 时只跑第 23 步（性能基线：冷启动、搜索、在线和本地点歌，只记录不设门限，见 perf.sh），
 # 同样要单独选。E2E_PERF_RUNS 改每项的次数（默认 10，另有 1 次预热）。
 # E2E_SUITE=crash 时只跑第 24 步（本机崩溃记录：Java 崩溃和原生崩溃都记下、清空后不再显示，见 crash.sh）。
+# E2E_AUDIO_HARDENING=enable|throw 时开头打开 Android 17 的后台音频加固，用“视频”替身作对照，
+# 结束时检查本应用没有被拦下（见 lib/audio_hardening.sh），只能在 Android 17 及以上跑。
 set -uo pipefail
 
 APK=${1:?用法：e2e/run.sh <APK> <提交号> <结果目录>}
@@ -32,6 +34,7 @@ FOCUS_PKG=fun.upup.musicfree.e2e.focus
 E2E_LEGACY_APK=${E2E_LEGACY_APK:-}
 E2E_MMKV_SEED=${E2E_MMKV_SEED:-}
 E2E_SUITE=${E2E_SUITE:-all}
+E2E_AUDIO_HARDENING=${E2E_AUDIO_HARDENING:-}
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
 RESULTS="$OUT/results.tsv"
@@ -47,6 +50,8 @@ shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; 
 # shellcheck source=lib/pause_checks.sh
 source "$HERE/lib/pause_checks.sh"
 source "$HERE/lib/startup_capture.sh"
+# shellcheck source=lib/audio_hardening.sh
+source "$HERE/lib/audio_hardening.sh"
 trap startup_capture_stop EXIT
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
@@ -233,6 +238,9 @@ finish() {
         log "有崩溃日志："
         head -n 60 "$OUT/crash.txt"
     fi
+    if [ -n "$E2E_AUDIO_HARDENING" ]; then
+        check_audio_hardening
+    fi
     write_summary
     exit $((FAILED > 0 ? 1 : 0))
 }
@@ -246,6 +254,11 @@ adb shell settings put global hide_error_dialogs 1 || true
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb logcat -c || true
+# Android 17 的后台音频加固：在装应用之前打开，先让替身在后台被拦一次，确认加固生效、记录认得出来
+if [ -n "$E2E_AUDIO_HARDENING" ]; then
+    enable_audio_hardening || finish
+    run_hardening_control
+fi
 startup_capture_start
 
 # 1. 安装并启动。-g 直接给通知、音频读取等运行时权限，不在系统弹窗上卡住
