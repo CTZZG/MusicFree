@@ -14,6 +14,7 @@ const mockNativeMpvPlayer = {
     seekTo: jest.fn(async () => undefined),
     setVolume: jest.fn(async () => undefined),
     setRate: jest.fn(async () => undefined),
+    setReplayGain: jest.fn(async () => undefined),
     getIsPlaying: jest.fn(async () => true),
     getPosition: jest.fn(async () => 0),
     getDuration: jest.fn(async () => 180),
@@ -861,5 +862,39 @@ describe("MpvPlayerAdapter play() while a load is still pending", () => {
         await adapter.play();
 
         expect(mockNativeMpvPlayer.resume).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("MpvPlayerAdapter volume levelling (ReplayGain)", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it("starts mpv with the saved mode and treats anything unknown as off", async () => {
+        await new MpvPlayerAdapter().setup({ replayGain: "album" });
+        expect(mockNativeMpvPlayer.initialize).toHaveBeenLastCalledWith(
+            expect.objectContaining({ replayGain: "album" }),
+        );
+
+        await new MpvPlayerAdapter().setup();
+        expect(mockNativeMpvPlayer.initialize).toHaveBeenLastCalledWith(
+            expect.objectContaining({ replayGain: "off" }),
+        );
+
+        await new MpvPlayerAdapter().setup({ replayGain: "loud" as any });
+        expect(mockNativeMpvPlayer.initialize).toHaveBeenLastCalledWith(
+            expect.objectContaining({ replayGain: "off" }),
+        );
+    });
+
+    it("changes the mode on the running engine without touching volume or the queue", async () => {
+        const adapter = await createAdapter();
+
+        await adapter.setReplayGain("track");
+        await adapter.setReplayGain("bogus" as any);
+
+        expect(mockNativeMpvPlayer.setReplayGain.mock.calls).toEqual([["track"], ["off"]]);
+        expect(mockNativeMpvPlayer.setVolume).not.toHaveBeenCalled();
+        expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
     });
 });

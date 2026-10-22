@@ -1,3 +1,5 @@
+import type { ReplayGainMode } from "./replayGain";
+
 export type PlayerBackendName = "mpv";
 
 export type PlayerBackendState =
@@ -153,6 +155,8 @@ export interface PlayerAdapterConfig {
     notificationCapabilities?: PlayerAdapterRemoteCapability[];
     remoteDuckMode?: "pause" | "lowerVolume";
     remoteDuckVolume?: number;
+    /** 音量平衡（ReplayGain），见 replayGain.ts */
+    replayGain?: ReplayGainMode;
 }
 
 export interface PlayerAdapterLoadQueueOptions {
@@ -229,6 +233,9 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
     setRate(rate: number): Promise<void>;
 
     setVolume(volume: number): Promise<void>;
+
+    /** 音量平衡（ReplayGain），改了立刻对正在放的歌生效 */
+    setReplayGain?(mode: ReplayGainMode): Promise<void>;
 
     updateTrack(track: TTrack, index?: number): Promise<void>;
 

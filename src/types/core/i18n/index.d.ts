@@ -906,6 +906,11 @@ export interface ILanguageData {
     "basicSettings.crossfadeEnabled.desc": string; // 上一首末尾淡出、下一首开头淡入
     "basicSettings.crossfadeSeconds": string; // 淡化时长
     "basicSettings.crossfadeSeconds.unit": string; // {{seconds}} 秒
+    "basicSettings.replayGain": string; // 音量平衡
+    "basicSettings.replayGain.off": string; // 关闭
+    "basicSettings.replayGain.track": string; // 按单曲
+    "basicSettings.replayGain.album": string; // 按专辑
+    "basicSettings.replayGain.tip": string; // 按歌曲文件里的 ReplayGain 标签调整音量……
     "basicSettings.tempRemoteDuck": string; // 播放被暂时打断时
     "basicSettings.tempRemoteDuck.pause": string; // 暂停播放
     "basicSettings.tempRemoteDuck.lowerVolume": string; // 降低音量

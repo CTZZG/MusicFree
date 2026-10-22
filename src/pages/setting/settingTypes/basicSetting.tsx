@@ -17,6 +17,7 @@ import PluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import trackPlayer from "@/core/trackPlayer";
 import { DEFAULT_CROSSFADE_SECONDS } from "@/core/trackPlayer/crossfadePolicy";
+import { normalizeReplayGainMode, REPLAY_GAIN_MODES } from "@/core/playerAdapter/replayGain";
 import useColors from "@/hooks/useColors";
 import LyricUtil, { NativeTextAlignment } from "@/native/lyricUtil";
 import { buildInfo } from "@/constants/buildInfo.generated";
@@ -141,10 +142,12 @@ const createRadio = function (
     value: string | number,
     valueMap?: Record<string | number, string | number>,
     onChange?: (value: string | number) => void,
+    tip?: string,
 ) {
     const onPress = () => {
         showDialog("RadioDialog", {
             title,
+            tip,
             content: valueMap
                 ? candidates.map(_ => ({
                     label: valueMap[_] as string,
@@ -213,6 +216,7 @@ export default function BasicSetting() {
     const autoStopWhenError = useAppConfig("basic.autoStopWhenError");
     const crossfadeEnabled = useAppConfig("basic.crossfadeEnabled");
     const crossfadeSeconds = useAppConfig("basic.crossfadeSeconds");
+    const replayGain = useAppConfig("basic.replayGain");
     const maxCacheSize = useAppConfig("basic.maxCacheSize");
     const defaultPlayQuality = useAppConfig("basic.defaultPlayQuality");
     const playQualityOrder = useAppConfig("basic.playQualityOrder");
@@ -473,6 +477,24 @@ export default function BasicSetting() {
                         ),
                     ]
                     : []),
+                // 音量平衡：只认歌曲文件里的 ReplayGain 标签，改了马上对正在放的歌生效
+                createRadio(
+                    t("basicSettings.replayGain"),
+                    "basic.replayGain",
+                    REPLAY_GAIN_MODES,
+                    normalizeReplayGainMode(replayGain),
+                    {
+                        off: t("basicSettings.replayGain.off"),
+                        track: t("basicSettings.replayGain.track"),
+                        album: t("basicSettings.replayGain.album"),
+                    },
+                    mode => {
+                        trackPlayer
+                            .setReplayGain(normalizeReplayGainMode(mode))
+                            .catch(() => undefined);
+                    },
+                    t("basicSettings.replayGain.tip"),
+                ),
                 {
                     title: t("dislikeMusic.manage"),
                     right: (

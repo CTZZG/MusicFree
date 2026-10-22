@@ -56,6 +56,7 @@ import type {
     PlayerAdapterEvent,
 } from "@/core/playerAdapter";
 import { resolvePlayerAdapter } from "@/core/playerAdapter";
+import type { ReplayGainMode } from "@/core/playerAdapter/replayGain";
 import { normalizeMusicState } from "@/utils/trackUtils";
 import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
 import {
@@ -3523,6 +3524,9 @@ class TrackPlayer
     };
     getRate = () => this.backend.getRate();
     setRate = (rate: number) => this.backend.setRate(rate);
+    /** 音量平衡（ReplayGain）：设置里改了马上对正在放的歌生效 */
+    setReplayGain = (mode: ReplayGainMode) =>
+        this.backend.setReplayGain?.(mode) ?? Promise.resolve();
     reset = () => {
         this.manualSkipGate.cancelPending();
         this.cancelMpvManualSkipTransition("reset");

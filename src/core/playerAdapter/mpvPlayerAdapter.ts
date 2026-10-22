@@ -10,6 +10,7 @@ import NativeMpvPlayer, {
 } from "./nativeMpvPlayer";
 import { encodeMpvMediaId, matchesMpvMediaId } from "./mpvMediaId";
 import { isStaleMpvRemoteCommand } from "./mpvRemoteCommandPolicy";
+import { normalizeReplayGainMode, type ReplayGainMode } from "./replayGain";
 import {
     collectMpvNextIndices,
     computeMpvNextIndex,
@@ -248,6 +249,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     config?.notificationCapabilities?.includes("stop") ??
                     config?.capabilities?.includes("stop") ??
                     false,
+                replayGain: normalizeReplayGainMode(config?.replayGain),
             });
             this.androidAutoConnected =
                 await NativeMpvPlayer.isAndroidAutoConnected().catch(
@@ -1386,6 +1388,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     async setRate(rate: number) {
         this.rate = rate;
         await NativeMpvPlayer.setRate(rate);
+    }
+
+    async setReplayGain(mode: ReplayGainMode) {
+        await NativeMpvPlayer.setReplayGain(normalizeReplayGainMode(mode));
     }
 
     async setVolume(volume: number) {

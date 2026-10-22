@@ -36,6 +36,7 @@ import type {
     PlayerAdapterRemoteCapability,
 } from "@/core/playerAdapter";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
+import { normalizeReplayGainMode } from "@/core/playerAdapter/replayGain";
 import { setupAppFolders } from "./setupFolders";
 import { setupKeyValueStores } from "@/utils/keyValueStore/bootstrapStores";
 import StorageUri from "@/native/storageUri";
@@ -199,6 +200,7 @@ export async function initTrackPlayer() {
         remoteDuckMode: Config.getConfig("basic.tempRemoteDuck") ?? "pause",
         remoteDuckVolume:
             Config.getConfig("basic.tempRemoteDuckVolume") ?? 0.5,
+        replayGain: normalizeReplayGainMode(Config.getConfig("basic.replayGain")),
     };
 
     try {

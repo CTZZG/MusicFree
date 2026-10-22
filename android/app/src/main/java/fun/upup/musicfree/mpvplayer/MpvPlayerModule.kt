@@ -179,6 +179,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         fun getPropertyString(property: String): String? =
             mpvInstance?.getPropertyString(property)
 
+        fun setPropertyString(property: String, value: String) =
+            requireMpv().setPropertyString(property, value)
+
         fun observeProperty(property: String, format: Int) =
             requireMpv().observeProperty(property, format)
 
@@ -968,6 +971,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 // handles the final ended state when there is no prepared next.
                 MPVLib.setOptionString("keep-open", "no")
                 MPVLib.setOptionString("gapless-audio", "yes")
+                // 音量平衡：按文件里的 ReplayGain 标签调音量，没有标签的歌不变（见 ReplayGain）
+                MPVLib.setOptionString(
+                    "replaygain",
+                    ReplayGain.mpvValue(readString(options, "replayGain")),
+                )
 
                 defaultUserAgent = readString(options, "userAgent")
                     ?.takeIf { it.isNotBlank() }
@@ -1652,6 +1660,27 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 operationPromise.resolve(null)
             } catch (e: Exception) {
                 operationPromise.reject("E_RATE", e.message, e)
+            }
+        }
+    }
+
+    /** 音量平衡：mpv 的 replaygain 改了立刻按新模式重算增益，不用重新加载 */
+    @ReactMethod
+    fun setReplayGain(mode: String, promise: Promise) {
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+        postPromise(promise, "E_REPLAY_GAIN") { operationPromise ->
+            if (!isInitialized.get()) {
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
+            }
+            try {
+                MPVLib.setPropertyString("replaygain", ReplayGain.mpvValue(mode))
+                operationPromise.resolve(null)
+            } catch (e: Exception) {
+                operationPromise.reject("E_REPLAY_GAIN", e.message, e)
             }
         }
     }

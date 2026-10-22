@@ -1,5 +1,7 @@
 import { NativeEventEmitter, NativeModules, Platform } from "react-native";
 
+import type { ReplayGainMode } from "./replayGain";
+
 /**
  * mpv 播放引擎的原生桥接层（仅 Android）。
  *
@@ -53,6 +55,8 @@ export interface MpvInitializeOptions {
     progressIntervalMs?: number;
     /** 通知栏是否显示停止/关闭按钮 */
     showStopAction?: boolean;
+    /** 音量平衡（ReplayGain），见 replayGain.ts */
+    replayGain?: ReplayGainMode;
     /** 透传给 mpv 的额外属性（如 audio-buffer、cache 等） */
     mpvOptions?: Record<string, string>;
 }
@@ -154,6 +158,8 @@ interface MpvPlayerNativeModule {
     /** 0-1 */
     setVolume(volume: number): Promise<void>;
     setRate(rate: number): Promise<void>;
+    /** 音量平衡，对正在放的歌立刻生效 */
+    setReplayGain?(mode: ReplayGainMode): Promise<void>;
     getIsPlaying(): Promise<boolean>;
     getPosition(): Promise<number>;
     getDuration(): Promise<number>;
@@ -274,6 +280,10 @@ const NativeMpvPlayer = {
     seekTo: (seconds: number) => assertAvailable().seekTo(seconds),
     setVolume: (volume: number) => assertAvailable().setVolume(volume),
     setRate: (rate: number) => assertAvailable().setRate(rate),
+    setReplayGain: (mode: ReplayGainMode) => {
+        const module = assertAvailable();
+        return module.setReplayGain ? module.setReplayGain(mode) : Promise.resolve();
+    },
     getIsPlaying: () => assertAvailable().getIsPlaying(),
     getPosition: () => assertAvailable().getPosition(),
     getDuration: () => assertAvailable().getDuration(),
