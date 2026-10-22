@@ -37,6 +37,7 @@ import type {
 } from "@/core/playerAdapter";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
 import { normalizeReplayGainMode } from "@/core/playerAdapter/replayGain";
+import { createAutoLibrary } from "@/core/androidAutoLibrary";
 import { setupAppFolders } from "./setupFolders";
 import { setupKeyValueStores } from "@/utils/keyValueStore/bootstrapStores";
 import StorageUri from "@/native/storageUri";
@@ -231,10 +232,39 @@ export async function initTrackPlayer() {
 
     // [新增] 设置播放服务观察者，用于和插件通信
     playbackServiceObserver.setupPlaybackObserver();
+    setupAndroidAutoLibrary();
     TrackPlayer.setReady(true);
     telemetry.logMetric("Bootstrap.TrackPlayerTrace", Date.now() - playerTimestamp.Start, playerMetrics);
 }
 
+
+/** Android Auto 里的“我喜欢”“最近播放”：车机来要时现读，点了其中一首就用整个列表换播放队列 */
+function setupAndroidAutoLibrary() {
+    const adapter = TrackPlayer.playerAdapter;
+    const library = createAutoLibrary({
+        sources: {
+            // 内置“我喜欢”歌单的 id（见 core/musicSheet 的 _defaultSheet）
+            favorite: () =>
+                MusicSheet.getSortedMusicListBySheetId("favorite").musicList,
+            recent: () => musicHistory.history,
+        },
+        provide: (parentId, items) =>
+            adapter.provideBrowseChildren?.(parentId, items) ?? Promise.resolve(),
+        play: (musicItem, list) =>
+            TrackPlayer.playWithReplacePlayList(musicItem, list),
+    });
+    adapter.addEventListener("libraryBrowseRequest", event => {
+        library.handleBrowseRequest(event?.parentId).catch(error => {
+            errorLog("Android Auto 列表读取失败", error?.message ?? error);
+        });
+    });
+    adapter.addEventListener("remotePlayFromLibrary", event => {
+        TrackPlayer.notePlayRequestedFromOutside();
+        library.handlePlay(event?.mediaId).catch(error => {
+            errorLog("Android Auto 列表点播失败", error?.message ?? error);
+        });
+    });
+}
 
 /** 不需要阻塞的 */
 async function extraMakeup() {

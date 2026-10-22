@@ -167,6 +167,11 @@ interface MpvPlayerNativeModule {
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
     updateMetadata(payload: MpvMetadataPayload): Promise<void>;
+    /** 答复 Android Auto 要的“我喜欢”“最近播放”（见 MpvMediaBrowserService） */
+    provideBrowseChildren?(
+        parentId: string,
+        items: MpvQueueSnapshotTrack[],
+    ): Promise<void>;
 }
 
 export const ON_MPV_STATE_CHANGED = "onMpvStateChanged";
@@ -177,6 +182,12 @@ export const ON_MPV_ERROR = "onMpvError";
 export const ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand";
 export const ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
     "onMpvAndroidAutoConnectionChanged";
+export const ON_MPV_BROWSE_REQUEST = "onMpvBrowseRequest";
+
+/** Android Auto 打开了“我喜欢”“最近播放”，要列表内容 */
+export interface MpvBrowseRequestEvent {
+    parentId: string;
+}
 
 export interface MpvStateChangedEvent {
     state: MpvPlayerState;
@@ -292,6 +303,12 @@ const NativeMpvPlayer = {
         assertAvailable().updateQueueSnapshot(payload),
     updateMetadata: (payload: MpvMetadataPayload) =>
         assertAvailable().updateMetadata(payload),
+    provideBrowseChildren: (parentId: string, items: MpvQueueSnapshotTrack[]) => {
+        const module = assertAvailable();
+        return module.provideBrowseChildren
+            ? module.provideBrowseChildren(parentId, items)
+            : Promise.resolve();
+    },
 
     // 事件订阅
     addStateChangedListener: (cb: (e: MpvStateChangedEvent) => void) =>
@@ -314,6 +331,8 @@ const NativeMpvPlayer = {
             ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED,
             cb,
         ),
+    addBrowseRequestListener: (cb: (e: MpvBrowseRequestEvent) => void) =>
+        addListener<MpvBrowseRequestEvent>(ON_MPV_BROWSE_REQUEST, cb),
 };
 
 export default NativeMpvPlayer;

@@ -139,6 +139,7 @@ const mockNativeMpvPlayer = {
         mockNative.listeners.auto = cb;
         return { remove: () => undefined };
     },
+    addBrowseRequestListener: () => ({ remove: () => undefined }),
 };
 
 jest.mock("@/core/playerAdapter/nativeMpvPlayer", () => ({
