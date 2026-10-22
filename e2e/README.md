@@ -313,6 +313,9 @@ Android 17 起，后台的应用没有可见界面、也没有前台服务时播
 | 对照 | 给“视频”替身发一个显式广播（`BackgroundAudioReceiver`），它在没有界面、没有前台服务时抢焦点、写一段静音：5 秒内替身打出结果，而且 logcat 或 `dumpsys audio` 里有带替身包名的 `AudioHardening` 记录。没有记录说明加固没生效或记录不写包名，后面的判断不作数 |
 | 本应用没有被拦下 | 跑完选中的检查后，logcat 和 `dumpsys audio` 里没有带 `fun.upup.musicfree` 的 `AudioHardening` 记录（包名前后不能紧挨着包名里的字符，替身 `fun.upup.musicfree.e2e.focus` 的不算）；对照没通过时也记失败。找到的记录存在 `audio-hardening-app.txt` |
 
+Android 17 镜像刚开机的几秒内装 APK 会在 `PackageInstallerService.createSession` 报错，所以应用和替身的安装
+（`lib/adb_install.sh`）失败时等 10 秒再试，最多 3 次，失败原因取 `Failure [...]`、异常类名那一行和 `Caused by`。
+
 加固只影响后台，`all` 和 `power` 里的后台播放、媒体键切歌、看视频打断、锁屏、Doze 都在加固下跑一遍。
 Android 17 模拟器较慢，`all` 可能超过 60 分钟的期限，可以先选 `power`。判断函数由 `lib/audio_hardening_test.sh`
 用假的 adb 自检。

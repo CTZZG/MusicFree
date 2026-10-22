@@ -50,6 +50,8 @@ shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; 
 # shellcheck source=lib/pause_checks.sh
 source "$HERE/lib/pause_checks.sh"
 source "$HERE/lib/startup_capture.sh"
+# shellcheck source=lib/adb_install.sh
+source "$HERE/lib/adb_install.sh"
 # shellcheck source=lib/audio_hardening.sh
 source "$HERE/lib/audio_hardening.sh"
 trap startup_capture_stop EXIT
@@ -262,10 +264,10 @@ fi
 startup_capture_start
 
 # 1. 安装并启动。-g 直接给通知、音频读取等运行时权限，不在系统弹窗上卡住
-if adb install -r -g "$APK" > "$OUT/install.log" 2>&1; then
+if adb_install "$OUT/install.log" -r -g "$APK"; then
     pass "安装 APK" "$(basename "$APK")"
 else
-    fail "安装 APK" "$(tail -n 3 "$OUT/install.log" | tr '\n' ' ')"
+    fail "安装 APK" "试了 3 次：$(install_failure_reason "$OUT/install.log")；完整输出在 install.log"
     finish
 fi
 # 保留启动命令的原始输出及首次启动现场；Maestro 安装驱动时的日志可能把早期日志冲掉。
@@ -599,7 +601,7 @@ expect_paused_through_video() {
     return 0
 }
 
-if [ -z "$FOCUS_APK" ] || ! adb install -r "$FOCUS_APK" > "$OUT/install-focus.log" 2>&1; then
+if [ -z "$FOCUS_APK" ] || ! adb_install "$OUT/install-focus.log" -r "$FOCUS_APK"; then
     for check in "${VIDEO_CHECKS[@]}"; do
         fail "$check" "没装上“视频”替身（E2E_FOCUS_APK=${FOCUS_APK:-未设置}），没有执行"
     done

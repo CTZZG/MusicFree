@@ -14,6 +14,8 @@ FOCUS_APK=$WORK/focus.apk
 OUT=$WORK/out
 mkdir -p "$OUT"
 E2E_AUDIO_HARDENING=throw
+# shellcheck source=adb_install.sh
+source "$HERE/lib/adb_install.sh"
 # shellcheck source=audio_hardening.sh
 source "$HERE/lib/audio_hardening.sh"
 
@@ -24,11 +26,13 @@ fail() { printf 'FAIL\t%s\t%s\n' "$1" "${2:-}" >> "$WORK/results"; }
 CONTROL_LINE='10-22 10:00:01.000  1000  1200 W AS.AudioService: AudioHardening level: partial package: fun.upup.musicfree.e2e.focus uid: 10200 focus request blocked'
 APP_LINE='10-22 10:20:00.000  1000  1200 W AS.AudioService: AudioHardening level: full package: fun.upup.musicfree uid: 10190 playback silenced'
 
-# 场景：ENABLE=ok|unknown|bad-exit，CONTROL=blocked|no-record|no-broadcast，DUMPSYS 是 dumpsys audio 的内容
+# 场景：ENABLE=ok|unknown|bad-exit，CONTROL=blocked|no-record|no-broadcast，DUMPSYS 是 dumpsys audio 的内容，
+# INSTALL_FAILURES 是替身前几次安装失败的次数（模拟刚开机时建不了安装会话）
 reset() {
-    ENABLE=ok CONTROL=blocked DUMPSYS=""
+    ENABLE=ok CONTROL=blocked DUMPSYS="" INSTALL_FAILURES=0
     : > "$WORK/results"
     : > "$OUT/logcat.txt"
+    echo 0 > "$WORK/installs"
 }
 
 adb() {
@@ -40,7 +44,17 @@ adb() {
                 bad-exit) return 255 ;;
             esac
             ;;
-        "install -r $FOCUS_APK") ;;
+        "install -r $FOCUS_APK")
+            local installs
+            installs=$(( $(cat "$WORK/installs") + 1 ))
+            echo "$installs" > "$WORK/installs"
+            if [ "$installs" -le "$INSTALL_FAILURES" ]; then
+                printf '%s\n' "Exception occurred while executing 'install-create':" \
+                    "java.lang.IllegalStateException: not ready" \
+                    "	at com.android.server.pm.PackageInstallerService.createSession(PackageInstallerService.java:758)"
+                return 1
+            fi
+            ;;
         "shell am broadcast --include-stopped-packages -n $FOCUS_PKG/.BackgroundAudioReceiver") echo "Broadcast completed: result=0" ;;
         "logcat -d -v threadtime")
             if [ "$CONTROL" != no-broadcast ]; then
@@ -134,9 +148,22 @@ ok "失败写出条数和第一条" contains "$(detail "$HARDENING_APP")" "1 条
 ok "全部记录另存" equals "$(cat "$OUT/audio-hardening-app.txt")" "$APP_LINE"
 
 reset
+reset
+INSTALL_FAILURES=2
+run_hardening_control
+ok "刚开机前两次装不上，第三次装上：对照照常通过" equals "$(result "$HARDENING_CONTROL"):$(cat "$WORK/installs")" "PASS:3"
+
+reset
+INSTALL_FAILURES=5
+run_hardening_control
+ok "三次都装不上：对照失败、不再多试" equals "$(result "$HARDENING_CONTROL"):$(cat "$WORK/installs")" "FAIL:3"
+ok "失败写出异常，不是调用栈的最后几行" contains "$(detail "$HARDENING_CONTROL")" "IllegalStateException: not ready"
+ok "三次的输出都留在日志里" equals "$(grep -c '^== 第' "$OUT/install-focus-control.log")" "3"
+
+reset
 FOCUS_APK=""
 run_hardening_control
-ok "没有替身 APK：对照失败" contains "$(detail "$HARDENING_CONTROL")" "没装上"
+ok "没有替身 APK：对照失败" contains "$(detail "$HARDENING_CONTROL")" "没有“视频”替身"
 
 if [ "$FAILURES" -gt 0 ]; then
     echo "$FAILURES 项没通过"

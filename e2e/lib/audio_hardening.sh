@@ -6,7 +6,7 @@
 # E2E_AUDIO_HARDENING=enable|throw 时 run.sh 在开头打开加固（throw 还会让焦点、音量请求直接抛异常），
 # 先用“视频”替身在后台抢焦点、写音频作对照：必须被拦下并留下记录，否则说明加固没生效或记录格式变了，
 # 后面的判断不作数。结束时本应用一条记录都不能有。由 run.sh source，用到它的 pass、fail、log、OUT、PKG、
-# FOCUS_APK、FOCUS_PKG。
+# FOCUS_APK、FOCUS_PKG 和 lib/adb_install.sh 的 adb_install。
 
 HARDENING_ON="打开后台音频加固（${E2E_AUDIO_HARDENING:-未设置}）"
 HARDENING_CONTROL="对照：后台没有前台服务的替身被加固拦下"
@@ -42,8 +42,12 @@ enable_audio_hardening() {
 
 run_hardening_control() {
     local result lines
-    if [ -z "${FOCUS_APK:-}" ] || ! adb install -r "$FOCUS_APK" > "$OUT/install-focus-control.log" 2>&1; then
-        fail "$HARDENING_CONTROL" "没装上“视频”替身（E2E_FOCUS_APK=${FOCUS_APK:-未设置}），没有执行"
+    if [ -z "${FOCUS_APK:-}" ]; then
+        fail "$HARDENING_CONTROL" "没有“视频”替身（E2E_FOCUS_APK 未设置），没有执行"
+        return 1
+    fi
+    if ! adb_install "$OUT/install-focus-control.log" -r "$FOCUS_APK"; then
+        fail "$HARDENING_CONTROL" "“视频”替身试了 3 次没装上：$(install_failure_reason "$OUT/install-focus-control.log")"
         return 1
     fi
     adb shell am broadcast --include-stopped-packages -n "$FOCUS_PKG/.BackgroundAudioReceiver" \
