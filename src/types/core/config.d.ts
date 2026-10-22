@@ -71,6 +71,8 @@ export interface IAppConfigProperties {
     "lyric.showStatusBarLyric": boolean;
     "lyric.showMediaNotificationLyric": boolean;
     "lyric.showLiveUpdateLyric": boolean;
+    // 车载蓝牙歌词：连着蓝牙音频或 Android Auto 时，把当前这句放进媒体会话的歌名
+    "lyric.showCarLyric": boolean;
     "lyric.topPercent": number;
     "lyric.leftPercent": number;
     "lyric.align": number;

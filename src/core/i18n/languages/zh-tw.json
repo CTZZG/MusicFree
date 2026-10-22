@@ -840,6 +840,8 @@
     "basicSettings.lyric.showStatusBarLyric": "開啟桌面歌詞",
     "basicSettings.lyric.showMediaNotificationLyric": "開啟媒體通知歌詞",
     "basicSettings.lyric.showLiveUpdateLyric": "開啟 Live Update 歌詞（實驗）",
+    "basicSettings.lyric.showCarLyric": "車載藍牙歌詞",
+    "basicSettings.lyric.showCarLyric.desc": "連著藍牙音訊或 Android Auto 時，把目前這句歌詞放在歌名的位置，車機螢幕上就能看到。這期間手機上的媒體卡片也顯示歌詞。",
     "basicSettings.lyric.align": "對齊方式",
     "basicSettings.lyric.align.left": "左對齊",
     "basicSettings.lyric.align.center": "居中對齊",

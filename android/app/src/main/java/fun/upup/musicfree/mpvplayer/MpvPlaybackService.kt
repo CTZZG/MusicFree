@@ -16,6 +16,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.drawable.Icon
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -146,6 +148,8 @@ class MpvPlaybackService : Service() {
     private var liveUpdateLargeIcon: Bitmap? = null
     private var liveUpdateSmallIcon: Icon? = null
     private var cachedMediaNotificationLyric = ""
+    // 上次写进媒体会话歌名位置的歌词（媒体通知歌词或车载蓝牙歌词），没变就不重写元数据
+    private var lastSessionLyric = ""
     private var cachedDuration = 0L
     private var cachedPosition = 0L
     private var cachedBufferedPosition = 0L
@@ -206,6 +210,8 @@ class MpvPlaybackService : Service() {
         createNotificationChannel()
         createMediaSession()
         registerNoisyReceiver()
+        // 注册时会先把当前的输出设备报一遍
+        audioManager?.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
         // Playback can start before Android delivers service creation.
         MpvServiceBridge.onServiceReady?.invoke(this)
     }
@@ -268,6 +274,7 @@ class MpvPlaybackService : Service() {
         MpvServiceBridge.service = null
         cancelLiveUpdateProgressTicker()
         unregisterNoisyReceiver()
+        audioManager?.unregisterAudioDeviceCallback(audioDeviceCallback)
         stopForegroundSafely()
         mediaSession.release()
         artworkExecutor.shutdownNow()
@@ -386,6 +393,34 @@ class MpvPlaybackService : Service() {
         }
     }
 
+    /** 车载蓝牙歌词：开关、当前这句、蓝牙或 Android Auto 的连接变了 */
+    fun onCarLyricStateChanged() {
+        if (sessionLyric() == lastSessionLyric) return
+        updateMediaSessionMetadata()
+    }
+
+    private val audioDeviceCallback =
+        object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) =
+                refreshBluetoothOutput()
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) =
+                refreshBluetoothOutput()
+        }
+
+    private fun refreshBluetoothOutput() {
+        val types = audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.map { it.type } ?: return
+        if (MpvServiceBridge.carLyric.setBluetoothOutput(CarLyricState.isBluetoothMediaOutput(types))) {
+            onCarLyricStateChanged()
+        }
+    }
+
+    /** 媒体会话歌名位置的歌词：媒体通知歌词优先，其次是连着车机时的车载蓝牙歌词 */
+    private fun sessionLyric(): String =
+        cachedMediaNotificationLyric.ifBlank {
+            MpvServiceBridge.carLyric.displayedLyric(MpvServiceBridge.isAndroidAutoConnected)
+        }
+
     fun onMediaNotificationLyricChanged(lyric: String?) {
         val nextLyric = lyric?.trim().orEmpty()
         if (cachedMediaNotificationLyric == nextLyric) return
@@ -473,9 +508,11 @@ class MpvPlaybackService : Service() {
     }
 
     private fun updateMediaSessionMetadata() {
-        val displayTitle = cachedMediaNotificationLyric.ifBlank { cachedTitle }
+        val lyric = sessionLyric()
+        lastSessionLyric = lyric
+        val displayTitle = lyric.ifBlank { cachedTitle }
         val displayArtist =
-            if (cachedMediaNotificationLyric.isNotBlank()) {
+            if (lyric.isNotBlank()) {
                 buildTrackIdentityText()
             } else {
                 cachedArtist

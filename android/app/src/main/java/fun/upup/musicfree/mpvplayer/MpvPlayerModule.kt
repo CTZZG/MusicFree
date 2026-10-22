@@ -411,6 +411,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         if (!force && isAndroidAutoConnected == connected) return
         isAndroidAutoConnected = connected
         MpvServiceBridge.isAndroidAutoConnected = connected
+        MpvServiceBridge.service?.onCarLyricStateChanged()
         sendEvent(
             ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED,
             Arguments.createMap().apply { putBoolean("connected", connected) },

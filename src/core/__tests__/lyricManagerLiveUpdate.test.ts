@@ -49,6 +49,8 @@ jest.mock("@/native/lyricUtil", () => ({
         setLiveUpdateLyricText: jest.fn().mockResolvedValue(undefined),
         setLiveUpdateLyricEnabled: jest.fn().mockResolvedValue(undefined),
         setMediaNotificationLyricText: jest.fn().mockResolvedValue(undefined),
+        setCarLyricEnabled: jest.fn().mockResolvedValue(undefined),
+        setCarLyricText: jest.fn().mockResolvedValue(undefined),
     },
 }));
 
@@ -159,6 +161,57 @@ describe("LyricManager Live Update switch", () => {
         expect(setEnabled).toHaveBeenCalledWith(true);
         expect(setEnabled).not.toHaveBeenCalledWith(false);
         expect(setText).not.toHaveBeenCalled();
+
+        lyricManager.dispose();
+    });
+});
+
+// 车载蓝牙歌词：开关单独告诉原生层，开着时每次都把这一句（这会儿可能是空的）交给原生，
+// 和通知歌词用哪种方式无关；关掉后不再发
+describe("LyricManager car lyrics", () => {
+    it("syncs the switch on its own and keeps sending the line while it is on", () => {
+        const config: Record<string, unknown> = {
+            "lyric.showCarLyric": true,
+            "lyric.showLiveUpdateLyric": true,
+        };
+        const appConfig = {
+            getConfig: jest.fn((key: string) => config[key] ?? false),
+        } as any;
+        const trackPlayer = { currentMusic: null, on: jest.fn(), off: jest.fn() } as any;
+        const pluginManager = {
+            getByMedia: jest.fn(),
+            getSearchablePlugins: jest.fn(() => []),
+        } as any;
+        const setEnabled = LyricUtil.setCarLyricEnabled as jest.Mock;
+        const setText = LyricUtil.setCarLyricText as jest.Mock;
+        setEnabled.mockClear();
+        setText.mockClear();
+
+        lyricManager.dispose();
+        lyricManager.injectDependencies(trackPlayer, appConfig, pluginManager);
+
+        lyricManager.refreshNativeNotificationLyric();
+        expect(setEnabled.mock.calls).toEqual([[true]]);
+        expect(setText.mock.calls).toEqual([[""]]);
+
+        // Live Update 关掉、换成媒体通知歌词，车载蓝牙歌词照常
+        config["lyric.showLiveUpdateLyric"] = false;
+        config["lyric.showMediaNotificationLyric"] = true;
+        lyricManager.refreshNativeNotificationLyric();
+        expect(setEnabled).toHaveBeenCalledTimes(1);
+        expect(setText).toHaveBeenCalledTimes(2);
+
+        config["lyric.showCarLyric"] = false;
+        lyricManager.refreshNativeNotificationLyric();
+        expect(setEnabled).toHaveBeenLastCalledWith(false);
+        expect(setText).toHaveBeenCalledTimes(2);
+
+        // 重新 setup 后再告诉一次原生层开关的状态
+        lyricManager.dispose();
+        lyricManager.injectDependencies(trackPlayer, appConfig, pluginManager);
+        lyricManager.refreshNativeNotificationLyric();
+        expect(setEnabled).toHaveBeenLastCalledWith(false);
+        expect(setEnabled).toHaveBeenCalledTimes(3);
 
         lyricManager.dispose();
     });

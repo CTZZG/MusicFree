@@ -1118,6 +1118,7 @@ function LyricSetting() {
         "lyric.showMediaNotificationLyric",
     );
     const showLiveUpdateLyric = useAppConfig("lyric.showLiveUpdateLyric");
+    const showCarLyric = useAppConfig("lyric.showCarLyric");
     const topPercent = useAppConfig("lyric.topPercent");
     const leftPercent = useAppConfig("lyric.leftPercent");
     const align = useAppConfig("lyric.align");
@@ -1287,6 +1288,17 @@ function LyricSetting() {
         },
     );
 
+    // 车载蓝牙歌词和上面两种通知歌词互不影响，不用互斥
+    const carLyric = createSwitch(
+        t("basicSettings.lyric.showCarLyric"),
+        "lyric.showCarLyric",
+        showCarLyric ?? false,
+        newValue => {
+            Config.setConfig("lyric.showCarLyric", newValue);
+            lyricManager.refreshNativeNotificationLyric();
+        },
+    );
+
     const liveUpdateLyric = createSwitch(
         t("basicSettings.lyric.showLiveUpdateLyric"),
         "lyric.showLiveUpdateLyric",
@@ -1418,6 +1430,13 @@ function LyricSetting() {
                 onPress={liveUpdateLyric.onPress}>
                 <ListItem.Content title={liveUpdateLyric.title} />
                 {liveUpdateLyric.right}
+            </ListItem>
+            <ListItem withHorizontalPadding onPress={carLyric.onPress}>
+                <ListItem.Content
+                    title={carLyric.title}
+                    description={t("basicSettings.lyric.showCarLyric.desc")}
+                />
+                {carLyric.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding
