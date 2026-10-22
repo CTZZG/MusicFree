@@ -142,7 +142,7 @@ with tempfile.TemporaryDirectory() as directory:
     (baseline.parent / 'android-build-info.txt').write_text('Commit: ' + 'a' * 40 + '\n')
     env_file = root / 'github-env'
     env = {**os.environ, 'GITHUB_ENV': str(env_file), 'SELECTED_SUITE': 'perf'}
-    for step in ('Pick the x86_64 APK for Android 14', 'Validate cold-start comparison inputs'):
+    for step in ('Pick the x86_64 APK for the emulator', 'Validate cold-start comparison inputs'):
         subprocess.run(['bash', '-euo', 'pipefail', '-c', workflow_command(step)], cwd=root, env=env, check=True, capture_output=True)
         env.update(dict(line.split('=', 1) for line in env_file.read_text().splitlines()))
     exported = dict(line.split('=', 1) for line in env_file.read_text().splitlines())
