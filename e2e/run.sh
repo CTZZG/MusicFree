@@ -286,6 +286,7 @@ if [ "$start_status" -ne 0 ] || grep -qE '^Error(:| type [0-9]+:)|^Exception' "$
 fi
 start_timeline
 flow "启动后进入首页" home.yaml || finish
+HARDENING_APP_STARTED=1
 startup_capture_stop
 
 # 2. 用外部链接装两个测试音源（B 只在找其他来源时有结果，见 plugins/e2e-source-b.js）

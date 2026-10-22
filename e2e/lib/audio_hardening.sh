@@ -5,13 +5,17 @@
 #
 # E2E_AUDIO_HARDENING=enable|throw 时 run.sh 在开头打开加固（throw 还会让焦点、音量请求直接抛异常），
 # 先用“视频”替身在后台抢焦点、写音频作对照：必须被拦下并留下记录，否则说明加固没生效或记录格式变了，
-# 后面的判断不作数。结束时本应用一条记录都不能有。由 run.sh source，用到它的 pass、fail、log、OUT、PKG、
-# FOCUS_APK、FOCUS_PKG 和 lib/adb_install.sh 的 adb_install。
+# 后面的判断不作数。结束时本应用一条记录都不能有；本应用没跑起来、或者系统框架中途重启过（加固的开关可能
+# 跟着没了）时也不算通过。由 run.sh source，用到它的 pass、fail、log、OUT、PKG、FOCUS_APK、FOCUS_PKG
+# 和 lib/adb_install.sh 的 adb_install；run.sh 在进了首页之后把 HARDENING_APP_STARTED 设为 1。
 
 HARDENING_ON="打开后台音频加固（${E2E_AUDIO_HARDENING:-未设置}）"
 HARDENING_CONTROL="对照：后台没有前台服务的替身被加固拦下"
 HARDENING_APP="后台音频加固没有拦下本应用"
 HARDENING_CONTROL_OK=0
+HARDENING_APP_STARTED=0
+# 打开加固时 system_server 的进程号；结束时变了说明框架重启过
+HARDENING_FRAMEWORK_PID=""
 
 # hardening_lines <包名> <文件…>：文件里提到这个包的 AudioHardening 记录，去掉重复。包名前后不能紧挨着
 # 包名里能出现的字符：fun.upup.musicfree 不能算上 fun.upup.musicfree.e2e.focus 的记录
@@ -37,7 +41,12 @@ enable_audio_hardening() {
         fail "$HARDENING_ON" "退出码 $status：$(tr '\n' ' ' <<< "$output" | cut -c1-200)"
         return 1
     fi
+    HARDENING_FRAMEWORK_PID=$(framework_pid)
     pass "$HARDENING_ON" "${output:-命令没有输出}"
+}
+
+framework_pid() {
+    adb shell pidof system_server 2>/dev/null | tr -d '\r'
 }
 
 run_hardening_control() {
@@ -71,14 +80,19 @@ run_hardening_control() {
 
 # check_audio_hardening：finish 里在存好 logcat.txt 之后调用
 check_audio_hardening() {
-    local lines
+    local lines pid
     adb shell dumpsys audio > "$OUT/dumpsys-audio.txt" 2>/dev/null || true
     lines=$(hardening_lines "$PKG" "$OUT/logcat.txt" "$OUT/dumpsys-audio.txt")
     printf '%s\n' "$lines" > "$OUT/audio-hardening-app.txt"
+    pid=$(framework_pid)
     if [ -n "$lines" ]; then
         fail "$HARDENING_APP" "$(wc -l <<< "$lines") 条，第一条：$(head -n 1 <<< "$lines" | cut -c1-200)；全部在 audio-hardening-app.txt"
     elif [ "$HARDENING_CONTROL_OK" -ne 1 ]; then
         fail "$HARDENING_APP" "没有本应用的记录，但对照没通过，不能说明没被拦下"
+    elif [ "$HARDENING_APP_STARTED" -ne 1 ]; then
+        fail "$HARDENING_APP" "没有本应用的记录，但本应用没进首页，不能说明没被拦下"
+    elif [ -z "$pid" ] || [ "$pid" != "$HARDENING_FRAMEWORK_PID" ]; then
+        fail "$HARDENING_APP" "没有本应用的记录，但系统框架中途重启过（system_server 进程号 ${HARDENING_FRAMEWORK_PID:-?} → ${pid:-?}），加固可能已经关了，不能说明没被拦下"
     else
         pass "$HARDENING_APP" "logcat 和 dumpsys audio 里共 $(hardening_count "$OUT/logcat.txt" "$OUT/dumpsys-audio.txt") 条 AudioHardening 记录，没有本应用的"
     fi

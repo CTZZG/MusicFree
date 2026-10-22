@@ -354,7 +354,10 @@ jobs:
         if: >-
             !cancelled() && inputs.e2e &&
             (needs.build-beta.result == 'success' || inputs.e2e_apk_run_id != '')
-        runs-on: ubuntu-latest
+        # Android 17（android-37.0）镜像在 ubuntu-24.04 主机上，SurfaceFlinger 每隔几十秒就在
+        # GoldfishMapper::readFromHost 断言 hasReadColorBufferDma 失败退出，系统框架跟着重启（Beta #196）；
+        # 别的项目报告同样的模拟器在 ubuntu-26.04 主机上不出现。Android 14 仍用 ubuntu-latest
+        runs-on: ${{ inputs.e2e_android == '17' && 'ubuntu-26.04' || 'ubuntu-latest' }}
         timeout-minutes: 60
         permissions:
             # 下载别的运行里的 APK；把截图推到 refs/e2e/latest

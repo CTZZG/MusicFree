@@ -27,9 +27,11 @@ CONTROL_LINE='10-22 10:00:01.000  1000  1200 W AS.AudioService: AudioHardening l
 APP_LINE='10-22 10:20:00.000  1000  1200 W AS.AudioService: AudioHardening level: full package: fun.upup.musicfree uid: 10190 playback silenced'
 
 # 场景：ENABLE=ok|unknown|bad-exit，CONTROL=blocked|no-record|no-broadcast，DUMPSYS 是 dumpsys audio 的内容，
-# INSTALL_FAILURES 是替身前几次安装失败的次数（模拟刚开机时建不了安装会话）
+# INSTALL_FAILURES 是替身前几次安装失败的次数，SYSTEM_PID 是 system_server 现在的进程号（空的是查不到）。
+# 默认本应用进了首页、打开加固以来框架没重启过
 reset() {
-    ENABLE=ok CONTROL=blocked DUMPSYS="" INSTALL_FAILURES=0
+    ENABLE=ok CONTROL=blocked DUMPSYS="" INSTALL_FAILURES=0 SYSTEM_PID=1765
+    HARDENING_APP_STARTED=1 HARDENING_FRAMEWORK_PID=1765
     : > "$WORK/results"
     : > "$OUT/logcat.txt"
     echo 0 > "$WORK/installs"
@@ -65,6 +67,7 @@ adb() {
             fi
             ;;
         "shell dumpsys audio") printf '%s\n' "$DUMPSYS" ;;
+        "shell pidof system_server") [ -n "$SYSTEM_PID" ] && printf '%s\r\n' "$SYSTEM_PID" ;;
         *) echo "未知 adb 调用：$*" >&2; return 1 ;;
     esac
 }
@@ -102,8 +105,11 @@ ok "读不到的文件不出错" equals "$(hardening_lines "$PKG" "$WORK/missing
 
 # ---- 打开加固 ----
 reset
+HARDENING_FRAMEWORK_PID=""
+SYSTEM_PID=2001
 ok "打开加固成功" enable_audio_hardening
 ok "记为通过" equals "$(result "$HARDENING_ON")" "PASS"
+ok "记下 system_server 的进程号（去掉 \\r）" equals "$HARDENING_FRAMEWORK_PID" "2001"
 reset
 ENABLE=unknown
 ok "Android 14 不认这个命令：返回失败" not enable_audio_hardening
@@ -146,6 +152,33 @@ check_audio_hardening
 ok "本应用被拦下：失败" equals "$(result "$HARDENING_APP")" "FAIL"
 ok "失败写出条数和第一条" contains "$(detail "$HARDENING_APP")" "1 条，第一条：10-22 10:20:00.000"
 ok "全部记录另存" equals "$(cat "$OUT/audio-hardening-app.txt")" "$APP_LINE"
+
+reset
+HARDENING_CONTROL_OK=1
+HARDENING_APP_STARTED=0
+check_audio_hardening
+ok "本应用没进首页：没记录也不算通过" equals "$(result "$HARDENING_APP")" "FAIL"
+ok "说明是没跑起来" contains "$(detail "$HARDENING_APP")" "没进首页"
+
+reset
+HARDENING_CONTROL_OK=1
+HARDENING_APP_STARTED=0
+printf '%s\n' "$APP_LINE" > "$OUT/logcat.txt"
+check_audio_hardening
+ok "有本应用的记录时先报记录" contains "$(detail "$HARDENING_APP")" "1 条，第一条"
+
+reset
+HARDENING_CONTROL_OK=1
+SYSTEM_PID=3020
+check_audio_hardening
+ok "框架中途重启过：没记录也不算通过" equals "$(result "$HARDENING_APP")" "FAIL"
+ok "写出前后两个进程号" contains "$(detail "$HARDENING_APP")" "1765 → 3020"
+
+reset
+HARDENING_CONTROL_OK=1
+SYSTEM_PID=""
+check_audio_hardening
+ok "查不到 system_server：不算通过" equals "$(result "$HARDENING_APP")" "FAIL"
 
 reset
 reset
