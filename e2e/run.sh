@@ -13,6 +13,7 @@
 # 第 22 步要单独选：all 已经用掉 e2e 任务 60 分钟期限的大半。
 # E2E_SUITE=perf 时只跑第 23 步（性能基线：冷启动、搜索、在线和本地点歌，只记录不设门限，见 perf.sh），
 # 同样要单独选。E2E_PERF_RUNS 改每项的次数（默认 10，另有 1 次预热）。
+# E2E_SUITE=crash 时只跑第 24 步（本机崩溃记录：Java 崩溃和原生崩溃都记下、清空后不再显示，见 crash.sh）。
 set -uo pipefail
 
 APK=${1:?用法：e2e/run.sh <APK> <提交号> <结果目录>}
@@ -327,6 +328,15 @@ source "$HERE/perf.sh"
 if [ "$E2E_SUITE" = perf ]; then
     log "E2E_SUITE=perf：只跑性能基线"
     run_perf_checks
+    finish
+fi
+
+# 24 步：本机崩溃记录（crash.sh，用到 storage.sh 的函数）
+# shellcheck source=crash.sh
+source "$HERE/crash.sh"
+if [ "$E2E_SUITE" = crash ]; then
+    log "E2E_SUITE=crash：只跑本机崩溃记录"
+    run_crash_record_checks
     finish
 fi
 
@@ -658,6 +668,10 @@ fi
 # 20. 省电：Doze 中播放、切歌取地址、等地址的期限、暂停后接着播；省电模式下切歌、播放。见 power.sh
 run_lock_screen_checks
 run_power_saving_checks
+
+# 24. 本机崩溃记录：am crash、SIGSEGV 各弄崩一次，复制播放诊断里都有，清空日志后不再显示。见 crash.sh。
+#     会重启应用，所以放在依赖播放状态的检查之后
+run_crash_record_checks
 
 # 17. 下载收尾时下载记录写不进去；18. 从 0.7.3 覆盖安装，迁移期间清空、迁移后删除的数据不回来。
 #     见 storage.sh。第 18 步会先卸载应用，所以放在最后（在第 19、20 步之后）

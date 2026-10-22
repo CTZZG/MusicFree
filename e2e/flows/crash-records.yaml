@@ -1,0 +1,27 @@
+# 设置 → 基本设置 → 开发选项 → 复制播放诊断：前面 crash.sh 用 am crash、SIGSEGV 各弄崩过一次。
+# 诊断是 JSON，原生侧的字段顺序不固定，所以每一项单独找
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "资料库"
+    timeout: 90000
+- runFlow: dismiss-update.yaml
+- tapOn: "设置"
+- tapOn: "基本设置"
+- scrollUntilVisible:
+    element: "复制播放诊断"
+    direction: DOWN
+    timeout: 30000
+- tapOn: "复制播放诊断"
+- extendedWaitUntil:
+    visible: "(?s).*\"abnormalExitCount\": ([2-9]|[1-9]\\d).*"
+    timeout: 15000
+# Java 崩溃：主线程上的 RemoteServiceException$CrashedByAdbException，退出记录指向它
+- assertVisible: "(?s).*\"exception\": \"[^\"]*CrashedByAdbException\".*"
+- assertVisible: "(?s).*\"javaCrashRecorded\": true.*"
+# 原生崩溃：退出原因、信号和 tombstone 里崩溃线程的调用栈
+- assertVisible: "(?s).*\"reason\": \"crash-native\".*"
+- assertVisible: "(?s).*\"signal\": \"SIGSEGV\".*"
+- assertVisible: "(?s).*\"#00 pc [0-9a-f]{8}  .*"
+- takeScreenshot: 24-crash-records
+- tapOn: "我知道了"

@@ -44,12 +44,14 @@ import { FlatList, ScrollView } from "react-native-gesture-handler";
 import { resolveDownloadDirectory } from "@/utils/downloadStoragePolicy";
 import { getPlayAttempts, summarizePlayAttempts } from "@/core/trackPlayer/playAttemptLog";
 import { formatPlayAttemptReport } from "@/core/trackPlayer/playAttemptReport";
+import { clearCrashDiagnostics, loadCrashDiagnostics } from "@/core/crashDiagnostics";
 
 async function buildPlaybackDiagnosticReport() {
-    const [playback, lyric, download] = await Promise.all([
+    const [playback, lyric, download, crashes] = await Promise.all([
         trackPlayer.getPlaybackDiagnosticSnapshot(),
         Promise.resolve(lyricManager.getLyricDiagnosticSnapshot()),
         Promise.resolve(downloader.getDownloadDiagnosticSnapshot()),
+        loadCrashDiagnostics(),
     ]);
 
     return JSON.stringify(
@@ -60,6 +62,8 @@ async function buildPlaybackDiagnosticReport() {
             playAttempts: summarizePlayAttempts(getPlayAttempts()),
             lyric,
             download,
+            // 本机的崩溃、无响应和被系统杀掉的记录（只在本机，见 core/crashDiagnostics）
+            crashes,
         },
         null,
         2,
@@ -945,6 +949,7 @@ export default function BasicSetting() {
                     async onPress() {
                         try {
                             await clearLog();
+                            await clearCrashDiagnostics();
                             Toast.success(t("toast.logCleared"));
                         } catch {}
                     },

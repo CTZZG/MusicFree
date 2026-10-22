@@ -15,6 +15,7 @@ import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
 import com.facebook.react.views.view.setEdgeToEdgeFeatureFlagOn
 import `fun`.upup.musicfree.cenc.CencPackage
+import `fun`.upup.musicfree.diagnostics.CrashDiagnostics
 import `fun`.upup.musicfree.lyricUtil.LyricUtilPackage
 import `fun`.upup.musicfree.mp3Util.Mp3UtilPackage
 import `fun`.upup.musicfree.mpvplayer.MpvPlayerPackage
@@ -63,6 +64,8 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     // 性能基线：应用进程起来（见 utils/PerfMarks、e2e/perf.sh）
     PerfMarks.mark("process-start")
+    // 未捕获的崩溃先记到本机，再交给原来的处理器（见 diagnostics/CrashDiagnostics）
+    CrashDiagnostics.install(this)
     super.onCreate()
     SoLoader.init(this, OpenSourceMergedSoMapping)
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {

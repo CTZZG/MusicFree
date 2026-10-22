@@ -1,0 +1,16 @@
+# 接着 crash-records.yaml，停在基本设置页：清空日志后再打开诊断，崩溃记录都不在了
+appId: fun.upup.musicfree
+---
+- scrollUntilVisible:
+    element: "清空日志"
+    direction: DOWN
+    timeout: 15000
+# “日志已清空”只显示 1.2 秒，不等它；点完 Maestro 会等界面静止，清除只是删几个本机文件
+- tapOn: "清空日志"
+- tapOn: "复制播放诊断"
+- extendedWaitUntil:
+    visible: "(?s).*\"abnormalExitCount\": 0.*"
+    timeout: 15000
+- assertNotVisible: "(?s).*CrashedByAdbException.*"
+- assertNotVisible: "(?s).*crash-native.*"
+- tapOn: "我知道了"

@@ -32,7 +32,7 @@ on:
                 default: ''
                 type: string
             e2e_suite:
-                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载；library 只跑本地音乐库；perf 只跑性能基线（只记录，不设门限）'
+                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载；library 只跑本地音乐库；perf 只跑性能基线（只记录，不设门限）；crash 只跑本机崩溃记录'
                 required: false
                 default: 'all'
                 type: choice
@@ -43,6 +43,7 @@ on:
                     - power
                     - library
                     - perf
+                    - crash
 
 jobs:
     check-version:
@@ -446,6 +447,7 @@ jobs:
                   bash e2e/lib/power_environment_test.sh
                   bash e2e/lib/power_controls_test.sh
                   bash e2e/lib/power_scenario_test.sh
+                  bash e2e/lib/crash_checks_test.sh
 
             - name: Enable KVM
               run: |
