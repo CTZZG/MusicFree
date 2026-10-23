@@ -51,5 +51,7 @@
     "sha256": "b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b",
     "sourceSha256": "9e368a9cc9e81c14af8562d79ec323a95a08822f738fa45b3a4dbdad0e375e8a"
   },
-  "patchedDriverSha256": "03c1f9ec47e6a2e11e51b21ee0b7fd4607b36746f607ec884107d8522e9bd2fe"
+  "patchedDriverSha256": "03c1f9ec47e6a2e11e51b21ee0b7fd4607b36746f607ec884107d8522e9bd2fe",
+  "upstreamBufferSha256": "e053296cdfe58a07b6bd2aa5554774ff5c54ca57c622a56636fb6fe8f0fed105",
+  "patchedBufferSha256": "e718e8ed512693f922c6968bfea0acbe3834097f59716482ddd582d47f4203ad"
 }

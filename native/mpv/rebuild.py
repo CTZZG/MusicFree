@@ -61,7 +61,7 @@ def prepare_sources(directory):
         if actual != pin["commit"]:
             raise RuntimeError(f"{name}: existing checkout differs from pinned source; refusing to reset it")
         changed = subprocess.check_output(["git", "-C", str(dest), "diff", "--name-only", "HEAD"], text=True).splitlines()
-        allowed = ["audio/out/ao_audiotrack.c"] if name == "mpv" else []
+        allowed = ["audio/out/ao_audiotrack.c", "audio/out/buffer.c"] if name == "mpv" else []
         if any(path not in allowed for path in changed):
             raise RuntimeError(f"{name}: tracked source changes are not part of the pinned build")
     placebo = directory / "libplacebo"
@@ -83,14 +83,22 @@ def prepare_sources(directory):
     if digest.hexdigest() != LOCK["lua"]["sourceSha256"]:
         raise RuntimeError("existing Lua source differs from the pinned release")
     mpv = directory / "mpv"
-    # Never reset a caller's checkout. Only the exact upstream or patched driver is accepted.
+    # Never reset a caller's checkout. Accept both exact upstream files or both
+    # exact patched files, never a partially applied or unrecognized variant.
     driver = mpv / "audio/out/ao_audiotrack.c"
+    buffer = mpv / "audio/out/buffer.c"
     original = subprocess.check_output(["git", "-C", str(mpv), "show", "HEAD:audio/out/ao_audiotrack.c"])
-    if driver.read_bytes() == original:
+    original_buffer = subprocess.check_output(["git", "-C", str(mpv), "show", "HEAD:audio/out/buffer.c"])
+    if hashlib.sha256(original_buffer).hexdigest() != LOCK["upstreamBufferSha256"]:
+        raise RuntimeError("upstream mpv buffer differs from the pinned source")
+    if driver.read_bytes() == original and buffer.read_bytes() == original_buffer:
         run(["git", "-C", mpv, "apply", "--check", HERE / "audiotrack-startup-delay.patch"])
         run(["git", "-C", mpv, "apply", HERE / "audiotrack-startup-delay.patch"])
     if sha(driver) != LOCK["patchedDriverSha256"]:
         raise RuntimeError("mpv driver contains unrecognized changes")
+    if sha(buffer) != LOCK["patchedBufferSha256"]:
+        raise RuntimeError("mpv buffer contains unrecognized or incomplete changes")
+    run(["python3", "-I", HERE / "check-short-read.py"])
     header = mpv / "audio/out/audiotrack_latency.h"
     if header.exists() and header.read_bytes() != (HERE / header.name).read_bytes():
         raise RuntimeError("existing AudioTrack helper differs; refusing to overwrite it")
@@ -186,6 +194,8 @@ def build(abi, source, work, ndk, base):
     inputs = {name: sha(HERE / name) for name in INPUTS}
     if sha(source / "mpv/audio/out/ao_audiotrack.c") != LOCK["patchedDriverSha256"]:
         raise RuntimeError("patched driver differs from pinned build")
+    if sha(source / "mpv/audio/out/buffer.c") != LOCK["patchedBufferSha256"]:
+        raise RuntimeError("patched buffer differs from pinned build")
     if sha(source / "mpv/audio/out/audiotrack_latency.h") != inputs["audiotrack_latency.h"]:
         raise RuntimeError("copied helper differs from source")
     prefix, cross, tools = setup_prefix(abi, source, work, ndk, base)

@@ -3,6 +3,7 @@
 64-bit native libraries that cannot load on 16 KB page-size devices."""
 
 import argparse
+import hashlib
 import json
 import struct
 import sys
@@ -80,6 +81,10 @@ def inspect_apk(filename):
             "nativePackagedBytes": sum(entry.compress_size for entry in native),
             "pageAlignedNativeLibraries": page_aligned,
             "nativeLibraries": sorted(entry.filename for entry in native),
+            "mpvPayloadSha256": {
+                entry.filename: hashlib.sha256(archive.read(entry)).hexdigest()
+                for entry in native if entry.filename.endswith("/libmpv.so")
+            },
             "errors": errors,
         }
 
@@ -134,6 +139,19 @@ def self_test():
                 print(f"FAIL {name}: {errors}")
                 return 1
             print(f"ok   {name}")
+        # The report must identify the decompressed native payload, so a build
+        # cache or packaging mismatch can be checked without the large APK ZIP.
+        for compression in [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED]:
+            apk = Path(directory) / f"mpv-{compression}.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("classes.dex", b"dex\n", compress_type=zipfile.ZIP_DEFLATED)
+                archive.writestr("lib/x86_64/libmpv.so", elf64(0x4000), compress_type=compression)
+            report = inspect_apk(apk)
+            expected = {"lib/x86_64/libmpv.so": "02191e9aaabd95888f8a33bbda819193c9ba84d6cba734c02b54a8adfd5e0ce6"}
+            if report["errors"] or report.get("mpvPayloadSha256") != expected:
+                print(f"FAIL mpv payload identity (ZIP method {compression})")
+                return 1
+            print(f"ok   mpv payload identity (ZIP method {compression})")
     return 0
 
 

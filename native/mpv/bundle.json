@@ -58,7 +58,7 @@
     "jni/arm64-v8a/libavformat.so": "dbdeb4621dbed72022dffba65d58430ed9ffdc64c20e8645f6a89339e9a40cea",
     "jni/arm64-v8a/libavutil.so": "9193c6f5d2b61eaa6aa957e1744c9d2324dd3b071942d2bdb5b37d47c4bedf05",
     "jni/arm64-v8a/libc++_shared.so": "c4c2fe5cbcb1fba0003a31fc7ab29a9bb12df6cc187ec45a806462540e83d93b",
-    "jni/arm64-v8a/libmpv.so": "0b947b57e13b455d40903f48d9ff0d8aaa248928c78718137421c50ae80c293b",
+    "jni/arm64-v8a/libmpv.so": "4ad6a1c158c263d6688bff3fcc4056536f527c15078deba3e21ff709fd23cd09",
     "jni/arm64-v8a/libplayer.so": "e087d886b3bc7d3077218d80fac2b9f0f1c538adc66692e5b63b1b2e4a5bedec",
     "jni/arm64-v8a/libswresample.so": "5b9d194c93a1d3eed1f8287fabc19db7d5becfb0018e8febdfc10b637eeda1ff",
     "jni/arm64-v8a/libswscale.so": "c1e82e2bfcc71be56b44e846855135604080e10e64228b7fcd3605a1af6aaa68",
@@ -68,7 +68,7 @@
     "jni/armeabi-v7a/libavformat.so": "8c45b70ea6128dc75d784244e7c12be26b81e6d15312dba77639f261d5bf772d",
     "jni/armeabi-v7a/libavutil.so": "7ff38326c6bf5153bcd013199ef92f6d046962d2db5b83fcc973a22477a44475",
     "jni/armeabi-v7a/libc++_shared.so": "af383654daf4cf0829615460419a180f84edd9d8bf51aa0f81ed0db811bf8491",
-    "jni/armeabi-v7a/libmpv.so": "a425970deb8af1562f9efab1988dc23372b42cd115020e014ccce5c3d5fad2cb",
+    "jni/armeabi-v7a/libmpv.so": "455b5dac99dcc38c0449f7d7abb843800963d41be7dd92fb63fa5de53642c7a0",
     "jni/armeabi-v7a/libplayer.so": "ba158503069f4351e1896f4e5130e0967563b1dc660b01ff0d6d2204b248fa03",
     "jni/armeabi-v7a/libswresample.so": "1219fd0485effe27b989d8242af4461e3607bd1086ef6769c681f3bb9c0f1a2e",
     "jni/armeabi-v7a/libswscale.so": "b7af585555967232fffab76704c39382e0682e866b689464e57c021bf17f7991",
@@ -78,7 +78,7 @@
     "jni/x86/libavformat.so": "3dd719d64786592a4231a14bf1f636910b1434e9589c4065f903b9cb15cefaac",
     "jni/x86/libavutil.so": "f38e1320c8b1909bbf079a2b3c6340edb577c4ad87e3851d1a480a46828342fd",
     "jni/x86/libc++_shared.so": "1b9fba4282c5a043994aa023c0a274b580534c5d72916cae7b42bec4e1a27d70",
-    "jni/x86/libmpv.so": "93e09ace77dc32e4522670bf5863e0cc3ae8d419244eacd4e12ecafd3f9ec702",
+    "jni/x86/libmpv.so": "c5f067888d1e5f3539e180fea181727275a4c416504991dc99525fe651270a68",
     "jni/x86/libplayer.so": "856d89b2924d5d8cf7f2a9ad6fb278b59b841431e037226df8da6ddc6ad42781",
     "jni/x86/libswresample.so": "3aafe3cbe6b59e4124c974fbf66c3fe228f61131f7558e72a7496b7159b6f3d1",
     "jni/x86/libswscale.so": "f43931bcc060627086d9573f034fba17f23bb6cfc6de3465a039f6cab3973df7",
@@ -88,16 +88,16 @@
     "jni/x86_64/libavformat.so": "ec54ba6d33c90f80307e5641562e5a880897118981bd6e721a77ebcb8a54b39e",
     "jni/x86_64/libavutil.so": "bcb62cf6da4a05aa6b8870e2cfc6f1eaa930229db4c2149586e609c3d3e44cc9",
     "jni/x86_64/libc++_shared.so": "683a1c7cd2f6829fd40bf805739166c5fce35235bf60d2c4e4a95e9f65a342ef",
-    "jni/x86_64/libmpv.so": "29a2a7ce84eedf4180d40ef1e4a7c4bc415a7171c55e291f69840974c7a359f2",
+    "jni/x86_64/libmpv.so": "fe095b7144951d043d1f1c48b321e4f655fb62b721a133bf5170489db8b506b0",
     "jni/x86_64/libplayer.so": "2a1886a06df2d4f28e4500da10b881c09a30bc53596ca08f446a880511880590",
     "jni/x86_64/libswresample.so": "a628157b05f15ea634ef8afde0d9c6bff18cdbcdcf426c3095eb3f70937e1e12",
     "jni/x86_64/libswscale.so": "0fb356b45304116e57a2a91a5d2f0e66aac5c16136832f2ec6ce1fd78bcb32b3",
     "proguard.txt": "f74d2c7379ad074a8c30527c1926640ce248942ecd0ed328bef24a5cf13d8bae"
   },
   "inputs": {
-    "audiotrack-startup-delay.patch": "1323d280d3b1b7edcfcf7b4ac38c9eb8a206e886947ac22ed22d24eb815851e3",
+    "audiotrack-startup-delay.patch": "2c92c83a8a42cf9dc802c6b3563cb8fab2e8c7afcf942e15421785c5f0cdb373",
     "audiotrack_latency.h": "283db965586cf944b75d52880c39dfae7ec60180a647af9f143b8d9c7d683c37",
-    "rebuild.py": "e5e0a3d00c3f911a3548c6c7a0e6a3f83f01b94dce38ca24e957d3b19113df78",
-    "sources.lock.json": "ce50c64f90269d771e07cd5e91409085605081488442e7d99b26a72fe922c5e5"
+    "rebuild.py": "09b5b86b21dbb95a43303157df6df6a97f73df24f419ad0333ceccb6e422ce22",
+    "sources.lock.json": "1c3dc05bb48f2b80a19d32c987b3006d1790998528f534970acea803eb76b50c"
   }
 }
