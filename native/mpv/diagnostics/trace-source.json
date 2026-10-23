@@ -9,5 +9,5 @@
   "experimentalShortReadFix": true,
   "upstreamBufferSha256": "e053296cdfe58a07b6bd2aa5554774ff5c54ca57c622a56636fb6fe8f0fed105",
   "patchedBufferSha256": "e718e8ed512693f922c6968bfea0acbe3834097f59716482ddd582d47f4203ad",
-  "bufferPatchSha256": "809f38deb5d3570d382582754a81b670f16698418c3f6ea343806db129522048"
+  "bufferPatchSha256": "dc46dcc0c63287e65619756d0ecb7dc60ed39408ba34d95eaf0bebfcdbbdebc0"
 }

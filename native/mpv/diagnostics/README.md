@@ -46,3 +46,12 @@ pinned to the diagnostic commit, without changing the original runner.
 `check_short_read.py /path/to/pinned-mpv` compiles the actual function and verifies
 nine accounting/underrun cases. Upstream and two deliberately weakened variants
 must fail. This is a host boundary check, not Android execution.
+
+## Run106 stopped before compilation
+
+Run39980948129 reached the job's90-minute limit while apt-get update had stopped
+producing output. No library, APK or device samples were produced. Its missing
+analysis inputs are a consequence of that setup timeout, not a clock-test result.
+The follow-up removes the broad apt refresh, pins Meson/Jinja2/Ninja, and builds
+gperf3.1 from its checksum-verified official tarball. The setup step has its own
+15-minute bound; device assertions and measurement windows are unchanged.

@@ -32,15 +32,20 @@ jobs:
           java-version: '17'
           cache: gradle
       - name: Install exact JS dependencies and host build tools
+        timeout-minutes: 15
         env:
           HUSKY: '0'
           NODE_ENV: development
         run: |
           npm ci --no-audit --no-fund
-          sudo apt-get update
-          sudo apt-get install -y ninja-build gperf pkg-config python3-venv
+          for tool in cc make pkg-config; do command -v "$tool"; done
           python3 -m venv "$RUNNER_TEMP/mpv-build-tools"
-          "$RUNNER_TEMP/mpv-build-tools/bin/pip" install meson==1.6.1 Jinja2
+          "$RUNNER_TEMP/mpv-build-tools/bin/pip" install meson==1.6.1 Jinja2==3.1.6 ninja==1.11.1.3
+          curl --fail --location --retry 2 --connect-timeout 15 --max-time 180 https://ftp.gnu.org/gnu/gperf/gperf-3.1.tar.gz -o "$RUNNER_TEMP/gperf-3.1.tar.gz"
+          echo '588546b945bba4b70b6a3a616e80b4ab466e3f33024a352fc2198112cdbb3ae2  '"$RUNNER_TEMP/gperf-3.1.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/gperf-source"
+          tar -xzf "$RUNNER_TEMP/gperf-3.1.tar.gz" -C "$RUNNER_TEMP/gperf-source" --strip-components=1
+          (cd "$RUNNER_TEMP/gperf-source" && ./configure --prefix="$RUNNER_TEMP/mpv-build-tools" && make -j2 && make install)
           echo "$RUNNER_TEMP/mpv-build-tools/bin" >> "$GITHUB_PATH"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.1.12297006' 'platforms;android-36' 'build-tools;36.0.0'
       - name: Build isolated experimental library (never assemble a product AAR)

@@ -1,9 +1,9 @@
 --- a/audio/out/buffer.c
 +++ b/audio/out/buffer.c
 @@ -183,8 +183,14 @@
- 
+
      int pos = read_buffer(ao, data, samples, eof, pad_silence);
- 
+
 -    if (pos > 0)
 +    if (pos > 0) {
 +        // out_time_ns includes the requested duration. A pull driver which does
@@ -13,6 +13,6 @@
 +            out_time_ns -= MP_TIME_S_TO_NS((samples - pos) / (double)ao->samplerate);
          p->end_time_ns = out_time_ns;
 +    }
- 
+
      if (pos < samples && p->playing && !p->paused) {
          p->playing = false;
