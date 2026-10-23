@@ -78,6 +78,25 @@ describe("crash diagnostics", () => {
         expect(report.exits?.[2].description).toBe("stop user 0 token=***");
     });
 
+    it("hides URL credentials and quoted header values in exception text", () => {
+        expect(redactCrashText("GET https://alice:example-password@cdn.example/a?sign=example-sign"))
+            .toBe("GET https://***@cdn.example/a?…");
+        const headers = JSON.stringify({
+            Authorization: "Bearer example-token",
+            Cookie: "session=example-cookie",
+            "x-visible": "keep this",
+            access_token: "example-access-token",
+        });
+        expect(JSON.parse(redactCrashText(headers))).toEqual({
+            Authorization: "***",
+            Cookie: "***",
+            "x-visible": "keep this",
+            access_token: "***",
+        });
+        expect(redactCrashText("{'password': 'example-password'}"))
+            .toBe("{'password': \"***\"}");
+    });
+
     it("reports a native failure instead of throwing", async () => {
         native.getCrashDiagnostics.mockRejectedValue(new Error("boom https://x.example/p?a=1"));
 

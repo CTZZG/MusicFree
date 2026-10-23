@@ -23,11 +23,15 @@ export interface ICrashDiagnosticsReport {
 const SECRET_PARAMETER = /(authorization|cookie|token|password|passwd|secret|sign|signature|key)=([^&\s"']+)/gi;
 const SECRET_HEADER = /(authorization|cookie|set-cookie|token|password):\s*([^\n]+)/gi;
 const URL_QUERY = /\b(https?:\/\/[^\s?#"'<>]+)[?#][^\s"'<>]*/gi;
+const URL_CREDENTIALS = /(\bhttps?:\/\/)[^\s/?#"'<>]*@/gi;
+const QUOTED_SECRET = /(["'](?:authorization|cookie|set-cookie|token|access[_-]?token|password|passwd|secret|sign|signature|(?:api[_-]?)?key)["']\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/gi;
 
 /** 遮掉地址的查询串和凭据，保留协议、主机和路径，方便判断是哪个服务出的错。 */
 export function redactCrashText(value: string): string {
     return value
+        .replace(URL_CREDENTIALS, "$1***@")
         .replace(URL_QUERY, "$1?…")
+        .replace(QUOTED_SECRET, "$1\"***\"")
         .replace(SECRET_PARAMETER, "$1=***")
         .replace(SECRET_HEADER, "$1: ***");
 }
@@ -39,8 +43,10 @@ function redactOptional(value: string | undefined) {
 function redactNativeCrash(summary: INativeCrashSummary): INativeCrashSummary {
     return {
         ...summary,
+        thread: redactOptional(summary.thread),
         abortMessage: redactOptional(summary.abortMessage),
         causes: summary.causes.map(redactCrashText),
+        frames: summary.frames.map(redactCrashText),
     };
 }
 
@@ -63,6 +69,9 @@ export function buildCrashDiagnosticsReport(
         abnormalExitCount: exits.filter(exit => exit.abnormal).length,
         javaCrashes: raw.javaCrashes.map(crash => ({
             ...crash,
+            thread: redactCrashText(crash.thread),
+            appVersion: redactCrashText(crash.appVersion),
+            exception: redactCrashText(crash.exception),
             message: redactCrashText(crash.message),
             stack: redactCrashText(crash.stack),
         })),
