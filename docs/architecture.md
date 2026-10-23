@@ -192,6 +192,9 @@
   掉回底部、盖住标签栏。补丁改成先取出要同步的值、再清理（Reanimated 4.7 已重写这段）。升级 Reanimated 时去掉补丁，并保留
   模拟器测试里的标签栏遮挡检查。
 - 原生代码由两套构建中的 `assembleRelease` 编译；`npm run audit:round20-native` 需要本地 Android 环境，不在 CI 质量门中。
+- 打出的 APK 由 `generator/audit-apk-packaging.py` 检查（稳定版和 Beta 构建都跑，质量门里跑它的自检）：DEX 必须压缩；
+  arm64-v8a、x86_64 的每个 `.so` 的 LOAD 段至少按 16 KB 对齐，否则在 16 KB 内存页的设备上加载不了（32 位库在这类设备上本来就不用，
+  不检查）。v0.12.0 里旧 Media3 FFmpeg 和旧 Fresco GIF 的两个库只按 4 KB 对齐，v0.12.1 移除、替换后全部达标。
 - Android 单元测试（`android/app/src/test`，纯 JVM，不依赖 Android API）：
   - Beta 和稳定版构建在 `assembleRelease` 之前运行 `testReleaseUnitTest`，失败时不打包、不上传、不发布；
   - PR 和推送检查（`ci.yml` 的 Android unit tests）在改到原生代码、原生依赖或这项检查本身时运行 `testDebugUnitTest`，判断规则见 `generator/lib/nativeChanges.mjs`，拿不准时照样运行；没改到时任务直接以成功结束；
@@ -205,6 +208,9 @@
   （通知栏停在暂停的地方、播放条和音质恢复、点播放接着播）、断网时点歌留下失败提示和网络恢复后重试、迷你播放器不盖住
   底部标签栏（从二级页面返回后马上切后台，回来换个标签）。
   测试音源和音频按提交号从 raw.githubusercontent.com 读取，提交必须已推送。
+  `e2e_android` 选 `17` 时换成 Android 17（API 37.0）模拟器（跑在 `ubuntu-26.04` 上，24.04 主机上这个镜像的
+  SurfaceFlinger 反复崩溃），打开后台音频加固（`set-enable-hardening throw`），先用“视频”替身在后台被拦一次作对照，
+  跑完检查本应用没有 `AudioHardening` 记录，且本应用进过首页、框架没有中途重启（`e2e/lib/audio_hardening.sh`）。
   只改测试时可以填 `e2e_apk_run_id`，直接测以前某次 Beta 的 APK，不重新打包。结果写进运行的 Summary，截图、Maestro 日志、
   logcat 在附件里，截图和结果另外推到 `refs/e2e/latest`（不在分支列表里，每次覆盖）。
 - 代理与订阅检查（`.github/workflows/proxy-subscription-check.yml`，`e2e/proxy-subscription-check.sh`）：PR 改到原生代码
@@ -269,6 +275,10 @@
 | 13 | 播放：原来源取不到地址时，到其他已启用的来源找同一个录音换过去播：歌名（连同括号里的 Live、伴奏等版本说明）和歌手都一致、两边都有时长且相差不超过 2 秒才算，专辑只用来排序（`src/utils/sameRecording.ts`）；各来源同时搜，最多等 8 秒。记住能播的来源（最多 300 首），下次这首歌原来源再失败时先试它；切歌、预先准备后面几首、播放地址过期重取、换音质也用它，但不在这些地方重新搜。原来源每次都先试，恢复了就照常用。播放页来源标签写“改用 XX”。基本设置里的“播放失败时尝试更换音源”默认改为开启（以前是用歌名搜两条、取最接近的一条，可能放错歌，默认关） | `src/utils/__tests__/sameRecording.test.ts`、`src/core/trackPlayer/__tests__/alternateSource.test.ts`、`playbackRecoveryIntegration.test.ts`、`tests/layout/player.layout.test.mjs`；模拟器：`e2e/` 的 E2E Fallback、E2E Live Only | 未验证 |
 | 14 | 播放统计：每一遍从头放出来 2 秒记一次（暂停后继续、往后拖进度还是同一遍，重播、单曲循环算新的一遍；换源播放的单独记），用户看到“播放未成功”时记一次失败和原因；只记来源、结果、原因和音质，不记歌名，只存在本机最近 500 次（`src/core/trackPlayer/playAttemptLog.ts`）。设置 → 基本设置 → 开发选项 → 播放统计显示最近 7 天各来源的次数、换源去向、失败原因和最近 10 次失败，可复制；“复制播放诊断”里也带上全部记录的汇总 | `src/core/trackPlayer/__tests__/playAttemptLog.test.ts`、`playAttemptReport.test.ts`、`playbackRecoveryIntegration.test.ts`；模拟器：`e2e/` 的播放统计 | 未验证 |
 | 15 | 原生联网在系统设置了本机或局域网 HTTP 代理时（FlClash 等的“系统代理”）经这个代理连接：只放行这次选路时系统给出的代理地址，直接连接的目标仍拒绝私网、回环地址（`PublicHttpsNetworkPolicy` 的 `ProxyRouteDns`）。通知栏封面、下载、QMC/CENC 代理和写入封面共用这个客户端，都受影响。前提是 OkHttp 4.10 在同一线程里先选代理、再解析地址；升级 OkHttp 后要重新核对新的选路实现并重跑这些测试，不能默认仍然成立 | `android/.../network/SystemProxyNetworkPolicyTest.kt`、`PublicHttpsNetworkPolicyTest.kt`（网络策略）；模拟器：`proxy-subscription-check.yml` 的 `NotificationArtworkProxyTest`（播放服务经代理取封面、写入 MediaSession；系统代理用测试替身，没有装 FlClash）。下载、QMC/CENC 播放经代理没有端到端测试 | 未验证 |
+| 16 | 本机崩溃记录：未捕获的 Java/Kotlin 异常在进程退出前写一条记录（异常类名、消息、调用栈，最多留 10 条），再交给原来的处理器；系统的进程退出记录（ApplicationExitInfo）在用户打开“复制播放诊断”时才读，最多 10 条，原生崩溃只取 tombstone 里的信号、abort 消息和崩溃线程前 24 帧，ANR 只取主线程栈。诊断里地址的查询串、Cookie、token 等遮掉；不联网、不上传。“清空日志”一并清掉，系统的退出记录删不掉，只记下清除时刻、以后不再显示之前的（`android/.../diagnostics/`、`src/core/crashDiagnostics.ts`） | `android/.../diagnostics/JavaCrashRecordsTest.kt`、`TombstoneSummaryTest.kt`、`ExitRecordsTest.kt`、`src/core/__tests__/crashDiagnostics.test.ts`；模拟器：`e2e/` 的本机崩溃记录（`am crash` 和 SIGSEGV） | 未验证 |
+| 17 | 音量平衡（基本设置 → 播放，默认关）：按歌曲文件里的 ReplayGain 标签调整音量，可选按单曲、按专辑；交给 mpv 的 `replaygain` 选项（mpv 0.41 里它带 `UPDATE_VOL`，改了立刻对正在放的歌重算增益，不重新加载），mpv 默认按标签里的峰值防止削波。没有标签的歌（多数在线音源）音量不变；捆绑的 libavfilter 里没有 loudnorm、dynaudnorm，不做实时响度分析（`src/core/playerAdapter/replayGain.ts`、`mpvplayer/ReplayGain.kt`） | `src/core/playerAdapter/__tests__/mpvPlayerAdapter.test.ts`（启动带上保存的模式、不认识的按关闭，运行中改模式不动音量和队列）、`android/.../mpvplayer/ReplayGainTest.kt` | 未验证 |
+| 18 | 车载蓝牙歌词（基本设置 → 歌词，默认关）：开着时 JS 把当前这句（可能是空的）交给原生，原生只在连着蓝牙音频输出（A2DP、LE Audio 音箱或耳机，用 `AudioDeviceCallback` 跟踪）或 Android Auto 时，把这句放进媒体会话的歌名、歌名和歌手挪到歌手的位置（车机经蓝牙 AVRCP、Android Auto 读的就是这两项）。和媒体通知歌词、Live Update 歌词互不影响，媒体通知歌词开着时以它为准；媒体会话只有一个，生效期间手机上的媒体卡片也显示歌词（`mpvplayer/CarLyricState.kt`） | `android/.../mpvplayer/CarLyricStateTest.kt`（开关、连接与显示、蓝牙输出类型）、`src/core/__tests__/lyricManagerLiveUpdate.test.ts`（开关单独同步、开着时每次发这一句、和通知歌词无关）。模拟器上没有蓝牙和 Android Auto，没有端到端测试 | 未验证 |
+| 19 | Android Auto 浏览：根目录除当前播放队列外还有“我喜欢”“最近播放”。车机打开列表时原生先挂起请求，向 JS 要（同一列表在答复前再打开只要一次），JS 现读歌单和播放历史、最多给 200 首；5 秒没回音或 JS 没起来时答复空列表。点了其中一首，媒体 ID 带着 `library/` 前缀经 MediaSession 回到 JS，用整个列表替换播放队列、从这首开始播；歌已经不在列表里时什么也不做（`src/core/androidAutoLibrary.ts`、`mpvplayer/MpvMediaBrowserService.kt`、`PendingBrowseRequests.kt`） | `src/core/__tests__/androidAutoLibrary.test.ts`（媒体 ID 编码、列表上限、读不出来也答复、换队列播放）、`src/core/playerAdapter/__tests__/mpvPlayerAdapter.test.ts`（列表点播不走队列、请求和答复的转发）、`android/.../mpvplayer/PendingBrowseRequestsTest.kt`。没有 Android Auto 车机或 DHU 的端到端测试 | 未验证 |
 
 ## 历史材料
 
@@ -279,5 +289,4 @@
 ## 待定事项
 
 - **Android 支持下限已决定**：API 34。不得为了 Android 7–13 重新加回证书、反射、权限分支或测试矩阵；要恢复支持必须先取得新的产品决定并更新本文。
-- **Nitro 遗留的原生依赖**：`android/app/build.gradle` 默认仍打包 Nitro 时期的 `musicfree-media3-ffmpeg-decoder` AAR（`musicfreeEnableNitroFfmpeg` 开关），而 `android/app/src/main/java` 中已没有 Media3 或 FFmpeg 的引用。是否移除需要构建与设备验证后再定。
 - **iOS**：是否继续支持需要单独定义。

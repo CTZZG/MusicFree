@@ -13,6 +13,9 @@
 # 第 22 步要单独选：all 已经用掉 e2e 任务 60 分钟期限的大半。
 # E2E_SUITE=perf 时只跑第 23 步（性能基线：冷启动、搜索、在线和本地点歌，只记录不设门限，见 perf.sh），
 # 同样要单独选。E2E_PERF_RUNS 改每项的次数（默认 10，另有 1 次预热）。
+# E2E_SUITE=crash 时只跑第 24 步（本机崩溃记录：Java 崩溃和原生崩溃都记下、清空后不再显示，见 crash.sh）。
+# E2E_AUDIO_HARDENING=enable|throw 时开头打开 Android 17 的后台音频加固，用“视频”替身作对照，
+# 结束时检查本应用没有被拦下（见 lib/audio_hardening.sh），只能在 Android 17 及以上跑。
 set -uo pipefail
 
 APK=${1:?用法：e2e/run.sh <APK> <提交号> <结果目录>}
@@ -31,6 +34,7 @@ FOCUS_PKG=fun.upup.musicfree.e2e.focus
 E2E_LEGACY_APK=${E2E_LEGACY_APK:-}
 E2E_MMKV_SEED=${E2E_MMKV_SEED:-}
 E2E_SUITE=${E2E_SUITE:-all}
+E2E_AUDIO_HARDENING=${E2E_AUDIO_HARDENING:-}
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
 RESULTS="$OUT/results.tsv"
@@ -46,6 +50,10 @@ shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; 
 # shellcheck source=lib/pause_checks.sh
 source "$HERE/lib/pause_checks.sh"
 source "$HERE/lib/startup_capture.sh"
+# shellcheck source=lib/adb_install.sh
+source "$HERE/lib/adb_install.sh"
+# shellcheck source=lib/audio_hardening.sh
+source "$HERE/lib/audio_hardening.sh"
 trap startup_capture_stop EXIT
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
@@ -232,6 +240,9 @@ finish() {
         log "有崩溃日志："
         head -n 60 "$OUT/crash.txt"
     fi
+    if [ -n "$E2E_AUDIO_HARDENING" ]; then
+        check_audio_hardening
+    fi
     write_summary
     exit $((FAILED > 0 ? 1 : 0))
 }
@@ -245,13 +256,18 @@ adb shell settings put global hide_error_dialogs 1 || true
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb logcat -c || true
+# Android 17 的后台音频加固：在装应用之前打开，先让替身在后台被拦一次，确认加固生效、记录认得出来
+if [ -n "$E2E_AUDIO_HARDENING" ]; then
+    enable_audio_hardening || finish
+    run_hardening_control
+fi
 startup_capture_start
 
 # 1. 安装并启动。-g 直接给通知、音频读取等运行时权限，不在系统弹窗上卡住
-if adb install -r -g "$APK" > "$OUT/install.log" 2>&1; then
+if adb_install "$OUT/install.log" -r -g "$APK"; then
     pass "安装 APK" "$(basename "$APK")"
 else
-    fail "安装 APK" "$(tail -n 3 "$OUT/install.log" | tr '\n' ' ')"
+    fail "安装 APK" "试了 3 次：$(install_failure_reason "$OUT/install.log")；完整输出在 install.log"
     finish
 fi
 # 保留启动命令的原始输出及首次启动现场；Maestro 安装驱动时的日志可能把早期日志冲掉。
@@ -270,6 +286,7 @@ if [ "$start_status" -ne 0 ] || grep -qE '^Error(:| type [0-9]+:)|^Exception' "$
 fi
 start_timeline
 flow "启动后进入首页" home.yaml || finish
+HARDENING_APP_STARTED=1
 startup_capture_stop
 
 # 2. 用外部链接装两个测试音源（B 只在找其他来源时有结果，见 plugins/e2e-source-b.js）
@@ -327,6 +344,15 @@ source "$HERE/perf.sh"
 if [ "$E2E_SUITE" = perf ]; then
     log "E2E_SUITE=perf：只跑性能基线"
     run_perf_checks
+    finish
+fi
+
+# 24 步：本机崩溃记录（crash.sh，用到 storage.sh 的函数）
+# shellcheck source=crash.sh
+source "$HERE/crash.sh"
+if [ "$E2E_SUITE" = crash ]; then
+    log "E2E_SUITE=crash：只跑本机崩溃记录"
+    run_crash_record_checks
     finish
 fi
 
@@ -576,7 +602,7 @@ expect_paused_through_video() {
     return 0
 }
 
-if [ -z "$FOCUS_APK" ] || ! adb install -r "$FOCUS_APK" > "$OUT/install-focus.log" 2>&1; then
+if [ -z "$FOCUS_APK" ] || ! adb_install "$OUT/install-focus.log" -r "$FOCUS_APK"; then
     for check in "${VIDEO_CHECKS[@]}"; do
         fail "$check" "没装上“视频”替身（E2E_FOCUS_APK=${FOCUS_APK:-未设置}），没有执行"
     done
@@ -658,6 +684,10 @@ fi
 # 20. 省电：Doze 中播放、切歌取地址、等地址的期限、暂停后接着播；省电模式下切歌、播放。见 power.sh
 run_lock_screen_checks
 run_power_saving_checks
+
+# 24. 本机崩溃记录：am crash、SIGSEGV 各弄崩一次，复制播放诊断里都有，清空日志后不再显示。见 crash.sh。
+#     会重启应用，所以放在依赖播放状态的检查之后
+run_crash_record_checks
 
 # 17. 下载收尾时下载记录写不进去；18. 从 0.7.3 覆盖安装，迁移期间清空、迁移后删除的数据不回来。
 #     见 storage.sh。第 18 步会先卸载应用，所以放在最后（在第 19、20 步之后）

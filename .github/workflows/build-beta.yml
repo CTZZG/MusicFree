@@ -32,7 +32,7 @@ on:
                 default: ''
                 type: string
             e2e_suite:
-                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载；library 只跑本地音乐库；perf 只跑性能基线（只记录，不设门限）'
+                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载；library 只跑本地音乐库；perf 只跑性能基线（只记录，不设门限）；crash 只跑本机崩溃记录'
                 required: false
                 default: 'all'
                 type: choice
@@ -43,6 +43,15 @@ on:
                     - power
                     - library
                     - perf
+                    - crash
+            e2e_android:
+                description: '模拟器的 Android 版本：14 是产品支持的最低版本；17（API 37.0）同时打开后台音频加固（throw），用替身作对照，检查本应用没有被拦下'
+                required: false
+                default: '14'
+                type: choice
+                options:
+                    - '14'
+                    - '17'
 
 jobs:
     check-version:
@@ -345,7 +354,10 @@ jobs:
         if: >-
             !cancelled() && inputs.e2e &&
             (needs.build-beta.result == 'success' || inputs.e2e_apk_run_id != '')
-        runs-on: ubuntu-latest
+        # Android 17（android-37.0）镜像在 ubuntu-24.04 主机上，SurfaceFlinger 每隔几十秒就在
+        # GoldfishMapper::readFromHost 断言 hasReadColorBufferDma 失败退出，系统框架跟着重启（Beta #196）；
+        # 别的项目报告同样的模拟器在 ubuntu-26.04 主机上不出现。Android 14 仍用 ubuntu-latest
+        runs-on: ${{ inputs.e2e_android == '17' && 'ubuntu-26.04' || 'ubuntu-latest' }}
         timeout-minutes: 60
         permissions:
             # 下载别的运行里的 APK；把截图推到 refs/e2e/latest
@@ -377,7 +389,7 @@ jobs:
                   run-id: ${{ inputs.e2e_apk_run_id }}
                   github-token: ${{ github.token }}
 
-            - name: Pick the x86_64 APK for Android 14
+            - name: Pick the x86_64 APK for the emulator
               run: |
                   shopt -s nullglob
                   apks=(apk/*x86_64-release.apk)
@@ -446,6 +458,8 @@ jobs:
                   bash e2e/lib/power_environment_test.sh
                   bash e2e/lib/power_controls_test.sh
                   bash e2e/lib/power_scenario_test.sh
+                  bash e2e/lib/crash_checks_test.sh
+                  bash e2e/lib/audio_hardening_test.sh
 
             - name: Enable KVM
               run: |
@@ -493,16 +507,21 @@ jobs:
               uses: reactivecircus/android-emulator-runner@v2
               env:
                   E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
+                  E2E_AUDIO_HARDENING: ${{ inputs.e2e_android == '17' && 'throw' || '' }}
                   # 测的 APK 不是按这次的提交打包时，写进结果
                   E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}
               with:
-                  # Product floor: Android 14. Android 16 has its own instrumented suite.
-                  api-level: 34
+                  # 默认用产品支持的最低版本 Android 14；Android 16 另有原生仪器测试。
+                  # Android 17 的镜像和平台包都叫 android-37.0（SDK 仓库里没有不带小版本号的 android-37）
+                  api-level: ${{ inputs.e2e_android == '17' && '37.0' || '34' }}
                   target: google_apis
                   arch: x86_64
                   profile: pixel_6
                   cores: 3
                   ram-size: 4096M
+                  # Android 17 镜像默认的数据分区装不下应用和替身（INSTALL_FAILED_INSUFFICIENT_STORAGE），
+                  # 只给它加大；留空是默认大小
+                  disk-size: ${{ inputs.e2e_android == '17' && '8G' || '' }}
                   disable-animations: true
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
                   script: >-

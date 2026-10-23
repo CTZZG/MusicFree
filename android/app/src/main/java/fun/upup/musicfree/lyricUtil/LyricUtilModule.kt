@@ -242,6 +242,32 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
         }
     }
 
+    /** 车载蓝牙歌词的开关；关掉时原生忘掉当前这句、歌名换回来（见 CarLyricState） */
+    @ReactMethod
+    fun setCarLyricEnabled(enabled: Boolean, promise: Promise) {
+        try {
+            if (MpvServiceBridge.carLyric.setEnabled(enabled)) {
+                MpvServiceBridge.service?.onCarLyricStateChanged()
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
+    /** 车载蓝牙歌词的当前这句，空字符串表示这会儿没有歌词 */
+    @ReactMethod
+    fun setCarLyricText(lyric: String, promise: Promise) {
+        try {
+            if (MpvServiceBridge.carLyric.setLyric(lyric)) {
+                MpvServiceBridge.service?.onCarLyricStateChanged()
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("Exception", e.message)
+        }
+    }
+
     @ReactMethod
     fun setLiveUpdateLyricText(lyric: String, promise: Promise) {
         try {

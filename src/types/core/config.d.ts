@@ -2,6 +2,7 @@ import type { ResumeMode, SortType } from "@/constants/commonConst.ts";
 import type { CustomizedColors } from "@/hooks/useColors";
 import type { ILocalMusicScanPolicy } from "@/core/localMusicScanPolicy";
 import type { LibraryPlaylistOrganization } from "@/core/libraryPlaylistOrganization";
+import type { ReplayGainMode } from "@/core/playerAdapter/replayGain";
 
 export interface IAppConfigProperties {
     $schema: "2";
@@ -40,6 +41,8 @@ export interface IAppConfigProperties {
     // 切歌淡入淡出：上一首末尾淡出、下一首开头淡入（不是真正的重叠交叉淡化）
     "basic.crossfadeEnabled": boolean;
     "basic.crossfadeSeconds": number;
+    // 音量平衡：按歌曲文件里的 ReplayGain 标签调整音量，默认关
+    "basic.replayGain": ReplayGainMode;
     "basic.qualityKeysList": string[];
     "basic.qualityTranslations": Record<string, string>;
     "basic.qualityAbbreviations": Record<string, string>;
@@ -68,6 +71,8 @@ export interface IAppConfigProperties {
     "lyric.showStatusBarLyric": boolean;
     "lyric.showMediaNotificationLyric": boolean;
     "lyric.showLiveUpdateLyric": boolean;
+    // 车载蓝牙歌词：连着蓝牙音频或 Android Auto 时，把当前这句放进媒体会话的歌名
+    "lyric.showCarLyric": boolean;
     "lyric.topPercent": number;
     "lyric.leftPercent": number;
     "lyric.align": number;

@@ -51,6 +51,9 @@ object MpvServiceBridge {
      */
     internal val liveUpdateLyric = LiveUpdateLyricState()
 
+    /** 车载蓝牙歌词：开关、当前这句、是否连着蓝牙音频输出，见 [CarLyricState] */
+    internal val carLyric = CarLyricState()
+
     /**
      * 给「复制播放诊断信息」用：封面拿不到时，通知、锁屏和 Live Update 都只会
      * 退回默认图标，没有 adb 时只能从这里看出原因。
@@ -83,6 +86,7 @@ object MpvServiceBridge {
         }
         // 开关是用户设置，不随播放会话重建清掉；上一首的歌词作废
         liveUpdateLyric.clearLyric()
+        carLyric.clearLyric()
         service?.onQueueSnapshotChanged()
         MpvMediaBrowserService.getInstance()?.onQueueUpdated()
     }
@@ -96,6 +100,13 @@ object MpvServiceBridge {
      */
     @Volatile
     var onCommand: ((command: String, position: Double?, mediaId: String?) -> Unit)? = null
+
+    /**
+     * Android Auto 打开“我喜欢”“最近播放”时向 JS 要内容（见 [MpvMediaBrowserService]）。
+     * 由 [MpvPlayerModule] 在 initialize 时设置；JS 没起来时为 null，车机上显示空列表。
+     */
+    @Volatile
+    var onBrowseRequest: ((parentId: String) -> Unit)? = null
 
     /**
      * 外部暂停、系统打断之后不许自动出声（见 [PlaybackHold]）。播放服务（通知栏、

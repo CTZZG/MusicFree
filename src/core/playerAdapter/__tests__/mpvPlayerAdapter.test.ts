@@ -14,6 +14,7 @@ const mockNativeMpvPlayer = {
     seekTo: jest.fn(async () => undefined),
     setVolume: jest.fn(async () => undefined),
     setRate: jest.fn(async () => undefined),
+    setReplayGain: jest.fn(async () => undefined),
     getIsPlaying: jest.fn(async () => true),
     getPosition: jest.fn(async () => 0),
     getDuration: jest.fn(async () => 180),
@@ -50,6 +51,11 @@ const mockNativeMpvPlayer = {
             return { remove: jest.fn() };
         },
     ),
+    addBrowseRequestListener: jest.fn((cb: (event: any) => void) => {
+        mockListeners.browse = cb;
+        return { remove: jest.fn() };
+    }),
+    provideBrowseChildren: jest.fn(async () => undefined),
 };
 
 jest.mock("../nativeMpvPlayer", () => ({
@@ -817,6 +823,42 @@ describe("MpvPlayerAdapter external play and pause commands", () => {
         expect(received).toEqual([expect.objectContaining({ mediaId })]);
     });
 
+    it("hands a song picked from an Android Auto library list to the layer above instead of the queue", async () => {
+        const { adapter, received } = await listen("remotePlayFromLibrary");
+        const queuePicks: any[] = [];
+        adapter.addEventListener("remotePlayFromId", event => queuePicks.push(event));
+        await adapter.loadQueue([track("a"), track("b")], 0);
+        mockNativeMpvPlayer.loadAndPlay.mockClear();
+
+        mockListeners.remote?.({
+            command: "playFromId",
+            mediaId: "library/favorite/%E6%B5%8B%40b",
+            enqueuedAt: Date.now(),
+        });
+
+        expect(received).toEqual([
+            expect.objectContaining({ mediaId: "library/favorite/%E6%B5%8B%40b" }),
+        ]);
+        expect(queuePicks).toEqual([]);
+        expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
+    });
+
+    it("passes Android Auto list requests up and the answers back down", async () => {
+        const { adapter, received } = await listen("libraryBrowseRequest");
+
+        mockListeners.browse?.({ parentId: "library/recent" });
+        mockListeners.browse?.({ parentId: "" });
+        await adapter.provideBrowseChildren("library/recent", [
+            { id: "library/recent/x", title: "X", artist: "A", album: "B" },
+        ]);
+
+        expect(received).toEqual([{ parentId: "library/recent" }]);
+        expect(mockNativeMpvPlayer.provideBrowseChildren).toHaveBeenCalledWith(
+            "library/recent",
+            [{ id: "library/recent/x", title: "X", artist: "A", album: "B" }],
+        );
+    });
+
     it("lifts the native hold when the user asks to play", async () => {
         const adapter = await createAdapter();
         await adapter.claimPlayback();
@@ -861,5 +903,39 @@ describe("MpvPlayerAdapter play() while a load is still pending", () => {
         await adapter.play();
 
         expect(mockNativeMpvPlayer.resume).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("MpvPlayerAdapter volume levelling (ReplayGain)", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it("starts mpv with the saved mode and treats anything unknown as off", async () => {
+        await new MpvPlayerAdapter().setup({ replayGain: "album" });
+        expect(mockNativeMpvPlayer.initialize).toHaveBeenLastCalledWith(
+            expect.objectContaining({ replayGain: "album" }),
+        );
+
+        await new MpvPlayerAdapter().setup();
+        expect(mockNativeMpvPlayer.initialize).toHaveBeenLastCalledWith(
+            expect.objectContaining({ replayGain: "off" }),
+        );
+
+        await new MpvPlayerAdapter().setup({ replayGain: "loud" as any });
+        expect(mockNativeMpvPlayer.initialize).toHaveBeenLastCalledWith(
+            expect.objectContaining({ replayGain: "off" }),
+        );
+    });
+
+    it("changes the mode on the running engine without touching volume or the queue", async () => {
+        const adapter = await createAdapter();
+
+        await adapter.setReplayGain("track");
+        await adapter.setReplayGain("bogus" as any);
+
+        expect(mockNativeMpvPlayer.setReplayGain.mock.calls).toEqual([["track"], ["off"]]);
+        expect(mockNativeMpvPlayer.setVolume).not.toHaveBeenCalled();
+        expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
     });
 });

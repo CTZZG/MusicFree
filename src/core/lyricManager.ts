@@ -355,6 +355,8 @@ class LyricManager implements IInjectable {
     private lastNativeLyricOutputSignature = "";
     /** 最近一次告诉原生层的 Live Update 歌词开关；undefined 表示还没同步过 */
     private nativeLiveUpdateEnabled: boolean | undefined = undefined;
+    /** 最近一次告诉原生层的车载蓝牙歌词开关；undefined 表示还没同步过 */
+    private nativeCarLyricEnabled: boolean | undefined = undefined;
     private isPlaybackAdvancing = false;
     private lastProgressPositionMs = 0;
     private isPositionClockRunning = false;
@@ -763,6 +765,7 @@ class LyricManager implements IInjectable {
         }
         // 下次 setup 后重新告诉原生层开关的状态
         this.nativeLiveUpdateEnabled = undefined;
+        this.nativeCarLyricEnabled = undefined;
         this.initialized = false;
     }
 
@@ -888,11 +891,13 @@ class LyricManager implements IInjectable {
         };
         const previousOutput = getDefaultStore().get(nativeLyricOutputAtom);
         this.syncNativeLiveUpdateEnabled();
+        const carLyricEnabled = this.syncNativeCarLyricEnabled();
         const signature = [
             this.appConfig.getConfig("lyric.showStatusBarLyric")
                 ? statusBarText
                 : "",
             output.notificationMode,
+            carLyricEnabled ? "car" : "",
             text,
             output.musicKey ?? "",
             output.lyricIndex ?? "",
@@ -966,6 +971,22 @@ class LyricManager implements IInjectable {
             );
             LyricUtil.clearLiveUpdateLyricText?.().catch(() => undefined);
         }
+
+        // 车载蓝牙歌词和通知歌词互不影响：开着就把这一句（可能是空的）交给原生，
+        // 连没连着车机由原生判断
+        if (carLyricEnabled) {
+            LyricUtil.setCarLyricText?.(text).catch(() => undefined);
+        }
+    }
+
+    /** 车载蓝牙歌词的开关单独告诉原生层，关掉时原生把歌名换回来。返回现在是否开着 */
+    private syncNativeCarLyricEnabled() {
+        const enabled = this.appConfig.getConfig("lyric.showCarLyric") === true;
+        if (enabled !== this.nativeCarLyricEnabled) {
+            this.nativeCarLyricEnabled = enabled;
+            LyricUtil.setCarLyricEnabled?.(enabled).catch(() => undefined);
+        }
+        return enabled;
     }
 
     /**

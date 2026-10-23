@@ -1,3 +1,5 @@
+import type { ReplayGainMode } from "./replayGain";
+
 export type PlayerBackendName = "mpv";
 
 export type PlayerBackendState =
@@ -40,7 +42,11 @@ export type PlayerAdapterEvent =
     | "remoteStop"
     | "remoteDuck"
     | "remoteInterruption"
-    | "remotePlayFromId";
+    | "remotePlayFromId"
+    /** Android Auto 上点了“我喜欢”“最近播放”里的一首（媒体 ID 以 library/ 开头） */
+    | "remotePlayFromLibrary"
+    /** Android Auto 打开“我喜欢”“最近播放”，要列表内容 */
+    | "libraryBrowseRequest";
 
 export interface PlayerAdapterSubscription {
     remove(): void;
@@ -139,6 +145,15 @@ export interface PlayerAdapterTrack {
     musicItem?: IMusic.IMusicItem;
 }
 
+/** Android Auto 列表里的一首 */
+export interface PlayerAdapterBrowseItem {
+    id: string;
+    title: string;
+    artist: string;
+    album: string;
+    artwork?: string | null;
+}
+
 export interface PlayerAdapterConfig {
     maxCacheSize?: number;
     progressUpdateEventInterval?: number;
@@ -153,6 +168,8 @@ export interface PlayerAdapterConfig {
     notificationCapabilities?: PlayerAdapterRemoteCapability[];
     remoteDuckMode?: "pause" | "lowerVolume";
     remoteDuckVolume?: number;
+    /** 音量平衡（ReplayGain），见 replayGain.ts */
+    replayGain?: ReplayGainMode;
 }
 
 export interface PlayerAdapterLoadQueueOptions {
@@ -229,6 +246,15 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
     setRate(rate: number): Promise<void>;
 
     setVolume(volume: number): Promise<void>;
+
+    /** 音量平衡（ReplayGain），改了立刻对正在放的歌生效 */
+    setReplayGain?(mode: ReplayGainMode): Promise<void>;
+
+    /** 答复 Android Auto 要的列表内容（见 libraryBrowseRequest） */
+    provideBrowseChildren?(
+        parentId: string,
+        items: PlayerAdapterBrowseItem[],
+    ): Promise<void>;
 
     updateTrack(track: TTrack, index?: number): Promise<void>;
 

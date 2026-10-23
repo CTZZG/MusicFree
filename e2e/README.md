@@ -41,6 +41,7 @@
 | 省电模式下切歌、播放 | 取消强制 Doze 并模拟运动确认已退出，再打开省电模式（`cmd power set-mode 1`，确认 `low_power` 是 1），灭着屏按“上一首”：取到 B 的地址放出来，20 秒里照常播 |
 | 下载记录写不进去时的下载 | 先正常下载 C 作对照，在 B 要下载到的位置放一个用户自己的同名文件，再让下载记录写不进去（见下面“故障注入”）后下载 B：下载列表里 B 标为“未知错误”；错误日志里有 `music.DownloadTasks` 落盘失败（故障确实生效）；没写出 B 的最终文件；C 和用户的同名文件逐字节不变；下载记录文件和故障前逐字节相同；下载缓存清空。去掉故障、重启后文件和下载记录都完好；重新下载 B 写到新文件名，已有的文件仍不变 |
 | 从 0.7.3 升级，迁移中、迁移后删掉的数据不回来 | 装 0.7.3 启动一次，往它的 MMKV 写入我喜欢（A、B、C）和测试源 A、B 的附加信息（带旧版标记），覆盖安装新版：我喜欢、测试源 A 的附加信息迁移过来（对照）；删掉我喜欢里的 B；卸载全部插件时测试源 B 的附加信息才第一次用到（之前新存储里没有它），清空和迁移同时进行，迁移跑完后没有旧数据；测试源 A 的（已迁移）清空后也没有。重启、再显示测试源 A 的歌之后，B 不在我喜欢里，两个平台都没有带旧版标记的键、迁移标记都在 |
+| 本机崩溃记录（第 24 步，`crash.sh`） | 停下播放后 `am crash` 让主线程抛出未捕获的异常，进程 20 秒内退出（或被系统拉起成新进程）；再用 root 给进程发 SIGSEGV，60 秒内退出。重新打开应用后“复制播放诊断”里：有 `CrashedByAdbException` 的 Java 崩溃记录，对应的退出记录标为已记下调用栈（`javaCrashRecorded`），有原因为 `crash-native`、信号为 SIGSEGV、带 `#00 pc …` 调用栈的原生崩溃，异常退出至少 2 次。点“清空日志”后再打开，异常退出 0 次，两次崩溃都不在了 |
 
 插件前提检查在 `lib/plugin_install.sh` / `plugin_install.py`，首次安装及旧版升级后重装都使用。
 这要求可执行 `adb root` 的测试模拟器；不能读取应用存储时直接失败，不把确认框关闭当安装成功。
@@ -48,6 +49,8 @@
 临时目录，附件保存 A/B 的校验结果；失败时只导出安装事件的选定字段并隐藏远程 URL。
 `install-errors.json` 的 `available: false` 表示诊断不可读取或解析，并不表示安装没有报错。
 `plugin_install_test.sh` 用假 adb 和时钟覆盖缺失、延迟、错误源码、禁用、读取失败和升级后重装等场景。
+`crash_checks_test.sh` 用假 adb 和时钟检查第 24 步：进程退出或被拉起成新进程才算崩溃生效，SIGSEGV 发给当时的进程，
+没有 root、进程不退出、诊断里没有记录时分别记失败。
 
 “在播”和“进度在走”都看系统媒体会话（`dumpsys media_session`）。Beta E2E 固定用 Android 14，
 不运行 Android 16 Live Update 的秒级通知刷新；这套检查验证的是会话进度，不直接验证音频输出。
@@ -294,6 +297,37 @@ in 1000ms`）系统才报 Displayed，之后开屏页才交给应用移除（见
 `lib/perf_stats.py --self-test` 在 PR CI 和 Beta 都跑：缺时间点、顺序不对、读到上一次启动的时间点都要判测不出；
 追踪的时间线和截屏转换也在里面。
 
+## Android 17：后台音频加固
+
+Android 17 起，后台的应用没有可见界面、也没有前台服务时播放会被静音、焦点请求失败、音量调不动，
+不抛异常（[说明](https://developer.android.com/about/versions/17/changes/bg-audio)）；目标版本是 37 的应用在后台还要有
+带“使用期间”权限的前台服务。系统会在 logcat 和 `dumpsys audio` 里留下带包名的 `AudioHardening` 记录。
+
+手动运行 Beta 构建时 `e2e_android` 选 `17`：模拟器换成 Android 17（`system-images;android-37.0;google_apis;x86_64`），
+`run.sh` 收到 `E2E_AUDIO_HARDENING=throw`，在装应用之前执行 `cmd audio set-enable-hardening throw`
+（不管目标版本，所有应用都按最严的规则检查，焦点、音量请求被拦时直接抛 `IllegalStateException`），日志缓冲区调到 16 MB。
+
+| 检查 | 怎么判断 |
+| --- | --- |
+| 打开后台音频加固 | 命令退出码是 0，输出里没有 unknown、error、exception |
+| 对照 | 给“视频”替身发一个显式广播（`BackgroundAudioReceiver`），它在没有界面、没有前台服务时抢焦点、写一段静音：5 秒内替身打出结果，而且 logcat 或 `dumpsys audio` 里有带替身包名的 `AudioHardening` 记录。没有记录说明加固没生效或记录不写包名，后面的判断不作数 |
+| 本应用没有被拦下 | 跑完选中的检查后，logcat 和 `dumpsys audio` 里没有带 `fun.upup.musicfree` 的 `AudioHardening` 记录（包名前后不能紧挨着包名里的字符，替身 `fun.upup.musicfree.e2e.focus` 的不算）；对照没通过、本应用没进首页、框架中途重启过时也记失败。找到的记录存在 `audio-hardening-app.txt` |
+
+Android 17 镜像默认的数据分区装不下应用和替身（`INSTALL_FAILED_INSUFFICIENT_STORAGE`），Beta 选 17 时把数据分区设为 8 GB
+（`disk-size`）。应用和替身的安装（`lib/adb_install.sh`）失败时等 10 秒再试，最多 3 次，失败原因取 `Failure [...]`、
+异常类名那一行和 `Caused by`。
+
+这个镜像在 ubuntu-24.04 主机上，SurfaceFlinger 每隔几十秒就在 `GoldfishMapper::readFromHost` 断言
+`hasReadColorBufferDma` 失败退出，系统框架跟着重启，刚装好的应用会报“Activity class does not exist”（Beta #196）。
+别的项目报告同样的模拟器在 ubuntu-26.04 主机上不出现，所以 Beta 选 17 时模拟器任务跑在 `ubuntu-26.04` 上，选 14 时不变。
+
+“本应用没有被拦下”只在本应用确实跑过时才算通过：本应用没进首页，或者打开加固以来 `system_server` 的进程号变了
+（框架重启过，加固的开关可能跟着没了），即使没有本应用的记录也记失败。
+
+加固只影响后台，`all` 和 `power` 里的后台播放、媒体键切歌、看视频打断、锁屏、Doze 都在加固下跑一遍。
+Android 17 模拟器较慢，`all` 可能超过 60 分钟的期限，可以先选 `power`。判断函数由 `lib/audio_hardening_test.sh`
+用假的 adb 自检。
+
 ## 怎么跑
 
 Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这次运行的 Summary 里，
@@ -301,7 +335,8 @@ Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这�
 
 - 只改了测试、不想重新打包：手动运行 Beta 构建，`e2e_apk_run_id` 填之前某次 Beta 构建的运行 ID，
   会直接测那次打出的 APK（30 天内的都在）。
-- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`；只跑性能基线：选 `perf`。
+- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`；只跑性能基线：选 `perf`；只跑本机崩溃记录：选 `crash`。
+- 在 Android 17 上、打开后台音频加固跑：`e2e_android` 选 `17`（见上面“Android 17：后台音频加固”）。
 - 拿修复前的代码对照：`build_ref` 填那个提交的完整提交号，打包那份代码，测试脚本和测试音源仍用触发的分支。
   APK 文件名、构建信息（`android-build-info.txt`、应用里的构建信息）记的是打包的源码提交和它的版本号，
   触发工作流的提交另记为 `Workflow commit`。测试结果里分开写测试脚本的提交和 APK 打包的源码提交。

@@ -1,5 +1,7 @@
 import { NativeEventEmitter, NativeModules, Platform } from "react-native";
 
+import type { ReplayGainMode } from "./replayGain";
+
 /**
  * mpv 播放引擎的原生桥接层（仅 Android）。
  *
@@ -53,6 +55,8 @@ export interface MpvInitializeOptions {
     progressIntervalMs?: number;
     /** 通知栏是否显示停止/关闭按钮 */
     showStopAction?: boolean;
+    /** 音量平衡（ReplayGain），见 replayGain.ts */
+    replayGain?: ReplayGainMode;
     /** 透传给 mpv 的额外属性（如 audio-buffer、cache 等） */
     mpvOptions?: Record<string, string>;
 }
@@ -154,6 +158,8 @@ interface MpvPlayerNativeModule {
     /** 0-1 */
     setVolume(volume: number): Promise<void>;
     setRate(rate: number): Promise<void>;
+    /** 音量平衡，对正在放的歌立刻生效 */
+    setReplayGain?(mode: ReplayGainMode): Promise<void>;
     getIsPlaying(): Promise<boolean>;
     getPosition(): Promise<number>;
     getDuration(): Promise<number>;
@@ -161,6 +167,11 @@ interface MpvPlayerNativeModule {
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
     updateMetadata(payload: MpvMetadataPayload): Promise<void>;
+    /** 答复 Android Auto 要的“我喜欢”“最近播放”（见 MpvMediaBrowserService） */
+    provideBrowseChildren?(
+        parentId: string,
+        items: MpvQueueSnapshotTrack[],
+    ): Promise<void>;
 }
 
 export const ON_MPV_STATE_CHANGED = "onMpvStateChanged";
@@ -171,6 +182,12 @@ export const ON_MPV_ERROR = "onMpvError";
 export const ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand";
 export const ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
     "onMpvAndroidAutoConnectionChanged";
+export const ON_MPV_BROWSE_REQUEST = "onMpvBrowseRequest";
+
+/** Android Auto 打开了“我喜欢”“最近播放”，要列表内容 */
+export interface MpvBrowseRequestEvent {
+    parentId: string;
+}
 
 export interface MpvStateChangedEvent {
     state: MpvPlayerState;
@@ -274,6 +291,10 @@ const NativeMpvPlayer = {
     seekTo: (seconds: number) => assertAvailable().seekTo(seconds),
     setVolume: (volume: number) => assertAvailable().setVolume(volume),
     setRate: (rate: number) => assertAvailable().setRate(rate),
+    setReplayGain: (mode: ReplayGainMode) => {
+        const module = assertAvailable();
+        return module.setReplayGain ? module.setReplayGain(mode) : Promise.resolve();
+    },
     getIsPlaying: () => assertAvailable().getIsPlaying(),
     getPosition: () => assertAvailable().getPosition(),
     getDuration: () => assertAvailable().getDuration(),
@@ -282,6 +303,12 @@ const NativeMpvPlayer = {
         assertAvailable().updateQueueSnapshot(payload),
     updateMetadata: (payload: MpvMetadataPayload) =>
         assertAvailable().updateMetadata(payload),
+    provideBrowseChildren: (parentId: string, items: MpvQueueSnapshotTrack[]) => {
+        const module = assertAvailable();
+        return module.provideBrowseChildren
+            ? module.provideBrowseChildren(parentId, items)
+            : Promise.resolve();
+    },
 
     // 事件订阅
     addStateChangedListener: (cb: (e: MpvStateChangedEvent) => void) =>
@@ -304,6 +331,8 @@ const NativeMpvPlayer = {
             ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED,
             cb,
         ),
+    addBrowseRequestListener: (cb: (e: MpvBrowseRequestEvent) => void) =>
+        addListener<MpvBrowseRequestEvent>(ON_MPV_BROWSE_REQUEST, cb),
 };
 
 export default NativeMpvPlayer;

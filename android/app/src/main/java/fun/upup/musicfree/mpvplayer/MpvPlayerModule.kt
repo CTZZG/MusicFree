@@ -179,6 +179,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         fun getPropertyString(property: String): String? =
             mpvInstance?.getPropertyString(property)
 
+        fun setPropertyString(property: String, value: String) =
+            requireMpv().setPropertyString(property, value)
+
         fun observeProperty(property: String, format: Int) =
             requireMpv().observeProperty(property, format)
 
@@ -270,6 +273,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private const val ON_MPV_ACTIVE_TRACK_CHANGED = "onMpvActiveTrackChanged"
         private const val ON_MPV_ERROR = "onMpvError"
         private const val ON_MPV_REMOTE_COMMAND = "onMpvRemoteCommand"
+        private const val ON_MPV_BROWSE_REQUEST = "onMpvBrowseRequest"
         private const val ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED =
             "onMpvAndroidAutoConnectionChanged"
         /** mpv 解复用缓存的内存上限（纯音频足够用，且与磁盘缓存设置无关） */
@@ -408,6 +412,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         if (!force && isAndroidAutoConnected == connected) return
         isAndroidAutoConnected = connected
         MpvServiceBridge.isAndroidAutoConnected = connected
+        MpvServiceBridge.service?.onCarLyricStateChanged()
         sendEvent(
             ON_MPV_ANDROID_AUTO_CONNECTION_CHANGED,
             Arguments.createMap().apply { putBoolean("connected", connected) },
@@ -895,6 +900,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         loadingGeneration = -1L
         pendingUnpause.cancel()
         MpvServiceBridge.onCommand = null
+        MpvServiceBridge.onBrowseRequest = null
         MpvServiceBridge.pauseNow = null
         unregisterAndroidAutoConnectionDetector(notifyJs = false)
         try {
@@ -968,6 +974,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 // handles the final ended state when there is no prepared next.
                 MPVLib.setOptionString("keep-open", "no")
                 MPVLib.setOptionString("gapless-audio", "yes")
+                // 音量平衡：按文件里的 ReplayGain 标签调音量，没有标签的歌不变（见 ReplayGain）
+                MPVLib.setOptionString(
+                    "replaygain",
+                    ReplayGain.mpvValue(readString(options, "replayGain")),
+                )
 
                 defaultUserAgent = readString(options, "userAgent")
                     ?.takeIf { it.isNotBlank() }
@@ -1012,6 +1023,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MpvServiceBridge.playbackHold.claim()
                 MpvServiceBridge.pauseNow = {
                     runMpvCallbackOnMain { keepHeldPaused("external") }
+                }
+                MpvServiceBridge.onBrowseRequest = { parentId ->
+                    if (!invalidated.get()) {
+                        sendEvent(
+                            ON_MPV_BROWSE_REQUEST,
+                            Arguments.createMap().apply { putString("parentId", parentId) },
+                        )
+                    }
                 }
                 MpvServiceBridge.onCommand = { command, position, mediaId ->
                     if (!invalidated.get()) {
@@ -1073,6 +1092,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
         isInitialized.set(false)
         MpvServiceBridge.onCommand = null
+        MpvServiceBridge.onBrowseRequest = null
         MpvServiceBridge.pauseNow = null
         androidAutoConnectionDetector?.onConnectionChanged = null
         pendingMainTasks.toList().forEach { it.cancel() }
@@ -1116,6 +1136,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             promise.resolve(null)
         } catch (error: Exception) {
             promise.reject("E_MPV_QUEUE_SNAPSHOT", error.message, error)
+        }
+    }
+
+    /** Android Auto 要的“我喜欢”“最近播放”，JS 给回来的内容（见 MpvMediaBrowserService） */
+    @ReactMethod
+    fun provideBrowseChildren(parentId: String, items: ReadableArray?, promise: Promise) {
+        try {
+            MpvMediaBrowserService.getInstance()
+                ?.deliverLibraryChildren(parentId, readQueueSnapshot(items))
+            promise.resolve(null)
+        } catch (error: Exception) {
+            promise.reject("E_MPV_BROWSE", error.message, error)
         }
     }
 
@@ -1652,6 +1684,27 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 operationPromise.resolve(null)
             } catch (e: Exception) {
                 operationPromise.reject("E_RATE", e.message, e)
+            }
+        }
+    }
+
+    /** 音量平衡：mpv 的 replaygain 改了立刻按新模式重算增益，不用重新加载 */
+    @ReactMethod
+    fun setReplayGain(mode: String, promise: Promise) {
+        if (!isInitialized.get()) {
+            promise.reject("E_NOT_INIT", "not init")
+            return
+        }
+        postPromise(promise, "E_REPLAY_GAIN") { operationPromise ->
+            if (!isInitialized.get()) {
+                operationPromise.reject("E_NOT_INIT", "not init")
+                return@postPromise
+            }
+            try {
+                MPVLib.setPropertyString("replaygain", ReplayGain.mpvValue(mode))
+                operationPromise.resolve(null)
+            } catch (e: Exception) {
+                operationPromise.reject("E_REPLAY_GAIN", e.message, e)
             }
         }
     }

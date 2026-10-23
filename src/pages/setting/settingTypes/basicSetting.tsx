@@ -17,6 +17,7 @@ import PluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
 import trackPlayer from "@/core/trackPlayer";
 import { DEFAULT_CROSSFADE_SECONDS } from "@/core/trackPlayer/crossfadePolicy";
+import { normalizeReplayGainMode, REPLAY_GAIN_MODES } from "@/core/playerAdapter/replayGain";
 import useColors from "@/hooks/useColors";
 import LyricUtil, { NativeTextAlignment } from "@/native/lyricUtil";
 import { buildInfo } from "@/constants/buildInfo.generated";
@@ -44,12 +45,14 @@ import { FlatList, ScrollView } from "react-native-gesture-handler";
 import { resolveDownloadDirectory } from "@/utils/downloadStoragePolicy";
 import { getPlayAttempts, summarizePlayAttempts } from "@/core/trackPlayer/playAttemptLog";
 import { formatPlayAttemptReport } from "@/core/trackPlayer/playAttemptReport";
+import { clearCrashDiagnostics, loadCrashDiagnostics } from "@/core/crashDiagnostics";
 
 async function buildPlaybackDiagnosticReport() {
-    const [playback, lyric, download] = await Promise.all([
+    const [playback, lyric, download, crashes] = await Promise.all([
         trackPlayer.getPlaybackDiagnosticSnapshot(),
         Promise.resolve(lyricManager.getLyricDiagnosticSnapshot()),
         Promise.resolve(downloader.getDownloadDiagnosticSnapshot()),
+        loadCrashDiagnostics(),
     ]);
 
     return JSON.stringify(
@@ -60,6 +63,8 @@ async function buildPlaybackDiagnosticReport() {
             playAttempts: summarizePlayAttempts(getPlayAttempts()),
             lyric,
             download,
+            // 本机的崩溃、无响应和被系统杀掉的记录（只在本机，见 core/crashDiagnostics）
+            crashes,
         },
         null,
         2,
@@ -137,10 +142,12 @@ const createRadio = function (
     value: string | number,
     valueMap?: Record<string | number, string | number>,
     onChange?: (value: string | number) => void,
+    tip?: string,
 ) {
     const onPress = () => {
         showDialog("RadioDialog", {
             title,
+            tip,
             content: valueMap
                 ? candidates.map(_ => ({
                     label: valueMap[_] as string,
@@ -209,6 +216,7 @@ export default function BasicSetting() {
     const autoStopWhenError = useAppConfig("basic.autoStopWhenError");
     const crossfadeEnabled = useAppConfig("basic.crossfadeEnabled");
     const crossfadeSeconds = useAppConfig("basic.crossfadeSeconds");
+    const replayGain = useAppConfig("basic.replayGain");
     const maxCacheSize = useAppConfig("basic.maxCacheSize");
     const defaultPlayQuality = useAppConfig("basic.defaultPlayQuality");
     const playQualityOrder = useAppConfig("basic.playQualityOrder");
@@ -469,6 +477,24 @@ export default function BasicSetting() {
                         ),
                     ]
                     : []),
+                // 音量平衡：只认歌曲文件里的 ReplayGain 标签，改了马上对正在放的歌生效
+                createRadio(
+                    t("basicSettings.replayGain"),
+                    "basic.replayGain",
+                    REPLAY_GAIN_MODES,
+                    normalizeReplayGainMode(replayGain),
+                    {
+                        off: t("basicSettings.replayGain.off"),
+                        track: t("basicSettings.replayGain.track"),
+                        album: t("basicSettings.replayGain.album"),
+                    },
+                    mode => {
+                        trackPlayer
+                            .setReplayGain(normalizeReplayGainMode(mode))
+                            .catch(() => undefined);
+                    },
+                    t("basicSettings.replayGain.tip"),
+                ),
                 {
                     title: t("dislikeMusic.manage"),
                     right: (
@@ -945,6 +971,7 @@ export default function BasicSetting() {
                     async onPress() {
                         try {
                             await clearLog();
+                            await clearCrashDiagnostics();
                             Toast.success(t("toast.logCleared"));
                         } catch {}
                     },
@@ -1091,6 +1118,7 @@ function LyricSetting() {
         "lyric.showMediaNotificationLyric",
     );
     const showLiveUpdateLyric = useAppConfig("lyric.showLiveUpdateLyric");
+    const showCarLyric = useAppConfig("lyric.showCarLyric");
     const topPercent = useAppConfig("lyric.topPercent");
     const leftPercent = useAppConfig("lyric.leftPercent");
     const align = useAppConfig("lyric.align");
@@ -1260,6 +1288,17 @@ function LyricSetting() {
         },
     );
 
+    // 车载蓝牙歌词和上面两种通知歌词互不影响，不用互斥
+    const carLyric = createSwitch(
+        t("basicSettings.lyric.showCarLyric"),
+        "lyric.showCarLyric",
+        showCarLyric ?? false,
+        newValue => {
+            Config.setConfig("lyric.showCarLyric", newValue);
+            lyricManager.refreshNativeNotificationLyric();
+        },
+    );
+
     const liveUpdateLyric = createSwitch(
         t("basicSettings.lyric.showLiveUpdateLyric"),
         "lyric.showLiveUpdateLyric",
@@ -1391,6 +1430,13 @@ function LyricSetting() {
                 onPress={liveUpdateLyric.onPress}>
                 <ListItem.Content title={liveUpdateLyric.title} />
                 {liveUpdateLyric.right}
+            </ListItem>
+            <ListItem withHorizontalPadding onPress={carLyric.onPress}>
+                <ListItem.Content
+                    title={carLyric.title}
+                    description={t("basicSettings.lyric.showCarLyric.desc")}
+                />
+                {carLyric.right}
             </ListItem>
             <ListItem
                 withHorizontalPadding

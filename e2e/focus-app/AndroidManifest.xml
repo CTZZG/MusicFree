@@ -8,5 +8,9 @@
             android:name=".HoldFocusActivity"
             android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault" />
+        <!-- Android 17 后台音频加固的对照，见 BackgroundAudioReceiver -->
+        <receiver
+            android:name=".BackgroundAudioReceiver"
+            android:exported="true" />
     </application>
 </manifest>

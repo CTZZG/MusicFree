@@ -906,6 +906,11 @@ export interface ILanguageData {
     "basicSettings.crossfadeEnabled.desc": string; // 上一首末尾淡出、下一首开头淡入
     "basicSettings.crossfadeSeconds": string; // 淡化时长
     "basicSettings.crossfadeSeconds.unit": string; // {{seconds}} 秒
+    "basicSettings.replayGain": string; // 音量平衡
+    "basicSettings.replayGain.off": string; // 关闭
+    "basicSettings.replayGain.track": string; // 按单曲
+    "basicSettings.replayGain.album": string; // 按专辑
+    "basicSettings.replayGain.tip": string; // 按歌曲文件里的 ReplayGain 标签调整音量……
     "basicSettings.tempRemoteDuck": string; // 播放被暂时打断时
     "basicSettings.tempRemoteDuck.pause": string; // 暂停播放
     "basicSettings.tempRemoteDuck.lowerVolume": string; // 降低音量
@@ -944,6 +949,8 @@ export interface ILanguageData {
     "basicSettings.lyric.showStatusBarLyric": string; // 开启桌面歌词
     "basicSettings.lyric.showMediaNotificationLyric": string; // 开启媒体通知歌词
     "basicSettings.lyric.showLiveUpdateLyric": string; // 开启 Live Update 歌词（实验）
+    "basicSettings.lyric.showCarLyric": string; // 车载蓝牙歌词
+    "basicSettings.lyric.showCarLyric.desc": string; // 连着蓝牙音频或 Android Auto 时……
     "basicSettings.lyric.align": string; // 对齐方式
     "basicSettings.lyric.align.left": string; // 左对齐
     "basicSettings.lyric.align.center": string; // 居中对齐

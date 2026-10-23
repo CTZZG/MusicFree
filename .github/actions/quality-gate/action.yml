@@ -42,6 +42,10 @@ runs:
           shell: bash
           run: python3 -I generator/check-rnscreens-listener.py
 
+        - name: Self-test the APK packaging audit (DEX compression, 16 KB native alignment)
+          shell: bash
+          run: python3 -I generator/audit-apk-packaging.py --self-test
+
         - name: Whitespace check
           shell: bash
           run: git diff --check

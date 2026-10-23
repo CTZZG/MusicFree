@@ -50,6 +50,10 @@ interface ILyricUtil extends NativeModule {
     }>;
     /** 设置 Live Update 歌词开关，同时调整媒体通知是否参与系统胶囊 */
     setLiveUpdateLyricEnabled?: (enabled: boolean) => Promise<void>;
+    /** 车载蓝牙歌词的开关（原生只在连着蓝牙音频或 Android Auto 时显示） */
+    setCarLyricEnabled?: (enabled: boolean) => Promise<void>;
+    /** 车载蓝牙歌词的当前这句，空字符串表示这会儿没有歌词 */
+    setCarLyricText?: (lyric: string) => Promise<void>;
     /** 设置距离顶部的距离 */
     setStatusBarLyricTop: (percent: number) => Promise<void>;
     /** 设置距离左部的距离 */

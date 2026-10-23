@@ -19,6 +19,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
+import `fun`.upup.musicfree.diagnostics.CrashDiagnostics
 import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import kotlin.system.exitProcess
 
@@ -139,6 +140,26 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
             })
         } catch (e: Throwable) {
             promise.reject("playback_native_diagnostics_failed", e)
+        }
+    }
+
+    /** 本机记下的崩溃和系统给出的退出原因，见 diagnostics/CrashDiagnostics */
+    @ReactMethod
+    fun getCrashDiagnostics(promise: Promise) {
+        try {
+            promise.resolve(CrashDiagnostics.toWritable(CrashDiagnostics.collect(reactContext)))
+        } catch (e: Throwable) {
+            promise.reject("crash_diagnostics_failed", e)
+        }
+    }
+
+    @ReactMethod
+    fun clearCrashDiagnostics(promise: Promise) {
+        try {
+            CrashDiagnostics.clear(reactContext)
+            promise.resolve(true)
+        } catch (e: Throwable) {
+            promise.reject("crash_diagnostics_clear_failed", e)
         }
     }
 

@@ -10,6 +10,8 @@ import NativeMpvPlayer, {
 } from "./nativeMpvPlayer";
 import { encodeMpvMediaId, matchesMpvMediaId } from "./mpvMediaId";
 import { isStaleMpvRemoteCommand } from "./mpvRemoteCommandPolicy";
+import { normalizeReplayGainMode, type ReplayGainMode } from "./replayGain";
+import { isAutoLibraryMediaId } from "./autoLibraryMediaId";
 import {
     collectMpvNextIndices,
     computeMpvNextIndex,
@@ -21,6 +23,7 @@ import {
 } from "./mpvQueue";
 import type {
     PlayerAdapter,
+    PlayerAdapterBrowseItem,
     PlayerAdapterConfig,
     PlayerAdapterEvent,
     PlayerAdapterLoadQueueOptions,
@@ -220,6 +223,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     >();
     private queuesChangedListeners = new Set<(...a: any[]) => void>();
     private queueChangedListeners = new Set<(...a: any[]) => void>();
+    private libraryBrowseRequestListeners = new Set<(...a: any[]) => void>();
     private remoteListeners: Partial<
         Record<PlayerAdapterEvent, Set<(...a: any[]) => void>>
     > = {};
@@ -248,6 +252,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     config?.notificationCapabilities?.includes("stop") ??
                     config?.capabilities?.includes("stop") ??
                     false,
+                replayGain: normalizeReplayGainMode(config?.replayGain),
             });
             this.androidAutoConnected =
                 await NativeMpvPlayer.isAndroidAutoConnected().catch(
@@ -351,6 +356,29 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 );
             },
         );
+
+        NativeMpvPlayer.addBrowseRequestListener(({ parentId }) => {
+            if (typeof parentId !== "string" || !parentId) {
+                return;
+            }
+            this.libraryBrowseRequestListeners.forEach(listener => {
+                try {
+                    listener({ parentId });
+                } catch (error: any) {
+                    errorLog(
+                        "MpvPlayer Android Auto 列表请求处理失败",
+                        error?.message ?? error,
+                    );
+                }
+            });
+        });
+    }
+
+    async provideBrowseChildren(
+        parentId: string,
+        items: PlayerAdapterBrowseItem[],
+    ) {
+        await NativeMpvPlayer.provideBrowseChildren(parentId, items);
     }
 
     /**************** 队列加载与切歌 ****************/
@@ -1388,6 +1416,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         await NativeMpvPlayer.setRate(rate);
     }
 
+    async setReplayGain(mode: ReplayGainMode) {
+        await NativeMpvPlayer.setReplayGain(normalizeReplayGainMode(mode));
+    }
+
     async setVolume(volume: number) {
         // 上层与 mpv 统一使用 0-1 的音量范围
         this.volume = volume <= 1 ? volume : volume / 100;
@@ -1923,6 +1955,21 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             });
         };
 
+        if (command === "playFromId" && isAutoLibraryMediaId(mediaId)) {
+            // “我喜欢”“最近播放”里的歌不在当前队列里，交给上层换队列再播
+            this.remoteListeners.remotePlayFromLibrary?.forEach(listener => {
+                try {
+                    listener({ mediaId, enqueuedAt });
+                } catch (error: any) {
+                    errorLog(
+                        "MpvPlayer Android Auto 列表点播处理失败",
+                        error?.message ?? error,
+                    );
+                }
+            });
+            return;
+        }
+
         if (command === "playFromId") {
             if (typeof mediaId === "string" && mediaId.length > 0) {
                 // 在 Android Auto 等处点的歌：先让上层把意图记成要播（原生已经
@@ -2082,6 +2129,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 this.androidAutoConnectionChangedListeners,
             queuesChanged: this.queuesChangedListeners,
             queueChanged: this.queueChangedListeners,
+            libraryBrowseRequest: this.libraryBrowseRequestListeners,
         };
         const target = setFor[event];
         if (target) {
