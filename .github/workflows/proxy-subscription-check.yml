@@ -1,139 +1,96 @@
-name: Proxy and subscription regression checks
-
+name: MPV AO clock diagnostic (not product acceptance)
+run-name: AO clock counters — ${{ github.sha }}
 on:
-    pull_request:
-        paths:
-            # 改到 debug 版 APK 原生部分的都要在 Android 16 模拟器上跑一遍：原生代码（网络层、播放服务和 Live Update
-            # 通知、MainActivity 和开屏页）、原生依赖（package.json、package-lock.json）和它们的补丁（patches/）
-            - 'android/**'
-            - 'native/mpv/**'
-            - 'patches/**'
-            - 'package.json'
-            - 'package-lock.json'
-            - 'src/components/base/appBar.tsx'
-            - 'src/pages/setting/settingTypes/pluginSetting/**'
-            - 'src/core/trackPlayer/**'
-            - 'src/core/mediaSource/**'
-            - 'src/core/appConfig.ts'
-            - 'src/core/playerAdapter/**'
-            - 'src/core/pluginManager/**'
-            - 'src/core/lyricManager.ts'
-            - 'src/entry/bootstrap/bootstrap.ts'
-            - 'src/components/panels/types/musicQuality.tsx'
-            - 'src/pages/musicDetail/**'
-            - 'src/pages/searchPage/**'
-            - 'src/components/musicBar/**'
-            - 'src/utils/qualities.ts'
-            - 'src/utils/keyValueStore/**'
-            - 'src/utils/a11yLabels.ts'
-            - 'src/core/i18n/languages/**'
-            - 'e2e/flows/plugin-*.yaml'
-            - 'e2e/proxy-subscription-check.sh'
-            - 'e2e/lib/engine_progress_artifact*.sh'
-            - 'e2e/android16-js-flow-check.sh'
-            - 'e2e/lib/js_flow_evidence.py'
-            - 'e2e/lib/quality_loading_evidence.py'
-            - 'e2e/lib/loading_spinner_evidence.py'
-            - 'e2e/plugins/e2e-source-js-flow.js'
-            - 'e2e/focus-app/**'
-            - '.github/workflows/proxy-subscription-check.yml'
-    workflow_dispatch:
-
+  workflow_dispatch:
 permissions:
-    contents: read
-
+  contents: read
 concurrency:
-    group: proxy-subscription-${{ github.event.pull_request.number || github.ref }}
-    cancel-in-progress: true
-
+  group: mpv-clock-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-    emulator:
-        runs-on: ubuntu-latest
-        timeout-minutes: 60
+  diagnostic:
+    name: Counter-only x86_64 build and original device gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MAESTRO_VERSION: 2.8.0
+      MAESTRO_CLI_NO_ANALYTICS: 1
+      MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install exact JS dependencies and host build tools
         env:
-            HUSKY: '0'
-            NODE_ENV: development
-            E2E_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        steps:
-            - uses: actions/checkout@v5
-              with:
-                  fetch-depth: 0
-            - uses: actions/setup-node@v6
-              with:
-                  node-version: '22'
-                  cache: npm
-            - uses: actions/setup-java@v5
-              with:
-                  distribution: temurin
-                  java-version: '17'
-                  cache: gradle
-            - run: npm ci --no-audit --no-fund
-            - name: Check raw sample export failure paths
-              run: |
-                  bash e2e/lib/engine_progress_artifact_test.sh
-                  python3 -I e2e/lib/js_flow_evidence.py --self-test
-                  python3 -I e2e/lib/quality_loading_evidence.py --self-test
-                  python3 -I e2e/lib/loading_spinner_evidence.py --self-test
-            - name: Build transient audio focus helper
-              run: |
-                  bash e2e/focus-app/build.sh "$RUNNER_TEMP/api36-focus.apk"
-                  echo "E2E_FOCUS_APK=$RUNNER_TEMP/api36-focus.apk" >> "$GITHUB_ENV"
-            - name: Restore native test APKs
-              id: native-apks
-              uses: actions/cache/restore@v4
-              with:
-                  path: |
-                      android/app/build/outputs/apk/debug/app-x86_64-debug.apk
-                      android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-                  key: proxy-test-apks-${{ runner.os }}-${{ hashFiles('android/**', 'package.json', 'package-lock.json', 'patches/**', '.github/workflows/proxy-subscription-check.yml') }}
-            - name: Build debug app and native test APK
-              if: steps.native-apks.outputs.cache-hit != 'true'
-              working-directory: android
-              run: |
-                  chmod +x gradlew
-                  ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest \
-                    -PreactNativeArchitectures=x86_64 \
-                    --no-daemon --max-workers=2 \
-                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
-            - name: Save native test APKs
-              if: steps.native-apks.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: |
-                      android/app/build/outputs/apk/debug/app-x86_64-debug.apk
-                      android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-                  key: ${{ steps.native-apks.outputs.cache-primary-key }}
-            - name: Install Maestro
-              run: |
-                  curl -fsSL https://get.maestro.mobile.dev | bash
-                  echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-            - name: Enable KVM
-              run: |
-                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-                  sudo udevadm control --reload-rules
-                  sudo udevadm trigger --name-match=kvm
-            - name: Check proxy routing, real-engine Live Update progress and subscription transition
-              uses: reactivecircus/android-emulator-runner@v2
-              with:
-                  api-level: 36
-                  target: google_apis
-                  arch: x86_64
-                  profile: pixel_6
-                  cores: 3
-                  ram-size: 4096M
-                  disable-animations: false
-                  emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
-                  script: bash e2e/proxy-subscription-check.sh
-            - name: Upload native reports and transition recordings
-              if: always()
-              uses: actions/upload-artifact@v7
-              with:
-                  name: proxy-subscription-${{ github.run_id }}
-                  path: |
-                      proxy-subscription-results/
-                      android/app/build/reports/tests/
-                      android/app/build/test-results/
-                      android/app/build/reports/androidTests/
-                      android/app/build/outputs/androidTest-results/
-                  if-no-files-found: ignore
-                  retention-days: 14
+          HUSKY: '0'
+          NODE_ENV: development
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gperf pkg-config python3-venv
+          python3 -m venv "$RUNNER_TEMP/mpv-build-tools"
+          "$RUNNER_TEMP/mpv-build-tools/bin/pip" install meson==1.6.1 Jinja2
+          echo "$RUNNER_TEMP/mpv-build-tools/bin" >> "$GITHUB_PATH"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.1.12297006' 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build isolated counter library (never assemble a product AAR)
+        run: |
+          python3 native/mpv/diagnostics/build_trace.py --work-dir "$RUNNER_TEMP/mpv-clock" --sdk "$ANDROID_HOME" > "$RUNNER_TEMP/trace-build.log" 2>&1
+      - name: Build real debug target and instrumented fixture
+        working-directory: android
+        run: |
+          bash gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+      - name: Verify one payload change and matching debug signatures
+        run: |
+          python3 native/mpv/diagnostics/package_apk.py --app android/app/build/outputs/apk/debug/app-x86_64-debug.apk --test android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk --library "$RUNNER_TEMP/mpv-clock/output/x86_64/libmpv-DIAGNOSTIC-ONLY.so" --build-info "$RUNNER_TEMP/mpv-clock/diagnostic-build.json" --sdk-tools "$ANDROID_HOME/build-tools/36.0.0" --output "$RUNNER_TEMP/clock-results/diagnostic.apk"
+      - name: Build focus helper and install the existing device runner
+        run: |
+          bash e2e/focus-app/build.sh "$RUNNER_TEMP/clock-focus.apk"
+          echo "E2E_FOCUS_APK=$RUNNER_TEMP/clock-focus.apk" >> "$GITHUB_ENV"
+          curl -fsSL https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Collect actual AO counts and raw positions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 3
+          ram-size: 4096M
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
+          script: bash native/mpv/diagnostics/run_device.sh "$RUNNER_TEMP/clock-results/diagnostic.apk" android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$RUNNER_TEMP/clock-results"
+      - name: Associate AO reads; apply the original clock gate
+        if: always()
+        run: python3 native/mpv/diagnostics/analyze_trace.py "$RUNNER_TEMP/clock-results"
+      - name: Preserve diagnostic evidence (no APK or release publishing)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-clock-trace-${{ github.run_id }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/clock-results/*.json
+            ${{ runner.temp }}/clock-results/*.jsonl
+            ${{ runner.temp }}/clock-results/*.log
+            ${{ runner.temp }}/clock-results/*.txt
+            ${{ runner.temp }}/clock-results/product-check/
+            ${{ runner.temp }}/mpv-clock/diagnostic-build.json
+            ${{ runner.temp }}/mpv-clock/producer/
+            ${{ runner.temp }}/mpv-clock/output/x86_64/libmpv-DIAGNOSTIC-ONLY.so
+            ${{ runner.temp }}/trace-build.log

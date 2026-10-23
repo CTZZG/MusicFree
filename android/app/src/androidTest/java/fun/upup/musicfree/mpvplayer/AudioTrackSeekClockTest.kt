@@ -40,6 +40,13 @@ class AudioTrackSeekClockTest {
         assertEquals("pinned real-JS MP3 fixture", FIXTURE_SHA256, digest)
         val mpv = requireNotNull(MPVLib.create(context))
         engine = mpv
+        // Diagnostic branch only: MPVLib otherwise has no log observers.
+        // Assertions, windows, sample selection and restore targets stay unchanged.
+        mpv.addLogObserver(object : MPVLib.LogObserver {
+            override fun logMessage(prefix: String, level: Int, text: String) {
+                if (text.contains("AO_CLOCK")) Log.i("MpvAoClockTrace", text.trimEnd())
+            }
+        })
         mpv.setOptionString("ao", "audiotrack")
         mpv.setOptionString("vo", "null")
         mpv.setOptionString("vid", "no")

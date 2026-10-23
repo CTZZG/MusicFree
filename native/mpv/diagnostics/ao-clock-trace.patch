@@ -1,0 +1,106 @@
+--- a/audio/out/ao_audiotrack.c
++++ b/audio/out/ao_audiotrack.c
+@@ -25,6 +25,7 @@
+ #include "internal.h"
+ #include "common/msg.h"
+ #include "audio/format.h"
++#include "audiotrack_latency.h"
+ #include "options/m_option.h"
+ #include "osdep/threads.h"
+ #include "osdep/timer.h"
+@@ -43,6 +44,10 @@
+     jobject timestamp;
+     int64_t timestamp_fetched;
+     bool timestamp_set;
++    bool latency_warmup; // AO thread only
++    atomic_bool latency_reset_pending;
++    atomic_uint trace_left;
++    atomic_uint trace_epoch;
+     int timestamp_stable;
+ 
+     uint32_t written_frames; /* requires uint32_t rollover semantics */
+@@ -472,6 +477,11 @@
+     if (!p->audiotrack)
+         return 0;
+ 
++    // reset() can run while the AO worker finishes its previous iteration.
++    // Consume its request here so an old iteration cannot disarm a new reset.
++    if (atomic_exchange_explicit(&p->latency_reset_pending, false, memory_order_acquire))
++        p->latency_warmup = true;
++
+     uint32_t playhead = AudioTrack_getPlaybackHeadPosition(ao);
+     uint32_t diff = p->written_frames - playhead;
+     double delay = diff / (double)(ao->samplerate);
+@@ -483,6 +493,9 @@
+         p->timestamp_fetched = 0;
+         return 0;
+     }
++    delay = mp_audiotrack_startup_delay(delay, p->written_frames,
++        ao->samplerate, p->timestamp_set,
++        p->format == AudioFormat.ENCODING_IEC61937, &p->latency_warmup);
+     return MPCLAMP(delay, 0.0, 2.0);
+ }
+ 
+@@ -580,11 +593,31 @@
+         }
+         if (state == AudioTrack.PLAYSTATE_PLAYING) {
+             int read_samples = p->chunksize / ao->sstride;
+-            int64_t ts = mp_time_ns();
++            unsigned trace_epoch = atomic_load(&p->trace_epoch);
++            uint32_t trace_written = p->written_frames;
++            int64_t read_start = mp_time_ns();
++            int64_t ts = read_start;
+             ts += MP_TIME_S_TO_NS(read_samples / (double)(ao->samplerate));
+-            ts += MP_TIME_S_TO_NS(AudioTrack_getLatency(ao));
++            double trace_latency = AudioTrack_getLatency(ao);
++            ts += MP_TIME_S_TO_NS(trace_latency);
+             int samples = ao_read_data(ao, &p->chunk, read_samples, ts, NULL, false, false);
++            int64_t read_end = mp_time_ns();
++            struct timespec boot_clock = {0};
++            clock_gettime(CLOCK_BOOTTIME, &boot_clock);
++            int64_t read_boot_ns = (int64_t)boot_clock.tv_sec * 1000000000LL + boot_clock.tv_nsec;
+             int ret = AudioTrack_write(ao, samples * ao->sstride);
++            if ((samples > 0 || trace_epoch != atomic_load(&p->trace_epoch)) &&
++                atomic_load(&p->trace_left) > 0) {
++                atomic_fetch_sub(&p->trace_left, 1);
++                MP_INFO(ao, "AO_CLOCK_DIAGNOSTIC ao=%p epoch=%u epoch_after=%u "
++                    "rate=%d requested=%d copied=%d written_before=%u write_result=%d "
++                    "latency=%.9f head=%u timestamp=%d stable=%d "
++                    "read_start=%lld read_end=%lld write_end=%lld out_time=%lld read_boot_ns=%lld\n",
++                    ao, trace_epoch, atomic_load(&p->trace_epoch), ao->samplerate,
++                    read_samples, samples, trace_written, ret / ao->sstride,
++                    trace_latency, p->playhead_pos, p->timestamp_set, p->timestamp_stable,
++                    (long long)read_start, (long long)read_end, (long long)mp_time_ns(), (long long)ts, (long long)read_boot_ns);
++            }
+             if (ret >= 0) {
+                 p->written_frames += ret / ao->sstride;
+             } else if (ret == AudioManager.ERROR_DEAD_OBJECT) {
+@@ -647,6 +680,9 @@
+ static int init(struct ao *ao)
+ {
+     struct priv *p = ao->priv;
++    atomic_init(&p->latency_reset_pending, false);
++    atomic_init(&p->trace_left, 64);
++    atomic_init(&p->trace_epoch, 0);
+     JNIEnv *env = MP_JNI_GET_ENV(ao);
+     if (!env)
+         return -1;
+@@ -817,6 +853,10 @@
+     p->written_frames = 0;
+     p->timestamp_fetched = 0;
+     p->timestamp_set = false;
++    atomic_store_explicit(&p->latency_reset_pending, true, memory_order_release);
++    unsigned epoch = atomic_fetch_add(&p->trace_epoch, 1) + 1;
++    atomic_store(&p->trace_left, 64);
++    MP_INFO(ao, "AO_CLOCK_RESET_DIAGNOSTIC ao=%p epoch=%u\n", ao, epoch);
+ }
+ 
+ static void start(struct ao *ao)
+@@ -846,6 +886,7 @@
+     .priv_size = sizeof(struct priv),
+     .priv_defaults = &(const OPT_BASE_STRUCT) {
+         .cfg_pcm_float = 1,
++        .latency_warmup = true,
+     },
+     .options   = (const struct m_option[]) {
+         {"pcm-float", OPT_BOOL(cfg_pcm_float)},

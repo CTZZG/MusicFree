@@ -1,0 +1,9 @@
+{
+  "diagnosticOnly": true,
+  "reviewCandidate": "6712eea8f2a415e08c5b6807898d8af220890c42",
+  "baseLockSha256": "ce50c64f90269d771e07cd5e91409085605081488442e7d99b26a72fe922c5e5",
+  "patchedDriverSha256": "2b39f399aa28ecfeb77789e0fe74beb9edaed5fce8b01ff333e4013ec674e611",
+  "tracePatchSha256": "46a02904e7304d8df5aecef34f5da8a6ec0a3d8cd2b8f2648bf4be0f58f743a4",
+  "abi": "x86_64",
+  "clock": "CLOCK_BOOTTIME"
+}
