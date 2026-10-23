@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import tempfile
 
@@ -89,9 +90,20 @@ def check_startup_stream():
     run = (HERE / 'run.sh').read_text()
     assert run.index('startup_capture_start\n') < run.index('adb shell am start -W')
     assert run.index('startup_capture_stop\n', run.index('flow "启动后进入首页"')) > run.index('flow "启动后进入首页"')
-    assert 'trap startup_capture_stop EXIT' in run
+    traps = [line for line in run.splitlines()
+             if line.startswith('trap ') and shlex.split(line)[-1] == 'EXIT']
+    assert len(traps) == 1, 'one combined EXIT handler must release both captures'
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
+        cleanup = root / 'cleanup.txt'
+        check = subprocess.run(['bash', '-eu', '-c', '''
+startup_capture_stop() { echo startup >> "$CLEANUP_OUT"; }
+hardening_capture_cancel() { echo hardening >> "$CLEANUP_OUT"; }
+''' + traps[0] + '\nexit 17\n'],
+            env={**os.environ, 'CLEANUP_OUT': str(cleanup)}, capture_output=True)
+        assert check.returncode == 17, 'cleanup changed the original failure status'
+        assert cleanup.read_text().splitlines() == ['startup', 'hardening'], \
+            'abnormal exit must release both capture processes'
         adb = root / 'adb'
         adb.write_text('''#!/usr/bin/env bash
 if [ "${2:-}" = -c ]; then : > "$OUT/ring.txt"; exit; fi
