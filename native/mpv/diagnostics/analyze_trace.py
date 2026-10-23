@@ -27,8 +27,8 @@ def main():
             raise AssertionError('malformed AO diagnostic record') from error
         # pos=0 does not update buffer.c's end_time_ns; preserve cross-reset rows
         # without mislabelling an empty read as a committed clock overestimate.
-            fields['unusedRequestSeconds'] = ((fields['requested'] - fields['copied']) / fields['rate']
-                                            if 0 < fields['copied'] < fields['requested'] else 0.0)
+        fields['unusedRequestSeconds'] = ((fields['requested'] - fields['copied']) / fields['rate']
+                                         if 0 < fields['copied'] < fields['requested'] else 0.0)
         if fields not in traces:
             traces.append(fields)
     cases = []
@@ -38,7 +38,7 @@ def main():
                       'firstDelta': row['samples'][0]['raw'] - row['target'] if row['samples'] else None,
                       'startedAtMs': row['startedAtMs'], 'earlyAoReads': early})
     summary = {'diagnosticOnly': True, 'aoReads': len(traces), 'cases': cases,
-               'physicalOutputMeasured': False, 'clockPolicyChanged': False,
+               'physicalOutputMeasured': False, 'acceptanceLimitsChanged': False,
                'nativeCaptureLines': [x for x in log.splitlines() if 'source replacement[' in x]}
     (args.results / 'ao-clock-analysis.json').write_text(json.dumps(summary, indent=2) + '\n')
     assert traces and all(x['earlyAoReads'] for x in cases), 'missing early AO counts; no root-cause conclusion'
