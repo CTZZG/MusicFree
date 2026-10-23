@@ -34,7 +34,7 @@ hardening_capture_marker() {
     adb shell log -p i -t MFHardening "$HARDENING_CAPTURE_TOKEN:$phase" || return 1
     for attempt in {1..50}; do
         kill -0 "$HARDENING_CAPTURE_PID" 2>/dev/null || return 1
-        if grep -qF "$HARDENING_CAPTURE_TOKEN:$phase" "$OUT/audio-hardening-stream.txt"; then
+        if grep -qE "[[:space:]]MFHardening[[:space:]]*:[[:space:]]${HARDENING_CAPTURE_TOKEN}:${phase}[[:space:]]*$" "$OUT/audio-hardening-stream.txt"; then
             return 0
         fi
         sleep 0.1
