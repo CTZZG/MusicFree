@@ -1,4 +1,4 @@
-# AO clock counter experiment — diagnostic branch only
+# AO short-read clock experiment — diagnostic branch only
 
 This branch is not a release candidate and must not be merged as a replacement
 for the normal device workflow. It dispatches the existing workflow filename on
@@ -10,7 +10,10 @@ forwarding the counter messages; assertions, windows, sample selection and resto
 targets are unchanged. The player module already forwards logs in real-JS flows.
 
 The product AAR is never replaced. The derived producer pins the same sources,
-NDK/API and startup helper, plus the counter-only driver patch. APK inspection
+NDK/API and startup helper, plus the counter driver and experimental buffer-clock
+correction. The correction subtracts the duration of unread frames only when a
+pull driver does not pad its short read with silence. It leaves padded reads,
+empty reads, seeks and AudioTrack startup latency policy unchanged. APK inspection
 requires a debuggable source, exactly one changed runtime payload and matching
 public debug certificates for target/test. There is no release signing or publish
 step. All other ABI binaries remain untouched.
@@ -28,3 +31,18 @@ also retains raw evidence; do not rerun it just to get green.
 Normal PR52 acceptance uses its own unchanged workflow and the product AAR, not
 this instrumented APK. Remove this temporary experiment when the investigation
 is finished; any product fix needs its own four-ABI rebuild and original gates.
+
+## Prior counter-only run104
+
+The actual tagged start/end messages and all89 native methods are present; the
+six unchanged clock windows passed (worst -91.257ms). In cases3/6, committed
+partial reads omit65.688/92.813ms while the first positions are65.523/91.257ms
+early. That supports the short-read accounting cause for these two windows.
+It does not establish the full cause of the original253ms failure or physical
+audio behavior. The remaining original regression stopped before the real-JS
+flow because this experimental workflow omitted E2E_TEST_SOURCE_SHA; it is now
+pinned to the diagnostic commit, without changing the original runner.
+
+`check_short_read.py /path/to/pinned-mpv` compiles the actual function and verifies
+nine accounting/underrun cases. Upstream and two deliberately weakened variants
+must fail. This is a host boundary check, not Android execution.

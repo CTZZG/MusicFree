@@ -1,5 +1,5 @@
-name: MPV AO clock diagnostic (not product acceptance)
-run-name: AO clock counters — ${{ github.sha }}
+name: MPV short-read clock experiment (not product acceptance)
+run-name: Short-read clock correction — ${{ github.sha }}
 on:
   workflow_dispatch:
 permissions:
@@ -16,6 +16,7 @@ jobs:
       MAESTRO_VERSION: 2.8.0
       MAESTRO_CLI_NO_ANALYTICS: 1
       MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: true
+      E2E_TEST_SOURCE_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -42,7 +43,7 @@ jobs:
           "$RUNNER_TEMP/mpv-build-tools/bin/pip" install meson==1.6.1 Jinja2
           echo "$RUNNER_TEMP/mpv-build-tools/bin" >> "$GITHUB_PATH"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.1.12297006' 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Build isolated counter library (never assemble a product AAR)
+      - name: Build isolated experimental library (never assemble a product AAR)
         run: |
           python3 native/mpv/diagnostics/build_trace.py --work-dir "$RUNNER_TEMP/mpv-clock" --sdk "$ANDROID_HOME" > "$RUNNER_TEMP/trace-build.log" 2>&1
       - name: Build real debug target and instrumented fixture

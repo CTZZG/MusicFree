@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
@@ -33,6 +34,8 @@ def main():
     assert meta['diagnosticOnly'] is True and meta['abi'] == 'x86_64'
     assert sha(PRODUCT / 'sources.lock.json') == meta['baseLockSha256']
     assert sha(HERE / 'ao-clock-trace.patch') == meta['tracePatchSha256']
+    assert meta['experimentalShortReadFix'] is True
+    assert sha(HERE / 'short-read-clock.patch') == meta['bufferPatchSha256']
     producer_dir = work / 'producer'
     producer_dir.mkdir()
     for name in ['rebuild.py', 'audiotrack_latency.h']:
@@ -40,7 +43,7 @@ def main():
     shutil.copyfile(HERE / 'ao-clock-trace.patch', producer_dir / 'audiotrack-startup-delay.patch')
     lock = json.loads((PRODUCT / 'sources.lock.json').read_text())
     lock.update(patchedDriverSha256=meta['patchedDriverSha256'], diagnosticOnly=True,
-                purpose='AO counters only; not a product clock fix')
+                purpose='Experimental short-read correction with AO counters; not a product AAR')
     (producer_dir / 'sources.lock.json').write_text(json.dumps(lock, indent=2) + '\n')
     if args.prepare_only:
         print('Diagnostic producer prepared; no library built.')
@@ -60,7 +63,17 @@ def main():
                         lock['baseCommit'] + ':android/app/libs/libmpv-release.aar'], stdout=out, check=True)
     assert sha(base) == lock['baseAarSha256']
     producer.prepare_sources(work / 'sources')
+    subprocess.run([sys.executable, str(HERE / 'check_short_read.py'),
+                    str(work / 'sources/mpv')], check=True)
+    buffer = work / 'sources/mpv/audio/out/buffer.c'
+    assert sha(buffer) == meta['upstreamBufferSha256'], 'unexpected upstream buffer source'
+    subprocess.run(['git', '-C', str(buffer.parents[2]), 'apply', '--check',
+                    str(HERE / 'short-read-clock.patch')], check=True)
+    subprocess.run(['git', '-C', str(buffer.parents[2]), 'apply',
+                    str(HERE / 'short-read-clock.patch')], check=True)
+    assert sha(buffer) == meta['patchedBufferSha256'], 'short-read correction differs'
     producer.build('x86_64', work / 'sources', work, ndk, base)
+    assert sha(buffer) == meta['patchedBufferSha256'], 'buffer source changed during build'
     library = work / 'output/x86_64/libmpv.so'
     diagnostic = library.with_name('libmpv-DIAGNOSTIC-ONLY.so')
     library.rename(diagnostic)

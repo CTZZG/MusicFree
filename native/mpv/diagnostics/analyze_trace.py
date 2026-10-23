@@ -27,9 +27,10 @@ def main():
             raise AssertionError('malformed AO diagnostic record') from error
         # pos=0 does not update buffer.c's end_time_ns; preserve cross-reset rows
         # without mislabelling an empty read as a committed clock overestimate.
-        fields['shortReadExcessSeconds'] = ((fields['requested'] - fields['copied']) / fields['rate']
+            fields['unusedRequestSeconds'] = ((fields['requested'] - fields['copied']) / fields['rate']
                                             if 0 < fields['copied'] < fields['requested'] else 0.0)
-        traces.append(fields)
+        if fields not in traces:
+            traces.append(fields)
     cases = []
     for row in rows:
         early = [x for x in traces if row['startedAtMs'] - 100 <= x['read_boot_ns'] / 1e6 <= row['startedAtMs'] + 300]
@@ -43,7 +44,8 @@ def main():
     assert traces and all(x['earlyAoReads'] for x in cases), 'missing early AO counts; no root-cause conclusion'
     assert json.loads((args.results / 'capture-health.json').read_text())['complete'] is True, 'incomplete host capture'
     assert not (args.results / 'logcat-error.txt').read_text().strip(), 'host capture reported an error'
-    assert 'mpv-diagnostic-start' in log and 'mpv-diagnostic-end' in log, 'incomplete diagnostic capture'
+    for phase in ('start', 'end'):
+        assert re.search(r'\sMPVClockTrace\s*:\s*mpv-diagnostic-' + phase + r'\s*$', log, re.M), 'missing actual diagnostic marker'
     instrument = (args.results / 'instrumentation.log').read_text()
     assert re.search(r'^INSTRUMENTATION_CODE: -1\s*$', instrument, re.M), 'instrumentation failed'
     codes = re.findall(r'^INSTRUMENTATION_STATUS_CODE: (-?\d+)\s*$', instrument, re.M)

@@ -5,5 +5,9 @@
   "patchedDriverSha256": "2b39f399aa28ecfeb77789e0fe74beb9edaed5fce8b01ff333e4013ec674e611",
   "tracePatchSha256": "46a02904e7304d8df5aecef34f5da8a6ec0a3d8cd2b8f2648bf4be0f58f743a4",
   "abi": "x86_64",
-  "clock": "CLOCK_BOOTTIME"
+  "clock": "CLOCK_BOOTTIME",
+  "experimentalShortReadFix": true,
+  "upstreamBufferSha256": "e053296cdfe58a07b6bd2aa5554774ff5c54ca57c622a56636fb6fe8f0fed105",
+  "patchedBufferSha256": "e718e8ed512693f922c6968bfea0acbe3834097f59716482ddd582d47f4203ad",
+  "bufferPatchSha256": "809f38deb5d3570d382582754a81b670f16698418c3f6ea343806db129522048"
 }

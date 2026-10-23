@@ -24,7 +24,7 @@ marker() {
     adb shell log -p i -t MPVClockTrace "$1"
     for attempt in {1..50}; do
         kill -0 "$CAPTURE_PID" 2>/dev/null || return 1
-        grep -qF "$1" "$OUT/logcat.txt" && return 0
+        grep -qE "[[:space:]]MPVClockTrace[[:space:]]*:[[:space:]]$1[[:space:]]*$" "$OUT/logcat.txt" && return 0
         sleep 0.1
     done
     return 1
