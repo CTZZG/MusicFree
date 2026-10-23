@@ -357,13 +357,14 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             },
         );
 
-        NativeMpvPlayer.addBrowseRequestListener(({ parentId }) => {
-            if (typeof parentId !== "string" || !parentId) {
+        NativeMpvPlayer.addBrowseRequestListener(({ parentId, requestId }) => {
+            if (typeof parentId !== "string" || !parentId ||
+                typeof requestId !== "string" || !requestId) {
                 return;
             }
             this.libraryBrowseRequestListeners.forEach(listener => {
                 try {
-                    listener({ parentId });
+                    listener({ parentId, requestId });
                 } catch (error: any) {
                     errorLog(
                         "MpvPlayer Android Auto 列表请求处理失败",
@@ -376,9 +377,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     async provideBrowseChildren(
         parentId: string,
+        requestId: string,
         items: PlayerAdapterBrowseItem[],
     ) {
-        await NativeMpvPlayer.provideBrowseChildren(parentId, items);
+        await NativeMpvPlayer.provideBrowseChildren(parentId, requestId, items);
     }
 
     /**************** 队列加载与切歌 ****************/

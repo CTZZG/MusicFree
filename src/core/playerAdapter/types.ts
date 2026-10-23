@@ -253,6 +253,7 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
     /** 答复 Android Auto 要的列表内容（见 libraryBrowseRequest） */
     provideBrowseChildren?(
         parentId: string,
+        requestId: string,
         items: PlayerAdapterBrowseItem[],
     ): Promise<void>;
 

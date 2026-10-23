@@ -170,6 +170,7 @@ interface MpvPlayerNativeModule {
     /** 答复 Android Auto 要的“我喜欢”“最近播放”（见 MpvMediaBrowserService） */
     provideBrowseChildren?(
         parentId: string,
+        requestId: string,
         items: MpvQueueSnapshotTrack[],
     ): Promise<void>;
 }
@@ -187,6 +188,7 @@ export const ON_MPV_BROWSE_REQUEST = "onMpvBrowseRequest";
 /** Android Auto 打开了“我喜欢”“最近播放”，要列表内容 */
 export interface MpvBrowseRequestEvent {
     parentId: string;
+    requestId: string;
 }
 
 export interface MpvStateChangedEvent {
@@ -303,10 +305,10 @@ const NativeMpvPlayer = {
         assertAvailable().updateQueueSnapshot(payload),
     updateMetadata: (payload: MpvMetadataPayload) =>
         assertAvailable().updateMetadata(payload),
-    provideBrowseChildren: (parentId: string, items: MpvQueueSnapshotTrack[]) => {
+    provideBrowseChildren: (parentId: string, requestId: string, items: MpvQueueSnapshotTrack[]) => {
         const module = assertAvailable();
         return module.provideBrowseChildren
-            ? module.provideBrowseChildren(parentId, items)
+            ? module.provideBrowseChildren(parentId, requestId, items)
             : Promise.resolve();
     },
 

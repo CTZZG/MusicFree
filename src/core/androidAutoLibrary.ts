@@ -21,7 +21,7 @@ export type IAutoLibrarySources = Record<AutoLibraryListId, () => IMusic.IMusicI
 export interface IAutoLibraryDependencies {
     sources: IAutoLibrarySources;
     /** 把列表内容交给原生，答复车机 */
-    provide(parentId: string, items: IAutoLibraryItem[]): Promise<void>;
+    provide(parentId: string, requestId: string, items: IAutoLibraryItem[]): Promise<void>;
     /** 用整个列表替换播放队列，从这首开始播 */
     play(musicItem: IMusic.IMusicItem, list: IMusic.IMusicItem[]): Promise<void>;
 }
@@ -84,13 +84,13 @@ export function createAutoLibrary(dependencies: IAutoLibraryDependencies) {
 
     return {
         /** 原生来要列表内容；不认识的列表也答复（空的），车机不用干等到超时 */
-        async handleBrowseRequest(parentId: string) {
+        async handleBrowseRequest(parentId: string, requestId: string) {
             const parsed = parseAutoLibraryMediaId(parentId);
             const items =
                 parsed && !parsed.key
                     ? toAutoLibraryItems(parsed.listId, readList(parsed.listId))
                     : [];
-            await dependencies.provide(parentId, items);
+            await dependencies.provide(parentId, requestId, items);
         },
 
         /**
