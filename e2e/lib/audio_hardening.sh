@@ -16,6 +16,57 @@ HARDENING_CONTROL_OK=0
 HARDENING_APP_STARTED=0
 # 打开加固时 system_server 的进程号；结束时变了说明框架重启过
 HARDENING_FRAMEWORK_PID=""
+HARDENING_CAPTURE_PID=""
+HARDENING_CAPTURE_COMPLETE=0
+HARDENING_CAPTURE_TOKEN=""
+HARDENING_CAPTURE_ERROR=""
+
+hardening_capture_cancel() {
+    if [ -n "$HARDENING_CAPTURE_PID" ]; then
+        kill "$HARDENING_CAPTURE_PID" 2>/dev/null || true
+        wait "$HARDENING_CAPTURE_PID" 2>/dev/null || true
+        HARDENING_CAPTURE_PID=""
+    fi
+}
+
+hardening_capture_marker() {
+    local phase=$1 attempt
+    adb shell log -p i -t MFHardening "$HARDENING_CAPTURE_TOKEN:$phase" || return 1
+    for attempt in {1..50}; do
+        kill -0 "$HARDENING_CAPTURE_PID" 2>/dev/null || return 1
+        if grep -qF "$HARDENING_CAPTURE_TOKEN:$phase" "$OUT/audio-hardening-stream.txt"; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
+# Maestro clears the device log buffer. A host stream, bounded by observed
+# markers, must cover the control and every subsequent scenario.
+hardening_capture_start() {
+    HARDENING_CAPTURE_COMPLETE=0
+    HARDENING_CAPTURE_ERROR=""
+    HARDENING_CAPTURE_TOKEN="hardening-$$-$RANDOM"
+    adb logcat -v threadtime -b main -b system -b crash \
+        > "$OUT/audio-hardening-stream.txt" 2> "$OUT/audio-hardening-stream-error.txt" &
+    HARDENING_CAPTURE_PID=$!
+    if ! hardening_capture_marker start; then
+        HARDENING_CAPTURE_ERROR="日志采集没有就绪"
+        hardening_capture_cancel
+        return 1
+    fi
+}
+
+hardening_capture_finish() {
+    if [ -n "$HARDENING_CAPTURE_PID" ] && hardening_capture_marker end &&
+        [ ! -s "$OUT/audio-hardening-stream-error.txt" ]; then
+        HARDENING_CAPTURE_COMPLETE=1
+    else
+        HARDENING_CAPTURE_ERROR="采集进程退出、末尾标记缺失或采集报错"
+    fi
+    hardening_capture_cancel
+}
 
 # hardening_lines <包名> <文件…>：文件里提到这个包的 AudioHardening 记录，去掉重复。包名前后不能紧挨着
 # 包名里能出现的字符：fun.upup.musicfree 不能算上 fun.upup.musicfree.e2e.focus 的记录
@@ -82,11 +133,13 @@ run_hardening_control() {
 check_audio_hardening() {
     local lines pid
     adb shell dumpsys audio > "$OUT/dumpsys-audio.txt" 2>/dev/null || true
-    lines=$(hardening_lines "$PKG" "$OUT/logcat.txt" "$OUT/dumpsys-audio.txt")
+    lines=$(hardening_lines "$PKG" "$OUT/audio-hardening-stream.txt" "$OUT/logcat.txt" "$OUT/dumpsys-audio.txt")
     printf '%s\n' "$lines" > "$OUT/audio-hardening-app.txt"
     pid=$(framework_pid)
     if [ -n "$lines" ]; then
         fail "$HARDENING_APP" "$(wc -l <<< "$lines") 条，第一条：$(head -n 1 <<< "$lines" | cut -c1-200)；全部在 audio-hardening-app.txt"
+    elif [ "$HARDENING_CAPTURE_COMPLETE" -ne 1 ]; then
+        fail "$HARDENING_APP" "全程日志采集不完整（$HARDENING_CAPTURE_ERROR），不能证明没有被拦下"
     elif [ "$HARDENING_CONTROL_OK" -ne 1 ]; then
         fail "$HARDENING_APP" "没有本应用的记录，但对照没通过，不能说明没被拦下"
     elif [ "$HARDENING_APP_STARTED" -ne 1 ]; then
@@ -94,6 +147,6 @@ check_audio_hardening() {
     elif [ -z "$pid" ] || [ "$pid" != "$HARDENING_FRAMEWORK_PID" ]; then
         fail "$HARDENING_APP" "没有本应用的记录，但系统框架中途重启过（system_server 进程号 ${HARDENING_FRAMEWORK_PID:-?} → ${pid:-?}），加固可能已经关了，不能说明没被拦下"
     else
-        pass "$HARDENING_APP" "logcat 和 dumpsys audio 里共 $(hardening_count "$OUT/logcat.txt" "$OUT/dumpsys-audio.txt") 条 AudioHardening 记录，没有本应用的"
+        pass "$HARDENING_APP" "全程日志、logcat 和 dumpsys audio 里共 $(hardening_count "$OUT/audio-hardening-stream.txt" "$OUT/logcat.txt" "$OUT/dumpsys-audio.txt") 条 AudioHardening 记录，没有本应用的"
     fi
 }

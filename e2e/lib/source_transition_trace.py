@@ -8,8 +8,9 @@ them readable without downloading the results artifact:
   seek-clock <audiotrack-seek-clock.jsonl>
       Per JNI replacement case: where the new file's raw clock starts relative
       to the restore target, its lowest point, and how fast it advances over
-      the first second (1.00 = real time; above 1 means the clock is catching
-      up rather than audio repeating).
+      the first second (1.00 = the raw readout advances at wall-clock speed).
+      The slope alone cannot establish decoded sample timestamps or audible
+      continuity: a constant clock offset has the same slope as correct playback.
   transition <logcat.txt>
       The native "source replacement" lines (position captured when the old
       source stopped, and the JS fallback) and the Real-JS 50 ms transition
