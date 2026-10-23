@@ -40,6 +40,8 @@ run_js() {
         -e jsFlowRef "$REF" -e jsFlowFreezeControl "$control" \
         fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner > "$OUT/$name-instrumentation.log" 2>&1
     adb logcat -d > "$OUT/$name-logcat.txt"
+    # 换音质时原生记下的停止位置和每 50 ms 的轮询打进任务日志，只供排查，不参与判定
+    python3 -I "$HERE/lib/source_transition_trace.py" transition "$OUT/$name-logcat.txt" || true
     local exported=false
     if export_engine_progress_samples "$OUT/$name-samples.jsonl" files/js-flow-engine-samples.jsonl; then exported=true; fi
     local args=()

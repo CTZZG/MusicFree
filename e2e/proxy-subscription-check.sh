@@ -83,6 +83,8 @@ PY
 export_engine_progress_samples "$OUT/engine-progress-samples.jsonl"
 export_engine_progress_samples "$OUT/quality-loading-state.jsonl" files/quality-loading-state.jsonl
 export_engine_progress_samples "$OUT/audiotrack-seek-clock.jsonl" files/audiotrack-seek-clock.jsonl
+# 先把每次换源的数字打进任务日志（结果附件不一定下载得到），再按原规则判定
+python3 -I e2e/lib/source_transition_trace.py seek-clock "$OUT/audiotrack-seek-clock.jsonl" || true
 python3 -I native/mpv/check-seek-clock.py "$OUT/audiotrack-seek-clock.jsonl"
 python3 -I e2e/lib/quality_loading_evidence.py "$OUT/quality-loading-state.jsonl"
 python3 - "$OUT/engine-progress-samples.jsonl" <<'PY'
