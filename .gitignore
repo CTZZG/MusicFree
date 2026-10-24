@@ -73,6 +73,7 @@ docs/
 !docs/
 docs/*
 !docs/release-notes-v*.md
+!docs/release-notes-guide.md
 !docs/architecture.md
 !docs/handoff/
 docs/handoff/*

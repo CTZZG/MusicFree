@@ -171,10 +171,6 @@
 - PR / 推送检查（`ci.yml`）和稳定版构建都在质量门最后运行 `npm run audit:production-deps`
   （`generator/audit-production-deps.mjs`，质量门的 `production-audit` 输入打开），是同一个步骤、同一份锁文件：
   生产依赖有新的高危公告时，合并前 PR 检查就失败，稳定版也不发布。Beta 测试构建不运行它。
-- 稳定版的 Release 正文就是 `docs/release-notes-v<版本>.md`，只写给用户看的内容：下载哪个文件、升级前要注意的行为变化、
-  新功能、改进与修复；不写测试数、Beta 编号、验证过程这类过程性内容。提交、构建时间、签名在附件 `android-build-info.txt`
-  和构建日志里，不追加到正文。发版后要改说明：改这个文件并合入 `feat/mpv-only`，再手动运行 Android Release Build、
-  勾选 `notes_only`，只更新正文，不重新构建、不动安装包；同一分支上正在跑的构建会让它排队。
   阻断标准与 `npm audit --omit=dev --audit-level=high` 相同，只放行脚本中登记的例外。例外只能是上游暂无修复版本的公告，并写明原因；
   一旦依赖方接受的版本范围内出现了不受影响的新版本，审计就会失败，提醒升级并删除例外。已不再匹配任何公告的例外只给出警告。
   例外可以写 `locations`（锁文件中的安装位置）：只放行这些位置上的副本，同一个包在别处也受影响时照样阻断。
@@ -190,6 +186,10 @@
   - zod（GHSA-mrhx-c7xc-m3w5，2026-10-24 登记，只放行 `node_modules/expo/node_modules/zod`）：经 `expo` → `@expo/cli` 引入，
     只有 Expo CLI 用它校验配置，应用代码和 Expo 运行时都不引用，也不打进 APK；修复只在 4.6.6 及以上，而 `@expo/cli` 依赖 `^3.25.76`。
     `npm audit` 建议的“降级 expo 到 44”这类方案只是绕开依赖链，不能采用。
+- 稳定版的 Release 正文就是 `docs/release-notes-v<版本>.md`，应用内“检查更新”也逐行显示它；`changelog.md` 每版一条。
+  两者都只写用户看得到的变化，写法、模板和发版后只改说明的做法见 `docs/release-notes-guide.md`，
+  `src/utils/__tests__/releaseNotesPolicy.test.ts` 检查当前版本。验证过程写进 PR 说明，提交、构建时间和签名在附件
+  `android-build-info.txt` 和构建日志里。
 - `brace-expansion` 通过 `overrides` 固定为 5.0.12，`patches/brace-expansion+5.0.12.patch` 让旧版 minimatch 仍能把它当函数调用；升级版本时需要同时重新生成补丁。
 - `patches/react-native+0.85.3.patch` 让所有 ScrollView（含 FlatList、SectionList、FlashList 和手势库的 ScrollView）在 Android 上默认 `overScrollMode="never"`。越界拉伸、回弹还没结束时，原生 ScrollView 会把下一次按下当成「停住回弹」拦掉，滚到底后第一下点不动。个别页面需要回弹时显式传 `overScrollMode`。`TabView` 不经过 ScrollView，在各处单独设置。升级 React Native 时需要重新生成补丁，`npm run verify` 会在补丁打不上时失败。
 - `patches/react-native-reanimated+4.4.0.patch`：Reanimated 4.4 在动画停下后每 0.5 秒把最终样式同步回 React（`settledProps`），

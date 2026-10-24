@@ -1,5 +1,6 @@
 import { compare, validate } from "compare-versions";
 import DeviceInfo from "react-native-device-info";
+import { releaseNotesToLines } from "./releaseNotes";
 import { validateRemoteNetworkUrl } from "./remoteNetworkPolicy";
 import { createRestrictedHttpClient } from "./restrictedHttpClient";
 import { PROJECT_REPO } from "@/constants/projectLinks";
@@ -11,7 +12,6 @@ const LATEST_RELEASE_API = `https://api.github.com/repos/${RELEASE_REPO}/release
 // api.github.com 连不上时的后备：jsDelivr 只能告诉我们最新的版本号，
 // 下载就指向那个版本的发布页面
 const LATEST_TAG_FALLBACK = `https://data.jsdelivr.com/v1/packages/gh/${RELEASE_REPO}/resolved?specifier=latest`;
-const MAX_CHANGELOG_LINES = 40;
 
 export interface IUpdateInfo {
     needUpdate: boolean;
@@ -37,48 +37,6 @@ function safeUrl(value: unknown) {
 
 function releasePageUrl(version: string) {
     return `https://github.com/${RELEASE_REPO}/releases/tag/v${version}`;
-}
-
-function plainText(markdown: string) {
-    return markdown
-        .replace(/\*\*(.+?)\*\*/g, "$1")
-        .replace(/`([^`]*)`/g, "$1")
-        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-        .trim();
-}
-
-/**
- * 发布说明是 Markdown。“下载”一节说的是该下哪个文件，对话框里有下载按钮，
- * 不用显示；其余各节（升级前请注意、新功能、改进与修复）的标题和条目逐行显示。
- */
-export function releaseNotesToLines(body: unknown): string[] {
-    if (typeof body !== "string") {
-        return [];
-    }
-    const lines: string[] = [];
-    let skipping = false;
-    for (const rawLine of body.split(/\r?\n/)) {
-        const line = rawLine.trim();
-        if (/^#\s/.test(line)) {
-            // 一级标题是“MusicFree vX.Y.Z”，对话框标题里已经有版本号
-            continue;
-        }
-        const heading = /^#{2,6}\s+(.*)$/.exec(line);
-        if (heading) {
-            const title = plainText(heading[1]);
-            skipping = /^(下载|下載|downloads?)$/i.test(title);
-            if (!skipping && title) {
-                lines.push(`【${title}】`);
-            }
-            continue;
-        }
-        if (skipping || !line) {
-            continue;
-        }
-        const bullet = /^[-*+]\s+(.*)$/.exec(line);
-        lines.push(bullet ? `· ${plainText(bullet[1])}` : plainText(line));
-    }
-    return lines.slice(0, MAX_CHANGELOG_LINES);
 }
 
 /** 按手机的 CPU 架构挑 APK：先找对应架构的，没有就用通用版 */

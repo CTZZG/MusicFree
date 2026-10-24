@@ -16,7 +16,8 @@ jest.mock("../restrictedHttpClient", () => ({
     }),
 }));
 
-import checkUpdate, { releaseNotesToLines } from "../checkUpdate";
+import checkUpdate from "../checkUpdate";
+import { releaseNotesToLines } from "../releaseNotes";
 
 const RELEASE_API = "https://api.github.com/repos/CTZZG/MusicFree/releases/latest";
 const TAG_FALLBACK = "https://data.jsdelivr.com/v1/packages/gh/CTZZG/MusicFree/resolved?specifier=latest";
