@@ -27,6 +27,9 @@ jobs:
 
             - name: Quality gate
               uses: ./.github/actions/quality-gate
+              with:
+                  # 与稳定版构建是同一个步骤：有新的高危生产依赖公告时合并前就失败
+                  production-audit: 'true'
 
             # 纯 shell/Python 自检，无需模拟器。即使不跑 Beta，也防止省电检查重新出现误报。
             - name: Device-check self-tests

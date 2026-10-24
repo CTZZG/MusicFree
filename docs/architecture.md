@@ -168,22 +168,28 @@
     字号面板里自己选大一档。
 - CI 共用 `.github/actions/quality-gate`：`npm ci` 后运行 `npm run verify` 和 `git diff --check`。
   稳定版构建（`android-build.yml`）、Beta 构建（`build-beta.yml`）和 PR / 推送检查（`ci.yml`）都先通过它。
-- 稳定版构建另外运行 `npm run audit:production-deps`（`generator/audit-production-deps.mjs`），有高危漏洞时不发布。
+- PR / 推送检查（`ci.yml`）和稳定版构建都在质量门最后运行 `npm run audit:production-deps`
+  （`generator/audit-production-deps.mjs`，质量门的 `production-audit` 输入打开），是同一个步骤、同一份锁文件：
+  生产依赖有新的高危公告时，合并前 PR 检查就失败，稳定版也不发布。Beta 测试构建不运行它。
 - 稳定版的 Release 正文就是 `docs/release-notes-v<版本>.md`，只写给用户看的内容：下载哪个文件、升级前要注意的行为变化、
   新功能、改进与修复；不写测试数、Beta 编号、验证过程这类过程性内容。提交、构建时间、签名在附件 `android-build-info.txt`
   和构建日志里，不追加到正文。发版后要改说明：改这个文件并合入 `feat/mpv-only`，再手动运行 Android Release Build、
   勾选 `notes_only`，只更新正文，不重新构建、不动安装包；同一分支上正在跑的构建会让它排队。
   阻断标准与 `npm audit --omit=dev --audit-level=high` 相同，只放行脚本中登记的例外。例外只能是上游暂无修复版本的公告，并写明原因；
   一旦依赖方接受的版本范围内出现了不受影响的新版本，审计就会失败，提醒升级并删除例外。已不再匹配任何公告的例外只给出警告。
+  例外可以写 `locations`（锁文件中的安装位置）：只放行这些位置上的副本，同一个包在别处也受影响时照样阻断。
 - 2026-10-02 已把有修复版本的高危依赖全部升级（axios、nanoid、brace-expansion、@xmldom/xmldom、browserslist、joi、js-yaml、undici），
   生产依赖的中危条目也已清零（qs 升到 6.16.0；@react-navigation/core 升到 7.23.0，不再依赖 query-string 和 decode-uri-component）。
-  开发依赖中 fast-uri、svgo 的公告也已修复（fast-uri 3.1.8、svgo 3.3.5）。发布审计只检查生产依赖；
-  目前完整的 `npm audit`（含开发依赖）也只剩下面登记的例外。
+  开发依赖中 fast-uri、svgo 的公告也已修复（fast-uri 3.1.8、svgo 3.3.5）。
+- 2026-10-24 新公布的高危公告：body-parser 升到 2.4.0（React Native 开发服务器引入，随之 content-type 2.1.0、qs 6.16.1），
+  undici 升到 7.30.1（cheerio 引入）；zod 登记例外（见下）。braces 的 GHSA-vfj7-8cjw-p6xm 已不再对 3.0.3 报出，删除了它的例外。
+  发布审计只检查生产依赖；完整的 `npm audit` 另有只在开发依赖里的条目（fast-uri 3.1.8 的中低危公告、ESLint 插件引入的 zod 4.4.3），不打进 APK。
   当前登记的例外：
   - node-forge（GHSA-86w9-cpqp-85rv）：最新 1.4.0 仍受影响，经 `expo` → `@expo/cli` 引入，只用于 Expo 更新包签名，本项目构建不使用，也不打进 APK。
   - image-size（GHSA-5p2g-fcmc-qvqq、GHSA-w3rx-r6r6-pgpr）：只在 2.x 修复，而 metro 各版本都依赖 `^1.0.2`；metro 只在打包时读取仓库自带的图片，不打进 APK。
-  - braces（GHSA-vfj7-8cjw-p6xm，2026-10-03 登记）：最新 3.0.3 仍受影响，经 `expo` → `@expo/cli` → `@expo/metro-file-map` → `micromatch` 引入，只在打包时匹配仓库自己的路径规则，不处理外部输入，也不打进 APK。
-    `npm audit` 建议的“降级 expo 到 44”只是绕开这条依赖链，不能采用。
+  - zod（GHSA-mrhx-c7xc-m3w5，2026-10-24 登记，只放行 `node_modules/expo/node_modules/zod`）：经 `expo` → `@expo/cli` 引入，
+    只有 Expo CLI 用它校验配置，应用代码和 Expo 运行时都不引用，也不打进 APK；修复只在 4.6.6 及以上，而 `@expo/cli` 依赖 `^3.25.76`。
+    `npm audit` 建议的“降级 expo 到 44”这类方案只是绕开依赖链，不能采用。
 - `brace-expansion` 通过 `overrides` 固定为 5.0.12，`patches/brace-expansion+5.0.12.patch` 让旧版 minimatch 仍能把它当函数调用；升级版本时需要同时重新生成补丁。
 - `patches/react-native+0.85.3.patch` 让所有 ScrollView（含 FlatList、SectionList、FlashList 和手势库的 ScrollView）在 Android 上默认 `overScrollMode="never"`。越界拉伸、回弹还没结束时，原生 ScrollView 会把下一次按下当成「停住回弹」拦掉，滚到底后第一下点不动。个别页面需要回弹时显式传 `overScrollMode`。`TabView` 不经过 ScrollView，在各处单独设置。升级 React Native 时需要重新生成补丁，`npm run verify` 会在补丁打不上时失败。
 - `patches/react-native-reanimated+4.4.0.patch`：Reanimated 4.4 在动画停下后每 0.5 秒把最终样式同步回 React（`settledProps`），
