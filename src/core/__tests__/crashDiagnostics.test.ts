@@ -152,6 +152,58 @@ describe("crash diagnostics", () => {
             .toBe("GET https://***@cdn.example/audio?… failed");
     });
 
+    it("hides credential keys with prefixes and header name/value pairs, keeps other fields", () => {
+        const message = JSON.stringify({
+            refresh_token: "synthetic-refresh",
+            client_secret: "synthetic-client-secret",
+            "x-api-key": "synthetic-api-key",
+            JSESSIONID: "synthetic-session",
+            keyword: "周杰伦",
+            status: 401,
+            headers: [
+                { name: "Authorization", value: "Bearer synthetic-header-token" },
+                { name: "Content-Type", value: "audio/mpeg" },
+            ],
+            entries: [["Cookie", "MUSIC_U=synthetic-entry-cookie"], ["Accept", "*/*"]],
+        });
+        expect(JSON.parse(redactCrashText(message))).toEqual({
+            refresh_token: "***",
+            client_secret: "***",
+            "x-api-key": "***",
+            JSESSIONID: "***",
+            keyword: "周杰伦",
+            status: 401,
+            headers: [
+                { name: "Authorization", value: "***" },
+                { name: "Content-Type", value: "audio/mpeg" },
+            ],
+            entries: [["Cookie", "***"], ["Accept", "*/*"]],
+        });
+        // Prose before the JSON (and native truncation after it) takes the text path instead.
+        const stack = redactCrashText(
+            `IOException: ${message.slice(0, -1)}\n\tat Player.kt:42`,
+        );
+        for (const secret of ["synthetic-refresh", "synthetic-client-secret", "synthetic-api-key",
+            "synthetic-session", "synthetic-header-token", "synthetic-entry-cookie"]) {
+            expect(stack).not.toContain(secret);
+        }
+        expect(stack).toContain("周杰伦");
+        expect(stack).toContain("audio/mpeg");
+        expect(stack).toContain("Player.kt:42");
+    });
+
+    it("hides every cookie pair, API key headers and credentials in non-HTTP addresses", () => {
+        expect(redactCrashText("Cookie=uin=1; SESSDATA=synthetic-sess\nnext line"))
+            .toBe("Cookie=***\nnext line");
+        expect(redactCrashText("X-Api-Key: synthetic-key\nnext line"))
+            .toBe("X-Api-Key: ***\nnext line");
+        expect(redactCrashText("open ws://user:synthetic-ws@host/socket failed"))
+            .toBe("open ws://***@host/socket failed");
+        expect(redactCrashText("rtmp://user:synthetic-rtmp@host/live?token=synthetic-q"))
+            .toBe("rtmp://***@host/live?…");
+        expect(redactCrashText("keyword=周杰伦 status=401")).toBe("keyword=周杰伦 status=401");
+    });
+
     it("stops decoding at a nesting limit and preserves surrounding stack locations", () => {
         let message = JSON.stringify({ Authorization: "synthetic-deep-token" });
         for (let level = 0; level < 8; level++) {
