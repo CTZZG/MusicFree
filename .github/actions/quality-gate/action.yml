@@ -35,6 +35,7 @@ runs:
           shell: bash
           run: |
               bash native/mpv/test-latency.sh
+              python3 -I native/mpv/check-short-read.py
               python3 -I native/mpv/verify-bundle.py
               python3 -I native/mpv/check-seek-clock.py --self-test
 

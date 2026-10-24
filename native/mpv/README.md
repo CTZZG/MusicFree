@@ -19,6 +19,22 @@ positions. It does not change the audio backend, decoder, seek target, playback
 intent, focus handling or the 250 ms / 0.25 s regression limits. Engine-position
 checks do not establish physical audio output or audible continuity.
 
+## Pull-buffer short reads
+
+The same pinned mpv source also recorded the end time of an entire requested
+buffer even when AudioTrack read and submitted fewer frames without padding.
+That counted unread frames as queued audio and could make the reported position
+fall behind the exact restore target. The patch subtracts only this unused tail
+when a read returns a positive number of frames and does not pad with silence.
+Full reads, empty reads, padded reads and the existing underrun wakeup behavior
+are preserved. The earlier AudioTrack startup bound is unchanged.
+
+Counter experiment107 observed a77.125ms partial read without the corresponding
+first-position dip after this correction; its original full device gates passed.
+This supports the short-read fix, but does not establish physical audio output
+or the complete trigger of the older253ms failure. The product build contains
+neither those counters nor the temporary manual diagnostic workflow.
+
 ## Source and binary scope
 
 - `sources.lock.json` pins all sources, API 26 and NDK 27.1.12297006. Dependency
@@ -78,6 +94,15 @@ archive bytes from arbitrary host environments.
 `test-latency.sh` compiles the actual helper on the host and checks initial/flush
 bounds, timestamps, passthrough, steady state and wraparound. Removing the bound
 must fail its assertions.
+
+`check-short-read.py` compiles the actual upstream/patched
+`ao_read_data_locked()` function with only queue/wakeup boundaries replaced.
+Nine cases cover short/full/empty/padded reads, a second sample rate, and the
+existing paused/underrun behavior; upstream and two weakened variants must fail.
+The whole upstream file in `tests/mpv-0.41-buffer.c` is a licensed, pinned test
+fixture, not app code. Its SHA must match the rebuild checkout's original file;
+the same product patch and patched whole-file SHA are checked in both paths.
+This keeps the quality check offline without substituting a model of the logic.
 
 `AudioTrackSeekClockTest` uses the real bundled MPVLib and AudioTrack, repeatedly
 replaces the real-JS MP3 fixture, and observes a complete raw position window
