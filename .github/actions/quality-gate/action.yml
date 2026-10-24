@@ -9,6 +9,12 @@ inputs:
         description: Node.js 版本
         required: false
         default: '22'
+    production-audit:
+        description: >-
+            是否运行生产依赖审计（npm run audit:production-deps）。PR 检查和稳定版构建都打开，
+            用同一个步骤和同一份锁文件，有新的高危公告时合并前就失败；Beta 测试构建不打开。
+        required: false
+        default: 'false'
 
 runs:
     using: composite
@@ -50,3 +56,10 @@ runs:
         - name: Whitespace check
           shell: bash
           run: git diff --check
+
+        # 生产依赖不能有高危公告；只放行 generator/audit-production-deps.mjs 中登记过、
+        # 上游暂无修复的公告。放在最后，失败时其余检查的结果照常可见。
+        - name: Production dependency audit
+          if: inputs.production-audit == 'true'
+          shell: bash
+          run: npm run audit:production-deps

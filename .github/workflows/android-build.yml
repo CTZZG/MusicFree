@@ -56,11 +56,8 @@ jobs:
               uses: ./.github/actions/quality-gate
               with:
                   node-version: ${{ env.NODE_VERSION }}
-
-            # 正式发布额外要求生产依赖没有高危漏洞；只放行
-            # generator/audit-production-deps.mjs 中登记过、上游暂无修复的公告
-            - name: Production dependency audit
-              run: npm run audit:production-deps
+                  # 与 PR 检查是同一个步骤（见 .github/actions/quality-gate）
+                  production-audit: 'true'
 
             - name: Setup Java
               uses: actions/setup-java@v5
