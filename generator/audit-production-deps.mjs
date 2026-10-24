@@ -11,6 +11,9 @@ import {parseNpmViewVersions} from './lib/npmView.mjs';
 // 只要依赖方声明的版本范围内出现了不受影响的版本，审计就会失败，提醒升级并删除
 // 对应例外；不能依赖 npm audit 的 fixAvailable——它会把“降级 expo 到 44”这类
 // 方案也算作修复。
+//
+// 写了 locations 的例外只放行锁文件中这些位置上的受影响副本：同一个包在别处
+// （例如被应用代码直接依赖）也受影响时，这条公告照样阻断。
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const registry = 'https://registry.npmjs.org';
@@ -40,11 +43,13 @@ const auditExceptions = [
         reviewedOn: '2026-10-02',
     },
     {
-        advisory: 'GHSA-vfj7-8cjw-p6xm',
-        packageName: 'braces',
+        advisory: 'GHSA-mrhx-c7xc-m3w5',
+        packageName: 'zod',
+        dependencyPath: 'expo → @expo/cli → zod',
+        locations: ['node_modules/expo/node_modules/zod'],
         reason:
-            '只在打包时由 Expo CLI 的 Metro 文件监视匹配仓库自己的路径规则（expo → @expo/cli → @expo/metro-file-map → micromatch → braces），不处理外部输入，也不打进 APK；最新的 3.0.3 仍受影响，上游暂无修复版。',
-        reviewedOn: '2026-10-03',
+            '只有 Expo CLI（开发服务器、打包命令）用它校验配置，应用代码和 Expo 运行时都不引用，也不打进 APK；修复只在 4.6.6 及以上，而 @expo/cli 依赖 ^3.25.76，3.x 最新的 3.25.76 仍受影响。',
+        reviewedOn: '2026-10-24',
     },
 ];
 
@@ -102,7 +107,10 @@ function runAudit() {
     return auditReport;
 }
 
-/** 公告本身；由其他包的公告传递出来的条目（via 为包名）不重复计算 */
+/**
+ * 公告本身；由其他包的公告传递出来的条目（via 为包名）不重复计算。
+ * nodes 是锁文件中受影响的安装位置。
+ */
 function collectAdvisories(auditReport) {
     const advisories = new Map();
     for (const vulnerability of Object.values(auditReport.vulnerabilities ?? {})) {
@@ -120,11 +128,30 @@ function collectAdvisories(auditReport) {
                     severity: via.severity,
                     range: via.range,
                     url: via.url,
+                    nodes: [],
                 });
+            }
+            if (vulnerability.name === via.name) {
+                const advisory = advisories.get(key);
+                advisory.nodes = [
+                    ...new Set([...advisory.nodes, ...(vulnerability.nodes ?? [])]),
+                ];
             }
         }
     }
     return [...advisories.values()];
+}
+
+/** 受影响的副本不在例外写明的位置时返回这些位置 */
+function nodesOutsideException(advisory, exception) {
+    if (!exception.locations) {
+        return [];
+    }
+    // 拿不到位置时不能证明都在范围内，按范围外处理
+    if (!advisory.nodes.length) {
+        return ['(unknown location)'];
+    }
+    return advisory.nodes.filter(node => !exception.locations.includes(node));
 }
 
 /** 查询失败时直接报错，不当成「没有修复版」，见 lib/npmView.mjs */
@@ -195,12 +222,18 @@ function findUsableFixes(packageName, advisoryRanges) {
 
 const auditReport = runAudit();
 const advisories = collectAdvisories(auditReport);
-const exceptionFor = advisory =>
+const registeredExceptionFor = advisory =>
     auditExceptions.find(
         item =>
             item.advisory === advisory.id &&
             item.packageName === advisory.packageName,
     );
+const exceptionFor = advisory => {
+    const exception = registeredExceptionFor(advisory);
+    return exception && !nodesOutsideException(advisory, exception).length
+        ? exception
+        : undefined;
+};
 
 const blocking = advisories.filter(
     advisory =>
@@ -239,8 +272,11 @@ const stale = auditExceptions.filter(
 
 for (const advisory of excepted) {
     const exception = exceptionFor(advisory);
+    const scope = exception.locations
+        ? `\n  only at ${exception.locations.join(', ')} (${exception.dependencyPath})`
+        : '';
     console.log(
-        `Allowed by exception (reviewed ${exception.reviewedOn}): ${advisory.packageName} ${advisory.id} [${advisory.severity}] ${advisory.title}\n  ${exception.reason}`,
+        `Allowed by exception (reviewed ${exception.reviewedOn}): ${advisory.packageName} ${advisory.id} [${advisory.severity}] ${advisory.title}\n  ${exception.reason}${scope}`,
     );
 }
 for (const exception of stale) {
@@ -250,9 +286,13 @@ for (const exception of stale) {
     );
 }
 for (const advisory of blocking) {
+    const exception = registeredExceptionFor(advisory);
+    const outside = exception
+        ? ` — the exception covers only ${exception.locations.join(', ')}, also affected: ${nodesOutsideException(advisory, exception).join(', ')}`
+        : '';
     report(
         'error',
-        `${advisory.packageName} [${advisory.severity}] ${advisory.title} (affected ${advisory.range}) ${advisory.url}`,
+        `${advisory.packageName} [${advisory.severity}] ${advisory.title} (affected ${advisory.range}) ${advisory.url}${outside}`,
     );
 }
 for (const {packageName, ids, fixes} of expired) {
