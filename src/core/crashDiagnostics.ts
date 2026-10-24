@@ -25,15 +25,68 @@ const SECRET_HEADER = /(authorization|cookie|set-cookie|token|password):\s*([^\n
 const URL_QUERY = /\b(https?:\/\/[^\s?#"'<>]+)[?#][^\s"'<>]*/gi;
 const URL_CREDENTIALS = /(\bhttps?:\/\/)[^\s/?#"'<>]*@/gi;
 const QUOTED_SECRET = /(["'](?:authorization|cookie|set-cookie|token|access[_-]?token|password|passwd|secret|sign|signature|(?:api[_-]?)?key)["']\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/gi;
+const SECRET_KEY = /^(?:authorization|cookie|set-cookie|token|access[_-]?token|password|passwd|secret|sign|signature|(?:api[_-]?)?key)$/i;
+// Include a truncated last literal (native records have a length cap), but not the next stack line.
+const JSON_STRING = /"(?:\\.|[^"\\\r\n])*(?:"|\\?(?=\r?\n|$))/g;
+const MAX_REDACTION_DEPTH = 12;
+const NESTING_LIMIT = "[redacted: nesting limit]";
 
-/** 遮掉地址的查询串和凭据，保留协议、主机和路径，方便判断是哪个服务出的错。 */
-export function redactCrashText(value: string): string {
+function redactPlainText(value: string): string {
     return value
+        .replace(/\bhttps?:\\\/\\\/[^\s"'<>]*/gi, url => url.replace(/\\\//g, "/"))
         .replace(URL_CREDENTIALS, "$1***@")
         .replace(URL_QUERY, "$1?…")
         .replace(QUOTED_SECRET, "$1\"***\"")
         .replace(SECRET_PARAMETER, "$1=***")
         .replace(SECRET_HEADER, "$1: ***");
+}
+
+function redactJsonValue(value: unknown, depth: number): unknown {
+    if (typeof value === "string") return redactText(value, depth);
+    if (value === null || typeof value !== "object") return value;
+    if (depth >= MAX_REDACTION_DEPTH) return NESTING_LIMIT;
+    if (Array.isArray(value)) {
+        return value.map(item => redactJsonValue(item, depth + 1));
+    }
+    // fromEntries also preserves a literal __proto__ field without invoking its setter.
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+        key, SECRET_KEY.test(key) ? "***" : redactJsonValue(item, depth + 1),
+    ]));
+}
+
+function redactText(value: string, depth: number): string {
+    if (depth >= MAX_REDACTION_DEPTH) return NESTING_LIMIT;
+    // Exceptions can contain a JSON response whose message is itself serialized JSON.
+    // Decode before matching keys so escaped quotes/slashes cannot hide credentials.
+    if (/^\s*[[{"]/.test(value)) {
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(value);
+        } catch {
+            // A stack/prose prefix or malformed JSON still needs the text fallback below.
+        }
+        if (parsed !== undefined) {
+            const redacted = JSON.stringify(redactJsonValue(parsed, depth + 1));
+            return redacted === JSON.stringify(parsed) ? value : redacted;
+        }
+    }
+    const decoded = value.replace(JSON_STRING, literal => {
+        let text: string;
+        try {
+            text = JSON.parse(literal);
+        } catch {
+            // Do not copy a truncated/invalid serialized value that we could not decode safely.
+            return JSON.stringify("[redacted: invalid JSON string]");
+        }
+        const redacted = redactText(text, depth + 1);
+        return redacted === text ? literal : JSON.stringify(redacted);
+    });
+    return redactPlainText(decoded);
+}
+
+/** 遮掉地址和嵌套 JSON 的凭据；超过解析深度时隐藏该片段，不导出未处理的值。 */
+export function redactCrashText(value: string): string {
+    return redactText(value, 0);
 }
 
 function redactOptional(value: string | undefined) {
