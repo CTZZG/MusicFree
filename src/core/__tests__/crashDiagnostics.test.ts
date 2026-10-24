@@ -78,6 +78,104 @@ describe("crash diagnostics", () => {
         expect(report.exits?.[2].description).toBe("stop user 0 token=***");
     });
 
+    it("hides URL credentials and quoted header values in exception text", () => {
+        expect(redactCrashText("GET https://alice:example-password@cdn.example/a?sign=example-sign"))
+            .toBe("GET https://***@cdn.example/a?…");
+        const headers = JSON.stringify({
+            Authorization: "Bearer example-token",
+            Cookie: "session=example-cookie",
+            "x-visible": "keep this",
+            access_token: "example-access-token",
+        });
+        expect(JSON.parse(redactCrashText(headers))).toEqual({
+            Authorization: "***",
+            Cookie: "***",
+            "x-visible": "keep this",
+            access_token: "***",
+        });
+        expect(redactCrashText("{'password': 'example-password'}"))
+            .toBe("{'password': \"***\"}");
+    });
+
+    it.each([1, 2, 3])("redacts headers serialized %i times before the report is copied", async levels => {
+        let message = JSON.stringify({
+            Authorization: "Bearer synthetic-nested-token",
+            Cookie: "session=synthetic-nested-cookie",
+            url: "https://user:synthetic-url-password@cdn.example/audio?token=synthetic-query",
+            status: 503,
+        });
+        for (let level = 0; level < levels; level++) {
+            message = JSON.stringify({ response: message });
+        }
+        // Some exception libraries wrap a serialized response in prose/stack text.
+        const stack = `IOException: ${message}\n\tat Player.load(Player.kt:42)`;
+        native.getCrashDiagnostics.mockResolvedValue({
+            clearedBefore: 0,
+            javaCrashes: [{
+                at: 1, thread: "main", appVersion: "test", exception: "IOException",
+                message, stack,
+            }],
+            exits: [],
+        });
+
+        // Same native -> report -> JSON serialization used by the copy-diagnostics action.
+        const report = await loadCrashDiagnostics();
+        const copied = JSON.stringify({ crashes: report }, null, 2);
+        for (const secret of ["synthetic-nested-token", "synthetic-nested-cookie",
+            "synthetic-url-password", "synthetic-query"]) {
+            expect(copied).not.toContain(secret);
+        }
+        let response = report.javaCrashes![0].message;
+        for (let level = 0; level < levels; level++) {
+            response = JSON.parse(response).response;
+        }
+        expect(JSON.parse(response)).toEqual({
+            Authorization: "***", Cookie: "***", url: "https://***@cdn.example/audio?…", status: 503,
+        });
+        expect(report.javaCrashes![0].stack).toContain("Player.load(Player.kt:42)");
+    });
+
+    it("redacts escaped URLs and structured secret values without losing useful fields", () => {
+        const message = JSON.stringify({
+            url: "https://user:synthetic-password@cdn.example/audio?token=synthetic-query",
+            headers: { AUTHORIZATION: { value: "synthetic-header" }, access_token: 12345 },
+            items: [{ "api-key": 67890, status: 502 }],
+            ["__proto__"]: { password: "synthetic-proto" },
+        }).replace(/\//g, "\\/");
+        expect(JSON.parse(redactCrashText(message))).toEqual({
+            url: "https://***@cdn.example/audio?…",
+            headers: { AUTHORIZATION: "***", access_token: "***" },
+            items: [{ "api-key": "***", status: 502 }],
+            ["__proto__"]: { password: "***" },
+        });
+        expect(redactCrashText("GET https:\\/\\/user:synthetic-password@cdn.example\\/audio?token=synthetic-query failed"))
+            .toBe("GET https://***@cdn.example/audio?… failed");
+    });
+
+    it("stops decoding at a nesting limit and preserves surrounding stack locations", () => {
+        let message = JSON.stringify({ Authorization: "synthetic-deep-token" });
+        for (let level = 0; level < 8; level++) {
+            message = JSON.stringify({ nested: message });
+        }
+        const redacted = redactCrashText(`IOException: ${message}\n\tat Player.kt:42`);
+        expect(redacted).not.toContain("synthetic-deep-token");
+        expect(redacted).toContain("[redacted: nesting limit]");
+        expect(redacted).toContain("Player.kt:42");
+    });
+
+    it.each([1, 2, 3])("hides credentials when a %i-times serialized message is truncated by native storage", levels => {
+        let message = JSON.stringify({
+            Authorization: "Bearer synthetic-truncated-token", padding: "x".repeat(2000),
+        });
+        for (let level = 0; level < levels; level++) {
+            message = JSON.stringify({ response: message });
+        }
+        const redacted = redactCrashText(`IOException: ${message.slice(0, 1000)}\n\tat Player.kt:42`);
+        expect(redacted).not.toContain("synthetic-truncated-token");
+        expect(redacted).toContain("[redacted: invalid JSON string]");
+        expect(redacted).toContain("Player.kt:42");
+    });
+
     it("reports a native failure instead of throwing", async () => {
         native.getCrashDiagnostics.mockRejectedValue(new Error("boom https://x.example/p?a=1"));
 

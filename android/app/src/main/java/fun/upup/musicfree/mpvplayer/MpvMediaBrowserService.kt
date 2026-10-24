@@ -105,22 +105,22 @@ class MpvMediaBrowserService : MediaBrowserServiceCompat() {
             return
         }
         result.detach()
-        if (!pendingLibrary.add(parentId, result)) return
-        val timeout = Runnable { answerLibrary(parentId, emptyList()) }
+        val requestId = pendingLibrary.add(parentId, result) ?: return
+        val timeout = Runnable { answerLibrary(parentId, requestId, emptyList()) }
         libraryTimeouts[parentId] = timeout
         mainHandler.postDelayed(timeout, LIBRARY_TIMEOUT_MS)
-        request(parentId)
+        request(parentId, requestId)
     }
 
     /** JS 给回来的列表内容；可以在任何线程调用 */
-    fun deliverLibraryChildren(parentId: String, tracks: List<MpvQueueTrack>) {
-        mainHandler.post { answerLibrary(parentId, tracks) }
+    fun deliverLibraryChildren(parentId: String, requestId: String, tracks: List<MpvQueueTrack>) {
+        mainHandler.post { answerLibrary(parentId, requestId, tracks) }
     }
 
-    private fun answerLibrary(parentId: String, tracks: List<MpvQueueTrack>) {
-        libraryTimeouts.remove(parentId)?.let { mainHandler.removeCallbacks(it) }
-        val waiting = pendingLibrary.take(parentId)
+    private fun answerLibrary(parentId: String, requestId: String, tracks: List<MpvQueueTrack>) {
+        val waiting = pendingLibrary.take(parentId, requestId)
         if (waiting.isEmpty()) return
+        libraryTimeouts.remove(parentId)?.let { mainHandler.removeCallbacks(it) }
         waiting.forEach { sendQuietly(it, playableItems(tracks)) }
     }
 

@@ -32,8 +32,10 @@ APP_LINE='10-22 10:20:00.000  1000  1200 W AS.AudioService: AudioHardening level
 reset() {
     ENABLE=ok CONTROL=blocked DUMPSYS="" INSTALL_FAILURES=0 SYSTEM_PID=1765
     HARDENING_APP_STARTED=1 HARDENING_FRAMEWORK_PID=1765
+    HARDENING_CAPTURE_COMPLETE=1
     : > "$WORK/results"
     : > "$OUT/logcat.txt"
+    : > "$OUT/audio-hardening-stream.txt"
     echo 0 > "$WORK/installs"
 }
 
@@ -155,6 +157,20 @@ ok "全部记录另存" equals "$(cat "$OUT/audio-hardening-app.txt")" "$APP_LIN
 
 reset
 HARDENING_CONTROL_OK=1
+printf '%s\n' "$APP_LINE" > "$OUT/audio-hardening-stream.txt"
+check_audio_hardening
+ok "Maestro 清空最终日志后，早期拦截仍必须失败" equals "$(result "$HARDENING_APP")" "FAIL"
+ok "早期拦截的原文保留" equals "$(cat "$OUT/audio-hardening-app.txt")" "$APP_LINE"
+
+reset
+HARDENING_CONTROL_OK=1
+HARDENING_CAPTURE_COMPLETE=0
+check_audio_hardening
+ok "全程日志中断时不能通过" equals "$(result "$HARDENING_APP")" "FAIL"
+ok "明确说明采集不完整" contains "$(detail "$HARDENING_APP")" "采集不完整"
+
+reset
+HARDENING_CONTROL_OK=1
 HARDENING_APP_STARTED=0
 check_audio_hardening
 ok "本应用没进首页：没记录也不算通过" equals "$(result "$HARDENING_APP")" "FAIL"
@@ -203,3 +219,4 @@ if [ "$FAILURES" -gt 0 ]; then
     exit 1
 fi
 echo "audio_hardening.sh 自检全部通过"
+bash "$HERE/lib/audio_hardening_capture_test.sh"

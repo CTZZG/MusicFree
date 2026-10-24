@@ -54,7 +54,7 @@ source "$HERE/lib/startup_capture.sh"
 source "$HERE/lib/adb_install.sh"
 # shellcheck source=lib/audio_hardening.sh
 source "$HERE/lib/audio_hardening.sh"
-trap startup_capture_stop EXIT
+trap 'startup_capture_stop; hardening_capture_cancel' EXIT
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
 print_screen_text() {
@@ -241,6 +241,7 @@ finish() {
         head -n 60 "$OUT/crash.txt"
     fi
     if [ -n "$E2E_AUDIO_HARDENING" ]; then
+        hardening_capture_finish
         check_audio_hardening
     fi
     write_summary
@@ -258,7 +259,12 @@ adb shell wm dismiss-keyguard || true
 adb logcat -c || true
 # Android 17 的后台音频加固：在装应用之前打开，先让替身在后台被拦一次，确认加固生效、记录认得出来
 if [ -n "$E2E_AUDIO_HARDENING" ]; then
+    # Later plugin/storage checks also request root. Do the daemon restart
+    # before the full-run stream, so it cannot silently interrupt coverage.
+    adb root > "$OUT/hardening-adb-root.txt" 2>&1 || true
+    adb wait-for-device
     enable_audio_hardening || finish
+    hardening_capture_start || finish
     run_hardening_control
 fi
 startup_capture_start

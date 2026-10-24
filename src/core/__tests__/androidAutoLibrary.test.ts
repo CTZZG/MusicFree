@@ -55,10 +55,11 @@ describe("Android Auto library", () => {
         const favorites = Array.from({ length: AUTO_LIBRARY_LIST_LIMIT + 5 }, (_, i) => song(String(i)));
         const { library, provide } = setup({ favorite: favorites });
 
-        await library.handleBrowseRequest("library/favorite");
+        await library.handleBrowseRequest("library/favorite", "request-1");
 
-        const [parentId, items] = (provide.mock.calls as any[])[0];
+        const [parentId, requestId, items] = (provide.mock.calls as any[])[0];
         expect(parentId).toBe("library/favorite");
+        expect(requestId).toBe("request-1");
         expect(items).toHaveLength(AUTO_LIBRARY_LIST_LIMIT);
         expect(items[0]).toEqual({
             id: encodeAutoLibraryItemId("favorite", favorites[0]),
@@ -82,14 +83,14 @@ describe("Android Auto library", () => {
             play: jest.fn(),
         });
 
-        await library.handleBrowseRequest("library/favorite");
-        await library.handleBrowseRequest("library/nope");
-        await library.handleBrowseRequest("library/recent/测试源%401");
+        await library.handleBrowseRequest("library/favorite", "request-1");
+        await library.handleBrowseRequest("library/nope", "request-2");
+        await library.handleBrowseRequest("library/recent/测试源%401", "request-3");
 
         expect(provide.mock.calls).toEqual([
-            ["library/favorite", []],
-            ["library/nope", []],
-            ["library/recent/测试源%401", []],
+            ["library/favorite", "request-1", []],
+            ["library/nope", "request-2", []],
+            ["library/recent/测试源%401", "request-3", []],
         ]);
     });
 

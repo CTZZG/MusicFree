@@ -1024,11 +1024,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MpvServiceBridge.pauseNow = {
                     runMpvCallbackOnMain { keepHeldPaused("external") }
                 }
-                MpvServiceBridge.onBrowseRequest = { parentId ->
+                MpvServiceBridge.onBrowseRequest = { parentId, requestId ->
                     if (!invalidated.get()) {
                         sendEvent(
                             ON_MPV_BROWSE_REQUEST,
-                            Arguments.createMap().apply { putString("parentId", parentId) },
+                            Arguments.createMap().apply {
+                                putString("parentId", parentId)
+                                putString("requestId", requestId)
+                            },
                         )
                     }
                 }
@@ -1141,10 +1144,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     /** Android Auto 要的“我喜欢”“最近播放”，JS 给回来的内容（见 MpvMediaBrowserService） */
     @ReactMethod
-    fun provideBrowseChildren(parentId: String, items: ReadableArray?, promise: Promise) {
+    fun provideBrowseChildren(parentId: String, requestId: String, items: ReadableArray?, promise: Promise) {
         try {
             MpvMediaBrowserService.getInstance()
-                ?.deliverLibraryChildren(parentId, readQueueSnapshot(items))
+                ?.deliverLibraryChildren(parentId, requestId, readQueueSnapshot(items))
             promise.resolve(null)
         } catch (error: Exception) {
             promise.reject("E_MPV_BROWSE", error.message, error)

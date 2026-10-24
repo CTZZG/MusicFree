@@ -248,13 +248,13 @@ function setupAndroidAutoLibrary() {
                 MusicSheet.getSortedMusicListBySheetId("favorite").musicList,
             recent: () => musicHistory.history,
         },
-        provide: (parentId, items) =>
-            adapter.provideBrowseChildren?.(parentId, items) ?? Promise.resolve(),
+        provide: (parentId, requestId, items) =>
+            adapter.provideBrowseChildren?.(parentId, requestId, items) ?? Promise.resolve(),
         play: (musicItem, list) =>
             TrackPlayer.playWithReplacePlayList(musicItem, list),
     });
     adapter.addEventListener("libraryBrowseRequest", event => {
-        library.handleBrowseRequest(event?.parentId).catch(error => {
+        library.handleBrowseRequest(event?.parentId, event?.requestId).catch(error => {
             errorLog("Android Auto 列表读取失败", error?.message ?? error);
         });
     });

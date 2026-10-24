@@ -38,6 +38,7 @@ jobs:
                   bash e2e/lib/tagging_test.sh
                   bash e2e/lib/plugin_install_test.sh
                   python3 -I e2e/lib/song_target_test.py
+                  python3 -I e2e/lib/source_transition_trace.py --self-test
                   python3 -I e2e/lib/perf_compare_test.py
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/power_checks_test.sh

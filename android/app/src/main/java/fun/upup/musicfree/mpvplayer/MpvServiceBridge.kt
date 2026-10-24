@@ -106,7 +106,7 @@ object MpvServiceBridge {
      * 由 [MpvPlayerModule] 在 initialize 时设置；JS 没起来时为 null，车机上显示空列表。
      */
     @Volatile
-    var onBrowseRequest: ((parentId: String) -> Unit)? = null
+    var onBrowseRequest: ((parentId: String, requestId: String) -> Unit)? = null
 
     /**
      * 外部暂停、系统打断之后不许自动出声（见 [PlaybackHold]）。播放服务（通知栏、

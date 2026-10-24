@@ -846,15 +846,18 @@ describe("MpvPlayerAdapter external play and pause commands", () => {
     it("passes Android Auto list requests up and the answers back down", async () => {
         const { adapter, received } = await listen("libraryBrowseRequest");
 
-        mockListeners.browse?.({ parentId: "library/recent" });
+        mockListeners.browse?.({ parentId: "library/recent", requestId: "request-7" });
         mockListeners.browse?.({ parentId: "" });
-        await adapter.provideBrowseChildren("library/recent", [
+        mockListeners.browse?.({ parentId: "library/recent" });
+        mockListeners.browse?.({ parentId: "library/recent", requestId: "" });
+        await adapter.provideBrowseChildren("library/recent", "request-7", [
             { id: "library/recent/x", title: "X", artist: "A", album: "B" },
         ]);
 
-        expect(received).toEqual([{ parentId: "library/recent" }]);
+        expect(received).toEqual([{ parentId: "library/recent", requestId: "request-7" }]);
         expect(mockNativeMpvPlayer.provideBrowseChildren).toHaveBeenCalledWith(
             "library/recent",
+            "request-7",
             [{ id: "library/recent/x", title: "X", artist: "A", album: "B" }],
         );
     });
