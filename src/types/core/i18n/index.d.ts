@@ -1345,6 +1345,14 @@ export interface ILanguageData {
     "shareCard.image": string;
     "shareCard.saved": string;
     "shareCard.failed": string;
+    "shareCard.cancel": string;
+    "shareCard.stage.preparing": string;
+    "shareCard.stage.saving": string;
+    "shareCard.stage.sharing": string;
+    "shareCard.failed.capture": string;
+    "shareCard.failed.file": string;
+    "shareCard.failed.save": string;
+    "shareCard.failed.share": string;
     "lyricTools.title": string;
     "lyricTools.focus": string;
     "lyricTools.translation": string;

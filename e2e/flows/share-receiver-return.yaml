@@ -1,0 +1,9 @@
+appId: fun.upup.musicfree
+---
+- pressKey: Back
+- extendedWaitUntil:
+    visible:
+      text: "分享图片"
+      enabled: true
+    timeout: 15000
+- takeScreenshot: share-returned-panel

@@ -1,0 +1,13 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "分享图片"
+- extendedWaitUntil:
+    visible: "E2E Share"
+    timeout: 15000
+- takeScreenshot: share-system-chooser
+- pressKey: Back
+- extendedWaitUntil:
+    visible:
+      text: "分享图片"
+      enabled: true
+    timeout: 15000

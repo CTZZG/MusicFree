@@ -451,7 +451,9 @@ jobs:
                   bash e2e/lib/download_source_test.sh
                   bash e2e/lib/tagging_test.sh
                   python3 -I e2e/lib/share_card.py --self-test
+                  python3 -I e2e/lib/share_receiver.py --self-test
                   bash e2e/lib/experience_test.sh
+                  bash e2e/lib/share_receiver_test.sh
                   bash e2e/lib/plugin_install_test.sh
                   python3 -I e2e/lib/song_target_test.py
                   python3 -I e2e/lib/perf_compare_test.py
@@ -482,6 +484,12 @@ jobs:
               run: |
                   bash e2e/focus-app/build.sh "$RUNNER_TEMP/e2e-focus.apk"
                   echo "E2E_FOCUS_APK=$RUNNER_TEMP/e2e-focus.apk" >> "$GITHUB_ENV"
+
+            - name: Build the independent share receiver
+              if: inputs.e2e_suite == 'all'
+              run: |
+                  bash e2e/share-receiver/build.sh "$RUNNER_TEMP/e2e-share.apk"
+                  echo "E2E_SHARE_RECEIVER_APK=$RUNNER_TEMP/e2e-share.apk" >> "$GITHUB_ENV"
 
             # 端到端第 18 步：从 0.7.3（MMKV 时代的最后一版）覆盖安装。下载它的 x86_64 APK（核对 SHA-256），
             # 编出往它的 MMKV 写测试数据的 mmkv-seed（见 e2e/mmkv-seed）。准备不好也接着跑其他检查，

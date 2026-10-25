@@ -20,6 +20,7 @@ import useResolvedMusicArtwork from "@/hooks/useResolvedMusicArtwork";
 import { isSameMediaItem } from "@/utils/mediaUtils";
 import NativeUtils from "@/native/utils";
 import Toast from "@/utils/toast";
+import { errorLog } from "@/utils/log";
 import { vh } from "@/utils/rpx";
 import {
     createArtworkColorCacheKey,
@@ -33,7 +34,11 @@ import {
     toggleShareLine,
     type ShareLyricLine,
 } from "@/components/musicShare/cardLayout";
-import { captureShareCard, shareCardPng } from "@/components/musicShare/shareImage";
+import {
+    captureShareCard,
+    shareCardPng,
+    ShareFilePreparationError,
+} from "@/components/musicShare/shareImage";
 import PanelBase from "../base/panelBase";
 import PanelHeader from "../base/panelHeader";
 
@@ -42,7 +47,9 @@ interface Props {
 }
 
 /** Freeze a matching lyric snapshot so a subsequent track change cannot relabel the card. */
-export function shareLyricSnapshot(musicItem: IMusic.IMusicItem): ShareLyricLine[] {
+export function shareLyricSnapshot(
+    musicItem: IMusic.IMusicItem,
+): ShareLyricLine[] {
     if (
         !isSameMediaItem(musicItem, TrackPlayer.currentMusic) ||
         lyricManager.lyricState.loading ||
@@ -67,11 +74,20 @@ export default function MusicShare({ musicItem }: Props) {
     const [selected, setSelected] = useState<number[]>([]);
     const [translation, setTranslation] = useState(false);
     const [color, setColor] = useState("#31516a");
-    const [cover, setCover] = useState({ key: artwork, ready: !artwork, omit: false });
+    const [cover, setCover] = useState({
+        key: artwork,
+        ready: !artwork,
+        omit: false,
+    });
     const coverReady = !artwork || (cover.key === artwork && cover.ready);
     const omitCover = cover.key === artwork && cover.omit;
-    const [busy, setBusy] = useState(false);
-    const busyRef = useRef(false);
+    const [stage, setStage] = useState<
+        "preparing" | "saving" | "sharing" | null
+    >(null);
+    const busy = stage !== null;
+    // A cancelled preparation may finish later; only its own token may commit
+    // native work or release the busy state of a newer request.
+    const operation = useRef<object | null>(null);
     const svg = useRef<Svg>(null);
     const activeArtwork = useRef(artwork);
     const loadedArtwork = useRef<string | undefined>(undefined);
@@ -80,6 +96,7 @@ export default function MusicShare({ musicItem }: Props) {
         mounted.current = true;
         return () => {
             mounted.current = false;
+            operation.current = null;
         };
     }, []);
     useEffect(() => {
@@ -115,30 +132,54 @@ export default function MusicShare({ musicItem }: Props) {
     const artist = String(musicItem.artist ?? "");
     const layout = getShareCardLayout(title, artist, picked, translation);
     async function run(action: "text" | "save" | "image") {
-        if (busyRef.current || (action !== "text" && !coverReady)) return;
-        busyRef.current = true;
-        setBusy(true);
+        if (operation.current || (action !== "text" && !coverReady)) return;
+        const token = {};
+        operation.current = token;
+        setStage("preparing");
+        const current = () => mounted.current && operation.current === token;
+        let failure: "capture" | "file" | "save" | "share" = "capture";
         try {
             if (action === "text") {
                 const message = await formatMusicShareMessage(musicItem);
-                if (mounted.current) await Share.share({ message });
+                if (!current()) return;
+                failure = "share";
+                setStage("sharing");
+                await Share.share({ message });
             } else {
                 const node = svg.current;
                 if (!node) throw new Error("Preview unavailable");
                 const png = await captureShareCard(done =>
-                    node.toDataURL(done, { width: CARD_WIDTH, height: layout.height }),
+                    node.toDataURL(done, {
+                        width: CARD_WIDTH,
+                        height: layout.height,
+                    }),
                 );
-                if (!mounted.current) return;
+                if (!current()) return;
                 if (action === "save") {
+                    failure = "save";
+                    setStage("saving");
                     await NativeUtils.saveShareImage(png);
-                    if (mounted.current) Toast.success(t("shareCard.saved"));
-                } else await shareCardPng(png);
+                    if (current()) Toast.success(t("shareCard.saved"));
+                } else {
+                    failure = "share";
+                    setStage("sharing");
+                    await shareCardPng(png);
+                }
             }
-        } catch {
-            if (mounted.current) Toast.warn(t("shareCard.failed"));
+        } catch (error) {
+            if (current()) {
+                if (error instanceof ShareFilePreparationError)
+                    failure = "file";
+                // Only static categories: never the plugin URL, image payload,
+                // lyric content or an untrusted native error message.
+                errorLog("share-operation-failed", { action, reason: failure });
+                Toast.warn(t(`shareCard.failed.${failure}`));
+            }
         } finally {
-            busyRef.current = false;
-            if (mounted.current) setBusy(false);
+            if (operation.current === token) {
+                operation.current = null;
+                if (mounted.current) setStage(null);
+            }
         }
     }
     const actionButton = (label: string, action: "text" | "save" | "image") => (
@@ -155,7 +196,8 @@ export default function MusicShare({ musicItem }: Props) {
                 styles.action,
                 { backgroundColor: colors.placeholder },
                 busy ? styles.dimmed : null,
-            ]}>
+            ]}
+        >
             <ThemeText fontWeight="semibold">{label}</ThemeText>
         </Pressable>
     );
@@ -164,7 +206,11 @@ export default function MusicShare({ musicItem }: Props) {
             height={vh(88)}
             renderBody={() => (
                 <>
-                    <PanelHeader title={t("shareCard.title")} hideButtons allowTitleWrap />
+                    <PanelHeader
+                        title={t("shareCard.title")}
+                        hideButtons
+                        allowTitleWrap
+                    />
                     <FlatList
                         style={styles.list}
                         data={lines}
@@ -175,7 +221,8 @@ export default function MusicShare({ musicItem }: Props) {
                             <>
                                 <View
                                     style={styles.preview}
-                                    accessibilityLabel={t("shareCard.preview")}>
+                                    accessibilityLabel={t("shareCard.preview")}
+                                >
                                     <ShareCard
                                         ref={svg}
                                         title={title}
@@ -183,14 +230,23 @@ export default function MusicShare({ musicItem }: Props) {
                                         lines={picked}
                                         translation={translation}
                                         color={color}
-                                        artwork={omitCover ? undefined : artwork}
+                                        artwork={
+                                            omitCover ? undefined : artwork
+                                        }
                                         width={Math.min(width - 56, 300)}
                                         onArtworkLoad={() => {
-                                            if (activeArtwork.current === artwork) {
+                                            if (
+                                                activeArtwork.current ===
+                                                artwork
+                                            ) {
                                                 loadedArtwork.current = artwork;
                                                 setCover(value =>
-                                                    value.key === artwork && !value.omit
-                                                        ? { ...value, ready: true }
+                                                    value.key === artwork &&
+                                                    !value.omit
+                                                        ? {
+                                                            ...value,
+                                                            ready: true,
+                                                        }
                                                         : value,
                                                 );
                                             }
@@ -205,8 +261,33 @@ export default function MusicShare({ musicItem }: Props) {
                                 <View style={styles.actions}>
                                     {actionButton(t("shareCard.link"), "text")}
                                     {actionButton(t("shareCard.save"), "save")}
-                                    {actionButton(t("shareCard.image"), "image")}
+                                    {actionButton(
+                                        t("shareCard.image"),
+                                        "image",
+                                    )}
                                 </View>
+                                {stage ? (
+                                    <ThemeText accessibilityLiveRegion="polite">
+                                        {t(`shareCard.stage.${stage}`)}
+                                    </ThemeText>
+                                ) : null}
+                                {stage === "preparing" ? (
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        accessibilityLabel={t(
+                                            "shareCard.cancel",
+                                        )}
+                                        style={styles.cancel}
+                                        onPress={() => {
+                                            operation.current = null;
+                                            setStage(null);
+                                        }}
+                                    >
+                                        <ThemeText fontColor="primary">
+                                            {t("shareCard.cancel")}
+                                        </ThemeText>
+                                    </Pressable>
+                                ) : null}
                                 <ThemeText fontColor="textSecondary">
                                     {lines.length
                                         ? t("shareCard.select")
@@ -262,15 +343,21 @@ export default function MusicShare({ musicItem }: Props) {
                                 style={[
                                     styles.lyric,
                                     selected.includes(item.index)
-                                        ? { backgroundColor: colors.placeholder }
+                                        ? {
+                                            backgroundColor:
+                                                  colors.placeholder,
+                                        }
                                         : null,
                                     selected.length === MAX_SHARE_LINES &&
                                     !selected.includes(item.index)
                                         ? styles.dimmed
                                         : null,
-                                ]}>
+                                ]}
+                            >
                                 <ThemeText>
-                                    {selected.includes(item.index) ? "✓  " : "○  "}
+                                    {selected.includes(item.index)
+                                        ? "✓  "
+                                        : "○  "}
                                     {item.text}
                                 </ThemeText>
                             </Pressable>
@@ -283,12 +370,24 @@ export default function MusicShare({ musicItem }: Props) {
 }
 
 const styles = StyleSheet.create({
+    cancel: { minHeight: 48, justifyContent: "center", paddingVertical: 12 },
     list: { flex: 1 },
     switchLabel: { flex: 1, marginRight: 12 },
     content: { padding: 20, paddingBottom: 48 },
     preview: { alignItems: "center", marginBottom: 16 },
-    actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 16 },
-    action: { minHeight: 48, justifyContent: "center", paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12 },
+    actions: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 8,
+        marginVertical: 16,
+    },
+    action: {
+        minHeight: 48,
+        justifyContent: "center",
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderRadius: 12,
+    },
     dimmed: { opacity: 0.5 },
     row: {
         flexDirection: "row",

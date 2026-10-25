@@ -406,3 +406,7 @@ e2e/run.sh path/to/MusicFree-…-x86_64-release.apk "$(git rev-parse HEAD)" e2e-
 `quality-loading-state.jsonl` 保留状态、按钮、命令与原始引擎读数；缺少四个场景或任一等待窗口，
 `quality_loading_evidence.py` 必须拒绝。新用例不改变旧250ms/0.25s采样门限，
 也不代表物理音频输出验证。基线与后续修复证据见慢换源交接文档和对应PR。
+
+### 分享接收端验证
+
+`all` 的分享阶段现在额外需要 `E2E_SHARE_RECEIVER_APK`（由 `e2e/share-receiver/build.sh` 构建）。这是不同 UID、没有媒体读取权限的测试应用，实际通过 Android 图片分享选择器接收 content URI；验证取消可重试、后台发送方下两次读取和完整 PNG。结果只保存接收器自己的有限 JSON/PNG，不导出产品私有设置。它不是任何商业接收应用的替代验收，亦不假设临时 URI 授权在 force-stop 后依然有效。

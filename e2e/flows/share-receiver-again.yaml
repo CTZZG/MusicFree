@@ -1,0 +1,7 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "Read image again"
+- extendedWaitUntil:
+    visible: "Image read again"
+    timeout: 15000
+- takeScreenshot: share-receiver-delayed

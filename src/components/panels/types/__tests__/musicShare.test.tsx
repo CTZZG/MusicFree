@@ -4,6 +4,11 @@ import MusicShare, { shareLyricSnapshot } from "../musicShare";
 import lyricManager from "@/core/lyricManager";
 import TrackPlayer from "@/core/trackPlayer";
 import NativeUtils from "@/native/utils";
+import { Share } from "react-native";
+import { formatMusicShareMessage } from "@/core/musicShare";
+import Toast from "@/utils/toast";
+import { errorLog } from "@/utils/log";
+import ImageShare from "react-native-share";
 
 const mockExport = jest.fn();
 let mockArtwork: string | undefined;
@@ -26,15 +31,25 @@ jest.mock("react-native-svg", () => {
         G: "G",
     };
 });
-jest.mock("react-native-fs", () => ({ CachesDirectoryPath: "/cache" }));
-jest.mock("react-native-share", () => ({ __esModule: true, default: {} }));
+jest.mock("react-native-fs", () => ({
+    CachesDirectoryPath: "/cache",
+    mkdir: jest.fn().mockResolvedValue(undefined),
+    readDir: jest.fn().mockResolvedValue([]),
+    writeFile: jest.fn().mockResolvedValue(undefined),
+    unlink: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("react-native-share", () => ({
+    __esModule: true,
+    default: { open: jest.fn() },
+}));
 jest.mock("react-native-reanimated", () => ({
     Easing: { out: (value: unknown) => value, exp: () => 0 },
 }));
 jest.mock("react-native-image-colors", () => ({
     __esModule: true,
     default: {
-        getColors: () => Promise.resolve({ platform: "android", dominant: "#123456" }),
+        getColors: () =>
+            Promise.resolve({ platform: "android", dominant: "#123456" }),
     },
 }));
 jest.mock("@/hooks/useResolvedMusicArtwork", () => ({
@@ -50,9 +65,12 @@ jest.mock("@/core/lyricManager", () => ({
     default: { lyricState: {}, getLyricDiagnosticSnapshot: jest.fn() },
 }));
 jest.mock("@/core/musicShare", () => ({ formatMusicShareMessage: jest.fn() }));
+jest.mock("@/utils/log", () => ({ errorLog: jest.fn() }));
 jest.mock("@/native/utils", () => ({
     __esModule: true,
-    default: { saveShareImage: jest.fn().mockResolvedValue("content://image/1") },
+    default: {
+        saveShareImage: jest.fn().mockResolvedValue("content://image/1"),
+    },
 }));
 jest.mock("@/utils/toast", () => ({
     __esModule: true,
@@ -98,6 +116,10 @@ function mount() {
 beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    (NativeUtils.saveShareImage as jest.Mock).mockResolvedValue(
+        "content://image/1",
+    );
+    (formatMusicShareMessage as jest.Mock).mockResolvedValue("Song - Artist");
     mockArtwork = undefined;
     Object.assign(TrackPlayer, { currentMusic: song });
     Object.assign(lyricManager, {
@@ -139,9 +161,13 @@ it("does not attach a different track's lyrics or a stale/loading parser to a so
 it("selects up to four real rows, captures the preview and waits for pixels before saving", async () => {
     mount();
     act(() => {
-        ["First line", "Second line", "Third line", "Fourth line", "Fifth line"].forEach(
-            line => button(line).props.onPress(),
-        );
+        [
+            "First line",
+            "Second line",
+            "Third line",
+            "Fourth line",
+            "Fifth line",
+        ].forEach(line => button(line).props.onPress());
     });
     expect(
         tree.root.findAll(
@@ -240,3 +266,134 @@ it("does not save a late export after the user has dismissed the panel", async (
     });
     expect(NativeUtils.saveShareImage).not.toHaveBeenCalled();
 });
+
+it("cancels preparation and immediately retries without a late export committing or releasing the new request", async () => {
+    mount();
+    const callbacks: Array<(png: string) => void> = [];
+    mockExport.mockImplementation(done => callbacks.push(done));
+    let old!: Promise<void>;
+    let retry!: Promise<void>;
+    act(() => {
+        old = button("shareCard.save").props.onPress();
+        // Two presses in the same React batch must still start only one capture.
+        button("shareCard.save").props.onPress();
+    });
+    expect(callbacks).toHaveLength(1);
+    act(() => button("shareCard.cancel").props.onPress());
+    act(() => {
+        retry = button("shareCard.save").props.onPress();
+    });
+    await act(async () => {
+        callbacks[0]("obsolete-image");
+        await old;
+    });
+    expect(NativeUtils.saveShareImage).not.toHaveBeenCalled();
+    expect(button("shareCard.save").props.disabled).toBe(true);
+    await act(async () => {
+        callbacks[1]("new-image");
+        await retry;
+    });
+    expect(NativeUtils.saveShareImage).toHaveBeenCalledTimes(1);
+    expect(NativeUtils.saveShareImage).toHaveBeenCalledWith("new-image");
+    expect(button("shareCard.save").props.disabled).toBe(false);
+});
+
+it("ignores a cancelled text preparation and opens only the retry's share sheet", async () => {
+    mount();
+    let resolve!: (message: string) => void;
+    (formatMusicShareMessage as jest.Mock).mockReturnValueOnce(
+        new Promise<string>(done => {
+            resolve = done;
+        }),
+    );
+    const share = jest
+        .spyOn(Share, "share")
+        .mockResolvedValue({ action: Share.sharedAction });
+    let old!: Promise<void>;
+    act(() => {
+        old = button("shareCard.link").props.onPress();
+    });
+    act(() => button("shareCard.cancel").props.onPress());
+    await act(async () => {
+        await button("shareCard.link").props.onPress();
+    });
+    await act(async () => {
+        resolve("obsolete-message");
+        await old;
+    });
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(share).toHaveBeenCalledWith({ message: "Song - Artist" });
+    share.mockRestore();
+});
+
+it("keeps a started gallery write in progress and reports a safe, specific save failure", async () => {
+    mount();
+    mockExport.mockImplementation(done => done("private-image-payload"));
+    let reject!: (reason: Error) => void;
+    (NativeUtils.saveShareImage as jest.Mock).mockReturnValueOnce(
+        new Promise((_, fail) => {
+            reject = fail;
+        }),
+    );
+    let result!: Promise<void>;
+    await act(async () => {
+        result = button("shareCard.save").props.onPress();
+    });
+    expect(button("shareCard.cancel")).toBeUndefined();
+    expect(button("shareCard.save").props.disabled).toBe(true);
+    await act(async () => {
+        reject(new Error("https://secret.test/?token=private"));
+        await result;
+    });
+    expect(Toast.warn).toHaveBeenCalledWith("shareCard.failed.save");
+    expect(errorLog).toHaveBeenCalledWith("share-operation-failed", {
+        action: "save",
+        reason: "save",
+    });
+    expect(JSON.stringify((errorLog as jest.Mock).mock.calls)).not.toMatch(
+        /private|secret|payload/,
+    );
+    expect(button("shareCard.save").props.disabled).toBe(false);
+});
+
+it("bounds a missing SVG callback, permits retry and reports capture failure", async () => {
+    mount();
+    mockExport.mockImplementation(() => undefined);
+    let result!: Promise<void>;
+    act(() => {
+        result = button("shareCard.save").props.onPress();
+    });
+    await act(async () => {
+        jest.advanceTimersByTime(5000);
+        await result;
+    });
+    expect(Toast.warn).toHaveBeenCalledWith("shareCard.failed.capture");
+    expect(NativeUtils.saveShareImage).not.toHaveBeenCalled();
+    expect(button("shareCard.save").props.disabled).toBe(false);
+});
+
+it.each(["file", "share"])(
+    "distinguishes a %s failure and permits retry without logging the native payload",
+    async failure => {
+        mount();
+        mockExport.mockImplementation(done => done("private-png"));
+        const fs = require("react-native-fs");
+        const error = new Error(
+            "private error https://secret.test/?token=value",
+        );
+        if (failure === "file") fs.writeFile.mockRejectedValueOnce(error);
+        else (ImageShare.open as jest.Mock).mockRejectedValueOnce(error);
+        await act(async () => {
+            await button("shareCard.image").props.onPress();
+        });
+        expect(Toast.warn).toHaveBeenCalledWith(`shareCard.failed.${failure}`);
+        expect(errorLog).toHaveBeenCalledWith("share-operation-failed", {
+            action: "image",
+            reason: failure,
+        });
+        expect(JSON.stringify((errorLog as jest.Mock).mock.calls)).not.toMatch(
+            /private|secret|token/,
+        );
+        expect(button("shareCard.image").props.disabled).toBe(false);
+    },
+);

@@ -37,14 +37,16 @@ for (const device of [{width: 320, height: 640}, {width: 363, height: 806}, {wid
                         '@/utils/mediaUtils': strictStub('matching current song', {isSameMediaItem: () => true}),
                         'react-native-image-colors': strictStub('palette', {default: {getColors: noop}}),
                         '@/core/musicShare': strictStub('textShare', {formatMusicShareMessage: noop}),
-                        '@/components/musicShare/shareImage': strictStub('imageExport', {captureShareCard: noop, shareCardPng: noop}),
+                        '@/utils/log': strictStub('error log', {errorLog: noop}),
+                        '@/components/musicShare/shareImage': strictStub('imageExport', {captureShareCard: () => new Promise(() => {}), shareCardPng: noop}),
                         // SVG drawing is checked by native PNG evidence; this boundary supplies its real aspect ratio.
-                        '@/components/musicShare/shareCard': strictStub('SVG', {default: ({width}) => h('View', {style: {width, height: width * .6}})}),
+                        '@/components/musicShare/shareCard': strictStub('SVG', {default: React.forwardRef(({width}, ref) => { React.useImperativeHandle(ref, () => ({toDataURL: noop})); return h('View', {style: {width, height: width * .6}}); })}),
                     });
                     const Panel = loader.load(`@/components/panels/types/${source}`).default;
-                    const {root, unmount} = renderLayout(inAppFontScaleScope(loader, {panel}, h(Panel, {musicItem, onDisplayChanged: noop})), {
+                    const layout = renderLayout(inAppFontScaleScope(loader, {panel}, h(Panel, {musicItem, onDisplayChanged: noop})), {
                         env, width: device.width, height: device.height,
                     });
+                    const {root, unmount} = layout;
                     try {
                         const scroll = findOne(root, r => r.type === 'ScrollView');
                         assert.ok(scroll.frame.height > 44, 'content remains scrollable on small/landscape screens');
@@ -57,6 +59,19 @@ for (const device of [{width: 320, height: 640}, {width: 363, height: 806}, {wid
                             assert.ok(action.frame.height >= 44 - .5, 'actions remain touchable');
                             for (const text of findAll(action, isText)) assert.ok(contains(action.frame, text.frame, 1), `${text.text} stays in its action`);
                         }
+                        if (panel === 'MusicShare') {
+                            const labels = {'zh-CN': ['保存图片', '取消准备'], 'zh-TW': ['儲存圖片', '取消準備'], 'en-US': ['Save image', 'Cancel preparation']}[language];
+                            const busy = layout.interact(() => findOne(root, r => r.props.accessibilityLabel === labels[0]).props.onPress());
+                            const cancel = findOne(busy, r => r.props.accessibilityLabel === labels[1]);
+                            assert.ok(cancel.frame.height >= 48 - .5, 'cancel remains a 48dp target');
+                            for (const text of findAll(cancel, isText)) {
+                                assertReadable(text, text.text);
+                                assert.ok(contains(cancel.frame, text.frame, 1), 'cancel label stays inside its target');
+                            }
+                            const idle = layout.interact(() => cancel.props.onPress());
+                            assert.equal(findAll(idle, r => r.props.accessibilityLabel === labels[1]).length, 0);
+                        }
+
                     } finally { unmount(); }
                 });
             }
