@@ -1332,6 +1332,35 @@ export interface ILanguageData {
     "repeatMode.SINGLE": string; // 单曲循环
 
     "scheme.searchPlayFailed": string; // Scheme 搜索播放失败
+    "shareCard.title": string;
+    "shareCard.preview": string;
+    "shareCard.select": string;
+    "shareCard.selected": string;
+    "shareCard.line": string;
+    "shareCard.noLyrics": string;
+    "shareCard.translation": string;
+    "shareCard.preparing": string;
+    "shareCard.link": string;
+    "shareCard.save": string;
+    "shareCard.image": string;
+    "shareCard.saved": string;
+    "shareCard.failed": string;
+    "lyricTools.title": string;
+    "lyricTools.focus": string;
+    "lyricTools.translation": string;
+    "lyricTools.romanization": string;
+    "lyricTools.offset": string;
+    "lyricTools.search": string;
+    "lyricTools.manage": string;
+    "homeOrder.title": string;
+    "homeOrder.description": string;
+    "homeOrder.continue": string;
+    "homeOrder.discovery": string;
+    "homeOrder.recent": string;
+    "homeOrder.shortcuts": string;
+    "homeOrder.reset": string;
+    "homeOrder.up": string;
+    "homeOrder.down": string;
 }
 
 // 语言接口定义

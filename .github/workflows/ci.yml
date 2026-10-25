@@ -39,6 +39,7 @@ jobs:
                   python3 -I e2e/lib/perf_stats.py --self-test
                   bash e2e/lib/download_source_test.sh
                   bash e2e/lib/tagging_test.sh
+                  python3 -I e2e/lib/share_card.py --self-test
                   bash e2e/lib/plugin_install_test.sh
                   python3 -I e2e/lib/song_target_test.py
                   python3 -I e2e/lib/source_transition_trace.py --self-test

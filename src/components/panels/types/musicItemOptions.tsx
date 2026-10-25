@@ -1,5 +1,5 @@
 import React from "react";
-import { Share, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import rpx from "@/utils/rpx";
 import ListItem from "@/components/base/listItem";
 import ThemeText from "@/components/base/themeText";
@@ -71,25 +71,6 @@ const getAlbumIds = (musicItem: IMusic.IMusicItem) => {
     return { albumId, albumMid };
 };
 
-const formatMusicShareMessage = async (musicItem: IMusic.IMusicItem) => {
-    const title = musicItem.title?.toString().trim();
-    const artist = musicItem.artist?.toString().trim();
-    const musicTitle =
-        title && artist
-            ? `${title} - ${artist}`
-            : title || artist || getMediaUniqueKey(musicItem);
-    let detailUrl = "";
-    try {
-        const result = await pluginManager
-            .getByMedia(musicItem)
-            ?.methods.getMusicDetailPageUrl(musicItem);
-        detailUrl = typeof result === "string" ? result : "";
-    } catch {
-        detailUrl = "";
-    }
-
-    return detailUrl ? `${musicTitle}\n${detailUrl}` : musicTitle;
-};
 
 export default function MusicItemOptions(props: IMusicItemOptionsProps) {
     const { musicItem, musicSheet, from } = props ?? {};
@@ -185,30 +166,7 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
         {
             icon: "share",
             title: t("panel.musicItemOptions.share"),
-            onPress: async () => {
-                try {
-                    await Share.share(
-                        {
-                            title: t("panel.musicItemOptions.shareTitle"),
-                            message: await formatMusicShareMessage(musicItem),
-                        },
-                        {
-                            dialogTitle: t(
-                                "panel.musicItemOptions.shareDialogTitle",
-                                {
-                                    title:
-                                        musicItem.title ||
-                                        t("panel.musicItemOptions.shareTitle"),
-                                },
-                            ),
-                            subject: t("panel.musicItemOptions.shareTitle"),
-                        },
-                    );
-                    hidePanel();
-                } catch {
-                    Toast.warn(t("toast.failToShareMusic"));
-                }
-            },
+            onPress: () => showPanel("MusicShare", { musicItem }),
         },
         {
             icon: "motion-play",

@@ -303,6 +303,8 @@ source "$HERE/storage.sh"
 source "$HERE/lib/plugin_install.sh"
 install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
+source "$HERE/experience.sh"
+if [ "$E2E_SUITE" = all ]; then run_home_order_checks; fi
 
 # 17、18 步：下载、旧版数据迁移的故障注入（storage.sh）
 # shellcheck source=download-source.sh
@@ -367,6 +369,7 @@ fi
 open_link "musicfree://search?keyword=e2e%20$REF"
 flow "搜索并依次点播三首歌" play-three.yaml || finish
 expect_playing "前台播放：在播 C，进度在走" "E2E Tone C"
+run_share_card_checks || finish
 
 # 4. 在后台用媒体键切歌（和通知栏、锁屏按钮走同一条路），再回到应用
 adb shell input keyevent KEYCODE_HOME

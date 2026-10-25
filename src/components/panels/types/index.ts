@@ -1,3 +1,6 @@
+import HomeSections from "./homeSections";
+import LyricTools from "./lyricTools";
+import MusicShare from "./musicShare";
 import AddToMusicSheet from "./addToMusicSheet";
 import AssociateLrc from "./associateLrc";
 import ColorPicker from "./colorPicker";
@@ -25,6 +28,9 @@ import MusicItemLyricOptions from "./musicItemLyricOptions";
 import MusicMetadataSettings from "./musicMetadataSettings";
 
 export default {
+    HomeSections,
+    LyricTools,
+    MusicShare,
     /** 加入歌单 */
     AddToMusicSheet,
     /** 歌曲选项 */

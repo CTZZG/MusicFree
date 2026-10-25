@@ -22,13 +22,35 @@ import com.facebook.react.bridge.WritableMap
 import `fun`.upup.musicfree.diagnostics.CrashDiagnostics
 import `fun`.upup.musicfree.mpvplayer.MpvServiceBridge
 import kotlin.system.exitProcess
+import java.util.concurrent.Executors
 
 class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
 
     private val reactContext: ReactApplicationContext = context;
     private val exitHandler = Handler(Looper.getMainLooper())
+    private val imageWriter = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "MusicFree-share-image")
+    }
 
     override fun getName() = "NativeUtils"
+
+    @ReactMethod
+    fun saveShareImage(encoded: String, promise: Promise) {
+        // Bitmap bounds and MediaStore I/O do not run on the UI thread.
+        imageWriter.execute {
+            try {
+                val uri = ShareImageStore.save(reactContext, encoded).toString()
+                if (reactContext.hasActiveReactInstance()) promise.resolve(uri)
+            } catch (error: Exception) {
+                if (reactContext.hasActiveReactInstance()) promise.reject("share_image_save_failed", error)
+            }
+        }
+    }
+
+    override fun invalidate() {
+        imageWriter.shutdownNow()
+        super.invalidate()
+    }
 
     @ReactMethod
     fun exitApp() {

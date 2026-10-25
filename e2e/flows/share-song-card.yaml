@@ -1,0 +1,14 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "歌曲: E2E Tone C 歌手: E2E Artist"
+- extendedWaitUntil:
+    visible: "分享歌曲与歌词"
+    timeout: 15000
+- tapOn: "分享歌曲与歌词"
+- extendedWaitUntil:
+    visible:
+      text: "保存图片"
+      enabled: true
+    timeout: 15000
+- takeScreenshot: share-song-preview
+- tapOn: "保存图片"

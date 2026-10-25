@@ -1,10 +1,10 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import Share from "react-native-share";
+import { showPanel } from "@/components/panels/usePanel";
 import FastImage from "@/components/base/fastImage";
 import Icon from "@/components/base/icon.tsx";
-import { ImgAsset, B64Asset } from "@/constants/assetsConst";
+import { ImgAsset } from "@/constants/assetsConst";
 import { fontWeightConst, maxFontScaleConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import { useCurrentMusic } from "@/core/trackPlayer";
@@ -100,17 +100,9 @@ export default function NavBar(props: INavBarProps) {
             )}
             <BarButton
                 icon="share"
-                accessibilityLabel={t("musicDetail.shareApp.a11y")}
-                onPress={async () => {
-                    try {
-                        await Share.open({
-                            type: "image/jpeg",
-                            title: "MusicFree-一个插件化的免费音乐播放器",
-                            message: "MusicFree-一个插件化的免费音乐播放器",
-                            url: B64Asset.share,
-                            subject: "MusicFree分享",
-                        });
-                    } catch {}
+                accessibilityLabel={t("shareCard.title")}
+                onPress={() => {
+                    if (musicItem) showPanel("MusicShare", { musicItem });
                 }}
             />
         </View>

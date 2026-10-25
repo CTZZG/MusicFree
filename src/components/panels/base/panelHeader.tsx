@@ -14,6 +14,7 @@ interface IPanelHeaderProps {
     onOk?: () => void;
     hideButtons?: boolean;
     hideDivider?: boolean;
+    allowTitleWrap?: boolean;
     style?: StyleProp<ViewStyle>;
 }
 export default function PanelHeader(props: IPanelHeaderProps) {
@@ -25,12 +26,13 @@ export default function PanelHeader(props: IPanelHeaderProps) {
         onCancel,
         hideButtons,
         hideDivider,
+        allowTitleWrap,
         style,
     } = props;
 
     return (
         <>
-            <View style={[styles.header, style]}>
+            <View style={[styles.header, allowTitleWrap ? styles.wrappedHeader : null, style]}>
                 {hideButtons ? null : (
                     <Pressable style={styles.button} onPress={onCancel}>
                         <ThemeText fontWeight="medium" numberOfLines={1}>
@@ -42,7 +44,7 @@ export default function PanelHeader(props: IPanelHeaderProps) {
                     style={styles.title}
                     fontWeight="bold"
                     fontSize="title"
-                    numberOfLines={1}>
+                    numberOfLines={allowTitleWrap ? undefined : 1}>
                     {title}
                 </ThemeText>
                 {hideButtons ? null : (
@@ -64,6 +66,7 @@ export default function PanelHeader(props: IPanelHeaderProps) {
 }
 
 const styles = StyleSheet.create({
+    wrappedHeader: { height: "auto", minHeight: rpx(100), paddingVertical: 12 },
     header: {
         width: "100%",
         flexDirection: "row",

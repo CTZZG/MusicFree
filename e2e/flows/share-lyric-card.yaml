@@ -1,0 +1,23 @@
+appId: fun.upup.musicfree
+---
+- scrollUntilVisible:
+    element: "选择歌词：First share line"
+    direction: DOWN
+- tapOn: "选择歌词：First share line"
+- scrollUntilVisible:
+    element: "选择歌词：Second share line"
+    direction: DOWN
+- tapOn: "选择歌词：Second share line"
+- scrollUntilVisible:
+    element: "选择歌词：Third share line"
+    direction: DOWN
+- tapOn: "选择歌词：Third share line"
+- scrollUntilVisible:
+    element: "卡片包含译文"
+    direction: UP
+- tapOn: "卡片包含译文"
+- scrollUntilVisible:
+    element: "保存图片"
+    direction: UP
+- takeScreenshot: share-lyric-preview
+- tapOn: "保存图片"

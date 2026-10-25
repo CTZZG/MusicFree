@@ -1,0 +1,6 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "首页顺序"
+- tapOn: "恢复默认顺序"
+- back
+- takeScreenshot: home-order-default

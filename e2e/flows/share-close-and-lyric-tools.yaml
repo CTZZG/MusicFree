@@ -1,0 +1,14 @@
+appId: fun.upup.musicfree
+---
+- back
+- tapOn: "显示歌词"
+- extendedWaitUntil:
+    visible: "歌词工具"
+    timeout: 15000
+- tapOn: "歌词工具"
+- assertVisible: "聚焦歌词"
+- assertVisible: "显示音译"
+- assertVisible: "调整歌词偏移"
+- takeScreenshot: lyric-tools
+- back
+- back

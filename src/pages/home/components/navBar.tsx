@@ -1,3 +1,4 @@
+import { showPanel } from "@/components/panels/usePanel";
 import { HOME_TAB } from "@/core/router";
 import { useNavigation } from "@react-navigation/native";
 import React from "react";
@@ -41,11 +42,16 @@ export default function NavBar() {
                     {t("home.clickToSearch")}
                 </ThemeText>
             </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={t("homeOrder.title")}
+                onPress={() => showPanel("HomeSections")} style={styles.arrange}>
+                <Icon name="bars-3" size={22} color={colors.text} />
+            </Pressable>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
+    arrange: { minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center", marginLeft: 8 },
     appbar: {
         flexDirection: "row",
         alignItems: "center",
