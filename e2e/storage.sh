@@ -92,14 +92,20 @@ download_cache() {
     adb shell "ls -1 '$EXT_FILES/cache/download' 2>/dev/null" | tr -d '\r'
 }
 
-# downloaded_path <标题>：这首歌下载出来的文件路径（只取第一个）
+# 固定音频夹具是 MP3/WMA。歌词等侧车文件参与保全检查，但绝不能冒充音频。
+downloaded_audio_files() {
+    downloaded_files | grep -Ei '\.(mp3|wma)$'
+}
+
+# downloaded_path <标题>：这首歌下载出来的音频路径（只取第一个）
 downloaded_path() {
-    downloaded_files | grep -F "/$1 - " | head -n 1 | sed 's/^[0-9a-f]*  //'
+    downloaded_audio_files | grep -F "/$1 - " | head -n 1 | sed 's/^[0-9a-f]*  //'
 }
 
 # download_settled <标题>：这首已经下载出来、下载缓存清空了，并且 2 秒里文件没再变
 download_settled() {
     local first second
+    [ -n "$(downloaded_path "$1")" ] || return 1
     first=$(downloaded_files | grep -F "/$1 - ")
     [ -n "$first" ] && [ -z "$(download_cache)" ] || return 1
     sleep 2
@@ -123,7 +129,7 @@ store_write_failures_above() {
 
 # new_download <标题> <之前的 downloaded_files>：这首有了之前没有的文件，下载缓存也清空了
 new_download() {
-    [ -n "$(missing_lines "$(downloaded_files)" "$2" | grep -F "/$1 - ")" ] && [ -z "$(download_cache)" ]
+    [ -n "$(missing_lines "$(downloaded_audio_files)" "$2" | grep -F "/$1 - ")" ] && [ -z "$(download_cache)" ]
 }
 
 # missing_lines <之前> <之后>：之前有、之后没有（或者内容变了）的行

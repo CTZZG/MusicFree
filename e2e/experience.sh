@@ -36,7 +36,16 @@ new_share_image() {
 }
 
 run_share_card_checks() {
-    local file kind
+    local file kind paused before_resume
+    # Maestro's share/tool flows can outlast the 180s fixture. Pause through the
+    # actual media control, then explicitly restore it before the existing C/B/A regression.
+    adb shell input keyevent KEYCODE_MEDIA_PAUSE
+    if ! wait_for_state PAUSED "E2E Tone C" 15; then
+        fail "分享：原曲暂停前提" "未暂停在 C，没有执行分享流程"
+        return 1
+    fi
+    paused=$(session)
+    printf '%s\n' "$paused" > "$OUT/share-playback-paused.json"
     list_share_images > "$OUT/share-images-before.txt" || true
     for kind in song lyric; do
         if ! flow "分享：实际生成 $kind 卡片" "share-$kind-card.yaml" ||
@@ -53,6 +62,23 @@ run_share_card_checks() {
     done
     if python3 -I "$HERE/lib/share_card.py" "$OUT/share-card-song.png" "$OUT/share-card-lyric.png" > "$OUT/share-card-pixels.json" 2> "$OUT/share-card-pixels-error.txt"; then
         pass "分享：实际 PNG 含远程封面与选中的译文歌词"
-    else fail "分享：实际 PNG 含远程封面与选中的译文歌词" "见 share-card-pixels-error.txt"; fi
-    flow "歌词工具：保留偏移、聚焦与音译入口" share-close-and-lyric-tools.yaml
+    else
+        fail "分享：实际 PNG 含远程封面与选中的译文歌词" "见 share-card-pixels-error.txt"
+        return 1
+    fi
+    flow "歌词工具：保留偏移、聚焦与音译入口" share-close-and-lyric-tools.yaml || return 1
+    before_resume=$(session)
+    printf '%s\n' "$before_resume" > "$OUT/share-playback-before-resume.json"
+    if ! python3 -I "$SESSION" still-paused "E2E Tone C" "$paused" "$before_resume"; then
+        fail "分享：原曲暂停前提" "UI 检查期间已换歌或进度改变"
+        return 1
+    fi
+    adb shell input keyevent KEYCODE_MEDIA_PLAY
+    if wait_for_state PLAYING "E2E Tone C" 15; then
+        session > "$OUT/share-playback-resumed.json"
+        pass "分享：UI 检查后显式恢复原曲播放"
+    else
+        fail "分享：UI 检查后显式恢复原曲播放" "未回到 C，停止后续播放回归"
+        return 1
+    fi
 }
