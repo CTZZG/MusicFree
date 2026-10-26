@@ -18,9 +18,9 @@ def landscape_png(data):
 
 def check(directory):
     root = Path(directory)
-    files = list((root / "maestro" / "continuity-landscape").rglob("continuity-landscape-page.png"))
+    files = list((root / "screens").glob("player-landscape-page.png"))
     if len(files) != 1:
-        raise ValueError("expected one actual Maestro landscape page screenshot")
+        raise ValueError("expected one actual landscape page screenshot")
     result = landscape_png(files[0].read_bytes())
     result["animationScales"] = animation_evidence(root)
     (root / "player-landscape-image.json").write_text(json.dumps(result))

@@ -306,6 +306,18 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
+if [ "$E2E_SUITE" = player-observation ]; then
+    open_link "musicfree://search?keyword=e2e%20$REF"
+    recorded_player_flow "观察准备：实际点播 A/B/C" play-three.yaml selection || finish
+    expect_playing "观察准备：C 引擎前进" "E2E Tone C" || finish
+    adb shell input keyevent KEYCODE_MEDIA_PAUSE
+    if ! wait_for_state PAUSED "E2E Tone C" 15; then
+        fail "播放页观察：暂停前提" "没有暂停在 C，未执行观察"
+        finish
+    fi
+    run_player_continuity_checks
+    finish
+fi
 if [ "$E2E_SUITE" = all ] || [ "$E2E_SUITE" = experience ]; then run_home_order_checks; fi
 
 run_foreground_experience_checks() {

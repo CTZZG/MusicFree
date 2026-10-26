@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Observe the real player/mini UI. No player commands, extra playback state or speed gate.
 recorded_player_flow() {
-    local title=$1 file=$2 label=$3 recorder result=0 remote="/sdcard/mf-continuity-$3.mp4"
+    local title=$1 file=$2 label=$3 runner=${4:-flow} recorder result=0 remote="/sdcard/mf-continuity-$3.mp4"
     local capture_size=540x1200
     if [ "$label" = landscape ]; then capture_size=1200x540; fi
     recorder=$(adb shell "screenrecord --time-limit 180 --size $capture_size --bit-rate 800000 $remote >/sdcard/mf-continuity-$label.log 2>&1 </dev/null & echo \$!" | tr -d '\r')
@@ -10,7 +10,7 @@ recorded_player_flow() {
         fail "录屏：$label" "录屏未启动，没有用截图充当视频"
         return 1
     fi
-    flow "$title" "$file" || result=$?
+    "$runner" "$title" "$file" || result=$?
     adb shell kill -2 "$recorder" 2>/dev/null || true
     for _ in {1..50}; do
         if ! adb shell kill -0 "$recorder" 2>/dev/null; then break; fi
@@ -26,6 +26,67 @@ recorded_player_flow() {
     fi
     if [ "$result" -ne 0 ]; then return "$result"; fi
     pass "录屏：$label" "真实录屏已解码；只保留观察证据，不设置速度通过线"
+}
+
+# Maestro's settling waits follow all visible animation, including unrelated
+# views. For animation observation use a separate read-only UI snapshot helper;
+# actual taps/back still use shell input and the same 15-second visible target.
+prepare_public_ui_observer() {
+    local driver
+    if [ ! -s "${E2E_UI_OBSERVER_APK:-}" ] ||
+        ! adb install -r -t "$E2E_UI_OBSERVER_APK" > "$OUT/ui-observer-install.txt" 2>&1; then
+        fail "播放页观察：公共 UI 前提" "只读快照 helper 未安装，未执行观察"
+        return 1
+    fi
+    for driver in dev.mobile.maestro dev.mobile.maestro.test; do
+        adb shell pm path "$driver" > "$OUT/ui-observer-$driver-path.txt" || return 1
+        grep -q '^package:' "$OUT/ui-observer-$driver-path.txt" || return 1
+        adb shell am force-stop "$driver" || return 1
+    done
+    for _ in {1..20}; do
+        adb shell dumpsys activity instrumentation > "$OUT/ui-observer-handoff.txt" || return 1
+        if ! grep -Fq dev.mobile.maestro "$OUT/ui-observer-handoff.txt"; then break; fi
+        sleep .25
+    done
+    if grep -Fq dev.mobile.maestro "$OUT/ui-observer-handoff.txt"; then
+        fail "播放页观察：公共 UI 前提" "原测试驱动没有释放 UiAutomation"
+        return 1
+    fi
+    DRIVER_INSTALLED=0
+}
+
+public_ui_target() {
+    local label=$1 tag=$2 encoded
+    encoded=$(printf '%s' "$label" | base64 | tr -d '\n')
+    adb shell am instrument -w -r -e labelBase64 "$encoded" \
+        fun.upup.musicfree.e2e.ui/.UiSnapshot > "$OUT/ui-$tag-instrumentation.txt" 2>&1 || return 1
+    python3 -I "$HERE/lib/ui_observer.py" "$OUT/ui-$tag-instrumentation.txt" "$label" > "$OUT/ui-$tag-point.txt"
+}
+
+player_observation_ui_flow() {
+    local title=$1 phase=${2#continuity-} count=2 i point x y
+    local mini='歌曲: E2E Tone C 歌手: E2E Artist'
+    phase=${phase%.yaml}
+    if [ "$phase" = landscape ]; then count=1; fi
+    public_ui_target "$mini" "$phase-before" || return 1
+    sleep .4
+    shot "player-$phase-mini-before"
+    for ((i=1; i<=count; i++)); do
+        point=$(cat "$OUT/ui-$phase-before-point.txt")
+        read -r x y <<< "$point"
+        adb shell input tap "$x" "$y" || return 1
+        public_ui_target '更多操作' "$phase-page-$i" || return 1
+        # Keep a stable frame as well as the complete transition in the video.
+        # This is not a latency sample or a replacement for the visible target.
+        sleep .4
+        shot "player-$phase-page"
+        adb shell input keyevent KEYCODE_BACK || return 1
+        public_ui_target "$mini" "$phase-returned-$i" || return 1
+        sleep .4
+        cp "$OUT/ui-$phase-returned-$i-point.txt" "$OUT/ui-$phase-before-point.txt" || return 1
+        shot "player-$phase-mini-after"
+    done
+    pass "$title" "实际可见节点快照和公开触摸/返回，不等待整个界面的所有动画结束"
 }
 
 # Restore settings on every returned error, without replacing the main EXIT trap
@@ -48,6 +109,13 @@ run_player_continuity_checks() {
     local rotation key value
     local -A scales
     local -a rotation_args
+    local preparation_failures=${FAILED:-0}
+    if ! prepare_public_ui_observer; then
+        if [ "${FAILED:-0}" -eq "$preparation_failures" ]; then
+            fail "播放页观察：公共 UI 前提" "设备命令未完成，没有执行观察"
+        fi
+        return 1
+    fi
     rotation=$(adb shell wm user-rotation | tr -d '\r')
     if ! [[ "$rotation" =~ ^(free|lock\ [0-3])$ ]]; then
         fail "播放页观察：设备前提" "无法保存旋转设置，没有执行观察"
@@ -89,18 +157,18 @@ run_player_continuity_checks() {
             if ! adb shell settings put global "$key" 1; then return 1; fi
         done
         player_animation_scales default 1 before || return 1
-        recorded_player_flow "播放页与迷你条：进入、返回两次" continuity-default.yaml default || return 1
+        recorded_player_flow "播放页与迷你条：进入、返回两次" continuity-default.yaml default player_observation_ui_flow || return 1
         player_animation_scales default 1 after || return 1
         if ! adb shell wm user-rotation lock 1; then return 1; fi
         player_animation_scales landscape 1 before || return 1
-        recorded_player_flow "播放页：旋转后进入与返回" continuity-landscape.yaml landscape || return 1
+        recorded_player_flow "播放页：旋转后进入与返回" continuity-landscape.yaml landscape player_observation_ui_flow || return 1
         player_animation_scales landscape 1 after || return 1
         if ! adb shell wm user-rotation lock 0; then return 1; fi
         for key in "${!scales[@]}"; do
             if ! adb shell settings put global "$key" 0; then return 1; fi
         done
         player_animation_scales reduced 0 before || return 1
-        recorded_player_flow "播放页与迷你条：系统移除动画下进入、返回" continuity-reduced.yaml reduced || return 1
+        recorded_player_flow "播放页与迷你条：系统移除动画下进入、返回" continuity-reduced.yaml reduced player_observation_ui_flow || return 1
         player_animation_scales reduced 0 after || return 1
         if ! python3 -I "$HERE/lib/player_continuity_evidence.py" "$OUT"; then
             fail "播放页观察：设备证据" "实际横屏截图或 1x/0x 设置记录不完整"

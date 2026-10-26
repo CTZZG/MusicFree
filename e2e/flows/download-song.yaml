@@ -6,9 +6,14 @@ appId: fun.upup.musicfree
     visible: "${TITLE} 更多操作"
     timeout: 45000
 - tapOn: "${TITLE} 更多操作"
-- scrollUntilVisible:
-    element: "下载"
-    direction: DOWN
+# The automatic scroll left this modal at its initial position. Keep
+# the swipe inside the actual recorded menu list (y=1364..2337 / 2400).
+- swipe:
+    start: "50%, 90%"
+    end: "50%, 65%"
+    duration: 400
+- extendedWaitUntil:
+    visible: "下载"
     timeout: 10000
 - tapOn: "下载"
 - extendedWaitUntil:

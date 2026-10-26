@@ -91,5 +91,9 @@
         "class": "android.widget.Button"
       }
     }
-  ]
+  ],
+  "subsequentFailure": {
+    "source": "Beta219 run40284541379, step005 automatic scrolling; screenshot still at same modal top",
+    "rawHierarchySha256": "9b4bc46ad2ff8dfd63de995c461e4f31e02de8c7766204768b9347c9e10d0d18"
+  }
 }

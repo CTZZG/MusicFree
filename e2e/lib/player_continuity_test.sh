@@ -3,6 +3,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 source "$HERE/player_continuity.sh"
+prepare_public_ui_observer() { [ "$CASE" != observer_failed ]; }
 python3 -I "$HERE/lib/player_continuity_evidence.py" --self-test
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -41,7 +42,7 @@ recorded_player_flow() {
     fi
     if [ "$CASE" = "$3" ]; then fail "$3 boundary"; return 1; fi
 }
-for CASE in normal normal_original_one default landscape reduced moved bad_rotation bad_landscape restore_failed rotation_command_failed scale_command_ignored reduced_scale_ignored scale_reset_during_flow; do
+for CASE in normal normal_original_one default landscape reduced moved bad_rotation bad_landscape restore_failed rotation_command_failed scale_command_ignored reduced_scale_ignored scale_reset_during_flow observer_failed; do
     OUT="$WORK/$CASE"; mkdir -p "$OUT"; : > "$OUT/results"; : > "$OUT/adb.log"
     FAILED=0
     ORIGINAL_SCALE=0.0
@@ -53,14 +54,14 @@ for CASE in normal normal_original_one default landscape reduced moved bad_rotat
     else
         [ "$result" -ne 0 ] && [ "$FAILED" -gt 0 ] || { echo "accepted/lost failure $CASE"; exit 1; }
     fi
-    if [ "$CASE" != bad_rotation ]; then
+    if [ "$CASE" != bad_rotation ] && [ "$CASE" != observer_failed ]; then
         for key in window_animation_scale transition_animation_scale animator_duration_scale; do
             grep -q "^shell settings put global $key $ORIGINAL_SCALE$" "$OUT/adb.log"
         done
         grep -q '^shell wm user-rotation free$' "$OUT/adb.log"
     fi
 done
-echo 'player continuity orchestration: 13 cases passed; 1x/0x, cleanup and parent failure status retained'
+echo 'player continuity orchestration: 14 cases passed; 1x/0x, cleanup and parent failure status retained'
 
 # Exercise the real recorder wrapper separately; no real video/device is claimed here.
 adb() {
