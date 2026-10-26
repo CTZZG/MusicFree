@@ -6,6 +6,7 @@ python3 -I "$HERE/lib/playback_info_flow_test.py"
 python3 -I "$HERE/lib/download_menu_flow_test.py"
 python3 -I "$HERE/lib/ui_observer.py" --self-test
 bash "$HERE/lib/player_continuity_test.sh"
+bash "$HERE/lib/maestro_handoff_test.sh"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 SESSION="$HERE/lib/media_session.py"
