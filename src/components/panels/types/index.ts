@@ -1,6 +1,7 @@
 import HomeSections from "./homeSections";
 import LyricTools from "./lyricTools";
 import MusicShare from "./musicShare";
+import PlaybackInfo from "./playbackInfo";
 import AddToMusicSheet from "./addToMusicSheet";
 import AssociateLrc from "./associateLrc";
 import ColorPicker from "./colorPicker";
@@ -31,6 +32,7 @@ export default {
     HomeSections,
     LyricTools,
     MusicShare,
+    PlaybackInfo,
     /** 加入歌单 */
     AddToMusicSheet,
     /** 歌曲选项 */

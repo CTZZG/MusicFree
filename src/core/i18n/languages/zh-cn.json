@@ -1254,5 +1254,18 @@
     "homeOrder.shortcuts": "快捷入口",
     "homeOrder.reset": "恢复默认顺序",
     "homeOrder.up": "将“{title}”上移",
-    "homeOrder.down": "将“{title}”下移"
+    "homeOrder.down": "将“{title}”下移",
+    "playbackInfo.title": "当前播放信息",
+    "playbackInfo.unknown": "未知",
+    "playbackInfo.noTrack": "当前未播放歌曲",
+    "playbackInfo.note": "这里是当前音频的解码信息，不代表设备输出。插件音质标签可能与实际文件不同。",
+    "playbackInfo.loading": "正在读取音频信息…",
+    "playbackInfo.originalSource": "歌曲原来源",
+    "playbackInfo.playbackSource": "实际播放来源",
+    "playbackInfo.qualityLabel": "插件音质标签",
+    "playbackInfo.codec": "音频编码",
+    "playbackInfo.sampleRate": "采样率",
+    "playbackInfo.channelCount": "声道数",
+    "playbackInfo.bitrate": "码率（估计）",
+    "playbackInfo.refresh": "刷新音频信息"
 }

@@ -41,6 +41,7 @@ jobs:
                   bash e2e/lib/tagging_test.sh
                   python3 -I e2e/lib/share_card.py --self-test
                   python3 -I e2e/lib/share_receiver.py --self-test
+                  python3 -I e2e/lib/playback_info_evidence.py --self-test
                   bash e2e/lib/experience_test.sh
                   bash e2e/lib/share_receiver_test.sh
                   bash e2e/lib/plugin_install_test.sh

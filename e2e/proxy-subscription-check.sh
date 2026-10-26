@@ -27,7 +27,7 @@ adb install -r -t android/app/build/outputs/apk/androidTest/debug/app-debug-andr
 adb install -r -t "$E2E_FOCUS_APK"
 # Raw engine samples are written by instrumentation, independently of the
 # service's projected clock. Do not retain samples from a previous installation.
-adb shell run-as fun.upup.musicfree rm -f files/engine-progress-samples.jsonl files/quality-loading-state.jsonl files/audiotrack-seek-clock.jsonl
+adb shell run-as fun.upup.musicfree rm -f files/engine-progress-samples.jsonl files/quality-loading-state.jsonl files/audiotrack-seek-clock.jsonl files/playback-audio-info.jsonl
 # Record this adb version's actual missing-file behavior as text, never JSONL.
 # The exporter must reject it regardless of whether exec-out returns zero.
 MISSING_SAMPLE_STATUS=0
@@ -40,7 +40,7 @@ if export_engine_progress_samples "$OUT/missing-sample-probe.jsonl"; then
 fi
 test ! -e "$OUT/missing-sample-probe.jsonl"
 echo 'Missing sample export rejected without creating a JSONL artifact.'
-TEST_CLASSES="fun.upup.musicfree.utils.ShareImageStoreTest,fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.JsFlowProbePolicyTest,fun.upup.musicfree.mpvplayer.SourceTransitionReaderTest,fun.upup.musicfree.mpvplayer.AwaitedSnapshotTest,fun.upup.musicfree.mpvplayer.SourceReplacementPositionTest,fun.upup.musicfree.mpvplayer.PendingSeekTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest,fun.upup.musicfree.mpvplayer.PlaybackServiceStartupTest,fun.upup.musicfree.mpvplayer.AudioTrackSeekClockTest,fun.upup.musicfree.mpvplayer.SlowQualityLoadingTest,fun.upup.musicfree.lyricUtil.LyricColorsInstrumentedTest,fun.upup.musicfree.lyricUtil.LyricUiTaskRunnerTest,fun.upup.musicfree.lyricUtil.LyricUiTaskInstrumentedTest,fun.upup.musicfree.mp3Util.OggCoverWriterInstrumentedTest"
+TEST_CLASSES="fun.upup.musicfree.mpvplayer.PlaybackAudioInfoInstrumentedTest,fun.upup.musicfree.utils.ShareImageStoreTest,fun.upup.musicfree.network.PublicHttpsNetworkPolicyTest,fun.upup.musicfree.network.SystemProxyNetworkPolicyTest,fun.upup.musicfree.network.NotificationArtworkProxyTest,fun.upup.musicfree.mpvplayer.LiveUpdateNotificationStyleTest,fun.upup.musicfree.mpvplayer.EngineProgressProbeTest,fun.upup.musicfree.mpvplayer.JsFlowProbePolicyTest,fun.upup.musicfree.mpvplayer.SourceTransitionReaderTest,fun.upup.musicfree.mpvplayer.AwaitedSnapshotTest,fun.upup.musicfree.mpvplayer.SourceReplacementPositionTest,fun.upup.musicfree.mpvplayer.PendingSeekTest,fun.upup.musicfree.mpvplayer.LiveUpdateEngineProgressTest,fun.upup.musicfree.mpvplayer.PlaybackServiceStartupTest,fun.upup.musicfree.mpvplayer.AudioTrackSeekClockTest,fun.upup.musicfree.mpvplayer.SlowQualityLoadingTest,fun.upup.musicfree.lyricUtil.LyricColorsInstrumentedTest,fun.upup.musicfree.lyricUtil.LyricUiTaskRunnerTest,fun.upup.musicfree.lyricUtil.LyricUiTaskInstrumentedTest,fun.upup.musicfree.mp3Util.OggCoverWriterInstrumentedTest"
 adb shell am instrument -w -r -e class "$TEST_CLASSES" \
     fun.upup.musicfree.test/androidx.test.runner.AndroidJUnitRunner \
     > "$OUT/instrumentation.log" 2>&1
@@ -83,6 +83,8 @@ PY
 export_engine_progress_samples "$OUT/engine-progress-samples.jsonl"
 export_engine_progress_samples "$OUT/quality-loading-state.jsonl" files/quality-loading-state.jsonl
 export_engine_progress_samples "$OUT/audiotrack-seek-clock.jsonl" files/audiotrack-seek-clock.jsonl
+export_engine_progress_samples "$OUT/playback-audio-info.jsonl" files/playback-audio-info.jsonl
+python3 -I e2e/lib/playback_info_evidence.py "$OUT/playback-audio-info.jsonl"
 # 先把每次换源的数字打进任务日志（结果附件不一定下载得到），再按原规则判定
 python3 -I e2e/lib/source_transition_trace.py seek-clock "$OUT/audiotrack-seek-clock.jsonl" || true
 python3 -I native/mpv/check-seek-clock.py "$OUT/audiotrack-seek-clock.jsonl"

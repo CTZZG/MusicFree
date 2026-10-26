@@ -74,6 +74,7 @@ jobs:
                   python3 -I e2e/lib/js_flow_evidence.py --self-test
                   python3 -I e2e/lib/quality_loading_evidence.py --self-test
                   python3 -I e2e/lib/loading_spinner_evidence.py --self-test
+                  python3 -I e2e/lib/playback_info_evidence.py --self-test
             - name: Build transient audio focus helper
               run: |
                   bash e2e/focus-app/build.sh "$RUNNER_TEMP/api36-focus.apk"

@@ -23,6 +23,7 @@ import {
 } from "./mpvQueue";
 import type {
     PlayerAdapter,
+    PlayerAudioInfo,
     PlayerAdapterBrowseItem,
     PlayerAdapterConfig,
     PlayerAdapterEvent,
@@ -1402,6 +1403,30 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             prepareToken: this.preparedNextTrack?.prepareToken ?? null,
             preparedQueueRevision:
                 this.preparedNextTrack?.queueRevision ?? null,
+        };
+    }
+
+    async getAudioInfo(): Promise<PlayerAudioInfo | null> {
+        const mediaId = this.activeMediaId;
+        const generation = this.activeLoadGeneration;
+        if (
+            !this.hasLoaded || !mediaId || generation == null ||
+            this.pendingActivation
+        ) return null;
+        const info = await NativeMpvPlayer.getAudioInfo();
+        // Switching away and back to the same song is still a different load.
+        if (
+            !info || this.pendingActivation || this.activeMediaId !== mediaId ||
+            this.activeLoadGeneration !== generation || info.mediaId !== mediaId ||
+            info.loadGeneration !== generation
+        ) return null;
+        return {
+            mediaId,
+            loadGeneration: generation,
+            codec: info.codec,
+            sampleRate: info.sampleRate,
+            channelCount: info.channelCount,
+            bitrate: info.bitrate,
         };
     }
 

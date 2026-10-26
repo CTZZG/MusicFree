@@ -58,6 +58,17 @@ export interface PlayerAdapterProgress {
     buffered: number;
 }
 
+/** A generation-scoped snapshot of the decoded file, not the device/DAC output. */
+export interface PlayerAudioInfo {
+    mediaId: string;
+    loadGeneration: number;
+    codec: string | null;
+    sampleRate: number | null;
+    channelCount: number | null;
+    /** Estimated bits/second; never inferred from a plugin quality label. */
+    bitrate: number | null;
+}
+
 export interface PlayerAdapterSeekedEvent {
     position: number;
     duration: number;
@@ -298,6 +309,8 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
 
     /** 后端内部一致性诊断；不得用 UI 镜像伪装原生 active 身份。 */
     getPlaybackDiagnostics?(): Promise<Record<string, unknown>>;
+
+    getAudioInfo?(): Promise<PlayerAudioInfo | null>;
 
     /**
      * 把后端队列整体重排为最新的播放列表顺序（上层在每次 setPlayList 时调用）。

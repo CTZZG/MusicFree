@@ -18,6 +18,7 @@ const mockNativeMpvPlayer = {
     getIsPlaying: jest.fn(async () => true),
     getPosition: jest.fn(async () => 0),
     getDuration: jest.fn(async () => 180),
+    getAudioInfo: jest.fn(async (): Promise<any> => null),
     isAndroidAutoConnected: jest.fn(async () => false),
     updateQueueSnapshot: jest.fn(async () => undefined),
     updateMetadata: jest.fn(async () => undefined),
@@ -940,5 +941,57 @@ describe("MpvPlayerAdapter volume levelling (ReplayGain)", () => {
         expect(mockNativeMpvPlayer.setReplayGain.mock.calls).toEqual([["track"], ["off"]]);
         expect(mockNativeMpvPlayer.setVolume).not.toHaveBeenCalled();
         expect(mockNativeMpvPlayer.loadAndPlay).not.toHaveBeenCalled();
+    });
+});
+
+describe("read-only decoded audio snapshots", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        for (const key of Object.keys(mockListeners)) delete mockListeners[key];
+        mockNativeMpvPlayer.loadAndPlay.mockResolvedValue(undefined);
+        mockNativeMpvPlayer.getAudioInfo.mockResolvedValue(null);
+    });
+    const decoded = (payload: any) => ({
+        mediaId: payload.mediaId, loadGeneration: payload.loadGeneration,
+        codec: "mp3", sampleRate: 16000, channelCount: 1, bitrate: 16000,
+    });
+    it("does not read an unloaded/pending file or change playback to obtain its information", async () => {
+        const adapter = await createAdapter();
+        expect(await adapter.getAudioInfo()).toBeNull();
+        await adapter.loadQueue([track("a")], 0, { autoPlay: false });
+        expect(await adapter.getAudioInfo()).toBeNull();
+        expect(mockNativeMpvPlayer.getAudioInfo).not.toHaveBeenCalled();
+        await confirmLastExplicitLoad();
+        const payload = lastLoadPayload();
+        mockNativeMpvPlayer.getAudioInfo.mockResolvedValue({ ...decoded(payload), url: "https://secret.test/?token=private" });
+        const before = [mockNativeMpvPlayer.loadAndPlay.mock.calls.length, mockNativeMpvPlayer.pause.mock.calls.length,
+            mockNativeMpvPlayer.resume.mock.calls.length, mockNativeMpvPlayer.claimPlayback.mock.calls.length, mockNativeMpvPlayer.seekTo.mock.calls.length];
+        expect(await adapter.getAudioInfo()).toEqual(decoded(payload));
+        expect([mockNativeMpvPlayer.loadAndPlay.mock.calls.length, mockNativeMpvPlayer.pause.mock.calls.length,
+            mockNativeMpvPlayer.resume.mock.calls.length, mockNativeMpvPlayer.claimPlayback.mock.calls.length, mockNativeMpvPlayer.seekTo.mock.calls.length]).toEqual(before);
+    });
+    it.each(["media", "generation"])("rejects a native snapshot with mismatched %s identity", async field => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")]); await confirmLastExplicitLoad();
+        const info = decoded(lastLoadPayload());
+        if (field === "media") info.mediaId = "other";
+        else info.loadGeneration--;
+        mockNativeMpvPlayer.getAudioInfo.mockResolvedValue(info);
+        expect(await adapter.getAudioInfo()).toBeNull();
+    });
+    it("rejects a late reply after the same song is reloaded at a different quality", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a")]); await confirmLastExplicitLoad();
+        const old = decoded(lastLoadPayload());
+        let done!: (info: any) => void;
+        mockNativeMpvPlayer.getAudioInfo.mockReturnValueOnce(new Promise(resolve => {
+            done = resolve;
+        }));
+        const result = adapter.getAudioInfo();
+        await adapter.loadQueue([{ ...track("a"), url: "https://example.test/new-quality.mp3" }]);
+        await confirmLastExplicitLoad();
+        expect(lastLoadPayload().loadGeneration).not.toBe(old.loadGeneration);
+        done(old);
+        expect(await result).toBeNull();
     });
 });

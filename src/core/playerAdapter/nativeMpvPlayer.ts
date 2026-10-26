@@ -1,6 +1,7 @@
 import { NativeEventEmitter, NativeModules, Platform } from "react-native";
 
 import type { ReplayGainMode } from "./replayGain";
+import type { PlayerAudioInfo } from "./types";
 
 /**
  * mpv 播放引擎的原生桥接层（仅 Android）。
@@ -163,6 +164,7 @@ interface MpvPlayerNativeModule {
     getIsPlaying(): Promise<boolean>;
     getPosition(): Promise<number>;
     getDuration(): Promise<number>;
+    getAudioInfo?(): Promise<PlayerAudioInfo | null>;
     isAndroidAutoConnected(): Promise<boolean>;
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
@@ -300,6 +302,10 @@ const NativeMpvPlayer = {
     getIsPlaying: () => assertAvailable().getIsPlaying(),
     getPosition: () => assertAvailable().getPosition(),
     getDuration: () => assertAvailable().getDuration(),
+    getAudioInfo: (): Promise<PlayerAudioInfo | null> => {
+        const module = assertAvailable();
+        return module.getAudioInfo ? module.getAudioInfo() : Promise.resolve(null);
+    },
     isAndroidAutoConnected: () => assertAvailable().isAndroidAutoConnected(),
     updateQueueSnapshot: (payload: MpvQueueSnapshotPayload) =>
         assertAvailable().updateQueueSnapshot(payload),
