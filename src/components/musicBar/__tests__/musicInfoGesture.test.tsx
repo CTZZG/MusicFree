@@ -70,12 +70,12 @@ import MusicInfo from "../musicInfo";
 let tree: ReactTestRenderer | undefined;
 function render(width = 200) {
     act(() => {
-        tree = create(<MusicInfo musicItem={mockSong} />); 
+        tree = create(<MusicInfo musicItem={mockSong} />);
     });
     const container = tree!.root.findAll(node => typeof node.props.onLayout === "function")[0];
     expect(container).toBeDefined();
     act(() => {
-        container.props.onLayout({ nativeEvent: { layout: { width, height: 64 } } }); 
+        container.props.onLayout({ nativeEvent: { layout: { width, height: 64 } } });
     });
     expect(mockPanEnd).toBeDefined();
 }
@@ -84,7 +84,7 @@ beforeEach(() => {
     mockNext.mockClear(); mockPrevious.mockClear(); mockCompletions.length = 0; mockPanEnd = undefined;
 });
 afterEach(() => {
-    act(() => tree?.unmount()); tree = undefined; 
+    act(() => tree?.unmount()); tree = undefined;
 });
 
 const cases: [string, number, number, "previous" | "next" | "none"][] = [
@@ -113,12 +113,12 @@ it.each(cases)("uses the actual pan callback: %s", async (_name, translationX, v
 it("does not dispatch a skip when Reanimated reports cancellation", async () => {
     render();
     await act(async () => {
- mockPanEnd!({ translationX: 80, velocityX: 200 }, true); 
+ mockPanEnd!({ translationX: 80, velocityX: 200 }, true);
     });
     expect(mockNext).not.toHaveBeenCalled(); expect(mockPrevious).not.toHaveBeenCalled();
     expect(mockCompletions).toHaveLength(1);
     await act(async () => {
-        mockCompletions[0](false); 
+        mockCompletions[0](false);
     });
     expect(mockNext).not.toHaveBeenCalled(); expect(mockPrevious).not.toHaveBeenCalled();
 });
