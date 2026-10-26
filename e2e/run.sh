@@ -14,6 +14,7 @@
 # E2E_SUITE=perf 时只跑第 23 步（性能基线：冷启动、搜索、在线和本地点歌，只记录不设门限，见 perf.sh），
 # 同样要单独选。E2E_PERF_RUNS 改每项的次数（默认 10，另有 1 次预热）。
 # E2E_SUITE=crash 时只跑第 24 步（本机崩溃记录：Java 崩溃和原生崩溃都记下、清空后不再显示，见 crash.sh）。
+# E2E_SUITE=experience 只跑首页、分享、播放信息和播放页/迷你条观察，复用同一实际安装包。
 # E2E_AUDIO_HARDENING=enable|throw 时开头打开 Android 17 的后台音频加固，用“视频”替身作对照，
 # 结束时检查本应用没有被拦下（见 lib/audio_hardening.sh），只能在 Android 17 及以上跑。
 set -uo pipefail
@@ -305,7 +306,18 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
-if [ "$E2E_SUITE" = all ]; then run_home_order_checks; fi
+if [ "$E2E_SUITE" = all ] || [ "$E2E_SUITE" = experience ]; then run_home_order_checks; fi
+
+run_foreground_experience_checks() {
+    open_link "musicfree://search?keyword=e2e%20$REF"
+    recorded_player_flow "搜索并依次点播三首歌" play-three.yaml selection || return 1
+    expect_playing "前台播放：在播 C，进度在走" "E2E Tone C" || return 1
+    run_share_card_checks
+}
+if [ "$E2E_SUITE" = experience ]; then
+    run_foreground_experience_checks
+    finish
+fi
 
 # 17、18 步：下载、旧版数据迁移的故障注入（storage.sh）
 # shellcheck source=download-source.sh
@@ -367,10 +379,7 @@ fi
 
 # 3. 搜索并依次播放三首，确认系统媒体会话里的进度真的在走。新装的应用点搜索结果时，
 #    用整页结果替换播放队列（旧版配置迁移时设的默认值），所以队列就是测试源 A 的那 7 首
-open_link "musicfree://search?keyword=e2e%20$REF"
-recorded_player_flow "搜索并依次点播三首歌" play-three.yaml selection || finish
-expect_playing "前台播放：在播 C，进度在走" "E2E Tone C"
-run_share_card_checks || finish
+run_foreground_experience_checks || finish
 
 # 4. 在后台用媒体键切歌（和通知栏、锁屏按钮走同一条路），再回到应用
 adb shell input keyevent KEYCODE_HOME

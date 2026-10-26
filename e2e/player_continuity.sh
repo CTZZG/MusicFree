@@ -30,6 +30,20 @@ recorded_player_flow() {
 
 # Restore settings on every returned error, without replacing the main EXIT trap
 # or losing the main harness fail counter in a subshell. Only scalar settings are read.
+player_animation_scales() {
+    local phase=$1 expected=$2 edge=$3 key value
+    local file="$OUT/player-$phase-animation-$edge.txt"
+    : > "$file"
+    for key in window_animation_scale transition_animation_scale animator_duration_scale; do
+        value=$(adb shell settings get global "$key" | tr -d '\r')
+        printf '%s=%s\n' "$key" "$value" >> "$file"
+        if ! [[ "$value" =~ ^$expected([.]0+)?$ ]]; then
+            fail "播放页观察：$phase 动画前提" "实际 $key=$value，不把倍率不符的视频当作对照"
+            return 1
+        fi
+    done
+}
+
 run_player_continuity_checks() {
     local rotation key value
     local -A scales
@@ -68,24 +82,30 @@ run_player_continuity_checks() {
     run_player_observation_steps() {
         session > "$OUT/player-observation-before.json"
         if ! adb shell wm user-rotation lock 0; then return 1; fi
+        # android-emulator-runner normally disables animations for E2E. The old
+        # clip called "default" therefore also had scale 0. Explicitly establish
+        # and read back 1x; require it to remain set after the real UI flow.
+        for key in "${!scales[@]}"; do
+            if ! adb shell settings put global "$key" 1; then return 1; fi
+        done
+        player_animation_scales default 1 before || return 1
         recorded_player_flow "播放页与迷你条：进入、返回两次" continuity-default.yaml default || return 1
+        player_animation_scales default 1 after || return 1
         if ! adb shell wm user-rotation lock 1; then return 1; fi
+        player_animation_scales landscape 1 before || return 1
         recorded_player_flow "播放页：旋转后进入与返回" continuity-landscape.yaml landscape || return 1
-        if ! python3 -I "$HERE/lib/player_continuity_evidence.py" "$OUT"; then
-            fail "播放页观察：实际横屏截图" "设置已请求旋转，但截图没有显示横屏，不能算横屏验收"
-            return 1
-        fi
+        player_animation_scales landscape 1 after || return 1
         if ! adb shell wm user-rotation lock 0; then return 1; fi
         for key in "${!scales[@]}"; do
             if ! adb shell settings put global "$key" 0; then return 1; fi
-            value=$(adb shell settings get global "$key" | tr -d '\r')
-            if ! [[ "$value" =~ ^0([.]0+)?$ ]]; then
-                fail "播放页观察：减少动态前提" "系统设置未生效"
-                return 1
-            fi
-            printf '%s=%s\n' "$key" "$value" >> "$OUT/player-observation-reduced-settings.txt"
         done
+        player_animation_scales reduced 0 before || return 1
         recorded_player_flow "播放页与迷你条：系统移除动画下进入、返回" continuity-reduced.yaml reduced || return 1
+        player_animation_scales reduced 0 after || return 1
+        if ! python3 -I "$HERE/lib/player_continuity_evidence.py" "$OUT"; then
+            fail "播放页观察：设备证据" "实际横屏截图或 1x/0x 设置记录不完整"
+            return 1
+        fi
         session > "$OUT/player-observation-after.json"
         if ! python3 -I "$SESSION" still-paused "E2E Tone C" \
             "$(cat "$OUT/player-observation-before.json")" "$(cat "$OUT/player-observation-after.json")"; then

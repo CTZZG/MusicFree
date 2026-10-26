@@ -6,8 +6,9 @@ appId: fun.upup.musicfree
     visible: "${TITLE} 更多操作"
     timeout: 45000
 - tapOn: "${TITLE} 更多操作"
-- extendedWaitUntil:
-    visible: "下载"
+- scrollUntilVisible:
+    element: "下载"
+    direction: DOWN
     timeout: 10000
 - tapOn: "下载"
 - extendedWaitUntil:
