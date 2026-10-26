@@ -1,140 +1,94 @@
-name: Proxy and subscription regression checks
-
+# ISOLATED DIAGNOSTIC BRANCH ONLY. Never merge this workflow over the product gate.
+name: Player gesture observation (diagnostic only)
 on:
-    pull_request:
-        paths:
-            # 改到 debug 版 APK 原生部分的都要在 Android 16 模拟器上跑一遍：原生代码（网络层、播放服务和 Live Update
-            # 通知、MainActivity 和开屏页）、原生依赖（package.json、package-lock.json）和它们的补丁（patches/）
-            - 'android/**'
-            - 'native/mpv/**'
-            - 'patches/**'
-            - 'package.json'
-            - 'package-lock.json'
-            - 'src/components/base/appBar.tsx'
-            - 'src/pages/setting/settingTypes/pluginSetting/**'
-            - 'src/core/trackPlayer/**'
-            - 'src/core/mediaSource/**'
-            - 'src/core/appConfig.ts'
-            - 'src/core/playerAdapter/**'
-            - 'src/core/pluginManager/**'
-            - 'src/core/lyricManager.ts'
-            - 'src/entry/bootstrap/bootstrap.ts'
-            - 'src/components/panels/types/musicQuality.tsx'
-            - 'src/pages/musicDetail/**'
-            - 'src/pages/searchPage/**'
-            - 'src/components/musicBar/**'
-            - 'src/utils/qualities.ts'
-            - 'src/utils/keyValueStore/**'
-            - 'src/utils/a11yLabels.ts'
-            - 'src/core/i18n/languages/**'
-            - 'e2e/flows/plugin-*.yaml'
-            - 'e2e/proxy-subscription-check.sh'
-            - 'e2e/lib/engine_progress_artifact*.sh'
-            - 'e2e/android16-js-flow-check.sh'
-            - 'e2e/lib/js_flow_evidence.py'
-            - 'e2e/lib/quality_loading_evidence.py'
-            - 'e2e/lib/loading_spinner_evidence.py'
-            - 'e2e/plugins/e2e-source-js-flow.js'
-            - 'e2e/focus-app/**'
-            - '.github/workflows/proxy-subscription-check.yml'
-    workflow_dispatch:
-
+  workflow_dispatch:
+    inputs:
+      apk_run_id:
+        required: true
+        default: '40252050369'
+        type: string
+      expected_apk_commit:
+        required: true
+        default: d775c352f2cf0b5b838d65840a0e567bd3605d7f
+        type: string
 permissions:
-    contents: read
-
-concurrency:
-    group: proxy-subscription-${{ github.event.pull_request.number || github.ref }}
-    cancel-in-progress: true
-
+  contents: read
+  actions: read
 jobs:
-    emulator:
-        runs-on: ubuntu-latest
-        timeout-minutes: 60
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MAESTRO_VERSION: '2.8.0'
+      MAESTRO_CLI_NO_ANALYTICS: '1'
+      MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: beta-apks-*
+          path: apk
+          merge-multiple: true
+          run-id: ${{ inputs.apk_run_id }}
+          github-token: ${{ github.token }}
+      - name: Validate reused APK and native probe
         env:
-            HUSKY: '0'
-            NODE_ENV: development
-            E2E_TEST_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        steps:
-            - uses: actions/checkout@v5
-              with:
-                  fetch-depth: 0
-            - uses: actions/setup-node@v6
-              with:
-                  node-version: '22'
-                  cache: npm
-            - uses: actions/setup-java@v5
-              with:
-                  distribution: temurin
-                  java-version: '17'
-                  cache: gradle
-            - run: npm ci --no-audit --no-fund
-            - name: Check raw sample export failure paths
-              run: |
-                  bash e2e/lib/engine_progress_artifact_test.sh
-                  python3 -I e2e/lib/js_flow_evidence.py --self-test
-                  python3 -I e2e/lib/quality_loading_evidence.py --self-test
-                  python3 -I e2e/lib/loading_spinner_evidence.py --self-test
-                  python3 -I e2e/lib/playback_info_evidence.py --self-test
-            - name: Build transient audio focus helper
-              run: |
-                  bash e2e/focus-app/build.sh "$RUNNER_TEMP/api36-focus.apk"
-                  echo "E2E_FOCUS_APK=$RUNNER_TEMP/api36-focus.apk" >> "$GITHUB_ENV"
-            - name: Restore native test APKs
-              id: native-apks
-              uses: actions/cache/restore@v4
-              with:
-                  path: |
-                      android/app/build/outputs/apk/debug/app-x86_64-debug.apk
-                      android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-                  key: proxy-test-apks-${{ runner.os }}-${{ hashFiles('android/**', 'package.json', 'package-lock.json', 'patches/**', '.github/workflows/proxy-subscription-check.yml') }}
-            - name: Build debug app and native test APK
-              if: steps.native-apks.outputs.cache-hit != 'true'
-              working-directory: android
-              run: |
-                  chmod +x gradlew
-                  ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest \
-                    -PreactNativeArchitectures=x86_64 \
-                    --no-daemon --max-workers=2 \
-                    -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
-            - name: Save native test APKs
-              if: steps.native-apks.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v4
-              with:
-                  path: |
-                      android/app/build/outputs/apk/debug/app-x86_64-debug.apk
-                      android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-                  key: ${{ steps.native-apks.outputs.cache-primary-key }}
-            - name: Install Maestro
-              run: |
-                  curl -fsSL https://get.maestro.mobile.dev | bash
-                  echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-            - name: Enable KVM
-              run: |
-                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-                  sudo udevadm control --reload-rules
-                  sudo udevadm trigger --name-match=kvm
-            - name: Check proxy routing, real-engine Live Update progress and subscription transition
-              uses: reactivecircus/android-emulator-runner@v2
-              with:
-                  api-level: 36
-                  target: google_apis
-                  arch: x86_64
-                  profile: pixel_6
-                  cores: 3
-                  ram-size: 4096M
-                  disable-animations: false
-                  emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
-                  script: bash e2e/proxy-subscription-check.sh
-            - name: Upload native reports and transition recordings
-              if: always()
-              uses: actions/upload-artifact@v7
-              with:
-                  name: proxy-subscription-${{ github.run_id }}
-                  path: |
-                      proxy-subscription-results/
-                      android/app/build/reports/tests/
-                      android/app/build/test-results/
-                      android/app/build/reports/androidTests/
-                      android/app/build/outputs/androidTest-results/
-                  if-no-files-found: ignore
-                  retention-days: 14
+          EXPECTED_COMMIT: ${{ inputs.expected_apk_commit }}
+          APK_RUN_ID: ${{ inputs.apk_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APK_RUN_ID" =~ ^[0-9]+$ ]]
+          commit=$(sed -n 's/^Commit: //p' apk/android-build-info.txt | head -n 1)
+          test "$commit" = "$EXPECTED_COMMIT"
+          (cd apk && sha256sum -c SHA256SUMS.txt)
+          shopt -s nullglob
+          apks=(apk/*x86_64-release.apk)
+          test ${#apks[@]} -eq 1
+          echo "E2E_APK=${apks[0]}" >> "$GITHUB_ENV"
+          echo "E2E_APK_COMMIT=$commit" >> "$GITHUB_ENV"
+          echo "E2E_APK_SOURCE=reused Beta run $APK_RUN_ID" >> "$GITHUB_ENV"
+          bash e2e/gesture-probe/build.sh "$RUNNER_TEMP/gesture-probe.apk"
+          echo "E2E_GESTURE_PROBE_APK=$RUNNER_TEMP/gesture-probe.apk" >> "$GITHUB_ENV"
+          PYTHONDONTWRITEBYTECODE=1 python3 -I e2e/gesture-probe/test_inspect.py
+          sha256sum "$RUNNER_TEMP/gesture-probe.apk"
+      - name: Install video validation and Maestro
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          curl -fsSL https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Observe actual held gestures
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          E2E_SUITE: gesture-observation
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 3
+          ram-size: 4096M
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
+          script: bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results
+      - name: Upload raw observation
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gesture-observation-${{ github.run_id }}
+          path: e2e-results
+          if-no-files-found: error
+          retention-days: 14

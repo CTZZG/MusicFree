@@ -306,6 +306,13 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
+if [ "$E2E_SUITE" = gesture-observation ]; then
+    source "$HERE/gesture-probe/observe.sh"
+    run_held_gesture_observation || {
+        fail "手势诊断：未完整执行" "参见原始证据，未用空样本充成功"
+    }
+    finish
+fi
 if [ "$E2E_SUITE" = all ] || [ "$E2E_SUITE" = experience ]; then run_home_order_checks; fi
 
 run_foreground_experience_checks() {

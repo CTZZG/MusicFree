@@ -1,9 +1,10 @@
 # Held mini-player swipe observation (test-only)
 
 This branch preserves a small diagnostic helper. It does not change the app,
-version, dependencies, player state, or normal workflows. No new device run has
-been dispatched for it. Do not merge a temporary manual diagnostic workflow into
-the product branch.
+version or dependencies. Its own `proxy-subscription-check.yml` is now a manual
+diagnostic workflow; NEVER merge that workflow or the temporary
+`gesture-observation` suite over the product gate. No new App is built. The
+diagnostic reuses Beta217's d775 Release APK and records its build source/hash.
 
 The actual `MusicInfo` pan callback at base `8c56c244` was replayed with only
 device/animation boundaries replaced. With a 200-wide view, three controls are
@@ -27,8 +28,8 @@ temporarily adopts shell input-injection permission, sends a finger stroke and
 returned Android VelocityTracker value describes the injected events, not
 RNGH's callback or a physical finger.
 
-Before using it, wait for the current Beta218 navigation/rotation/reduced-motion
-recordings. A future targeted probe must reuse Beta217's d775 app, keep MusicFree
+Beta218 navigation/rotation videos have been inspected, with their old 0x/0x
+animation limitation preserved. The targeted probe reuses Beta217's d775 app, keeps MusicFree
 in front on the mini-player, and derive coordinates from its actual visible
 node bounds. Start on fixture B so previous=A and next=C are both valid. Avoid
 guessing coordinates or changing production test entry points. Ensure no other

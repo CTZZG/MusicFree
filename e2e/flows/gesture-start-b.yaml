@@ -1,0 +1,10 @@
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "E2E Tone B, E2E Artist"
+    timeout: 45000
+- tapOn: "E2E Tone B, E2E Artist"
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone B 歌手: E2E Artist"
+    timeout: 30000
+- takeScreenshot: gesture-start-b
