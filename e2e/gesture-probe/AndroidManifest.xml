@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="fun.upup.musicfree.e2e.gesture">
+    <application android:label="E2E Gesture Probe" android:allowBackup="false" android:debuggable="true" android:testOnly="true" />
+    <instrumentation android:name=".HeldGestureProbe" android:targetPackage="fun.upup.musicfree.e2e.gesture" />
+</manifest>
