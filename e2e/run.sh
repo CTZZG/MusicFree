@@ -304,6 +304,7 @@ source "$HERE/lib/plugin_install.sh"
 install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
+source "$HERE/player_continuity.sh"
 if [ "$E2E_SUITE" = all ]; then run_home_order_checks; fi
 
 # 17、18 步：下载、旧版数据迁移的故障注入（storage.sh）
@@ -367,7 +368,7 @@ fi
 # 3. 搜索并依次播放三首，确认系统媒体会话里的进度真的在走。新装的应用点搜索结果时，
 #    用整页结果替换播放队列（旧版配置迁移时设的默认值），所以队列就是测试源 A 的那 7 首
 open_link "musicfree://search?keyword=e2e%20$REF"
-flow "搜索并依次点播三首歌" play-three.yaml || finish
+recorded_player_flow "搜索并依次点播三首歌" play-three.yaml selection || finish
 expect_playing "前台播放：在播 C，进度在走" "E2E Tone C"
 run_share_card_checks || finish
 

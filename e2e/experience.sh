@@ -69,6 +69,7 @@ run_share_card_checks() {
     run_share_receiver_checks || return 1
     flow "播放信息：读取真实解码参数并刷新" playback-info.yaml || return 1
     flow "歌词工具：保留偏移、聚焦与音译入口" share-close-and-lyric-tools.yaml || return 1
+    run_player_continuity_checks || return 1
     before_resume=$(session)
     printf '%s\n' "$before_resume" > "$OUT/share-playback-before-resume.json"
     if ! python3 -I "$SESSION" still-paused "E2E Tone C" "$paused" "$before_resume"; then

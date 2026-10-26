@@ -2,6 +2,8 @@
 # Orchestration test with fake device/clock boundaries. Real PNGs stay a device requirement.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+python3 -I "$HERE/lib/playback_info_flow_test.py"
+bash "$HERE/lib/player_continuity_test.sh"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 SESSION="$HERE/lib/media_session.py"
@@ -44,8 +46,11 @@ flow() {
 run_share_receiver_checks() {
     if [ "$CASE" = receiver_failed ]; then fail "receiver boundary"; return 1; fi
 }
+run_player_continuity_checks() {
+    if [ "$CASE" = observation_failed ]; then fail "observation boundary"; return 1; fi
+}
 
-for CASE in normal pause_failed resume_failed wrong_pixels progress_changed receiver_failed info_failed; do
+for CASE in normal pause_failed resume_failed wrong_pixels progress_changed receiver_failed info_failed observation_failed; do
     OUT="$WORK/$CASE"; mkdir -p "$OUT"; : > "$OUT/results"; : > "$OUT/device-images"
     STATE=PLAYING; TITLE='E2E Tone C'; POSITION=19000; FLOWS=0
     result=0; run_share_card_checks > "$OUT/check.log" 2>&1 || result=$?
@@ -60,4 +65,4 @@ for CASE in normal pause_failed resume_failed wrong_pixels progress_changed rece
         if [ "$CASE" = pause_failed ]; then [ "$FLOWS" -eq 0 ]; fi
     fi
 done
-echo 'experience orchestration: 7 cases passed (long UI, pause/resume failure, missing pixels, changed position, receiver failure, info failure)'
+echo 'experience orchestration: 8 cases passed (long UI, pause/resume failure, missing pixels, changed position, receiver failure, info/observation failure)'
