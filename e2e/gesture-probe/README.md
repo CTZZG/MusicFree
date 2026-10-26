@@ -61,3 +61,21 @@ extracts only ffmpeg/ffprobe, checks both executables, and bounds video-tool and
 Maestro preparation separately. No input events, APK, sampling or direction
 analysis is changed. Metadata/checksum and shell/Python extraction were checked
 locally; the150MB tool archive was not downloaded into the disk-limited executor.
+
+Diagnostic123 (run40318451608) reached the real App. Its first right case has82
+accepted events/code-1, +409px over the measured744px mini, and1821ms at exactly
+the same endpoint. B/PAUSED18700ms became C/PLAYING852ms; expected previous=A.
+The raw Android tracker was -.019198854px/s, not exactly zero. The old invented
+.001 fitted-velocity threshold rejected this complete raw case and stopped the
+remaining two controls. Preserve the failed workflow; do not call all3 complete.
+Data quality now uses the actual constant-coordinate hold, finite tracker value,
+and complete injection, followed by a required correct A/C/B UI outcome. The old
+right case remains a wrong-direction rejection. No engine/pause/window rules change.
+
+The old instrumentation dumpsys query was unsupported on Android14 despite exit0.
+The shared handoff function now checks actual process names with a validated
+header and rejects live test-driver processes. Its6 host boundary tests are not
+a device claim. The original123 native code-1 and accepted input remain real.
+The original93 video packets have strictly increasing DTS; preserving demux time
+base for null output removes mux timestamp quantization diagnostics while keeping
+-xerror complete decoding. No video frames, inputs or negative controls are removed.

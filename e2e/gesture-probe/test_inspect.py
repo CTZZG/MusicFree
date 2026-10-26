@@ -62,13 +62,21 @@ class Checks(unittest.TestCase):
 
     def test_incomplete_or_moving_injection_rejected(self):
         rejected = deepcopy(self.points()); rejected[30]["accepted"] = False
+        moving_end = deepcopy(self.points()); moving_end[-2]["x"] += 1
         no_hold = deepcopy(self.points())
         for p in no_hold: p["time"] //= 10
         for points, code, velocity in [(self.points()[:-1], -1, 0), (rejected, -1, 0),
                                         (no_hold, -1, 0), (self.points(), 0, 0),
-                                        (self.points(), -1, 10), (self.points(), -1, float("nan"))]:
+                                        (moving_end, -1, 0), (self.points(), -1, float("nan"))]:
             self.prepare(points, code, velocity)
             with self.assertRaises(ValueError): impl.result(self.root, "right")
+
+    def test_exact_raw_hold_does_not_require_zero_fitted_velocity(self):
+        self.prepare(velocity=-.019198854)
+        with redirect_stdout(io.StringIO()): impl.result(self.root, "right")
+        report = json.loads((self.root / "gesture-right-result.json").read_text())
+        self.assertEqual(report["injectedVelocityX"], -.019198854)
+        self.assertFalse(report["matches"])
 
 
 if __name__ == "__main__":

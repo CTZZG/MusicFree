@@ -46,7 +46,11 @@ run_held_gesture_cases() {
             return 1
         fi
         cat "$OUT/gesture-$kind-analysis.txt"
-        pass "手势诊断：$kind 原始证据完整" "方向是否正确以 result.json 的 matches 为准，不把诊断采集成功当作产品通过"
+        if ! python3 -I -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["matches"] is True else 1)' "$OUT/gesture-$kind-result.json"; then
+            fail "手势：$kind 实际方向" "真实方向与拖动意图不符，保留原始证据"
+            return 1
+        fi
+        pass "手势：$kind 方向与原始证据完整" "实际 UI/会话方向正确，非物理手指或声音测量"
     done
 }
 
@@ -54,19 +58,9 @@ run_held_gesture_observation() {
     open_link "musicfree://search?keyword=e2e%20$REF"
     flow "手势诊断：准备真实 B 队列" gesture-start-b.yaml || return 1
     expect_playing "手势诊断：B 引擎实际前进" "E2E Tone B" || return 1
-    # Same verified driver packages as the original API16 harness. Never stop MusicFree.
-    for driver in dev.mobile.maestro dev.mobile.maestro.test; do
-        adb shell pm path "$driver" > "$OUT/$driver-path.txt" || return 1
-        grep -q '^package:' "$OUT/$driver-path.txt" || return 1
-        adb shell am force-stop "$driver" || return 1
-    done
-    for _ in {1..20}; do
-        adb shell dumpsys activity instrumentation > "$OUT/gesture-automation-handoff.txt" || return 1
-        if ! grep -Fq dev.mobile.maestro "$OUT/gesture-automation-handoff.txt"; then break; fi
-        sleep .25
-    done
-    if grep -Fq dev.mobile.maestro "$OUT/gesture-automation-handoff.txt"; then
-        fail "手势诊断：UiAutomation 所有权" "Maestro 未释放，未注入触摸"
+    source "$HERE/lib/maestro_handoff.sh"
+    if ! stop_maestro_ui_driver "$OUT/gesture-automation"; then
+        fail "手势诊断：测试驱动退出前提" "未得到有效的进程列表，未注入触摸"
         return 1
     fi
     adb install -r -t "$E2E_GESTURE_PROBE_APK" > "$OUT/gesture-install.txt" 2>&1 || return 1
@@ -82,7 +76,7 @@ run_held_gesture_observation() {
     adb pull /sdcard/mf-gesture-recorder.log "$OUT/gesture-recorder.log" >/dev/null 2>&1 || true
     if ! adb pull /sdcard/mf-gesture.mp4 "$OUT/gesture-observation.mp4" > "$OUT/gesture-video-pull.txt" 2>&1 ||
         ! ffprobe -v error -select_streams v:0 -show_entries stream=width,height,codec_name:format=duration -of json "$OUT/gesture-observation.mp4" > "$OUT/gesture-video.json" ||
-        ! ffmpeg -v error -xerror -i "$OUT/gesture-observation.mp4" -f null - 2> "$OUT/gesture-video-decode.txt"; then result=1; fi
+        ! ffmpeg -v error -xerror -i "$OUT/gesture-observation.mp4" -fps_mode passthrough -enc_time_base -1 -f null - 2> "$OUT/gesture-video-decode.txt"; then result=1; fi
     if [ "$result" -ne 0 ]; then
         fail "手势诊断：采集完整性" "实际触摸/UI/会话或视频不完整，不能作方向结论"
         return 1

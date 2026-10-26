@@ -54,7 +54,8 @@ jobs:
           echo "E2E_APK_SOURCE=reused Beta run $APK_RUN_ID" >> "$GITHUB_ENV"
           bash e2e/gesture-probe/build.sh "$RUNNER_TEMP/gesture-probe.apk"
           echo "E2E_GESTURE_PROBE_APK=$RUNNER_TEMP/gesture-probe.apk" >> "$GITHUB_ENV"
-          PYTHONDONTWRITEBYTECODE=1 python3 -I e2e/gesture-probe/test_inspect.py
+          python3 -B -I e2e/gesture-probe/test_inspect.py
+          bash e2e/lib/maestro_handoff_test.sh
           sha256sum "$RUNNER_TEMP/gesture-probe.apk"
       # Diagnostic121 spent its entire 30-minute job downloading ~100 apt
       # packages/recommendations and never reached a device. Use one immutable,
