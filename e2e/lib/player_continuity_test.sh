@@ -19,10 +19,12 @@ adb() {
     case "$*" in
         'shell wm user-rotation') if [ "$CASE" = bad_rotation ]; then echo invalid; else echo free; fi ;;
         'shell settings get global '*)
-            if [ -e "$OUT/zero-${5}" ]; then echo 0; else echo 1.0; fi ;;
+            if [ -e "$OUT/state-${5}" ]; then cat "$OUT/state-${5}"; else echo "$ORIGINAL_SCALE"; fi ;;
         'shell settings put global '*)
-            if [ "$CASE" = restore_failed ] && [ "${6}" = 1.0 ]; then return 1; fi
-            if [ "${6}" = 0 ]; then touch "$OUT/zero-${5}"; else rm -f "$OUT/zero-${5}"; fi ;;
+            if [ "$CASE" = restore_failed ] && [ "${6}" = 2.0 ]; then return 1; fi
+            if [ "$CASE" = scale_command_ignored ] && [ "${6}" = 1 ]; then return 0; fi
+            if [ "$CASE" = reduced_scale_ignored ] && [ "${6}" = 0 ]; then return 0; fi
+            printf '%s\n' "${6}" > "$OUT/state-${5}" ;;
         'shell wm user-rotation '*) [ "$CASE" != rotation_command_failed ] ;;
         *) return 1 ;;
     esac
@@ -34,25 +36,31 @@ python3() {
 recorded_player_flow() {
     echo "$3" >> "$OUT/phases"
     if [ "$3" = reduced ]; then touch "$OUT/reduced"; fi
+    if [ "$CASE" = scale_reset_during_flow ] && [ "$3" = default ]; then
+        printf '0.0\n' > "$OUT/state-animator_duration_scale"
+    fi
     if [ "$CASE" = "$3" ]; then fail "$3 boundary"; return 1; fi
 }
-for CASE in normal default landscape reduced moved bad_rotation bad_landscape restore_failed rotation_command_failed; do
+for CASE in normal normal_original_one default landscape reduced moved bad_rotation bad_landscape restore_failed rotation_command_failed scale_command_ignored reduced_scale_ignored scale_reset_during_flow; do
     OUT="$WORK/$CASE"; mkdir -p "$OUT"; : > "$OUT/results"; : > "$OUT/adb.log"
     FAILED=0
+    ORIGINAL_SCALE=0.0
+    if [ "$CASE" = normal_original_one ]; then ORIGINAL_SCALE=1.0; fi
+    if [ "$CASE" = restore_failed ]; then ORIGINAL_SCALE=2.0; fi
     result=0; run_player_continuity_checks > "$OUT/test.log" 2>&1 || result=$?
-    if [ "$CASE" = normal ]; then
+    if [[ "$CASE" = normal* ]]; then
         [ "$result" -eq 0 ] && [ "$(cat "$OUT/phases")" = $'default\nlandscape\nreduced' ] || { cat "$OUT/test.log"; exit 1; }
     else
         [ "$result" -ne 0 ] && [ "$FAILED" -gt 0 ] || { echo "accepted/lost failure $CASE"; exit 1; }
     fi
     if [ "$CASE" != bad_rotation ]; then
         for key in window_animation_scale transition_animation_scale animator_duration_scale; do
-            grep -q "^shell settings put global $key 1.0$" "$OUT/adb.log"
+            grep -q "^shell settings put global $key $ORIGINAL_SCALE$" "$OUT/adb.log"
         done
         grep -q '^shell wm user-rotation free$' "$OUT/adb.log"
     fi
 done
-echo 'player continuity orchestration: 9 cases passed; cleanup and parent failure status retained'
+echo 'player continuity orchestration: 13 cases passed; 1x/0x, cleanup and parent failure status retained'
 
 # Exercise the real recorder wrapper separately; no real video/device is claimed here.
 adb() {
