@@ -50,3 +50,14 @@ Record the native UI outcome before any product fix. The helper has been
 compiled locally with SDK36/javac/D8/aapt2/zipalign/apksigner, but has not run on a
 device. No new app build, physical audio, real phone, performance or production
 certificate claim follows from that compilation.
+
+Diagnostic121 (run40313951713) completed no emulator scenarios. It was cancelled
+at the 30-minute job boundary while apt downloaded about100 packages, including
+optional drivers and a speech model. The missing result artifact is a consequence,
+not an App or gesture failure. Raw log is preserved externally. Tool preparation
+now uses BtbN's immutable2026-10-25 FFmpeg8.1.3 archive with GitHub asset SHA256
+3300aa8c1d68e79e20d22117d3748a6121a49fe09b7eece3dcc38b84a1104e71,
+extracts only ffmpeg/ffprobe, checks both executables, and bounds video-tool and
+Maestro preparation separately. No input events, APK, sampling or direction
+analysis is changed. Metadata/checksum and shell/Python extraction were checked
+locally; the150MB tool archive was not downloaded into the disk-limited executor.
