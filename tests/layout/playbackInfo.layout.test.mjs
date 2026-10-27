@@ -74,7 +74,7 @@ for (const device of [
                         '@/components/panels/types/playbackInfo',
                     ).default;
                     const layout = renderLayout(
-                        inAppFontScaleScope(loader, {}, h(Panel)),
+                        inAppFontScaleScope(loader, {panel: 'PlaybackInfo'}, h(Panel)),
                         {env, width: device.width, height: device.height},
                     );
                     try {
@@ -93,6 +93,7 @@ for (const device of [
                         );
                         for (const text of findAll(root, isText)) {
                             assertReadable(text, text.text);
+                            assert.equal(text.props.allowFontScaling, true, 'panel text follows system font size');
                             assert.ok(
                                 text.frame.x >= -1 &&
                                     text.frame.x + text.frame.width <=

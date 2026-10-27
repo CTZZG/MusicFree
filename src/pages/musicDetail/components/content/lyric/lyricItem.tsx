@@ -286,6 +286,7 @@ function AnimatedWord(props: {
     primary: boolean;
     isPseudo?: boolean;
     enableFloat?: boolean;
+    emphasisDuration: number;
 }) {
     const {
         word,
@@ -296,12 +297,13 @@ function AnimatedWord(props: {
         primary,
         isPseudo,
         enableFloat,
+        emphasisDuration,
     } = props;
     const currentPositionMs = useMemo(() => getCurrentPositionMsShared(), []);
     const maxTranslateY = Math.min(rpx(5), fontSize * ACTIVE_FLOAT_RATE);
     const wordStartTime = word.startTime;
     const wordDuration = word.duration;
-    const emphasis = getWordEmphasis(wordDuration, !!(primary && !isPseudo && enableFloat));
+    const emphasis = getWordEmphasis(emphasisDuration, !!(primary && !isPseudo && enableFloat));
     const animatedStyle = useAnimatedStyle(() => {
         const startTime = wordStartTime;
         const duration = Math.max(wordDuration || 0, MIN_WORD_DURATION);
@@ -350,6 +352,7 @@ function AnimatedWord(props: {
         enableFloat,
         wordDuration,
         wordStartTime,
+        emphasisDuration,
     ]);
 
     return (
@@ -397,6 +400,7 @@ function AnimatedWordGroup(props: {
             <View style={lyricStyles.charGroup}>
                 <AnimatedWord
                     word={characters[0]}
+                    emphasisDuration={word.duration}
                     activeColor={activeColor}
                     inactiveColor={inactiveColor}
                     fontSize={fontSize}
@@ -429,6 +433,7 @@ function AnimatedWordGroup(props: {
                 <AnimatedWord
                     key={`${character.startTime}-${index}`}
                     word={character}
+                    emphasisDuration={word.duration}
                     activeColor={activeColor}
                     inactiveColor={inactiveColor}
                     fontSize={fontSize}

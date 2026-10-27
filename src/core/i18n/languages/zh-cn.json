@@ -1224,6 +1224,7 @@
     "shareCard.selected": "已选 {count}/4 句",
     "shareCard.line": "选择歌词：{text}",
     "shareCard.noLyrics": "播放这首歌并加载歌词后，可以在这里选句分享。",
+    "shareCard.reloadLyrics": "重新载入歌词",
     "shareCard.translation": "卡片包含译文",
     "shareCard.preparing": "正在准备封面；加载失败时使用简洁卡片。",
     "shareCard.link": "分享歌曲信息",

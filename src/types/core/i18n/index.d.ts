@@ -1338,6 +1338,7 @@ export interface ILanguageData {
     "shareCard.selected": string;
     "shareCard.line": string;
     "shareCard.noLyrics": string;
+    "shareCard.reloadLyrics": string;
     "shareCard.translation": string;
     "shareCard.preparing": string;
     "shareCard.link": string;

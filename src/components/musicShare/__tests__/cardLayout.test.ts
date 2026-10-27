@@ -22,6 +22,16 @@ describe("song and lyric card layout", () => {
         }
     });
 
+    it("wraps wide Latin characters before they can cross the card edge", () => {
+        const word = "W".repeat(26);
+        const card = getShareCardLayout(word, "", [{ index: 0, text: word }], false);
+        expect(card.title).toHaveLength(2);
+        expect(card.text).toHaveLength(2);
+        expect(card.title.join("")).toBe(word);
+        expect(card.text.map(row => row.text).join("")).toBe(word);
+        expect(card.text[0].text.length).toBeLessThanOrEqual(17);
+    });
+
     it("fits the maximum translated selection and separates title from the image", () => {
         const lines = Array.from({ length: 4 }, (_, index) => ({
             index,

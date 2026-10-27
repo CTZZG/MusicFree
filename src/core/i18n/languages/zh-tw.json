@@ -1224,6 +1224,7 @@
     "shareCard.preview": "分享卡片預覽",
     "shareCard.select": "可選最多四句歌詞；不選則產生歌曲卡片。",
     "shareCard.noLyrics": "播放這首歌並載入歌詞後，可以在這裡選句分享。",
+    "shareCard.reloadLyrics": "重新載入歌詞",
     "shareCard.translation": "卡片包含譯文",
     "shareCard.preparing": "正在準備封面；載入失敗時使用簡潔卡片。",
     "shareCard.link": "分享歌曲資訊",
