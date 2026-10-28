@@ -383,9 +383,9 @@ export default function BackupSetting() {
                 try {
                     const url = text.trim();
                     if (url.endsWith(".json") || url.endsWith(".txt")) {
-                        const raw = String(
-                            (await remoteBackupHttpClient.get(url)).data ?? "",
-                        );
+                        // Axios can already decode JSON. Preserve that object rather
+                        // than converting a valid backup to "[object Object]".
+                        const raw = (await remoteBackupHttpClient.get(url)).data;
                         closePanel();
                         setTimeout(() => {
                             showResumePreview(raw);
