@@ -8,4 +8,15 @@ appId: fun.upup.musicfree
     visible: "资料库"
     timeout: 30000
 - runFlow: dismiss-update.yaml
+# The tab bar can render before bootstrap finishes. Require restored data in
+# the real library, rather than treating a dismissed error dialog as recovery.
+- tapOn: "资料库"
+- scrollUntilVisible:
+    element: "E2E Backup Playlist"
+    direction: DOWN
+    timeout: 15000
+- scrollUntilVisible:
+    element: "E2E Legacy Playlist"
+    direction: DOWN
+    timeout: 15000
 - takeScreenshot: storage-read-recovered
