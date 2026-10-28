@@ -1,0 +1,23 @@
+{
+    "version": 3,
+    "musicSheets": [{
+        "id": "e2e-original-backup-id",
+        "platform": "本地",
+        "title": "E2E Backup Playlist",
+        "description": "E2E backup description",
+        "artist": "E2E Backup Artist",
+        "coverImg": "https://example.org/e2e-backup-cover.png",
+        "createAt": 1234,
+        "musicList": []
+    }],
+    "preferences": {
+        "settings": {
+            "theme.homeSectionOrder": ["shortcuts", "recent", "continue", "discovery"],
+            "library.playlistView": "list"
+        },
+        "playlistOrganization": {
+            "pinnedIds": ["e2e-original-backup-id"],
+            "groupBySheetId": {"e2e-original-backup-id": "E2E Backup Group"}
+        }
+    }
+}

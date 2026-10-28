@@ -11,9 +11,9 @@ appId: fun.upup.musicfree
     direction: DOWN
 - tapOn: "选择歌词：汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字"
 - scrollUntilVisible:
-    element: "选择歌词：👩‍🎤👩‍🎤👩‍🎤👩‍🎤👩‍🎤"
+    element: "选择歌词：WWWWWWWWWWWWWWW👩‍🎤"
     direction: DOWN
-- tapOn: "选择歌词：👩‍🎤👩‍🎤👩‍🎤👩‍🎤👩‍🎤"
+- tapOn: "选择歌词：WWWWWWWWWWWWWWW👩‍🎤"
 - scrollUntilVisible:
     element: "选择歌词：Supercalifragilisticexpialidocious"
     direction: DOWN

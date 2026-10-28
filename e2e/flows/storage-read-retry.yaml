@@ -1,0 +1,11 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "重新读取"
+- extendedWaitUntil:
+    notVisible: "本地数据读取失败"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "资料库"
+    timeout: 30000
+- runFlow: dismiss-update.yaml
+- takeScreenshot: storage-read-recovered

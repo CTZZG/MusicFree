@@ -1,0 +1,19 @@
+appId: fun.upup.musicfree
+---
+- repeat:
+    times: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible: "设置"
+          commands:
+            - back
+- tapOn: "设置"
+- scrollUntilVisible:
+    element: "备份与恢复"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "备份与恢复"
+- extendedWaitUntil:
+    visible: "从远程URL中恢复"
+    timeout: 10000

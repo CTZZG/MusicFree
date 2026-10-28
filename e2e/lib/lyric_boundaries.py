@@ -38,16 +38,16 @@ def offscreen(path):
 
 
 def card_pixels(pixels, width, height):
-    if width != 1000 or not 900 <= height <= 1300 or len(pixels) != width * height * 3:
+    if width != 1000 or height != 1026 or len(pixels) != width * height * 3:
         raise ValueError('incomplete or unexpected four-line card')
 
     def rgb(x, y):
         start = (y * width + x) * 3
         return pixels[start:start + 3]
 
-    # The four fixed inputs produce these six white-text baselines. The emoji
-    # row at610 is retained for human inspection; colored glyphs need not be white.
-    rows = [294, 359, 452, 517, 703, 768]
+    # The four fixed inputs produce these seven white-text baselines. The intact emoji
+    # row at675 is retained for human inspection; colored glyphs need not be white.
+    rows = [294, 359, 452, 517, 610, 768, 833]
     ink = [sum(min(rgb(x, y)) > 210 for y in range(b - 50, b + 8)
                for x in range(65, 935)) for b in rows]
     if any(n < 80 for n in ink):
@@ -168,15 +168,15 @@ def self_test():
                         offscreen(path)
 
         def test_pixels_reject_clipped_and_empty(self):
-            p = bytearray([10, 20, 30] * 1000 * 961)
-            for b in [294, 359, 452, 517, 703, 768]:
+            p = bytearray([10, 20, 30] * 1000 * 1026)
+            for b in [294, 359, 452, 517, 610, 768, 833]:
                 for y in range(b - 30, b - 20):
                     for x in range(100, 200):
                         i = (y * 1000 + x) * 3; p[i:i + 3] = b'\xff\xff\xff'
-            self.assertTrue(card_pixels(p, 1000, 961)['guttersHaveNoGlyphEdges'])
+            self.assertTrue(card_pixels(p, 1000, 1026)['guttersHaveNoGlyphEdges'])
             i = (300 * 1000 + 980) * 3; p[i:i + 3] = b'\xff\xff\xff'
-            with self.assertRaises(ValueError): card_pixels(p, 1000, 961)
-            with self.assertRaises(ValueError): card_pixels(bytes([10, 20, 30] * 1000 * 961), 1000, 961)
+            with self.assertRaises(ValueError): card_pixels(p, 1000, 1026)
+            with self.assertRaises(ValueError): card_pixels(bytes([10, 20, 30] * 1000 * 1026), 1000, 1026)
         def test_real_tree_contract_and_font_growth(self):
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)

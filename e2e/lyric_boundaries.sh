@@ -43,8 +43,8 @@ boundary_dump_info() {
 
 boundary_hold() { sleep 12; }
 
-run_lyric_boundary_steps() {
-    local wide='WWWWWWWWWWWWWWWWWWWWWWWWWW' file before after
+run_share_boundary_card() {
+    local wide='WWWWWWWWWWWWWWWWWWWWWWWWWW' file
     open_link "musicfree://search?keyword=e2e%20boundaries%20$REF"
     flow '边界：点播真实宽字符夹具' boundary-wide-start.yaml || return 1
     adb shell input keyevent KEYCODE_MEDIA_PAUSE
@@ -57,6 +57,11 @@ run_lyric_boundary_steps() {
     python3 -I "$HERE/lib/lyric_boundaries.py" card "$OUT/boundary-wide.png" > "$OUT/boundary-wide-pixels.json" || return 1
     pass '边界：真实宽W/中文/组合emoji/长英文卡片位于画布内'
 
+}
+
+run_lyric_boundary_steps() {
+    local before after
+    run_share_boundary_card || return 1
     # All subsequent taps use independent public node snapshots so continuous
     # lyric motion does not make Maestro wait for the whole UI to settle.
     prepare_public_ui_observer || return 1
