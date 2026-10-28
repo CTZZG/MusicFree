@@ -4,7 +4,7 @@ appId: fun.upup.musicfree
 - tapOn: "输入框"
 - inputText: ${BACKUP_URL}
 - hideKeyboard
-- tapOn: "确定"
+- tapOn: "确认"
 - extendedWaitUntil:
     visible: "恢复前预览"
     timeout: 20000
