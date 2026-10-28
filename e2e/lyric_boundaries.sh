@@ -75,6 +75,10 @@ run_lyric_boundary_steps() {
     pass '边界：同曲歌词晚到后手动重载，面板保持原曲暂停位置'
 
     adb shell input keyevent KEYCODE_BACK
+    public_ui_target '分享歌曲与歌词' boundary-detail-mode || return 1
+    local mode
+    mode=$(python3 -I "$HERE/lib/lyric_boundaries.py" mode "$OUT/ui-boundary-detail-mode-instrumentation.txt") || return 1
+    if [ "$mode" = '"lyric"' ]; then boundary_tap '显示封面' info-cover || return 1; fi
     boundary_tap '更多操作' info-menu || return 1
     boundary_tap '当前播放信息' info-open || return 1
     boundary_dump_info 1x || return 1

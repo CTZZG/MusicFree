@@ -62,6 +62,11 @@ def font(root):
         raise ValueError('device system font was not2x')
     def header(phase):
         nodes = tree(root / f'ui-boundary-info-{phase}-instrumentation.txt')
+        refresh = [n for n in nodes if n.get('visible') is True and n.get('enabled') is True
+                   and n.get('clickable') is True and
+                   '刷新音频信息' in [n.get('text'), n.get('description')]]
+        if len(refresh) != 1:
+            raise ValueError('refresh button is missing or ambiguous')
         titles = [n for n in nodes if n.get('visible') is True and
                   '当前播放信息' in [n.get('text'), n.get('description')]]
         if not titles:
@@ -83,8 +88,18 @@ def empty(path):
     return {'emptyFrozenSnapshot': True}
 
 
+def mode(path):
+    labels = {n.get('description') for n in tree(path) if n.get('visible') is True
+              and n.get('enabled') is True and n.get('clickable') is True}
+    showing = labels.intersection({'显示歌词', '显示封面'})
+    if len(showing) != 1:
+        raise ValueError('actual detail mode is missing or ambiguous')
+    return 'lyric' if '显示封面' in showing else 'cover'
+
+
 def self_test():
     import unittest
+    import tempfile
     class Checks(unittest.TestCase):
         def test_pixels_reject_clipped_and_empty(self):
             p = bytearray([10, 20, 30] * 1000 * 961)
@@ -96,6 +111,41 @@ def self_test():
             i = (300 * 1000 + 980) * 3; p[i:i + 3] = b'\xff\xff\xff'
             with self.assertRaises(ValueError): card_pixels(p, 1000, 961)
             with self.assertRaises(ValueError): card_pixels(bytes([10, 20, 30] * 1000 * 961), 1000, 961)
+        def test_real_tree_contract_and_font_growth(self):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                def write(phase, height):
+                    nodes = [{'package': 'fun.upup.musicfree', 'visible': True, 'text': '当前播放信息',
+                              'bounds': [20, 100, 500, 100 + height]},
+                             {'package': 'fun.upup.musicfree', 'visible': True, 'enabled': True, 'clickable': True,
+                              'description': '刷新音频信息', 'bounds': [20, 1500, 500, 1600]}]
+                    (root / f'ui-boundary-info-{phase}-instrumentation.txt').write_text(
+                        'INSTRUMENTATION_RESULT: tree=' + json.dumps(nodes) + '\nINSTRUMENTATION_CODE: -1\n')
+                (root / 'boundary-info-font-scale.txt').write_text('2.0')
+                write('1x', 30); write('2x', 60)
+                self.assertEqual(font(root)['heightRatio'], 2)
+                write('2x', 30)
+                with self.assertRaises(ValueError): font(root)
+                (root / 'boundary-info-font-scale.txt').write_text('1.0')
+                with self.assertRaises(ValueError): font(root)
+        def test_empty_and_cover_mode_are_actual_node_properties(self):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'ui.txt'
+                def write(labels, code=-1):
+                    path.write_text('INSTRUMENTATION_RESULT: tree=' + json.dumps([
+                        {'package': 'fun.upup.musicfree', 'visible': True, 'enabled': True,
+                         'clickable': True, 'description': label} for label in labels]) +
+                        f'\nINSTRUMENTATION_CODE: {code}\n')
+                write(['重新载入歌词']); self.assertTrue(empty(path)['emptyFrozenSnapshot'])
+                write(['选择歌词：already ready'])
+                with self.assertRaises(ValueError): empty(path)
+                write(['显示封面']); self.assertEqual(mode(path), 'lyric')
+                write(['显示歌词']); self.assertEqual(mode(path), 'cover')
+                for labels in [[], ['显示歌词', '显示封面']]:
+                    write(labels)
+                    with self.assertRaises(ValueError): mode(path)
+                write(['显示歌词'], code=0)
+                with self.assertRaises(ValueError): mode(path)
     result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(Checks))
     if not result.wasSuccessful():
         raise SystemExit(1)
@@ -106,6 +156,6 @@ if __name__ == '__main__':
         self_test()
     else:
         try:
-            print(json.dumps({'card': card, 'font': font, 'empty': empty}[sys.argv[1]](sys.argv[2])))
+            print(json.dumps({'card': card, 'font': font, 'empty': empty, 'mode': mode}[sys.argv[1]](sys.argv[2])))
         except (ValueError, KeyError, IndexError, TypeError, OSError, subprocess.CalledProcessError) as error:
             print(str(error), file=sys.stderr); sys.exit(1)

@@ -9,6 +9,12 @@ sleep() { :; }
 adb() {
     printf '%s\n' "$*" >> "$OUT/commands.txt"
     case "$*" in
+        'shell pm list packages')
+            [ "$CASE" != pm-disconnected ] || return 1
+            if [ "$CASE" = pm-unsupported ]; then printf 'Unknown command\n'; return 0; fi
+            if [ "$CASE" = pm-empty ]; then return 0; fi
+            printf 'package:fun.upup.musicfree\npackage:android\n'
+            if [ "$CASE" != absent ] && [ "$CASE" != absent-active ]; then printf 'package:dev.mobile.maestro\npackage:dev.mobile.maestro.test\n'; fi ;;
         'shell pm path '*)
             [ "$CASE" != missing ] || return 1
             printf 'package:/data/app/test-driver/base.apk\n' ;;
@@ -20,7 +26,7 @@ adb() {
                 printf 'Unknown command: instrumentation\n'; return 0
             fi
             printf 'NAME\ninit\nfun.upup.musicfree\n'
-            if [ "$CASE" = lingering ] || { [ "$CASE" = delayed ] && [ "$READS" -eq 1 ]; }; then
+            if [ "$CASE" = lingering ] || [ "$CASE" = absent-active ] || { [ "$CASE" = delayed ] && [ "$READS" -eq 1 ]; }; then
                 printf ' dev.mobile.maestro.test:worker\n'
             fi ;;
         *) return 1 ;;
@@ -41,6 +47,15 @@ for CASE in normal delayed unsupported lingering disconnected missing; do
     fi
 done
 echo 'Maestro handoff: 6 cases passed; unsupported/active/disconnected states rejected'
+
+for CASE in absent normal pm-disconnected pm-unsupported pm-empty absent-active; do
+    OUT="$WORK/reentry-$CASE"; mkdir -p "$OUT"; : > "$OUT/commands.txt"; READS=0
+    result=0; stop_maestro_ui_driver "$OUT/test" allow-uninstalled > "$OUT/output.txt" 2>&1 || result=$?
+    if [ "$CASE" = absent ] || [ "$CASE" = normal ]; then [ "$result" -eq 0 ]
+    else [ "$result" -ne 0 ]; fi
+    if [ "$CASE" = absent ]; then ! grep -q '^shell am force-stop' "$OUT/commands.txt"; fi
+done
+echo 'Maestro reentry:6 cases passed; valid uninstalled state accepted only with PackageManager and process proof'
 
 # Exercise the actual run.sh wrapper: a second CLI must not launch while its
 # predecessor can still own the fixed server port. No assertion is retried.

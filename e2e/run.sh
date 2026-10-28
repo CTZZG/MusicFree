@@ -80,7 +80,7 @@ flow() {
         # can outlive its CLI and keep 44291 bound (Beta224). Release only the
         # two test-driver packages before starting another flow; never restart
         # MusicFree or retry an assertion to conceal a failed test.
-        if ! stop_maestro_ui_driver "$OUT/maestro/$tag"; then
+        if ! stop_maestro_ui_driver "$OUT/maestro/$tag" allow-uninstalled; then
             fail "$name" "旧 Maestro 驱动未退出，未启动新的测试服务器"
             return 1
         fi
@@ -271,15 +271,11 @@ if [ "$E2E_SUITE" = lyric-boundaries ]; then
     # Reanimated reads reduced motion at process startup. Establish evidence
     # before the App is first launched, rather than treating a live0x->1x switch
     # as proof that the long-note animation was enabled at startup.
-    : > "$OUT/boundary-animation-before-start.txt"
-    for key in window_animation_scale transition_animation_scale animator_duration_scale; do
-        value=$(adb shell settings get global "$key" | tr -d '\r')
-        printf '%s=%s\n' "$key" "$value" >> "$OUT/boundary-animation-before-start.txt"
-        if ! [[ "$value" =~ ^1([.]0+)?$ ]]; then
-            fail '边界：启动前动画设置' "实际 $key=$value，未执行长音场景"
-            finish
-        fi
-    done
+    source "$HERE/lib/boundary_environment.sh"
+    if ! prepare_boundary_startup_motion; then
+        fail '边界：启动前动画设置' '没有实际设置并读回1x，未执行长音场景'
+        finish
+    fi
 fi
 # Android 17 的后台音频加固：在装应用之前打开，先让替身在后台被拦一次，确认加固生效、记录认得出来
 if [ -n "$E2E_AUDIO_HARDENING" ]; then
