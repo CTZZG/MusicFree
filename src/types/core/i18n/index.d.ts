@@ -3,6 +3,11 @@ export interface ILanguageData {
     "storage.readFailed.title": string;
     "storage.readFailed.message": string;
     "storage.readFailed.retry": string;
+    "backupAndResume.includesPreferences": string;
+    "backupAndResume.report.preferences": string;
+    "backupAndResume.contentsNote": string;
+    "backupAndResume.persistenceFailed": string;
+    "backupAndResume.incomplete": string;
     // 通用词汇
     "common.setting": string; // 设置
     "common.language": string; // 语言

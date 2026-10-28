@@ -63,18 +63,41 @@ function normalizeResumeMusicList(
 function normalizeResumeSheet(
     sheet: Partial<IMusic.IMusicSheetItem> | null | undefined,
 ): IMusic.IMusicSheetItem | null {
-    if (!sheet || typeof sheet !== "object") {
+    if (!sheet || typeof sheet !== "object" || Array.isArray(sheet)) {
         return null;
     }
     return {
         ...sheet,
         id: sheet.id ? `${sheet.id}` : nanoid(),
         platform: sheet.platform ? `${sheet.platform}` : localPluginPlatform,
-        title: sheet.title ?? "",
+        title: typeof sheet.title === "string" ? sheet.title : "",
         musicList: normalizeResumeMusicList(sheet.musicList),
     };
 }
 
+
+export interface SheetRestoreResult {
+    idMap: Record<string, string>;
+    successCount: number;
+    failedCount: number;
+    skippedCount: number;
+    failureReasons: string[];
+}
+
+/** Metadata only: membership, generated IDs and counters stay owned by MusicSheet.
+ * Merge restores fill missing metadata; they preserve the destination's customization.
+ * Local artwork paths remain references, not embedded image files.
+ */
+function restoreSheetMetadata(source: IMusic.IMusicSheetItem, current?: IMusic.IMusicSheetItemBase) {
+    const result: Partial<IMusic.IMusicSheetItemBase> = {};
+    for (const key of ["coverImg", "artwork", "artist", "description"] as const) {
+        const value = current?.[key] || source[key];
+        if (typeof value === "string" && value.length) result[key] = value;
+    }
+    if (typeof source.createAt === "number" && Number.isFinite(source.createAt) &&
+        source.createAt >= 0 && !current?.createAt) result.createAt = source.createAt;
+    return result;
+}
 
 const ee = new EventEmitter<{
     UpdateMusicList: (updateInfo: {
@@ -315,6 +338,7 @@ class MusicSheetClazz implements IInjectable {
         return allSheets.map(it => ({
             ...it,
             musicList: musicListMap.get(it.id)?.musicList || [],
+            $backupSortType: storage.getSheetMeta(it.id, "sort") ?? SortType.None,
         })) as IMusic.IMusicSheetItem[];
     }
 
@@ -322,78 +346,39 @@ class MusicSheetClazz implements IInjectable {
     async resumeSheets(
         sheets: IMusic.IMusicSheetItem[] | undefined,
         resumeMode: ResumeMode,
-    ) {
-        const resumeSheets = Array.isArray(sheets)
-            ? sheets
-                .map(normalizeResumeSheet)
-                .filter((it): it is IMusic.IMusicSheetItem => !!it)
-            : [];
-        if (!resumeSheets.length) {
-            return;
-        }
-
-        if (resumeMode === ResumeMode.Append) {
-            // 逆序恢复，最新创建的在最上方
-            for (let i = resumeSheets.length - 1; i >= 0; --i) {
-                const newSheetId = await this.addSheet(
-                    resumeSheets[i].title || "",
-                );
-                await this.addMusic(
-                    newSheetId,
-                    resumeSheets[i].musicList || [],
-                );
-            }
-            return;
-        }
-        // 1. 分离默认歌单和其他歌单
-        const defaultSheetIndex = resumeSheets.findIndex(
-            it => it.id === _defaultSheet.id,
-        );
-
-        let exportedDefaultSheet: IMusic.IMusicSheetItem | null = null;
-
-        if (defaultSheetIndex !== -1) {
-            exportedDefaultSheet = resumeSheets.splice(defaultSheetIndex, 1)[0];
-        }
-
-        // 2. 合并默认歌单
-        await this.addMusic(
-            _defaultSheet.id,
-            exportedDefaultSheet?.musicList || [],
-        );
-
-        // 3. 合并其他歌单
-        if (resumeMode === ResumeMode.OverwriteDefault) {
-            // 逆序恢复，最新创建的在最上方
-            for (let i = resumeSheets.length - 1; i >= 0; --i) {
-                const newSheetId = await this.addSheet(
-                    resumeSheets[i].title || "",
-                );
-                await this.addMusic(
-                    newSheetId,
-                    resumeSheets[i].musicList || [],
-                );
-            }
-        } else {
-            // 合并同名
-            const existsSheetIdMap: Record<string, string> = {};
-            const allSheets = getDefaultStore().get(musicSheetsBaseAtom);
-            allSheets.forEach(it => {
-                existsSheetIdMap[it.title!] = it.id;
-            });
-            for (let i = resumeSheets.length - 1; i >= 0; --i) {
-                let newSheetId = existsSheetIdMap[resumeSheets[i].title || ""];
-                if (!newSheetId) {
-                    newSheetId = await this.addSheet(
-                        resumeSheets[i].title || "",
-                    );
+    ): Promise<SheetRestoreResult> {
+        const input = Array.isArray(sheets) ? sheets : [];
+        const normalized = input.map(normalizeResumeSheet)
+            .filter((it): it is IMusic.IMusicSheetItem => !!it);
+        const result: SheetRestoreResult = {
+            idMap: Object.create(null), successCount: 0, failedCount: 0,
+            skippedCount: input.length - normalized.length, failureReasons: [],
+        };
+        const byTitle = new Map(this.getSheets().map(sheet => [sheet.title || "", sheet.id]));
+        // Preserve the existing reverse-create order and all three restore modes.
+        for (const sheet of [...normalized].reverse()) {
+            try {
+                const isFavorite = resumeMode !== ResumeMode.Append && sheet.id === _defaultSheet.id;
+                const existingId = isFavorite ? _defaultSheet.id
+                    : resumeMode === ResumeMode.Overwrite ? byTitle.get(sheet.title || "") : undefined;
+                const id = existingId ?? await this.addSheet(sheet.title || "");
+                const current = existingId ? this.getSheets().find(item => item.id === id) : undefined;
+                await this.addMusic(id, sheet.musicList);
+                const metadata = restoreSheetMetadata(sheet, current);
+                if (Object.keys(metadata).length) await this.updateMusicSheetBase(id, metadata);
+                if (!existingId && [SortType.None, SortType.Newest, SortType.Oldest,
+                    SortType.Artist, SortType.Album, SortType.Title].includes(sheet.$backupSortType)) {
+                    await this.setSortType(id, sheet.$backupSortType);
                 }
-                await this.addMusic(
-                    newSheetId,
-                    resumeSheets[i].musicList || [],
-                );
+                result.idMap[sheet.id] = id;
+                byTitle.set(sheet.title || "", id);
+                result.successCount++;
+            } catch (error) {
+                result.failedCount++;
+                result.failureReasons.push(`${sheet.title || sheet.id}: ${String((error as Error)?.message ?? error)}`);
             }
         }
+        return result;
     }
 
 
