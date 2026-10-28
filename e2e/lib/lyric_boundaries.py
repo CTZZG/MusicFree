@@ -18,6 +18,25 @@ def tree(path):
     return nodes
 
 
+def offscreen(path):
+    text = Path(path).read_text()
+    fields = dict(re.findall(r'(?m)^INSTRUMENTATION_RESULT: ([a-zA-Z]+)=([^\r\n]*)', text))
+    if (not re.search(r'(?m)^INSTRUMENTATION_CODE: 0\s*$', text)
+            or fields.get('matches') != '0' or 'errorType' in fields or 'match' in fields):
+        raise ValueError('not a completed offscreen-target snapshot')
+    nodes = json.loads(fields['tree'])
+    own = [n for n in nodes if n.get('package') == 'fun.upup.musicfree']
+    if not any(n.get('visible') is True and '当前播放信息' in [n.get('text'), n.get('description')]
+               for n in own):
+        raise ValueError('playback information panel is not visible')
+    targets = [n for n in own if '刷新音频信息' in [n.get('text'), n.get('description')]
+               and n.get('clickable') is True]
+    if (len(targets) != 1 or targets[0].get('enabled') is not True
+            or targets[0].get('visible') is not False):
+        raise ValueError('expected exactly one offscreen refresh control')
+    return {'panelVisible': True, 'refreshOffscreen': True, 'bounds': targets[0]['bounds']}
+
+
 def card_pixels(pixels, width, height):
     if width != 1000 or not 900 <= height <= 1300 or len(pixels) != width * height * 3:
         raise ValueError('incomplete or unexpected four-line card')
@@ -128,6 +147,26 @@ def self_test():
     import unittest
     import tempfile
     class Checks(unittest.TestCase):
+        def test_offscreen_probe_only_allows_known_panel_and_hidden_target(self):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'probe.txt'
+                nodes = [dict(package='fun.upup.musicfree', visible=True, text='当前播放信息'),
+                         dict(package='fun.upup.musicfree', enabled=True, visible=False, clickable=True,
+                              description='刷新音频信息', bounds=[53, 3154, 1028, 2400])]
+                def raw(tree=nodes, code=0, matches=0, extra=''):
+                    return ('INSTRUMENTATION_RESULT: tree=' + json.dumps(tree) +
+                            f'\nINSTRUMENTATION_RESULT: matches={matches}\n{extra}INSTRUMENTATION_CODE: {code}\n')
+                path.write_text(raw())
+                self.assertTrue(offscreen(path)['refreshOffscreen'])
+                for bad in [raw(code=-1), raw(matches=1), raw(extra='INSTRUMENTATION_RESULT: errorType=IOException\n'),
+                            raw(tree=nodes[1:]), raw(tree=nodes + [nodes[1]]), raw(tree=[]), '',
+                            raw(tree=[nodes[0], dict(nodes[1], visible=True)]),
+                            raw(tree=[nodes[0], dict(nodes[1], enabled=False)]),
+                            raw(tree=[dict(n, package='other') for n in nodes])]:
+                    path.write_text(bad)
+                    with self.assertRaises((ValueError, KeyError)):
+                        offscreen(path)
+
         def test_pixels_reject_clipped_and_empty(self):
             p = bytearray([10, 20, 30] * 1000 * 961)
             for b in [294, 359, 452, 517, 703, 768]:
@@ -198,7 +237,7 @@ if __name__ == '__main__':
             if sys.argv[1] == 'geometry':
                 result = geometry(sys.argv[2], *map(int, sys.argv[3:6]))
             else:
-                result = {'card': card, 'font': font, 'empty': empty, 'mode': mode}[sys.argv[1]](sys.argv[2])
+                result = {'card': card, 'font': font, 'empty': empty, 'mode': mode, 'offscreen': offscreen}[sys.argv[1]](sys.argv[2])
             print(json.dumps(result))
         except (ValueError, KeyError, IndexError, TypeError, OSError, subprocess.CalledProcessError) as error:
             print(str(error), file=sys.stderr); sys.exit(1)

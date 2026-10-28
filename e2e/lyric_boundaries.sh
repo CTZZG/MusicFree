@@ -21,7 +21,15 @@ boundary_dump_info() {
     for attempt in {1..8}; do
         adb shell input swipe "$((width/2))" "$((height*3/4))" "$((width/2))" "$((height/3))" 200 || return 1
         probe="font-probe-$phase-$attempt"
-        public_ui_target '刷新音频信息' "$probe" || return 1
+        if ! public_ui_target '刷新音频信息' "$probe"; then
+            # At2x the content can still be below the viewport after the first
+            # scroll/reflow. Only a complete snapshot of this exact panel with
+            # its one enabled, clickable but offscreen target permits another
+            # bounded scroll. Transport errors or a different UI still fail.
+            python3 -I "$HERE/lib/lyric_boundaries.py" offscreen "$OUT/ui-$probe-instrumentation.txt" \
+                > "$OUT/$probe-offscreen.json" || return 1
+            continue
+        fi
         if python3 -I "$HERE/lib/lyric_boundaries.py" geometry "$OUT/ui-$probe-instrumentation.txt" \
             "$width" "$height" "$dpi" > "$OUT/$probe-geometry.json" 2> "$OUT/$probe-geometry-error.txt"; then
             cp "$OUT/ui-$probe-instrumentation.txt" "$OUT/ui-boundary-info-$phase-instrumentation.txt"
