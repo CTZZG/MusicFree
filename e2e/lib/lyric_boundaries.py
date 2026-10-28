@@ -67,6 +67,15 @@ def font(root):
                    '刷新音频信息' in [n.get('text'), n.get('description')]]
         if len(refresh) != 1:
             raise ValueError('refresh button is missing or ambiguous')
+        import struct
+        image = (root / f'screens/boundary-info-{phase}.png').read_bytes()
+        if image[:8] != b'\x89PNG\r\n\x1a\n':
+            raise ValueError('actual font screenshot missing')
+        width, height = struct.unpack('>II', image[16:24])
+        # isVisibleToUser includes partially clipped controls. Require actual
+        # safe geometry, not just the framework's visible flag (Beta229).
+        refresh_box(refresh[0]['bounds'], width, height,
+                    float((root / 'boundary-display-density.txt').read_text()))
         titles = [n for n in nodes if n.get('visible') is True and
                   '当前播放信息' in [n.get('text'), n.get('description')]]
         if not titles:
@@ -97,6 +106,24 @@ def mode(path):
     return 'lyric' if '显示封面' in showing else 'cover'
 
 
+def refresh_box(bounds, width, height, dpi):
+    left, top, right, bottom = bounds
+    minimum = 48 * dpi / 160
+    if not (0 <= left < right <= width and 0 <= top < bottom <= height - minimum
+            and bottom - top >= minimum and right - left >= minimum):
+        raise ValueError(f'refresh target clipped or too small: {bounds}, display{width}x{height}@{dpi}')
+    return {'bounds': bounds, 'minimum48dpPixels': minimum, 'wholeTargetInsideSafeArea': True}
+
+
+def geometry(path, width, height, dpi):
+    nodes = tree(path)
+    found = [n for n in nodes if n.get('visible') and n.get('enabled') and n.get('clickable')
+             and '刷新音频信息' in [n.get('description'), n.get('text')]]
+    if len(found) != 1:
+        raise ValueError('refresh target not unique')
+    return refresh_box(found[0]['bounds'], width, height, dpi)
+
+
 def self_test():
     import unittest
     import tempfile
@@ -121,13 +148,25 @@ def self_test():
                               'description': '刷新音频信息', 'bounds': [20, 1500, 500, 1600]}]
                     (root / f'ui-boundary-info-{phase}-instrumentation.txt').write_text(
                         'INSTRUMENTATION_RESULT: tree=' + json.dumps(nodes) + '\nINSTRUMENTATION_CODE: -1\n')
+                    # Only the dimensions are consumed here; full screenshot
+                    # decode is independently performed on device artifacts.
+                    import struct
+                    (root / 'screens').mkdir(exist_ok=True)
+                    (root / f'screens/boundary-info-{phase}.png').write_bytes(
+                        b'\x89PNG\r\n\x1a\n' + bytes(8) + struct.pack('>II', 1080, 2400))
                 (root / 'boundary-info-font-scale.txt').write_text('2.0')
+                (root / 'boundary-display-density.txt').write_text('320')
                 write('1x', 30); write('2x', 60)
                 self.assertEqual(font(root)['heightRatio'], 2)
                 write('2x', 30)
                 with self.assertRaises(ValueError): font(root)
                 (root / 'boundary-info-font-scale.txt').write_text('1.0')
                 with self.assertRaises(ValueError): font(root)
+        def test_partial_target_from_beta229_rejected(self):
+            with self.assertRaises(ValueError): refresh_box([53, 2309, 1028, 2400], 1080, 2400, 420)
+            for box in [[0, 0, 50, 50], [-1, 100, 800, 400]]:
+                with self.assertRaises(ValueError): refresh_box(box, 1080, 2400, 420)
+            self.assertTrue(refresh_box([53, 2100, 1028, 2274], 1080, 2400, 420)['wholeTargetInsideSafeArea'])
         def test_empty_and_cover_mode_are_actual_node_properties(self):
             with tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / 'ui.txt'
@@ -156,6 +195,10 @@ if __name__ == '__main__':
         self_test()
     else:
         try:
-            print(json.dumps({'card': card, 'font': font, 'empty': empty, 'mode': mode}[sys.argv[1]](sys.argv[2])))
+            if sys.argv[1] == 'geometry':
+                result = geometry(sys.argv[2], *map(int, sys.argv[3:6]))
+            else:
+                result = {'card': card, 'font': font, 'empty': empty, 'mode': mode}[sys.argv[1]](sys.argv[2])
+            print(json.dumps(result))
         except (ValueError, KeyError, IndexError, TypeError, OSError, subprocess.CalledProcessError) as error:
             print(str(error), file=sys.stderr); sys.exit(1)

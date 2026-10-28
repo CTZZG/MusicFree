@@ -9,17 +9,28 @@ boundary_tap() {
 }
 
 boundary_dump_info() {
-    local phase=$1 size width height
+    local phase=$1 size width height dpi probe attempt
     size=$(adb shell wm size | tr -d '\r' | sed -n 's/^Physical size: //p')
     [[ "$size" =~ ^[0-9]+x[0-9]+$ ]] || return 1
     width=${size%x*}; height=${size#*x}
+    dpi=$(adb shell wm density | tr -d '\r' | sed -n 's/.*density: //p' | tail -1)
+    [[ "$dpi" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$dpi" > "$OUT/boundary-display-density.txt"
     # The header remains outside the ScrollView. Reach the real refresh button
     # at the bottom, preserving the full raw tree and the fixed title.
-    for _ in {1..8}; do
+    for attempt in {1..8}; do
         adb shell input swipe "$((width/2))" "$((height*3/4))" "$((width/2))" "$((height/3))" 200 || return 1
+        probe="font-probe-$phase-$attempt"
+        public_ui_target '刷新音频信息' "$probe" || return 1
+        if python3 -I "$HERE/lib/lyric_boundaries.py" geometry "$OUT/ui-$probe-instrumentation.txt" \
+            "$width" "$height" "$dpi" > "$OUT/$probe-geometry.json" 2> "$OUT/$probe-geometry-error.txt"; then
+            cp "$OUT/ui-$probe-instrumentation.txt" "$OUT/ui-boundary-info-$phase-instrumentation.txt"
+            cp "$OUT/ui-$probe-point.txt" "$OUT/ui-boundary-info-$phase-point.txt"
+            shot "boundary-info-$phase"
+            return 0
+        fi
     done
-    public_ui_target '刷新音频信息' "boundary-info-$phase" || return 1
-    shot "boundary-info-$phase"
+    return 1
 }
 
 boundary_hold() { sleep 12; }
@@ -75,8 +86,12 @@ run_lyric_boundary_steps() {
     pass '边界：同曲歌词晚到后手动重载，面板保持原曲暂停位置'
 
     adb shell input keyevent KEYCODE_BACK
+    run_font_info_checks 'E2E Delayed Lyrics' "$before"
+}
+
+run_font_info_checks() {
+    local title=$1 before=$2 after mode x y
     public_ui_target '分享歌曲与歌词' boundary-detail-mode || return 1
-    local mode
     mode=$(python3 -I "$HERE/lib/lyric_boundaries.py" mode "$OUT/ui-boundary-detail-mode-instrumentation.txt") || return 1
     if [ "$mode" = '"lyric"' ]; then boundary_tap '显示封面' info-cover || return 1; fi
     boundary_tap '更多操作' info-menu || return 1
@@ -86,10 +101,28 @@ run_lyric_boundary_steps() {
     adb shell settings get system font_scale > "$OUT/boundary-info-font-scale.txt" || return 1
     boundary_dump_info 2x || return 1
     python3 -I "$HERE/lib/lyric_boundaries.py" font "$OUT" > "$OUT/boundary-info-font-proof.json" || return 1
+    read -r x y < "$OUT/ui-boundary-info-2x-point.txt"
+    printf 'x=%s\ny=%s\n' "$x" "$y" > "$OUT/boundary-info-refresh-touch.txt"
+    adb shell input tap "$x" "$y" || return 1
+    public_ui_target '刷新音频信息' boundary-info-refreshed || return 1
+    shot boundary-info-refreshed
     after=$(session)
     printf '%s\n' "$after" > "$OUT/boundary-info-after.json"
-    python3 -I "$SESSION" still-paused 'E2E Delayed Lyrics' "$before" "$after" || return 1
+    python3 -I "$SESSION" still-paused "$title" "$before" "$after" || return 1
     pass '边界：播放信息真实系统2x字号、固定标题与可达刷新按钮'
+}
+
+run_font_boundary_steps() {
+    local before
+    open_link "musicfree://search?keyword=e2e%20$REF"
+    flow '字体：点播真实A/B/C夹具' play-three.yaml || return 1
+    wait_for_state PLAYING 'E2E Tone C' 15 || return 1
+    adb shell input keyevent KEYCODE_MEDIA_PAUSE
+    wait_for_state PAUSED 'E2E Tone C' 15 || return 1
+    before=$(session); printf '%s\n' "$before" > "$OUT/boundary-info-paused.json"
+    prepare_public_ui_observer || return 1
+    boundary_tap '歌曲: E2E Tone C 歌手: E2E Artist' font-mini || return 1
+    run_font_info_checks 'E2E Tone C' "$before"
 }
 
 run_lyric_boundary_checks() {
@@ -103,7 +136,8 @@ run_lyric_boundary_checks() {
         fail '边界：设备设置' '设置失败，没有执行专项'
         return 1
     fi
-    run_lyric_boundary_steps || result=$?
+    if [ "$E2E_SUITE" = playback-font ]; then run_font_boundary_steps || result=$?
+    else run_lyric_boundary_steps || result=$?; fi
     if [ "$font" = null ]; then adb shell settings delete system font_scale >/dev/null || result=1
     else adb shell settings put system font_scale "$font" >/dev/null || result=1; fi
     local -a rotation_args

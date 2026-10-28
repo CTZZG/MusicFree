@@ -325,7 +325,7 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
-if [ "$E2E_SUITE" = lyric-boundaries ]; then
+if [ "$E2E_SUITE" = lyric-boundaries ] || [ "$E2E_SUITE" = playback-font ]; then
     source "$HERE/lyric_boundaries.sh"
     run_lyric_boundary_checks
     finish
