@@ -40,6 +40,7 @@ import { normalizeReplayGainMode } from "@/core/playerAdapter/replayGain";
 import { createAutoLibrary } from "@/core/androidAutoLibrary";
 import { setupAppFolders } from "./setupFolders";
 import { setupKeyValueStores } from "@/utils/keyValueStore/bootstrapStores";
+import { StoreReadError } from "@/utils/keyValueStore/readError";
 import StorageUri from "@/native/storageUri";
 import { addFileScheme, escapeCharacter } from "@/utils/fileUtils";
 
@@ -69,7 +70,7 @@ async function bootstrapImpl() {
     const bootstrapMetrics: Record<string, number> = {};
 
     bootstrapTimestamp.Start = Date.now();
-    
+
     // Storage access is requested only at the feature entry point. App startup
     // must remain functional with no shared-storage permission.
     bootstrapTimestamp.PermissionChecked = Date.now();
@@ -148,7 +149,7 @@ async function bootstrapImpl() {
     trace("多语言初始化完成");
     bootstrapTimestamp.I18nSetup = Date.now();
     bootstrapMetrics.I18nSetup = bootstrapTimestamp.I18nSetup - bootstrapTimestamp.ThemeSetup;
-    
+
     ErrorUtils.setGlobalHandler(error => {
         telemetry.logException(error);
         errorLog("未捕获的错误", error);
@@ -166,7 +167,7 @@ async function setupFolder() {
 
 export async function initTrackPlayer() {
     const playerTimestamp: Record<string, number> = {};
-    const playerMetrics: Record<string, number> = {}; 
+    const playerMetrics: Record<string, number> = {};
     playerTimestamp.Start = Date.now();
     TrackPlayer.setReady(false);
     TrackPlayer.lockBackend();
@@ -680,7 +681,7 @@ function bindEvents() {
     });
 }
 
-export default async function () {
+export default async function bootstrap() {
     try {
         await telemetry.setup().catch(console.warn);
         const startTime = Date.now();
@@ -707,6 +708,18 @@ export default async function () {
             getDefaultStore().set(bootstrapAtom, {
                 state: "Fatal",
                 reason: e,
+            });
+        }
+        if (e instanceof StoreReadError) {
+            showDialog("SimpleDialog", {
+                title: i18n.t("storage.readFailed.title"),
+                content: i18n.t("storage.readFailed.message"),
+                okText: i18n.t("storage.readFailed.retry"),
+                onOk() {
+                    setTimeout(() => {
+                        bootstrap().catch(error => errorLog("重试初始化失败", error));
+                    }, 0);
+                },
             });
         }
     }

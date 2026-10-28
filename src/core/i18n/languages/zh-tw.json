@@ -1268,5 +1268,8 @@
     "playbackInfo.sampleRate": "取樣率",
     "playbackInfo.channelCount": "聲道數",
     "playbackInfo.bitrate": "位元率（估計）",
-    "playbackInfo.refresh": "重新整理音訊資訊"
+    "playbackInfo.refresh": "重新整理音訊資訊",
+    "storage.readFailed.title": "本機資料讀取失敗",
+    "storage.readFailed.message": "無法讀取本機資料。已停止載入以保護原檔案。請重試；若仍失敗，請保留應用程式資料以便復原。",
+    "storage.readFailed.retry": "重新讀取"
 }

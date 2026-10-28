@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import migrate, { migrateV2 } from "./migrate.ts";
 import SortedMusicList from "./sortedMusicList.ts";
 import storage from "./storage.ts";
+import { StoreReadError } from "@/utils/keyValueStore/readError";
 
 const produce = new Immer({
     autoFreeze: false,
@@ -168,6 +169,7 @@ class MusicSheetClazz implements IInjectable {
             getDefaultStore().set(starredMusicSheetsAtom, starredSheets);
 
         } catch (e: any) {
+            if (e instanceof StoreReadError) throw e;
             if (e.message === "not exist") {
                 await storage.setSheets([_defaultSheet]);
                 await storage.setMusicList(_defaultSheet.id, []);

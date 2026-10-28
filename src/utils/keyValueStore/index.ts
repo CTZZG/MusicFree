@@ -93,7 +93,9 @@ export function getKeyValueStore(storeId: string): KeyValueStore {
         stores.set(storeId, store);
         // 立即开始 hydrate。同步读在 hydrate 完成前返回 undefined，因此
         // bootstrap 必须先 await hydrateKeyValueStores() 再读配置。
-        void store.hydrate();
+        // The caller that awaits hydration handles failure; eager reads must not
+        // create an unhandled rejection or mark an unreadable store as ready.
+        void store.hydrate().catch(() => undefined);
     }
     return store;
 }

@@ -1268,5 +1268,8 @@
     "playbackInfo.sampleRate": "Sample rate",
     "playbackInfo.channelCount": "Channels",
     "playbackInfo.bitrate": "Bitrate (estimated)",
-    "playbackInfo.refresh": "Refresh audio information"
+    "playbackInfo.refresh": "Refresh audio information",
+    "storage.readFailed.title": "Could not read local data",
+    "storage.readFailed.message": "Loading has stopped to protect your existing files. Try again. If reading still fails, keep the app data so it can be recovered.",
+    "storage.readFailed.retry": "Read again"
 }

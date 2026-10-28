@@ -1,5 +1,8 @@
 // 国际化语言数据接口定义
 export interface ILanguageData {
+    "storage.readFailed.title": string;
+    "storage.readFailed.message": string;
+    "storage.readFailed.retry": string;
     // 通用词汇
     "common.setting": string; // 设置
     "common.language": string; // 语言

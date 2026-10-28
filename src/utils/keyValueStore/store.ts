@@ -1,4 +1,5 @@
 import { MIGRATION_FLAG_KEY } from "./mmkvMigration";
+import { StoreReadError } from "./readError";
 import { decodeSnapshot, encodeSnapshot, toStoredValue } from "./snapshotCodec";
 import {
     DEFAULT_RETRY_DELAYS_MS,
@@ -88,38 +89,48 @@ export default class KeyValueStore implements IKeyValueStore {
         return this.hydrated;
     }
 
-    /** 从磁盘载入。重复调用共享同一个 promise，多次调用是安全的。 */
+    /** Share an in-flight read. Failed reads remain unhydrated and can be retried. */
     hydrate(): Promise<void> {
         this.hydratePromise ??= (async () => {
-            let base: Record<string, StoredValue> = {};
             try {
                 const raw = await this.persistence.read(this.storeId);
-                const decoded = decodeSnapshot(raw);
+                let decoded = decodeSnapshot(raw);
+                let recoveryReason = this.persistence.getRecoverySource?.(this.storeId);
                 if (decoded.recovered) {
-                    this.options.onRecover?.({
-                        storeId: this.storeId,
-                        reason: decoded.reason,
-                    });
+                    const reason = decoded.reason ?? "invalid-snapshot";
+                    // An older app must not roll a future schema back to its old .bak.
+                    if (reason.startsWith("unsupported-version:")) {
+                        throw new StoreReadError(this.storeId, reason);
+                    }
+                    const backup = await this.persistence.readBackup?.(this.storeId);
+                    const previous = decodeSnapshot(backup);
+                    if (backup == null || previous.recovered) {
+                        throw new StoreReadError(this.storeId, reason);
+                    }
+                    decoded = previous;
+                    recoveryReason = this.persistence.getRecoverySource?.(this.storeId) ?? "backup";
                 }
-                base = decoded.entries;
-            } catch (error) {
-                // 读不到就当空表起步，并上报。抛出会让应用起不来。
-                this.options.onRecover?.({
-                    storeId: this.storeId,
-                    reason: `read-failed:${String(
-                        (error as any)?.message ?? error,
-                    )}`,
+                if (recoveryReason) this.options.onRecover?.({
+                    storeId: this.storeId, reason: `snapshot-restored:${recoveryReason}`,
                 });
-            } finally {
                 // 读盘之前（以及读盘期间）的写入是更新的：按发生顺序重放到磁盘
                 // 内容上，而不是整个键以内存为准。
                 const ops = this.pendingOps ?? [];
-                this.pendingOps = null;
-                this.entries = { ...base };
+                this.entries = { ...decoded.entries };
                 ops.forEach(op => op());
+                this.pendingOps = null;
                 this.hydrated = true;
+            } catch (error) {
+                const failure = error instanceof StoreReadError
+                    ? error
+                    : new StoreReadError(this.storeId, "read-failed");
+                this.options.onRecover?.({ storeId: this.storeId, reason: failure.reason });
+                throw failure;
             }
-        })();
+        })().catch(error => {
+            this.hydratePromise = null;
+            throw error;
+        });
         return this.hydratePromise;
     }
 
@@ -308,7 +319,12 @@ export default class KeyValueStore implements IKeyValueStore {
             await this.inflight;
         }
         if (!this.dirty) {
-            return true;
+            try {
+                await this.hydrate();
+                return true;
+            } catch {
+                return false;
+            }
         }
         this.cancelTimer();
         return this.performWrite();
@@ -401,20 +417,16 @@ export default class KeyValueStore implements IKeyValueStore {
     }
 
     private async writeOnce(): Promise<boolean> {
-        // 读盘完成前不能落盘：那时内存里只有早到的几个键，写下去会覆盖整份文件。
-        if (!this.hydrated) {
-            await this.hydrate();
-        }
-        // 先取快照再清脏标记：写入期间到来的新变更会重新置脏，写完后再落一次，
-        // 不会被这一轮的成功掩盖掉。
-        const payload = encodeSnapshot({ ...this.entries });
-        this.dirty = false;
-        this.firstDirtyAt = null;
-        this.lastDirtyAt = null;
-
         let failure: unknown = null;
         let failed = false;
         try {
+            // A failed hydrate must reach the same bounded retry path as a failed write,
+            // retaining pending operations and never serializing an empty fallback.
+            if (!this.hydrated) await this.hydrate();
+            const payload = encodeSnapshot({ ...this.entries });
+            this.dirty = false;
+            this.firstDirtyAt = null;
+            this.lastDirtyAt = null;
             await this.persistence.write(this.storeId, payload);
             this.retryAttempt = 0;
         } catch (error) {
