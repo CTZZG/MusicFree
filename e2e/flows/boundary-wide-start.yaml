@@ -1,0 +1,9 @@
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "WWWWWWWWWWWWWWWWWWWWWWWWWW, E2E Artist"
+    timeout: 45000
+- tapOn: "WWWWWWWWWWWWWWWWWWWWWWWWWW, E2E Artist"
+- extendedWaitUntil:
+    visible: "歌曲: WWWWWWWWWWWWWWWWWWWWWWWWWW 歌手: E2E Artist"
+    timeout: 30000

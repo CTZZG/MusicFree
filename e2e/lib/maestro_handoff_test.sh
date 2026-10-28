@@ -41,3 +41,26 @@ for CASE in normal delayed unsupported lingering disconnected missing; do
     fi
 done
 echo 'Maestro handoff: 6 cases passed; unsupported/active/disconnected states rejected'
+
+# Exercise the actual run.sh wrapper: a second CLI must not launch while its
+# predecessor can still own the fixed server port. No assertion is retried.
+source <(sed -n '/^flow() {/,/^}$/p' "$HERE/../run.sh")
+pass() { :; }
+fail() { FAILED=$((FAILED + 1)); }
+shot() { :; }
+print_screen_text() { :; }
+maestro() { printf 'cli\n' >> "$OUT/sequence"; }
+stop_maestro_ui_driver() {
+    printf 'stop\n' >> "$OUT/sequence"
+    [ "$CASE" != wrapper_blocked ]
+}
+OUT="$WORK/wrapper"; mkdir -p "$OUT/maestro"; : > "$OUT/sequence"
+DRIVER_INSTALLED=0; FAILED=0; CASE=wrapper
+flow first fixture.yaml
+flow second fixture.yaml
+[ "$(cat "$OUT/sequence")" = $'cli\nstop\ncli' ]
+CASE=wrapper_blocked
+if flow third fixture.yaml; then echo 'started over a lingering driver'; exit 1; fi
+[ "$(cat "$OUT/sequence")" = $'cli\nstop\ncli\nstop' ]
+[ "$FAILED" -eq 1 ]
+echo 'Maestro wrapper: ordered driver release and blocked handoff passed'
