@@ -58,7 +58,7 @@ source "$HERE/lib/maestro_handoff.sh"
 source "$HERE/lib/adb_install.sh"
 # shellcheck source=lib/audio_hardening.sh
 source "$HERE/lib/audio_hardening.sh"
-trap 'offline_capture_cancel; startup_capture_stop; hardening_capture_cancel' EXIT
+trap 'startup_capture_stop; hardening_capture_cancel' EXIT
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
 print_screen_text() {
@@ -524,6 +524,7 @@ fi
 # 12. 断网：断网后点一首歌，要提示播放未成功（不能一直转圈，也不能一路往下跳）；
 #     恢复网络后在提示里点“重试”，要能播
 if [ "${E2E_OFFLINE_PROBE:-}" = 1 ]; then
+    trap 'offline_capture_cancel; startup_capture_stop; hardening_capture_cancel' EXIT
     offline_capture_start || { fail '离线诊断：连续日志启动'; finish; }
 fi
 open_link "musicfree://search?keyword=e2e%20$REF"

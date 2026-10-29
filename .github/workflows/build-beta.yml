@@ -414,9 +414,13 @@ jobs:
                   commit=$(sed -n 's/^Commit: //p' apk/android-build-info.txt 2>/dev/null | head -n 1)
                   echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
                   echo "APK source commit: ${commit:-unknown}"
+
+            - name: Validate the pinned diagnostic APK source and manifest
+              run: |
+                  commit=$(sed -n 's/^Commit: //p' apk/android-build-info.txt | head -n 1)
                   test "$commit" = f4870ebefcbec1d0b2a6d0d3ce440c7d1ba3fca2
                   (cd apk && sha256sum --check SHA256SUMS.txt)
-                  sha256sum "${apks[0]}"
+                  sha256sum "$E2E_APK"
 
             - name: Download cold-start comparison baseline
               if: inputs.perf_baseline_apk_run_id != ''
