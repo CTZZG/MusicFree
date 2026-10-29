@@ -6,6 +6,11 @@ on:
     #   paths: ['package.json']
     workflow_dispatch:
         inputs:
+            offline_probe:
+                description: '临时诊断：保留原all前置，完成离线恢复段后结束；不构建新包'
+                required: false
+                default: true
+                type: boolean
             force_build:
                 description: '强制构建 Beta 版本'
                 required: false
@@ -409,6 +414,9 @@ jobs:
                   commit=$(sed -n 's/^Commit: //p' apk/android-build-info.txt 2>/dev/null | head -n 1)
                   echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
                   echo "APK source commit: ${commit:-unknown}"
+                  test "$commit" = f4870ebefcbec1d0b2a6d0d3ce440c7d1ba3fca2
+                  (cd apk && sha256sum --check SHA256SUMS.txt)
+                  sha256sum "${apks[0]}"
 
             - name: Download cold-start comparison baseline
               if: inputs.perf_baseline_apk_run_id != ''
@@ -442,6 +450,7 @@ jobs:
 
             - name: Self-test E2E helpers
               run: |
+                  python3 -I e2e/lib/offline_probe.py --self-test
                   python3 -I e2e/lib/media_session.py --self-test
                   python3 -I e2e/lib/dock.py --self-test
                   python3 -I e2e/lib/audio_focus.py --self-test
@@ -531,6 +540,7 @@ jobs:
               uses: reactivecircus/android-emulator-runner@v2
               env:
                   E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
+                  E2E_OFFLINE_PROBE: ${{ inputs.offline_probe && '1' || '' }}
                   E2E_AUDIO_HARDENING: ${{ inputs.e2e_android == '17' && 'throw' || '' }}
                   # 测的 APK 不是按这次的提交打包时，写进结果
                   E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}

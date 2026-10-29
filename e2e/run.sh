@@ -52,12 +52,13 @@ shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; 
 # shellcheck source=lib/pause_checks.sh
 source "$HERE/lib/pause_checks.sh"
 source "$HERE/lib/startup_capture.sh"
+source "$HERE/lib/offline_probe.sh"
 source "$HERE/lib/maestro_handoff.sh"
 # shellcheck source=lib/adb_install.sh
 source "$HERE/lib/adb_install.sh"
 # shellcheck source=lib/audio_hardening.sh
 source "$HERE/lib/audio_hardening.sh"
-trap 'startup_capture_stop; hardening_capture_cancel' EXIT
+trap 'offline_capture_cancel; startup_capture_stop; hardening_capture_cancel' EXIT
 
 # 把当前界面上带文字的元素打到日志里，流程没通过时不用看截图也能知道停在哪
 print_screen_text() {
@@ -223,6 +224,9 @@ write_summary() {
         echo "- 测的 APK：$(basename "$APK")，打包的源码提交：\`${E2E_APK_COMMIT:-未知}\`${E2E_APK_SOURCE:+（$E2E_APK_SOURCE）}"
         if [ "$E2E_SUITE" != all ]; then
             echo "- 只跑了：$E2E_SUITE"
+        fi
+        if [ "${E2E_OFFLINE_PROBE:-}" = 1 ]; then
+            echo '- 临时离线诊断：保留原all前置，完成离线恢复段后结束；没有执行后续锁屏/下载/迁移'
         fi
         echo "- 设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
         echo "- 结果：$passed 项通过，$FAILED 项失败"
@@ -519,14 +523,20 @@ fi
 
 # 12. 断网：断网后点一首歌，要提示播放未成功（不能一直转圈，也不能一路往下跳）；
 #     恢复网络后在提示里点“重试”，要能播
+if [ "${E2E_OFFLINE_PROBE:-}" = 1 ]; then
+    offline_capture_start || { fail '离线诊断：连续日志启动'; finish; }
+fi
 open_link "musicfree://search?keyword=e2e%20$REF"
 if flow "再次打开搜索页" search-results.yaml && set_network off; then
+    offline_capture_marker network-off || { fail '离线诊断：断网标记'; set_network on; finish; }
     offline_notice=0
     if flow "断网时点歌，提示播放未成功" offline-song.yaml; then
         offline_notice=1
     fi
     log "断网时的媒体会话：$(session)"
+    offline_capture_marker offline-checked || { fail '离线诊断：操作后标记'; set_network on; finish; }
     set_network on
+    offline_capture_marker network-on || { fail '离线诊断：联网标记'; finish; }
     if [ "$offline_notice" -eq 1 ]; then
         flow "网络恢复后在失败提示里点重试" offline-retry.yaml
     else
@@ -536,6 +546,10 @@ if flow "再次打开搜索页" search-results.yaml && set_network off; then
 fi
 # 不管上面哪步没过，都把网络恢复
 set_network on > /dev/null
+if [ "${E2E_OFFLINE_PROBE:-}" = 1 ]; then
+    offline_capture_finish
+    finish
+fi
 
 # 13. 迷你播放器不能盖住底部标签栏。从二级页面回到标签页时，播放条会从底部升到标签栏上方；
 #     刚升上去就切到后台、过几秒再回来，Reanimated 4.4 会丢掉播放条最后停下的位置，之后
