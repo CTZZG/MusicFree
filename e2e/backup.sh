@@ -11,7 +11,7 @@ backup_snapshot() {
     adb exec-out cat "$(kv_path "LocalSheet.$sheet_id")" | python3 -I "$HERE/lib/backup_restore.py" extract songs > "$OUT/backup-$name-songs.json" || return 1
 }
 
-run_backup_checks() {
+run_backup_steps() {
     local kind config before after mode
     ensure_root || { fail '备份：设备文件前提' '需要真实私有快照'; return 1; }
     flow '备份：打开现有恢复界面' backup-open.yaml || return 1
@@ -58,4 +58,15 @@ run_backup_checks() {
     # Same actual APK, static image boundary only; no new product instrumentation.
     source "$HERE/lyric_boundaries.sh"
     run_share_boundary_card || return 1
+}
+
+run_backup_checks() {
+    local failures_before=$FAILED result=0
+    run_backup_steps || result=$?
+    # finish() uses recorded failures. A device/helper error must not turn a
+    # partially completed suite into success, even if it did not call fail().
+    if [ "$result" -ne 0 ] && [ "$FAILED" -eq "$failures_before" ]; then
+        fail '备份：专项完整性' '设备命令或图片检查失败，专项未完成；查看原始日志'
+    fi
+    return "$result"
 }

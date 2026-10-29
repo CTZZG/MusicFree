@@ -448,6 +448,7 @@ jobs:
                   python3 -I e2e/lib/kvstore.py --self-test
                   python3 -I e2e/lib/local_library.py --self-test
                   python3 -I e2e/lib/backup_restore.py --self-test
+                  python3 -I e2e/lib/backup_flow_test.py
                   python3 -I e2e/lib/perf_stats.py --self-test
                   python3 -I e2e/lib/device_state.py --self-test
                   bash e2e/lib/pause_checks_test.sh
