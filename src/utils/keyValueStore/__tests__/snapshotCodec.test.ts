@@ -32,6 +32,11 @@ describe("snapshot codec", () => {
         ["not json at all", "invalid-json"],
         ["[]", "not-an-object"],
         ["{\"version\":99,\"entries\":{}}", "unsupported-version:99"],
+        ["{\"entries\":{}}", "invalid-version"],
+        ["{\"version\":null,\"entries\":{}}", "invalid-version"],
+        ["{\"version\":\"1\",\"entries\":{}}", "invalid-version"],
+        ["{\"version\":0,\"entries\":{}}", "invalid-version"],
+        ["{\"version\":1.5,\"entries\":{}}", "invalid-version"],
         [`{"version":${SNAPSHOT_VERSION}}`, "missing-entries"],
     ])("degrades gracefully and reports why: %s", (raw, reason) => {
         const decoded = decodeSnapshot(raw);

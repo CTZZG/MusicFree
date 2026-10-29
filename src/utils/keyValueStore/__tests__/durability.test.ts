@@ -158,6 +158,75 @@ it("retains the backup when RNFS leaves a truncated primary after copy failure",
     expect(restarted.getString("data")).toBe("candidate");
 });
 
+it("recovers the complete temp after promoting it leaves a partial backup", async () => {
+    files.set(`${primary}.tmp`, raw("last-surviving"));
+    const target = store();
+    await target.hydrate();
+    target.set("data", "newer");
+    io.moveFile.mockImplementationOnce(async (_from, to) => {
+        files.set(to, "{partial");
+        throw new Error("copy failed");
+    });
+    await expect(target.flush()).resolves.toBe(false);
+    expect(files.get(`${primary}.tmp`)).toBe(raw("last-surviving"));
+    const restarted = store();
+    await restarted.hydrate();
+    expect(restarted.getString("data")).toBe("last-surviving");
+    restarted.set("data", "committed");
+    await expect(restarted.flush()).resolves.toBe(true);
+    expect(files.get(`${primary}.bak`)).toBe(raw("last-surviving"));
+    const committed = store();
+    await committed.hydrate();
+    expect(committed.getString("data")).toBe("committed");
+});
+
+it.each([false, true])("skips a malformed backup for a complete temp, primary present=%s", async hasPrimary => {
+    if (hasPrimary) files.set(primary, "{broken-primary");
+    files.set(`${primary}.bak`, "{broken-backup");
+    files.set(`${primary}.tmp`, raw("complete-temp"));
+    const onRecover = jest.fn();
+    const target = new KeyValueStore("s", createFilePersistence(), { ...options, onRecover });
+    await target.hydrate();
+    expect(target.getString("data")).toBe("complete-temp");
+    expect(onRecover).toHaveBeenCalledWith({ storeId: "s", reason: "snapshot-restored:temporary" });
+});
+
+it("blocks malformed recovery files when none is a complete snapshot", async () => {
+    files.set(`${primary}.bak`, "{broken-backup");
+    files.set(`${primary}.tmp`, "{broken-temp");
+    const before = [...files];
+    const target = store();
+    await expect(target.hydrate()).rejects.toMatchObject({ name: "StoreReadError" });
+    target.set("data", "must-not-overwrite");
+    await expect(target.flush()).resolves.toBe(false);
+    expect([...files]).toEqual(before);
+});
+
+it.each([undefined, null, "1", 0, 1.5, {}])("recovers a malformed version field from a valid backup: %s", async version => {
+    const malformed = JSON.stringify({ version, entries: {} });
+    files.set(primary, malformed);
+    files.set(`${primary}.bak`, raw("last-good"));
+    const target = store();
+    await target.hydrate();
+    expect(target.getString("data")).toBe("last-good");
+    expect(files.get(primary)).toBe(malformed);
+    target.set("data", "repaired");
+    await expect(target.flush()).resolves.toBe(true);
+    expect(files.get(`${primary}.corrupt`)).toBe(malformed);
+    expect(files.get(`${primary}.bak`)).toBe(raw("last-good"));
+});
+
+it("never bypasses a future recovery format to read an older temp", async () => {
+    const future = JSON.stringify({ version: 99, entries: {} });
+    files.set(`${primary}.bak`, future);
+    files.set(`${primary}.tmp`, raw("older"));
+    const target = store();
+    await expect(target.hydrate()).rejects.toMatchObject({ reason: "unsupported-version:99" });
+    target.set("data", "new");
+    await expect(target.flush()).resolves.toBe(false);
+    expect(files.get(`${primary}.bak`)).toBe(future);
+});
+
 it("explicit deletion removes recovery files so deleted data cannot return", async () => {
     for (const suffix of ["", ".bak", ".tmp", ".corrupt"]) files.set(`${primary}${suffix}`, raw("old"));
     const backend = createFilePersistence();

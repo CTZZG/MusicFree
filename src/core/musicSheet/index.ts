@@ -60,6 +60,18 @@ function normalizeResumeMusicList(
     }));
 }
 
+/** Restore historical ordering without treating imported songs as new additions. */
+function restoreMusicMetadata(musicList: IMusic.IMusicItem[], sortType: SortType) {
+    return musicList.map((item, index) => ({
+        ...item,
+        $timestamp: typeof item.$timestamp === "number" &&
+            Number.isFinite(item.$timestamp) && item.$timestamp >= 0 ? item.$timestamp : 0,
+        $sortIndex: typeof item.$sortIndex === "number" &&
+            Number.isFinite(item.$sortIndex) && item.$sortIndex >= 0 ? item.$sortIndex
+            : sortType === SortType.Newest ? musicList.length - index : index,
+    }));
+}
+
 function normalizeResumeSheet(
     sheet: Partial<IMusic.IMusicSheetItem> | null | undefined,
 ): IMusic.IMusicSheetItem | null {
@@ -363,13 +375,16 @@ class MusicSheetClazz implements IInjectable {
                     : resumeMode === ResumeMode.Overwrite ? byTitle.get(sheet.title || "") : undefined;
                 const id = existingId ?? await this.addSheet(sheet.title || "");
                 const current = existingId ? this.getSheets().find(item => item.id === id) : undefined;
-                await this.addMusic(id, sheet.musicList);
-                const metadata = restoreSheetMetadata(sheet, current);
-                if (Object.keys(metadata).length) await this.updateMusicSheetBase(id, metadata);
+                // Select the incoming sort before insertion; the destination's
+                // default sort must not reorder a manually ordered backup first.
                 if (!existingId && [SortType.None, SortType.Newest, SortType.Oldest,
                     SortType.Artist, SortType.Album, SortType.Title].includes(sheet.$backupSortType)) {
                     await this.setSortType(id, sheet.$backupSortType);
                 }
+                const sortType = storage.getSheetMeta(id, "sort") as SortType;
+                await this.addMusicWithMetadata(id, restoreMusicMetadata(sheet.musicList, sortType));
+                const metadata = restoreSheetMetadata(sheet, current);
+                if (Object.keys(metadata).length) await this.updateMusicSheetBase(id, metadata);
                 result.idMap[sheet.id] = id;
                 byTitle.set(sheet.title || "", id);
                 result.successCount++;
@@ -424,7 +439,10 @@ class MusicSheetClazz implements IInjectable {
             $timestamp: now,
             $sortIndex: musicItem.length - index,
         }));
+        await this.addMusicWithMetadata(sheetId, taggedMusicItems);
+    }
 
+    private async addMusicWithMetadata(sheetId: string, taggedMusicItems: IMusic.IMusicItem[]) {
         let musicList = this.getSortedMusicListBySheetId(sheetId);
 
         const addedCount = musicList.add(taggedMusicItems);

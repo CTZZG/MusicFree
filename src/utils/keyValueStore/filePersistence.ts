@@ -1,6 +1,7 @@
 import RNFS from "react-native-fs";
 
 import type { IStorePersistence } from "./types";
+import { decodeSnapshot } from "./snapshotCodec";
 
 /**
  * 键值存储的落盘目录。
@@ -127,14 +128,25 @@ export function createFilePersistence(): IStorePersistence {
     const recoveredFrom = new Map<string, string>();
     async function readFallback(storeId: string) {
         const filePath = storePath(storeId);
+        recoveredFrom.delete(storeId);
+        let malformed: string | null = null;
         for (const candidate of [`${filePath}.bak`, `${filePath}.tmp`]) {
             if (await RNFS.exists(candidate)) {
                 const contents = await RNFS.readFile(candidate, "utf8");
+                const decoded = decodeSnapshot(contents);
+                if (decoded.recovered) {
+                    // Do not bypass a newer format, even for an older valid temp.
+                    if (decoded.reason?.startsWith("unsupported-version:")) return contents;
+                    malformed ??= contents;
+                    continue;
+                }
                 recoveredFrom.set(storeId, candidate);
                 return contents;
             }
         }
-        return null;
+        // Malformed files are not an absent store. Let hydration reject rather
+        // than starting an empty, writable store when no candidate is complete.
+        return malformed;
     }
     return {
         async read(storeId) {

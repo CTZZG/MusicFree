@@ -28,6 +28,9 @@ function modules(directory, stage) {
             checkpoint('temp-complete');
         },
         moveFile: async (from, to) => {
+            if (stage === 'temp-promotion-partial' && to === `${primary}.bak`) {
+                await fsp.writeFile(to, '{partial'); process.exit(81);
+            }
             if (stage === 'primary-partial' && to === primary) {
                 await fsp.writeFile(to, '{partial'); process.exit(81);
             }
@@ -80,15 +83,19 @@ async function parent() {
     const results = [];
     const snapshot = value => JSON.stringify({version: 1, entries: {data: {t: 's', v: value}}});
     const cases = [...stages.map(stage => ({stage, first: false})),
-        {stage: 'temp-complete', first: true}, {stage: 'temp-partial', first: true}];
-    for (const {stage, first} of cases) {
+        {stage: 'temp-complete', first: true}, {stage: 'temp-partial', first: true},
+        {stage: 'temp-promotion-partial', first: true},
+        {stage: 'temp-complete', first: false, invalidHeader: true}];
+    for (const {stage, first, invalidHeader} of cases) {
         const directory = await fsp.mkdtemp(path.join(os.tmpdir(), marker));
         try {
             const kv = path.join(directory, 'kvstore');
             await fsp.mkdir(kv);
             if (!first) {
-                await fsp.writeFile(path.join(kv, 's.json'), snapshot('last-good'));
-                await fsp.writeFile(path.join(kv, 's.json.bak'), snapshot('older'));
+                await fsp.writeFile(path.join(kv, 's.json'), invalidHeader ? '{"entries":{}}' : snapshot('last-good'));
+                await fsp.writeFile(path.join(kv, 's.json.bak'), snapshot(invalidHeader ? 'last-good' : 'older'));
+            } else if (stage === 'temp-promotion-partial') {
+                await fsp.writeFile(path.join(kv, 's.json.tmp'), snapshot('last-good'));
             }
             const run = spawnSync(process.execPath, [__filename, '--child', 'write', directory, stage], {encoding: 'utf8', timeout: 15000});
             assert.equal(run.status, 81, `crash checkpoint ${stage}: ${run.stderr}`);
@@ -96,9 +103,10 @@ async function parent() {
             assert.equal(restart.status, 0, `restart ${stage}: ${restart.stderr}`);
             const observed = JSON.parse(restart.stdout);
             const expected = first && stage === 'temp-partial' ? {blocked: true}
+                : stage === 'temp-promotion-partial' ? {value: 'last-good'}
                 : {value: stage === 'committed' || first ? 'candidate' : 'last-good'};
             assert.deepEqual(observed, expected, `restart at ${stage}, first=${first}`);
-            results.push({stage, firstWrite: first, ...observed});
+            results.push({stage, firstWrite: first, invalidHeader: !!invalidHeader, ...observed});
         } finally { await fsp.rm(directory, {recursive: true, force: true}); }
     }
     process.stdout.write(`${JSON.stringify({hostProcessCrashCases: results.length, results}, null, 2)}\n`);

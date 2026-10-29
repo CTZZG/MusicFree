@@ -8,7 +8,11 @@
         "artist": "E2E Backup Artist",
         "coverImg": "https://example.org/e2e-backup-cover.png",
         "createAt": 1234,
-        "musicList": []
+        "$backupSortType": "time-rev",
+        "musicList": [
+            {"id": "e2e-backup-old", "platform": "E2E Backup Fixture", "title": "Z Old Song", "artist": "E2E Backup Artist", "album": "E2E Backup Album", "$timestamp": 100, "$sortIndex": 0},
+            {"id": "e2e-backup-new", "platform": "E2E Backup Fixture", "title": "A New Song", "artist": "E2E Backup Artist", "album": "E2E Backup Album", "$timestamp": 200, "$sortIndex": 0}
+        ]
     }],
     "preferences": {
         "settings": {

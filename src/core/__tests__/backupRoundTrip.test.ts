@@ -142,3 +142,68 @@ it("restores custom metadata independently of the returned report", async () => 
     expect(restored.coverImg).toBe(source.coverImg);
     expect(restored.description).toBe(source.description);
 });
+
+it.each([SortType.Oldest, SortType.Newest, SortType.None])("round-trips multi-song order and added metadata with a different default sort: %s", async sort => {
+    const old = { ...song, id: "old", title: "Z old", $timestamp: 100, $sortIndex: 0 };
+    const middle = { ...song, id: "middle", title: "A middle", $timestamp: 200, $sortIndex: 0 };
+    const recent = { ...song, id: "recent", title: "M recent", $timestamp: 200, $sortIndex: 1 };
+    mockSheets.set("original", sort === SortType.Oldest ? [old, middle, recent]
+        : sort === SortType.Newest ? [recent, middle, old] : [old, recent, middle]);
+    mockMeta.set("original:sort", sort);
+    await setup([favorite, source]);
+    const raw = Backup.backup();
+    const exported = JSON.parse(raw).musicSheets.find((sheet: IMusic.IMusicSheetItem) => sheet.id === source.id);
+    mockSheets.clear(); mockMeta.clear();
+    mockConfig.set("basic.musicOrderInLocalSheet", SortType.Title);
+    await setup([favorite]);
+    const report = await Backup.resume(raw, ResumeMode.Append);
+    expect(report.musicSheets.failedCount).toBe(0);
+    const restoredId = MusicSheet.getSheets().find(sheet => sheet.title === source.title)!.id;
+    const restored = MusicSheet.getSortedMusicListBySheetId(restoredId).musicList;
+    expect(restored).toEqual(exported.musicList);
+    expect(mockSheets.get(restoredId)).toEqual(exported.musicList);
+    expect(mockMeta.get(`${restoredId}:sort`)).toBe(sort);
+    // The persisted ordering survives a new MusicSheet setup too.
+    await setup([...mockIndex]);
+    expect(MusicSheet.getSortedMusicListBySheetId(restoredId).musicList).toEqual(exported.musicList);
+});
+
+it("keeps the destination sort and duplicate metadata when merging a backup", async () => {
+    const existing = { ...song, id: "existing", title: "A local", $timestamp: 10, $sortIndex: 0 };
+    const incoming = { ...song, id: "incoming", title: "Z imported", $timestamp: 20, $sortIndex: 0 };
+    mockSheets.set("local", [existing]); mockMeta.set("local:sort", SortType.Title);
+    await setup([favorite, { ...source, id: "local" }]);
+    const report = await MusicSheet.resumeSheets([{ ...source, $backupSortType: SortType.Oldest,
+        musicList: [{ ...existing, $timestamp: 999 }, incoming] }], ResumeMode.Overwrite);
+    expect(report.idMap[source.id]).toBe("local");
+    expect(mockMeta.get("local:sort")).toBe(SortType.Title);
+    expect(MusicSheet.getSortedMusicListBySheetId("local").musicList).toEqual([existing, incoming]);
+});
+
+it.each([SortType.Oldest, SortType.Newest])("uses safe ordered fallbacks for invalid backup time fields: %s", async sort => {
+    const songs = [
+        { ...song, id: "first", $timestamp: "bad", $sortIndex: null },
+        { ...song, id: "second", $timestamp: -1, $sortIndex: "bad" },
+    ];
+    const report = await MusicSheet.resumeSheets([{ ...source, $backupSortType: sort, musicList: songs }], ResumeMode.Append);
+    const restored = MusicSheet.getSortedMusicListBySheetId(report.idMap[source.id]).musicList;
+    expect(restored.map(item => item.id)).toEqual(["first", "second"]);
+    expect(restored.every(item => Number.isFinite(item.$timestamp) && Number.isFinite(item.$sortIndex))).toBe(true);
+});
+
+it("still timestamps ordinary additions as new songs", async () => {
+    jest.spyOn(Date, "now").mockReturnValue(12345);
+    try {
+        await MusicSheet.addMusic("original", [
+            { ...song, id: "first-new", $timestamp: 1, $sortIndex: 0 },
+            { ...song, id: "second-new", $timestamp: 2, $sortIndex: 0 },
+        ]);
+        const added = MusicSheet.getSortedMusicListBySheetId("original").musicList.filter(item => item.id !== song.id);
+        expect(added).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: "first-new", $timestamp: 12345, $sortIndex: 2 }),
+            expect.objectContaining({ id: "second-new", $timestamp: 12345, $sortIndex: 1 }),
+        ]));
+    } finally {
+        jest.restoreAllMocks();
+    }
+});

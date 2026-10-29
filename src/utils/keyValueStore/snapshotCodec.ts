@@ -56,12 +56,16 @@ export function decodeSnapshot(raw: string | null | undefined): {
         return { entries: {}, recovered: true, reason: "not-an-object" };
     }
 
-    const candidate = parsed as Partial<IStoreSnapshot>;
+    const candidate = parsed as { version?: unknown; entries?: unknown };
     if (candidate.version !== SNAPSHOT_VERSION) {
         return {
             entries: {},
             recovered: true,
-            reason: `unsupported-version:${String(candidate.version)}`,
+            // Only a well-formed newer version proves this app would downgrade
+            // the snapshot. A missing or invalid header can use a good backup.
+            reason: typeof candidate.version === "number" &&
+                Number.isSafeInteger(candidate.version) && candidate.version > SNAPSHOT_VERSION
+                ? `unsupported-version:${candidate.version}` : "invalid-version",
         };
     }
     if (!candidate.entries || typeof candidate.entries !== "object" || Array.isArray(candidate.entries)) {
