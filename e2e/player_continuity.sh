@@ -20,7 +20,7 @@ recorded_player_flow() {
     if ! adb pull "$remote" "$OUT/player-$label.mp4" > "$OUT/player-$label-pull.log" 2>&1 ||
         ! ffprobe -v error -select_streams v:0 -show_entries stream=width,height,codec_name:format=duration \
             -of json "$OUT/player-$label.mp4" > "$OUT/player-$label-video.json" ||
-        ! ffmpeg -v error -xerror -i "$OUT/player-$label.mp4" -f null - 2> "$OUT/player-$label-decode.log"; then
+        ! ffmpeg -v error -xerror -i "$OUT/player-$label.mp4" -fps_mode passthrough -enc_time_base -1 -f null - 2> "$OUT/player-$label-decode.log"; then
         fail "录屏：$label" "视频未完整解码，不能评估此段衔接"
         return 1
     fi

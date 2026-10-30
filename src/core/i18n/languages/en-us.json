@@ -1224,6 +1224,7 @@
     "shareCard.preview": "Share card preview",
     "shareCard.select": "Select up to four lines, or leave empty for a song card.",
     "shareCard.noLyrics": "Play this song and load its lyrics to share selected lines.",
+    "shareCard.reloadLyrics": "Reload lyrics",
     "shareCard.translation": "Include translation",
     "shareCard.preparing": "Preparing artwork; a plain card is used if it cannot load.",
     "shareCard.link": "Share song info",

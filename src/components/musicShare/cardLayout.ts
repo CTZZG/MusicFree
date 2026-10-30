@@ -17,7 +17,9 @@ export function wrapCardText(text: string, columns: number, maxLines: number) {
             .replace(/[\r\n\t]+/g, " ")
             .trim(),
     )) {
-        const unit = /[\x20-\x7e]/.test(char) ? 0.65 : 1.1;
+        // Wide Latin glyphs such as W can be nearly one em in Android's
+        // system font. Budget the full em instead of an average glyph width.
+        const unit = /[\x20-\x7e]/.test(char) ? 1 : 1.1;
         if (width + unit > columns && line) {
             lines.push(line.trim());
             line = "";

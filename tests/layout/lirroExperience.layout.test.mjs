@@ -55,7 +55,7 @@ for (const device of [{width: 320, height: 640}, {width: 363, height: 806}, {wid
                             assertReadable(text, text.text);
                             assert.ok(text.frame.x >= -1 && text.frame.x + text.frame.width <= device.width + 1, `${text.text} stays within the screen`);
                         }
-                        for (const action of findAll(scroll, r => ['button', 'checkbox', 'radio'].includes(r.props.accessibilityRole))) {
+                        for (const action of findAll(root, r => ['button', 'checkbox', 'radio'].includes(r.props.accessibilityRole))) {
                             assert.ok(action.frame.height >= 44 - .5, 'actions remain touchable');
                             for (const text of findAll(action, isText)) assert.ok(contains(action.frame, text.frame, 1), `${text.text} stays in its action`);
                         }

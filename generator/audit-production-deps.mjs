@@ -24,13 +24,6 @@ const imageSizeReason =
 
 const auditExceptions = [
     {
-        advisory: 'GHSA-86w9-cpqp-85rv',
-        packageName: 'node-forge',
-        reason:
-            '只用于 Expo CLI 的更新包代码签名（expo → @expo/cli → @expo/code-signing-certificates），本项目构建不签名，也不打进 APK。',
-        reviewedOn: '2026-10-02',
-    },
-    {
         advisory: 'GHSA-5p2g-fcmc-qvqq',
         packageName: 'image-size',
         reason: imageSizeReason,

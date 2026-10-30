@@ -1,0 +1,24 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "歌曲: WWWWWWWWWWWWWWWWWWWWWWWWWW 歌手: E2E Artist"
+- tapOn: "分享歌曲与歌词"
+- extendedWaitUntil:
+    visible: "选择歌词：WWWWWWWWWWWWWWWWWWWWWWWWWW"
+    timeout: 15000
+- tapOn: "选择歌词：WWWWWWWWWWWWWWWWWWWWWWWWWW"
+- scrollUntilVisible:
+    element: "选择歌词：汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字"
+    direction: DOWN
+- tapOn: "选择歌词：汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字汉字"
+- scrollUntilVisible:
+    element: "选择歌词：👩‍🎤👩‍🎤👩‍🎤👩‍🎤👩‍🎤"
+    direction: DOWN
+- tapOn: "选择歌词：👩‍🎤👩‍🎤👩‍🎤👩‍🎤👩‍🎤"
+- scrollUntilVisible:
+    element: "选择歌词：Supercalifragilisticexpialidocious"
+    direction: DOWN
+- tapOn: "选择歌词：Supercalifragilisticexpialidocious"
+# Do not scroll back to the preview: the portrait action row must remain usable.
+- assertVisible: "保存图片"
+- takeScreenshot: boundary-four-lines-actions
+- tapOn: "保存图片"

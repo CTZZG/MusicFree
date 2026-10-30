@@ -39,6 +39,14 @@ const TAGGING_SONGS = [
     { id: "tagged-wma", title: "E2E Tagged WMA", file: "tagged.wma", duration: 2 },
 ];
 
+// Separate query for real UI boundaries; the normal queue is byte-for-byte the
+// same. These public test lyrics never enter a normal search or production API.
+const BOUNDARY_SONGS = [
+    { id: "boundary-wide", title: "W".repeat(26), file: "tone-a.mp3", duration: 480 },
+    { id: "boundary-long", title: "E2E Long Word", file: "tone-a.mp3", duration: 480 },
+    { id: "boundary-delay", title: "E2E Delayed Lyrics", file: "tone-a.mp3", duration: 480 },
+];
+
 // 只有这几档音质，选无损之类的取不到：用来检查切换音质失败时，保持原来的音质接着播。
 // 应用先用新写法（192k）问，取不到再用旧写法（standard）问一遍
 const QUALITIES = ["128k", "192k", "320k", "low", "standard", "high"];
@@ -60,7 +68,8 @@ module.exports = {
         if (type !== "music" || page > 1 || !ref) {
             return { isEnd: true, data: [] };
         }
-        const songs = /(?:^|\s)wma(?:\s|$)/i.test(String(query)) ? TAGGING_SONGS :
+        const songs = /(?:^|\s)boundaries(?:\s|$)/i.test(String(query)) ? BOUNDARY_SONGS :
+            /(?:^|\s)wma(?:\s|$)/i.test(String(query)) ? TAGGING_SONGS :
             /(?:^|\s)hang(?:\s|$)/i.test(String(query)) ? HANG_SONGS : SONGS;
         return {
             isEnd: true,
@@ -86,7 +95,25 @@ module.exports = {
     },
 
     // Deterministic share-card/lyric-tools UI fixture; normal playback/queue stay unchanged.
-    async getLyric() {
+    async getLyric(musicItem) {
+        if (musicItem?.id === "boundary-wide") {
+            return { rawLrc: "[00:00.00]" + "W".repeat(26) +
+                "\n[00:08.00]" + "汉字".repeat(14) +
+                "\n[00:16.00]" + "👩‍🎤".repeat(5) +
+                "\n[00:24.00]Supercalifragilisticexpialidocious", };
+        }
+        if (musicItem?.id === "boundary-long") {
+            return {
+                rawLrc: Array.from({ length: 30 }, (_, i) =>
+                    `[${i * 4000},4000]${i % 2 ? "啊" : "Stay"}(${i * 4000},2400) awake(${i * 4000 + 2400},1600)`).join("\n"),
+            };
+        }
+        if (musicItem?.id === "boundary-delay") {
+            // Below the existing 25s product lyric timeout. The diagnostic
+            // opens the panel through public taps while this is still pending.
+            await new Promise(resolve => setTimeout(resolve, 22000));
+            return { rawLrc: "[00:00.00]Delayed lyrics ready\n[00:08.00]Same song reloaded" };
+        }
         return {
             rawLrc: "[00:00.00]First share line\n[00:08.00]Second share line\n[00:16.00]Third share line\n[00:24.00]Fourth share line",
             translation: "[00:00.00]第一句译文\n[00:08.00]第二句译文\n[00:16.00]第三句译文\n[00:24.00]第四句译文",

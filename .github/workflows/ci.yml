@@ -40,9 +40,14 @@ jobs:
                   bash e2e/lib/download_source_test.sh
                   bash e2e/lib/tagging_test.sh
                   python3 -I e2e/lib/share_card.py --self-test
+                  python3 -I e2e/lib/lyric_boundaries.py --self-test
+                  node generator/test-lyric-boundary-fixture.mjs
                   python3 -I e2e/lib/share_receiver.py --self-test
                   python3 -I e2e/lib/playback_info_evidence.py --self-test
                   bash e2e/lib/experience_test.sh
+                  bash e2e/lib/maestro_handoff_test.sh
+                  bash e2e/lib/boundary_environment_test.sh
+                  bash e2e/lib/font_controls_test.sh
                   bash e2e/lib/share_receiver_test.sh
                   bash e2e/lib/plugin_install_test.sh
                   python3 -I e2e/lib/song_target_test.py

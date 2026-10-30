@@ -51,6 +51,7 @@ shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; 
 # shellcheck source=lib/pause_checks.sh
 source "$HERE/lib/pause_checks.sh"
 source "$HERE/lib/startup_capture.sh"
+source "$HERE/lib/maestro_handoff.sh"
 # shellcheck source=lib/adb_install.sh
 source "$HERE/lib/adb_install.sh"
 # shellcheck source=lib/audio_hardening.sh
@@ -75,6 +76,14 @@ flow() {
     done
     local args=(test --test-output-dir "$OUT/maestro/$tag" "$@")
     if [ "$DRIVER_INSTALLED" -eq 1 ]; then
+        # Each CLI invocation owns one instrumentation server. A prior server
+        # can outlive its CLI and keep 44291 bound (Beta224). Release only the
+        # two test-driver packages before starting another flow; never restart
+        # MusicFree or retry an assertion to conceal a failed test.
+        if ! stop_maestro_ui_driver "$OUT/maestro/$tag" allow-uninstalled; then
+            fail "$name" "旧 Maestro 驱动未退出，未启动新的测试服务器"
+            return 1
+        fi
         args+=(--no-reinstall-driver)
     fi
     DRIVER_INSTALLED=1
@@ -258,6 +267,16 @@ adb shell settings put global hide_error_dialogs 1 || true
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb logcat -c || true
+if [ "$E2E_SUITE" = lyric-boundaries ]; then
+    # Reanimated reads reduced motion at process startup. Establish evidence
+    # before the App is first launched, rather than treating a live0x->1x switch
+    # as proof that the long-note animation was enabled at startup.
+    source "$HERE/lib/boundary_environment.sh"
+    if ! prepare_boundary_startup_motion; then
+        fail '边界：启动前动画设置' '没有实际设置并读回1x，未执行长音场景'
+        finish
+    fi
+fi
 # Android 17 的后台音频加固：在装应用之前打开，先让替身在后台被拦一次，确认加固生效、记录认得出来
 if [ -n "$E2E_AUDIO_HARDENING" ]; then
     # Later plugin/storage checks also request root. Do the daemon restart
@@ -306,6 +325,11 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
+if [ "$E2E_SUITE" = lyric-boundaries ] || [ "$E2E_SUITE" = playback-font ]; then
+    source "$HERE/lyric_boundaries.sh"
+    run_lyric_boundary_checks
+    finish
+fi
 if [ "$E2E_SUITE" = player-observation ]; then
     open_link "musicfree://search?keyword=e2e%20$REF"
     recorded_player_flow "观察准备：实际点播 A/B/C" play-three.yaml selection || finish

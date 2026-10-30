@@ -68,9 +68,10 @@ export function shareLyricSnapshot(
 export default function MusicShare({ musicItem }: Props) {
     const { t } = useI18N();
     const colors = useColors();
-    const { width } = useWindowDimensions();
+    const { width, height } = useWindowDimensions();
+    const stickyActions = height >= 500;
     const artwork = useResolvedMusicArtwork(musicItem);
-    const [lines] = useState(() => shareLyricSnapshot(musicItem));
+    const [lines, setLines] = useState(() => shareLyricSnapshot(musicItem));
     const [selected, setSelected] = useState<number[]>([]);
     const [translation, setTranslation] = useState(false);
     const [color, setColor] = useState("#31516a");
@@ -201,6 +202,40 @@ export default function MusicShare({ musicItem }: Props) {
             <ThemeText fontWeight="semibold">{label}</ThemeText>
         </Pressable>
     );
+    const actions = (
+        <View style={styles.footer}>
+            <View style={styles.actions}>
+                {actionButton(t("shareCard.link"), "text")}
+                {actionButton(t("shareCard.save"), "save")}
+                {actionButton(
+                    t("shareCard.image"),
+                    "image",
+                )}
+            </View>
+            {stage ? (
+                <ThemeText accessibilityLiveRegion="polite">
+                    {t(`shareCard.stage.${stage}`)}
+                </ThemeText>
+            ) : null}
+            {stage === "preparing" ? (
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                        "shareCard.cancel",
+                    )}
+                    style={styles.cancel}
+                    onPress={() => {
+                        operation.current = null;
+                        setStage(null);
+                    }}
+                >
+                    <ThemeText fontColor="primary">
+                        {t("shareCard.cancel")}
+                    </ThemeText>
+                </Pressable>
+            ) : null}
+        </View>
+    );
     return (
         <PanelBase
             height={vh(88)}
@@ -258,41 +293,24 @@ export default function MusicShare({ musicItem }: Props) {
                                         {t("shareCard.preparing")}
                                     </ThemeText>
                                 ) : null}
-                                <View style={styles.actions}>
-                                    {actionButton(t("shareCard.link"), "text")}
-                                    {actionButton(t("shareCard.save"), "save")}
-                                    {actionButton(
-                                        t("shareCard.image"),
-                                        "image",
-                                    )}
-                                </View>
-                                {stage ? (
-                                    <ThemeText accessibilityLiveRegion="polite">
-                                        {t(`shareCard.stage.${stage}`)}
-                                    </ThemeText>
-                                ) : null}
-                                {stage === "preparing" ? (
-                                    <Pressable
-                                        accessibilityRole="button"
-                                        accessibilityLabel={t(
-                                            "shareCard.cancel",
-                                        )}
-                                        style={styles.cancel}
-                                        onPress={() => {
-                                            operation.current = null;
-                                            setStage(null);
-                                        }}
-                                    >
-                                        <ThemeText fontColor="primary">
-                                            {t("shareCard.cancel")}
-                                        </ThemeText>
-                                    </Pressable>
-                                ) : null}
+                                {!stickyActions ? actions : null}
                                 <ThemeText fontColor="textSecondary">
                                     {lines.length
                                         ? t("shareCard.select")
                                         : t("shareCard.noLyrics")}
                                 </ThemeText>
+                                {!lines.length ? (
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        accessibilityLabel={t("shareCard.reloadLyrics")}
+                                        style={styles.cancel}
+                                        disabled={busy}
+                                        onPress={() => setLines(shareLyricSnapshot(musicItem))}>
+                                        <ThemeText fontColor="primary">
+                                            {t("shareCard.reloadLyrics")}
+                                        </ThemeText>
+                                    </Pressable>
+                                ) : null}
                                 {lines.length ? (
                                     <ThemeText>
                                         {t("shareCard.selected", {
@@ -363,6 +381,7 @@ export default function MusicShare({ musicItem }: Props) {
                             </Pressable>
                         )}
                     />
+                    {stickyActions ? actions : null}
                 </>
             )}
         />
@@ -370,6 +389,7 @@ export default function MusicShare({ musicItem }: Props) {
 }
 
 const styles = StyleSheet.create({
+    footer: { paddingHorizontal: 20, paddingBottom: 16 },
     cancel: { minHeight: 48, justifyContent: "center", paddingVertical: 12 },
     list: { flex: 1 },
     switchLabel: { flex: 1, marginRight: 12 },
@@ -379,7 +399,7 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         flexWrap: "wrap",
         gap: 8,
-        marginVertical: 16,
+        marginVertical: 8,
     },
     action: {
         minHeight: 48,

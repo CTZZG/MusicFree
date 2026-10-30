@@ -158,6 +158,19 @@ it("does not attach a different track's lyrics or a stale/loading parser to a so
     expect(shareLyricSnapshot(song)).toEqual([]);
 });
 
+it("reloads lyrics after loading without attaching a different song", () => {
+    Object.assign(lyricManager.lyricState, { loading: true });
+    mount();
+    expect(button("shareCard.reloadLyrics")).toBeDefined();
+    Object.assign(lyricManager.lyricState, { loading: false });
+    Object.assign(TrackPlayer, { currentMusic: { ...song, id: "other" } });
+    act(() => button("shareCard.reloadLyrics").props.onPress());
+    expect(button("shareCard.reloadLyrics")).toBeDefined();
+    Object.assign(TrackPlayer, { currentMusic: song });
+    act(() => button("shareCard.reloadLyrics").props.onPress());
+    expect(button("First line")).toBeDefined();
+});
+
 it("selects up to four real rows, captures the preview and waits for pixels before saving", async () => {
     mount();
     act(() => {
