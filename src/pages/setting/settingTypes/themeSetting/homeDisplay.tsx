@@ -3,6 +3,7 @@ import ThemeSwitch from "@/components/base/switch";
 import { GroupedRow, GroupedSection } from "@/components/base/groupedList";
 import Config, { useAppConfig } from "@/core/appConfig";
 import { useI18N } from "@/core/i18n";
+import HomeSectionEditor from "@/pages/home/components/homeBody/homeSectionEditor";
 
 export default function HomeDisplay() {
     const { t } = useI18N();
@@ -11,7 +12,8 @@ export default function HomeDisplay() {
     const hideHomeHeroCard = useAppConfig("theme.hideHomeHeroCard") ?? false;
     const hideHomeRecentListening =
         useAppConfig("theme.hideHomeRecentListening") ?? false;
-    const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
+    const hideHomeOperations =
+        useAppConfig("theme.hideHomeOperations") ?? false;
 
     const switchRow = (
         title: string,
@@ -33,37 +35,49 @@ export default function HomeDisplay() {
     );
 
     return (
-        <GroupedSection title={t("themeSettings.homeDisplay")}>
-            {switchRow(
-                t("themeSettings.useEnhancedHome"),
-                useEnhancedHome,
-                value => Config.setConfig("theme.useEnhancedHome", value),
-                t("themeSettings.useEnhancedHome.desc"),
-            )}
-            {useEnhancedHome
-                ? switchRow(
-                    t("themeSettings.hideHomeDiscovery"),
-                    hideHomeDiscovery,
+        <>
+            <GroupedSection title={t("themeSettings.homeDisplay")}>
+                {switchRow(
+                    t("themeSettings.useEnhancedHome"),
+                    useEnhancedHome,
+                    value => Config.setConfig("theme.useEnhancedHome", value),
+                    t("themeSettings.useEnhancedHome.desc"),
+                )}
+                {useEnhancedHome
+                    ? switchRow(
+                        t("themeSettings.hideHomeDiscovery"),
+                        hideHomeDiscovery,
+                        value =>
+                            Config.setConfig(
+                                "theme.hideHomeDiscovery",
+                                value,
+                            ),
+                    )
+                    : null}
+                {switchRow(
+                    t("themeSettings.hideHomeHeroCard"),
+                    hideHomeHeroCard,
+                    value => Config.setConfig("theme.hideHomeHeroCard", value),
+                )}
+                {switchRow(
+                    t("themeSettings.hideHomeRecentListening"),
+                    hideHomeRecentListening,
                     value =>
-                        Config.setConfig("theme.hideHomeDiscovery", value),
-                )
-                : null}
-            {switchRow(
-                t("themeSettings.hideHomeHeroCard"),
-                hideHomeHeroCard,
-                value => Config.setConfig("theme.hideHomeHeroCard", value),
-            )}
-            {switchRow(
-                t("themeSettings.hideHomeRecentListening"),
-                hideHomeRecentListening,
-                value =>
-                    Config.setConfig("theme.hideHomeRecentListening", value),
-            )}
-            {switchRow(
-                t("themeSettings.hideHomeOperations"),
-                hideHomeOperations,
-                value => Config.setConfig("theme.hideHomeOperations", value),
-            )}
-        </GroupedSection>
+                        Config.setConfig(
+                            "theme.hideHomeRecentListening",
+                            value,
+                        ),
+                )}
+                {switchRow(
+                    t("themeSettings.hideHomeOperations"),
+                    hideHomeOperations,
+                    value =>
+                        Config.setConfig("theme.hideHomeOperations", value),
+                )}
+            </GroupedSection>
+            <GroupedSection title={t("homeOrder.title")}>
+                <HomeSectionEditor />
+            </GroupedSection>
+        </>
     );
 }

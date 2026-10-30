@@ -25,6 +25,7 @@ import {
     getFullLyricOpacity,
 } from "@/utils/lyricTransition";
 import { getLyricMotionPolicy } from "./lyricMotionPolicy";
+import { getWordEmphasis } from "./wordEmphasis";
 
 interface ILyricLine {
     key: string;
@@ -300,6 +301,7 @@ function AnimatedWord(props: {
     const maxTranslateY = Math.min(rpx(5), fontSize * ACTIVE_FLOAT_RATE);
     const wordStartTime = word.startTime;
     const wordDuration = word.duration;
+    const emphasis = getWordEmphasis(wordDuration, !!(primary && !isPseudo && enableFloat));
     const animatedStyle = useAnimatedStyle(() => {
         const startTime = wordStartTime;
         const duration = Math.max(wordDuration || 0, MIN_WORD_DURATION);
@@ -320,17 +322,20 @@ function AnimatedWord(props: {
                 [inactiveColor, activeColor],
             ),
             opacity: interpolate(progress, [0, 0.35, 1], [0.55, 0.82, 1]),
+            textShadowColor: emphasis.glow ? "rgba(255, 255, 255, 0.32)" : "transparent",
+            textShadowOffset: { width: 0, height: 0 },
+            textShadowRadius: wave * emphasis.glow,
             transform: [
                 {
                     translateY:
                         primary && !isPseudo && enableFloat
-                            ? -wave * maxTranslateY
+                            ? -wave * maxTranslateY * emphasis.lift
                             : 0,
                 },
                 {
                     scale:
                         primary && !isPseudo && enableFloat
-                            ? 1 + wave * ACTIVE_SCALE_RATE
+                            ? 1 + wave * (ACTIVE_SCALE_RATE + emphasis.scale)
                             : 1,
                 },
             ],

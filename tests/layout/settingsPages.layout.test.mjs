@@ -275,6 +275,7 @@ function renderAbout(env) {
         'react-native-device-info': strictStub('react-native-device-info', {
             default: {getApplicationName: () => 'MusicFree', getVersion: () => '0.11.2', getBuildNumber: () => '400028'},
         }),
+        'react-native-share': strictStub('share', {default: {open: async () => {}}}),
         '@/constants/buildInfo.generated': strictStub('buildInfo', {buildInfo: BUILD_INFO}),
         '@/hooks/useCheckUpdate': strictStub('useCheckUpdate', {checkUpdateAndShowResult: noop}),
         '@/utils/openUrl': strictStub('openUrl', {default: url => opened.push(url)}),

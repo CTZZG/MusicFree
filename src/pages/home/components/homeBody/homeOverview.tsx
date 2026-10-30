@@ -27,6 +27,7 @@ import { getShelfTileWidth, PAGE_MARGIN, TILE_GAP } from "@/utils/tileLayout";
 import useHomeDiscovery from "./useHomeDiscovery";
 import useHomeDiscoverySource from "./useHomeDiscoverySource";
 import useHomeOverview from "./useHomeOverview";
+import { normalizeHomeOrder } from "./homeSectionOrder";
 
 const PAGE_PADDING = PAGE_MARGIN;
 const RECOMMEND_LIMIT = 10;
@@ -51,12 +52,20 @@ function formatTime(value?: number) {
 export default function HomeOverview() {
     const { t } = useI18N();
     const data = useHomeOverview();
+    const colors = useColors();
     const { plugin, candidates } = useHomeDiscoverySource();
     const hideHomeDiscovery = useAppConfig("theme.hideHomeDiscovery") ?? false;
     const hideHomeHeroCard = useAppConfig("theme.hideHomeHeroCard") ?? false;
     const hideHomeRecentListening =
         useAppConfig("theme.hideHomeRecentListening") ?? false;
     const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
+    const sectionOrder = normalizeHomeOrder(useAppConfig("theme.homeSectionOrder"));
+    const sections = {
+        continue: !hideHomeHeroCard ? <ContinueListening currentMusic={data.currentMusic} featuredMusic={data.featuredMusic} /> : null,
+        discovery: !hideHomeDiscovery && plugin ? <><RecommendSheets plugin={plugin} /><TopLists plugin={plugin} /></> : null,
+        recent: !hideHomeRecentListening ? <RecentListening musics={data.recentMusics} /> : null,
+        shortcuts: !hideHomeOperations ? <QuickAccess /> : null,
+    };
 
     return (
         <LargeTitleScrollView
@@ -64,26 +73,15 @@ export default function HomeOverview() {
             title={t("tabs.home")}
             subtitle={t("home.subtitle")}
             actions={
-                !hideHomeDiscovery && plugin ? (
-                    <SourcePill plugin={plugin} candidates={candidates} />
-                ) : null
+                <View style={styles.headerActions}>
+                    {!hideHomeDiscovery && plugin ? <SourcePill plugin={plugin} candidates={candidates} /> : null}
+                    <Pressable accessibilityRole="button" accessibilityLabel={t("homeOrder.title")}
+                        onPress={() => showPanel("HomeSections")} style={styles.arrangeButton}>
+                        <Icon name="bars-3" size={22} color={colors.text} />
+                    </Pressable>
+                </View>
             }>
-            {!hideHomeHeroCard ? (
-                <ContinueListening
-                    currentMusic={data.currentMusic}
-                    featuredMusic={data.featuredMusic}
-                />
-            ) : null}
-            {!hideHomeDiscovery && plugin ? (
-                <>
-                    <RecommendSheets plugin={plugin} />
-                    <TopLists plugin={plugin} />
-                </>
-            ) : null}
-            {!hideHomeRecentListening ? (
-                <RecentListening musics={data.recentMusics} />
-            ) : null}
-            {!hideHomeOperations ? <QuickAccess /> : null}
+            {sectionOrder.map(section => <React.Fragment key={section}>{sections[section]}</React.Fragment>)}
         </LargeTitleScrollView>
     );
 }
@@ -688,10 +686,13 @@ function QuickAccess() {
 }
 
 const styles = StyleSheet.create({
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 8, maxWidth: 210, flexShrink: 1 },
+    arrangeButton: { minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
     pressed: {
         opacity: 0.6,
     },
     sourcePill: {
+        flexShrink: 1,
         flexDirection: "row",
         alignItems: "center",
         gap: 4,

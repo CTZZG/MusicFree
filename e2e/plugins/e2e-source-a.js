@@ -72,6 +72,7 @@ module.exports = {
                 duration: song.duration,
                 e2eRef: ref,
                 e2eFile: song.file,
+                artwork: `${RAW_BASE}/${ref}/e2e/fixtures/share-cover.png`,
             })),
         };
     },
@@ -82,6 +83,14 @@ module.exports = {
             return new Promise(() => undefined);
         }
         return Promise.resolve(resolveMediaSource(musicItem, quality));
+    },
+
+    // Deterministic share-card/lyric-tools UI fixture; normal playback/queue stay unchanged.
+    async getLyric() {
+        return {
+            rawLrc: "[00:00.00]First share line\n[00:08.00]Second share line\n[00:16.00]Third share line\n[00:24.00]Fourth share line",
+            translation: "[00:00.00]第一句译文\n[00:08.00]第二句译文\n[00:16.00]第三句译文\n[00:24.00]第四句译文",
+        };
     },
 };
 

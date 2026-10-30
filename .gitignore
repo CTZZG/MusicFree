@@ -98,6 +98,10 @@ docs/handoff/*
 !docs/handoff/dex-maintenance-2026-10-19.md
 !docs/handoff/v0.13.0-takeover-2026-10-23.md
 !docs/handoff/mpv-short-read-clock-2026-10-23.md
+!docs/handoff/lirro-experience-2026-10-25.md
+!docs/research/
+docs/research/*
+!docs/research/lirro-2026-10-24.md
 /1.jpg
 /2.jpg
 /FINAL_SUMMARY.md

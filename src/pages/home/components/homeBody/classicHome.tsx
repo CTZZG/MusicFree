@@ -9,6 +9,7 @@ import Operations from "./operations";
 import Sheets from "./sheets";
 import useHomeOverview from "./useHomeOverview";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
+import { normalizeHomeOrder } from "./homeSectionOrder";
 
 export default function ClassicHomeBody() {
     const data = useHomeOverview();
@@ -17,6 +18,13 @@ export default function ClassicHomeBody() {
         useAppConfig("theme.hideHomeRecentListening") ?? false;
     const hideHomeOperations = useAppConfig("theme.hideHomeOperations") ?? false;
     const musicBarBottomInset = useMusicBarFloatingOffset(rpx(36));
+    const order = normalizeHomeOrder(useAppConfig("theme.homeSectionOrder"), false);
+    const sections = {
+        continue: !hideHomeHeroCard ? <ClassicContinueHero currentMusic={data.currentMusic} featuredMusic={data.featuredMusic} /> : null,
+        shortcuts: !hideHomeOperations ? <Operations /> : null,
+        recent: !hideHomeRecentListening ? <ClassicRecentListening musics={data.recentMusics.slice(0, 3)} /> : null,
+        discovery: null,
+    };
 
     return (
         <ScrollView
@@ -26,16 +34,7 @@ export default function ClassicHomeBody() {
                 { paddingBottom: musicBarBottomInset || rpx(36) },
             ]}
             showsVerticalScrollIndicator={false}>
-            {!hideHomeHeroCard ? (
-                <ClassicContinueHero
-                    currentMusic={data.currentMusic}
-                    featuredMusic={data.featuredMusic}
-                />
-            ) : null}
-            {!hideHomeOperations ? <Operations /> : null}
-            {!hideHomeRecentListening ? (
-                <ClassicRecentListening musics={data.recentMusics.slice(0, 3)} />
-            ) : null}
+            {order.map(section => <React.Fragment key={section}>{sections[section]}</React.Fragment>)}
             <Sheets variant="classic" />
         </ScrollView>
     );

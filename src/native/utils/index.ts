@@ -85,6 +85,7 @@ export interface INativeCrashDiagnostics {
 }
 
 interface INativeUtils extends NativeModule {
+    saveShareImage: (pngBase64: string) => Promise<string>;
     exitApp: () => void;
     getWindowDimensions: () => { width: number, height: number }; // Fix bug: https://github.com/facebook/react-native/issues/47080
     isIgnoringBatteryOptimizations: () => Promise<boolean>;

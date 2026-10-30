@@ -25,7 +25,7 @@ PKG=fun.upup.musicfree
 OUT=$WORK/out
 mkdir -p "$OUT"
 # shellcheck source=../storage.sh
-source "$HERE/storage.sh"
+source "${E2E_STORAGE_IMPL:-$HERE/storage.sh}"
 MEDIA_ROOT=$WORK/device/media
 EXT_FILES=$MEDIA_ROOT/Android/data/$PKG/files
 KV_DIR=$WORK/device/kvstore
@@ -81,6 +81,16 @@ ok "写坏的下载记录解析不了" not quiet kv music.DownloadTasks check
 echo C > "$DOWNLOADS/E2E Tone C - E2E Artist.mp3"
 ok "C 下载完了" download_settled "E2E Tone C"
 ok "下载出的路径" equals "$(downloaded_path "E2E Tone C")" "$DOWNLOADS/E2E Tone C - E2E Artist.mp3"
+echo lyrics > "$DOWNLOADS/E2E Tone C - E2E Artist.lrc"
+echo words > "$DOWNLOADS/E2E Tone C - E2E Artist.txt"
+ok "有 LRC/TXT 时仍只取真实 MP3" equals "$(downloaded_path "E2E Tone C")" "$DOWNLOADS/E2E Tone C - E2E Artist.mp3"
+echo lyrics > "$DOWNLOADS/E2E Tagged WMA - E2E Artist.lrc"
+echo WMA > "$DOWNLOADS/E2E Tagged WMA - E2E Artist.wma"
+ok "有 LRC 时仍只取真实 WMA" equals "$(downloaded_path "E2E Tagged WMA")" "$DOWNLOADS/E2E Tagged WMA - E2E Artist.wma"
+echo lyrics > "$DOWNLOADS/E2E Lyrics Only - E2E Artist.lrc"
+ok "仅歌词不能产生音频路径" equals "$(downloaded_path "E2E Lyrics Only")" ""
+ok "仅歌词不算下载完成" not download_settled "E2E Lyrics Only"
+ok "仅新增歌词不算下载出新的音频" not new_download "E2E Lyrics Only" ""
 echo partial > "$EXT_FILES/cache/download/tone-b.part"
 ok "缓存还在就不算下载完" not download_settled "E2E Tone C"
 rm "$EXT_FILES/cache/download/tone-b.part"

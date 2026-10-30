@@ -1,11 +1,12 @@
 import React from "react";
+import Share from "react-native-share";
 import { Image, ScrollView, StyleSheet, View } from "react-native";
 import Clipboard from "@react-native-clipboard/clipboard";
 import DeviceInfo from "react-native-device-info";
 import { GroupedRow, GroupedSection } from "@/components/base/groupedList";
 import ThemeText from "@/components/base/themeText";
 import useMusicBarFloatingOffset from "@/components/musicBar/useMusicBarFloatingOffset";
-import { ImgAsset } from "@/constants/assetsConst";
+import { ImgAsset, B64Asset } from "@/constants/assetsConst";
 import { buildInfo } from "@/constants/buildInfo.generated";
 import {
     PROJECT_RELEASES_URL,
@@ -187,6 +188,14 @@ export default function AboutSetting() {
                         Toast.success(t("toast.copiedToClipboard"));
                     }}
                 />
+            </GroupedSection>
+
+            <GroupedSection title={t("musicDetail.shareApp.a11y")}>
+                <GroupedRow title={t("musicDetail.shareApp.a11y")} onPress={() => {
+                    Share.open({ type: "image/jpeg", title: applicationName,
+                        message: applicationName, url: B64Asset.share, failOnCancel: false })
+                        .catch(() => Toast.warn(t("toast.failToShareMusic")));
+                }} />
             </GroupedSection>
 
             <ThemeText
