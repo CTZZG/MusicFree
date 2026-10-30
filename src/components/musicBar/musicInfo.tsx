@@ -237,13 +237,15 @@ export default function MusicInfo(props: IMusicInfoProps) {
                     const rate = deltaX / musicItemWidthValue.value;
 
                     if (Math.abs(rate) > 0.3) {
-                        // 先判断距离
-                        skip = vX > 0 ? 1 : -1;
+                        // 距离优先：停住或轻微回拖后的松手速度不能反转方向。
+                        skip = deltaX > 0 ? 1 : -1;
                         transformSharedValue.value = withTiming(
                             skip,
                             timingConfig.animationFast,
-                            () => {
-                                runOnJS(skipMusicItem)(skip);
+                            finished => {
+                                if (finished) {
+                                    runOnJS(skipMusicItem)(skip);
+                                }
                             },
                         );
                     } else if (Math.abs(vX) > 1500) {

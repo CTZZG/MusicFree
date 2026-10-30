@@ -32,23 +32,13 @@ recorded_player_flow() {
 # views. For animation observation use a separate read-only UI snapshot helper;
 # actual taps/back still use shell input and the same 15-second visible target.
 prepare_public_ui_observer() {
-    local driver
     if [ ! -s "${E2E_UI_OBSERVER_APK:-}" ] ||
         ! adb install -r -t "$E2E_UI_OBSERVER_APK" > "$OUT/ui-observer-install.txt" 2>&1; then
         fail "播放页观察：公共 UI 前提" "只读快照 helper 未安装，未执行观察"
         return 1
     fi
-    for driver in dev.mobile.maestro dev.mobile.maestro.test; do
-        adb shell pm path "$driver" > "$OUT/ui-observer-$driver-path.txt" || return 1
-        grep -q '^package:' "$OUT/ui-observer-$driver-path.txt" || return 1
-        adb shell am force-stop "$driver" || return 1
-    done
-    for _ in {1..20}; do
-        adb shell dumpsys activity instrumentation > "$OUT/ui-observer-handoff.txt" || return 1
-        if ! grep -Fq dev.mobile.maestro "$OUT/ui-observer-handoff.txt"; then break; fi
-        sleep .25
-    done
-    if grep -Fq dev.mobile.maestro "$OUT/ui-observer-handoff.txt"; then
+    source "$HERE/lib/maestro_handoff.sh"
+    if ! stop_maestro_ui_driver "$OUT/ui-observer"; then
         fail "播放页观察：公共 UI 前提" "原测试驱动没有释放 UiAutomation"
         return 1
     fi
