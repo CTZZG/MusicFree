@@ -1,0 +1,18 @@
+appId: fun.upup.musicfree
+---
+- assertVisible: "歌曲: E2E Tone C 歌手: E2E Artist"
+- takeScreenshot: continuity-default-mini-before
+- repeat:
+    times: 2
+    commands:
+      - tapOn: "歌曲: E2E Tone C 歌手: E2E Artist"
+      - extendedWaitUntil:
+          visible: "更多操作"
+          timeout: 15000
+      - assertVisible: "E2E Tone C"
+      - takeScreenshot: continuity-default-page
+      - back
+      - extendedWaitUntil:
+          visible: "歌曲: E2E Tone C 歌手: E2E Artist"
+          timeout: 15000
+      - takeScreenshot: continuity-default-mini-after

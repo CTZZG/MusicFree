@@ -1,0 +1,51 @@
+appId: fun.upup.musicfree
+---
+# C stays explicitly paused throughout the longer sharing/information/tool checks.
+- back
+- extendedWaitUntil:
+    visible: "更多操作"
+    timeout: 15000
+- tapOn: "更多操作"
+- tapOn: "当前播放信息"
+- extendedWaitUntil:
+    visible: "歌曲原来源: E2E 测试源 A"
+    timeout: 15000
+- scrollUntilVisible:
+    element: "实际播放来源: E2E 测试源 A"
+    direction: DOWN
+    timeout: 15000
+- takeScreenshot: playback-info-source
+- scrollUntilVisible:
+    element: "音频编码: mp3"
+    direction: DOWN
+    timeout: 15000
+- assertVisible: "音频编码: mp3"
+- scrollUntilVisible:
+    element: "采样率: 16 kHz"
+    direction: DOWN
+    timeout: 15000
+- scrollUntilVisible:
+    element: "声道数: 1"
+    direction: DOWN
+    timeout: 15000
+- assertVisible: "声道数: 1"
+- scrollUntilVisible:
+    element: "码率（估计）: 16 kb/s"
+    direction: DOWN
+    timeout: 15000
+- assertVisible: "码率（估计）: 16 kb/s"
+- takeScreenshot: playback-info
+- scrollUntilVisible:
+    element: "刷新音频信息"
+    direction: DOWN
+- tapOn: "刷新音频信息"
+- scrollUntilVisible:
+    element: "采样率: 16 kHz"
+    direction: UP
+    timeout: 15000
+- takeScreenshot: playback-info-refreshed
+- back
+- tapOn: "分享歌曲与歌词"
+- extendedWaitUntil:
+    visible: "分享图片"
+    timeout: 15000

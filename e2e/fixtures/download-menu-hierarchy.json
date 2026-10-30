@@ -1,0 +1,99 @@
+{
+  "source": "Beta218 run40277591504, failed download-song step005, reduced actual menu hierarchy; download is not mounted in the visible viewport",
+  "rawHierarchySha256": "8d8dbdb67e4c007701d139f7a2acbc248729ede006238dc89edb165a1a9e8c6a",
+  "nodes": [
+    {
+      "attributes": {
+        "clickable": "false",
+        "bounds": "[0,1364][1080,2337]",
+        "enabled": "true",
+        "scrollable": "true",
+        "class": "android.widget.ScrollView"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "ID: E2E 测试源 A@fallback",
+        "clickable": "true",
+        "bounds": "[0,1381][1080,1512]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "作者: E2E Artist",
+        "clickable": "true",
+        "bounds": "[0,1512][1080,1643]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "专辑: E2E Album",
+        "clickable": "true",
+        "bounds": "[0,1644][1080,1776]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "分享歌曲",
+        "clickable": "true",
+        "bounds": "[0,1775][1080,1906]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "当前播放信息",
+        "clickable": "true",
+        "bounds": "[0,1906][1080,2037]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "下一首播放",
+        "clickable": "true",
+        "bounds": "[0,2037][1080,2168]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "稍后播放",
+        "clickable": "true",
+        "bounds": "[0,2169][1080,2301]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    },
+    {
+      "attributes": {
+        "accessibilityText": "加入歌单",
+        "clickable": "true",
+        "bounds": "[0,2300][1080,2337]",
+        "enabled": "true",
+        "scrollable": "false",
+        "class": "android.widget.Button"
+      }
+    }
+  ],
+  "subsequentFailure": {
+    "source": "Beta219 run40284541379, step005 automatic scrolling; screenshot still at same modal top",
+    "rawHierarchySha256": "9b4bc46ad2ff8dfd63de995c461e4f31e02de8c7766204768b9347c9e10d0d18"
+  }
+}

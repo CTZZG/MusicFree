@@ -6,7 +6,7 @@ import ThemeText from "@/components/base/themeText";
 import { ImgAsset } from "@/constants/assetsConst";
 import Clipboard from "@react-native-clipboard/clipboard";
 
-import { getMediaUniqueKey } from "@/utils/mediaUtils";
+import { getMediaUniqueKey, isSameMediaItem } from "@/utils/mediaUtils";
 import FastImage from "@/components/base/fastImage";
 import Toast from "@/utils/toast";
 import LocalMusicSheet from "@/core/localMusicSheet";
@@ -167,6 +167,12 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             icon: "share",
             title: t("panel.musicItemOptions.share"),
             onPress: () => showPanel("MusicShare", { musicItem }),
+        },
+        {
+            icon: "information-circle",
+            title: t("playbackInfo.title"),
+            show: isSameMediaItem(musicItem, TrackPlayer.currentMusic),
+            onPress: () => showPanel("PlaybackInfo"),
         },
         {
             icon: "motion-play",

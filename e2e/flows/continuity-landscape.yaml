@@ -1,0 +1,17 @@
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone C 歌手: E2E Artist"
+    timeout: 15000
+- takeScreenshot: continuity-landscape-mini
+- tapOn: "歌曲: E2E Tone C 歌手: E2E Artist"
+- extendedWaitUntil:
+    visible: "更多操作"
+    timeout: 15000
+- assertVisible: "E2E Tone C"
+- takeScreenshot: continuity-landscape-page
+- back
+- extendedWaitUntil:
+    visible: "歌曲: E2E Tone C 歌手: E2E Artist"
+    timeout: 15000
+- takeScreenshot: continuity-landscape-returned

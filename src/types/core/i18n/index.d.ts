@@ -1369,6 +1369,19 @@ export interface ILanguageData {
     "homeOrder.reset": string;
     "homeOrder.up": string;
     "homeOrder.down": string;
+    "playbackInfo.title": string;
+    "playbackInfo.unknown": string;
+    "playbackInfo.noTrack": string;
+    "playbackInfo.note": string;
+    "playbackInfo.loading": string;
+    "playbackInfo.originalSource": string;
+    "playbackInfo.playbackSource": string;
+    "playbackInfo.qualityLabel": string;
+    "playbackInfo.codec": string;
+    "playbackInfo.sampleRate": string;
+    "playbackInfo.channelCount": string;
+    "playbackInfo.bitrate": string;
+    "playbackInfo.refresh": string;
 }
 
 // 语言接口定义

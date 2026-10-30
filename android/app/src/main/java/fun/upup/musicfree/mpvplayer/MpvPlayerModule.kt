@@ -1752,6 +1752,38 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /** One read on the existing owner thread; no observers, playback commands or URL export. */
+    @ReactMethod
+    fun getAudioInfo(promise: Promise) {
+        postPromise(promise, "E_MPV_QUERY") { operationPromise ->
+            try {
+                val identity = activeTrackIdentity
+                if (!isInitialized.get() || identity == null || stopRequested ||
+                    identity.loadGeneration != currentLoadGeneration ||
+                    loadingGeneration == currentLoadGeneration || loadingTrackIdentity != null ||
+                    MPVLib.getPropertyBoolean("idle-active") == true || !currentPathMatches(identity.url)) {
+                    operationPromise.resolve(null)
+                    return@postPromise
+                }
+                val info = DecodedAudioInfo.read(MPVLib::getPropertyString, MPVLib::getPropertyDouble)
+                if (activeTrackIdentity != identity || !currentPathMatches(identity.url)) {
+                    operationPromise.resolve(null)
+                    return@postPromise
+                }
+                operationPromise.resolve(Arguments.createMap().apply {
+                    putString("mediaId", identity.mediaId)
+                    putDouble("loadGeneration", identity.loadGeneration.toDouble())
+                    putString("codec", info.codec)
+                    info.sampleRate?.let { putInt("sampleRate", it) } ?: putNull("sampleRate")
+                    info.channelCount?.let { putInt("channelCount", it) } ?: putNull("channelCount")
+                    info.bitrate?.let { putDouble("bitrate", it) } ?: putNull("bitrate")
+                })
+            } catch (_: Exception) {
+                operationPromise.resolve(null)
+            }
+        }
+    }
+
     private fun buildHeaderString(headers: ReadableMap?): String {
         if (headers == null) {
             return ""

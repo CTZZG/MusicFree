@@ -1254,5 +1254,18 @@
     "homeOrder.shortcuts": "Quick access",
     "homeOrder.reset": "Restore default order",
     "homeOrder.up": "Move {title} up",
-    "homeOrder.down": "Move {title} down"
+    "homeOrder.down": "Move {title} down",
+    "playbackInfo.title": "Playback information",
+    "playbackInfo.unknown": "Unknown",
+    "playbackInfo.noTrack": "No track is playing",
+    "playbackInfo.note": "These are decoded audio parameters, not device output. Plugin quality labels may differ from the actual file.",
+    "playbackInfo.loading": "Reading audio information…",
+    "playbackInfo.originalSource": "Original source",
+    "playbackInfo.playbackSource": "Playback source",
+    "playbackInfo.qualityLabel": "Plugin quality label",
+    "playbackInfo.codec": "Audio codec",
+    "playbackInfo.sampleRate": "Sample rate",
+    "playbackInfo.channelCount": "Channels",
+    "playbackInfo.bitrate": "Bitrate (estimated)",
+    "playbackInfo.refresh": "Refresh audio information"
 }

@@ -32,12 +32,14 @@ on:
                 default: ''
                 type: string
             e2e_suite:
-                description: '跑哪些自动测试：all 全部；storage 只跑下载、旧版数据迁移的故障注入；power 只跑锁屏和省电；download-source 只跑备用来源下载；library 只跑本地音乐库；perf 只跑性能基线（只记录，不设门限）；crash 只跑本机崩溃记录'
+                description: '跑哪些自动测试：all 全部；player-observation 播放页/迷你条1x/0x录屏；experience 首页/分享/播放信息；storage 下载/迁移故障；power 锁屏/省电；download-source 备用下载/WMA标签；library 本地音乐库；perf 性能基线（不设门限）；crash 本机崩溃记录'
                 required: false
                 default: 'all'
                 type: choice
                 options:
                     - all
+                    - experience
+                    - player-observation
                     - storage
                     - download-source
                     - power
@@ -452,6 +454,7 @@ jobs:
                   bash e2e/lib/tagging_test.sh
                   python3 -I e2e/lib/share_card.py --self-test
                   python3 -I e2e/lib/share_receiver.py --self-test
+                  python3 -I e2e/lib/playback_info_evidence.py --self-test
                   bash e2e/lib/experience_test.sh
                   bash e2e/lib/share_receiver_test.sh
                   bash e2e/lib/plugin_install_test.sh
@@ -486,10 +489,16 @@ jobs:
                   echo "E2E_FOCUS_APK=$RUNNER_TEMP/e2e-focus.apk" >> "$GITHUB_ENV"
 
             - name: Build the independent share receiver
-              if: inputs.e2e_suite == 'all'
+              if: inputs.e2e_suite == 'all' || inputs.e2e_suite == 'experience'
               run: |
                   bash e2e/share-receiver/build.sh "$RUNNER_TEMP/e2e-share.apk"
                   echo "E2E_SHARE_RECEIVER_APK=$RUNNER_TEMP/e2e-share.apk" >> "$GITHUB_ENV"
+
+            - name: Build the public UI observer
+              if: inputs.e2e_suite == 'all' || inputs.e2e_suite == 'experience' || inputs.e2e_suite == 'player-observation'
+              run: |
+                  bash e2e/ui-observer/build.sh "$RUNNER_TEMP/e2e-ui-observer.apk"
+                  echo "E2E_UI_OBSERVER_APK=$RUNNER_TEMP/e2e-ui-observer.apk" >> "$GITHUB_ENV"
 
             # 端到端第 18 步：从 0.7.3（MMKV 时代的最后一版）覆盖安装。下载它的 x86_64 APK（核对 SHA-256），
             # 编出往它的 MMKV 写测试数据的 mmkv-seed（见 e2e/mmkv-seed）。准备不好也接着跑其他检查，
@@ -532,7 +541,9 @@ jobs:
                   # Android 17 镜像默认的数据分区装不下应用和替身（INSTALL_FAILED_INSUFFICIENT_STORAGE），
                   # 只给它加大；留空是默认大小
                   disk-size: ${{ inputs.e2e_android == '17' && '8G' || '' }}
-                  disable-animations: true
+                  # Player observation starts at 1x before the app/ReactHost is created;
+                  # its observer records 1x/0x boundaries and restores settings.
+                  disable-animations: ${{ inputs.e2e_suite != 'player-observation' }}
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
                   script: >-
                       if [ -n "${E2E_PERF_BASELINE_APK:-}" ]; then bash e2e/perf-cold-compare.sh "$E2E_PERF_BASELINE_APK" "$E2E_APK" "$GITHUB_SHA" e2e-results; else bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results; fi

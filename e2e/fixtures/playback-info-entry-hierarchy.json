@@ -1,0 +1,10 @@
+{
+    "source": "Beta217 run40252050369 / Maestro playback-info step004 after closing the share panel",
+    "nodes": [
+        {"attributes": {"text": "正在播放", "clickable": "false"}},
+        {"attributes": {"text": "E2E Tone C", "clickable": "false"}},
+        {"attributes": {"text": "E2E Artist", "clickable": "false"}},
+        {"attributes": {"accessibilityText": "更多操作", "class": "android.widget.Button", "enabled": "true", "clickable": "true", "bounds": "[849,1277][944,1371]"}},
+        {"attributes": {"accessibilityText": "分享歌曲与歌词", "class": "android.widget.Button", "enabled": "true", "clickable": "true", "bounds": "[933,154][1049,270]"}}
+    ]
+}

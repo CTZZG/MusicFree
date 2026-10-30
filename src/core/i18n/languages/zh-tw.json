@@ -1254,5 +1254,18 @@
     "homeOrder.shortcuts": "快捷入口",
     "homeOrder.reset": "恢復預設順序",
     "homeOrder.up": "將「{title}」上移",
-    "homeOrder.down": "將「{title}」下移"
+    "homeOrder.down": "將「{title}」下移",
+    "playbackInfo.title": "目前播放資訊",
+    "playbackInfo.unknown": "未知",
+    "playbackInfo.noTrack": "目前未播放歌曲",
+    "playbackInfo.note": "這裡是目前音訊的解碼資訊，不代表裝置輸出。外掛音質標籤可能與實際檔案不同。",
+    "playbackInfo.loading": "正在讀取音訊資訊…",
+    "playbackInfo.originalSource": "歌曲原來源",
+    "playbackInfo.playbackSource": "實際播放來源",
+    "playbackInfo.qualityLabel": "外掛音質標籤",
+    "playbackInfo.codec": "音訊編碼",
+    "playbackInfo.sampleRate": "取樣率",
+    "playbackInfo.channelCount": "聲道數",
+    "playbackInfo.bitrate": "位元率（估計）",
+    "playbackInfo.refresh": "重新整理音訊資訊"
 }
