@@ -180,8 +180,8 @@
 - 2026-10-24 新公布的高危公告：body-parser 升到 2.4.0（React Native 开发服务器引入，随之 content-type 2.1.0、qs 6.16.1），
   undici 升到 7.30.1（cheerio 引入）；zod 登记例外（见下）。braces 的 GHSA-vfj7-8cjw-p6xm 已不再对 3.0.3 报出，删除了它的例外。
   发布审计只检查生产依赖；完整的 `npm audit` 另有只在开发依赖里的条目（fast-uri 3.1.8 的中低危公告、ESLint 插件引入的 zod 4.4.3），不打进 APK。
-  当前登记的例外：
-  - node-forge（GHSA-86w9-cpqp-85rv）：最新 1.4.0 仍受影响，经 `expo` → `@expo/cli` 引入，只用于 Expo 更新包签名，本项目构建不使用，也不打进 APK。
+- 2026-10-28 已将 node-forge 锁定为 1.4.1，修复 GHSA-86w9-cpqp-85rv，并移除对应例外。
+  2026-10-30 生产依赖审计通过（critical 0 / high 4 / low 8）；当前登记的三条公告例外：
   - image-size（GHSA-5p2g-fcmc-qvqq、GHSA-w3rx-r6r6-pgpr）：只在 2.x 修复，而 metro 各版本都依赖 `^1.0.2`；metro 只在打包时读取仓库自带的图片，不打进 APK。
   - zod（GHSA-mrhx-c7xc-m3w5，2026-10-24 登记，只放行 `node_modules/expo/node_modules/zod`）：经 `expo` → `@expo/cli` 引入，
     只有 Expo CLI 用它校验配置，应用代码和 Expo 运行时都不引用，也不打进 APK；修复只在 4.6.6 及以上，而 `@expo/cli` 依赖 `^3.25.76`。

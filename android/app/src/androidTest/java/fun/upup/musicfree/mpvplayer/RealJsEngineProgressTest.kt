@@ -197,6 +197,23 @@ class RealJsEngineProgressTest {
      * Separate evidence keeps the existing source/focus/transition windows unchanged.
      */
     private fun exerciseActualBufferingButtons() {
+        // The source/focus windows above can consume most of the 180-second
+        // fixture. Give this separate UI scenario a fresh position through the
+        // public seek control, once before any of its pause/resume observations.
+        // Never seek during a sample window or repair an already-ended engine.
+        val before = onMain {
+            val raw = engine.getPropertyDouble("time-pos")
+            check(raw != null && raw.isFinite() && engine.getPropertyString("path") == hq &&
+                engine.getPropertyBoolean("idle-active") == false && engine.getPropertyBoolean("pause") == false) {
+                "SPINNER_SETUP_NOT_READY: expected the existing playing C engine"
+            }
+            raw
+        }
+        onMain { controller.transportControls.seekTo(15000) }
+        awaitEngine(hq, false, "JS Flow C", anchor = 15.0)
+        android.util.Log.i("E2ELoadingSpinnerSetup", JSONObject()
+            .put("beforeRawSeconds", before).put("targetSeconds", 15.0)
+            .put("afterRawSeconds", onMain { engine.getPropertyDouble("time-pos") }).toString())
         fun recordWindow(phase: String, paused: Boolean) {
             val samples = List(5) {
                 val sample = onMain {
