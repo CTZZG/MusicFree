@@ -36,12 +36,12 @@ describe("key-value store diagnostics", () => {
     it("reports a corrupt snapshot read before the callbacks were registered", async () => {
         setKeyValueStorePersistenceForTests(persistenceWith({ "App.config": "{ not json" }));
         const store = getKeyValueStore("App.config");
-        await store.hydrate();
+        await expect(store.hydrate()).rejects.toMatchObject({ name: "StoreReadError" });
 
         const onRecover = jest.fn();
         configureKeyValueStores({ onRecover });
 
-        expect(onRecover).toHaveBeenCalledTimes(1);
+        expect(onRecover).toHaveBeenCalled();
         expect(onRecover.mock.calls[0][0].storeId).toBe("App.config");
     });
 

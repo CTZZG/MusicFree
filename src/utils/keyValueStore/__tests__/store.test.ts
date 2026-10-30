@@ -174,7 +174,7 @@ describe("KeyValueStore", () => {
         expect(store.getString("k")).toBe("new");
     });
 
-    it("degrades to an empty store and reports corruption", async () => {
+    it("keeps a corrupt store unhydrated and refuses to overwrite it", async () => {
         const h = createHarness();
         h.files.set("cfg", "{ this is not json");
         const recovers: any[] = [];
@@ -183,12 +183,16 @@ describe("KeyValueStore", () => {
             onRecover: info => recovers.push(info),
         });
 
-        await store.hydrate();
+        await expect(store.hydrate()).rejects.toMatchObject({ name: "StoreReadError" });
 
         expect(store.size).toBe(0);
+        expect(store.isHydrated).toBe(false);
         expect(recovers).toEqual([
             { storeId: "cfg", reason: "invalid-json" },
         ]);
+        store.set("new", "value");
+        await expect(store.flush()).resolves.toBe(false);
+        expect(h.files.get("cfg")).toBe("{ this is not json");
     });
 
     it("retries a failed write and keeps the data", async () => {

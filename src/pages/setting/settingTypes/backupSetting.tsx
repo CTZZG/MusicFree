@@ -1,5 +1,6 @@
 import ListItem, { ListItemHeader } from "@/components/base/listItem";
 import ThemeSwitch from "@/components/base/switch";
+import ThemeText from "@/components/base/themeText";
 import Backup, {
     IBackupPreview,
     IBackupResumeReport,
@@ -110,6 +111,7 @@ export default function BackupSetting() {
             `${t("backupAndResume.report.starredMusicSheets")}: ${preview.starredMusicSheetCount}`,
             `${t("backupAndResume.report.plugins")}: ${preview.pluginCount}`,
             `${t("backupAndResume.report.pluginConfigs")}: ${preview.pluginConfigCount}`,
+            preview.hasPreferences ? t("backupAndResume.includesPreferences") : "",
             preview.invalidPluginCount
                 ? `${t("backupAndResume.report.invalidPlugins")}: ${preview.invalidPluginCount}`
                 : "",
@@ -130,6 +132,8 @@ export default function BackupSetting() {
             ...report.starredMusicSheets.failureReasons,
             ...report.plugins.failureReasons,
             ...report.pluginConfigs.failureReasons,
+            ...(report.preferences?.failureReasons ?? []),
+            report.persisted === false ? t("backupAndResume.persistenceFailed") : "",
             report.preRestoreBackup?.success === false
                 ? `${t("backupAndResume.report.preRestoreBackup")}: ${
                     report.preRestoreBackup.error ?? ""
@@ -168,6 +172,9 @@ export default function BackupSetting() {
                 t("backupAndResume.report.pluginConfigs"),
                 report.pluginConfigs,
             ),
+            report.preferences ? formatResumeSection(
+                t("backupAndResume.report.preferences"), report.preferences,
+            ) : "",
             failureReasons.length
                 ? [
                     "",
@@ -224,7 +231,11 @@ export default function BackupSetting() {
                 },
                 onResolve(report, hideDialog) {
                     hideDialog();
-                    Toast.success(t("toast.resumeSuccess"));
+                    const incomplete = report.persisted === false || [report.musicSheets,
+                        report.localMusicSheet, report.starredMusicSheets, report.plugins,
+                        report.pluginConfigs, report.preferences].some(section => (section?.failedCount ?? 0) > 0);
+                    if (incomplete) Toast.warn(t("backupAndResume.incomplete"));
+                    else Toast.success(t("toast.resumeSuccess"));
                     showResumeReport(report);
                     resolve(true);
                 },
@@ -372,9 +383,9 @@ export default function BackupSetting() {
                 try {
                     const url = text.trim();
                     if (url.endsWith(".json") || url.endsWith(".txt")) {
-                        const raw = String(
-                            (await remoteBackupHttpClient.get(url)).data ?? "",
-                        );
+                        // Axios can already decode JSON. Preserve that object rather
+                        // than converting a valid backup to "[object Object]".
+                        const raw = (await remoteBackupHttpClient.get(url)).data;
                         closePanel();
                         setTimeout(() => {
                             showResumePreview(raw);
@@ -589,6 +600,9 @@ export default function BackupSetting() {
                 </ListItem.ListItemText>
             </ListItem>
             <ListItemHeader>{t("backupAndResume.localBackup")}</ListItemHeader>
+            <ThemeText style={style.backupNote} fontSize="description" fontColor="textSecondary">
+                {t("backupAndResume.contentsNote")}
+            </ThemeText>
             <ListItem withHorizontalPadding onPress={onBackupToLocal}>
                 <ListItem.Content title={t("backupAndResume.backupToLocal")} />
             </ListItem>
@@ -776,6 +790,7 @@ export default function BackupSetting() {
 }
 
 const style = StyleSheet.create({
+    backupNote: { marginHorizontal: 16, marginBottom: 12 },
     wrapper: {
         width: "100%",
         flex: 1,

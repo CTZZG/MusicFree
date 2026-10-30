@@ -30,16 +30,16 @@ export function encodeSnapshot(
 }
 
 /**
- * 解析快照。任何形式的损坏都退化为空表而不是抛异常——存储层崩溃会让整个
- * 应用起不来，而丢一份缓存只是退化。返回值同时告知调用方是否发生了降级，
- * 便于上层记录诊断（静默丢数据是此前 MMKV 方案最难查的地方）。
+ * Pure inspection: return valid entries plus a corruption reason. The store must
+ * recover from a complete backup or reject hydration; a malformed snapshot must
+ * never become a writable empty store. No files are modified here.
  */
 export function decodeSnapshot(raw: string | null | undefined): {
     entries: Record<string, StoredValue>;
     recovered: boolean;
     reason?: string;
 } {
-    if (raw === null || raw === undefined || raw === "") {
+    if (raw === null || raw === undefined) {
         return { entries: {}, recovered: false };
     }
 
@@ -56,15 +56,19 @@ export function decodeSnapshot(raw: string | null | undefined): {
         return { entries: {}, recovered: true, reason: "not-an-object" };
     }
 
-    const candidate = parsed as Partial<IStoreSnapshot>;
+    const candidate = parsed as { version?: unknown; entries?: unknown };
     if (candidate.version !== SNAPSHOT_VERSION) {
         return {
             entries: {},
             recovered: true,
-            reason: `unsupported-version:${String(candidate.version)}`,
+            // Only a well-formed newer version proves this app would downgrade
+            // the snapshot. A missing or invalid header can use a good backup.
+            reason: typeof candidate.version === "number" &&
+                Number.isSafeInteger(candidate.version) && candidate.version > SNAPSHOT_VERSION
+                ? `unsupported-version:${candidate.version}` : "invalid-version",
         };
     }
-    if (!candidate.entries || typeof candidate.entries !== "object") {
+    if (!candidate.entries || typeof candidate.entries !== "object" || Array.isArray(candidate.entries)) {
         return { entries: {}, recovered: true, reason: "missing-entries" };
     }
 

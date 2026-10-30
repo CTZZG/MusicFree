@@ -90,7 +90,10 @@ export function setupKeyValueStores(): Promise<void> {
                 migrateLegacyMMKVStore(id, true).catch(() => null),
             ),
         ]);
-    })();
+    })().catch(error => {
+        ready = null;
+        throw error;
+    });
     return ready;
 }
 

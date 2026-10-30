@@ -15,6 +15,7 @@
 # 同样要单独选。E2E_PERF_RUNS 改每项的次数（默认 10，另有 1 次预热）。
 # E2E_SUITE=crash 时只跑第 24 步（本机崩溃记录：Java 崩溃和原生崩溃都记下、清空后不再显示，见 crash.sh）。
 # E2E_SUITE=experience 只跑首页、分享、播放信息和播放页/迷你条观察，复用同一实际安装包。
+# E2E_SUITE=backup 单独验收备份恢复和 Android 读取失败重试，不包含在 all 中。
 # E2E_AUDIO_HARDENING=enable|throw 时开头打开 Android 17 的后台音频加固，用“视频”替身作对照，
 # 结束时检查本应用没有被拦下（见 lib/audio_hardening.sh），只能在 Android 17 及以上跑。
 set -uo pipefail
@@ -325,6 +326,11 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
+if [ "$E2E_SUITE" = backup ]; then
+    source "$HERE/backup.sh"
+    run_backup_checks
+    finish
+fi
 if [ "$E2E_SUITE" = lyric-boundaries ] || [ "$E2E_SUITE" = playback-font ]; then
     source "$HERE/lyric_boundaries.sh"
     run_lyric_boundary_checks

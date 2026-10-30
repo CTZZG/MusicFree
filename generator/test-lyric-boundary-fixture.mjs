@@ -29,14 +29,28 @@ for (let i = 0; i < lines.length; i++) {
 const wide = new parsed.exports.default((await getLyric(songs[0])).rawLrc).getLyricItems();
 assert.equal(wide[0].lrc, 'W'.repeat(26));
 assert.equal(wide[1].lrc, '汉字'.repeat(14));
-assert.equal(wide[2].lrc, '👩‍🎤'.repeat(5));
+assert.equal(wide[2].lrc, 'W'.repeat(15) + '👩‍🎤');
 console.log('Boundary fixture: unchanged normal queue, 30 actual parser long-note lines and four share inputs passed');
 
-const cardModule = {exports: {}};
-vm.runInNewContext(ts.transpileModule(readFileSync('src/components/musicShare/cardLayout.ts', 'utf8'), {
-    compilerOptions: {module: ts.ModuleKind.CommonJS},
-}).outputText, {exports: cardModule.exports});
-const layout = cardModule.exports.getShareCardLayout(songs[0].title, 'E2E Artist',
-    wide.map((line, index) => ({index, text: line.lrc})), false);
-assert.equal(layout.height, 961);
-assert.equal(layout.text.map(row => row.y).join(','), '294,359,452,517,610,703,768');
+// Load the actual static-card dependency too; both native Intl and Hermes
+// fallback must preserve the deliberately split-prone cluster on a single row.
+for (const useIntl of [true, false]) {
+    const graphemes = {exports: {}};
+    vm.runInNewContext(ts.transpileModule(readFileSync('src/components/musicShare/graphemes.ts', 'utf8'), {
+        compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022},
+    }).outputText, {exports: graphemes.exports, Intl: useIntl ? Intl : {}});
+    const cardModule = {exports: {}};
+    vm.runInNewContext(ts.transpileModule(readFileSync('src/components/musicShare/cardLayout.ts', 'utf8'), {
+        compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022},
+    }).outputText, {exports: cardModule.exports, require(name) {
+        assert.equal(name, './graphemes');
+        return graphemes.exports;
+    }});
+    const layout = cardModule.exports.getShareCardLayout(songs[0].title, 'E2E Artist',
+        wide.map((line, index) => ({index, text: line.lrc})), false);
+    assert.equal(layout.height, 1026);
+    assert.equal(layout.text.map(row => row.y).join(','), '294,359,452,517,610,675,768,833');
+    assert.equal(layout.text[4].text, 'W'.repeat(15));
+    assert.equal(layout.text[5].text, '👩‍🎤');
+}
+console.log('Boundary card: native Intl/fallback preserve the whole cluster, exact 1026px/8-row layout passed');

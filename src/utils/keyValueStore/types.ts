@@ -58,6 +58,9 @@ export interface IStoreSnapshot {
 /** 落盘后端。实现方只需能读写一整份文本。 */
 export interface IStorePersistence {
     read(storeId: string): Promise<string | null>;
+    /** Previous committed snapshot, used only when the primary snapshot is malformed. */
+    readBackup?(storeId: string): Promise<string | null>;
+    getRecoverySource?(storeId: string): "backup" | "temporary" | undefined;
     write(storeId: string, contents: string): Promise<void>;
     remove(storeId: string): Promise<void>;
 }

@@ -1268,5 +1268,13 @@
     "playbackInfo.sampleRate": "Sample rate",
     "playbackInfo.channelCount": "Channels",
     "playbackInfo.bitrate": "Bitrate (estimated)",
-    "playbackInfo.refresh": "Refresh audio information"
+    "playbackInfo.refresh": "Refresh audio information",
+    "storage.readFailed.title": "Could not read local data",
+    "storage.readFailed.message": "Loading has stopped to protect your existing files. Try again. If reading still fails, keep the app data so it can be recovered.",
+    "storage.readFailed.retry": "Read again",
+    "backupAndResume.includesPreferences": "Includes playlist groups, pins and home layout",
+    "backupAndResume.report.preferences": "Layout and Groups",
+    "backupAndResume.contentsNote": "Backups include playlists, plugin configuration and layout. Local audio and artwork are path references; transfer those files separately.",
+    "backupAndResume.persistenceFailed": "Local changes could not be saved. Keep the backup file and try again.",
+    "backupAndResume.incomplete": "Some items could not be restored. Check the restore report."
 }

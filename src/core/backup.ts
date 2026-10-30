@@ -6,6 +6,8 @@ import MusicSheet from "@/core/musicSheet";
 import { ResumeMode } from "@/constants/commonConst.ts";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
+import { backupPreferences, restoreBackupPreferences, type BackupPreferences } from "./backupPreferences";
+import { flushKeyValueStores } from "@/utils/keyValueStore";
 
 /**
  * 结果：一份大的json文件
@@ -16,11 +18,13 @@ import { validateRemoteInstallUrl } from "@/utils/remoteInstallUrl";
  */
 
 interface IBackJson {
+    version?: 3;
     musicSheets?: IMusic.IMusicSheetItem[];
     localMusicSheet?: IMusic.IMusicItem[];
     starredMusicSheets?: IMusic.IMusicSheetItem[];
     plugins?: IBackupPluginItem[];
     pluginBackupV2?: IPluginBackupV2;
+    preferences?: BackupPreferences;
 }
 
 interface IBackupPluginItem {
@@ -55,6 +59,7 @@ export interface IBackupPreview {
     pluginCount: number;
     invalidPluginCount: number;
     pluginConfigCount: number;
+    hasPreferences: boolean;
 }
 
 export interface IBackupResumeSectionReport {
@@ -72,6 +77,8 @@ export interface IBackupResumeReport {
     starredMusicSheets: IBackupResumeSectionReport;
     plugins: IBackupResumeSectionReport;
     pluginConfigs: IBackupResumeSectionReport;
+    preferences?: IBackupResumeSectionReport;
+    persisted?: boolean;
     preRestoreBackup?: {
         success: boolean;
         path?: string;
@@ -86,7 +93,7 @@ function isValidPluginBackupItem(
 }
 
 function isBackupObject(value: unknown): value is Record<string, unknown> {
-    return !!value && typeof value === "object";
+    return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function isValidPluginBackupV2InstalledItem(
@@ -156,10 +163,12 @@ function normalizeUserVariableBackup(
 }
 
 function parseBackup(raw: string | object): IBackJson {
-    if (typeof raw === "string") {
-        return JSON.parse(raw);
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!isBackupObject(parsed)) throw new Error("Invalid backup object");
+    if (parsed.version !== undefined && parsed.version !== 3) {
+        throw new Error("Unsupported backup version");
     }
-    return raw as IBackJson;
+    return parsed as IBackJson;
 }
 
 function createSectionReport(
@@ -236,6 +245,7 @@ function getBackupPreview(obj: IBackJson): IBackupPreview {
         pluginCount: pluginPreview.pluginCount,
         invalidPluginCount: pluginPreview.invalidPluginCount,
         pluginConfigCount: pluginPreview.pluginConfigCount,
+        hasPreferences: isBackupObject(obj?.preferences),
     };
 }
 
@@ -532,11 +542,13 @@ function backup() {
         }));
 
     return JSON.stringify({
+        version: 3,
         musicSheets: musicSheets,
         localMusicSheet: localMusicSheet,
         starredMusicSheets: starredMusicSheets,
         plugins: normalizedPlugins,
         pluginBackupV2,
+        preferences: backupPreferences(MusicSheet.getSheets().map(sheet => sheet.id), MusicSheet.defaultSheet.id),
     });
 }
 
@@ -576,12 +588,32 @@ async function resume(
     };
 
     /** 恢复歌单 */
+    let idMap: Record<string, string> = Object.create(null);
     try {
-        await MusicSheet.resumeSheets(validMusicSheets, resumeMode);
+        const restored = await MusicSheet.resumeSheets(validMusicSheets, resumeMode);
+        idMap = restored.idMap;
+        report.musicSheets = {
+            successCount: restored.successCount,
+            failedCount: restored.failedCount,
+            skippedCount: restored.skippedCount + backupPreview.musicSheetCount - validMusicSheets.length,
+            failureReasons: restored.failureReasons,
+        };
     } catch (e) {
         report.musicSheets.failedCount += report.musicSheets.successCount;
         report.musicSheets.successCount = 0;
         report.musicSheets.failureReasons.push(getErrorMessage(e));
+    }
+    if (backupPreview.hasPreferences) {
+        report.preferences = createSectionReport();
+        try {
+            report.preferences.successCount = restoreBackupPreferences(
+                obj.preferences, idMap,
+                MusicSheet.getSheets().map(sheet => sheet.id), MusicSheet.defaultSheet.id,
+            );
+        } catch (error) {
+            report.preferences.failedCount++;
+            report.preferences.failureReasons.push(getErrorMessage(error));
+        }
     }
 
     try {
@@ -614,6 +646,7 @@ async function resume(
         report.plugins = await resumePlugins(plugins);
     }
 
+    report.persisted = await flushKeyValueStores();
     return report;
 }
 

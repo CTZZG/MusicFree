@@ -29,7 +29,7 @@ const getPluginStore = (pluginName: string) => {
         hydratedPluginStores.add(pluginName);
         void prepareKeyValueStore(`MediaExtra.${pluginName}`, mediaExtraStoreMerge)
             .then(() => emitPlatformLoaded(pluginName))
-            .catch(() => undefined);
+            .catch(() => hydratedPluginStores.delete(pluginName));
     }
     return store;
 };
@@ -109,7 +109,7 @@ function onPlatformLoaded(platform: string, callback: () => void) {
 /**
  * 获取媒体资源的全部附加属性
  * @param mediaItem 媒体资源
- * @returns 
+ * @returns
  */
 function getMediaExtra(mediaItem: ICommon.IMediaBase | null | undefined): IMediaExtraProperties | null {
     if (!mediaItem?.platform || !mediaItem.id) {
@@ -129,9 +129,9 @@ function getMediaExtra(mediaItem: ICommon.IMediaBase | null | undefined): IMedia
 
 /**
  * 获取媒体资源的附加属性值
- * @param mediaItem 
- * @param key 
- * @returns 
+ * @param mediaItem
+ * @param key
+ * @returns
  */
 function getMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem: ICommon.IMediaBase | null | undefined, key: K): IMediaExtraProperties[K] | null {
     const meta = getMediaExtra(mediaItem);
@@ -142,7 +142,7 @@ function getMediaExtraProperty<K extends keyof IMediaExtraProperties>(mediaItem:
  * 更新媒体资源的附加属性
  * @param mediaItem 媒体资源
  * @param extra 附加属性
- * @returns 
+ * @returns
  */
 function patchMediaExtra(mediaItem: ICommon.IMediaBase, extra: Partial<IMediaExtraProperties>) {
     if (!mediaItem.platform || !mediaItem.id) {
@@ -180,7 +180,7 @@ function patchMediaExtra(mediaItem: ICommon.IMediaBase, extra: Partial<IMediaExt
  * 直接替换媒体资源的附加属性
  * @param mediaItem 媒体资源
  * @param extra 附加属性
- * @returns 
+ * @returns
  */
 function setMediaExtra(mediaItem: ICommon.IMediaBase, extra: IMediaExtraProperties) {
     if (!mediaItem.platform || !mediaItem.id) {
@@ -204,7 +204,7 @@ function setMediaExtra(mediaItem: ICommon.IMediaBase, extra: IMediaExtraProperti
 /**
  * 删除媒体资源的附加属性
  * @param mediaItem 媒体资源
- * @returns 
+ * @returns
  */
 function removeMediaExtra(mediaItem: ICommon.IMediaBase) {
     if (!mediaItem.platform || !mediaItem.id) {

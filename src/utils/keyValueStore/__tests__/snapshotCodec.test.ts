@@ -18,7 +18,7 @@ describe("snapshot codec", () => {
     });
 
     it("treats absent input as an empty store without flagging recovery", () => {
-        for (const raw of [null, undefined, ""]) {
+        for (const raw of [null, undefined]) {
             const decoded = decodeSnapshot(raw);
             expect(decoded.entries).toEqual({});
             expect(decoded.recovered).toBe(false);
@@ -28,9 +28,15 @@ describe("snapshot codec", () => {
     // 存储层抛异常会让整个应用起不来，所以损坏必须降级而不是抛。但降级
     // 必须可观察——静默丢数据正是旧方案最难查的地方。
     it.each([
+        ["", "invalid-json"],
         ["not json at all", "invalid-json"],
         ["[]", "not-an-object"],
         ["{\"version\":99,\"entries\":{}}", "unsupported-version:99"],
+        ["{\"entries\":{}}", "invalid-version"],
+        ["{\"version\":null,\"entries\":{}}", "invalid-version"],
+        ["{\"version\":\"1\",\"entries\":{}}", "invalid-version"],
+        ["{\"version\":0,\"entries\":{}}", "invalid-version"],
+        ["{\"version\":1.5,\"entries\":{}}", "invalid-version"],
         [`{"version":${SNAPSHOT_VERSION}}`, "missing-entries"],
     ])("degrades gracefully and reports why: %s", (raw, reason) => {
         const decoded = decodeSnapshot(raw);

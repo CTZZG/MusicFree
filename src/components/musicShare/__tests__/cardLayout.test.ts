@@ -58,3 +58,23 @@ describe("song and lyric card layout", () => {
         ).toBe(true);
     });
 });
+
+
+describe("grapheme-safe share text", () => {
+    const Segmenter = (Intl as unknown as { Segmenter?: unknown }).Segmenter;
+    afterEach(() => {
+        Object.defineProperty(Intl, "Segmenter", { value: Segmenter, configurable: true, writable: true });
+    });
+    it.each([true, false])("keeps clusters whole with native segmentation available=%s", native => {
+        if (!native) Object.defineProperty(Intl, "Segmenter", { value: undefined, configurable: true });
+        for (const cluster of ["👩‍🎤", "👨‍👩‍👧‍👦", "🇨🇳", "👍🏽", "e\u0301", "1️⃣"]) {
+            const prefix = "W".repeat(15);
+            const result = wrapCardText(prefix + cluster + " music", 17, 3);
+            expect(result.some(row => row.includes(cluster))).toBe(true);
+            expect(result[0]).not.toMatch(/[\u200d\u0301]$/);
+            const truncated = wrapCardText(cluster.repeat(20), 17, 1)[0];
+            expect(truncated).toMatch(/…$/);
+            expect(truncated.slice(0, -1).split(cluster).join("")).toBe("");
+        }
+    });
+});

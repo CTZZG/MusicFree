@@ -1268,5 +1268,13 @@
     "playbackInfo.sampleRate": "取樣率",
     "playbackInfo.channelCount": "聲道數",
     "playbackInfo.bitrate": "位元率（估計）",
-    "playbackInfo.refresh": "重新整理音訊資訊"
+    "playbackInfo.refresh": "重新整理音訊資訊",
+    "storage.readFailed.title": "本機資料讀取失敗",
+    "storage.readFailed.message": "無法讀取本機資料。已停止載入以保護原檔案。請重試；若仍失敗，請保留應用程式資料以便復原。",
+    "storage.readFailed.retry": "重新讀取",
+    "backupAndResume.includesPreferences": "包含資料庫分組、置頂與首頁版面",
+    "backupAndResume.report.preferences": "版面與分組",
+    "backupAndResume.contentsNote": "備份包含歌單、外掛程式設定與版面設定。本機音訊與封面只儲存路徑，檔案需要另外移轉。",
+    "backupAndResume.persistenceFailed": "本機資料尚未成功儲存，請保留備份檔案並重試。",
+    "backupAndResume.incomplete": "復原仍有未完成項目，請查看結果報告。"
 }

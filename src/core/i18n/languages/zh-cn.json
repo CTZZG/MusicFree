@@ -1268,5 +1268,13 @@
     "playbackInfo.sampleRate": "采样率",
     "playbackInfo.channelCount": "声道数",
     "playbackInfo.bitrate": "码率（估计）",
-    "playbackInfo.refresh": "刷新音频信息"
+    "playbackInfo.refresh": "刷新音频信息",
+    "storage.readFailed.title": "本地数据读取失败",
+    "storage.readFailed.message": "无法读取本地数据。已停止加载以保护原文件。请重试；若仍失败，请保留应用数据以便恢复。",
+    "storage.readFailed.retry": "重新读取",
+    "backupAndResume.includesPreferences": "包含资料库分组、置顶和首页布局",
+    "backupAndResume.report.preferences": "布局与分组",
+    "backupAndResume.contentsNote": "备份包含歌单、插件配置和布局设置。本地音频与封面只保存路径，需要另行迁移文件。",
+    "backupAndResume.persistenceFailed": "本地数据尚未成功保存，请保留备份文件并重试。",
+    "backupAndResume.incomplete": "恢复存在未完成项目，请查看结果报告。"
 }

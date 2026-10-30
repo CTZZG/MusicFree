@@ -1,0 +1,17 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "从远程URL中恢复"
+- tapOn: "输入框"
+- inputText: ${BACKUP_URL}
+- hideKeyboard
+- tapOn: "确认"
+- extendedWaitUntil:
+    visible: "恢复前预览"
+    timeout: 20000
+- tapOn: "开始恢复"
+- extendedWaitUntil:
+    visible: "恢复结果"
+    timeout: 20000
+- assertVisible: "(?s).*歌单: 成功 1, 跳过 0, 失败 0.*"
+- takeScreenshot: ${SNAPSHOT_NAME}
+- tapOn: "取消"

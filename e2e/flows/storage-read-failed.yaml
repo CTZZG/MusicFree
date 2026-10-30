@@ -1,0 +1,7 @@
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "本地数据读取失败"
+    timeout: 30000
+- assertVisible: "重新读取"
+- takeScreenshot: storage-read-failed

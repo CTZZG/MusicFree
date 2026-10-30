@@ -49,7 +49,8 @@ export async function migrateLegacyMMKVStore(
         }
         return migrateFromLegacy(target, dbName, cachePath, mergeExisting);
     } finally {
-        target.endLegacyMigration();
+        // Keep deletion tombstones across failed reads until migration can finish.
+        if (target.isHydrated) target.endLegacyMigration();
     }
 }
 
@@ -114,11 +115,12 @@ export function prepareKeyValueStore(
             try {
                 await hydrateKeyValueStore(dbName);
                 await migrateLegacyMMKVStore(dbName, false, mergeExisting);
-            } catch {
-                // 迁移失败不能挡住正常读写；migrateLegacyMMKVStore 自己会记下
-                // “旧数据不可用”，下次不再重试
+            } catch (error) {
+                // Do not cache an unsuccessful preparation or continue with empty data.
+                preparedStores.delete(dbName);
+                throw error;
             } finally {
-                store.endLegacyMigration();
+                if (store.isHydrated) store.endLegacyMigration();
             }
         })();
         preparedStores.set(dbName, prepared);

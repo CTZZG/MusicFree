@@ -99,7 +99,7 @@ module.exports = {
         if (musicItem?.id === "boundary-wide") {
             return { rawLrc: "[00:00.00]" + "W".repeat(26) +
                 "\n[00:08.00]" + "汉字".repeat(14) +
-                "\n[00:16.00]" + "👩‍🎤".repeat(5) +
+                "\n[00:16.00]" + "W".repeat(15) + "👩‍🎤" +
                 "\n[00:24.00]Supercalifragilisticexpialidocious", };
         }
         if (musicItem?.id === "boundary-long") {

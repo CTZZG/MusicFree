@@ -1,6 +1,7 @@
 import RNFS from "react-native-fs";
 
 import type { IStorePersistence } from "./types";
+import { decodeSnapshot } from "./snapshotCodec";
 
 /**
  * 键值存储的落盘目录。
@@ -122,43 +123,41 @@ async function ensureDir() {
     }
 }
 
-/**
- * 原子写入：先写临时文件再改名。直接覆写会在进程于写入中途被杀时留下半份
- * 文件——那正是 JSON 解析失败、整份配置归零的场景。rename 在同一文件系统内
- * 是原子的，读到的要么是旧的完整内容、要么是新的完整内容。
- */
-async function atomicWrite(filePath: string, contents: string) {
-    const tempPath = `${filePath}.tmp`;
-    await RNFS.writeFile(tempPath, contents, "utf8");
-    try {
-        await RNFS.moveFile(tempPath, filePath);
-    } catch {
-        // 某些实现下目标已存在会导致 moveFile 失败，退化为「删除后重命名」。
-        // 这段窗口内文件缺失，但下一次写入会补上，且比留下半份文件安全。
-        try {
-            if (await RNFS.exists(filePath)) {
-                await RNFS.unlink(filePath);
-            }
-            await RNFS.moveFile(tempPath, filePath);
-        } catch (fallbackError) {
-            try {
-                await RNFS.unlink(tempPath);
-            } catch {
-                // 临时文件清理失败不影响正确性，下次写入会覆盖它。
-            }
-            throw fallbackError;
-        }
-    }
-}
-
 export function createFilePersistence(): IStorePersistence {
+    // Recovery reads must retain their good source until a new primary commits.
+    const recoveredFrom = new Map<string, string>();
+    async function readFallback(storeId: string) {
+        const filePath = storePath(storeId);
+        recoveredFrom.delete(storeId);
+        let malformed: string | null = null;
+        for (const candidate of [`${filePath}.bak`, `${filePath}.tmp`]) {
+            if (await RNFS.exists(candidate)) {
+                const contents = await RNFS.readFile(candidate, "utf8");
+                const decoded = decodeSnapshot(contents);
+                if (decoded.recovered) {
+                    // Do not bypass a newer format, even for an older valid temp.
+                    if (decoded.reason?.startsWith("unsupported-version:")) return contents;
+                    malformed ??= contents;
+                    continue;
+                }
+                recoveredFrom.set(storeId, candidate);
+                return contents;
+            }
+        }
+        // Malformed files are not an absent store. Let hydration reject rather
+        // than starting an empty, writable store when no candidate is complete.
+        return malformed;
+    }
     return {
         async read(storeId) {
             await ensureDir();
             const filePath = storePath(storeId);
             if (await RNFS.exists(filePath)) {
+                recoveredFrom.delete(storeId);
                 return await RNFS.readFile(filePath, "utf8");
             }
+            const fallback = await readFallback(storeId);
+            if (fallback !== null) return fallback;
             // 新文件还没有：把旧版本写下的内容接过来，下次写入新文件后删掉旧的
             const legacy = legacyLocation(storeId);
             if (!legacy) {
@@ -170,17 +169,58 @@ export function createFilePersistence(): IStorePersistence {
                         const contents = await RNFS.readFile(legacy.readPath, "utf8");
                         legacyToCleanUp.set(storeId, legacy);
                         return contents;
-                    } catch {
-                        // 读不出来的旧文件就当没有，也不删它
-                        return null;
+                    } catch (error) {
+                        // A literal legacy % path may not have a decoded counterpart.
+                        // Other I/O failures are not evidence that the store is empty.
+                        if ((error as { code?: string }).code === "ENOENT") return null;
+                        throw error;
                     }
                 }
             }
             return null;
         },
+        readBackup: readFallback,
+        getRecoverySource(storeId) {
+            const source = recoveredFrom.get(storeId);
+            return source?.endsWith(".bak") ? "backup" : source?.endsWith(".tmp") ? "temporary" : undefined;
+        },
         async write(storeId, contents) {
             await ensureDir();
-            await atomicWrite(storePath(storeId), contents);
+            const filePath = storePath(storeId);
+            const tempPath = `${filePath}.tmp`;
+            const backupPath = `${filePath}.bak`;
+            const recovery = recoveredFrom.get(storeId);
+            if (recovery) {
+                // A completed first-write temp can be the only surviving snapshot.
+                if (recovery === tempPath) {
+                    await RNFS.moveFile(tempPath, backupPath);
+                    recoveredFrom.set(storeId, backupPath);
+                }
+                if (!(await RNFS.exists(backupPath))) {
+                    throw new Error("Recovery snapshot is unavailable");
+                }
+                if (await RNFS.exists(filePath)) {
+                    // Keep one malformed primary for diagnosis; never rotate it over .bak.
+                    const corruptPath = `${filePath}.corrupt`;
+                    if (await RNFS.exists(corruptPath)) await RNFS.unlink(corruptPath);
+                    await RNFS.moveFile(filePath, corruptPath);
+                }
+            }
+            await RNFS.writeFile(tempPath, contents, "utf8");
+            if (!recovery && await RNFS.exists(filePath)) {
+                // The old primary is still intact while the older backup is removed.
+                if (await RNFS.exists(backupPath)) await RNFS.unlink(backupPath);
+                await RNFS.moveFile(filePath, backupPath);
+            }
+            try {
+                await RNFS.moveFile(tempPath, filePath);
+            } catch (error) {
+                // Retain both .bak and .tmp across retries and process death. Some RNFS
+                // implementations can leave a partial destination after a failed copy.
+                if (await RNFS.exists(backupPath)) recoveredFrom.set(storeId, backupPath);
+                throw error;
+            }
+            recoveredFrom.delete(storeId);
             const legacy = legacyToCleanUp.get(storeId);
             if (legacy) {
                 legacyToCleanUp.delete(storeId);
@@ -189,9 +229,10 @@ export function createFilePersistence(): IStorePersistence {
         },
         async remove(storeId) {
             const filePath = storePath(storeId);
-            if (await RNFS.exists(filePath)) {
-                await RNFS.unlink(filePath);
+            for (const candidate of [filePath, `${filePath}.bak`, `${filePath}.tmp`, `${filePath}.corrupt`]) {
+                if (await RNFS.exists(candidate)) await RNFS.unlink(candidate);
             }
+            recoveredFrom.delete(storeId);
             const legacy = legacyLocation(storeId);
             if (legacy) {
                 legacyToCleanUp.delete(storeId);
