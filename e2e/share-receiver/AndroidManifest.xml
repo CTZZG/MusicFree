@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test-only independent UID. No media/storage permission; can read only the shared URI grant. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="fun.upup.musicfree.e2e.share">
+    <queries><package android:name="fun.upup.musicfree" /></queries>
+    <application android:label="E2E Share" android:allowBackup="false" android:debuggable="true">
+        <activity android:name=".ReceiveActivity" android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/png" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

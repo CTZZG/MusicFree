@@ -66,6 +66,7 @@ run_share_card_checks() {
         fail "分享：实际 PNG 含远程封面与选中的译文歌词" "见 share-card-pixels-error.txt"
         return 1
     fi
+    run_share_receiver_checks || return 1
     flow "歌词工具：保留偏移、聚焦与音译入口" share-close-and-lyric-tools.yaml || return 1
     before_resume=$(session)
     printf '%s\n' "$before_resume" > "$OUT/share-playback-before-resume.json"
@@ -81,4 +82,49 @@ run_share_card_checks() {
         fail "分享：UI 检查后显式恢复原曲播放" "未回到 C，停止后续播放回归"
         return 1
     fi
+}
+
+# The stand-in has no media permission and reads through a real separate-UID URI
+# grant. Keep its activity alive for a delayed second read; do not assume Android
+# grants survive force-stop or a finished receiving activity.
+share_receiver_report() {
+    adb exec-out run-as fun.upup.musicfree.e2e.share cat files/result.json > "$OUT/share-receiver-$1.json" 2>/dev/null || return 1
+    python3 -I "$HERE/lib/share_receiver.py" "$1" "$OUT/share-receiver-$1.json" >/dev/null 2>&1
+}
+
+run_share_receiver_checks() {
+    if [ ! -s "${E2E_SHARE_RECEIVER_APK:-}" ] ||
+        ! adb install -r "$E2E_SHARE_RECEIVER_APK" > "$OUT/share-receiver-install.log" 2>&1; then
+        fail "分享：独立接收器前提" "测试接收器未安装，没有执行 URI 检查"
+        return 1
+    fi
+    adb shell am start -W -n fun.upup.musicfree.e2e.share/.ReceiveActivity \
+        -a android.intent.action.SEND -t image/png > "$OUT/share-receiver-negative-start.txt" 2>&1 || return 1
+    if ! wait_until 10 share_receiver_report missing; then
+        fail "分享：接收器拒绝缺失附件" "缺失真实 URI 的 Intent 未被拒绝"
+        return 1
+    fi
+    pass "分享：接收器拒绝缺失附件"
+    adb shell input keyevent KEYCODE_BACK
+    flow "分享：关闭系统选择器后可以重试" share-chooser-cancel.yaml || return 1
+    flow "分享：独立应用读取真实图片" share-receiver.yaml || return 1
+    if ! wait_until 10 share_receiver_report received; then
+        fail "分享：独立 UID 的真实 URI 授权" "接收报告不完整"
+        return 1
+    fi
+    # A chosen receiver may consume its file later, after the sender is backgrounded.
+    sleep 5
+    flow "分享：后台发送方附件仍可延迟读取" share-receiver-again.yaml || return 1
+    if ! wait_until 10 share_receiver_report reread ||
+        ! adb exec-out run-as fun.upup.musicfree.e2e.share cat files/received.png > "$OUT/share-receiver.png"; then
+        fail "分享：独立 UID 的真实 URI 授权" "第二次读取或图片拉取失败"
+        return 1
+    fi
+    if python3 -I "$HERE/lib/share_receiver.py" image "$OUT/share-receiver-reread.json" "$OUT/share-receiver.png" > "$OUT/share-receiver-verified.json" 2> "$OUT/share-receiver-error.txt"; then
+        pass "分享：独立 UID 读取两次且 PNG 字节与像素完整"
+    else
+        fail "分享：独立 UID 读取两次且 PNG 字节与像素完整" "见 share-receiver-error.txt"
+        return 1
+    fi
+    flow "分享：返回原面板后可以继续操作" share-receiver-return.yaml
 }

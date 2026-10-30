@@ -1,4 +1,7 @@
 import pluginManager from "./pluginManager";
+import { withTimeout } from "@/utils/promiseTimeout";
+
+export const SHARE_DETAIL_TIMEOUT_MS = 3000;
 
 /** Share the public detail page, never a resolved audio URL containing temporary credentials. */
 export async function formatMusicShareMessage(musicItem: IMusic.IMusicItem) {
@@ -8,9 +11,14 @@ export async function formatMusicShareMessage(musicItem: IMusic.IMusicItem) {
         .join(" - ");
     let url = "";
     try {
-        const detail = await pluginManager
-            .getByMedia(musicItem)
-            ?.methods.getMusicDetailPageUrl(musicItem);
+        const detail = await withTimeout(
+            Promise.resolve().then(() =>
+                pluginManager
+                    .getByMedia(musicItem)
+                    ?.methods.getMusicDetailPageUrl(musicItem),
+            ),
+            SHARE_DETAIL_TIMEOUT_MS,
+        );
         // Ignore non-web schemes, URL user-info, and control characters from a plugin.
         if (
             typeof detail === "string" &&
