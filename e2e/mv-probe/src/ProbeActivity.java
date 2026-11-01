@@ -288,13 +288,19 @@ public final class ProbeActivity extends Activity {
         require("no".equals(property("vid")), "audio retained video selection");
 
         stage("prepared-eof"); load(videoB, true);
+        int beforePromotionLoaded = loadedCount;
         ui(() -> {
             player.command(new String[]{"loadfile", audio.getAbsolutePath(), "append", "-1", "vid=no"});
             player.command(new String[]{"seek", "22.5", "absolute+exact"});
             player.setPropertyBoolean("pause", false); return null;
         });
-        await(() -> audio.getAbsolutePath().equals(property("path")), "native appended audio did not promote");
-        await(() -> position() > .2, "promoted audio did not advance");
+        await(() -> {
+            // START_FILE changes path before FILE_LOADED/time-pos are available.
+            // Wait for readiness; strict finite samples begin after this boundary.
+            if (loadedCount <= beforePromotionLoaded || !audio.getAbsolutePath().equals(property("path"))) return false;
+            Double value = ui(() -> player.getPropertyDouble("time-pos"));
+            return value != null && Double.isFinite(value) && value > .2;
+        }, "native appended audio did not become ready and advance");
         require("no".equals(property("vid")), "prepared audio inherited video");
         emit("promoted", "file", "audio.m4a", "position", position(), "vid", property("vid"), "vo", property("current-vo"));
         stage("complete"); finishResult(true, null);
