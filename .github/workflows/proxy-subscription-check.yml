@@ -27,6 +27,7 @@ jobs:
               rel=p.relative_to(src);manifest[str(rel)]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
               target=dst/rel;target.parent.mkdir(parents=True,exist_ok=True)
               if p.name=='logcat.txt':
+                  shutil.copy2(p,target)
                   selected=[]
                   with p.open(errors='replace') as lines:
                       for line in lines:
