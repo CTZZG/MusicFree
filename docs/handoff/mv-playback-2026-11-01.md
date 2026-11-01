@@ -47,8 +47,9 @@ Reviewed official MusicFreePlugins at
   files were read to find one.
 
 Do not claim these old plugins implement the new API or that a test clip is
-real content-provider acceptance. Full output/lifecycle acceptance remains
-pending, followed by RN/controller integration only if the path works.
+real content-provider acceptance. The standalone output path is now accepted below. Real content and RN/Fabric
+composition remain unverified, so there is no visible MV entry or completed
+product MV feature yet.
 
 ## Device run2 and diagnosed harness corrections
 
@@ -89,10 +90,75 @@ An isolated actual-package HTTP redirect control reproduces the old cross-realm
 header leak and verifies the fixed package strips it; representative Joi schema
 and multi-email validation passed. Shared node_modules were not modified.
 
-## Next
+## Standalone device result (run4)
 
-Read the current run's real jobs/logs/artifacts, inspect actual frames and
-recompute the checker. A rendering/lifecycle failure must be localized before
-changing the normal product path. Keep original audio gates, seek-clock rules,
-pause windows and negative evidence. Native surface ownership, video/queue
-identity and all progress consumers remain the next implementation scope.
+Manual run `41279963118`, exact source
+`d5781382aecfae3001133635a872fdb5061232f9`, completed on API34 and36 x86_64.
+Both TextureView and SurfaceView used the unchanged AAR/JNI payloads,
+`gpu-next`, H.264 and software decoding. Each case created one mpv instance.
+Original frame PNGs were fully decoded independently; changing colourful frames
+and restored-surface images were actually viewed. Media hashes match the original
+fixture manifest. The fixture files were fully decoded with ffmpeg -xerror.
+
+| API / surface | Actual audio stop → restored (s) | MV start | Background audio advanced (s) |
+| --- | --- | --- | --- |
+| 34 TextureView | 37.691712966 → 37.691712966 | 0 | 0.882853481 |
+| 34 SurfaceView | 37.628646760 → 37.628645833 | 0 | 0.753554849 |
+| 36 TextureView | 37.643869553 → 37.643854167 | 0 | 1.698134394 |
+| 36 SurfaceView | 37.710025698 → 37.710020833 | 0 | 0.803251209 |
+
+All four actual pause deltas were zero. After video EOF the appended audio
+became active near0.35s with vid=no. Independent checks accepted all four cases.
+Artifacts13072223587/13073315785 ZIP digests were verified. Detailed evidence is
+in the task scratch `p0-final-independent-summary.json` and original GitHub
+artifacts. No AAR rebuild is justified by this evidence.
+
+Run3 `41279404773` is retained as a failure: SurfaceView completed on both APIs,
+but TextureView queried time-pos after START_FILE before FILE_LOADED. Run4 waits
+for the new FILE_LOADED and actual finite progress; it does not substitute zero
+for a missing property or relax pause/restore observations.
+
+The provisional product choice is TextureView for rounded clipping/overlays and
+its actual frame-update callback. This is a candidate, not proof of correct RN
+layering, rotation, Fabric Release mounting or old-view ownership. Those require
+the next narrow native-view integration test. This standalone run has raw event
+logs and PNGs, not an app interaction recording or physical output test.
+
+## Normal regression result and seek-fixture repair
+
+CI239 `41279464834` at fe165 passed actual fresh-install quality:
+207 Jest suites/1545 tests,40 generator/1437 layout, ESLint0 errors/215 warnings,
+and the production audit with the same3 exceptions. Actual Debug Gradle executed
+all1414 tasks. The new ZIP digest was checked:36 suites/180 cases,
+zero failures/errors/skips. These are fe165 results, not the later seek repair.
+
+API143 `41279464833` failed its separate page buffering-button scenario.
+Its original70 JS source/focus/transition readings were written, but the whole
+normal instrumentation returned code-2; UI20 and freeze were not accepted.
+The actual timeout label was ordinary `暂停, busy`, not the injected loading
+label. Raw timestamps show setup at06:27:12.292, native seek done12.420 and
+PLAYBACK_RESTART12.439: time-pos exposed15 before the real seek finished.
+That restart legitimately published playing after the synthetic buffering event.
+
+The test-only setup now observes this seek and its PLAYBACK_RESTART before
+injecting buffering, removes its observer in finally, and shares the existing
+30-second seek deadline. All original button, pause, raw-progress, first-read,
+250ms/.25s and freeze gates remain unchanged. Actual SDK36 compilation of the
+whole changed instrument/probe/policy/reader passed, using real project classes
+for unchanged neighbours; this is not a local full App/device run.
+Seven host boundary cases run the exact observer body: fixed7/7; removing seek
+ownership5/7; admitting target-visible before restart2/7. Mutants were only
+scratch host sources. The new cloud run must still prove the actual regression.
+
+## Remaining gates
+
+- Normal CI/API at the final probe/seek-fixture head, with raw evidence accepted.
+- Narrow production native-view/Fabric mounting, owner+load-generation handoff,
+  RN layering/clipping/rotation, full app recording and Release evidence.
+- One actual provider's MV association and combined playable URL/headers/expiry.
+  Current requests did not establish one; do not substitute the generated clips.
+- Only then the optional plugin/controller contracts and MV UI according to the
+  design pack. Current app menus, playback implementation and AAR remain intact.
+
+No merge, release or version/API change. No ARM/physical phone/hardware-decoder,
+physical sound, commercial service or production-signature coverage is claimed.
