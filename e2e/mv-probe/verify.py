@@ -27,6 +27,8 @@ def verify(root, expected_native):
             return rows[0]
 
         stopped = one('audio-stop')['position']
+        assert len([e for e in events if e['event'] == 'instance']) == 1
+        assert abs(one('video-start')['position']) < .25
         assert 37.6 <= stopped < 40
         restored = one('audio-restored')
         assert restored['expected'] == stopped and abs(restored['actual'] - stopped) < .25
@@ -43,8 +45,6 @@ def verify(root, expected_native):
         assert loaded_a[0]['videoCodec'] is not None
         frames = [e for e in events if e['event'] == 'frame']
         assert {e['name'] for e in frames} == {'a-first.png', 'a-later.png', 'a-seek.png', 'a-reattach.png'}
-        first = next(e for e in frames if e['name'] == 'a-first.png')
-        assert .5 < first['position'] < 3  # audio was at >37.6; MV must start at zero
         decoded = {}
         for frame in frames:
             path = files / frame['name']

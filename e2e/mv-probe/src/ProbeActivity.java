@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.SurfaceTexture;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioTrack;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -43,12 +46,15 @@ public final class ProbeActivity extends Activity {
     private int attachCount;
     private int detachCount;
     private volatile int loadedCount;
+    private volatile boolean destroyed;
+    private Thread probeThread;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         kind = getIntent().getStringExtra("surface");
         if (!"surface".equals(kind)) kind = "texture";
+        emit("activity-created", "activity", System.identityHashCode(this));
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         if ("texture".equals(kind)) {
@@ -84,19 +90,26 @@ public final class ProbeActivity extends Activity {
         label = new TextView(this); label.setTextColor(Color.WHITE); label.setTextSize(14);
         label.setPadding(20, 20, 20, 20); root.addView(label);
         setContentView(root);
-        new Thread(() -> {
+        probeThread = new Thread(() -> {
             try { runProbe(); }
             catch (Throwable error) {
-                emit("failure", "stage", phase, "error", error.toString());
-                finishResult(false, error.toString());
+                if (destroyed) emit("activity-cancelled", "activity", System.identityHashCode(this));
+                else {
+                    emit("failure", "stage", phase, "error", error.toString());
+                    finishResult(false, error.toString());
+                }
             }
-        }, "mv-p0").start();
+        }, "mv-p0");
+        probeThread.start();
     }
 
     private <T> T ui(Callable<T> action) throws Exception {
         if (Looper.myLooper() == Looper.getMainLooper()) return action.call();
         Object[] result = new Object[2]; CountDownLatch done = new CountDownLatch(1);
-        main.post(() -> { try { result[0] = action.call(); } catch (Throwable e) { result[1] = e; } finally { done.countDown(); } });
+        main.post(() -> { try {
+            if (destroyed) throw new IllegalStateException("Activity destroyed");
+            result[0] = action.call();
+        } catch (Throwable e) { result[1] = e; } finally { done.countDown(); } });
         if (!done.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("main operation timeout");
         if (result[1] != null) throw new IllegalStateException("main operation failed", (Throwable) result[1]);
         @SuppressWarnings("unchecked") T value = (T) result[0]; return value;
@@ -158,20 +171,31 @@ public final class ProbeActivity extends Activity {
     }
     private void capture(String name) throws Exception {
         Bitmap bitmap;
+        int width = 640;
+        int height = ui(() -> Math.max(1, videoView.getHeight() * 640 / videoView.getWidth()));
         if (videoView instanceof TextureView) {
-            bitmap = ui(() -> ((TextureView) videoView).getBitmap());
+            bitmap = ui(() -> ((TextureView) videoView).getBitmap(width, height));
         } else {
-            bitmap = Bitmap.createBitmap(ui(() -> videoView.getWidth()), ui(() -> videoView.getHeight()), Bitmap.Config.ARGB_8888);
-            CountDownLatch done = new CountDownLatch(1); int[] status = {-1}; Bitmap target = bitmap;
-            ui(() -> { PixelCopy.request(((SurfaceView) videoView).getHolder().getSurface(), target,
-                    code -> { status[0] = code; done.countDown(); }, main); return null; });
-            require(done.await(5, TimeUnit.SECONDS) && status[0] == PixelCopy.SUCCESS, "PixelCopy failed: " + status[0]);
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            long deadline = SystemClock.elapsedRealtime() + 10000;
+            int code;
+            do {
+                CountDownLatch done = new CountDownLatch(1); int[] status = {-1}; Bitmap target = bitmap;
+                ui(() -> { PixelCopy.request(((SurfaceView) videoView).getHolder().getSurface(), target,
+                        result -> { status[0] = result; done.countDown(); }, main); return null; });
+                require(done.await(5, TimeUnit.SECONDS), "PixelCopy callback timed out");
+                code = status[0]; emit("pixel-copy", "name", name, "result", code);
+                if (code == PixelCopy.ERROR_SOURCE_NO_DATA && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50);
+                else break;
+            } while (true);
+            require(code == PixelCopy.SUCCESS, "PixelCopy failed: " + code);
         }
         require(bitmap != null, "no captured frame");
+        double capturedPosition = position();
         try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), name))) {
             require(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out), "PNG encode failed");
         }
-        emit("frame", "name", name, "updates", frameUpdates, "position", position(), "width", bitmap.getWidth(), "height", bitmap.getHeight());
+        emit("frame", "name", name, "updates", frameUpdates, "position", capturedPosition, "width", bitmap.getWidth(), "height", bitmap.getHeight());
         bitmap.recycle();
     }
 
@@ -179,6 +203,26 @@ public final class ProbeActivity extends Activity {
         File audio = asset("audio.m4a"), videoA = asset("mv-a.mp4"), videoB = asset("mv-b.mp4");
         asset("native-manifest.json"); asset("fixture-manifest.json");
         await(() -> ui(() -> availableSurface != null && availableSurface.isValid()), "no Android surface");
+        // A newly installed UID can precede audioserver's UID/package snapshot
+        // during emulator startup. Require a real Android PCM track first;
+        // never replace mpv's AO with null or retry a failed mpv load as PASS.
+        await(() -> ui(() -> {
+            AudioTrack track = null;
+            try {
+                int minimum = AudioTrack.getMinBufferSize(48000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT);
+                if (minimum <= 0) return false;
+                track = new AudioTrack.Builder()
+                    .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    .setAudioFormat(new AudioFormat.Builder().setSampleRate(48000)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_FLOAT).build())
+                    .setBufferSizeInBytes(Math.max(minimum * 2, 28800)).setTransferMode(AudioTrack.MODE_STREAM).build();
+                boolean ready = track.getState() == AudioTrack.STATE_INITIALIZED;
+                emit("audio-preflight", "ready", ready); return ready;
+            } catch (RuntimeException error) {
+                emit("audio-preflight", "ready", false, "error", error.toString()); return false;
+            } finally { if (track != null) track.release(); }
+        }), "Android PCM output is not ready for the installed UID");
         stage("audio");
         ui(() -> {
             player = MPVLib.create(this); require(player != null, "create failed"); instanceCount++;
@@ -208,6 +252,11 @@ public final class ProbeActivity extends Activity {
         require(Double.isFinite(stopped), "invalid actual stop"); emit("audio-stop", "position", stopped);
 
         stage("video-a"); load(videoA, true);
+        await(() -> {
+            Double value = ui(() -> player.getPropertyDouble("time-pos"));
+            return value != null && Double.isFinite(value) && Math.abs(value) < .25;
+        }, "MV did not initialize at zero");
+        emit("video-start", "position", position());
         ui(() -> { player.setPropertyBoolean("pause", false); return null; });
         await(() -> position() > .5 && property("video-codec") != null, "video did not start");
         require(position() < 3, "MV inherited audio seek");
@@ -226,7 +275,11 @@ public final class ProbeActivity extends Activity {
         emit("background", "before", backgroundBefore, "after", backgroundAfter);
         stage("foreground-wait"); await(() -> resumed, "host did not restore activity");
         await(() -> "gpu-next".equals(property("current-vo")) && property("video-codec") != null, "reattach failed");
-        Thread.sleep(400); capture("a-reattach.png");
+        if (videoView instanceof TextureView) {
+            int beforeFrame = ui(() -> frameUpdates);
+            await(() -> ui(() -> frameUpdates > beforeFrame), "no actual TextureView frame after attach");
+        }
+        capture("a-reattach.png");
 
         stage("return-audio"); load(audio, false);
         ui(() -> { player.command(new String[]{"seek", Double.toString(stopped), "absolute+exact"}); return null; });
@@ -250,6 +303,9 @@ public final class ProbeActivity extends Activity {
     @Override public void onResume() { super.onResume(); resumed = true; if (renderDesired) attachVideo(); }
     @Override public void onPause() { resumed = false; detachVideo(); super.onPause(); }
     @Override public void onDestroy() {
+        destroyed = true;
+        emit("activity-destroyed", "activity", System.identityHashCode(this));
+        if (probeThread != null) probeThread.interrupt();
         detachVideo();
         if (player != null) { player.destroy(); player = null; }
         super.onDestroy();

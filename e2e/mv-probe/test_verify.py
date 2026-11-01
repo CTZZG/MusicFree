@@ -46,6 +46,8 @@ class CheckerTest(unittest.TestCase):
                 {'event': 'background', 'before': 6.1, 'after': 7.1},
                 {'event': 'promoted', 'file': 'audio.m4a', 'vid': 'no', 'position': .4},
                 {'event': 'loaded', 'file': 'mv-a.mp4', 'vo': 'gpu-next', 'videoCodec': 'h264'},
+                {'event': 'instance', 'id': 1},
+                {'event': 'video-start', 'position': 0},
             ]
             for i, name in enumerate(['a-first.png', 'a-later.png', 'a-seek.png', 'a-reattach.png']):
                 (files / name).write_bytes(png(i))
@@ -65,7 +67,7 @@ class CheckerTest(unittest.TestCase):
         (self.root / 'texture/files/events.jsonl').unlink()
         with self.assertRaises(FileNotFoundError): module.verify(self.root, self.native)
     def test_wrong_restore_rejected(self): self.reject(lambda rows: rows[1].update(actual=8))
-    def test_old_seek_inherited_rejected(self): self.reject(lambda rows: rows[6].update(position=37.7))
+    def test_old_seek_inherited_rejected(self): self.reject(lambda rows: rows[7].update(position=37.7))
     def test_paused_motion_rejected(self): self.reject(lambda rows: rows[2].update(after=2))
     def test_no_background_progress_rejected(self): self.reject(lambda rows: rows[3].update(after=6.1))
     def test_prepared_video_leak_rejected(self): self.reject(lambda rows: rows[4].update(vid='auto'))

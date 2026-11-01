@@ -62,3 +62,6 @@ jobs:
                       ${{ runner.temp }}/source-sha.txt
                       ${{ runner.temp }}/mv-probe-native.json
                       ${{ runner.temp }}/mv-probe-fixtures.json
+                      !${{ runner.temp }}/mv-results/**/evidence.tar
+                      !${{ runner.temp }}/mv-results/**/files/*.m4a
+                      !${{ runner.temp }}/mv-results/**/files/*.mp4

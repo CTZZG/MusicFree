@@ -39,6 +39,13 @@ for SURFACE in texture surface; do
     adb exec-out screencap -p > "$CASE/device.png"
     adb exec-out run-as "$PACKAGE" tar -cf - files > "$CASE/evidence.tar"
     tar -xf "$CASE/evidence.tar" -C "$CASE"
+    # Preserve all raw evidence on the runner; upload one copy of the original
+    # media rather than duplicating it in two tar files and two extracted trees.
+    if [ "$SURFACE" = texture ]; then
+        mkdir -p "$OUT/fixtures"
+        cp "$CASE/files/"*.m4a "$CASE/files/"*.mp4 "$OUT/fixtures/"
+    fi
+    if [ -f "$CASE/files/summary.json" ]; then cat "$CASE/files/summary.json"; fi
     if [ "$finished" != true ]; then printf '%s\n' 'Probe did not produce a final summary' > "$CASE/missing-summary.txt"; fi
 done
 adb shell am force-stop "$PACKAGE"

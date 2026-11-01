@@ -12,8 +12,9 @@ Keep version400037/API34; no merge/tag/release. Full design pack is at
   independent frame/state checker with ten rejection controls.
 - A separate manual API34/36 workflow, leaving normal product regressions intact.
 
-There are no MusicFree product changes, plugin API additions, AAR replacements
-or visible MV buttons in this first checkpoint.
+There are no MusicFree playback implementation changes, plugin API additions,
+AAR replacements or visible MV buttons in this first checkpoint. Two compatible
+transitive lockfile patches address the newly blocking CI advisories below.
 
 ## Actual local evidence
 
@@ -46,8 +47,47 @@ Reviewed official MusicFreePlugins at
   files were read to find one.
 
 Do not claim these old plugins implement the new API or that a test clip is
-real content-provider acceptance. Capability/output evidence is pending the
-manual device run, followed by RN/controller integration only if the path works.
+real content-provider acceptance. Full output/lifecycle acceptance remains
+pending, followed by RN/controller integration only if the path works.
+
+## Device run2 and diagnosed harness corrections
+
+`41278370119` built and test-signed both probe APKs, then failed on both devices.
+Recovery runs `41278852881` and `41279114209` only repack the original artifacts;
+they do not repeat a device or build. The first archive exceeded the32MiB
+transfer limit; one standard CLI attempt was also denied. Original archives
+remain on GitHub. Recovered ZIP digests were checked, and43 raw files matched
+the recovery manifest. Actual coloured H.264 frames were viewed on API34/36,
+using gpu-next and software decode.
+
+- API34 TextureView's original Activity was relaunched. Its old worker later
+  wrote a failure while the new Activity had already rendered video. The
+  helper now cancels destroyed Activity work and records lifecycle events.
+- API36's first AudioTrack failed with AudioFlinger `unknown uid` immediately
+  after install. The helper now requires a real Android PCM track preflight
+  before creating mpv; it does not retry failed mpv loads or use ao=null.
+- Both SurfaceView runs detached video while real audio advanced0.832/0.863s.
+  Reattachment selectedgpu-next, but PixelCopy was requested before its first
+  new buffer (ERROR_SOURCE_NO_DATA); later screenshots show real video. The
+  helper now waits boundedly for actual copy/TextureView frame readiness.
+- Native zero position is recorded while the new MV is initially paused. A
+  PNG's encoding time must not be treated as the first engine timestamp.
+
+These are partial observations, not fullP0 acceptance: return-audio and appended
+EOF were not reached. Fixed helper compilation and ten host controls passed;
+the new device batch must prove the remaining steps.
+
+## New audit blockers
+
+CI237 passed the functional quality checks, then correctly blocked
+follow-redirects GHSA-mrwp-f3q8-3g9p and joi GHSA-4528-x5fx-h6hg.
+Only two lock entries change: follow-redirects1.16.1 to1.16.2 and joi17.13.8
+to17.13.9, both within existing parent ranges. Root package.json and audit
+exceptions are unchanged. The local production audit now passes with the same
+three documented exceptions (critical0/high3/moderate20/low4).
+An isolated actual-package HTTP redirect control reproduces the old cross-realm
+header leak and verifies the fixed package strips it; representative Joi schema
+and multi-email validation passed. Shared node_modules were not modified.
 
 ## Next
 
