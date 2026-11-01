@@ -6,8 +6,10 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+import sys
 import zlib
 
+sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('probe_verify', Path(__file__).with_name('verify.py'))
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
