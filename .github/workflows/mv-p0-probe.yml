@@ -37,6 +37,7 @@ jobs:
             - name: Build isolated probe with unchanged bundled libraries
               run: |
                   python3 -I e2e/mv-probe/test_verify.py
+                  python3 -I e2e/mv-probe/test_frame_code.py
                   bash e2e/mv-probe/build.sh "$RUNNER_TEMP/mv-probe.apk"
                   git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
             - name: Run real output and lifecycle checks

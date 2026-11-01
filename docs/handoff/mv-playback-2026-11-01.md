@@ -9,7 +9,7 @@ Keep version400037/API34; no merge/tag/release. Full design pack is at
 - An isolated Android capability probe using the exact bundled AAR, two real
   Android Surface implementations and original generated media.
 - Raw capture, bounded stage waits, real home/return orchestration and an
-  independent frame/state checker with ten rejection controls.
+  independent frame/state checker with28 host controls.
 - A separate manual API34/36 workflow, leaving normal product regressions intact.
 
 There are no MusicFree playback implementation changes, plugin API additions,
@@ -32,6 +32,41 @@ changing the AAR. The cloud uses the complete JDK21 setup.
 No local Android device/KVM is available. This local result is a build and
 checker result, not actual video output or app regression acceptance.
 
+## Review repairs after run4
+
+The review found three P0 coverage gaps. Run4's target clock reached6s while
+three of four seek PNGs still showed3.625/2.167/5.250s. Return-audio sought to
+the captured position but stayed paused before the next video replaced it.
+The old checker accepted a copied trace with its background detach/foreground
+attach removed. Those raw artifacts and the original review remain retained;
+the prior green summary is insufficient for completeP0 acceptance.
+
+The repaired probe now waits for this SEEK followed by PLAYBACK_RESTART within
+the existing10s wait, then reads a ten-bit frame number actually rendered in
+the generated clip. The seek PNG must be within one24fps frame of6s; the
+original .25s native-clock criterion also remains. Old pending frames are
+logged and the first is saved. The independent checker decodes the PNG rather
+than trusting the frame number reported by Java.
+
+Return-audio now explicitly unpauses and samples the same audio file900ms
+apart, requiring more than0.5s real native progress, pause=false, vid=no and no
+attached Surface. This adds the previously missing playing-intent coverage;
+it is not the future product controller's paused-intent implementation.
+Surface evidence now includes the one mpv instance, Surface identity and binding
+generation. The checker reconstructs ordered ownership and the background
+interval, reconciles raw counters, and rejects a stale reattached frame.
+
+Local results:28 checker cases pass. The same eight selected cases against the
+old checker pass only the complete control and fail seven rejection cases.
+Actual generated H.264 frames0/87/144/575 survive codec/letterboxing/PNG and
+match both the independent Python decoder and the actual Java helper. Initial
+host compiler selection failed because this environment has a Java21 compiler
+module without a javac launcher; the same explicit JAVAC selector as build.sh
+resolves it. Real SDK36/Java21/D8 test APK assembly and test-certificate
+apksigner verification passed; all10 original x64 JNI payloads match the AAR.
+These repairs have not yet been accepted on Android devices; one focused
+API34/36 standalone workflow is required for the changed probe/fixtures.
+
 ## Source investigation
 
 Reviewed official MusicFreePlugins at
@@ -47,7 +82,7 @@ Reviewed official MusicFreePlugins at
   files were read to find one.
 
 Do not claim these old plugins implement the new API or that a test clip is
-real content-provider acceptance. The standalone output path is now accepted below. Real content and RN/Fabric
+real content-provider acceptance. The standalone output observations below are subject to the review repairs above. Real content and RN/Fabric
 composition remain unverified, so there is no visible MV entry or completed
 product MV feature yet.
 
@@ -108,7 +143,8 @@ fixture manifest. The fixture files were fully decoded with ffmpeg -xerror.
 | 36 SurfaceView | 37.710025698 → 37.710020833 | 0 | 0.803251209 |
 
 All four actual pause deltas were zero. After video EOF the appended audio
-became active near0.35s with vid=no. Independent checks accepted all four cases.
+became active near0.35s with vid=no. The original checker accepted all four cases,
+but it did not establish rendered seek readiness or actual returned-audio resume.
 Artifacts13072223587/13073315785 ZIP digests were verified. Detailed evidence is
 in the task scratch `p0-final-independent-summary.json` and original GitHub
 artifacts. No AAR rebuild is justified by this evidence.
@@ -148,11 +184,22 @@ whole changed instrument/probe/policy/reader passed, using real project classes
 for unchanged neighbours; this is not a local full App/device run.
 Seven host boundary cases run the exact observer body: fixed7/7; removing seek
 ownership5/7; admitting target-visible before restart2/7. Mutants were only
-scratch host sources. The new cloud run must still prove the actual regression.
+scratch host sources.
+
+CI240/API144 at f4ba subsequently completed: actual quality207/1545/40/1437,
+ESLint0/215; Debug Gradle1414tasks executed and36 suites180tests with no
+failure/error/skip. API144 really compiled app/test Kotlin and780tasks;
+93native methods code0, native25/slow73/normalJS70 with normal instrumentation0,
+UI20 and both PNGs viewed, and freeze5 with actualRAW_STALLED/raw0/session4403ms.
+All seven normal plus two UI paused windows stayed still. Six clock rounds
+288samples: worstDelta-.149819991s/maxgap28ms; actual old stop100.045203261 ->
+first100.165848505, maxpoll99ms. Source12begin/7resolved/focus passed. The
+single setup SEEK/RESTART preceded all UI readings. No original gate changed.
 
 ## Remaining gates
 
-- Normal CI/API at the final probe/seek-fixture head, with raw evidence accepted.
+- Focused device acceptance of the three repaired standalone P0 checks; ordinary
+  CI240/API144 passed for the unchanged product/test preparation at f4ba.
 - Narrow production native-view/Fabric mounting, owner+load-generation handoff,
   RN layering/clipping/rotation, full app recording and Release evidence.
 - One actual provider's MV association and combined playable URL/headers/expiry.

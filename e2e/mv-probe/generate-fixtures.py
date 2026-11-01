@@ -7,6 +7,16 @@ from pathlib import Path
 import subprocess
 
 
+def frame_code_filter():
+    # An actual frame-number barcode, not a label populated from player time-pos.
+    filters = ['drawbox=x=352:y=40:w=344:h=64:color=black:t=fill',
+               'drawbox=x=360:y=56:w=24:h=32:color=magenta:t=fill',
+               'drawbox=x=668:y=56:w=24:h=32:color=cyan:t=fill']
+    for bit in range(10):
+        filters.append(f"drawbox=x={392 + bit * 28}:y=56:w=24:h=32:color=white:t=fill:enable='bitand(n,{1 << bit})'")
+    return ','.join(filters)
+
+
 def generate(output):
     output.mkdir(parents=True, exist_ok=True)
     common = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y']
@@ -15,6 +25,7 @@ def generate(output):
     for name, source, frequency in [('mv-a.mp4', 'testsrc2', 660), ('mv-b.mp4', 'testsrc', 880)]:
         subprocess.run(common + ['-f', 'lavfi', '-i', f'{source}=size=1280x720:rate=24:duration=24',
                                  '-f', 'lavfi', '-i', f'sine=frequency={frequency}:sample_rate=48000:duration=24',
+                                 '-vf', frame_code_filter(),
                                  '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '34',
                                  '-pix_fmt', 'yuv420p', '-g', '24', '-c:a', 'aac', '-b:a', '64k',
                                  '-movflags', '+faststart', '-shortest', str(output / name)], check=True)

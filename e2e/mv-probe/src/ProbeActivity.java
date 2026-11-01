@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Standalone engine capability probe. Does not claim RN/production integration. */
 public final class ProbeActivity extends Activity {
@@ -120,7 +121,9 @@ public final class ProbeActivity extends Activity {
     }
     private void require(boolean value, String message) { if (!value) throw new IllegalStateException(message); }
     private void await(Callable<Boolean> condition, String message) throws Exception {
-        long deadline = SystemClock.elapsedRealtime() + 10000;
+        awaitUntil(SystemClock.elapsedRealtime() + 10000, condition, message);
+    }
+    private void awaitUntil(long deadline, Callable<Boolean> condition, String message) throws Exception {
         do { if (condition.call()) return; Thread.sleep(50); } while (SystemClock.elapsedRealtime() < deadline);
         throw new IllegalStateException(message);
     }
@@ -141,12 +144,15 @@ public final class ProbeActivity extends Activity {
         player.attachSurface(availableSurface); attachedSurface = availableSurface; attachCount++;
         updateSize(videoView.getWidth(), videoView.getHeight());
         player.setPropertyString("vo", "gpu-next"); player.setPropertyString("vid", "auto");
-        emit("attach", "count", attachCount);
+        emit("attach", "count", attachCount, "attachment", attachCount,
+             "surfaceId", System.identityHashCode(attachedSurface));
     }
     private void detachVideo() {
         if (player == null || attachedSurface == null) return;
         player.setPropertyString("vid", "no"); player.setPropertyString("vo", "null");
-        player.detachSurface(); attachedSurface = null; detachCount++; emit("detach", "count", detachCount);
+        int surfaceId = System.identityHashCode(attachedSurface);
+        player.detachSurface(); attachedSurface = null; detachCount++;
+        emit("detach", "count", detachCount, "attachment", attachCount, "surfaceId", surfaceId);
     }
     private File asset(String name) throws Exception {
         File file = new File(getFilesDir(), name);
@@ -169,7 +175,52 @@ public final class ProbeActivity extends Activity {
         emit("loaded", "file", file.getName(), "vid", property("vid"), "vo", property("current-vo"),
              "videoCodec", property("video-codec"), "hwdec", property("hwdec-current"));
     }
-    private void capture(String name) throws Exception {
+    private JSONObject playbackSnapshot() throws Exception {
+        return ui(() -> {
+            Double pos = player.getPropertyDouble("time-pos");
+            String path = player.getPropertyString("path");
+            String vo = player.getPropertyString("current-vo");
+            Boolean paused = player.getPropertyBoolean("pause");
+            require(pos != null && Double.isFinite(pos) && path != null && paused != null, "incomplete playback snapshot");
+            return new JSONObject().put("position", pos).put("file", new File(path).getName())
+                .put("paused", paused).put("vid", player.getPropertyString("vid"))
+                .put("vo", vo == null ? JSONObject.NULL : vo)
+                .put("attached", attachedSurface != null).put("attachment", attachedSurface == null ? 0 : attachCount)
+                .put("instanceId", System.identityHashCode(player)).put("uptimeMs", SystemClock.elapsedRealtime());
+        });
+    }
+    private void seekPaused(double target) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 10000;
+        AtomicBoolean seekSeen = new AtomicBoolean(); CountDownLatch restarted = new CountDownLatch(1);
+        MPVLib.EventObserver observer = new MPVLib.EventObserver() {
+            public void eventProperty(String key) {}
+            public void eventProperty(String key, long value) {}
+            public void eventProperty(String key, double value) {}
+            public void eventProperty(String key, boolean value) {}
+            public void eventProperty(String key, String value) {}
+            public void event(int id) {
+                if (id == MPVLib.MpvEvent.MPV_EVENT_SEEK) seekSeen.set(true);
+                if (id == MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART && seekSeen.get()) restarted.countDown();
+            }
+        };
+        ui(() -> {
+            require(Boolean.TRUE.equals(player.getPropertyBoolean("pause")), "seek must begin paused");
+            player.addObserver(observer); return null;
+        });
+        try {
+            emit("seek-request", "target", target);
+            ui(() -> { player.command(new String[]{"seek", Double.toString(target), "absolute+exact"}); return null; });
+            awaitUntil(deadline, () -> restarted.getCount() == 0
+                && Boolean.FALSE.equals(ui(() -> player.getPropertyBoolean("seeking")))
+                && Math.abs(position() - target) < .25, "paused seek did not complete");
+            require(Boolean.TRUE.equals(ui(() -> player.getPropertyBoolean("pause"))), "seek changed pause intent");
+            emit("seek-ready", "target", target, "actual", position(),
+                 "seekObserved", seekSeen.get(), "restartObserved", restarted.getCount() == 0);
+        } finally {
+            ui(() -> { player.removeObserver(observer); return null; });
+        }
+    }
+    private Bitmap copyFrame(long deadline) throws Exception {
         Bitmap bitmap;
         int width = 640;
         int height = ui(() -> Math.max(1, videoView.getHeight() * 640 / videoView.getWidth()));
@@ -177,26 +228,48 @@ public final class ProbeActivity extends Activity {
             bitmap = ui(() -> ((TextureView) videoView).getBitmap(width, height));
         } else {
             bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-            long deadline = SystemClock.elapsedRealtime() + 10000;
             int code;
             do {
                 CountDownLatch done = new CountDownLatch(1); int[] status = {-1}; Bitmap target = bitmap;
                 ui(() -> { PixelCopy.request(((SurfaceView) videoView).getHolder().getSurface(), target,
                         result -> { status[0] = result; done.countDown(); }, main); return null; });
                 require(done.await(5, TimeUnit.SECONDS), "PixelCopy callback timed out");
-                code = status[0]; emit("pixel-copy", "name", name, "result", code);
+                code = status[0]; emit("pixel-copy", "result", code);
                 if (code == PixelCopy.ERROR_SOURCE_NO_DATA && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50);
                 else break;
             } while (true);
             require(code == PixelCopy.SUCCESS, "PixelCopy failed: " + code);
         }
         require(bitmap != null, "no captured frame");
-        double capturedPosition = position();
+        return bitmap;
+    }
+    private void saveFrame(Bitmap bitmap, String name) throws Exception {
         try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), name))) {
             require(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out), "PNG encode failed");
         }
-        emit("frame", "name", name, "updates", frameUpdates, "position", capturedPosition, "width", bitmap.getWidth(), "height", bitmap.getHeight());
-        bitmap.recycle();
+    }
+    private void capture(String name) throws Exception { capture(name, 0, 575); }
+    private void capture(String name, int minFrame, int maxFrame) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 10000;
+        int pending = 0;
+        do {
+            Bitmap bitmap = copyFrame(deadline);
+            int frame = FrameCode.read(bitmap.getWidth(), bitmap.getHeight(), bitmap::getPixel);
+            if (frame >= minFrame && frame <= maxFrame) {
+                double capturedPosition = position();
+                saveFrame(bitmap, name);
+                emit("frame", "name", name, "updates", frameUpdates, "position", capturedPosition,
+                     "width", bitmap.getWidth(), "height", bitmap.getHeight(), "frameIndex", frame,
+                     "attachment", attachCount, "surfaceId", System.identityHashCode(attachedSurface));
+                bitmap.recycle(); return;
+            }
+            String firstPending = name.replace(".png", "-pending-first.png");
+            if (pending == 0) saveFrame(bitmap, firstPending);
+            emit("frame-pending", "name", name, "observedFrame", frame, "minFrame", minFrame,
+                 "maxFrame", maxFrame, "attempt", ++pending, "firstPendingImage", firstPending);
+            bitmap.recycle(); Thread.sleep(50);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        throw new IllegalStateException("rendered frame did not reach requested range: " + name);
     }
 
     private void runProbe() throws Exception {
@@ -265,27 +338,39 @@ public final class ProbeActivity extends Activity {
         double pauseBefore = position(); Thread.sleep(600); double pauseAfter = position();
         require(Math.abs(pauseAfter - pauseBefore) < .02, "video advanced while paused");
         emit("paused", "before", pauseBefore, "after", pauseAfter);
-        ui(() -> { player.command(new String[]{"seek", "6", "absolute+exact"}); return null; });
-        await(() -> Math.abs(position() - 6) < .25, "video exact seek failed"); capture("a-seek.png");
+        seekPaused(6); capture("a-seek.png", 6 * FrameCode.FPS - 1, 6 * FrameCode.FPS + 1);
         ui(() -> { player.setPropertyBoolean("pause", false); return null; });
         stage("background-wait");
         await(() -> !resumed, "host did not background activity");
-        double backgroundBefore = position(); Thread.sleep(900); double backgroundAfter = position();
+        JSONObject backgroundStart = playbackSnapshot();
+        double backgroundBefore = backgroundStart.getDouble("position");
+        Thread.sleep(900); JSONObject backgroundEnd = playbackSnapshot();
+        double backgroundAfter = backgroundEnd.getDouble("position");
         require(backgroundAfter - backgroundBefore > .5, "detached audio did not advance");
-        emit("background", "before", backgroundBefore, "after", backgroundAfter);
+        emit("background", "before", backgroundBefore, "after", backgroundAfter,
+             "beforeState", backgroundStart, "afterState", backgroundEnd);
         stage("foreground-wait"); await(() -> resumed, "host did not restore activity");
         await(() -> "gpu-next".equals(property("current-vo")) && property("video-codec") != null, "reattach failed");
         if (videoView instanceof TextureView) {
             int beforeFrame = ui(() -> frameUpdates);
             await(() -> ui(() -> frameUpdates > beforeFrame), "no actual TextureView frame after attach");
         }
-        capture("a-reattach.png");
+        capture("a-reattach.png", (int) Math.floor(backgroundAfter * FrameCode.FPS) - 1, 575);
 
         stage("return-audio"); load(audio, false);
-        ui(() -> { player.command(new String[]{"seek", Double.toString(stopped), "absolute+exact"}); return null; });
-        await(() -> Math.abs(position() - stopped) < .25, "audio restore seek failed");
+        seekPaused(stopped);
         emit("audio-restored", "expected", stopped, "actual", position(), "vid", property("vid"));
         require("no".equals(property("vid")), "audio retained video selection");
+        ui(() -> { player.setPropertyBoolean("pause", false); return null; });
+        JSONObject resumeBefore = playbackSnapshot();
+        Thread.sleep(900); JSONObject resumeAfter = playbackSnapshot();
+        require(!resumeBefore.getBoolean("paused") && !resumeAfter.getBoolean("paused")
+                && resumeAfter.getDouble("position") - resumeBefore.getDouble("position") > .5,
+                "restored audio did not resume and advance");
+        require("audio.m4a".equals(resumeBefore.getString("file")) && "audio.m4a".equals(resumeAfter.getString("file"))
+                && "no".equals(resumeBefore.getString("vid")) && "no".equals(resumeAfter.getString("vid"))
+                && !resumeBefore.getBoolean("attached") && !resumeAfter.getBoolean("attached"), "return audio policy changed");
+        emit("audio-resumed", "beforeState", resumeBefore, "afterState", resumeAfter);
 
         stage("prepared-eof"); load(videoB, true);
         int beforePromotionLoaded = loadedCount;
@@ -320,6 +405,7 @@ public final class ProbeActivity extends Activity {
         try {
             JSONObject row = new JSONObject(); row.put("event", event); row.put("phase", phase);
             row.put("uptimeMs", SystemClock.elapsedRealtime()); row.put("surface", kind);
+            row.put("instanceId", player == null ? 0 : System.identityHashCode(player));
             for (int i = 0; i < values.length; i += 2) row.put((String) values[i], values[i + 1] == null ? JSONObject.NULL : values[i + 1]);
             try (FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "events.jsonl"), true)) {
                 out.write((row.toString() + "\n").getBytes("UTF-8"));

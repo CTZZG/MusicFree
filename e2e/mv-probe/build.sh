@@ -40,7 +40,7 @@ PY
 # lambdas against the JDK API, then let D8 desugar with the actual Android jar.
 "${JAVAC:-javac}" -source 8 -target 8 -nowarn -Xlint:-options \
     -classpath "$ANDROID_JAR:$WORK/classes.jar:$STDLIB" -d "$WORK/classes" \
-    "$HERE/src/ProbeActivity.java"
+    "$HERE/src/ProbeActivity.java" "$HERE/src/FrameCode.java"
 mapfile -t CLASS_FILES < <(find "$WORK/classes" -name '*.class' -print)
 "$TOOLS/d8" --min-api 34 --lib "$ANDROID_JAR" --output "$WORK/dex" \
     "${CLASS_FILES[@]}" "$WORK/classes.jar" "$STDLIB"
