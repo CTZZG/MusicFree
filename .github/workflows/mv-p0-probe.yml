@@ -1,0 +1,58 @@
+name: MV P0 current-AAR output probe
+
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: mv-p0-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    output-probe:
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        strategy:
+            fail-fast: false
+            matrix:
+                api: [34, 36]
+        steps:
+            - uses: actions/checkout@v5
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  # AAR classes are Java 21 bytecode; the probe itself targets Java 8/D8.
+                  java-version: '21'
+            - name: Prepare SDK and frame decoder
+              run: |
+                  sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+                  command -v ffmpeg || sudo apt-get install -y --no-install-recommends ffmpeg
+                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                  sudo udevadm control --reload-rules
+                  sudo udevadm trigger --name-match=kvm
+            - name: Build isolated probe with unchanged bundled libraries
+              run: |
+                  python3 -I e2e/mv-probe/test_verify.py
+                  bash e2e/mv-probe/build.sh "$RUNNER_TEMP/mv-probe.apk"
+                  git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
+            - name: Run real output and lifecycle checks
+              uses: reactivecircus/android-emulator-runner@v2
+              with:
+                  api-level: ${{ matrix.api }}
+                  target: google_apis
+                  arch: x86_64
+                  profile: pixel_7
+                  disable-animations: true
+                  emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
+                  script: bash e2e/mv-probe/run.sh "$RUNNER_TEMP/mv-probe.apk" "$RUNNER_TEMP/mv-results"
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: mv-p0-api${{ matrix.api }}-${{ github.run_id }}
+                  path: |
+                      ${{ runner.temp }}/mv-results/
+                      ${{ runner.temp }}/source-sha.txt
+                      ${{ runner.temp }}/mv-probe-native.json
+                      ${{ runner.temp }}/mv-probe-fixtures.json
