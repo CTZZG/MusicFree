@@ -1,6 +1,10 @@
 name: MV P0 current-AAR output probe
 
 on:
+    pull_request:
+        paths:
+            - 'e2e/mv-probe/**'
+            - '.github/workflows/mv-p0-probe.yml'
     workflow_dispatch:
 
 permissions:

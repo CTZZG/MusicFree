@@ -34,7 +34,8 @@ python3 -I e2e/mv-probe/test_verify.py
 bash e2e/mv-probe/run.sh /tmp/mv-probe.apk /tmp/mv-results
 ```
 
-`.github/workflows/mv-p0-probe.yml` runs this manually on API34 and36. It does
+`.github/workflows/mv-p0-probe.yml` runs this on probe PR changes, or manually,
+on API34 and36. It does
 not replace the normal proxy/audio regression workflow. Do not dispatch a
 duplicate run for the same candidate while it is still active.
 
