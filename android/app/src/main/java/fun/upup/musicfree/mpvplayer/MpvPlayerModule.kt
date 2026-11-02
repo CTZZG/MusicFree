@@ -232,6 +232,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private data class PendingNaturalEnd(
         val serial: Long,
         val endedIdentity: TrackIdentity?,
+        val videoEndIdentity: TrackIdentity?,
     )
 
     private var positionSecs = 0.0
@@ -241,7 +242,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     private var currentLoadGeneration = 0L
     private val engineProgressMarker = EngineProgressMarker()
-    private var activeTrackIdentity: TrackIdentity? = null
+    @Volatile private var activeTrackIdentity: TrackIdentity? = null
     // Only a confirmed, unpromoted MV END_FILE owns a return/restart after mpv
     // has removed its path/time-pos. Never infer ownership from an idle player.
     private var completedVideoIdentity: TrackIdentity? = null
@@ -816,11 +817,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         if (pendingNaturalEnd?.serial != pending.serial) return
         pendingNaturalEnd = null
         val autoAdvanced = promotedTrack != null
-        completedVideoIdentity = pending.endedIdentity?.takeIf {
+        completedVideoIdentity = pending.videoEndIdentity?.takeIf {
             !autoAdvanced && renditionKind == "mv" && it == activeTrackIdentity &&
-                it.loadGeneration == currentLoadGeneration && loadingTrackIdentity == null &&
-                (MPVLib.getPropertyBoolean("idle-active") == true || MPVLib.getPropertyBoolean("eof-reached") == true)
+                it.loadGeneration == currentLoadGeneration && loadingTrackIdentity == null
         }
+        // END_FILE is authoritative here. During mpv's teardown, eof-reached
+        // may already be unavailable while idle-active has not changed yet.
+        // New loads/identities and PLAYBACK_RESTART revoke this exact owner.
         val now = System.currentTimeMillis()
         Log.d(
             TAG,
@@ -2066,6 +2069,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     override fun event(eventId: Int) {
+        // Latch the identity at callback receipt, before a queued new load can
+        // replace it on the main looper. Only MV terminal ownership uses this;
+        // ordinary prepared/audio end handling below retains its existing path.
+        val videoEndIdentity = if (eventId == MPVLib.MPV_EVENT_END_FILE) activeTrackIdentity else null
         runMpvCallbackOnMain {
             when (eventId) {
                 MPVLib.MPV_EVENT_START_FILE -> {
@@ -2170,6 +2177,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     val pending = PendingNaturalEnd(
                         serial = ++naturalEndSerial,
                         endedIdentity = endedIdentity,
+                        videoEndIdentity = videoEndIdentity,
                     )
                     pendingNaturalEnd = pending
                     val promotedTrack = promotePreparedTrack(
