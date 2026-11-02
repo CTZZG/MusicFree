@@ -1,5 +1,51 @@
 # MV implementation — P0
 
+## END_FILE teardown and paused resize — 2026-11-02
+
+The next device batch exposed two concrete failures in d066; no run was
+silently retried or accepted. CI41461221249 really executed1414JVM tasks;
+its new XML is37suites/182tests, all failure/error/skip0. API41461221623
+completed95native methods:94passed, but the new owned-video-EOF method
+timed out. The remaining real-JS/UI/freeze stages were not executed.
+The original log shows END_FILE at14:30:51.922, then path/eof-reached
+already unavailable at14:30:51.923, before idle-active had settled. An
+instantaneous property gate therefore discarded a valid terminal owner.
+
+The existing natural-end path now latches the exact MV identity from
+END_FILE without requiring those transient properties. A volatile identity
+snapshot is taken at callback receipt, before dispatching to the main
+looper; an old queued callback cannot assign completion to a newer load.
+Promotion, pending-load/current-generation checks and revocation remain.
+Ordinary audio/prepared handling is unchanged. The actual latch and
+preflight/catch code with real PendingSeek/Unpause passes28host boundary
+cases. Original d066 passes23/fails5, including missing teardown properties
+and a queued old callback. This is synthetic JNI/dispatch, not device EOF.
+
+Fabric41461328511 really rotated to landscape, but its paused frame was
+cropped, so the frame guard correctly failed and later phases never ran.
+The raw viewport changed996x560 to1342x754; measured color bars are302px
+instead of about224px, matching the extra1342/996scale of the old render
+target. The frame's top barcode and right edge were missing. The output
+now recreates only its VO/Surface binding when bounds change, setting the
+new size before creating that output. It keeps the same player/file and
+issues no load, seek, pause, unpause, rate or volume command. Normal
+unchanged-size updates do not rebuild it; stale owner/generation guards
+remain. Actual output/lease code passes6host Surface/JNI-boundary cases;
+d066 fails2(size-before-VO and paused resize). Real resized pixels remain
+the mandatory Fabric gate, not a conclusion of those mocked boundaries.
+
+The failed d066 diagnostic APK is retained:29933761bytes, SHA256
+b2e61f880a530fc68a6e394662971471449c367e9cafaf9d88fe4b6468062fe4;
+its public TEST certificate verifies independently and all10x64JNI files
+match the fixed AAR. It is not the next repair APK or a production-signed
+App. The full VFR recording decodes and the actual failed landscape images
+were inspected. No pixel/deadline/clock/pause gate was weakened. A new
+native diagnostic build is required for these two related product fixes.
+The final source passes full local verify208suites/1568Jest/40generator/
+1437layout, ESLint0/215, TypeScript/static/cycles/7patch checks using the
+existing dependency install. Actual SDK36 module/view and complete changed
+instrumentation classes compile. There is no local whole-App/device pass.
+
 ## Completed MV ownership — 2026-11-02
 
 Run41449166385 (product172b) built the real Fabric Release variant and

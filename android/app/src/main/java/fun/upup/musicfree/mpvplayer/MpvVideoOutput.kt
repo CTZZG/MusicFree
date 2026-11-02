@@ -70,16 +70,21 @@ internal class MpvVideoOutput(
         val mpv = player() ?: return
         if (!canRender(bound.mediaId, bound.generation) || !bound.surface.isValid) return
         try {
-            if (attached?.surface !== bound.surface) {
+            val previous = attached
+            if (previous == null || previous.surface !== bound.surface ||
+                previous.width != bound.width || previous.height != bound.height) {
                 detach()
+                // Recreate the output at its new bounds. Updating only the viewport
+                // on a paused TextureView can retain the old EGL render target and
+                // crop the frame. The mpv instance, file, clock and intent stay put.
+                if (bound.width > 0 && bound.height > 0) {
+                    mpv.setPropertyString("android-surface-size", "${bound.width}x${bound.height}")
+                }
                 mpv.attachSurface(bound.surface)
                 attached = bound
                 mpv.setPropertyString("vo", "gpu-next")
                 mpv.setPropertyString("vid", "auto")
                 log(true, bound, mpv)
-            }
-            if (bound.width > 0 && bound.height > 0) {
-                mpv.setPropertyString("android-surface-size", "${bound.width}x${bound.height}")
             }
         } catch (error: Exception) {
             Log.w(TAG, "video output unavailable", error)
