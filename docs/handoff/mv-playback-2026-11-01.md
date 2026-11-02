@@ -1,5 +1,21 @@
 # MV implementation — P0
 
+## Plugin contract checkpoint — 2026-11-02
+
+Optional wrapper/source service now supports both the new method pair and the
+existing QQ/Bilibili `getMvSource` API. It preserves original association fields,
+uses existing URL admission and variables, caches metadata only, resolves fresh
+URLs on selection and rejects late results after owner/revision changes. See
+[the interface contract](../music-video-plugin-api.md). This is not yet a visible
+MV control or a complete rendition coordinator.
+
+Full current local verify208suites1568Jest/40generator/1437layout and
+ESLint0/215 passed;32 targeted wrapper/source tests passed. Removing the
+disable-enable revision or plugin-instance guard makes the original tests fail.
+The source was restored after both controls. The first fake-timer test fixture
+accidentally awaited before advancing the clock; corrected without changing
+the15second product timeout. No new full local App/device result is claimed.
+
 ## Current App integration checkpoint — 2026-11-02
 
 The user supplied a real subscription; its unmodified QQ/Bilibili plugins both
@@ -37,16 +53,16 @@ target lint found the diagnostic's JS global and inline-style issue. Both
 were corrected before the complete successful checks. Host/compiler results
 are not Android/Fabric mounting or physical audio evidence.
 
-**Next gate remains actual Fabric Release device acceptance.** Plugin wrapper,
-rendition coordinator and user-facing MV entry follow that gate; they are not
-implemented by this native-view checkpoint. Keep PR draft until current
+**Next gate remains actual Fabric Release device acceptance.** The plugin
+contract above is independently tested; the rendition coordinator and visible
+MV entry still follow the device gate. Keep PR draft until current
 device evidence and the final product candidate are independently verified.
 
 Base: v0.14.0 / `91fa2b98046078fe65303ee28c5b7ad83750e9fa`.
 Keep version400037/API34; no merge/tag/release. Full design pack is at
 `/workspace/MusicFree-MV-Sol-handoff-20261101` in the current workspace.
 
-## Implemented
+## Historical standalone P0 checkpoint (before the App view and plugin additions)
 
 - An isolated Android capability probe using the exact bundled AAR, two real
   Android Surface implementations and original generated media.
