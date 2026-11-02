@@ -50,11 +50,16 @@ for phase in seek-paused new-owner landscape portrait background foreground hevc
     if [ "$phase" != returned-audio ]; then
         captured=false
         for attempt in $(seq 1 10); do
+            adb shell uiautomator dump "$REMOTE/ui-$phase.xml" > "$OUT/$phase-ui-dump.txt" 2>&1
+            adb pull "$REMOTE/ui-$phase.xml" "$OUT/$phase-ui.xml" >/dev/null
             adb exec-out screencap -p > "$OUT/$phase.png"
             adb pull "$REMOTE/result.json" "$OUT/result.json" >/dev/null
             if [[ "$phase" =~ ^(seek-paused|new-owner|landscape|portrait)$ ]]; then expected=(144); elif [ "$phase" = hevc ]; then expected=(24); else expected=(); fi
             if python3 -I e2e/mv-view-probe/capture.py "$OUT" "$phase" "${expected[@]}" > "$OUT/$phase-frame.json" 2> "$OUT/$phase-frame-stderr.txt"; then captured=true; break; fi
-            if [ "$attempt" = 1 ]; then cp "$OUT/$phase.png" "$OUT/$phase-first-pending.png"; fi
+            if [ "$attempt" = 1 ]; then
+                cp "$OUT/$phase.png" "$OUT/$phase-first-pending.png"
+                cp "$OUT/$phase-ui.xml" "$OUT/$phase-first-pending-ui.xml"
+            fi
             sleep 0.1
         done
         test "$captured" = true
@@ -67,6 +72,7 @@ for phase in seek-paused new-owner landscape portrait background foreground hevc
         background)
             adb shell log -t MvViewHost MV_VIEW_BACKGROUND_BEGIN
             adb shell input keyevent KEYCODE_HOME
+            adb shell dumpsys media_session > "$OUT/background-start-media-session.txt"
             sleep 2
             adb shell dumpsys media_session > "$OUT/background-media-session.txt"
             adb shell log -t MvViewHost MV_VIEW_BACKGROUND_END
