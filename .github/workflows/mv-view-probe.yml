@@ -6,9 +6,6 @@ on:
                 description: Reuse the unchanged diagnostic APK artifact from this run
                 type: string
                 default: ''
-    push:
-        branches: [codex/mv-fabric-probe-20261102]
-        paths: [.github/workflows/mv-view-probe.yml]
 permissions:
     contents: read
     actions: read
@@ -88,6 +85,7 @@ jobs:
             - name: Prepare original media and KVM
               run: |
                   python3 -I e2e/mv-view-probe/test_verify.py
+                  python3 -I e2e/mv-view-probe/test_driver.py
                   python3 e2e/mv-probe/generate-fixtures.py "$RUNNER_TEMP/mv-fixtures"
                   python3 e2e/mv-view-probe/generate-hevc.py "$RUNNER_TEMP/mv-fixtures"
                   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
