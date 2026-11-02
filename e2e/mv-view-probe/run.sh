@@ -28,6 +28,7 @@ for _ in $(seq 1 90); do
     adb shell test -d "$REMOTE" && break
     sleep 1
 done
+python3 -I e2e/mv-view-probe/prepare_ui.py "$OUT"
 adb push "$FIXTURES/audio.m4a" "$FIXTURES/mv-a.mp4" "$FIXTURES/mv-hevc.mp4" "$REMOTE/" > "$OUT/push.txt"
 adb shell screenrecord --time-limit 180 "$REMOTE/recording.mp4" > "$OUT/recording-process.txt" 2>&1 &
 RECORD_PID=$!
