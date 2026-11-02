@@ -18,12 +18,12 @@ def fixture():
     phases=['seek-paused','new-owner','landscape','portrait','background','foreground','hevc','returned-audio']
     events=[]
     for i,phase in enumerate(phases):
-        events.append({'phase':phase,'position':6,'at':i,
+        events.append({'phase':phase,'probeOwner':1,'position':6,'at':i,
             'rect':{'width':800 if phase=='landscape' else 400},
             'video':{'instance':7,'kind':'audio' if phase=='returned-audio' else 'mv',
                      'loadGeneration':103 if phase=='hevc' else 101,'surfaceAttached':phase!='returned-audio',
                      'surfaceOwner':1 if i==0 else 2,'codec':'hevc' if phase=='hevc' else 'h264','vo':'gpu-next'}})
-    return {'status':'passed','fabric':True,'rejectedStaleRequest':True,'capturedAudio':37.,'events':events,
+    return {'status':'passed','probeOwner':1,'fabric':True,'rejectedStaleRequest':True,'capturedAudio':37.,'events':events,
         'background':{'before':6.1,'after':8.5},
         'returnAudio':{'audioBefore':37.01,'audioAfter':37.8,'video':{'kind':'audio','surfaceAttached':False}}}
 
@@ -77,6 +77,9 @@ class Controls(unittest.TestCase):
         with self.assertRaises(AssertionError):self.check(frames={'foreground':144})
     def test_absent_rotation_rejected(self):
         d=fixture();d['events'][2]['rect']['width']=400
+        with self.assertRaises(AssertionError):self.check(d)
+    def test_old_component_checkpoint_rejected(self):
+        d=fixture();d['events'][0]['probeOwner']=0
         with self.assertRaises(AssertionError):self.check(d)
 
 

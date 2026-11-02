@@ -80,6 +80,45 @@ class LiveUpdateEngineProgressTest {
     }
 
     @Test
+    fun rejectedRenditionLeavesAnotherGenerationAndItsDeferredWorkUntouched() {
+        call { requireNotNull(module).pause(it) }
+        fun field(name: String) = MpvPlayerModule::class.java.getDeclaredField(name).apply { isAccessible = true }
+        val loading = onMain {
+            val identity = MpvPlayerModule::class.java.declaredClasses.single { it.simpleName == "TrackIdentity" }
+                .getDeclaredConstructor(String::class.java, String::class.java, Long::class.javaPrimitiveType,
+                    Long::class.javaPrimitiveType, Long::class.javaPrimitiveType).apply { isAccessible = true }
+                .newInstance(tone.absolutePath + "/pending", "raw-progress", 42L, 0L, 1L)
+            // Deterministically hold the real loadfile-replace window: the current file
+            // is still the original audio, while the next generation owns deferred work.
+            field("loadingTrackIdentity").set(module, identity)
+            field("currentLoadGeneration").setLong(module, 42L)
+            field("loadingGeneration").setLong(module, 42L)
+            field("renditionKind").set(module, "mv")
+            (field("pendingSeek").get(module) as PendingSeek).defer(42L, 12.0)
+            (field("pendingUnpause").get(module) as PendingUnpause).arm(42L)
+            identity
+        }
+        val rejected = assertThrows(AssertionError::class.java) {
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                "renditionKind", "mv", "positionMode", "start-zero",
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) }
+        }
+        assertTrue(rejected.message.orEmpty().contains("stale rendition replacement"))
+        onMain {
+            assertTrue("keep the exact pending identity", field("loadingTrackIdentity").get(module) === loading)
+            assertEquals(42L, field("currentLoadGeneration").getLong(module))
+            assertEquals(42L, field("loadingGeneration").getLong(module))
+            assertEquals("mv", field("renditionKind").get(module))
+            assertEquals(12.0, requireNotNull((field("pendingSeek").get(module) as PendingSeek).peek(42L)), 0.0)
+            assertTrue((field("pendingUnpause").get(module) as PendingUnpause).isArmedFor(42L))
+            assertEquals(tone.absolutePath, engine.getPropertyString("path"))
+            assertTrue(engine.getPropertyBoolean("pause") == true)
+        }
+    }
+
+    @Test
     fun queuedSourceReplacementPreservesTheStoppedPositionAndPause() {
         val fallback = requireNotNull(engine.getPropertyDouble("time-pos"))
         val entered = CountDownLatch(1)
