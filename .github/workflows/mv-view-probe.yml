@@ -1,0 +1,62 @@
+name: MV Fabric Release view probe
+on:
+    workflow_dispatch:
+permissions:
+    contents: read
+concurrency:
+    group: mv-view-${{ github.ref }}
+    cancel-in-progress: false
+jobs:
+    release-view:
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        steps:
+            - uses: actions/checkout@v5
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '22'
+                  cache: npm
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: '17'
+                  cache: gradle
+            - name: Install pinned dependencies
+              run: npm ci --no-audit --no-fund
+              env:
+                  HUSKY: '0'
+            - name: Build isolated Fabric Release variant with product module and ViewManager
+              working-directory: android
+              run: |
+                  bash gradlew :app:assembleRelease -PmvViewProbe=true -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
+                  git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
+                  APK=$(find app/build/outputs/apk/release -name '*x86_64*.apk' -print -quit)
+                  test -n "$APK"
+                  "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+                  echo "PROBE_APK=$PWD/$APK" >> "$GITHUB_ENV"
+            - name: Prepare original media and KVM
+              run: |
+                  python3 -I e2e/mv-view-probe/test_verify.py
+                  python3 e2e/mv-probe/generate-fixtures.py "$RUNNER_TEMP/mv-fixtures"
+                  python3 e2e/mv-view-probe/generate-hevc.py "$RUNNER_TEMP/mv-fixtures"
+                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                  sudo udevadm control --reload-rules
+                  sudo udevadm trigger --name-match=kvm
+            - name: Mount actual native view in Fabric Release and verify rendered frames
+              uses: reactivecircus/android-emulator-runner@v2
+              with:
+                  api-level: 34
+                  target: google_apis
+                  arch: x86_64
+                  profile: pixel_7
+                  disable-animations: true
+                  emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
+                  script: bash e2e/mv-view-probe/run.sh "$PROBE_APK" "$RUNNER_TEMP/mv-view-results" "$RUNNER_TEMP/mv-fixtures"
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: mv-fabric-release-${{ github.run_id }}
+                  path: |
+                      ${{ runner.temp }}/mv-view-results/
+                      ${{ runner.temp }}/source-sha.txt
+                      ${{ runner.temp }}/mv-fixtures/fixture-manifest.json

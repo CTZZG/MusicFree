@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Surface
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -264,6 +265,34 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var naturalEndSerial = 0L
     private var androidAutoConnectionDetector: MpvAndroidAutoConnectionDetector? = null
     private var isAndroidAutoConnected = false
+    private var renditionKind = "audio"
+    private val videoOutput = MpvVideoOutput(
+        player = { mpvInstance },
+        accepts = { mediaId, generation ->
+            !invalidated.get() && generation == currentLoadGeneration &&
+                mediaId == (loadingTrackIdentity ?: activeTrackIdentity)?.mediaId
+        },
+        canRender = { mediaId, generation ->
+            renditionKind == "mv" && loadingTrackIdentity == null &&
+                activeTrackIdentity?.let {
+                    it.mediaId == mediaId && it.loadGeneration == generation && currentPathMatches(it.url)
+                } == true
+        },
+        onError = {
+            sendEvent(ON_MPV_ERROR, Arguments.createMap().apply {
+                putString("message", "Video output unavailable")
+                putString("code", "video-output-unavailable")
+            })
+        },
+    )
+
+    internal fun updateVideoSurface(owner: Long, mediaId: String, generation: Long, surface: Surface, width: Int, height: Int) =
+        videoOutput.update(owner, mediaId, generation, surface, width, height)
+
+    internal fun releaseVideoSurface(owner: Long) = videoOutput.release(owner)
+
+    internal fun ownsVideoSurface(owner: Long, mediaId: String, generation: Long): Boolean =
+        videoOutput.owns(owner, mediaId, generation)
 
     companion object {
         private const val TAG = "MpvPlayerModule"
@@ -553,6 +582,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 putDouble("prepareToken", identity.prepareToken.toDouble())
                 putDouble("queueRevision", identity.queueRevision.toDouble())
                 putString("source", source)
+                putString("renditionKind", renditionKind)
             },
         )
     }
@@ -716,6 +746,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         hasPlaylistPreparedTrack = false
         preparedPlaylistIndex = -1
         pendingPlaylistCompaction = true
+        videoOutput.detach()
+        renditionKind = "audio"
         cachedTitle = prepared.title
         cachedArtist = prepared.artist
         cachedAlbum = prepared.album
@@ -887,6 +919,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun releaseMpvResources() {
+        videoOutput.clear()
+        renditionKind = "audio"
         isInitialized.set(false)
         detachServiceReadyCallback()
         stopRequested = true
@@ -949,6 +983,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MPVLib.setOptionString("ao", "audiotrack,opensles")
                 MPVLib.setOptionString("vo", "null")
                 MPVLib.setOptionString("vid", "no")
+                MPVLib.setOptionString("gpu-context", "android")
                 MPVLib.setOptionString("cache", "yes")
                 MPVLib.setOptionString("cache-secs", "2")
                 // demuxer-max-bytes 是「内存里」的解复用缓存上限，绝不能接
@@ -1188,7 +1223,38 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
 
         postPromise(promise, "E_LOAD") { operationPromise ->
+            val outgoingIdentity = activeTrackIdentity
+            val outgoingKind = renditionKind
+            val wasPaused = MPVLib.getPropertyBoolean("pause") != false
             try {
+                val nextKind = readString(payload, "renditionKind") ?: "audio"
+                require(nextKind == "audio" || nextKind == "mv") { "invalid rendition kind" }
+                val mode = readString(payload, "positionMode")
+                require(mode == null || readDouble(payload, "preservePositionFallback") == null) {
+                    "rendition and audio fallback policies cannot be combined"
+                }
+                require(nextKind != "mv" || mode != null) { "MV requires an explicit position policy" }
+                val explicitStart = readDouble(payload, "startPosition")
+                if (mode == "restore-audio") {
+                    require(nextKind == "audio" && outgoingKind == "mv" && explicitStart != null &&
+                        explicitStart.isFinite() && explicitStart >= 0.0) { "invalid audio return position" }
+                }
+                val capturedPosition = mode?.let {
+                    require(it in listOf("start-zero", "preserve-mv", "restore-audio")) { "invalid position policy" }
+                    require(it != "start-zero" || nextKind == "mv") { "start-zero is a video transition" }
+                    require(loadingTrackIdentity == null && outgoingIdentity != null &&
+                        outgoingIdentity.mediaId == readString(payload, "expectedMediaId") &&
+                        outgoingIdentity.loadGeneration == readLong(payload, "expectedLoadGeneration") &&
+                        currentLoadGeneration == outgoingIdentity.loadGeneration && currentPathMatches(outgoingIdentity.url) &&
+                        MPVLib.getPropertyBoolean("idle-active") != true && MPVLib.getPropertyBoolean("eof-reached") != true) {
+                        "stale rendition replacement"
+                    }
+                    require(it != "preserve-mv" || (outgoingKind == "mv" && nextKind == "mv")) { "invalid video replacement" }
+                    // Capture after pausing the actual outgoing file, beside loadfile. No JS fallback.
+                    MPVLib.setPropertyBoolean("pause", true)
+                    MPVLib.getPropertyDouble("time-pos")?.takeIf { pos -> pos.isFinite() && pos >= 0.0 }
+                        ?: throw IllegalStateException("outgoing engine position unavailable")
+                }
                 val previousIdentity = loadingTrackIdentity ?: activeTrackIdentity
                 val previousDeferredPosition = if (loadingGeneration == currentLoadGeneration) {
                     pendingSeek.peek(currentLoadGeneration)
@@ -1241,6 +1307,15 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 ))
 
                 val generation = markLoading(autoPlay, requestedGeneration)
+                videoOutput.detach()
+                renditionKind = nextKind
+                val renditionStart = when (mode) {
+                    "restore-audio" -> explicitStart
+                    "preserve-mv" -> capturedPosition
+                    "start-zero" -> 0.0
+                    else -> null
+                }
+                renditionStart?.let { pendingSeek.defer(generation, it); positionSecs = it }
                 if (autoPlay) {
                     startPlaybackService(foreground = true)
                 }
@@ -1286,9 +1361,20 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     MPVLib.setPropertyBoolean("pause", true)
                     emitState("paused", force = true)
                 }
-                operationPromise.resolve(restoredPosition)
+                operationPromise.resolve(if (mode == "start-zero") capturedPosition else renditionStart ?: restoredPosition)
             } catch (e: Exception) {
                 clearLoadingIdentity()
+                if (readString(payload, "positionMode") != null && outgoingIdentity != null && currentPathMatches(outgoingIdentity.url)) {
+                    currentLoadGeneration = outgoingIdentity.loadGeneration
+                    loadingGeneration = -1L
+                    pendingUnpause.cancel()
+                    pendingSeek.reset()
+                    renditionKind = outgoingKind
+                    if (!wasPaused && !MpvServiceBridge.playbackHold.blocksAutoPlay) {
+                        MPVLib.setPropertyBoolean("pause", false)
+                    }
+                    videoOutput.refresh()
+                }
                 Log.e(TAG, "loadAndPlay failed", e)
                 operationPromise.reject("E_LOAD", e.message, e)
             }
@@ -1603,6 +1689,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             }
             try {
                 stopRequested = true
+                videoOutput.detach()
+                renditionKind = "audio"
                 pendingPlaylistCompaction = false
                 pendingNaturalEnd = null
                 clearPreparedTrack(removeFromPlaylist = true)
@@ -1753,6 +1841,26 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     /** One read on the existing owner thread; no observers, playback commands or URL export. */
+    @ReactMethod
+    fun getVideoInfo(promise: Promise) {
+        postPromise(promise, "E_MPV_VIDEO_QUERY") { result ->
+            val identity = activeTrackIdentity
+            result.resolve(Arguments.createMap().apply {
+                putString("mediaId", identity?.mediaId)
+                putDouble("loadGeneration", currentLoadGeneration.toDouble())
+                putString("kind", renditionKind)
+                putInt("instance", mpvInstance?.let { System.identityHashCode(it) } ?: 0)
+                putBoolean("surfaceAttached", videoOutput.isAttached)
+                videoOutput.owner?.let { putDouble("surfaceOwner", it.toDouble()) }
+                putString("codec", MPVLib.getPropertyString("video-codec"))
+                putString("vo", MPVLib.getPropertyString("current-vo"))
+                putString("hwdec", MPVLib.getPropertyString("hwdec-current"))
+                MPVLib.getPropertyInt("width")?.let { putInt("width", it) }
+                MPVLib.getPropertyInt("height")?.let { putInt("height", it) }
+            })
+        }
+    }
+
     @ReactMethod
     fun getAudioInfo(promise: Promise) {
         postPromise(promise, "E_MPV_QUERY") { operationPromise ->
@@ -1993,6 +2101,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     explicitIdentity?.let { identity ->
                         replaceActiveIdentity(identity)
                         loadingTrackIdentity = null
+                        videoOutput.refresh()
                         emitActiveTrackChanged(identity, "loaded")
                     }
                     if (pendingUnpause.isArmedFor(generation)) {

@@ -1,5 +1,47 @@
 # MV implementation — P0
 
+## Current App integration checkpoint — 2026-11-02
+
+The user supplied a real subscription; its unmodified QQ/Bilibili plugins both
+return playable video through the optional `getMvSource(song, quality)` method.
+The real QQ sample is HEVC720p+AAC and Bilibili's sample is H264720p+AAC.
+Both were fully decoded and their actual frames viewed on the host. QQ's audio
+CDN returned403; do not claim that audio path passed or invent the reason.
+The private key/temporary media URLs were not committed or sent to Actions.
+See the PR's `mv-real-source-validation` record for exact hashes and scope.
+
+This checkpoint adds the narrow product `MusicFreeMpvVideo` ViewManager,
+TextureView and Surface lifecycle helper using the existing mpv instance.
+View owner/generation and actual SurfaceTexture identity prevent late old
+callbacks from detaching or reporting a frame for a new view. The view can
+only present an already confirmed native MV generation; it has no URL/load,
+seek, focus or unpause authority. GPU output remains off for audio and while
+the view is hidden. Native loading now has a separate strict outgoing-file
+capture and start-zero/restore-audio position contract. Ordinary audio source
+replacement retains its existing fallback behavior.
+
+The explicit `-PmvViewProbe=true` build uses a separate applicationId and test
+certificate, a separate JS entry, Release R8/Hermes and the actual product
+module/ViewManager. The diagnostic entry is absent from normal App bundles.
+Its manual workflow verifies actual Fabric, rendered frame barcodes, RN
+overlay/clipping, replacement owner, portrait/landscape, Home/return,
+H264/HEVC decoding and audio restoration. It does not add a product menu.
+
+Local results: full verify207suites1545Jest/40generator/1437layout,
+ESLint0errors215warnings; actual SDK36 full changed native module/view
+compilation and2real JVM lease tests passed. Removing owner-release or
+generation guards makes the same tests fail. Ten independent checker
+controls and actual encoded H264/HEVC PNG crop/barcode/overlay controls pass.
+The first native compile lacked an AndroidX media classpath entry; the first
+target lint found the diagnostic's JS global and inline-style issue. Both
+were corrected before the complete successful checks. Host/compiler results
+are not Android/Fabric mounting or physical audio evidence.
+
+**Next gate remains actual Fabric Release device acceptance.** Plugin wrapper,
+rendition coordinator and user-facing MV entry follow that gate; they are not
+implemented by this native-view checkpoint. Keep PR draft until current
+device evidence and the final product candidate are independently verified.
+
 Base: v0.14.0 / `91fa2b98046078fe65303ee28c5b7ad83750e9fa`.
 Keep version400037/API34; no merge/tag/release. Full design pack is at
 `/workspace/MusicFree-MV-Sol-handoff-20261101` in the current workspace.

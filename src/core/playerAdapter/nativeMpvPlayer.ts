@@ -109,6 +109,26 @@ export interface MpvLoadPayload {
     autoPlay?: boolean;
     /** Preserve this media's stopped engine position at replacement; fallback if unavailable. */
     preservePositionFallback?: number;
+    /** Separate the outgoing audio capture from the new video's zero start. */
+    renditionKind?: "audio" | "mv";
+    positionMode?: "start-zero" | "restore-audio" | "preserve-mv";
+    expectedMediaId?: string;
+    expectedLoadGeneration?: number;
+    startPosition?: number;
+}
+
+export interface MpvVideoInfo {
+    instance: number;
+    mediaId: string | null;
+    loadGeneration: number;
+    kind: "audio" | "mv";
+    surfaceAttached: boolean;
+    surfaceOwner?: number;
+    codec: string | null;
+    vo: string | null;
+    hwdec: string | null;
+    width?: number;
+    height?: number;
 }
 
 export interface MpvQueueSnapshotTrack {
@@ -165,6 +185,7 @@ interface MpvPlayerNativeModule {
     getPosition(): Promise<number>;
     getDuration(): Promise<number>;
     getAudioInfo?(): Promise<PlayerAudioInfo | null>;
+    getVideoInfo(): Promise<MpvVideoInfo>;
     isAndroidAutoConnected(): Promise<boolean>;
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
@@ -273,6 +294,7 @@ function addListener<T>(
 }
 
 const NativeMpvPlayer = {
+    getVideoInfo: () => assertAvailable().getVideoInfo(),
     isAvailable: isMpvAvailable,
 
     initialize: (options: MpvInitializeOptions = {}) =>
