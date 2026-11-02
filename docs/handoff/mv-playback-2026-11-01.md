@@ -1,5 +1,46 @@
 # MV implementation — P0
 
+## Rejected-load ownership and diagnostic lifecycle — 2026-11-02
+
+Run41410113207 showed two React surfaces around an Activity recreation, then
+two audio generation100 loads from the diagnostic's uncancelled async effects.
+The module also had a real defect: rejecting a stale rendition request still
+cleared another generation's loading identity, deferred seek and pending
+unpause. The error handler now performs rendition rollback only after this
+call began mutations. Rejection before that point has no side effects;
+ordinary audio failure cleanup and rollback of an owned capture remain.
+
+The real production preflight/catch source and actual PendingSeek/Unpause
+were compiled with synthetic dispatch/JNI boundaries: old source4passed/
+5failed, repaired source9passed. This is not a whole App/JNI execution.
+A new Android instrumentation regression drives the real module/JNI, holds
+the actual replacement-window fields and checks that a rejected stale request
+cannot erase the pending generation/seek/unpause or replace the old file.
+Local full SDK36 module/view, Java test context and both complete changed
+instrumentation classes compile; new device execution remains required.
+
+The diagnostic now gives each mounted runner an owner, guards native calls
+and waits after unmount, rejects old checkpoint acknowledgements and only
+destroys a player while still owning cleanup. Two real helper mutants
+(unguarded late call / old-owner destroy) fail the same Node controls.
+The helper is a compiled entry dependency and is included in APK-reuse
+source checks. These changes require a new diagnostic APK; old2b00 bytes
+cannot prove this native/lifecycle repair.
+
+Retained device preparation failures:41403708916 actually rendered H2646s/
+frame144 but the system Launcher ANR obscured its pixels;41406564551 never
+booted because host6674.02MB was below default userdata7372.80MB;41408342199
+closed only the exact Launcher ANR and rendered frame144, but the checker
+used Fabric window y784 for a view whose actual screen y was920. The Pixel7
+cutout top136 is also present in the original system log. The repaired crop
+uses the actual Android MV container bounds, matched against RN size, never
+a guessed offset; replaying the original screenshot decodes144 and rejects
+the old crop. The RN overlay check now samples its actual label bounds,
+so a yellow video bar cannot satisfy it. Original frame/color/corner gates,
+15second first-frame and30second checkpoint deadlines remain unchanged.
+No incomplete old run is promoted to success. A4G emulator data configuration
+and exact system-dialog preflight are diagnostic setup, not product changes.
+
 ## Fabric module lookup repair — 2026-11-02
 
 The actual Fabric Release probe41401505452 captured outgoing audio37seconds,

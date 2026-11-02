@@ -14,6 +14,8 @@ def verify(root):
     d=json.loads((root/'result.json').read_text())
     assert d['status']=='passed' and d['fabric'] is True and d['rejectedStaleRequest'] is True, d
     phases=['seek-paused','new-owner','landscape','portrait','background','foreground','hevc','returned-audio']
+    assert type(d.get('probeOwner')) is int and d['probeOwner'] > 0
+    assert all(e.get('probeOwner') == d['probeOwner'] for e in d['events']), 'mixed diagnostic owners'
     assert [e['phase'] for e in d['events']]==phases
     assert abs(d['capturedAudio']-37)<.25
     instances={e['video']['instance'] for e in d['events']}

@@ -40,7 +40,7 @@ for phase in seek-paused new-owner landscape portrait background foreground hevc
         if [ ! -f "$OUT/result.json" ]; then sleep 1; continue; fi
         if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if d["status"]!="failed" else 1)' "$OUT/result.json"; then
             current=$(adb shell cat "$REMOTE/phase.txt" 2>/dev/null | tr -d '\r' || true)
-            if [ "$current" = "$phase" ]; then matched=true; break; fi
+            if [ "$current" = "$phase" ] && python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if type(d.get("probeOwner")) is int and d["probeOwner"]>0 and any(e["phase"]==sys.argv[2] and e.get("probeOwner")==d["probeOwner"] for e in d["events"]) else 1)' "$OUT/result.json" "$phase"; then matched=true; break; fi
         else
             cat "$OUT/result.json"; exit 1
         fi
@@ -79,7 +79,8 @@ for phase in seek-paused new-owner landscape portrait background foreground hevc
             adb shell am start -W -n "$PKG/fun.upup.musicfree.MainActivity" > "$OUT/foreground-launch.txt"
             ;;
     esac
-    adb shell touch "$REMOTE/continue-$phase"
+    OWNER=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["probeOwner"])' "$OUT/result.json")
+    adb shell touch "$REMOTE/continue-$OWNER-$phase"
 done
 for _ in $(seq 1 20); do
     adb pull "$REMOTE/result.json" "$OUT/result.json" >/dev/null

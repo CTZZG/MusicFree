@@ -1229,6 +1229,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             val outgoingIdentity = activeTrackIdentity
             val outgoingKind = renditionKind
             val wasPaused = MPVLib.getPropertyBoolean("pause") != false
+            val isRenditionRequest = payload.hasKey("positionMode") || payload.hasKey("renditionKind")
+            var renditionMutationStarted = false
             try {
                 val nextKind = readString(payload, "renditionKind") ?: "audio"
                 require(nextKind == "audio" || nextKind == "mv") { "invalid rendition kind" }
@@ -1254,6 +1256,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                     require(it != "preserve-mv" || (outgoingKind == "mv" && nextKind == "mv")) { "invalid video replacement" }
                     // Capture after pausing the actual outgoing file, beside loadfile. No JS fallback.
+                    renditionMutationStarted = true
                     MPVLib.setPropertyBoolean("pause", true)
                     MPVLib.getPropertyDouble("time-pos")?.takeIf { pos -> pos.isFinite() && pos >= 0.0 }
                         ?: throw IllegalStateException("outgoing engine position unavailable")
@@ -1272,6 +1275,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                 val trackUserAgent = readString(payload, "userAgent")
                     ?.takeIf { it.isNotBlank() }
+                renditionMutationStarted = true
                 MPVLib.setOptionString(
                     "http-header-fields",
                     buildHeaderString(headers),
@@ -1366,17 +1370,21 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 }
                 operationPromise.resolve(if (mode == "start-zero") capturedPosition else renditionStart ?: restoredPosition)
             } catch (e: Exception) {
-                clearLoadingIdentity()
-                if (readString(payload, "positionMode") != null && outgoingIdentity != null && currentPathMatches(outgoingIdentity.url)) {
-                    currentLoadGeneration = outgoingIdentity.loadGeneration
-                    loadingGeneration = -1L
-                    pendingUnpause.cancel()
-                    pendingSeek.reset()
-                    renditionKind = outgoingKind
-                    if (!wasPaused && !MpvServiceBridge.playbackHold.blocksAutoPlay) {
-                        MPVLib.setPropertyBoolean("pause", false)
+                // A rejected stale/invalid request has no ownership over another load's
+                // identity, seek or pending unpause. Roll back only work this call began.
+                if (!isRenditionRequest || renditionMutationStarted) {
+                    clearLoadingIdentity()
+                    if (readString(payload, "positionMode") != null && outgoingIdentity != null && currentPathMatches(outgoingIdentity.url)) {
+                        currentLoadGeneration = outgoingIdentity.loadGeneration
+                        loadingGeneration = -1L
+                        pendingUnpause.cancel()
+                        pendingSeek.reset()
+                        renditionKind = outgoingKind
+                        if (!wasPaused && !MpvServiceBridge.playbackHold.blocksAutoPlay) {
+                            MPVLib.setPropertyBoolean("pause", false)
+                        }
+                        videoOutput.refresh()
                     }
-                    videoOutput.refresh()
                 }
                 Log.e(TAG, "loadAndPlay failed", e)
                 operationPromise.reject("E_LOAD", e.message, e)
