@@ -12,6 +12,10 @@ ownership, portrait/landscape layout, background detach/foreground reattach,
 HEVC seek frame24, and return to the captured audio position with advancing
 audio. It checks one native mpv instance throughout. Host frame decoding and
 the JSON/log checker independently reject incomplete or inconsistent evidence.
+Both video generations must also reach an owned native EOF before the next
+explicit zero-start/return load. The original audio stop capture remains live
+and exact; a video EOF must not make returning to that stored audio stop impossible.
+Rotation uses WindowManager and must result in an actual landscape image.
 
 Run `python3 -I e2e/mv-view-probe/test_verify.py` for host rejection controls.
 These mocked-image checker controls are not device rendering evidence.

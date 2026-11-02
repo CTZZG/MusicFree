@@ -18,6 +18,8 @@ def verify(root):
     assert all(e.get('probeOwner') == d['probeOwner'] for e in d['events']), 'mixed diagnostic owners'
     assert [e['phase'] for e in d['events']]==phases
     assert abs(d['capturedAudio']-37)<.25
+    assert [v['loadGeneration'] for v in d['completedVideos']]==[101,103]
+    assert all(v['kind']=='mv' and v['completed'] is True and v['mediaId']=='probe-audio' for v in d['completedVideos'])
     instances={e['video']['instance'] for e in d['events']}
     assert len(instances)==1 and next(iter(instances))>0, 'more than one native player'
     raw=(root/'logcat.txt').read_text(errors='replace')

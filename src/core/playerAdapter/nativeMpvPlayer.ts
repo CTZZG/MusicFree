@@ -122,6 +122,7 @@ export interface MpvVideoInfo {
     mediaId: string | null;
     loadGeneration: number;
     kind: "audio" | "mv";
+    completed: boolean;
     surfaceAttached: boolean;
     surfaceOwner?: number;
     codec: string | null;
