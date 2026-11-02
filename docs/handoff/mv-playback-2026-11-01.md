@@ -1,5 +1,28 @@
 # MV implementation — P0
 
+## Fabric module lookup repair — 2026-11-02
+
+The actual Fabric Release probe41401505452 captured outgoing audio37seconds,
+rejected a stale replacement and activated MV101, but timed out waiting for a
+real first frame. It produced no Surface attach event. The screenshot also
+contains a Pixel Launcher ANR; that alone does not establish the App cause.
+
+RN0.85.3 `ReactInstance.getNativeModule(Class)` returns null unless the class
+has `@ReactModule`. This module was only registered by name; the existing
+App instrument used by-name lookup while the new view used class lookup.
+The repair declares the same module name in its annotation and `getName`,
+and the real App instrument now requires both lookups to return the very
+same player. Actual SDK-compiled old class fails the lookup-name check;
+fixed class passes. The complete module/view and full original JS instrument
+with its probe helpers compile against SDK36. This is not device acceptance.
+
+Diagnostic harness history is retained:41396838259 built Release but lacked
+ffmpeg before emulator setup;41399045777 launched Fabric but its external
+shell exited while `phase.txt` was not ready. That second APK was preserved
+and reused unchanged for41401505452 after the missing-file pending check was
+fixed. Deadlines and frame/state checkers were unchanged. The current native
+repair needs a new diagnostic APK, not another replay of the old bytes.
+
 ## Plugin contract checkpoint — 2026-11-02
 
 Optional wrapper/source service now supports both the new method pair and the

@@ -70,8 +70,11 @@ class RealJsEngineProgressTest {
         onMain { host = (context.applicationContext as ReactApplication).reactHost }
         await("ReactHost-owned native module", 30000) {
             onMain {
-                // RN's class overload requires @ReactModule; this legacy module is registered by name.
                 val actual = host?.currentReactContext?.getNativeModule("MpvPlayer") as? MpvPlayerModule
+                if (actual != null) {
+                    assertTrue("Fabric view class lookup must use the ReactHost's same player",
+                        host?.currentReactContext?.getNativeModule(MpvPlayerModule::class.java) === actual)
+                }
                 val field = MpvPlayerModule::class.java.getDeclaredField("mpvInstance").apply { isAccessible = true }
                 val handle = actual?.let { field.get(it) as? MPVLib }
                 if (actual != null && handle != null) { module = actual; engine = handle; true } else false

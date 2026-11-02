@@ -37,7 +37,7 @@ for phase in seek-paused new-owner landscape portrait background foreground hevc
         adb pull "$REMOTE/result.json" "$OUT/result.json" >/dev/null 2>&1 || true
         if [ ! -f "$OUT/result.json" ]; then sleep 1; continue; fi
         if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if d["status"]!="failed" else 1)' "$OUT/result.json"; then
-            current=$(adb shell cat "$REMOTE/phase.txt" 2>/dev/null | tr -d '\r')
+            current=$(adb shell cat "$REMOTE/phase.txt" 2>/dev/null | tr -d '\r' || true)
             if [ "$current" = "$phase" ]; then matched=true; break; fi
         else
             cat "$OUT/result.json"; exit 1

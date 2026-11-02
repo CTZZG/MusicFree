@@ -1,8 +1,14 @@
 name: MV Fabric Release view probe
 on:
     workflow_dispatch:
+        inputs:
+            apk_run_id:
+                description: Reuse the unchanged diagnostic APK artifact from this run
+                type: string
+                default: ''
 permissions:
     contents: read
+    actions: read
 concurrency:
     group: mv-view-${{ github.ref }}
     cancel-in-progress: false
@@ -25,7 +31,16 @@ jobs:
               run: npm ci --no-audit --no-fund
               env:
                   HUSKY: '0'
+            - name: Install media validation tools
+              timeout-minutes: 5
+              run: |
+                  if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+                    sudo apt-get install -y --no-install-recommends ffmpeg
+                  fi
+                  ffmpeg -version
+                  ffprobe -version
             - name: Build isolated Fabric Release variant with product module and ViewManager
+              if: inputs.apk_run_id == ''
               working-directory: android
               run: |
                   bash gradlew :app:assembleRelease -PmvViewProbe=true -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
@@ -33,10 +48,44 @@ jobs:
                   APK=$(find app/build/outputs/apk/release -name '*x86_64*.apk' -print -quit)
                   test -n "$APK"
                   "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+                  mkdir -p "$RUNNER_TEMP/mv-view-apk"
+                  cp "$APK" "$RUNNER_TEMP/mv-view-apk/probe.apk"
+                  git rev-parse HEAD > "$RUNNER_TEMP/mv-view-apk/source-sha.txt"
+                  sha256sum "$RUNNER_TEMP/mv-view-apk/probe.apk" > "$RUNNER_TEMP/mv-view-apk/sha256.txt"
                   echo "PROBE_APK=$PWD/$APK" >> "$GITHUB_ENV"
+            - name: Preserve diagnostic APK for harness-only follow-ups
+              if: inputs.apk_run_id == ''
+              uses: actions/upload-artifact@v4
+              with:
+                  name: mv-fabric-apk-${{ github.run_id }}
+                  path: ${{ runner.temp }}/mv-view-apk/
+                  if-no-files-found: error
+            - name: Reuse existing diagnostic APK
+              if: inputs.apk_run_id != ''
+              uses: actions/download-artifact@v4
+              with:
+                  name: mv-fabric-apk-${{ inputs.apk_run_id }}
+                  run-id: ${{ inputs.apk_run_id }}
+                  github-token: ${{ github.token }}
+                  path: ${{ runner.temp }}/mv-view-apk/
+            - name: Verify reused APK bytes
+              if: inputs.apk_run_id != ''
+              run: |
+                  EXPECTED=$(awk '{print $1}' "$RUNNER_TEMP/mv-view-apk/sha256.txt")
+                  ACTUAL=$(sha256sum "$RUNNER_TEMP/mv-view-apk/probe.apk" | awk '{print $1}')
+                  test "$EXPECTED" = "$ACTUAL"
+                  COMMIT=$(cat "$RUNNER_TEMP/mv-view-apk/source-sha.txt")
+                  [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+                  git fetch --no-tags origin "$COMMIT"
+                  git diff --exit-code "$COMMIT" HEAD -- android package.json package-lock.json patches native src/components/mpvVideo src/core/playerAdapter/nativeMpvPlayer.ts e2e/mv-view-probe/index.js babel.config.js metro.config.js
+                  cp "$RUNNER_TEMP/mv-view-apk/source-sha.txt" "$RUNNER_TEMP/source-sha.txt"
+                  echo "PROBE_APK=$RUNNER_TEMP/mv-view-apk/probe.apk" >> "$GITHUB_ENV"
+            - name: Record external harness source
+              run: git rev-parse HEAD > "$RUNNER_TEMP/script-sha.txt"
             - name: Prepare original media and KVM
               run: |
                   python3 -I e2e/mv-view-probe/test_verify.py
+                  python3 -I e2e/mv-view-probe/test_driver.py
                   python3 e2e/mv-probe/generate-fixtures.py "$RUNNER_TEMP/mv-fixtures"
                   python3 e2e/mv-view-probe/generate-hevc.py "$RUNNER_TEMP/mv-fixtures"
                   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -59,4 +108,5 @@ jobs:
                   path: |
                       ${{ runner.temp }}/mv-view-results/
                       ${{ runner.temp }}/source-sha.txt
+                      ${{ runner.temp }}/script-sha.txt
                       ${{ runner.temp }}/mv-fixtures/fixture-manifest.json

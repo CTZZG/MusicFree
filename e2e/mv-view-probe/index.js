@@ -98,7 +98,12 @@ function Probe() {
       await checkpoint('returned-audio');
       report.status='passed';await save();
     };
-    run().catch(async error => { report.status='failed';report.error=String(error.message);await save();setPhase('FAILED: '+error.message); });
+    run().catch(async error => {
+      report.status='failed';report.error=String(error.message);
+      report.failedVideo=await NativeMpvPlayer.getVideoInfo().catch(()=>null);
+      report.failedRect=await rect();
+      await save();setPhase('FAILED: '+error.message);
+    });
     return () => { NativeMpvPlayer.destroy().catch(()=>{}); };
   }, []);
   return <View onLayout={()=>{}} style={styles.root}>
