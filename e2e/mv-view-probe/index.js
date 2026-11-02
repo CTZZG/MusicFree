@@ -83,6 +83,19 @@ function Probe() {
       requireValue(after>before+0.5,'same MV audio did not advance over background');
       report.background={before,after};
       await checkpoint('foreground');
+      // Exercise the real terminal identity, rather than depending on the host's
+      // screenshot speed to keep this short clip alive between checkpoints.
+      const completeVideo = async generation => {
+        if (!(await native.getVideoInfo()).completed) {
+          const duration=await native.getDuration();
+          requireValue(Number.isFinite(duration)&&duration>1,'missing video duration');
+          await native.seekTo(duration-.25);await native.resume();
+        }
+        await until(async()=>{const info=await native.getVideoInfo();return info.completed&&info.loadGeneration===generation;},'owned video EOF missing');
+        const info=await native.getVideoInfo();
+        report.completedVideos=[...(report.completedVideos||[]),info];await save();
+      };
+      await completeVideo(101);
       await load('mv-hevc.mp4',103,{renditionKind:'mv',positionMode:'start-zero',expectedMediaId:'probe-audio',expectedLoadGeneration:101});
       setIdentity({mediaId:'probe-audio',loadGeneration:103});
       await until(()=>frames.current.has(103),'HEVC did not render in product native view');
@@ -90,6 +103,7 @@ function Probe() {
       await native.seekTo(1);
       await until(async()=>Math.abs(await native.getPosition()-1)<.25,'HEVC seek');
       await checkpoint('hevc');
+      await completeVideo(103);
       setIdentity(null);
       await load('audio.m4a',104,{renditionKind:'audio',positionMode:'restore-audio',expectedMediaId:'probe-audio',expectedLoadGeneration:103,startPosition:captured});
       await until(async () => Math.abs(await native.getPosition()-captured)<0.25,'return audio position');

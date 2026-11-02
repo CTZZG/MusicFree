@@ -1,5 +1,46 @@
 # MV implementation — P0
 
+## Completed MV ownership — 2026-11-02
+
+Run41449166385 (product172b) built the real Fabric Release variant and
+rendered H264 seek144, remounted Surface ownership, and background/foreground
+frames266/556 in one mpv instance. It then failed: the24second MV reached
+natural EOF while the host captured screenshots; the next explicit MV load
+was rejected because mpv no longer had a live path/time-pos. Its claimed
+landscape screenshot was also still portrait. Neither incomplete sequence
+is accepted as a complete P0 pass.
+
+The module now remembers only an owned, unpromoted MV completion: exact
+active identity/current generation, no loading identity, and actual native
+idle/EOF at END_FILE. A matching explicit zero-start MV or stored audio
+return may replace this terminal generation without an invented old clock.
+Audio-to-MV capture and preserve-MV still require the live matching file.
+New loads, active identity changes, stop/destroy and playback restart revoke
+the terminal identity. Late/wrong generations and pending replacements are
+still rejected without modifying the owner. The actual extracted preflight
+and catch with real PendingSeek/Unpause pass18host cases; original172b fails
+the2new valid EOF replacements. These are synthetic JNI/dispatch boundaries,
+not device acceptance. The real-module instrumentation additionally drives
+JNI to EOF, rejects a wrong return generation, then restores paused audio37.
+
+The compiled probe now deliberately observes both MV generations at EOF
+before the next MV/audio transition, and the host uses WindowManager's
+rotation command already used by the App's existing continuity checks.
+The checker still requires a real wider landscape image, all original
+frames/Surface/intent/clock assertions, and both confirmed EOF identities.
+New native/compiled-entry changes need a new diagnostic APK;172b's bytes
+are retained as failed evidence. Current local full verify208/1568/40/1437,
+ESLint0/215 passes; new real device acceptance is still required.
+
+The172b normal checks are independently accepted: CI41449131122 actual
+JVM1414tasks executed,37suites182tests failure/error/skip0; API41449131129
+cachemiss/new app/test Kotlin,94methods code0 including rejected-load
+ownership, native25/slow73/normal70+normalcode0/UI20+two viewed PNGs/freeze5.
+Freeze is actual RAW_STALLED/raw0/session4405ms;7normal+2UI pause windows0;
+source12begin/7resolved. Six clock rounds288samples worst+.000122678s,
+gap32ms; actual old106.621453945 to first106.669750362, maxpoll78ms.
+These figures describe172b, not the subsequent EOF repair candidate.
+
 ## Rejected-load ownership and diagnostic lifecycle — 2026-11-02
 
 Run41410113207 showed two React surfaces around an Activity recreation, then

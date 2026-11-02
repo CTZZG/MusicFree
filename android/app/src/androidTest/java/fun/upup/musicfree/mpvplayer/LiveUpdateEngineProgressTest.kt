@@ -80,6 +80,47 @@ class LiveUpdateEngineProgressTest {
     }
 
     @Test
+    fun ownedVideoEndCanRestoreAudioWithoutAnOutgoingRawClock() {
+        call { requireNotNull(module).pause(it) }
+        call { requireNotNull(module).seekTo(37.0, it) }
+        await("original audio stop") { onMain { kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25 } }
+        val captured = call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 2.0,
+            "autoPlay", true, "renditionKind", "mv", "positionMode", "start-zero",
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+        ), it) } as Number
+        assertEquals(37.0, captured.toDouble(), .25)
+        awaitPlaying()
+        call { requireNotNull(module).seekTo(89.7, it) }
+        fun field(name: String) = MpvPlayerModule::class.java.getDeclaredField(name).apply { isAccessible = true }
+        await("confirmed unpromoted EOF of this MV generation") { onMain {
+            field("completedVideoIdentity").get(module) != null && engine.getPropertyBoolean("idle-active") == true
+        } }
+        val completed = onMain { field("completedVideoIdentity").get(module) }
+        assertThrows(AssertionError::class.java) {
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", 37.0,
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) }
+        }
+        onMain { assertTrue(field("completedVideoIdentity").get(module) === completed) }
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 3.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio",
+            "startPosition", captured.toDouble(), "expectedMediaId", "raw-progress", "expectedLoadGeneration", 2.0,
+        ), it) }
+        await("returned audio at its stored stop") { onMain {
+            field("loadingTrackIdentity").get(module) == null && field("currentLoadGeneration").getLong(module) == 3L &&
+                engine.getPropertyBoolean("pause") == true && kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25
+        } }
+        onMain {
+            assertEquals("audio", field("renditionKind").get(module))
+            assertEquals(null, field("completedVideoIdentity").get(module))
+        }
+    }
+
+    @Test
     fun rejectedRenditionLeavesAnotherGenerationAndItsDeferredWorkUntouched() {
         call { requireNotNull(module).pause(it) }
         fun field(name: String) = MpvPlayerModule::class.java.getDeclaredField(name).apply { isAccessible = true }

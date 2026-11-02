@@ -13,7 +13,7 @@ adb logcat -c
 adb logcat -v threadtime > "$OUT/logcat.txt" 2> "$OUT/logcat-stderr.txt" &
 LOG_PID=$!
 cleanup() {
-    adb shell settings put system accelerometer_rotation 1 >/dev/null || true
+    adb shell wm user-rotation free >/dev/null || true
     adb shell pidof screenrecord | tr -d '\r' | xargs -r -I{} adb shell kill -2 '{}' || true
     if [ -n "${RECORD_PID:-}" ]; then wait "$RECORD_PID" || true; fi
     adb pull "$REMOTE/result.json" "$OUT/result.json" >/dev/null 2>&1 || true
@@ -22,8 +22,7 @@ cleanup() {
     kill "$LOG_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
-adb shell settings put system accelerometer_rotation 0
-adb shell settings put system user_rotation 0
+adb shell wm user-rotation lock 0
 adb shell am start -W -n "$PKG/fun.upup.musicfree.MainActivity" > "$OUT/launch.txt"
 for _ in $(seq 1 90); do
     adb shell test -d "$REMOTE" && break
@@ -67,8 +66,8 @@ for phase in seek-paused new-owner landscape portrait background foreground hevc
         adb exec-out screencap -p > "$OUT/$phase.png"
     fi
     case "$phase" in
-        new-owner) adb shell settings put system user_rotation 1; sleep 2 ;;
-        landscape) adb shell settings put system user_rotation 0; sleep 2 ;;
+        new-owner) adb shell wm user-rotation lock 1; sleep 2 ;;
+        landscape) adb shell wm user-rotation lock 0; sleep 2 ;;
         background)
             adb shell log -t MvViewHost MV_VIEW_BACKGROUND_BEGIN
             adb shell input keyevent KEYCODE_HOME

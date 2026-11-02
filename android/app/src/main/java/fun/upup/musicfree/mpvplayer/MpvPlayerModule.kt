@@ -242,6 +242,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var currentLoadGeneration = 0L
     private val engineProgressMarker = EngineProgressMarker()
     private var activeTrackIdentity: TrackIdentity? = null
+    // Only a confirmed, unpromoted MV END_FILE owns a return/restart after mpv
+    // has removed its path/time-pos. Never infer ownership from an idle player.
+    private var completedVideoIdentity: TrackIdentity? = null
     private var loadingTrackIdentity: TrackIdentity? = null
     private var loadingGeneration = -1L
     private val pendingUnpause = PendingUnpause()
@@ -813,6 +816,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         if (pendingNaturalEnd?.serial != pending.serial) return
         pendingNaturalEnd = null
         val autoAdvanced = promotedTrack != null
+        completedVideoIdentity = pending.endedIdentity?.takeIf {
+            !autoAdvanced && renditionKind == "mv" && it == activeTrackIdentity &&
+                it.loadGeneration == currentLoadGeneration && loadingTrackIdentity == null &&
+                (MPVLib.getPropertyBoolean("idle-active") == true || MPVLib.getPropertyBoolean("eof-reached") == true)
+        }
         val now = System.currentTimeMillis()
         Log.d(
             TAG,
@@ -906,6 +914,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun setLoadingIdentity(identity: TrackIdentity) {
+        completedVideoIdentity = null
         loadingTrackIdentity = identity
     }
 
@@ -914,10 +923,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun replaceActiveIdentity(identity: TrackIdentity) {
+        completedVideoIdentity = null
         activeTrackIdentity = identity
     }
 
     private fun clearActiveIdentity() {
+        completedVideoIdentity = null
         activeTrackIdentity = null
     }
 
@@ -1250,14 +1261,21 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     require(loadingTrackIdentity == null && outgoingIdentity != null &&
                         outgoingIdentity.mediaId == readString(payload, "expectedMediaId") &&
                         outgoingIdentity.loadGeneration == readLong(payload, "expectedLoadGeneration") &&
-                        currentLoadGeneration == outgoingIdentity.loadGeneration && currentPathMatches(outgoingIdentity.url) &&
-                        MPVLib.getPropertyBoolean("idle-active") != true && MPVLib.getPropertyBoolean("eof-reached") != true) {
+                        currentLoadGeneration == outgoingIdentity.loadGeneration) {
                         "stale rendition replacement"
                     }
                     require(it != "preserve-mv" || (outgoingKind == "mv" && nextKind == "mv")) { "invalid video replacement" }
+                    val completedVideo = outgoingKind == "mv" && completedVideoIdentity == outgoingIdentity
+                    val liveFile = currentPathMatches(outgoingIdentity.url) &&
+                        MPVLib.getPropertyBoolean("idle-active") != true && MPVLib.getPropertyBoolean("eof-reached") != true
+                    require(liveFile || (completedVideo && it != "preserve-mv")) { "stale rendition replacement" }
                     // Capture after pausing the actual outgoing file, beside loadfile. No JS fallback.
+                    // A completed MV needs no outgoing clock for a new zero start or
+                    // the already captured audio return. Audio entry/preserve remain live-only.
+                    if (completedVideo && !liveFile) return@let null
                     renditionMutationStarted = true
                     MPVLib.setPropertyBoolean("pause", true)
+                    if (it == "restore-audio") return@let null
                     MPVLib.getPropertyDouble("time-pos")?.takeIf { pos -> pos.isFinite() && pos >= 0.0 }
                         ?: throw IllegalStateException("outgoing engine position unavailable")
                 }
@@ -1860,6 +1878,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 putString("mediaId", identity?.mediaId)
                 putDouble("loadGeneration", currentLoadGeneration.toDouble())
                 putString("kind", renditionKind)
+                putBoolean("completed", identity != null && completedVideoIdentity == identity)
                 putInt("instance", mpvInstance?.let { System.identityHashCode(it) } ?: 0)
                 putBoolean("surfaceAttached", videoOutput.isAttached)
                 videoOutput.owner?.let { putDouble("surfaceOwner", it.toDouble()) }
@@ -2127,6 +2146,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     if (identity == null || !currentPathMatches(identity.url)) {
                         return@runMpvCallbackOnMain
                     }
+                    completedVideoIdentity = null
                     updateDurationFromMpv()
                     val generation = currentLoadGeneration
                     if (pendingUnpause.isArmedFor(generation)) {
