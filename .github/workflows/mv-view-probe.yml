@@ -1,6 +1,9 @@
 name: MV Fabric Release view probe
 on:
     workflow_dispatch:
+    push:
+        branches: [codex/mv-fabric-probe-20261102]
+        paths: [.github/workflows/mv-view-probe.yml]
 permissions:
     contents: read
 concurrency:
