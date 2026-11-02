@@ -99,6 +99,7 @@ jobs:
                   target: google_apis
                   arch: x86_64
                   profile: pixel_7
+                  disk-size: 4G
                   disable-animations: true
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
                   script: bash e2e/mv-view-probe/run.sh "$PROBE_APK" "$RUNNER_TEMP/mv-view-results" "$RUNNER_TEMP/mv-fixtures"

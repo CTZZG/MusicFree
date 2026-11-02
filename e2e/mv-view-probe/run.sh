@@ -6,6 +6,7 @@ FIXTURES=$3
 PKG=fun.upup.musicfree.mvprobe
 REMOTE=/sdcard/Android/data/$PKG/files/mv-view-probe
 mkdir -p "$OUT"
+adb shell df -k /data > "$OUT/device-data-space.txt"
 adb install --no-streaming -r "$APK"
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
 adb logcat -c
