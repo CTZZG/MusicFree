@@ -15,6 +15,7 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
+import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter
 import dev.jdtech.mpv.MPVLib as NativeMPVLib
 import `fun`.upup.musicfree.bridge.CancelablePromise
@@ -32,6 +33,7 @@ import kotlin.math.min
  * generation counter so stale END_FILE events from replacing the old file do
  * not look like a natural track end.
  */
+@ReactModule(name = MpvPlayerModule.NAME)
 class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext),
     NativeMPVLib.EventObserver {
@@ -295,6 +297,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         videoOutput.owns(owner, mediaId, generation)
 
     companion object {
+        const val NAME = "MpvPlayer"
         private const val TAG = "MpvPlayerModule"
         private const val ON_MPV_STATE_CHANGED = "onMpvStateChanged"
         private const val ON_MPV_PROGRESS = "onMpvProgress"
@@ -317,7 +320,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private val UNPAUSE_RETRY_DELAYS_MS = longArrayOf(0L, 80L, 250L, 700L)
     }
 
-    override fun getName() = "MpvPlayer"
+    override fun getName() = NAME
 
     @ReactMethod
     fun addListener(eventName: String) {
