@@ -62,7 +62,12 @@ player_observation_ui_flow() {
     sleep .4
     shot "player-$phase-mini-before"
     for ((i=1; i<=count; i++)); do
-        point=$(cat "$OUT/ui-$phase-before-point.txt")
+        # Returning may expose the mini while its layout is still moving. The
+        # returned snapshot proves visibility, but is not a coordinate lease:
+        # screenshots and the transition can move it above the bottom tabs.
+        # Resolve the real target again immediately before each public input.
+        public_ui_target "$mini" "$phase-tap-$i" || return 1
+        point=$(cat "$OUT/ui-$phase-tap-$i-point.txt")
         read -r x y <<< "$point"
         adb shell input tap "$x" "$y" || return 1
         public_ui_target '更多操作' "$phase-page-$i" || return 1
@@ -73,7 +78,6 @@ player_observation_ui_flow() {
         adb shell input keyevent KEYCODE_BACK || return 1
         public_ui_target "$mini" "$phase-returned-$i" || return 1
         sleep .4
-        cp "$OUT/ui-$phase-returned-$i-point.txt" "$OUT/ui-$phase-before-point.txt" || return 1
         shot "player-$phase-mini-after"
     done
     pass "$title" "实际可见节点快照和公开触摸/返回，不等待整个界面的所有动画结束"
