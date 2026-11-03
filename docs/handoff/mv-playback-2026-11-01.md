@@ -1,5 +1,44 @@
 # MV implementation — P0
 
+## Host lifecycle must release video output — 2026-11-03
+
+CI41475773503 and API41475773509 accepted9c2 independently: real JVM
+1414tasks executed,37suites/182tests with no failure/error/skip;95native
+methods code0, including owned-video EOF and rejected-load ownership.
+The original25/73/70+normalcode0/UI20/freeze5 checks all pass. Freeze is
+real RAW_STALLED/raw0/session4402ms;7normal+2UI pause windows remain0.
+Six clock rounds288samples have worst-.013113158s/maxgap30ms; the actual
+old stop125.87798876197024 to first126.01846662596827 has maxpoll98ms.
+
+Fabric41475871797 completed all8phases in one mpv instance: H264 frame144
+at seek/remount/real landscape/portrait, HEVC frame24, and both confirmed
+video EOF identities. Audio returns to37s and advances by.674915126s.
+The raw recording fully decodes and the actual screenshots were inspected.
+Its APK bytes, public TEST certificate and all10x64JNI payloads match.
+It nevertheless fails the unchanged checker: Surface detach occurs at
+16:12:58.293, after Home END16:12:57.047 and3.302s after actual RN host
+pause. The view's window-visibility callback arrives only on the way back.
+The report's own passed status does not override this lifecycle failure.
+
+The video view now observes RN host lifecycle while attached, releases its
+owned output on pause/destroy, and unregisters when detached or disposed.
+Texture replacement releases the old Surface without dropping that listener.
+Every update reads the actual ReactApplicationContext lifecycle, rather
+than the themed wrapper or a cached resume boolean. RN can deliver a queued
+resume notification after a later pause, so that callback must not reattach.
+Existing owner/generation/window/visibility guards remain. This changes only
+video output ownership, with no load/seek/play/pause/focus command.
+
+Actual View/lease source compiled against synthetic Android/RN/module
+boundaries passes9host cases. Original9c2 passes4/fails5; removing the
+pause guard fails4, removing unregister fails3, and a cached resume-state
+implementation fails1. These are not device/JNI/frame proofs. Final SDK36
+module/View and complete changed instrumentation compile; local full verify
+208/1568/40/1437, ESLint0/215, TypeScript/static/cycles/7patch passes using
+the existing dependencies. New native diagnostic bytes and the complete
+unchanged device gate are required before P0 is accepted. The normal App
+MV controller and user-facing entry remain unfinished.
+
 ## END_FILE teardown and paused resize — 2026-11-02
 
 The next device batch exposed two concrete failures in d066; no run was
