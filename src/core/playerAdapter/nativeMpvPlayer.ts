@@ -115,6 +115,10 @@ export interface MpvLoadPayload {
     expectedMediaId?: string;
     expectedLoadGeneration?: number;
     startPosition?: number;
+    playbackRate?: number;
+    /** Prepared runway ownership; absent on legacy ordinary audio requests. */
+    sourceMediaId?: string;
+    sourceLoadGeneration?: number;
 }
 
 export interface MpvVideoInfo {
@@ -130,6 +134,7 @@ export interface MpvVideoInfo {
     hwdec: string | null;
     width?: number;
     height?: number;
+    outgoingAudioPosition?: number;
 }
 
 export interface MpvQueueSnapshotTrack {
@@ -155,6 +160,8 @@ export type MpvMetadataPayload = Omit<
     | "prepareToken"
     | "queueRevision"
     | "preservePositionFallback"
+    | "renditionKind" | "positionMode" | "expectedMediaId" | "expectedLoadGeneration"
+    | "startPosition" | "playbackRate" | "sourceMediaId" | "sourceLoadGeneration"
 >;
 
 interface MpvPlayerNativeModule {
@@ -187,6 +194,7 @@ interface MpvPlayerNativeModule {
     getDuration(): Promise<number>;
     getAudioInfo?(): Promise<PlayerAudioInfo | null>;
     getVideoInfo(): Promise<MpvVideoInfo>;
+    getRenditionProgress?(): Promise<MpvRenditionProgress | null>;
     isAndroidAutoConnected(): Promise<boolean>;
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
@@ -215,10 +223,20 @@ export interface MpvBrowseRequestEvent {
     requestId: string;
 }
 
-export interface MpvStateChangedEvent {
+export interface MpvEventIdentity {
+    mediaId?: string | null;
+    loadGeneration?: number;
+    renditionKind?: "audio" | "mv";
+}
+export interface MpvRenditionProgress extends MpvEventIdentity {
+    position: number;
+    duration: number;
+    buffered: number;
+}
+export interface MpvStateChangedEvent extends MpvEventIdentity {
     state: MpvPlayerState;
 }
-export interface MpvProgressEvent {
+export interface MpvProgressEvent extends MpvEventIdentity {
     position: number;
     duration: number;
     buffered?: number;
@@ -233,6 +251,8 @@ export interface MpvEndedEvent {
     prepareToken?: number;
     queueRevision?: number;
     loadGeneration?: number;
+    endedLoadGeneration?: number;
+    endedRenditionKind?: "audio" | "mv";
 }
 export interface MpvActiveTrackChangedEvent {
     mediaId: string;
@@ -240,8 +260,9 @@ export interface MpvActiveTrackChangedEvent {
     prepareToken: number;
     queueRevision: number;
     source: "loaded" | "prepared";
+    renditionKind?: "audio" | "mv";
 }
-export interface MpvErrorEvent {
+export interface MpvErrorEvent extends MpvEventIdentity {
     message: string;
     code?: string | number;
 }
@@ -325,6 +346,10 @@ const NativeMpvPlayer = {
     getIsPlaying: () => assertAvailable().getIsPlaying(),
     getPosition: () => assertAvailable().getPosition(),
     getDuration: () => assertAvailable().getDuration(),
+    getRenditionProgress: (): Promise<MpvRenditionProgress | null> => {
+        const module = assertAvailable();
+        return module.getRenditionProgress ? module.getRenditionProgress() : Promise.resolve(null);
+    },
     getAudioInfo: (): Promise<PlayerAudioInfo | null> => {
         const module = assertAvailable();
         return module.getAudioInfo ? module.getAudioInfo() : Promise.resolve(null);

@@ -80,6 +80,53 @@ class LiveUpdateEngineProgressTest {
     }
 
     @Test
+    fun ownedFailedVideoCanReturnTheCapturedAudioWithoutAMvClock() {
+        call { requireNotNull(module).pause(it) }
+        call { requireNotNull(module).seekTo(37.0, it) }
+        await("original stopped audio checkpoint") { onMain {
+            kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25
+        } }
+        val missingVideo = File(tone.parentFile, tone.name + ".missing.mp4")
+        assertTrue("controlled nonexistent video", !missingVideo.exists())
+        val captured = call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", missingVideo.absolutePath, "mediaId", "raw-progress", "loadGeneration", 2.0,
+            "autoPlay", false, "renditionKind", "mv", "positionMode", "start-zero",
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+        ), it) } as Number
+        await("failed video has no outgoing clock") { onMain {
+            engine.getPropertyBoolean("idle-active") == true && engine.getPropertyDouble("time-pos") == null
+        } }
+        val failed = call { requireNotNull(module).getVideoInfo(it) } as com.facebook.react.bridge.ReadableMap
+        assertEquals("mv", failed.getString("kind"))
+        assertEquals(2.0, failed.getDouble("loadGeneration"), 0.0)
+        assertEquals(captured.toDouble(), failed.getDouble("outgoingAudioPosition"), 0.0)
+        var rejectionCode: String? = null
+        assertThrows(AssertionError::class.java) {
+            call(onRejected = { rejectionCode = it }) { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured.toDouble(),
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) }
+        }
+        assertEquals("E_RENDITION_REJECTED", rejectionCode)
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 3.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio",
+            "startPosition", captured.toDouble(), "playbackRate", 1.5,
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 2.0,
+        ), it) }
+        await("original audio restored paused after owned video failure") { onMain {
+            engine.getPropertyString("path") == tone.absolutePath && engine.getPropertyBoolean("pause") == true &&
+                kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - captured.toDouble()) < .25
+        } }
+        val restored = call { requireNotNull(module).getRenditionProgress(it) } as com.facebook.react.bridge.ReadableMap
+        assertEquals("audio", restored.getString("renditionKind"))
+        assertEquals(3.0, restored.getDouble("loadGeneration"), 0.0)
+        assertEquals(captured.toDouble(), restored.getDouble("position"), .25)
+        onMain { assertEquals(1.5, requireNotNull(engine.getPropertyDouble("speed")), 0.0) }
+    }
+
+    @Test
     fun ownedVideoEndCanRestoreAudioWithoutAnOutgoingRawClock() {
         call { requireNotNull(module).pause(it) }
         call { requireNotNull(module).seekTo(37.0, it) }
@@ -355,14 +402,14 @@ class LiveUpdateEngineProgressTest {
         return requireNotNull(result).getOrThrow()
     }
 
-    private fun call(action: (Promise) -> Unit): Any? {
+    private fun call(onRejected: ((String?) -> Unit)? = null, action: (Promise) -> Unit): Any? {
         val completed = CountDownLatch(1)
         var failure: String? = null
         var result: Any? = null
         val promise = Proxy.newProxyInstance(Promise::class.java.classLoader, arrayOf(Promise::class.java)) { _, method, args ->
             when (method.name) {
                 "resolve" -> { result = args?.firstOrNull(); completed.countDown() }
-                "reject" -> { failure = args?.joinToString(); completed.countDown() }
+                "reject" -> { failure = args?.joinToString(); onRejected?.invoke(args?.firstOrNull() as? String); completed.countDown() }
                 else -> throw AssertionError("Unexpected Promise call: ${method.name}")
             }
             null

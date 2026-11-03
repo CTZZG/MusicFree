@@ -1,5 +1,62 @@
 # MV implementation — P0
 
+## Accepted Fabric path and P1 rendition foundation — 2026-11-03
+
+The ba18 batch is independently accepted. CI41556840337 actually executes
+1414JVM tasks; new XML37suites/182tests has no failure/error/skip. API41556840319
+has a genuine APK cache miss, app/test Kotlin compilation and780executed tasks;
+95native methods pass, together with the original25/73/70+normalcode0/UI20/
+freeze5 checks. Both spinner PNGs were inspected. RAW_STALLED is raw0/session
+4404ms,7normal+2UI pause windows0,source12begin/7resolved. Six clock rounds
+288samples have worst-.037882802s/maxgap27ms; actual old95.40126676196952
+to first95.43714464196951 has maxpoll116ms. Original gates remain unchanged.
+
+Fabric41556877856 actually builds R8/JS/Release1244tasks, in the exact ba18
+tree. New diagnostic APK29933869bytes/SHA256
+2905c1ce31ea6989ddde38a02279eb3e92865aa2ee2516e6b7fef5a9f51f8e77
+independently verifies with the public TEST certificate; all10x64JNI payloads
+match the actual fixed AAR. Every artifact ZIP digest was verified. All8phases
+and unchanged pixel/lifecycle checker pass in instance239907257: H264144 at
+seek/remount/actual landscape/portrait, HEVC24, background260→foreground477,
+two completed MV identities and audio37→37.756911934666526. All8screens were
+inspected and the complete VFR recording decodes. Home BEGIN01:20:17.825,
+host pause19.224, detach19.527, END20.760; resume21.240 then attach21.790.
+The previous late-detach failure remains retained; its marker was not widened.
+
+P1 now adds a narrow adapter/native foundation, not the normal App feature.
+Confirmed active rendition is separate from attempted-load ownership. Same-song
+replacement awaits its exact FILE_LOADED identity, resolves the latest logical
+queue index, and emits renditionChanged without trackChanged or writing an MV
+URL/duration into the audio queue. Native capture is delivered on scheduling,
+before activation, for immediate original-audio checkpoint persistence. Unknown
+video duration remains0. Extra runtime source/metadata fields cannot override
+the host's identity or position policy. MV rate1is separate from the audio rate.
+
+Native event/progress/end scope includes load generation and rendition kind.
+After first MV use, queued old property callbacks are rejected and current native
+values are read; the ordinary audio-before-MV observed-value path is retained.
+Prepared source/chain owners are checked before mutation and linked through native
+promotion. A preflight-rejected MV cannot erase genuine prepared-audio promotion;
+a cancelled MV's late receipt cannot clear the new song's runway. Both races had
+real failing adapter tests before repair. Owned pending/failed MV can explicitly
+start zero or return to captured audio, without inventing an outgoing MV clock;
+preserve-MV still requires a live clock and a declared matching timeline.
+
+Final local verify209suites/1584Jest/40generator/1437layout, ESLint0/215,
+TypeScript/static/cycles/7patch passes with the existing dependency install.
+Real adapter tests are62(46original+16new). Actual preflight/catch+latch and
+PendingSeek/Unpause pass36synthetic JNI/dispatch cases; ba18 fails3new valid
+pending/failed transitions. SDK36 complete module/View and full instrumentation
+compile, including the new failed-MV-to-paused-audio test; no new local App/device
+result is claimed. The foundation still needs its own cloud execution.
+
+Shared commitTail controller, persistence/lyrics/Last.fm/plugin/network routing,
+normal App MV entry/inline/fullscreen/mini UI and final product acceptance are
+unfinished. Actual prepared audio after a rendered video EOF also remains a
+mandatory integration/device gate. Do not replace it with ordinary audio prepared
+tests. Failed audio-return retry must retain its checkpoint and remain bounded.
+No production certificate, ARM hardware decoding or physical output is proved.
+
 ## Host lifecycle must release video output — 2026-11-03
 
 CI41475773503 and API41475773509 accepted9c2 independently: real JVM
