@@ -40,6 +40,8 @@ const mockMusicItem = {
 };
 
 jest.mock("@/core/trackPlayer", () => ({
+    useMusicVideoState: () => ({ phase: "audio" }),
+    useHasMusicVideo: () => false,
     useCurrentMusic: () => mockMusicItem,
     useAlternateSourceInUse: () => null,
     useMusicState: () => "paused",

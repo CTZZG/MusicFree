@@ -1533,6 +1533,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     MPVLib.setPropertyBoolean("pause", true)
                     emitState("paused", force = true)
                 }
+                if (mode != null) {
+                    // Bounded source transitions only; never log URLs, headers or plugin credentials.
+                    Log.d(TAG, "rendition committed[$generation]: kind=$nextKind mode=$mode " +
+                        "captured=$capturedPosition target=$renditionStart " +
+                        "instance=${mpvInstance?.let { System.identityHashCode(it) } ?: 0}")
+                }
                 operationPromise.resolve(if (mode == "start-zero") capturedPosition else renditionStart ?: restoredPosition)
             } catch (e: Exception) {
                 var rolledBack = false
@@ -2432,6 +2438,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         forceUnpause(generation)
                     }
                     if (renditionTrackingEnabled) emitProgress(force = true)
+                    if (renditionTrackingEnabled) {
+                        Log.d(TAG, "rendition ready[$generation]: kind=$renditionKind " +
+                            "position=${MPVLib.getPropertyDouble("time-pos")} paused=${MPVLib.getPropertyBoolean("pause")}")
+                    }
                 }
                 MPVLib.MPV_EVENT_END_FILE -> {
                     if (renditionTrackingEnabled && videoEndIdentity != activeTrackIdentity) {

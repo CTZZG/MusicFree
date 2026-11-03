@@ -1,3 +1,4 @@
+import MusicVideo from "./musicVideo";
 import HomeSections from "./homeSections";
 import LyricTools from "./lyricTools";
 import MusicShare from "./musicShare";
@@ -29,6 +30,7 @@ import MusicItemLyricOptions from "./musicItemLyricOptions";
 import MusicMetadataSettings from "./musicMetadataSettings";
 
 export default {
+    MusicVideo,
     HomeSections,
     LyricTools,
     MusicShare,

@@ -14,7 +14,7 @@ import { useI18N } from "@/core/i18n";
 import MusicSheet, { useFavorite } from "@/core/musicSheet";
 import pluginManager from "@/core/pluginManager";
 import { ROUTE_PATH, useNavigate } from "@/core/router";
-import { useAlternateSourceInUse, useCurrentMusic } from "@/core/trackPlayer";
+import { useAlternateSourceInUse, useCurrentMusic, useHasMusicVideo } from "@/core/trackPlayer";
 import { parseArtists } from "@/utils/artistParser";
 import rpx from "@/utils/rpx";
 import {
@@ -138,6 +138,7 @@ export default function SongInfo(props: ISongInfoProps) {
     const lines = (isLandscape ? landscapeFit : undefined) ?? ALL_LINES;
     const musicItem = useCurrentMusic();
     const alternatePlatform = useAlternateSourceInUse();
+    const hasMusicVideo = useHasMusicVideo();
     const navigate = useNavigate();
     const { t } = useI18N();
     const { width: windowWidth } = useWindowDimensions();
@@ -300,6 +301,11 @@ export default function SongInfo(props: ISongInfoProps) {
                                     style={styles.tagText}
                                 />
                             ) : null}
+                            {hasMusicVideo && !isLandscape ? <Pressable
+                                accessibilityRole="button" accessibilityLabel={t("musicVideo.title")}
+                                style={styles.mvShortcut} onPress={() => showPanel("MusicVideo")}>
+                                <Text style={styles.mvText}>MV</Text>
+                            </Pressable> : null}
                         </View>
                     ) : null}
                     {musicItem.album && !isHero && lines.showAlbum ? (
@@ -401,6 +407,8 @@ function FavoriteButton(props: {
 }
 
 const styles = StyleSheet.create({
+    mvShortcut: { minWidth: 48, minHeight: 48, justifyContent: "center", alignItems: "center", paddingHorizontal: 8 },
+    mvText: { color: "white", fontSize: 14, fontWeight: fontWeightConst.semibold },
     container: {
         alignSelf: "center",
         paddingTop: 22,

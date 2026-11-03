@@ -236,3 +236,87 @@ test("explicit play while returning from an originally paused song resumes only 
     await returning;
     expect(f.deps.resumeAudio).toHaveBeenCalledTimes(1);
 });
+
+test("duplicate returns share one native transition and a video click cannot erase an unresolved audio checkpoint", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    const ready = deferred<void>(); const replace = f.deps.replace.getMockImplementation()!;
+    f.deps.replace.mockImplementationOnce(async request => {
+        const receipt = await replace(request); await ready.promise; return receipt;
+    });
+    const first = f.controller.returnToAudio(); await tick();
+    const second = f.controller.returnToAudio();
+    expect(await f.controller.enter(clip("new-video"))).toEqual({ status: "error", error: "audio-return" });
+    expect(f.controller.checkpoint?.positionSeconds).toBe(37.125);
+    expect(f.deps.replace).toHaveBeenCalledTimes(2);
+    ready.resolve(undefined);
+    expect(await first).toEqual({ status: "audio" }); expect(await second).toEqual({ status: "audio" });
+});
+
+test("MV selection reserves the existing source coordinator before network consent completes", async () => {
+    const f = fixture(false); const oldQuality = f.coordinator.begin();
+    const consent = deferred<{ mobileApproved: boolean; claimPlayback: boolean } | null>();
+    const pending = f.controller.enter(clip(), undefined, { preflight: () => consent.promise });
+    expect(f.coordinator.isActive(oldQuality)).toBe(false);
+    expect(f.sources.resolve).not.toHaveBeenCalled(); expect(f.deps.claimPlayback).not.toHaveBeenCalled();
+    consent.resolve(null);
+    expect(await pending).toEqual({ status: "cancelled" });
+    expect(f.deps.claimPlayback).not.toHaveBeenCalled(); expect(f.deps.replace).not.toHaveBeenCalled();
+    expect(f.controller.snapshot.phase).toBe("audio");
+});
+
+test("a later pause during consent remains paused when the selected video is loaded", async () => {
+    const f = fixture(); const consent = deferred<{ mobileApproved: boolean; claimPlayback: boolean }>();
+    const pending = f.controller.enter(clip(), undefined, { preflight: () => consent.promise });
+    f.pause(); consent.resolve({ mobileApproved: true, claimPlayback: false }); await pending;
+    expect(f.deps.claimPlayback).not.toHaveBeenCalled();
+    expect(f.deps.replace.mock.calls[0][0]).toMatchObject({ autoPlay: false });
+});
+
+test("cancelling while consent is open rejects its late approved result", async () => {
+    const f = fixture(); const consent = deferred<{ mobileApproved: boolean; claimPlayback: boolean }>();
+    const pending = f.controller.enter(clip(), undefined, { preflight: () => consent.promise });
+    f.controller.cancelResolving(); consent.resolve({ mobileApproved: true, claimPlayback: true });
+    expect(await pending).toEqual({ status: "cancelled" });
+    expect(f.deps.replace).not.toHaveBeenCalled(); expect(f.deps.claimPlayback).not.toHaveBeenCalled();
+});
+
+test("an old MV EOF cannot cancel the video the user is currently selecting", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    const source = deferred<ReturnType<typeof f.resolved>>(); f.sources.resolve.mockReturnValueOnce(source.promise);
+    const selected = f.controller.enter(clip("second")); await tick();
+    expect(await f.controller.replay()).toEqual({ status: "cancelled" });
+    source.resolve(f.resolved(clip("second"))); expect(await selected).toEqual({ status: "playing" });
+    expect(f.controller.snapshot).toMatchObject({ video: { id: "second" } });
+});
+
+test("explicit replay works in queue mode and can continue an existing background MV", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    f.deps.repeatCurrentVideo = () => false; f.setForeground(false);
+    expect(await f.controller.replay()).toEqual({ status: "cancelled" });
+    expect(await f.controller.replay(false)).toEqual({ status: "playing" });
+    expect(f.deps.replace.mock.calls[1][0]).toMatchObject({ requireForeground: false, position: { mode: "start-zero" } });
+    expect(f.deps.saveAudioCheckpoint).toHaveBeenCalledTimes(1);
+});
+
+test("resuming a completed MV reloads it at zero instead of unpausing an idle file", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    const readInfo = f.deps.videoInfo.getMockImplementation()!;
+    f.deps.videoInfo.mockImplementationOnce(async () => ({ ...await readInfo(), completed: true }));
+    expect(await f.controller.resume()).toEqual({ status: "playing" });
+    expect(f.deps.resumeVideo).not.toHaveBeenCalled();
+    expect(f.deps.replace.mock.calls[1][0].position).toEqual({ mode: "start-zero" });
+    expect(f.deps.saveAudioCheckpoint).toHaveBeenCalledTimes(1);
+});
+
+test("a late audio-return source cannot replace a newly selected video or remove its saved checkpoint", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    const source = deferred<{ url: string }>(); f.deps.resolveAudio.mockReturnValueOnce(source.promise);
+    const returning = f.controller.returnToAudio(); await tick();
+    expect(await f.controller.enter(clip("new-video"))).toEqual({ status: "playing" });
+    source.resolve({ url: "https://example.test/old-audio.mp3" });
+    expect(await returning).toEqual({ status: "cancelled" });
+    expect(f.deps.replace).toHaveBeenCalledTimes(2);
+    expect(f.controller.snapshot).toMatchObject({ video: { id: "new-video" } });
+    expect(f.controller.checkpoint?.positionSeconds).toBe(37.125);
+    expect(await f.controller.returnToAudio()).toEqual({ status: "audio" });
+});

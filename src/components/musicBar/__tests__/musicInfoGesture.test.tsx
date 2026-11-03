@@ -52,6 +52,8 @@ jest.mock("@/core/trackPlayer", () => ({
         skipToNext: () => mockNext(),
         skipToPrevious: () => mockPrevious(),
     },
+    useMusicVideoState: () => ({ phase: "audio" }),
+    useHasMusicVideo: () => false,
     useCurrentMusic: () => mockSong,
     usePlayList: () => [mockSong],
     useProgress: () => ({ position: 0, duration: 180, buffered: 0 }),

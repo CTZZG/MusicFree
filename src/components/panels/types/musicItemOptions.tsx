@@ -169,6 +169,12 @@ export default function MusicItemOptions(props: IMusicItemOptionsProps) {
             onPress: () => showPanel("MusicShare", { musicItem }),
         },
         {
+            icon: "play-circle-outline",
+            title: t("musicVideo.watch"),
+            show: isSameMediaItem(musicItem, TrackPlayer.currentMusic) && TrackPlayer.supportsMusicVideo(),
+            onPress: () => showPanel("MusicVideo"),
+        },
+        {
             icon: "information-circle",
             title: t("playbackInfo.title"),
             show: isSameMediaItem(musicItem, TrackPlayer.currentMusic),

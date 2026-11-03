@@ -1,6 +1,55 @@
-# MV implementation — P0/P1
+# MV implementation — P0/P1/P2
 
-## Actual App core wiring; normal UI still unfinished — 2026-11-03
+## Normal App UI implementation — 2026-11-03 (device acceptance pending)
+
+The current core checkpoint ff450 is independently accepted by CI250
+`41601281631` and API154 `41601281788`. Quality212/1624/40/1437/ESLint0/215;
+actual Debug JVM1414tasks executed, new digested XML37suites182tests all0.
+API APK cache miss and new app/test Kotlin compile780tasks;97native methods
+allcode0, original25/73/70normal0/UI20 plus both images inspected/freeze5.
+RAW_STALLED raw0/session4403ms;7normal+2UI pause windows0;source12/7/focus.
+Six clock rounds288samples worst+.000106367s/gap26ms; actual old
+75.71431967696923→first75.71431200396826/maxpoll84ms. API153's loading-null
+fixture NPE and missing normal/UI/freeze evidence remain a real historical
+failure. Only the nullable poll was fixed, with the same15s/50ms and immediate
+rejection of the first bad ready sample. This is not UI device evidence.
+
+P2 now uses the original player route, optional-provider More entry, explicit
+candidate selection and a cover shortcut only after a positive lookup for the
+current plugin revision. There is no discovery autoplay. One MpvVideo View
+changes bounds for same-route fullscreen. Hardware Back exits fullscreen before
+navigation; route blur/App background release output while MV audio can continue.
+MV options explain background data use; download still means original song
+audio, timed song lyrics/rate controls are hidden, mini gestures use the original
+song queue. Unknown MV duration is never replaced by song duration. A drag from
+an old rendition cannot seek a replacement. PlaybackInfo separates MV provider/
+quality label from actual decoded audio and rejects late same-song generations.
+
+Fresh network consent reserves the existing source request before it awaits UI.
+Cancel only dismisses its own dialog; a late approval cannot override a newer
+pause/focus event or song. Duplicate returns share one native transition; a late
+return source cannot steal the checkpoint from a newly selected video. Explicit
+replay works outside single-repeat mode; old EOF cannot cancel a new selection.
+Named keep-awake activation leases cannot release one another after late async
+completion. Short landscape uses side-by-side video/controls and compact actions;
+fullscreen controls overlay the same view, auto-hide while playing and remain
+available while paused. The existing reduced-motion configuration is unchanged.
+
+Actual component checks reject late-pause and shared-keep-awake-tag mutants;
+old ff450 controller fails seven of the new29cases. New layout checks cover
+three languages, small/short-landscape windows and1–2x fonts. Initial test/type/
+mock/short-layout failures were fixed and preserved in scratch. SDK36 module/
+View compilation and lease JUnit2 pass; this is not a whole App build or device
+render. Bounded native rendition commit/ready logs contain scalar ownership/
+clock facts, not URLs or credentials, to diagnose actual transitions.
+
+P3 still requires one stable normal Release Beta/all, reuse for the new MV suite,
+actual public App controls/pixels/recording, exact checkpoint return, and rendered
+video EOF into prepared audio. P0 diagnostic recordings do not substitute for
+normal App UI. No physical ARM/audio/car/hardware-decoder/battery or new independent
+production-certificate proof. Keep draft/unmerged/unreleased; version/API intact.
+
+## Actual App core wiring (historical checkpoint) — 2026-11-03
 
 The10137foundation is independently accepted: CI41568241929 executes1414JVM
 tasks and its digested XML has37suites/182tests with no failure/error/skip.
@@ -552,7 +601,7 @@ All seven normal plus two UI paused windows stayed still. Six clock rounds
 first100.165848505, maxpoll99ms. Source12begin/7resolved/focus passed. The
 single setup SEEK/RESTART preceded all UI readings. No original gate changed.
 
-## Remaining gates
+## Remaining gates at the initial P0 checkpoint (superseded by the sections above)
 
 - Focused device acceptance of the three repaired standalone P0 checks; ordinary
   CI240/API144 passed for the unchanged product/test preparation at f4ba.

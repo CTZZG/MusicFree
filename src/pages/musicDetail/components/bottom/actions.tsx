@@ -8,7 +8,7 @@ import { useI18N } from "@/core/i18n";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import PluginManager from "@/core/pluginManager";
 import TrackPlayer, {
-    useCurrentMusic,
+    useCurrentMusic, useMusicVideoState,
     useRepeatMode,
 } from "@/core/trackPlayer";
 import delay from "@/utils/delay";
@@ -59,6 +59,8 @@ interface IPlayerActionsProps {
 export default function PlayerActions(props: IPlayerActionsProps) {
     const { lyricTab } = props;
     const musicItem = useCurrentMusic();
+    const video = useMusicVideoState();
+    const isVideo = video.phase !== "audio" && (video.owner?.kind === "mv" || video.phase === "returning");
     const repeatMode = useRepeatMode();
     const isDownloaded = LocalMusicSheet.useIsLocal(musicItem);
     const { t } = useI18N();
@@ -86,14 +88,14 @@ export default function PlayerActions(props: IPlayerActionsProps) {
             />
             {lyricTab ? (
                 <ActionButton
-                    icon="lyric"
-                    selected={lyricTab.showingLyric}
-                    accessibilityLabel={t(
+                    icon={isVideo ? "ellipsis-vertical" : "lyric"}
+                    selected={!isVideo && lyricTab.showingLyric}
+                    accessibilityLabel={isVideo ? t("musicVideo.options") : t(
                         lyricTab.showingLyric
                             ? "musicDetail.showCover.a11y"
                             : "musicDetail.showLyric.a11y",
                     )}
-                    onPress={lyricTab.toggle}
+                    onPress={() => isVideo ? showPanel("MusicVideo") : lyricTab.toggle()}
                 />
             ) : null}
             <ActionButton
@@ -101,7 +103,7 @@ export default function PlayerActions(props: IPlayerActionsProps) {
                 accessibilityLabel={
                     isDownloaded
                         ? t("panel.musicItemOptions.downloaded")
-                        : t("common.download")
+                        : t(isVideo ? "musicVideo.audioOnly" : "common.download")
                 }
                 onPress={() => {
                     if (musicItem && !isDownloaded) {

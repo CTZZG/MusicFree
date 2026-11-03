@@ -9,6 +9,7 @@ import { getMediaUniqueKey } from "@/utils/mediaIdentity";
 
 export type MusicVideoFailure = "source" | "network" | "activation" | "audio-return" | "checkpoint-unavailable";
 export type MusicVideoAction = { status: "playing" | "audio" | "cancelled" | "restart-confirmation" | "error"; error?: MusicVideoFailure };
+export type MusicVideoPreflight = (signal: AbortSignal) => Promise<{ mobileApproved: boolean; claimPlayback: boolean } | null>;
 export type MusicVideoDisplay = Pick<MusicVideoCandidate, "id" | "title" | "artist" | "providerName" | "qualities"> & {
     qualityId?: string;
 };
@@ -54,7 +55,7 @@ interface Dependencies {
     resolveAudio(song: IMusic.IMusicItem, quality: IMusic.IQualityKey, current: () => boolean): Promise<PlayerRenditionSource>;
     replace(request: PlayerRenditionRequest): Promise<PlayerRenditionReceipt>;
     cancelNativeWait(): void;
-    videoInfo(): Promise<{ mediaId: string | null; loadGeneration: number; kind: string; outgoingAudioPosition?: number }>;
+    videoInfo(): Promise<{ mediaId: string | null; loadGeneration: number; kind: string; outgoingAudioPosition?: number; completed?: boolean }>;
     publish(state: MusicVideoState): void;
     timelineChanged(blocked: boolean): void;
     saveAudioCheckpoint(checkpoint: MusicVideoAudioCheckpoint): void;
@@ -70,13 +71,18 @@ export default class MusicVideoController {
     private state: MusicVideoState = { phase: "audio" };
     private session: AudioSession | null = null;
     private currentVideo: { candidate: MusicVideoCandidate; quality?: string; timeline?: string } | null = null;
-    private request: { token: IQualityChangeRequestToken; abort: AbortController; automaticRepeat: boolean } | null = null;
+    private request: { token: IQualityChangeRequestToken; abort: AbortController; automaticRepeat: boolean; allowBackground: boolean } | null = null;
     private blocked = false;
     private failedGeneration: number | null = null;
     private mobileApproved = false;
     private playOnReturn = false;
+    private audioReturnTask: { key: string; promise: Promise<MusicVideoAction> } | null = null;
 
     constructor(private readonly deps: Dependencies) { }
+
+    get hasMobileApproval() {
+        return this.mobileApproved;
+    }
 
     get snapshot() {
         return this.state;
@@ -105,10 +111,10 @@ export default class MusicVideoController {
         const song = this.deps.currentSong();
         return song ? getMediaUniqueKey(song) : null;
     }
-    private begin(automaticRepeat = false) {
+    private begin(automaticRepeat = false, allowBackground = false) {
         this.request?.abort.abort();
         this.deps.cancelNativeWait();
-        const request = { token: this.deps.coordinator.begin(), abort: new AbortController(), automaticRepeat };
+        const request = { token: this.deps.coordinator.begin(), abort: new AbortController(), automaticRepeat, allowBackground };
         this.request = request;
         return request;
     }
@@ -117,7 +123,7 @@ export default class MusicVideoController {
             this.deps.coordinator.isActive(request.token) && this.currentKey() === key;
     }
     private guard(request: NonNullable<MusicVideoController["request"]>, key: string, foreground = false) {
-        if (!this.current(request, key) || (foreground && !request.automaticRepeat && !this.deps.foreground()) ||
+        if (!this.current(request, key) || (foreground && !request.allowBackground && !this.deps.foreground()) ||
             (request.automaticRepeat && !this.deps.repeatCurrentVideo())) throw new Superseded();
     }
     private block(value: boolean) {
@@ -153,24 +159,30 @@ export default class MusicVideoController {
     }
 
     async enter(candidate: MusicVideoCandidate, quality?: string,
-        options: { explicit?: boolean; preserve?: boolean; restartApproved?: boolean; mobileApproved?: boolean; automaticRepeat?: boolean } = {}): Promise<MusicVideoAction> {
+        options: { explicit?: boolean; preserve?: boolean; restartApproved?: boolean; mobileApproved?: boolean; automaticRepeat?: boolean; existingSession?: boolean; preflight?: MusicVideoPreflight } = {}): Promise<MusicVideoAction> {
         const song = this.deps.currentSong(), initialOwner = this.deps.owner();
         if (!song || !initialOwner || candidate.originalSongKey !== getMediaUniqueKey(song) || initialOwner.mediaId !== candidate.originalSongKey) return { status: "cancelled" };
+        if (this.session && this.blocked && initialOwner.kind === "audio") return { status: "error", error: "audio-return" };
         if (!this.session) this.mobileApproved = false;
         const oldVideo = this.currentVideo;
         const settings = this.deps.audioSettings();
         const session = this.session ?? { song: { ...song }, key: candidate.originalSongKey,
             generation: initialOwner.loadGeneration, ...settings, position: null };
         this.session = session;
-        const request = this.begin(options.automaticRepeat === true);
+        this.audioReturnTask = null;
+        const request = this.begin(options.automaticRepeat === true,
+            !!oldVideo && initialOwner.kind === "mv" && (options.automaticRepeat === true || options.existingSession === true));
         let commitStarted = false;
         let stage: MusicVideoFailure = "network";
         this.publish({ phase: "resolving", songKey: session.key, owner: initialOwner,
             video: this.display(oldVideo?.candidate ?? candidate, oldVideo?.quality ?? quality), canReturn: this.checkpoint !== null });
         try {
-            if (options.explicit !== false) await this.deps.claimPlayback();
+            const preparation = options.preflight ? await options.preflight(request.abort.signal) : undefined;
             this.guard(request, session.key, true);
-            const networkPolicy = await this.deps.videoNetwork(options.mobileApproved === true || this.mobileApproved);
+            if (preparation === null) throw new Superseded();
+            if (options.explicit !== false && preparation?.claimPlayback !== false) await this.deps.claimPlayback();
+            this.guard(request, session.key, true);
+            const networkPolicy = await this.deps.videoNetwork(preparation?.mobileApproved === true || options.mobileApproved === true || this.mobileApproved);
             if (networkPolicy === "allow-metered") this.mobileApproved = true;
             this.guard(request, session.key, true);
             stage = "source";
@@ -200,7 +212,7 @@ export default class MusicVideoController {
                 this.block(true); this.phase("loading");
                 const receipt = await this.deps.replace({
                     expected: owner, kind: "mv", source: admitted,
-                    videoNetworkPolicy: networkPolicy, requireForeground: !request.automaticRepeat,
+                    videoNetworkPolicy: networkPolicy, requireForeground: !request.allowBackground,
                     autoPlay: this.deps.mayAutoPlay(),
                     position: options.preserve && sameTimeline ? { mode: "preserve-mv", timelineId: resolved.source.timelineId! } : { mode: "start-zero" },
                     video: { videoId: resolved.candidate.id, providerKey: resolved.candidate.providerKey,
@@ -253,7 +265,26 @@ export default class MusicVideoController {
         }
     }
 
-    async returnToAudio(explicitPlay = false, reason?: MusicVideoFailure): Promise<MusicVideoAction> {
+    returnToAudio(explicitPlay = false, reason?: MusicVideoFailure): Promise<MusicVideoAction> {
+        const existing = this.audioReturnTask;
+        if (existing && existing.key === this.currentKey()) {
+            if (explicitPlay) {
+                this.playOnReturn = true;
+                return this.deps.claimPlayback().then(() => existing.promise, () => ({ status: "error", error: "audio-return" }));
+            }
+            return existing.promise;
+        }
+        const key = this.currentKey();
+        if (!key) return Promise.resolve({ status: "cancelled" });
+        const task = { key, promise: this.performAudioReturn(explicitPlay, reason) };
+        this.audioReturnTask = task;
+        task.promise.finally(() => {
+            if (this.audioReturnTask === task) this.audioReturnTask = null;
+        }).catch(() => undefined);
+        return task.promise;
+    }
+
+    private async performAudioReturn(explicitPlay: boolean, reason?: MusicVideoFailure): Promise<MusicVideoAction> {
         const session = this.session;
         if (!session || this.currentKey() !== session.key) return { status: "cancelled" };
         const request = this.begin();
@@ -298,22 +329,31 @@ export default class MusicVideoController {
         }
     }
 
-    changeQuality(quality: string, restartApproved = false, mobileApproved = false) {
+    changeQuality(quality: string, restartApproved = false, mobileApproved = false, preflight?: MusicVideoPreflight) {
         return this.currentVideo ? this.enter(this.currentVideo.candidate, quality,
-            { explicit: false, preserve: true, restartApproved, mobileApproved }) : Promise.resolve<MusicVideoAction>({ status: "cancelled" });
+            { explicit: false, preserve: true, restartApproved, mobileApproved, preflight }) : Promise.resolve<MusicVideoAction>({ status: "cancelled" });
     }
-    replay() {
+    replay(automatic = true) {
+        if (["resolving", "loading", "returning"].includes(this.state.phase)) return Promise.resolve<MusicVideoAction>({ status: "cancelled" });
         return this.currentVideo ? this.enter(this.currentVideo.candidate, this.currentVideo.quality,
-            { explicit: false, automaticRepeat: true }) : Promise.resolve<MusicVideoAction>({ status: "cancelled" });
+            { explicit: false, automaticRepeat: automatic, existingSession: !automatic }) : Promise.resolve<MusicVideoAction>({ status: "cancelled" });
     }
 
-    async resume(mobileApproved = false): Promise<MusicVideoAction> {
+    async resume(mobileApproved = false, explicit = true, preflight?: MusicVideoPreflight): Promise<MusicVideoAction> {
         const key = this.currentKey(), owner = this.deps.owner();
         if (!key || owner?.kind !== "mv") return { status: "cancelled" };
-        const current = () => this.currentKey() === key && this.deps.owner()?.loadGeneration === owner.loadGeneration;
-        await this.deps.claimPlayback();
+        const request = this.request;
+        const current = () => this.request === request && this.currentKey() === key && this.deps.owner()?.loadGeneration === owner.loadGeneration;
         try {
-            const policy = await this.deps.videoNetwork(mobileApproved || this.mobileApproved);
+            const preparation = preflight ? await preflight(request?.abort.signal ?? new AbortController().signal) : undefined;
+            if (!current() || preparation === null) return { status: "cancelled" };
+            if (explicit && preparation?.claimPlayback !== false) await this.deps.claimPlayback();
+            if (!current()) return { status: "cancelled" };
+            const info = await this.deps.videoInfo();
+            if (!current() || info.mediaId !== owner.mediaId || info.loadGeneration !== owner.loadGeneration) return { status: "cancelled" };
+            if (info.completed && this.currentVideo) return this.enter(this.currentVideo.candidate, this.currentVideo.quality,
+                { explicit: false, existingSession: true, mobileApproved: preparation?.mobileApproved === true || mobileApproved || this.mobileApproved });
+            const policy = await this.deps.videoNetwork(preparation?.mobileApproved === true || mobileApproved || this.mobileApproved);
             if (!current()) return { status: "cancelled" };
             if (policy === "allow-metered") this.mobileApproved = true;
             if (this.deps.mayAutoPlay()) await this.deps.resumeVideo(policy);
@@ -327,7 +367,7 @@ export default class MusicVideoController {
     }
 
     onBackground() {
-        if (!this.request?.automaticRepeat) this.cancelResolving();
+        if (!this.request?.allowBackground) this.cancelResolving();
     }
     playPendingReturn() {
         if (this.state.phase === "returning") this.playOnReturn = true;
@@ -346,6 +386,7 @@ export default class MusicVideoController {
         request?.abort.abort(); this.deps.cancelNativeWait(); this.request = null;
     }
     leaveForSongChange() {
+        this.audioReturnTask = null;
         this.mobileApproved = false;
         this.cancelRequest(); this.session = null; this.currentVideo = null;
         this.block(false); this.publish({ phase: "audio" });

@@ -1,4 +1,5 @@
 import PlaybackSourceResolver from "./playbackSourceResolver";
+import { getPluginRuntimeRevision, usePluginEnabledRevision } from "../pluginManager/enabledRevision";
 import MusicVideoController, { type MusicVideoState } from "./musicVideoController";
 import { MusicVideoSources } from "../pluginManager/musicVideoSource";
 import { admitMusicVideoSource } from "./musicVideoAdmission";
@@ -253,6 +254,7 @@ interface IQueueUndoRecord {
     playbackIntent: number;
     currentKey: string | null;
 }
+const knownMusicVideoAtom = atom<{ key: string; available: boolean; revision: number } | null>(null);
 const musicVideoAtom = atom<MusicVideoState>({ phase: "audio" });
 const musicStateAtom = atom<PlayerBackendState>("idle");
 const playerReadyAtom = atom(false);
@@ -445,8 +447,22 @@ class TrackPlayer
     supportsMusicVideo() {
         return this.musicVideo?.supportsCurrentSong() ?? false;
     }
-    findMusicVideos(signal?: AbortSignal) {
-        return this.musicVideo?.candidates(signal) ?? Promise.resolve([]);
+    async findMusicVideos(signal?: AbortSignal) {
+        const key = this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null;
+        const revision = getPluginRuntimeRevision();
+        const items = await (this.musicVideo?.candidates(signal) ?? Promise.resolve([]));
+        if (key && !signal?.aborted && revision === getPluginRuntimeRevision() && this.currentMusic && key === getMediaUniqueKey(this.currentMusic)) getDefaultStore().set(knownMusicVideoAtom, { key, available: items.length > 0, revision });
+        return items;
+    }
+    get videoMobileApproved() {
+        return this.musicVideo?.hasMobileApproval ?? false;
+    }
+    get playbackIntentRevision() {
+        return this.playbackIntent.revision;
+    }
+    videoOutputFailed(owner: { mediaId: string; loadGeneration: number }) {
+        const current = this.backend.getRenditionOwner?.();
+        if (current?.kind === "mv" && current.mediaId === owner.mediaId && current.loadGeneration === owner.loadGeneration) this.musicVideo?.handlePlaybackError().catch(() => undefined);
     }
     watchMusicVideo(...args: Parameters<MusicVideoController["enter"]>) {
         return this.musicVideo?.enter(...args) ?? Promise.resolve({ status: "cancelled" as const });
@@ -457,8 +473,8 @@ class TrackPlayer
     returnToSong(explicitPlay = false) {
         return this.musicVideo?.returnToAudio(explicitPlay) ?? Promise.resolve({ status: "cancelled" as const });
     }
-    resumeMusicVideo(approved = false) {
-        return this.musicVideo?.resume(approved);
+    resumeMusicVideo(...args: Parameters<MusicVideoController["resume"]>) {
+        return this.musicVideo?.resume(...args) ?? Promise.resolve({ status: "cancelled" as const });
     }
     cancelVideoRequest() {
         this.musicVideo?.cancelResolving();
@@ -1453,8 +1469,8 @@ class TrackPlayer
             } else if (!musicItem && this.musicVideo.blocksAudioTimeline) {
                 this.notePlayByUser();
                 const state = await this.backend.getState();
-                if (state === "ended" || state === "idle") await this.musicVideo.replay();
-                else await this.musicVideo.resume();
+                if (state === "ended" || state === "idle") await this.musicVideo.replay(false);
+                else await this.musicVideo.resume(false, false);
                 return;
             }
         }
@@ -3418,6 +3434,7 @@ class TrackPlayer
         newQuality: IMusic.IQualityKey,
     ): Promise<IQualityChangeResult> {
         if (!this.audioTimelineAvailable) return { success: false, requestedQuality: newQuality, superseded: true };
+        this.musicVideo?.cancelResolving();
         const requestToken = this.qualityChangeCoordinator.begin();
         const superseded = (): IQualityChangeResult => ({
             success: false,
@@ -5509,6 +5526,12 @@ class TrackPlayer
     }
 }
 
+export function useHasMusicVideo() {
+    usePluginEnabledRevision();
+    const current = useAtomValue(currentMusicAtom);
+    const known = useAtomValue(knownMusicVideoAtom);
+    return !!current && known?.key === getMediaUniqueKey(current) && known.available && known.revision === getPluginRuntimeRevision() && trackPlayer.supportsMusicVideo();
+}
 export const useMusicVideoState = () => useAtomValue(musicVideoAtom);
 export const usePlayList = () => useAtomValue(playListAtom);
 export const usePlayLaterQueue = () => useAtomValue(playLaterQueueAtom);
