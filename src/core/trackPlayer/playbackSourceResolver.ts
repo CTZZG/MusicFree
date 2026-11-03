@@ -303,9 +303,10 @@ export default class PlaybackSourceResolver {
     async resolveDirectMediaSource(
         musicItem: IMusic.IMusicItem,
         timedOutSources?: TimedOutSources,
+        requestedQuality?: IMusic.IQualityKey,
     ): Promise<IPlugin.IMediaSourceResult | null> {
         const plugin = this.pluginManagerService.getByName(musicItem.platform);
-        const qualityOrder = this.getPlayQualityOrder();
+        const qualityOrder = requestedQuality ? [requestedQuality] : this.getPlayQualityOrder();
 
         for (let quality of qualityOrder) {
             const candidate = await this.requestPluginMediaSourceOrStop(

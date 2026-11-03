@@ -672,7 +672,7 @@ describe("quality reload uses the current position when committing", () => {
         mockNativeMpvPlayer.getPosition.mockResolvedValue(position);
         await jest.advanceTimersByTimeAsync(1);
         await finishChange(changing);
-        expect(source).toHaveBeenLastCalledWith(expect.anything(), true, position, true);
+        expect(source).toHaveBeenLastCalledWith(expect.anything(), true, position, true, expect.objectContaining({ id: expect.any(Number) }), true);
     });
 
     it.each([NaN, Infinity, -1, undefined])("uses the request-time position if the latest read is %p", async position => {

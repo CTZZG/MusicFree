@@ -94,6 +94,7 @@ export class RenditionTransitionFailure extends Error {
         message: string,
         readonly rejectedBeforeMutation = false,
         readonly cancelled = false,
+        readonly rolledBack = false,
     ) {
         super(message);
         this.name = "RenditionTransitionFailure";
@@ -196,6 +197,11 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         confirm: () => void;
         reject: (error: Error) => void;
         foreignPrepared?: MpvActiveTrackChangedEvent;
+        loaded: boolean;
+        failed: boolean;
+        readyPosition?: number;
+        readyProgress?: PlayerAdapterProgress;
+        minimumPosition?: number;
     } | null = null;
     private renditionListeners = new Set<(...args: any[]) => void>();
     private queueRevision = 0;
@@ -260,7 +266,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     private queueChangedListeners = new Set<(...a: any[]) => void>();
     private libraryBrowseRequestListeners = new Set<(...a: any[]) => void>();
     private remoteListeners: Partial<
-        Record<PlayerAdapterEvent, Set<(...a: any[]) => void>>
+        Record<PlayerAdapterEvent, Set<(...a: any[]) => unknown>>
     > = {};
 
     /**************** setup / configure ****************/
@@ -328,13 +334,26 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             event => {
                 if (!this.acceptsRenditionEvent(event)) return;
                 const { position, duration, buffered } = event;
+                const wasReady = this.currentProgress.ready === true;
+                const pending = this.pendingRendition;
+                if (pending?.target.kind === "audio" && !pending.failed && event.ready === true && pending.readyPosition === undefined) {
+                    pending.readyPosition = position;
+                    pending.readyProgress = { position, duration, buffered: Math.max(position, buffered ?? position), ready: true };
+                    if (!Number.isFinite(position) || position < (pending.minimumPosition ?? 0) - .25) {
+                        pending.reject(new Error("Native audio return started before its saved position"));
+                    } else if (pending.loaded) pending.confirm();
+                }
                 this.currentProgress = {
                     position,
                     duration: this.expectedRendition()?.kind === "mv"
                         ? Math.max(0, duration || 0)
                         : duration || this.currentProgress.duration,
                     buffered: Math.max(position, buffered ?? position),
+                    ...(this.hasUsedRendition ? { ready: event.ready === true } : {}),
                 };
+                if (this.hasUsedRendition && this.activeRendition?.kind === "audio" && event.ready === true && !wasReady) {
+                    this.renditionListeners.forEach(listener => listener(this.getActiveRendition()));
+                }
                 this.progressListeners.forEach(l => l(this.currentProgress));
             },
         );
@@ -452,12 +471,23 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     }
 
     getActiveRendition(): PlayerActiveRendition | null {
-        return this.activeRendition ? { ...this.activeRendition } : null;
+        return this.activeRendition ? { ...this.activeRendition,
+            ...(this.hasUsedRendition && this.activeRendition.kind === "audio" ? { ready: this.currentProgress.ready === true } : {}) } : null;
     }
 
     getRenditionOwner(): PlayerRenditionIdentity | null {
         const owner = this.expectedRendition();
         return owner ? { ...owner } : null;
+    }
+
+    getVideoInfo() {
+        return NativeMpvPlayer.getVideoInfo();
+    }
+
+    async resumeVideo(policy: "unmetered" | "allow-metered") {
+        const owner = this.expectedRendition();
+        if (!owner || owner.kind !== "mv") throw new Error("Video superseded");
+        await NativeMpvPlayer.resumeVideo({ mediaId: owner.mediaId, loadGeneration: owner.loadGeneration, policy });
     }
 
     cancelRenditionTransition() {
@@ -506,9 +536,17 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         let timer: number | undefined;
         let outgoingPosition: number | null = null;
         let rejectedBeforeMutation = false;
+        let rolledBack = false;
         const confirmation = new Promise<void>((resolve, reject) => {
-            this.pendingRendition = { target, confirm: resolve, reject };
-            timer = BackgroundTimer.setTimeout(() => reject(new Error("Rendition activation timed out")), 15000);
+            const pending = { target, confirm: resolve,
+                reject: (error: Error) => {
+                    pending.failed = true; reject(error);
+                },
+                loaded: false, failed: false,
+                minimumPosition: request.position.mode === "restore-audio" ? request.position.positionSeconds : undefined,
+            };
+            this.pendingRendition = pending;
+            timer = BackgroundTimer.setTimeout(() => pending.reject(new Error("Rendition activation timed out")), 15000);
         });
         const track = this.queue[index];
         const payload: MpvLoadPayload = {
@@ -523,6 +561,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             positionMode: request.position.mode,
             expectedMediaId: expected.mediaId,
             expectedLoadGeneration: expected.loadGeneration,
+            ...(request.kind === "mv" ? { videoNetworkPolicy: request.videoNetworkPolicy, requireForeground: request.requireForeground } : {}),
             // Original audio duration must never become this video's duration.
             duration: request.kind === "mv" ? 0 : Number(track.duration) || 0,
             title: request.kind === "mv" ? `${track.title} · MV` : track.title,
@@ -542,21 +581,25 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     }
                 }, error => {
                     rejectedBeforeMutation = error?.code === "E_RENDITION_REJECTED";
+                    rolledBack = error?.code === "E_RENDITION_ROLLED_BACK" &&
+                        error?.userInfo?.mediaId === expected.mediaId && error?.userInfo?.loadGeneration === expected.loadGeneration;
+                    if (rolledBack && Number.isFinite(error.userInfo.outgoingAudioPosition) && error.userInfo.outgoingAudioPosition >= 0) outgoingPosition = error.userInfo.outgoingAudioPosition;
                     throw error;
                 }),
                 confirmation,
             ]);
             if (this.activeRendition?.loadGeneration !== target.loadGeneration) throw new Error("Rendition transition superseded");
-            return { rendition: { ...target }, outgoingPosition };
+            return { rendition: { ...target }, outgoingPosition,
+                readyProgress: this.pendingRendition?.target === target ? this.pendingRendition.readyProgress : undefined };
         } catch (error: any) {
-            if (rejectedBeforeMutation && this.pendingActivation === activation) {
+            if ((rejectedBeforeMutation || rolledBack) && this.pendingActivation === activation) {
                 const prepared = this.pendingRendition?.foreignPrepared;
                 this.pendingActivation = null;
                 this.nativeRenditionAttempt = previousNativeAttempt;
                 if (prepared) await this.handleNativeActiveTrackChanged(prepared);
             }
             throw new RenditionTransitionFailure({ ...target }, outgoingPosition, "Rendition activation failed",
-                rejectedBeforeMutation, error?.code === "E_RENDITION_SUPERSEDED");
+                rejectedBeforeMutation, error?.code === "E_RENDITION_SUPERSEDED", rolledBack);
         } finally {
             if (timer !== undefined) BackgroundTimer.clearTimeout(timer);
             if (this.pendingRendition?.target === target) this.pendingRendition = null;
@@ -1166,8 +1209,11 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.activeRendition = { ...pending.rendition };
             this.pendingActivation = null;
             this.hasLoaded = true;
+            pendingRendition.loaded = true;
             this.renditionListeners.forEach(listener => listener(this.getActiveRendition()));
-            pendingRendition.confirm();
+            if (pending.rendition.kind === "mv" || (pendingRendition.readyPosition !== undefined && !pendingRendition.failed)) {
+                pendingRendition.confirm();
+            }
             return;
         }
         if (pending?.rendition && pendingRendition) {
@@ -1612,7 +1658,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 const progress = await NativeMpvPlayer.getRenditionProgress();
                 if (pending !== this.pendingActivation || generation !== this.expectedRendition()?.loadGeneration) return this.currentProgress;
                 if (progress && this.acceptsRenditionEvent(progress)) {
-                    this.currentProgress = { position: progress.position, duration: progress.duration, buffered: progress.buffered };
+                    this.currentProgress = { position: progress.position, duration: progress.duration, buffered: progress.buffered, ready: progress.ready === true };
                 }
                 return this.currentProgress;
             }
@@ -2263,9 +2309,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             if (typeof mediaId === "string" && mediaId.length > 0) {
                 // 在 Android Auto 等处点的歌：先让上层把意图记成要播（原生已经
                 // 解除了外部暂停的拦截），再由这里直接装载
+                let handled = false;
                 this.remoteListeners.remotePlayFromId?.forEach(listener => {
                     try {
-                        listener({ mediaId, enqueuedAt });
+                        handled = listener({ mediaId, enqueuedAt }) === true || handled;
                     } catch (error: any) {
                         errorLog(
                             "MpvPlayer 远程点播监听处理失败",
@@ -2273,7 +2320,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                         );
                     }
                 });
-                runRemoteTask(this.playTrack(mediaId), "点播");
+                if (!handled) runRemoteTask(this.playTrack(mediaId), "点播");
             }
             return;
         }

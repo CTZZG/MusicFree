@@ -1,4 +1,55 @@
-# MV implementation — P0
+# MV implementation — P0/P1
+
+## Actual App core wiring; normal UI still unfinished — 2026-11-03
+
+The10137foundation is independently accepted: CI41568241929 executes1414JVM
+tasks and its digested XML has37suites/182tests with no failure/error/skip.
+Quality209suites/1584Jest/40generator/1437layout/ESLint0/215 passes. API41568241994
+has real cache-miss app/test Kotlin compilation/780executed tasks and96native
+methods code0, including the failed-MV return case. All original25/73/70normal0/
+UI20/freeze5 checkers pass, both PNGs inspected; RAW_STALLED raw0/session4405ms,
+7normal+2UI paused windows0,source12/7. Six clock rounds288samples have
+worst-.031787774s/gap27ms. Actual stop110.43550307396944→first110.32499950396827
+is-.110503570s/maxpoll87ms. This is foundation evidence, not a later UI build.
+
+The new MusicVideoController is now connected to the actual TrackPlayer with
+its existing QualityChangeCoordinator commitTail. Selection, audio quality,
+manual source mutations and error recovery share that tail; network resolution
+stays outside it. Candidate browsing is not a playback request. Original song,
+queue URL/duration and saved quality are not replaced by a video's URL or clock.
+Native onScheduled capture immediately saves the original stop. Paused getters,
+seek/persistence/exit, manual rollback, Last.fm/crossfade and lyric publication
+are isolated from video time. Same-song late lyric responses are generation
+checked; native/status/LiveUpdate/car cues are cleared during MV and hydrated
+again after the original audio is actually ready. An explicit play during an
+audio return is applied only after readiness and while the latest intent permits.
+
+FILE_LOADED alone cannot complete an audio return. The owned PLAYBACK_RESTART
+and actual first raw sample must pass the original-.25s floor. An invalid first
+ready sample stays rejected even if a later sample catches up. The exact passing
+sample travels in the receipt; hydration does not replace it with another read.
+An exact pending/failed audio-return owner may retry only its saved checkpoint;
+a successful ready load/new song/stop invalidates that special ownership. A
+synchronous native rollback restores old metadata/rate and reports its identity
+and any captured original stop so the adapter does not invent a new active owner.
+
+Fresh OS NetInfo plus the existing mobile-data switch and session approval gate
+video requests. Native foreground/network checks happen before mutation; a native
+ConnectivityManager callback pauses an unapproved MV network even with JS asleep.
+This hold is separate from user/focus intent and does not auto-resume on Wi-Fi.
+A generation-scoped explicit resume rechecks current network/owner. Pausing is
+not a claim of zero transferred bytes, and ordinary audio-before-MV retains its
+existing behavior.
+
+Local proof includes actual controller/TrackPlayer/adapter/lyric tests, three
+rejected product mutants,43 actual native-preflight/catch cases compiled against
+synthetic JNI/dispatch boundaries (old10137fails5), and SDK36 module/View/full
+instrument compilation. The new failed-audio-return retry instrumentation still
+needs actual device execution. Existing P0 pixels do not prove this new module.
+Normal cover/more/candidate/inline/fullscreen/mini UI and final stable Release
+Beta/all+MV device acceptance remain unfinished. Actual rendered video EOF into
+prepared audio remains required; ordinary audio runway tests are not a substitute.
+No new production signature/physical ARM/audio/car/hardware-decoding proof.
 
 ## Accepted Fabric path and P1 rendition foundation — 2026-11-03
 

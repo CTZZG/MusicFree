@@ -111,6 +111,8 @@ export interface MpvLoadPayload {
     preservePositionFallback?: number;
     /** Separate the outgoing audio capture from the new video's zero start. */
     renditionKind?: "audio" | "mv";
+    videoNetworkPolicy?: "unmetered" | "allow-metered";
+    requireForeground?: boolean;
     positionMode?: "start-zero" | "restore-audio" | "preserve-mv";
     expectedMediaId?: string;
     expectedLoadGeneration?: number;
@@ -162,6 +164,7 @@ export type MpvMetadataPayload = Omit<
     | "preservePositionFallback"
     | "renditionKind" | "positionMode" | "expectedMediaId" | "expectedLoadGeneration"
     | "startPosition" | "playbackRate" | "sourceMediaId" | "sourceLoadGeneration"
+    | "videoNetworkPolicy" | "requireForeground"
 >;
 
 interface MpvPlayerNativeModule {
@@ -194,6 +197,7 @@ interface MpvPlayerNativeModule {
     getDuration(): Promise<number>;
     getAudioInfo?(): Promise<PlayerAudioInfo | null>;
     getVideoInfo(): Promise<MpvVideoInfo>;
+    resumeVideo(payload: { mediaId: string; loadGeneration: number; policy: "unmetered" | "allow-metered" }): Promise<void>;
     getRenditionProgress?(): Promise<MpvRenditionProgress | null>;
     isAndroidAutoConnected(): Promise<boolean>;
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
@@ -232,6 +236,7 @@ export interface MpvRenditionProgress extends MpvEventIdentity {
     position: number;
     duration: number;
     buffered: number;
+    ready?: boolean;
 }
 export interface MpvStateChangedEvent extends MpvEventIdentity {
     state: MpvPlayerState;
@@ -240,6 +245,7 @@ export interface MpvProgressEvent extends MpvEventIdentity {
     position: number;
     duration: number;
     buffered?: number;
+    ready?: boolean;
 }
 export interface MpvEndedEvent {
     /** 自然播放结束 vs 出错中断 */
@@ -317,6 +323,7 @@ function addListener<T>(
 
 const NativeMpvPlayer = {
     getVideoInfo: () => assertAvailable().getVideoInfo(),
+    resumeVideo: (payload: { mediaId: string; loadGeneration: number; policy: "unmetered" | "allow-metered" }) => assertAvailable().resumeVideo(payload),
     isAvailable: isMpvAvailable,
 
     initialize: (options: MpvInitializeOptions = {}) =>

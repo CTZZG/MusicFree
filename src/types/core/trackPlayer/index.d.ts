@@ -118,6 +118,7 @@ export interface IQualityChangeResult {
 export interface ITrackPlayer
     extends IInjectable,
         EventEmitter<{
+            [TrackPlayerEvents.AudioTimelineChanged]: () => void;
             [TrackPlayerEvents.PlayEnd]: () => void;
             [TrackPlayerEvents.CurrentMusicChanged]: (
                 musicItem: IMusic.IMusicItem | null,
@@ -143,6 +144,8 @@ export interface ITrackPlayer
      * 当前播放的歌曲
      */
     readonly currentMusic: IMusic.IMusicItem | null;
+    readonly audioTimelineAvailable?: boolean;
+    readonly timelineSerial?: number;
 
     /**
      * 下一首歌曲

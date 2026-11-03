@@ -127,6 +127,56 @@ class LiveUpdateEngineProgressTest {
     }
 
     @Test
+    fun failedAudioReturnRetriesOnlyItsSavedCheckpointAndReportsActualReadyClock() {
+        call { requireNotNull(module).pause(it) }
+        call { requireNotNull(module).seekTo(37.0, it) }
+        await("original checkpoint") { onMain { kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25 } }
+        val missing = File(tone.parentFile, tone.name + ".missing.mp4").absolutePath
+        val captured = (call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", missing, "mediaId", "raw-progress", "loadGeneration", 2.0,
+            "autoPlay", false, "renditionKind", "mv", "positionMode", "start-zero",
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+        ), it) } as Number).toDouble()
+        await("failed owned video") { onMain { engine.getPropertyBoolean("idle-active") == true && engine.getPropertyDouble("time-pos") == null } }
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", missing + ".audio", "mediaId", "raw-progress", "loadGeneration", 3.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured,
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 2.0,
+        ), it) }
+        await("failed owned audio return") { onMain { engine.getPropertyBoolean("idle-active") == true && engine.getPropertyDouble("time-pos") == null } }
+        for ((owner, position) in listOf(2.0 to captured, 3.0 to captured + 1.0)) {
+            var code: String? = null
+            assertThrows(AssertionError::class.java) {
+                call(onRejected = { code = it }) { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                    "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                    "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", position,
+                    "expectedMediaId", "raw-progress", "expectedLoadGeneration", owner,
+                ), it) }
+            }
+            assertEquals("E_RENDITION_REJECTED", code)
+        }
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 4.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured,
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 3.0,
+        ), it) }
+        await("actual playback restart at captured audio position") {
+            val progress = call { requireNotNull(module).getRenditionProgress(it) } as com.facebook.react.bridge.ReadableMap
+            progress.getDouble("loadGeneration") == 4.0 && progress.getBoolean("ready") &&
+                kotlin.math.abs(progress.getDouble("position") - captured) < .25
+        }
+        onMain { assertTrue(engine.getPropertyBoolean("pause") == true) }
+        // A successfully ready audio file no longer owns a failed-return retry.
+        assertThrows(AssertionError::class.java) {
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 5.0,
+                "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured,
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 4.0,
+            ), it) }
+        }
+    }
+
+    @Test
     fun ownedVideoEndCanRestoreAudioWithoutAnOutgoingRawClock() {
         call { requireNotNull(module).pause(it) }
         call { requireNotNull(module).seekTo(37.0, it) }

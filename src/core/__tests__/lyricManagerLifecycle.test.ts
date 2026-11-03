@@ -8,6 +8,7 @@ jest.mock("react-native-reanimated", () => ({
 jest.mock("@/utils/log", () => ({
     errorLog: jest.fn(),
     trace: jest.fn(),
+    devLog: jest.fn(),
 }));
 
 jest.mock("@/utils/mediaExtra", () => ({
@@ -99,14 +100,53 @@ describe("LyricManager listener lifecycle", () => {
         const secondSetup = lyricManager.setup();
         await Promise.all([firstSetup, secondSetup]);
 
-        expect(trackPlayer.on).toHaveBeenCalledTimes(1);
+        expect(trackPlayer.on).toHaveBeenCalledTimes(2);
         expect(addEventListener).toHaveBeenCalledTimes(3);
 
         lyricManager.dispose();
 
-        expect(trackPlayer.off).toHaveBeenCalledTimes(1);
+        expect(trackPlayer.off).toHaveBeenCalledTimes(2);
         removeListeners.forEach(remove => {
             expect(remove).toHaveBeenCalledTimes(1);
         });
     });
+});
+
+it("same-song MV entry invalidates a late lyric response and audio return can publish fresh lyrics", async () => {
+    const { TrackPlayerEvents } = require("@/constants/trackPlayerConst");
+    const listeners = new Map<string, () => void>();
+    const song = { id: "a", platform: "test", title: "Song", artist: "Artist" };
+    let release!: (value: unknown) => void;
+    const getLyric = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    const player: any = {
+        currentMusic: null, audioTimelineAvailable: true,
+        on: (event: string, fn: () => void) => listeners.set(event, fn), off: jest.fn(),
+        isCurrentMusic: (item: unknown) => item === song,
+        playerAdapter: { name: "mpv", getState: async () => "paused", addEventListener: () => ({ remove: jest.fn() }) },
+        getProgress: async () => ({ position: 0, duration: 300, buffered: 0 }),
+        getProgressSnapshot: () => ({ position: 0, duration: 300, buffered: 0, sequence: 0 }),
+    };
+    const plugin = { name: "test", methods: { getLyric }, supportedMethods: new Set(["getLyric"]) };
+    lyricManager.dispose();
+    lyricManager.injectDependencies(player, { getConfig: () => undefined } as any,
+        { getByMedia: () => plugin, getSearchablePlugins: () => [] } as any);
+    await lyricManager.setup();
+    player.currentMusic = song;
+    listeners.get(TrackPlayerEvents.CurrentMusicChanged)!();
+    expect(getLyric).toHaveBeenCalledTimes(1);
+    player.audioTimelineAvailable = false;
+    listeners.get(TrackPlayerEvents.AudioTimelineChanged)!();
+    release({ rawLrc: "[00:00]Late original lyric" });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(lyricManager.lyricState.lyrics).toHaveLength(0);
+    expect(lyricManager.getLyricDiagnosticSnapshot().nativeOutput.text).toBe("");
+    getLyric.mockImplementationOnce(() => Promise.resolve({ rawLrc: "[00:00]Restored lyric" }));
+    player.audioTimelineAvailable = true;
+    listeners.get(TrackPlayerEvents.AudioTimelineChanged)!();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(lyricManager.lyricState.lyrics).toHaveLength(1);
+    expect(lyricManager.getLyricDiagnosticSnapshot().nativeOutput.text).toBe("Restored lyric");
+    lyricManager.dispose();
 });

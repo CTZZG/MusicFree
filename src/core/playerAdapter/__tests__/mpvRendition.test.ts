@@ -28,7 +28,9 @@ const mockNative = {
     addErrorListener: (fn: any) => {
         mockEvents.error = fn; 
     },
-    addRemoteCommandListener: () => undefined,
+    addRemoteCommandListener: (fn: any) => {
+        mockEvents.remote = fn;
+    },
     addAndroidAutoConnectionChangedListener: () => undefined,
     addBrowseRequestListener: () => undefined,
 };
@@ -47,7 +49,12 @@ const a = { id: "a", title: "Song A", url: "https://example.test/a.mp3", duratio
 const b = { id: "b", title: "Song B", url: "https://example.test/b.mp3", duration: 200 };
 const last = () => (mockNative.loadAndPlay.mock.calls as any[]).at(-1)[0];
 const identity = (payload: any) => ({ mediaId: payload.mediaId, loadGeneration: payload.loadGeneration, renditionKind: payload.renditionKind ?? "audio" });
-const confirm = () => mockEvents.active({ ...last(), ...identity(last()), source: "loaded" });
+const confirmLoaded = () => mockEvents.active({ ...last(), ...identity(last()), source: "loaded" });
+const ready = (position = last().startPosition ?? 0) => mockEvents.progress({ ...identity(last()), position, duration: 300, buffered: position, ready: true });
+const confirm = () => {
+    confirmLoaded();
+    if (last().positionMode === "restore-audio") ready();
+};
 const video = (expected: PlayerRenditionIdentity): PlayerRenditionRequest => ({
     expected, kind: "mv", autoPlay: true,
     source: { url: "https://example.test/video.mp4" },
@@ -85,7 +92,7 @@ test("actual adapter separates native audio capture from MV zero, queue URL and 
     mockNative.updateMetadata.mockClear();
     const audio = adapter.getActiveRendition()!;
     const pending = adapter.replaceRendition(video(audio));
-    expect(adapter.getActiveRendition()).toEqual(audio);
+    expect(adapter.getActiveRendition()).toMatchObject(audio);
     expect(last()).toMatchObject({ url: "https://example.test/video.mp4", duration: 0, title: "Song A · MV", positionMode: "start-zero", playbackRate: 1, expectedLoadGeneration: audio.loadGeneration });
     expect(last()).not.toHaveProperty("preservePositionFallback");
     expect(last()).not.toHaveProperty("startPosition");
@@ -145,7 +152,7 @@ test("an audio getProgress promise cannot overwrite a later MV snapshot", async 
     await enter(adapter);
     mockEvents.progress({ ...identity(last()), position: 4, duration: 25, buffered: 5 });
     release(81);
-    expect(await old).toEqual({ position: 4, duration: 25, buffered: 5 });
+    expect(await old).toMatchObject({ position: 4, duration: 25, buffered: 5 });
 });
 
 test("audio return uses explicit captured position and original rate, without trackChanged", async () => {
@@ -298,4 +305,61 @@ test("extra runtime source/metadata fields cannot replace host identity or posit
     expect(publicValue).toMatchObject({ mediaId: expected.mediaId, kind: "mv" });
     publicValue.loadGeneration = -1;
     expect(adapter.getActiveRendition()!.loadGeneration).not.toBe(-1);
+});
+
+
+test("loaded and projected progress cannot release audio-return isolation before actual ready", async () => {
+    const adapter = await setup(); await enter(adapter);
+    let settled = false;
+    const pending = adapter.replaceRendition({ expected: adapter.getRenditionOwner()!, kind: "audio", autoPlay: false,
+        source: { url: a.url }, position: { mode: "restore-audio", positionSeconds: 37.25 } }).then(() => {
+        settled = true;
+    });
+    confirmLoaded();
+    mockEvents.progress({ ...identity(last()), position: 37.25, duration: 300, ready: false });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    ready(37.25); await pending;
+    expect(settled).toBe(true);
+});
+
+test("the first real ready audio clock below the checkpoint is rejected even if a later clock catches up", async () => {
+    const adapter = await setup(); await enter(adapter);
+    const pending = adapter.replaceRendition({ expected: adapter.getRenditionOwner()!, kind: "audio", autoPlay: false,
+        source: { url: a.url }, position: { mode: "restore-audio", positionSeconds: 37.25 } }).catch(error => error);
+    confirmLoaded(); ready(36.99); ready(37.25);
+    expect(await pending).toBeInstanceOf(RenditionTransitionFailure);
+});
+
+
+test("a native synchronous rollback reconciles the old owner and actual stopped checkpoint", async () => {
+    const adapter = await setup(); const old = adapter.getRenditionOwner()!;
+    mockNative.loadAndPlay.mockRejectedValueOnce(Object.assign(new Error("native command"), { code: "E_RENDITION_ROLLED_BACK",
+        userInfo: { mediaId: old.mediaId, loadGeneration: old.loadGeneration, outgoingAudioPosition: 37.5 } }));
+    const error = await adapter.replaceRendition(video(old)).catch(value => value);
+    expect(error).toMatchObject({ rolledBack: true, outgoingPosition: 37.5, rejectedBeforeMutation: false });
+    expect(adapter.getRenditionOwner()).toEqual(old);
+    expect(mockNative.stop).not.toHaveBeenCalled();
+});
+
+test("the audio return receipt preserves the exact passing ready sample instead of rereading the player", async () => {
+    const adapter = await setup(); await enter(adapter);
+    const pending = adapter.replaceRendition({ expected: adapter.getRenditionOwner()!, kind: "audio", autoPlay: false,
+        source: { url: a.url }, position: { mode: "restore-audio", positionSeconds: 37.25 } });
+    confirmLoaded(); ready(37.25);
+    mockEvents.progress({ ...identity(last()), position: 38.5, duration: 300, buffered: 40, ready: true });
+    const receipt = await pending;
+    expect(receipt.readyProgress).toMatchObject({ position: 37.25, ready: true });
+    expect(mockNative.getRenditionProgress).not.toHaveBeenCalled();
+});
+
+
+test("an owned remote-song handler prevents a second direct adapter source mutation", async () => {
+    const adapter = await setup(); await enter(adapter);
+    const handler = jest.fn(() => true); adapter.addEventListener("remotePlayFromId", handler);
+    const loaded = mockNative.loadAndPlay.mock.calls.length;
+    mockEvents.remote({ command: "playFromId", mediaId: "b" });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ mediaId: "b" }));
+    expect(mockNative.loadAndPlay).toHaveBeenCalledTimes(loaded);
 });
