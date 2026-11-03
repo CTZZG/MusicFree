@@ -57,8 +57,10 @@ mv_ready_count() {
     adb logcat -d -v threadtime | python3 -I "$HERE/mv/evidence.py" count-ready
 }
 mv_start_video() {
-    local title=$1 tag=$2 before
-    mv_tap '音乐视频' "$tag-open" || return 1
+    local title=$1 tag=$2 entry_label=$3 before
+    # The More sheet says "观看 MV"; the discovered cover shortcut says
+    # "音乐视频". Keep the actual entry explicit instead of tapping a title.
+    mv_tap "$entry_label" "$tag-open" || return 1
     before=$(mv_ready_count)
     mv_tap "$title, E2E Artist, E2E 测试源 A" "$tag-select" || return 1
     mv_wait_ready "$tag" "$before" || return 1
@@ -106,7 +108,7 @@ mv_app_scenarios() {
     sleep .5
     mv_record_session original
     mv_tap '更多操作' original-more || return 1
-    mv_start_video 'E2E H264 MV' h264 || return 1
+    mv_start_video 'E2E H264 MV' h264 '观看 MV' || return 1
     before=$(mv_ready_count); mv_seek .125 h264 || return 1; mv_wait_ready h264-seek "$before" || return 1
     mv_capture inline || return 1
     pass 'MV：明确选择H264出画' '实际PNG帧检验通过，原歌曲身份保留，ready后暂停'
@@ -163,7 +165,7 @@ mv_app_scenarios() {
     shot mv-missing-restored
     pass 'MV：实际404后恢复原音频' '原停点仍保留，不在错误页卡住，也不因回退自动播放'
     # The positive cover shortcut is only shown after actual candidate discovery.
-    mv_start_video 'E2E HEVC MV' hevc || return 1
+    mv_start_video 'E2E HEVC MV' hevc '音乐视频' || return 1
     before=$(mv_ready_count); mv_seek .08 hevc || return 1; mv_wait_ready hevc-seek "$before" || return 1
     mv_capture hevc || return 1
     pass 'MV：明确选择HEVC出画' '第二候选从头，不套原歌曲或上一MV时间'

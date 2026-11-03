@@ -1,12 +1,18 @@
 """Run the actual scenario function with host command boundaries, never a device claim."""
 import os
+import json
 from pathlib import Path
 import shlex
 import subprocess
 import sys
 import tempfile
 sys.dont_write_bytecode = True
-source = Path(__file__).parents[1] / 'mv.sh'
+source = Path(os.environ.get('MV_SCENARIO_SOURCE', Path(__file__).parents[1] / 'mv.sh'))
+# Actual Beta244 More-sheet clickable node, artifact13237779864, App d550.
+# Its wording differs from the positive cover shortcut's localized title.
+recorded_more_node = dict(package='fun.upup.musicfree', description='观看 MV',
+                          visible=True, enabled=True, clickable=True, bounds=[0, 1906, 1080, 2037])
+cover_label = json.loads((Path(__file__).parents[2] / 'src/core/i18n/languages/zh-cn.json').read_text())['musicVideo.title']
 script = r'''
 set -uo pipefail
 source SOURCE
@@ -14,7 +20,13 @@ OUT=OUTDIR; mkdir -p "$OUT/mv"; ACTIVITY=fun.upup.musicfree/.MainActivity
 call() { printf '%s\n' "$1" >> "$OUT/calls"; test "$1" != "$FAIL_AT"; }
 mv_pause() { call pause; }
 mv_seek() { call "seek-$2"; }
-mv_tap() { call "tap-$2"; }
+mv_tap() {
+    case "$2" in
+        h264-open) [ "$1" = "$MORE_LABEL" ] || return 1 ;;
+        hevc-open|missing-open) [ "$1" = "$COVER_LABEL" ] || return 1 ;;
+    esac
+    call "tap-$2"
+}
 mv_snapshot() { call "snapshot-$2"; }
 mv_wait_ready() { call "ready-$1"; }
 mv_capture() { call "capture-$1"; }
@@ -33,7 +45,8 @@ cases = [''] + ['capture-' + p for p in phases] + ['ready-h264-seek', 'tap-alter
 for fail in cases:
     with tempfile.TemporaryDirectory() as temp:
         code = script.replace('SOURCE', shlex.quote(str(source))).replace('OUTDIR', shlex.quote(temp))
-        run = subprocess.run(['bash', '-c', code], env=dict(os.environ, FAIL_AT=fail), capture_output=True, text=True)
+        run = subprocess.run(['bash', '-c', code], env=dict(os.environ, FAIL_AT=fail,
+                             MORE_LABEL=recorded_more_node['description'], COVER_LABEL=cover_label), capture_output=True, text=True)
         calls = (Path(temp) / 'calls').read_text().splitlines()
         if not fail:
             assert run.returncode == 0, run.stderr
