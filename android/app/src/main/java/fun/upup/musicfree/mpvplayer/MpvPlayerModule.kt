@@ -2440,7 +2440,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     if (renditionTrackingEnabled) emitProgress(force = true)
                     if (renditionTrackingEnabled) {
                         Log.d(TAG, "rendition ready[$generation]: kind=$renditionKind " +
-                            "position=${MPVLib.getPropertyDouble("time-pos")} paused=${MPVLib.getPropertyBoolean("pause")}")
+                            "position=${MPVLib.getPropertyDouble("time-pos")} paused=${MPVLib.getPropertyBoolean("pause")} " +
+                            "videoCodec=${MPVLib.getPropertyString("video-codec")?.substringBefore(" ")} " +
+                            "width=${MPVLib.getPropertyInt("width")} height=${MPVLib.getPropertyInt("height")} " +
+                            "vo=${MPVLib.getPropertyString("current-vo")} hwdec=${MPVLib.getPropertyString("hwdec-current")}")
                     }
                 }
                 MPVLib.MPV_EVENT_END_FILE -> {

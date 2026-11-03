@@ -36,6 +36,10 @@ FOCUS_PKG=fun.upup.musicfree.e2e.focus
 E2E_LEGACY_APK=${E2E_LEGACY_APK:-}
 E2E_MMKV_SEED=${E2E_MMKV_SEED:-}
 E2E_SUITE=${E2E_SUITE:-all}
+case "$E2E_SUITE" in
+    all|experience|lyric-boundaries|playback-font|player-observation|storage|download-source|power|library|backup|perf|crash|mv) ;;
+    *) echo "Unknown E2E_SUITE: $E2E_SUITE" >&2; exit 2 ;;
+esac
 E2E_AUDIO_HARDENING=${E2E_AUDIO_HARDENING:-}
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
@@ -326,6 +330,11 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
+if [ "$E2E_SUITE" = mv ]; then
+    source "$HERE/mv.sh"
+    run_mv_checks
+    finish
+fi
 if [ "$E2E_SUITE" = backup ]; then
     source "$HERE/backup.sh"
     run_backup_checks

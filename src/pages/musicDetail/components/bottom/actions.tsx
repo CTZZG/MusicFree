@@ -86,16 +86,16 @@ export default function PlayerActions(props: IPlayerActionsProps) {
                     });
                 }}
             />
-            {lyricTab ? (
+            {lyricTab && !isVideo ? (
                 <ActionButton
-                    icon={isVideo ? "ellipsis-vertical" : "lyric"}
-                    selected={!isVideo && lyricTab.showingLyric}
-                    accessibilityLabel={isVideo ? t("musicVideo.options") : t(
+                    icon="lyric"
+                    selected={lyricTab.showingLyric}
+                    accessibilityLabel={t(
                         lyricTab.showingLyric
                             ? "musicDetail.showCover.a11y"
                             : "musicDetail.showLyric.a11y",
                     )}
-                    onPress={() => isVideo ? showPanel("MusicVideo") : lyricTab.toggle()}
+                    onPress={lyricTab.toggle}
                 />
             ) : null}
             <ActionButton

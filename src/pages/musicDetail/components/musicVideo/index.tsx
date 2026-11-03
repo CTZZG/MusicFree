@@ -63,12 +63,7 @@ export default function MusicVideoContent({
     const visible = focused && appActive;
     const hasFrame = !!key && frameKey === key;
     const error = state.phase !== "audio" ? state.error : undefined;
-    const showControls =
-        !fullscreen ||
-        controlsVisible ||
-        musicState !== "playing" ||
-        !hasFrame ||
-        !!error;
+    const showControls = !fullscreen || controlsVisible || !hasFrame || !!error;
     useEffect(() => {
         const subscription = AppState.addEventListener("change", value =>
             setAppActive(value === "active"),
@@ -80,7 +75,7 @@ export default function MusicVideoContent({
     }, [focused, fullscreen, onFullscreen]);
     useEffect(() => {
         setControlsVisible(true);
-    }, [fullscreen, key]);
+    }, [fullscreen, key, musicState]);
     useEffect(() => {
         if (
             !fullscreen ||
@@ -158,34 +153,39 @@ export default function MusicVideoContent({
                     );
                 }}>
                 {owner?.kind === "mv" && videoWidth > 0 && videoHeight > 0 ? (
-                    <MpvVideo
-                        testID="music-video-surface"
-                        accessibilityLabel={t("musicVideo.surface")}
-                        mediaId={owner.mediaId}
-                        loadGeneration={owner.loadGeneration}
-                        outputVisible={visible}
+                    <View
                         style={[
                             styles.video,
                             fullscreen
                                 ? styles.fullscreenVideo
                                 : styles.inlineVideo,
                             { width: videoWidth, height: videoHeight },
-                        ]}
-                        onVideoFrame={event => {
-                            const current =
-                                TrackPlayer.playerAdapter.getRenditionOwner?.();
-                            if (
-                                key &&
-                                event.nativeEvent.mediaId === owner.mediaId &&
-                                event.nativeEvent.loadGeneration ===
-                                    owner.loadGeneration &&
-                                current?.kind === "mv" &&
-                                current.mediaId === owner.mediaId &&
-                                current.loadGeneration === owner.loadGeneration
-                            )
-                                setFrameKey(key);
-                        }}
-                    />
+                        ]}>
+                        <MpvVideo
+                            testID="music-video-surface"
+                            accessibilityLabel={t("musicVideo.surface")}
+                            mediaId={owner.mediaId}
+                            loadGeneration={owner.loadGeneration}
+                            outputVisible={visible}
+                            style={styles.nativeVideo}
+                            onVideoFrame={event => {
+                                const current =
+                                    TrackPlayer.playerAdapter.getRenditionOwner?.();
+                                if (
+                                    key &&
+                                    event.nativeEvent.mediaId ===
+                                        owner.mediaId &&
+                                    event.nativeEvent.loadGeneration ===
+                                        owner.loadGeneration &&
+                                    current?.kind === "mv" &&
+                                    current.mediaId === owner.mediaId &&
+                                    current.loadGeneration ===
+                                        owner.loadGeneration
+                                )
+                                    setFrameKey(key);
+                            }}
+                        />
+                    </View>
                 ) : null}
                 {!hasFrame || returning ? (
                     <View pointerEvents="none" style={styles.waiting}>
@@ -326,6 +326,7 @@ export default function MusicVideoContent({
     );
 }
 const styles = StyleSheet.create({
+    nativeVideo: { width: "100%", height: "100%" },
     video: { backgroundColor: "black", overflow: "hidden" },
     inlineVideo: { borderRadius: 12 },
     fullscreenVideo: { borderRadius: 0 },

@@ -6,7 +6,7 @@ import re
 import sys
 
 
-def target(text, label):
+def target(text, label, visible_only=False):
     if not re.search(r'(?m)^INSTRUMENTATION_CODE: -1\s*$', text):
         raise ValueError('public UI snapshot did not complete')
     fields = dict(re.findall(r'(?m)^INSTRUMENTATION_RESULT: ([a-zA-Z]+)=([^\r\n]*)', text))
@@ -15,12 +15,12 @@ def target(text, label):
     node = json.loads(fields['match'])
     tree = json.loads(fields['tree'])
     matching = [n for n in tree if n.get('visible') is True and n.get('enabled') is True
-                and n.get('clickable') is True and n.get('package') == 'fun.upup.musicfree'
+                and (visible_only or n.get('clickable') is True) and n.get('package') == 'fun.upup.musicfree'
                 and label in [n.get('text'), n.get('description')]]
     if matching != [node]:
         raise ValueError('reported target not unique in the actual tree')
     if (node.get('package') != 'fun.upup.musicfree' or node.get('enabled') is not True
-            or node.get('visible') is not True or node.get('clickable') is not True
+            or node.get('visible') is not True or (not visible_only and node.get('clickable') is not True)
             or label not in [node.get('text'), node.get('description')]):
         raise ValueError('incorrect actual public UI target')
     left, top, right, bottom = node['bounds']
@@ -46,6 +46,10 @@ if __name__ == '__main__':
             def test_incomplete_ambiguous_or_invalid_bounds_rejected(self):
                 for text in [self.raw(code=0), self.raw().replace('matches=1', 'matches=2'), self.raw(bounds=[0, 0, 0, 0]), '']:
                     with self.assertRaises(ValueError): target(text, '更多操作')
+            def test_visible_only_mode_does_not_change_the_default_clickable_contract(self):
+                raw = self.raw(clickable=False)
+                with self.assertRaises(ValueError): target(raw, '更多操作')
+                self.assertEqual(target(raw, '更多操作', True), (896, 1324))
             def test_reported_match_must_belong_to_unique_raw_tree(self):
                 raw = self.raw()
                 tree = re.search(r'(?m)^INSTRUMENTATION_RESULT: tree=(.*)$', raw)[1]
@@ -55,7 +59,7 @@ if __name__ == '__main__':
         unittest.main(argv=[sys.argv[0]])
     else:
         try:
-            print(*target(Path(sys.argv[1]).read_text(), sys.argv[2]))
+            print(*target(Path(sys.argv[1]).read_text(), sys.argv[2], '--visible' in sys.argv[3:]))
         except (ValueError, OSError, KeyError, IndexError, TypeError) as error:
             print(f'public UI rejected: {error}', file=sys.stderr)
             sys.exit(1)

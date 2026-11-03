@@ -22,6 +22,7 @@ public final class UiSnapshot extends Instrumentation {
         int code = Activity.RESULT_CANCELED;
         try {
             String label = new String(Base64.decode(arguments.getString("labelBase64", ""), Base64.DEFAULT), StandardCharsets.UTF_8);
+            boolean visibleOnly = "visible".equals(arguments.getString("matchKind", "clickable"));
             if (label.isEmpty() || label.length() > 200) throw new IllegalArgumentException("label");
             long deadline = SystemClock.uptimeMillis() + 15000;
             do {
@@ -40,7 +41,7 @@ public final class UiSnapshot extends Instrumentation {
                         .put("visible", n.isVisibleToUser()).put("enabled", n.isEnabled()).put("clickable", n.isClickable())
                         .put("bounds", new JSONArray(new int[]{bounds.left, bounds.top, bounds.right, bounds.bottom}));
                     nodes.put(entry);
-                    if (n.isVisibleToUser() && n.isEnabled() && n.isClickable()
+                    if (n.isVisibleToUser() && n.isEnabled() && (visibleOnly || n.isClickable())
                         && "fun.upup.musicfree".equals(text(n.getPackageName()))
                         && (label.equals(text(n.getText())) || label.equals(text(n.getContentDescription())))) {
                         match = entry; matches++;

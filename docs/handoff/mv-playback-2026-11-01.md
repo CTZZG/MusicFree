@@ -1,5 +1,34 @@
 # MV implementation — P0/P1/P2
 
+## Normal-product MV candidate and reusable suite — 2026-11-03
+
+The normal UI commit af73 is independently accepted by CI25141607620689
+(216suites1660Jest/40generator1509layout/ESLint0/215; actualJVM1414tasks,
+digested XML37/182all0) and API15541607620723 (real cache-miss app/testKotlin
+780tasks,97methods0, original25/73/70normal0/UI20+images/freeze5 complete).
+Freeze raw0/session4404ms,7ordinary+2UI pause windows0,source12/7/focus;
+clock6rounds288worst-.046393619/gap26;actualold117.79744143596957→
+first117.83199950396825/maxpoll76. This still does not prove normalMV frames.
+
+The candidate followup wraps the same native View in RN clipping, allows explicit
+fullscreen-control hiding while paused (no paused auto-hide), gives candidates
+clear labels, and removes a redundant MV-options bottom action. The new mv suite
+uses the normal App/public controls,3 original public coded video fixtures, and
+raw native generation/Surface/clock facts. It checks inline/fullscreen/rotation/
+Home, same-cut quality, explicit different-cut restart, original-song identity/
+progress persistence, explicit return, actual404 recovery, HEVC pixels, and video
+EOF into prepared audio without a subsequent JS reload. Only filtered synthetic
+song fields are exported. Its own Java UI helper builds with SDK36/test signing;
+9host evidence cases include actual decoded fixture frames and wrong-file rejection,
+and14 host driver cases stop at the first failure. These are not device passes.
+
+The first script checks caught and fixed malformed synthetic-ready rows, assumed
+RGB equality after different color conversions, a missing host fixture directory,
+and an unused binding; failures remain in scratch. Full local quality is recorded
+for the candidate before push. The fixed AAR/dependencies/versions/audio gates are
+unchanged. Actual normal Release Beta/all plus reused mv remains pending; maintain
+draft until the original artifacts, images and recordings are independently read.
+
 ## Normal App UI implementation — 2026-11-03 (device acceptance pending)
 
 The current core checkpoint ff450 is independently accepted by CI250

@@ -193,6 +193,13 @@ export default function MusicVideo() {
                             <Pressable
                                 key={`${item.providerKey}:${item.id}`}
                                 accessibilityRole="button"
+                                accessibilityLabel={[
+                                    item.title,
+                                    item.artist,
+                                    item.providerName,
+                                ]
+                                    .filter(Boolean)
+                                    .join(", ")}
                                 disabled={video?.phase === "returning"}
                                 style={styles.item}
                                 onPress={() =>
