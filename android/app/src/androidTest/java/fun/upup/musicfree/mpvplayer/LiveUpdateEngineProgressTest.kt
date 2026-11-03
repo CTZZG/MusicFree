@@ -161,9 +161,12 @@ class LiveUpdateEngineProgressTest {
             "expectedMediaId", "raw-progress", "expectedLoadGeneration", 3.0,
         ), it) }
         await("actual playback restart at captured audio position") {
-            val progress = call { requireNotNull(module).getRenditionProgress(it) } as com.facebook.react.bridge.ReadableMap
-            progress.getDouble("loadGeneration") == 4.0 && progress.getBoolean("ready") &&
-                kotlin.math.abs(progress.getDouble("position") - captured) < .25
+            val progress = call { requireNotNull(module).getRenditionProgress(it) } as? com.facebook.react.bridge.ReadableMap
+                ?: return@await false
+            if (progress.getDouble("loadGeneration") != 4.0 || !progress.getBoolean("ready")) return@await false
+            assertTrue("first ready audio retains its captured position",
+                kotlin.math.abs(progress.getDouble("position") - captured) < .25)
+            true
         }
         onMain { assertTrue(engine.getPropertyBoolean("pause") == true) }
         // A successfully ready audio file no longer owns a failed-return retry.
