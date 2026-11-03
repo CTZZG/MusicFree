@@ -79,6 +79,13 @@ flow() {
         n=$((n + 1))
         tag="${file%.yaml}-$n"
     done
+    # Flows can live in a subdirectory (for example mv/start.yaml). The
+    # handoff and CLI both write beside this prefix before Maestro creates
+    # its own output directory, so establish the parent first.
+    if ! mkdir -p "$(dirname "$OUT/maestro/$tag")"; then
+        fail "$name" "无法创建测试日志目录，未启动测试驱动"
+        return 1
+    fi
     local args=(test --test-output-dir "$OUT/maestro/$tag" "$@")
     if [ "$DRIVER_INSTALLED" -eq 1 ]; then
         # Each CLI invocation owns one instrumentation server. A prior server
