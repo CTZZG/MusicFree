@@ -339,6 +339,8 @@ source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
 if [ "$E2E_SUITE" = mv ]; then
     source "$HERE/mv.sh"
+    # Isolated diagnostic branch only: controlled observations, not MV acceptance.
+    source "$HERE/mv/fullscreen-probe.sh"
     run_mv_checks
     finish
 fi

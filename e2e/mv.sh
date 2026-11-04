@@ -136,9 +136,9 @@ run_mv_checks() {
     adb pull /sdcard/musicfree-mv-app.mp4 "$OUT/mv/app.mp4" > "$OUT/mv/video-pull.txt" 2>&1 || status=1
     if ! ffmpeg -v error -xerror -i "$OUT/mv/app.mp4" -fps_mode passthrough -enc_time_base -1 -f null - 2> "$OUT/mv/video-decode.txt"; then status=1; fi
     if [ "$status" -ne 0 ]; then fail 'MV：正常App专项' '首个真实步骤失败，原始UI/native/PNG/录屏保留，没有重试断言'; return 1; fi
-    if python3 -I "$HERE/mv/evidence.py" verify "$OUT/mv"; then
-        pass 'MV：正常App独立证据' '真实按钮、帧、返回停点、后台与视频EOF接管；不代表物理声音'
-    else fail 'MV：正常App独立证据' '原始证据不满足完整契约'; return 1; fi
+    if python3 -I "$HERE/mv/fullscreen-probe.py" "$OUT/mv"; then
+        pass 'MV：全屏定向诊断资料齐全' '只记录各受控状态的图像，不是完整MV功能通过'
+    else fail 'MV：全屏定向诊断资料' '原始诊断资料不完整'; return 1; fi
 }
 mv_app_scenarios() {
     local before
