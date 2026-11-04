@@ -37,6 +37,23 @@ neither those counters nor the temporary manual diagnostic workflow.
 
 ## Source and binary scope
 
+`android-surface-resize.patch` keeps the Android EGL context while rebuilding
+only its window drawing target when the presentation dimensions change. The
+embedding View updates `android-surface-size` on a live Surface rather than
+toggling `vid`/`vo`: mpv implements a VO replacement by rebuilding the video
+chain and issuing an internal refresh seek. Normal-App recordings247/248 exposed
+black paused pictures during fullscreen/inline transitions with that sequence.
+An earlier viewport-only version instead retained a cropped EGL back buffer.
+
+The resize patch makes the EGL target extent agree with the new native-window
+geometry without replacing the decoder, file or playback clock. Source hashes
+are pinned independently; the original AudioTrack patches remain unchanged.
+`check-surface-resize.py` compiles the real C function and checks resize, context
+retention and failure paths against synthetic EGL/window boundaries, including
+the upstream implementation and two negative controls. This is not device pixel
+evidence; the normal-App MV scenario must still verify actual rendered frames,
+paused position, ownership and audio return using the rebuilt candidate.
+
 - `sources.lock.json` pins all sources, API 26 and NDK 27.1.12297006. Dependency
   versions follow the referenced CTZZG/libmpv-android build recipe.
 - mpv and its static subtitle/rendering dependencies are rebuilt. The shared

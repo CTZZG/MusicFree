@@ -15,6 +15,12 @@ spec.loader.exec_module(evidence)
 RAW = '''MpvPlayerModule rendition committed[2]: kind=mv mode=start-zero captured=37.125 target=0.0 instance=7
 MpvVideoOutput attached=true owner=1 generation=2 instance=7
 MpvPlayerModule rendition ready[2]: kind=mv position=0.0 paused=true
+MV_APP_LAYOUT_FULLSCREEN_BEGIN
+MV_APP_LAYOUT_FULLSCREEN_END
+MV_APP_LAYOUT_INLINE_BEGIN
+MV_APP_LAYOUT_INLINE_END
+MV_APP_LAYOUT_ROTATION_BEGIN
+MV_APP_LAYOUT_ROTATION_END
 MV_APP_HOME_BEGIN
 MpvVideoOutput attached=false owner=1 generation=2 instance=7
 MV_APP_HOME_END
@@ -34,6 +40,17 @@ FIRST = dict(title='E2E MV Song A', position=37125, state='PAUSED')
 class Evidence(unittest.TestCase):
     def test_actual_capture_return_and_eof_contract(self):
         self.assertTrue(evidence.verify_native(RAW, FIRST, FIRST)['actualPreparedPromotion'])
+
+    def test_layout_cannot_reset_output_or_trigger_implicit_seek(self):
+        for layout in ('FULLSCREEN', 'INLINE', 'ROTATION'):
+            for action in ['Set property: vid="no"', 'Set property: vo="null"',
+                           'refresh seek to 4.25', 'loadAndPlay[9]',
+                           'rendition committed[9]']:
+                raw = RAW.replace(f'MV_APP_LAYOUT_{layout}_BEGIN',
+                                  f'MV_APP_LAYOUT_{layout}_BEGIN\n{action}')
+                with self.assertRaises(AssertionError): evidence.verify_native(raw, FIRST, FIRST)
+        with self.assertRaises(AssertionError):
+            evidence.verify_native(RAW.replace('MV_APP_LAYOUT_INLINE_END', ''), FIRST, FIRST)
 
     def test_changed_audio_checkpoint_and_bad_first_ready_rejected(self):
         for raw in [RAW.replace('target=37.125', 'target=6.0'), RAW.replace('position=37.125', 'position=36.8')]:

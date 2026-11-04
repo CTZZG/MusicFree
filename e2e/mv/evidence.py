@@ -175,6 +175,11 @@ def verify_native(raw, first, returned):
     background = raw.split('MV_APP_HOME_BEGIN', 1)[1].split('MV_APP_HOME_END', 1)[0]
     assert re.search(r'MpvVideoOutput.*attached=false ', background), 'Surface not released inside Home window'
     assert not re.search(r'MpvVideoOutput.*attached=true ', background), 'Surface attached while Home visible'
+    for layout in ('FULLSCREEN', 'INLINE', 'ROTATION'):
+        begin, end = f'MV_APP_LAYOUT_{layout}_BEGIN', f'MV_APP_LAYOUT_{layout}_END'
+        assert raw.count(begin) == raw.count(end) == 1, 'missing or duplicated layout window'
+        span = raw.split(begin, 1)[1].split(end, 1)[0]
+        assert not re.search(r'Set property: (?:vid|vo)=|refresh seek|loadAndPlay\[\d+\]|rendition committed\[', span), 'layout reset the video chain or sought'
     assert re.search(r'END_FILE completed: endedMediaId=.*mv-audio-a.*promotedMediaId=.*mv-audio-b.*autoAdvanced=true', raw), 'no rendered-video-to-prepared-audio promotion'
     # A JS loadfile after native EOF would reset/reload the prepared successor.
     end = raw.rsplit('autoAdvanced=true', 1)[1]

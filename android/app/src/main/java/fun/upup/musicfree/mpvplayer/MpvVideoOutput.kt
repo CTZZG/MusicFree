@@ -71,12 +71,19 @@ internal class MpvVideoOutput(
         if (!canRender(bound.mediaId, bound.generation) || !bound.surface.isValid) return
         try {
             val previous = attached
-            if (previous == null || previous.surface !== bound.surface ||
-                previous.width != bound.width || previous.height != bound.height) {
+            if (previous != null && previous.surface === bound.surface &&
+                previous.owner == bound.owner && previous.mediaId == bound.mediaId &&
+                previous.generation == bound.generation) {
+                // The Android backend rebuilds only its EGL window target for
+                // EXTERNAL_RESIZE. Toggling vid/vo here would flush the decoder
+                // and cause mpv's internal refresh seek even while paused.
+                if ((previous.width != bound.width || previous.height != bound.height) &&
+                    bound.width > 0 && bound.height > 0) {
+                    mpv.setPropertyString("android-surface-size", "${bound.width}x${bound.height}")
+                }
+                attached = bound
+            } else {
                 detach()
-                // Recreate the output at its new bounds. Updating only the viewport
-                // on a paused TextureView can retain the old EGL render target and
-                // crop the frame. The mpv instance, file, clock and intent stay put.
                 if (bound.width > 0 && bound.height > 0) {
                     mpv.setPropertyString("android-surface-size", "${bound.width}x${bound.height}")
                 }

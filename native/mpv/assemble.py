@@ -16,7 +16,7 @@ args = parser.parse_args()
 if hashlib.sha256(args.base_aar.read_bytes()).hexdigest() != LOCK["baseAarSha256"]:
     raise SystemExit("unexpected base AAR")
 inputs = {name: hashlib.sha256((HERE / name).read_bytes()).hexdigest()
-          for name in ["audiotrack_latency.h", "audiotrack-startup-delay.patch", "sources.lock.json", "rebuild.py"]}
+          for name in ["audiotrack_latency.h", "audiotrack-startup-delay.patch", "android-surface-resize.patch", "sources.lock.json", "rebuild.py"]}
 libraries = {}
 for abi in ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]:
     lib = args.work_dir / "output" / abi / "libmpv.so"
