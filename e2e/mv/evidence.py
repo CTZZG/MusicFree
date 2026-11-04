@@ -79,7 +79,7 @@ def persist(text):
 
 
 def picture_identity(cropped, phase, frame):
-    name = 'hevc-720.mp4' if phase in ('hevc', 'alternate') else 'h264-360.mp4' if phase == 'quality' else 'h264-720.mp4'
+    name = 'hevc-720.mp4' if phase in ('hevc', 'alternate', 'first-hevc') else 'h264-360.mp4' if phase == 'quality' else 'h264-720.mp4'
     source = HERE.parent / 'fixtures/mv' / name
     expected_hash = json.loads((source.parent / 'manifest.json').read_text())[name]['sha256']
     assert hashlib.sha256(source.read_bytes()).hexdigest() == expected_hash
@@ -118,13 +118,19 @@ def capture(root, phase):
     codec, decoded_width, decoded_height, vo, hwdec = metadata[-1]
     expected_width, expected_height = (640, 360) if phase == 'quality' else (1280, 720)
     assert (int(decoded_width), int(decoded_height)) == (expected_width, expected_height)
-    assert re.search('hevc|h265', codec.lower().replace('.', '')) if phase in ('hevc', 'alternate') else re.search('h264|avc', codec.lower().replace('.', ''))
+    assert re.search('hevc|h265', codec.lower().replace('.', '')) if phase in ('hevc', 'alternate', 'first-hevc') else re.search('h264|avc', codec.lower().replace('.', ''))
     assert vo == 'gpu-next'
 
-    if phase not in ('before-home', 'foreground'):
+    if phase not in ('before-home', 'foreground', 'first-h264', 'first-hevc'):
         expected = round(native[-1]['position'] * 24)
         assert native[-1]['paused'] is True and abs(frame - expected) <= 1, ('rendered frame differs from actual paused ready position', phase, frame, expected)
     identity = picture_identity(cropped, phase, frame)
+    if phase in ('first-h264', 'first-hevc'):
+        budget = json.loads((root / f'{phase}-budget.json').read_text())
+        assert (0 < budget['startedAtMs'] <= budget['capturedAtMs'] <= budget['deadlineMs']
+                and budget['deadlineMs'] - budget['startedAtMs'] == 15000), 'first picture exceeded the shared15s budget'
+        # The observer's absent-label report is checked against its actual tree.
+        ui.target((root / f'ui-surface-{phase}.txt').read_text(), 'MV 视频画面', True, '正在等待 MV 画面…')
     result = dict(phase=phase, videoCodec=codec, decodedWidth=int(decoded_width), decodedHeight=int(decoded_height), vo=vo, hwdec=hwdec, pictureIdentity=identity, bounds=bounds, screen=screen, frame=frame, commit=starts[-1], ready=native[-1], lease=leases[-1])
     (root / f'frame-{phase}.json').write_text(json.dumps(result, indent=2) + '\n')
     return result
@@ -178,7 +184,7 @@ def verify_native(raw, first, returned):
 
 
 def verify(root):
-    phases = ['inline', 'fullscreen', 'returned-inline', 'landscape', 'portrait', 'before-home', 'foreground', 'quality', 'alternate', 'hevc']
+    phases = ['inline', 'fullscreen', 'returned-inline', 'landscape', 'portrait', 'before-home', 'foreground', 'quality', 'alternate', 'hevc', 'first-h264', 'first-hevc']
     facts = {p: json.loads((root / f'frame-{p}.json').read_text()) for p in phases}
     assert facts['landscape']['screen']['width'] > facts['landscape']['screen']['height']
     assert facts['landscape']['bounds'][2] - facts['landscape']['bounds'][0] > facts['portrait']['bounds'][2] - facts['portrait']['bounds'][0]

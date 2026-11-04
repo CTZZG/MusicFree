@@ -1,14 +1,19 @@
 # shellcheck shell=bash
 # Normal product APK, public controls + native transition/Surface logs; no diagnostic App entry.
+mv_clock_ms() { date +%s%3N; }
 mv_snapshot() {
-    local label=$1 tag=$2 kind=${3:-clickable} encoded
+    local label=$1 tag=$2 kind=${3:-clickable} absent=${4:-} timeout_ms=${5:-15000} encoded absent_encoded
     encoded=$(printf '%s' "$label" | base64 | tr -d '\n')
+    absent_encoded=$(printf '%s' "$absent" | base64 | tr -d '\n')
     adb shell am instrument -w -r -e labelBase64 "$encoded" -e matchKind "$kind" \
+        -e absentLabelBase64 "$absent_encoded" -e timeoutMs "$timeout_ms" \
         fun.upup.musicfree.e2e.ui/.UiSnapshot > "$OUT/mv/ui-$tag.txt" 2>&1 || return 1
+    local args=()
+    if [ -n "$absent" ]; then args+=(--absent "$absent"); fi
     if [ "$kind" = visible ]; then
-        python3 -I "$HERE/lib/ui_observer.py" "$OUT/mv/ui-$tag.txt" "$label" --visible > "$OUT/mv/point-$tag.txt"
+        python3 -I "$HERE/lib/ui_observer.py" "$OUT/mv/ui-$tag.txt" "$label" --visible "${args[@]}" > "$OUT/mv/point-$tag.txt"
     else
-        python3 -I "$HERE/lib/ui_observer.py" "$OUT/mv/ui-$tag.txt" "$label" > "$OUT/mv/point-$tag.txt"
+        python3 -I "$HERE/lib/ui_observer.py" "$OUT/mv/ui-$tag.txt" "$label" "${args[@]}" > "$OUT/mv/point-$tag.txt"
     fi
 }
 mv_tap() {
@@ -19,7 +24,7 @@ mv_tap() {
 }
 mv_pause() {
     adb shell input keyevent KEYCODE_MEDIA_PAUSE || return 1
-    wait_for_state PAUSED 'E2E MV Song A' 15
+    wait_for_state PAUSED "${1:-E2E MV Song A · MV}" 15
 }
 mv_record_session() { session > "$OUT/mv/session-$1.json"; }
 mv_persist() {
@@ -34,19 +39,29 @@ mv_seek() {
     adb shell input swipe "$x" "$y" "$x" "$y" 200 || return 1
 }
 mv_capture() {
-    local phase=$1
-    mv_snapshot 'MV 视频画面' "surface-$phase" visible || return 1
+    local phase=$1 source_snapshot=${2:-} picture_deadline=${3:-} picture_started=${4:-}
+    if [ -n "$source_snapshot" ]; then
+        cp "$source_snapshot" "$OUT/mv/ui-surface-$phase.txt" || return 1
+    else
+        mv_snapshot 'MV 视频画面' "surface-$phase" visible || return 1
+    fi
     # One capture after the native seek-ready event; no retrying stale screenshots.
     sleep .25
     adb exec-out screencap -p > "$OUT/mv/$phase.png" || return 1
+    if [ -n "$picture_deadline" ]; then
+        local captured_at
+        captured_at=$(mv_clock_ms)
+        printf '{"startedAtMs":%s,"capturedAtMs":%s,"deadlineMs":%s}\n' "$picture_started" "$captured_at" "$picture_deadline" > "$OUT/mv/$phase-budget.json"
+        if [ "$captured_at" -gt "$picture_deadline" ]; then return 1; fi
+    fi
     adb logcat -d -v threadtime > "$OUT/mv/log-$phase.txt" || return 1
     mv_record_session "$phase"
     mv_persist "$phase" || return 1
     python3 -I "$HERE/mv/evidence.py" capture "$OUT/mv" "$phase"
 }
 mv_wait_ready() {
-    local tag=$1 before=$2 deadline=$(( $(clock) + 15 ))
-    while [ "$(clock)" -lt "$deadline" ]; do
+    local tag=$1 before=$2 deadline=${3:-$(( $(mv_clock_ms) + 15000 ))}
+    while [ "$(mv_clock_ms)" -lt "$deadline" ]; do
         adb logcat -d -v threadtime > "$OUT/mv/ready-$tag.txt" || return 1
         if python3 -I "$HERE/mv/evidence.py" ready "$OUT/mv/ready-$tag.txt" "$before" > "$OUT/mv/ready-$tag.json" 2> "$OUT/mv/ready-$tag-error.txt"; then return 0; fi
         sleep .1
@@ -57,13 +72,22 @@ mv_ready_count() {
     adb logcat -d -v threadtime | python3 -I "$HERE/mv/evidence.py" count-ready
 }
 mv_start_video() {
-    local title=$1 tag=$2 entry_label=$3 before
+    local title=$1 tag=$2 entry_label=$3 before started deadline remaining
     # The More sheet says "观看 MV"; the discovered cover shortcut says
     # "音乐视频". Keep the actual entry explicit instead of tapping a title.
     mv_tap "$entry_label" "$tag-open" || return 1
     before=$(mv_ready_count)
     mv_tap "$title, E2E Artist, E2E 测试源 A" "$tag-select" || return 1
-    mv_wait_ready "$tag" "$before" || return 1
+    started=$(mv_clock_ms)
+    deadline=$(( started + 15000 ))
+    mv_wait_ready "$tag" "$before" "$deadline" || return 1
+    # Clock-ready is not a video frame. Observe the actual native-frame-driven
+    # UI before issuing a test pause, within the SAME 15s startup budget.
+    remaining=$(( deadline - $(mv_clock_ms) ))
+    if [ "$remaining" -le 0 ]; then return 1; fi
+    mv_snapshot 'MV 视频画面' "$tag-first-frame" visible '正在等待 MV 画面…' "$remaining" || return 1
+    # One real startup PNG, before any test pause/seek can manufacture a frame.
+    mv_capture "first-$tag" "$OUT/mv/ui-$tag-first-frame.txt" "$deadline" "$started" || return 1
     mv_pause || return 1
 }
 run_mv_checks() {
@@ -86,6 +110,15 @@ run_mv_checks() {
     adb shell log -t MV_APP_GATE MV_APP_RECORD_BEGIN
     printf '{"apkCommit":"%s","scriptCommit":"%s","apkSha256":"%s"}\n' "${E2E_APK_COMMIT:-}" "$REF" "$(sha256sum "$APK" | cut -d' ' -f1)" > "$OUT/mv/source.json"
     mv_app_scenarios || status=$?
+    if [ "$status" -ne 0 ]; then
+        # Preserve the first failed state, never feed these later diagnostic
+        # pixels back into a passed capture or retry a frame assertion.
+        mv_clock_ms > "$OUT/mv/first-failure-host-ms.txt"
+        adb exec-out screencap -p > "$OUT/mv/first-failure.png" || true
+        session > "$OUT/mv/session-first-failure.json" || true
+        timeout 5s adb shell dumpsys gfxinfo "$PKG" > "$OUT/mv/first-failure-gfx.txt" 2>&1 || true
+        timeout 5s adb shell dumpsys SurfaceFlinger --list > "$OUT/mv/first-failure-surfaces.txt" 2>&1 || true
+    fi
     adb shell log -t MV_APP_GATE MV_APP_RECORD_END
     # Restore every setting even after an assertion fails. Do not turn a partial run green.
     read -r -a rotation_args <<< "$rotation"
@@ -103,7 +136,7 @@ run_mv_checks() {
 }
 mv_app_scenarios() {
     local before
-    mv_pause || return 1
+    mv_pause 'E2E MV Song A' || return 1
     mv_seek .08 original || return 1
     sleep .5
     mv_record_session original
@@ -124,7 +157,7 @@ mv_app_scenarios() {
     adb shell wm user-rotation lock 0 > "$OUT/mv/rotation-portrait.txt" 2>&1 || return 1
     mv_capture portrait || return 1
     adb shell input keyevent KEYCODE_MEDIA_PLAY || return 1
-    wait_for_state PLAYING 'E2E MV Song A' 15 || return 1
+    wait_for_state PLAYING 'E2E MV Song A · MV' 15 || return 1
     mv_capture before-home || return 1
     adb shell log -t MV_APP_GATE MV_APP_HOME_BEGIN
     adb shell input keyevent KEYCODE_HOME || return 1

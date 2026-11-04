@@ -91,6 +91,43 @@ class Evidence(unittest.TestCase):
                 else:
                     with self.assertRaises(AssertionError): evidence.picture_identity(image, phase, frame)
 
+    def test_startup_requires_real_pixels_absent_waiting_and_the_same_15s_budget(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            phase = 'first-h264'
+            picture = root / f'{phase}.png'
+            subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-ss', '6', '-i',
+                            str(Path(__file__).parents[1] / 'fixtures/mv/h264-720.mp4'),
+                            '-frames:v', '1', '-update', '1', str(picture)], check=True)
+            n = dict(package='fun.upup.musicfree', visible=True, enabled=True, clickable=False,
+                     text='', description='MV 视频画面', bounds=[0, 0, 1280, 720])
+            def raw(tree):
+                return ('INSTRUMENTATION_RESULT: tree=' + json.dumps(tree) +
+                        '\nINSTRUMENTATION_RESULT: match=' + json.dumps(n) +
+                        '\nINSTRUMENTATION_RESULT: matches=1\nINSTRUMENTATION_RESULT: blockedLabel=正在等待 MV 画面…'
+                        '\nINSTRUMENTATION_RESULT: blockedMatches=0\nINSTRUMENTATION_CODE: -1\n')
+            ui_file = root / f'ui-surface-{phase}.txt'
+            ui_file.write_text(raw([n]))
+            (root / f'log-{phase}.txt').write_text(
+                'MpvPlayerModule rendition committed[2]: kind=mv mode=start-zero captured=37.125 target=0.0 instance=7\n'
+                'MpvVideoOutput attached=true owner=1 generation=2 instance=7\n'
+                'MpvPlayerModule rendition ready[2]: kind=mv position=0.01 paused=false videoCodec=h264 width=1280 height=720 vo=gpu-next hwdec=no\n')
+            budget_file = root / f'{phase}-budget.json'
+            good = dict(startedAtMs=1000, capturedAtMs=6000, deadlineMs=16000)
+            budget_file.write_text(json.dumps(good))
+            self.assertEqual(evidence.capture(root, phase)['frame'], 144)
+            for bad in [dict(good, capturedAtMs=16001), dict(good, deadlineMs=16001)]:
+                budget_file.write_text(json.dumps(bad))
+                with self.assertRaises(AssertionError): evidence.capture(root, phase)
+            budget_file.write_text(json.dumps(good))
+            ui_file.write_text(raw([n, dict(package='fun.upup.musicfree', visible=True,
+                                           text='正在等待 MV 画面…')]))
+            with self.assertRaises(ValueError): evidence.capture(root, phase)
+            ui_file.write_text(raw([n]))
+            subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-y', '-f', 'lavfi', '-i',
+                            'color=c=black:s=1280x720', '-frames:v', '1', '-update', '1', str(picture)], check=True)
+            with self.assertRaises((ValueError, AssertionError)): evidence.capture(root, phase)
+
 
 if __name__ == '__main__':
     unittest.main()

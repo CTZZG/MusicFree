@@ -29,6 +29,13 @@ PNG frame codes/picture identity and completed recording coverage. Edited summar
 JSON is not a substitute for original files. All original audio gates remain
 unchanged. Original private settings are never copied into artifacts.
 
+Startup clock-ready does not establish a rendered frame. Before the test issues
+pause or seek, the public observer must see the frame-driven waiting label gone,
+then a single startup PNG must decode to the actual clip. Native ready, UI
+observation and that PNG share one original 15-second budget. No bad first image
+is retried. The published MV session intentionally uses the original song title
+with ` · MV`; the returned audio session uses the original title alone.
+
 Host checks:
 
 ```sh

@@ -33,6 +33,8 @@ mv_capture() { call "capture-$1"; }
 mv_record_session() { call "session-$1"; }
 mv_persist() { call "persist-$1"; }
 mv_ready_count() { echo 0; }
+clock() { echo 0; }
+mv_clock_ms() { echo 0; }
 adb() { call "adb-$*"; }
 shot() { call "shot-$1"; }
 sleep() { :; }
@@ -40,8 +42,8 @@ wait_for_state() { call "state-$2"; }
 pass() { printf '%s\n' "$1" >> "$OUT/pass"; }
 mv_app_scenarios
 '''
-phases = ['inline', 'fullscreen', 'returned-inline', 'landscape', 'portrait', 'before-home', 'foreground', 'quality', 'alternate', 'hevc']
-cases = [''] + ['capture-' + p for p in phases] + ['ready-h264-seek', 'tap-alternate-confirm', 'state-E2E MV Song B']
+phases = ['first-h264', 'inline', 'fullscreen', 'returned-inline', 'landscape', 'portrait', 'before-home', 'foreground', 'quality', 'alternate', 'first-hevc', 'hevc']
+cases = [''] + ['capture-' + p for p in phases] + ['ready-h264-seek', 'tap-alternate-confirm', 'state-E2E MV Song B', 'snapshot-h264-first-frame', 'snapshot-hevc-first-frame']
 for fail in cases:
     with tempfile.TemporaryDirectory() as temp:
         code = script.replace('SOURCE', shlex.quote(str(source))).replace('OUTDIR', shlex.quote(temp))
@@ -55,3 +57,19 @@ for fail in cases:
             assert run.returncode != 0, (fail, calls)
             assert calls[-1] == fail, (fail, calls[-3:])
 print(f'Actual MV scenario success/first-failure boundaries: {len(cases)} host cases passed')
+
+# Actual Beta245 published session title, not a video candidate's title. Exercise
+# the real pause helper rather than the scenario's fake device boundary above.
+pause_script = r'''
+source SOURCE
+adb() { return 0; }
+wait_for_state() { test "$1" = PAUSED && test "$2" = "$EXPECTED_TITLE" && test "$3" = 15; }
+if [ "$ORIGINAL_AUDIO" = yes ]; then mv_pause 'E2E MV Song A'; else mv_pause; fi
+'''
+for original, expected, ok in [('yes', 'E2E MV Song A', True),
+                               ('no', 'E2E MV Song A · MV', True),
+                               ('no', 'E2E H264 MV', False)]:
+    run = subprocess.run(['bash', '-c', pause_script.replace('SOURCE', shlex.quote(str(source)))],
+                         env=dict(os.environ, EXPECTED_TITLE=expected, ORIGINAL_AUDIO=original), capture_output=True)
+    assert (run.returncode == 0) is ok, (original, expected, run.stderr)
+print('Actual pause helper: 3 published-session title boundary cases passed')
