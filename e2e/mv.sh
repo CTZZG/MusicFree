@@ -4,9 +4,15 @@ mv_clock_ms() { date +%s%3N; }
 mv_snapshot() {
     local label=$1 tag=$2 kind=${3:-clickable} absent=${4:-} timeout_ms=${5:-15000} encoded absent_encoded
     encoded=$(printf '%s' "$label" | base64 | tr -d '\n')
-    absent_encoded=$(printf '%s' "$absent" | base64 | tr -d '\n')
+    # adb shell joins argv into a remote command. An empty value disappears and
+    # makes Android's -e parser consume the next option as that value.
+    local instrument_args=(-e timeoutMs "$timeout_ms")
+    if [ -n "$absent" ]; then
+        absent_encoded=$(printf '%s' "$absent" | base64 | tr -d '\n')
+        instrument_args+=(-e absentLabelBase64 "$absent_encoded")
+    fi
     adb shell am instrument -w -r -e labelBase64 "$encoded" -e matchKind "$kind" \
-        -e absentLabelBase64 "$absent_encoded" -e timeoutMs "$timeout_ms" \
+        "${instrument_args[@]}" \
         fun.upup.musicfree.e2e.ui/.UiSnapshot > "$OUT/mv/ui-$tag.txt" 2>&1 || return 1
     local args=()
     if [ -n "$absent" ]; then args+=(--absent "$absent"); fi

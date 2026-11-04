@@ -35,6 +35,9 @@ then a single startup PNG must decode to the actual clip. Native ready, UI
 observation and that PNG share one original 15-second budget. No bad first image
 is retried. The published MV session intentionally uses the original song title
 with ` · MV`; the returned audio session uses the original title alone.
+Optional observer arguments are omitted when empty: `adb shell` joins argv into
+a remote shell command, so an empty `-e` value must not consume the next option.
+Host transport cases exercise the actual snapshot helper through this boundary.
 
 Host checks:
 

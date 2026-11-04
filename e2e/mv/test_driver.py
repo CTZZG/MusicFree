@@ -73,3 +73,73 @@ for original, expected, ok in [('yes', 'E2E MV Song A', True),
                          env=dict(os.environ, EXPECTED_TITLE=expected, ORIGINAL_AUDIO=original), capture_output=True)
     assert (run.returncode == 0) is ok, (original, expected, run.stderr)
 print('Actual pause helper: 3 published-session title boundary cases passed')
+
+# adb shell reparses joined arguments on the device. In Beta246 the empty
+# absentLabelBase64 consumed the following -e; Android then treated timeoutMs
+# as a package instead of the instrumentation component (Invalid userId -2).
+# Model that transport + AOSP Am.runInstrument parsing, not an App/device.
+snapshot_boundary = r'''
+import base64
+import json
+import os
+from pathlib import Path
+import shlex
+import sys
+words = shlex.split(' '.join(sys.argv[1:]))
+assert words[:3] == ['shell', 'am', 'instrument'], words
+args = {}
+i = 3
+while i < len(words) and words[i].startswith('-'):
+    if words[i] in ['-w', '-r']:
+        i += 1
+    elif words[i] == '-e':
+        args[words[i + 1]] = words[i + 2]
+        i += 3
+    else:
+        raise AssertionError(words[i:])
+component = words[i] if i < len(words) else ''
+Path(os.environ['PARSED_ARGS']).write_text(json.dumps(dict(component=component, args=args)))
+if component != 'fun.upup.musicfree.e2e.ui/.UiSnapshot':
+    print('onError: commandError=true message=Invalid userId -2')
+    sys.exit(0)
+label = base64.b64decode(args['labelBase64']).decode()
+absent = base64.b64decode(args.get('absentLabelBase64', '')).decode()
+node = dict(package='fun.upup.musicfree', visible=True, enabled=True,
+            clickable=args['matchKind'] == 'clickable', text='', description=label, bounds=[0, 0, 100, 120])
+tree = [node]
+blocked = int(os.environ['BLOCKED'] == 'yes')
+if blocked:
+    tree.append(dict(package='fun.upup.musicfree', visible=True, text=absent))
+for key, value in dict(tree=json.dumps(tree), match=json.dumps(node), matches='1',
+                       blockedLabel=absent, blockedMatches=str(blocked)).items():
+    print(f'INSTRUMENTATION_RESULT: {key}={value}')
+print('INSTRUMENTATION_CODE: -1')
+'''
+snapshot_script = r'''
+source SOURCE
+HERE=HEREPATH; OUT=OUTDIR; mkdir -p "$OUT/mv"
+adb() { python3 "$ADB_BOUNDARY" "$@"; }
+mv_snapshot 'MV 视频画面' actual "$KIND" "$ABSENT" "$BUDGET"
+'''
+for kind, absent, budget, blocked, ok in [
+        ('clickable', '', '15000', False, True),
+        ('visible', '', '15000', False, True),
+        ('visible', '正在等待 MV 画面…', '7300', False, True),
+        ('visible', '正在等待 MV 画面…', '7300', True, False)]:
+    with tempfile.TemporaryDirectory() as temp:
+        boundary = Path(temp) / 'adb.py'
+        boundary.write_text(snapshot_boundary)
+        parsed = Path(temp) / 'parsed.json'
+        code = snapshot_script.replace('SOURCE', shlex.quote(str(source))).replace(
+            'HEREPATH', shlex.quote(str(Path(__file__).parents[1]))).replace('OUTDIR', shlex.quote(temp))
+        run = subprocess.run(['bash', '-c', code], env=dict(os.environ, ADB_BOUNDARY=str(boundary),
+                             PARSED_ARGS=str(parsed), KIND=kind, ABSENT=absent, BUDGET=budget,
+                             BLOCKED='yes' if blocked else 'no'), capture_output=True, text=True)
+        assert (run.returncode == 0) is ok, (kind, absent, run.stdout, run.stderr)
+        actual = json.loads(parsed.read_text())
+        assert actual['component'] == 'fun.upup.musicfree.e2e.ui/.UiSnapshot', actual
+        assert actual['args']['timeoutMs'] == budget, actual
+        assert ('absentLabelBase64' in actual['args']) is bool(absent), actual
+        if ok:
+            assert (Path(temp) / 'mv/point-actual.txt').read_text().strip() == '50 60'
+print('Actual snapshot helper: 4 adb-shell/Android option boundary cases passed')
