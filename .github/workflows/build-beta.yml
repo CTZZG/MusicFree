@@ -411,6 +411,33 @@ jobs:
                   echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
                   echo "APK source commit: ${commit:-unknown}"
 
+            # The MV suite installs only x86_64. Keep the original build artifact
+            # intact and remove just the other extracted copies from this runner.
+            - name: Free unused APK copies for MV
+              if: inputs.e2e_suite == 'mv'
+              run: |
+                  set -euo pipefail
+                  shopt -s nullglob
+                  [[ -d apk && ! -L apk ]]
+                  name=${E2E_APK#apk/}
+                  [[ "$E2E_APK" == "apk/$name" && "$name" != */* && "$name" == *-app-x86_64-release.apk ]]
+                  [[ -f "$E2E_APK" && ! -L "$E2E_APK" ]]
+                  unused=()
+                  for abi in arm64-v8a armeabi-v7a universal x86; do
+                    for candidate in apk/*-app-"$abi"-release.apk; do
+                      [[ -f "$candidate" && ! -L "$candidate" ]]
+                      unused+=("$candidate")
+                    done
+                  done
+                  bytes=0
+                  for candidate in "${unused[@]}"; do
+                    size=$(wc -c < "$candidate")
+                    bytes=$((bytes + size))
+                    rm -- "$candidate"
+                  done
+                  echo "Removed ${#unused[@]} unused extracted APK copies ($bytes bytes); retained $E2E_APK"
+                  df -Pk .
+
             - name: Download cold-start comparison baseline
               if: inputs.perf_baseline_apk_run_id != ''
               uses: actions/download-artifact@v8
@@ -516,6 +543,7 @@ jobs:
             # 编出往它的 MMKV 写测试数据的 mmkv-seed（见 e2e/mmkv-seed）。准备不好也接着跑其他检查，
             # 第 18 步会逐项记失败
             - name: Prepare the 0.7.3 upgrade test
+              if: inputs.e2e_suite != 'mv'
               continue-on-error: true
               env:
                   LEGACY_APK_URL: https://github.com/CTZZG/MusicFree/releases/download/v0.7.3/MusicFree-0.7.3-c35e6ba-app-x86_64-release.apk
@@ -550,9 +578,9 @@ jobs:
                   profile: pixel_6
                   cores: 3
                   ram-size: 4096M
-                  # Android 17 需要更大的分区；Android 14 的 MV 专项使用 4G，
-                  # 避免运行器剩余空间不足时模拟器默认分区无法创建。
-                  disk-size: ${{ inputs.e2e_android == '17' && '8G' || inputs.e2e_suite == 'mv' && '4G' || '' }}
+                  # Android 17 镜像默认的数据分区装不下应用和替身（INSTALL_FAILED_INSUFFICIENT_STORAGE），
+                  # 只给它加大；留空是默认大小
+                  disk-size: ${{ inputs.e2e_android == '17' && '8G' || '' }}
                   # Player observation starts at 1x before the app/ReactHost is created;
                   # its observer records 1x/0x boundaries and restores settings.
                   disable-animations: ${{ inputs.e2e_suite != 'player-observation' && inputs.e2e_suite != 'lyric-boundaries' }}
