@@ -558,7 +558,6 @@ jobs:
                   disable-animations: ${{ inputs.e2e_suite != 'player-observation' && inputs.e2e_suite != 'lyric-boundaries' }}
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
                   script: >-
-                      if [ "$E2E_SUITE" = mv ]; then adb shell df -m /data || exit 1; fi;
                       if [ -n "${E2E_PERF_BASELINE_APK:-}" ]; then bash e2e/perf-cold-compare.sh "$E2E_PERF_BASELINE_APK" "$E2E_APK" "$GITHUB_SHA" e2e-results; else bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results; fi
 
             - name: E2E summary
