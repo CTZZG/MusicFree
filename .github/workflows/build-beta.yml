@@ -550,14 +550,15 @@ jobs:
                   profile: pixel_6
                   cores: 3
                   ram-size: 4096M
-                  # Android 17 镜像默认的数据分区装不下应用和替身（INSTALL_FAILED_INSUFFICIENT_STORAGE），
-                  # 只给它加大；留空是默认大小
-                  disk-size: ${{ inputs.e2e_android == '17' && '8G' || '' }}
+                  # Android 17 需要更大的分区；Android 14 的 MV 专项使用 4G，
+                  # 避免运行器剩余空间不足时模拟器默认分区无法创建。
+                  disk-size: ${{ inputs.e2e_android == '17' && '8G' || inputs.e2e_suite == 'mv' && '4G' || '' }}
                   # Player observation starts at 1x before the app/ReactHost is created;
                   # its observer records 1x/0x boundaries and restores settings.
                   disable-animations: ${{ inputs.e2e_suite != 'player-observation' && inputs.e2e_suite != 'lyric-boundaries' }}
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
                   script: >-
+                      if [ "$E2E_SUITE" = mv ]; then adb shell df -m /data || exit 1; fi;
                       if [ -n "${E2E_PERF_BASELINE_APK:-}" ]; then bash e2e/perf-cold-compare.sh "$E2E_PERF_BASELINE_APK" "$E2E_APK" "$GITHUB_SHA" e2e-results; else bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results; fi
 
             - name: E2E summary
