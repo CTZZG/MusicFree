@@ -25,7 +25,7 @@ ARCHES = {
     "x86": ("i686-linux-android26", "x86"),
     "x86_64": ("x86_64-linux-android26", "x86_64"),
 }
-INPUTS = ["audiotrack_latency.h", "audiotrack-startup-delay.patch", "sources.lock.json", "rebuild.py"]
+INPUTS = ["audiotrack_latency.h", "audiotrack-startup-delay.patch", "android-surface-resize.patch", "sources.lock.json", "rebuild.py"]
 
 
 def run(args, **kwargs):
@@ -61,7 +61,7 @@ def prepare_sources(directory):
         if actual != pin["commit"]:
             raise RuntimeError(f"{name}: existing checkout differs from pinned source; refusing to reset it")
         changed = subprocess.check_output(["git", "-C", str(dest), "diff", "--name-only", "HEAD"], text=True).splitlines()
-        allowed = ["audio/out/ao_audiotrack.c", "audio/out/buffer.c"] if name == "mpv" else []
+        allowed = ["audio/out/ao_audiotrack.c", "audio/out/buffer.c", "video/out/opengl/context_android.c"] if name == "mpv" else []
         if any(path not in allowed for path in changed):
             raise RuntimeError(f"{name}: tracked source changes are not part of the pinned build")
     placebo = directory / "libplacebo"
@@ -99,6 +99,16 @@ def prepare_sources(directory):
     if sha(buffer) != LOCK["patchedBufferSha256"]:
         raise RuntimeError("mpv buffer contains unrecognized or incomplete changes")
     run(["python3", "-I", HERE / "check-short-read.py"])
+    context = mpv / "video/out/opengl/context_android.c"
+    original_context = subprocess.check_output(["git", "-C", str(mpv), "show", "HEAD:video/out/opengl/context_android.c"])
+    if hashlib.sha256(original_context).hexdigest() != LOCK["upstreamAndroidContextSha256"]:
+        raise RuntimeError("upstream Android context differs from the pinned source")
+    if context.read_bytes() == original_context:
+        run(["git", "-C", mpv, "apply", "--check", HERE / "android-surface-resize.patch"])
+        run(["git", "-C", mpv, "apply", HERE / "android-surface-resize.patch"])
+    if sha(context) != LOCK["patchedAndroidContextSha256"]:
+        raise RuntimeError("Android context contains unrecognized or incomplete changes")
+    run(["python3", "-I", HERE / "check-surface-resize.py"])
     header = mpv / "audio/out/audiotrack_latency.h"
     if header.exists() and header.read_bytes() != (HERE / header.name).read_bytes():
         raise RuntimeError("existing AudioTrack helper differs; refusing to overwrite it")
@@ -196,6 +206,8 @@ def build(abi, source, work, ndk, base):
         raise RuntimeError("patched driver differs from pinned build")
     if sha(source / "mpv/audio/out/buffer.c") != LOCK["patchedBufferSha256"]:
         raise RuntimeError("patched buffer differs from pinned build")
+    if sha(source / "mpv/video/out/opengl/context_android.c") != LOCK["patchedAndroidContextSha256"]:
+        raise RuntimeError("patched Android context differs from pinned build")
     if sha(source / "mpv/audio/out/audiotrack_latency.h") != inputs["audiotrack_latency.h"]:
         raise RuntimeError("copied helper differs from source")
     prefix, cross, tools = setup_prefix(abi, source, work, ndk, base)

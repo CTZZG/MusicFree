@@ -59,7 +59,7 @@ echo 'Maestro reentry:6 cases passed; valid uninstalled state accepted only with
 
 # Exercise the actual run.sh wrapper: a second CLI must not launch while its
 # predecessor can still own the fixed server port. No assertion is retried.
-source <(sed -n '/^flow() {/,/^}$/p' "$HERE/../run.sh")
+source <(sed -n '/^flow() {/,/^}$/p' "${E2E_RUN_IMPL:-$HERE/../run.sh}")
 pass() { :; }
 fail() { FAILED=$((FAILED + 1)); }
 shot() { :; }
@@ -79,3 +79,21 @@ if flow third fixture.yaml; then echo 'started over a lingering driver'; exit 1;
 [ "$(cat "$OUT/sequence")" = $'cli\nstop\ncli\nstop' ]
 [ "$FAILED" -eq 1 ]
 echo 'Maestro wrapper: ordered driver release and blocked handoff passed'
+
+# The MV suite is the first nested flow. Neither handoff's redirections nor
+# the CLI log can create its parent. Reproduce the actual mv/start.yaml path,
+# including the second call's distinct log, without a device or server retry.
+OUT="$WORK/nested"; mkdir -p "$OUT/maestro"; : > "$OUT/sequence"
+DRIVER_INSTALLED=1; FAILED=0; CASE=nested
+flow 'nested first' mv/start.yaml
+flow 'nested second' mv/start.yaml
+[ -f "$OUT/maestro/mv/start.log" ] && [ -f "$OUT/maestro/mv/start-2.log" ]
+[ "$(cat "$OUT/sequence")" = $'stop\ncli\nstop\ncli' ]
+
+OUT="$WORK/unwritable-parent"; mkdir -p "$OUT/maestro"; : > "$OUT/sequence"
+DRIVER_INSTALLED=1; FAILED=0
+mkdir() { return 1; }
+if flow 'blocked parent' mv/start.yaml; then echo 'started without a writable log parent'; exit 1; fi
+unset -f mkdir
+[ "$FAILED" -eq 1 ] && [ ! -s "$OUT/sequence" ]
+echo 'Maestro nested flow: 2 cases passed; unique subdirectory logs, blocked parent fails before driver commands'

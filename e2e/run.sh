@@ -36,6 +36,10 @@ FOCUS_PKG=fun.upup.musicfree.e2e.focus
 E2E_LEGACY_APK=${E2E_LEGACY_APK:-}
 E2E_MMKV_SEED=${E2E_MMKV_SEED:-}
 E2E_SUITE=${E2E_SUITE:-all}
+case "$E2E_SUITE" in
+    all|experience|lyric-boundaries|playback-font|player-observation|storage|download-source|power|library|backup|perf|crash|mv) ;;
+    *) echo "Unknown E2E_SUITE: $E2E_SUITE" >&2; exit 2 ;;
+esac
 E2E_AUDIO_HARDENING=${E2E_AUDIO_HARDENING:-}
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
@@ -75,6 +79,13 @@ flow() {
         n=$((n + 1))
         tag="${file%.yaml}-$n"
     done
+    # Flows can live in a subdirectory (for example mv/start.yaml). The
+    # handoff and CLI both write beside this prefix before Maestro creates
+    # its own output directory, so establish the parent first.
+    if ! mkdir -p "$(dirname "$OUT/maestro/$tag")"; then
+        fail "$name" "无法创建测试日志目录，未启动测试驱动"
+        return 1
+    fi
     local args=(test --test-output-dir "$OUT/maestro/$tag" "$@")
     if [ "$DRIVER_INSTALLED" -eq 1 ]; then
         # Each CLI invocation owns one instrumentation server. A prior server
@@ -326,6 +337,11 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
+if [ "$E2E_SUITE" = mv ]; then
+    source "$HERE/mv.sh"
+    run_mv_checks
+    finish
+fi
 if [ "$E2E_SUITE" = backup ]; then
     source "$HERE/backup.sh"
     run_backup_checks

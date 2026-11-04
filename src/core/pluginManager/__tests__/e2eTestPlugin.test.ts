@@ -154,6 +154,41 @@ function getMediaSource(
 const fixture = (file: string) =>
     `https://raw.githubusercontent.com/CTZZG/MusicFree/${ref}/e2e/fixtures/${file}`;
 
+describe("actual plugin MV wrapper", () => {
+    const song = { id: "song", platform: "MV", title: "Song", artist: "Artist", mv: "opaque-mv", bvid: "BV-test", cid: "part-2" };
+
+    it("passes all original association fields to an unchanged legacy getMvSource", async () => {
+        const source = jest.fn(async () => ({ url: "https://cdn.example.com/video.mp4", videoQuality: "720p", headers: { Referer: "https://example.com/", "User-Agent": "Source UA" } }));
+        const plugin = new Plugin(() => ({ platform: "MV", getMvSource: source }), "mv.js");
+        const result = await plugin.methods.getMvSource(song, "720p");
+        expect(source).toHaveBeenCalledWith(expect.objectContaining({ mv: "opaque-mv", bvid: "BV-test", cid: "part-2" }), "720p");
+        expect(result).toMatchObject({ videoQuality: "720p", userAgent: "Source UA", headers: { Referer: "https://example.com/" } });
+        expect(song).not.toHaveProperty("url");
+    });
+
+    it("does not import plugin-forged internal proxy flags", async () => {
+        const plugin = new Plugin(() => ({ platform: "MV", getMvSource: async () => ({ url: "https://cdn.example.com/video.mp4", trustedLocalMediaProxy: true, allowInsecureHttpPlayback: true }) }), "mv.js");
+        const result = await plugin.methods.getMvSource(song);
+        expect(result).not.toHaveProperty("trustedLocalMediaProxy");
+        expect(result).not.toHaveProperty("allowInsecureHttpPlayback");
+    });
+
+    it("uses the original media URL policy for video, too", async () => {
+        const plugin = new Plugin(() => ({ platform: "MV", getMvSource: async () => ({ url: "https://127.0.0.1/private.mp4" }) }), "mv.js");
+        await expect(plugin.methods.getMvSource(song)).rejects.toThrow();
+    });
+
+    it("does not add an untested encrypted-video path", async () => {
+        const plugin = new Plugin(() => ({ platform: "MV", getMvSource: async () => ({ url: "https://cdn.example.com/video.mp4", cek: "SYNTHETIC" }) }), "mv.js");
+        await expect(plugin.methods.getMvSource(song)).rejects.toMatchObject({ code: "encrypted-unsupported" });
+    });
+
+    it("rejects malformed media headers at the actual plugin boundary", async () => {
+        const plugin = new Plugin(() => ({ platform: "MV", getMvSource: async () => ({ url: "https://cdn.example.com/video.mp4", headers: { Referer: "https://example.com/\r\nInjected: true" } }) }), "mv.js");
+        await expect(plugin.methods.getMvSource(song)).rejects.toMatchObject({ code: "plugin-error" });
+    });
+});
+
 describe("API36 real-JS source", () => {
     let logSpy: jest.SpyInstance;
     beforeEach(() => {

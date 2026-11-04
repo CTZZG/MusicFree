@@ -365,6 +365,7 @@ class LyricManager implements IInjectable {
     private positionClockCorrectionUntil = 0;
     private playbackStateSyncGeneration = 0;
     private positionHydrationGeneration = 0;
+    private renditionPublicationGeneration = 0;
     private nativeStatusBarPayloadSequence = 0;
     private initialized = false;
     private listenerLifecycleGeneration = 0;
@@ -503,6 +504,7 @@ class LyricManager implements IInjectable {
         progress: {position?: number} | null | undefined,
         forceNativeOutput = false,
     ) {
+        if (this.trackPlayer.audioTimelineAvailable === false) return 0;
         const position = Number(progress?.position);
         const safePosition = Number.isFinite(position)
             ? Math.max(0, position)
@@ -546,6 +548,7 @@ class LyricManager implements IInjectable {
      * 首帧定位，再异步读取原生进度校正，避免页面停在 0 秒等待下一次回调。
      */
     hydrateCurrentPosition() {
+        if (this.trackPlayer.audioTimelineAvailable === false) return;
         const currentMusicItem = this.trackPlayer.currentMusic;
         const generation = ++this.positionHydrationGeneration;
         const progressSnapshot = this.getCurrentProgressSnapshot();
@@ -560,6 +563,7 @@ class LyricManager implements IInjectable {
             .getProgress()
             .then(progress => {
                 if (
+                    this.trackPlayer.audioTimelineAvailable === false ||
                     generation !== this.positionHydrationGeneration ||
                     !currentMusicItem ||
                     !this.trackPlayer.isCurrentMusic(currentMusicItem) ||
@@ -595,6 +599,7 @@ class LyricManager implements IInjectable {
 
             // 更新歌词
             this.currentMusicChangedListener = () => {
+                this.renditionPublicationGeneration += 1;
                 this.playbackStateSyncGeneration += 1;
                 this.positionHydrationGeneration += 1;
                 this.lastProgressPositionMs = 0;
@@ -607,6 +612,12 @@ class LyricManager implements IInjectable {
                     positionMs: 0,
                     isPlaying: this.isPlaybackAdvancing,
                 });
+                if (this.trackPlayer.audioTimelineAvailable === false) {
+                    this.isPlaybackAdvancing = false;
+                    this.setLyricAsNoLyricState("no-current-music");
+                    this.publishNativeLyricOutput({ force: true, isPlaying: false });
+                    return;
+                }
                 this.refreshLyric(true, false);
             };
             this.trackPlayer.on(
@@ -614,11 +625,13 @@ class LyricManager implements IInjectable {
                 this.currentMusicChangedListener,
             );
 
+            this.trackPlayer.on(TrackPlayerEvents.AudioTimelineChanged, this.currentMusicChangedListener);
             const initialStateGeneration = this.playbackStateSyncGeneration;
             this.trackPlayer.playerAdapter
                 .getState()
                 .then(state => {
                     if (
+                        this.trackPlayer.audioTimelineAvailable !== false &&
                         initialStateGeneration ===
                     this.playbackStateSyncGeneration
                     ) {
@@ -631,12 +644,14 @@ class LyricManager implements IInjectable {
                 this.trackPlayer.playerAdapter.addEventListener(
                     "playbackStateChanged",
                     state => {
+                        if (this.trackPlayer.audioTimelineAvailable === false) return;
                         this.isPlaybackAdvancing = state === "playing";
                         const syncGeneration = ++this.playbackStateSyncGeneration;
                         this.trackPlayer
                             .getProgress()
                             .then(progress => {
                                 if (
+                                    this.trackPlayer.audioTimelineAvailable === false ||
                                     syncGeneration !==
                             this.playbackStateSyncGeneration
                                 ) {
@@ -695,6 +710,7 @@ class LyricManager implements IInjectable {
 
             this.playerSubscriptions.push(
                 this.trackPlayer.playerAdapter.addEventListener("progress", evt => {
+                    if (this.trackPlayer.audioTimelineAvailable === false) return;
                     const parser = this.lyricParser;
                     const positionMs = evt.position * 1000;
                     this.updatePositionClockFromProgress(positionMs);
@@ -757,6 +773,7 @@ class LyricManager implements IInjectable {
             } catch {}
         });
         if (this.currentMusicChangedListener) {
+            this.trackPlayer.off(TrackPlayerEvents.AudioTimelineChanged, this.currentMusicChangedListener);
             this.trackPlayer.off(
                 TrackPlayerEvents.CurrentMusicChanged,
                 this.currentMusicChangedListener,
@@ -875,8 +892,9 @@ class LyricManager implements IInjectable {
             normalizedCurrentLyricStateAtom,
         );
         const lyricLine = normalizedState.line;
-        const text = this.getNativeLyricText(lyricLine);
-        const statusBarText = text || this.getNativeLyricFallbackText();
+        const audioAvailable = this.trackPlayer.audioTimelineAvailable !== false;
+        const text = audioAvailable ? this.getNativeLyricText(lyricLine) : "";
+        const statusBarText = audioAvailable ? text || this.getNativeLyricFallbackText() : "";
         const musicItem = this.trackPlayer.currentMusic;
         const output: INativeLyricOutputState = {
             text,
@@ -1221,7 +1239,11 @@ class LyricManager implements IInjectable {
         skipFetchLyricSourceIfSame: boolean = true,
         ignoreProgress: boolean = false,
     ) {
+        if (this.trackPlayer.audioTimelineAvailable === false) return;
+        const publication = this.renditionPublicationGeneration;
         const currentMusicItem = this.trackPlayer.currentMusic;
+        const current = () => publication === this.renditionPublicationGeneration &&
+            this.trackPlayer.audioTimelineAvailable !== false && !!currentMusicItem && this.trackPlayer.isCurrentMusic(currentMusicItem);
 
         // 如果没有当前音乐项，重置歌词状态
         if (!currentMusicItem) {
@@ -1272,7 +1294,7 @@ class LyricManager implements IInjectable {
             }
 
             // 切换到其他歌曲了, 直接返回
-            if (!this.trackPlayer.isCurrentMusic(currentMusicItem)) {
+            if (!current()) {
                 return;
             }
 
@@ -1305,7 +1327,7 @@ class LyricManager implements IInjectable {
             }
 
             // 切换到其他歌曲了, 直接返回
-            if (!this.trackPlayer.isCurrentMusic(currentMusicItem)) {
+            if (!current()) {
                 return;
             }
 
@@ -1337,7 +1359,7 @@ class LyricManager implements IInjectable {
                 )
                 : lrcSource.romanization;
 
-            if (!this.trackPlayer.isCurrentMusic(currentMusicItem)) {
+            if (!current()) {
                 return;
             }
 
@@ -1390,7 +1412,7 @@ class LyricManager implements IInjectable {
             if (
                 hydrationGeneration !== this.positionHydrationGeneration ||
                 this.lyricParser !== parser ||
-                !this.trackPlayer.isCurrentMusic(currentMusicItem) ||
+                !current() ||
                 this.trackPlayer.getProgressSnapshot().sequence !==
                     progressSequence
             ) {
@@ -1398,7 +1420,7 @@ class LyricManager implements IInjectable {
             }
             this.applyProgressToLyric(progress);
         } catch (err) {
-            if (this.trackPlayer.isCurrentMusic(currentMusicItem)) {
+            if (current()) {
                 this.lyricParser = null;
                 this.setLyricAsNoLyricState(
                     isTimeoutError(err) ? "timeout" : "parse-failed",

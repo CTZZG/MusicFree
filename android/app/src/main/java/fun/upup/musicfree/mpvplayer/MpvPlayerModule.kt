@@ -3,9 +3,13 @@ package `fun`.upup.musicfree.mpvplayer
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Surface
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -14,7 +18,9 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
+import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter
+import com.facebook.react.common.LifecycleState
 import dev.jdtech.mpv.MPVLib as NativeMPVLib
 import `fun`.upup.musicfree.bridge.CancelablePromise
 import `fun`.upup.musicfree.utils.PerfMarks
@@ -31,6 +37,7 @@ import kotlin.math.min
  * generation counter so stale END_FILE events from replacing the old file do
  * not look like a natural track end.
  */
+@ReactModule(name = MpvPlayerModule.NAME)
 class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext),
     NativeMPVLib.EventObserver {
@@ -203,6 +210,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         val album: String,
         val artwork: String?,
         val duration: Double,
+        val sourceMediaId: String? = null,
+        val sourceLoadGeneration: Long? = null,
     )
 
     /**
@@ -229,6 +238,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private data class PendingNaturalEnd(
         val serial: Long,
         val endedIdentity: TrackIdentity?,
+        val videoEndIdentity: TrackIdentity?,
+        val endedKind: String = "audio",
     )
 
     private var positionSecs = 0.0
@@ -236,9 +247,50 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var cacheAheadSecs = 0.0
     private var currentState = "idle"
 
-    private var currentLoadGeneration = 0L
+    @Volatile private var currentLoadGeneration = 0L
     private val engineProgressMarker = EngineProgressMarker()
-    private var activeTrackIdentity: TrackIdentity? = null
+    @Volatile private var activeTrackIdentity: TrackIdentity? = null
+    // Accepted native MV load ownership also covers loading/failure, before
+    // FILE_LOADED can confirm active identity. Only explicit zero/return may
+    // replace it; preserve-MV still requires a live outgoing file/clock.
+    private var ownedVideoIdentity: TrackIdentity? = null
+    private var ownedAudioReturnIdentity: TrackIdentity? = null
+    private var audioReturnPosition: Double? = null
+    private var outgoingAudioPosition: Double? = null
+    @Volatile private var renditionTrackingEnabled = false
+    private var readyGeneration = -1L
+    private var failedAudioReturnGeneration = -1L
+    private var videoNetworkPolicy: String? = null
+    private val connectivity by lazy { reactContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    private fun videoNetworkAllowed(policy: String? = videoNetworkPolicy): Boolean {
+        if (policy == null) return true
+        val caps = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+            (policy == "allow-metered" || caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
+    }
+
+    private fun watchVideoNetwork() {
+        if (networkCallback != null) return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = check()
+            override fun onLost(network: Network) = check()
+            private fun check() {
+                mainHandler.post {
+                    if (isInitialized.get() && renditionKind == "mv" && !videoNetworkAllowed()) {
+                        keepHeldPaused("video-network")
+                    }
+                }
+            }
+        }
+        connectivity.registerDefaultNetworkCallback(callback)
+        networkCallback = callback
+    }
+    // Only a confirmed, unpromoted MV END_FILE owns a return/restart after mpv
+    // has removed its path/time-pos. Never infer ownership from an idle player.
+    private var completedVideoIdentity: TrackIdentity? = null
     private var loadingTrackIdentity: TrackIdentity? = null
     private var loadingGeneration = -1L
     private val pendingUnpause = PendingUnpause()
@@ -264,8 +316,37 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var naturalEndSerial = 0L
     private var androidAutoConnectionDetector: MpvAndroidAutoConnectionDetector? = null
     private var isAndroidAutoConnected = false
+    private var renditionKind = "audio"
+    private val videoOutput = MpvVideoOutput(
+        player = { mpvInstance },
+        accepts = { mediaId, generation ->
+            !invalidated.get() && generation == currentLoadGeneration &&
+                mediaId == (loadingTrackIdentity ?: activeTrackIdentity)?.mediaId
+        },
+        canRender = { mediaId, generation ->
+            renditionKind == "mv" && loadingTrackIdentity == null &&
+                activeTrackIdentity?.let {
+                    it.mediaId == mediaId && it.loadGeneration == generation && currentPathMatches(it.url)
+                } == true
+        },
+        onError = {
+            sendEvent(ON_MPV_ERROR, Arguments.createMap().apply {
+                putString("message", "Video output unavailable")
+                putString("code", "video-output-unavailable")
+            })
+        },
+    )
+
+    internal fun updateVideoSurface(owner: Long, mediaId: String, generation: Long, surface: Surface, width: Int, height: Int) =
+        videoOutput.update(owner, mediaId, generation, surface, width, height)
+
+    internal fun releaseVideoSurface(owner: Long) = videoOutput.release(owner)
+
+    internal fun ownsVideoSurface(owner: Long, mediaId: String, generation: Long): Boolean =
+        videoOutput.owns(owner, mediaId, generation)
 
     companion object {
+        const val NAME = "MpvPlayer"
         private const val TAG = "MpvPlayerModule"
         private const val ON_MPV_STATE_CHANGED = "onMpvStateChanged"
         private const val ON_MPV_PROGRESS = "onMpvProgress"
@@ -288,7 +369,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         private val UNPAUSE_RETRY_DELAYS_MS = longArrayOf(0L, 80L, 250L, 700L)
     }
 
-    override fun getName() = "MpvPlayer"
+    override fun getName() = NAME
 
     @ReactMethod
     fun addListener(eventName: String) {
@@ -301,6 +382,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun sendEvent(name: String, params: WritableMap?) {
+        if (name == ON_MPV_ERROR && params != null) putEventIdentity(params)
         if (invalidated.get()) return
         reactContext.getJSModule(RCTDeviceEventEmitter::class.java)
             .emit(name, params ?: Arguments.createMap())
@@ -316,6 +398,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             task.run()
         } else {
             mainHandler.post(task)
+        }
+    }
+
+    private fun runOwnedPropertyOnMain(action: () -> Unit) {
+        val generation = currentLoadGeneration
+        runMpvCallbackOnMain {
+            if (!renditionTrackingEnabled || generation == currentLoadGeneration) action()
         }
     }
 
@@ -341,9 +430,16 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         currentState = state
         sendEvent(
             ON_MPV_STATE_CHANGED,
-            Arguments.createMap().apply { putString("state", state) },
+            Arguments.createMap().apply { putString("state", state); putEventIdentity(this) },
         )
         MpvServiceBridge.service?.onPlaybackStateChanged(state)
+    }
+
+    private fun putEventIdentity(map: WritableMap) {
+        val identity = loadingTrackIdentity ?: activeTrackIdentity
+        map.putString("mediaId", identity?.mediaId)
+        map.putDouble("loadGeneration", currentLoadGeneration.toDouble())
+        map.putString("renditionKind", renditionKind)
     }
 
     private fun bufferedPositionSecs(): Double {
@@ -360,6 +456,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
         lastProgressEmitMs = now
 
+        val identity = activeTrackIdentity
+        val readyRaw = if (renditionTrackingEnabled && readyGeneration == currentLoadGeneration &&
+            loadingTrackIdentity == null && identity?.loadGeneration == currentLoadGeneration &&
+            currentPathMatches(identity.url)) {
+            MPVLib.getPropertyDouble("time-pos")?.takeIf { it.isFinite() && it >= 0.0 }
+        } else null
+        if (readyRaw != null) positionSecs = readyRaw
+
         val bufferedSecs = bufferedPositionSecs()
         sendEvent(
             ON_MPV_PROGRESS,
@@ -367,6 +471,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 putDouble("position", positionSecs)
                 putDouble("duration", durationSecs)
                 putDouble("buffered", bufferedSecs)
+                putBoolean("ready", readyRaw != null)
+                putEventIdentity(this)
             },
         )
         MpvServiceBridge.service?.onProgressChanged(
@@ -528,6 +634,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun markLoading(autoPlay: Boolean, requestedGeneration: Long): Long {
+        readyGeneration = -1L
+        failedAudioReturnGeneration = -1L
         val generation = requestedGeneration
         currentLoadGeneration = generation
         loadingGeneration = generation
@@ -553,6 +661,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 putDouble("prepareToken", identity.prepareToken.toDouble())
                 putDouble("queueRevision", identity.queueRevision.toDouble())
                 putString("source", source)
+                putString("renditionKind", renditionKind)
             },
         )
     }
@@ -592,6 +701,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         Log.d(TAG, "autoplay held ($reason): ${MpvServiceBridge.playbackHold}")
     }
 
+    private fun emitError(code: String, message: String) {
+        emitState("error")
+        sendEvent(ON_MPV_ERROR, Arguments.createMap().apply {
+            putString("code", code)
+            putString("message", message)
+        })
+    }
+
     private fun forceUnpause(generation: Long) {
         // 排着的重试在明确暂停之后照样会到点执行：撤销过就什么都不做（见 PendingUnpause）
         if (
@@ -603,7 +720,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             return
         }
         // 外部暂停、系统打断着：这一代就算还排着自动播放，也不能放出来
-        if (MpvServiceBridge.playbackHold.blocksAutoPlay) {
+        if (MpvServiceBridge.playbackHold.blocksAutoPlay || (renditionKind == "mv" && !videoNetworkAllowed())) {
             keepHeldPaused("unpause")
             return
         }
@@ -716,6 +833,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         hasPlaylistPreparedTrack = false
         preparedPlaylistIndex = -1
         pendingPlaylistCompaction = true
+        videoOutput.detach()
+        renditionKind = "audio"
+        ownedVideoIdentity = null
+        ownedAudioReturnIdentity = null
+        audioReturnPosition = null
+        videoNetworkPolicy = null
+        outgoingAudioPosition = null
         cachedTitle = prepared.title
         cachedArtist = prepared.artist
         cachedAlbum = prepared.album
@@ -778,6 +902,13 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         if (pendingNaturalEnd?.serial != pending.serial) return
         pendingNaturalEnd = null
         val autoAdvanced = promotedTrack != null
+        completedVideoIdentity = pending.videoEndIdentity?.takeIf {
+            !autoAdvanced && renditionKind == "mv" && it == activeTrackIdentity &&
+                it.loadGeneration == currentLoadGeneration && loadingTrackIdentity == null
+        }
+        // END_FILE is authoritative here. During mpv's teardown, eof-reached
+        // may already be unavailable while idle-active has not changed yet.
+        // New loads/identities and PLAYBACK_RESTART revoke this exact owner.
         val now = System.currentTimeMillis()
         Log.d(
             TAG,
@@ -794,6 +925,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 putString("reason", "end")
                 putBoolean("autoAdvanced", autoAdvanced)
                 pending.endedIdentity?.let { putString("endedMediaId", it.mediaId) }
+                pending.endedIdentity?.let { putDouble("endedLoadGeneration", it.loadGeneration.toDouble()) }
+                putString("endedRenditionKind", pending.endedKind)
                 promotedTrack?.let {
                     putString("promotedMediaId", it.mediaId)
                     putDouble("prepareToken", it.prepareToken.toDouble())
@@ -871,6 +1004,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun setLoadingIdentity(identity: TrackIdentity) {
+        completedVideoIdentity = null
         loadingTrackIdentity = identity
     }
 
@@ -879,14 +1013,26 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     private fun replaceActiveIdentity(identity: TrackIdentity) {
+        completedVideoIdentity = null
         activeTrackIdentity = identity
     }
 
     private fun clearActiveIdentity() {
+        readyGeneration = -1L
+        failedAudioReturnGeneration = -1L
+        ownedVideoIdentity = null
+        ownedAudioReturnIdentity = null
+        audioReturnPosition = null
+        videoNetworkPolicy = null
+        outgoingAudioPosition = null
+        completedVideoIdentity = null
         activeTrackIdentity = null
     }
 
     private fun releaseMpvResources() {
+        renditionTrackingEnabled = false
+        videoOutput.clear()
+        renditionKind = "audio"
         isInitialized.set(false)
         detachServiceReadyCallback()
         stopRequested = true
@@ -903,6 +1049,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         MpvServiceBridge.onBrowseRequest = null
         MpvServiceBridge.pauseNow = null
         unregisterAndroidAutoConnectionDetector(notifyJs = false)
+        networkCallback?.let { runCatching { connectivity.unregisterNetworkCallback(it) } }
+        networkCallback = null
         try {
             reactContext.stopService(
                 Intent(reactContext, MpvPlaybackService::class.java),
@@ -949,6 +1097,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 MPVLib.setOptionString("ao", "audiotrack,opensles")
                 MPVLib.setOptionString("vo", "null")
                 MPVLib.setOptionString("vid", "no")
+                MPVLib.setOptionString("gpu-context", "android")
                 MPVLib.setOptionString("cache", "yes")
                 MPVLib.setOptionString("cache-secs", "2")
                 // demuxer-max-bytes 是「内存里」的解复用缓存上限，绝不能接
@@ -1188,8 +1337,83 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
 
         postPromise(promise, "E_LOAD") { operationPromise ->
+            val restoreOrRestart = readString(payload, "positionMode") in listOf("restore-audio", "start-zero")
+            val outgoingIdentity = if (readString(payload, "positionMode") == "restore-audio" && ownedAudioReturnIdentity != null) {
+                ownedAudioReturnIdentity
+            } else if (restoreOrRestart && renditionKind == "mv") {
+                ownedVideoIdentity ?: activeTrackIdentity
+            } else activeTrackIdentity
+            val outgoingKind = renditionKind
+            val previousNetworkPolicy = videoNetworkPolicy
+            val previousVideoOwner = ownedVideoIdentity
+            val previousReturnOwner = ownedAudioReturnIdentity
+            val previousReturnPosition = audioReturnPosition
+            val previousAudioPosition = outgoingAudioPosition
+            val previousTitle = cachedTitle
+            val previousArtist = cachedArtist
+            val previousAlbum = cachedAlbum
+            val previousArtwork = cachedArtwork
+            val previousDuration = durationSecs
+            val previousPosition = positionSecs
+            val previousState = currentState
+            val previousRate = MPVLib.getPropertyDouble("speed")
+            val previousReadyGeneration = readyGeneration
+            var capturedForFailure: Double? = null
+            val wasPaused = MPVLib.getPropertyBoolean("pause") != false
+            val isRenditionRequest = payload.hasKey("positionMode") || payload.hasKey("renditionKind")
+            var renditionMutationStarted = false
             try {
+                val nextKind = readString(payload, "renditionKind") ?: "audio"
+                require(nextKind == "audio" || nextKind == "mv") { "invalid rendition kind" }
+                val nextNetworkPolicy = readString(payload, "videoNetworkPolicy")
+                require(nextNetworkPolicy == null || nextNetworkPolicy in listOf("unmetered", "allow-metered")) { "invalid video network policy" }
+                if (nextKind == "mv") {
+                    require(readBoolean(payload, "requireForeground") != true || reactContext.lifecycleState == LifecycleState.RESUMED) { "MV requires foreground" }
+                    require(videoNetworkAllowed(nextNetworkPolicy)) { "Video network unavailable" }
+                }
+                val mode = readString(payload, "positionMode")
+                val playbackRate = readDouble(payload, "playbackRate")
+                require(playbackRate == null || (playbackRate.isFinite() && playbackRate > 0.0)) { "invalid playback rate" }
+                require(mode == null || readDouble(payload, "preservePositionFallback") == null) {
+                    "rendition and audio fallback policies cannot be combined"
+                }
+                require(nextKind != "mv" || mode != null) { "MV requires an explicit position policy" }
+                val explicitStart = readDouble(payload, "startPosition")
+                val retryAudioReturn = mode == "restore-audio" && outgoingKind == "audio" &&
+                    outgoingIdentity != null && outgoingIdentity == ownedAudioReturnIdentity &&
+                    explicitStart != null && explicitStart == audioReturnPosition
+                if (mode == "restore-audio") {
+                    require(nextKind == "audio" && (outgoingKind == "mv" || retryAudioReturn) && explicitStart != null &&
+                        explicitStart.isFinite() && explicitStart >= 0.0) { "invalid audio return position" }
+                }
+                val capturedPosition = mode?.let {
+                    require(it in listOf("start-zero", "preserve-mv", "restore-audio")) { "invalid position policy" }
+                    require(it != "start-zero" || nextKind == "mv") { "start-zero is a video transition" }
+                    val ownedVideoReplacement = outgoingKind == "mv" && outgoingIdentity == ownedVideoIdentity &&
+                        it in listOf("restore-audio", "start-zero")
+                    require((loadingTrackIdentity == null || ownedVideoReplacement || retryAudioReturn) && outgoingIdentity != null &&
+                        outgoingIdentity.mediaId == readString(payload, "expectedMediaId") &&
+                        outgoingIdentity.loadGeneration == readLong(payload, "expectedLoadGeneration") &&
+                        currentLoadGeneration == outgoingIdentity.loadGeneration) {
+                        "stale rendition replacement"
+                    }
+                    require(it != "preserve-mv" || (outgoingKind == "mv" && nextKind == "mv")) { "invalid video replacement" }
+                    val completedVideo = outgoingKind == "mv" && completedVideoIdentity == outgoingIdentity
+                    val liveFile = currentPathMatches(outgoingIdentity.url) &&
+                        MPVLib.getPropertyBoolean("idle-active") != true && MPVLib.getPropertyBoolean("eof-reached") != true
+                    require(liveFile || ownedVideoReplacement || retryAudioReturn || (completedVideo && it != "preserve-mv")) { "stale rendition replacement" }
+                    // Capture after pausing the actual outgoing file, beside loadfile. No JS fallback.
+                    // A completed MV needs no outgoing clock for a new zero start or
+                    // the already captured audio return. Audio entry/preserve remain live-only.
+                    if ((completedVideo || ownedVideoReplacement || retryAudioReturn) && !liveFile) return@let null
+                    renditionMutationStarted = true
+                    MPVLib.setPropertyBoolean("pause", true)
+                    if (it == "restore-audio") return@let null
+                    MPVLib.getPropertyDouble("time-pos")?.takeIf { pos -> pos.isFinite() && pos >= 0.0 }
+                        ?: throw IllegalStateException("outgoing engine position unavailable")
+                }
                 val previousIdentity = loadingTrackIdentity ?: activeTrackIdentity
+                if (outgoingKind == "audio" && nextKind == "mv") capturedForFailure = capturedPosition
                 val previousDeferredPosition = if (loadingGeneration == currentLoadGeneration) {
                     pendingSeek.peek(currentLoadGeneration)
                 } else null
@@ -1203,6 +1427,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                 val trackUserAgent = readString(payload, "userAgent")
                     ?.takeIf { it.isNotBlank() }
+                renditionMutationStarted = true
                 MPVLib.setOptionString(
                     "http-header-fields",
                     buildHeaderString(headers),
@@ -1214,7 +1439,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 // 外部暂停、系统打断着：按暂停装载，等用户明确要播或系统还回焦点
                 val requestedAutoPlay = readBoolean(payload, "autoPlay") ?: true
                 val autoPlay =
-                    requestedAutoPlay && !MpvServiceBridge.playbackHold.blocksAutoPlay
+                    requestedAutoPlay && !MpvServiceBridge.playbackHold.blocksAutoPlay && (nextKind != "mv" || videoNetworkAllowed(nextNetworkPolicy))
                 if (requestedAutoPlay && !autoPlay) {
                     Log.d(TAG, "loadAndPlay held: ${MpvServiceBridge.playbackHold}")
                 }
@@ -1240,7 +1465,29 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     queueRevision = readLong(payload, "queueRevision") ?: 0L,
                 ))
 
+                if (nextKind == "mv") renditionTrackingEnabled = true
                 val generation = markLoading(autoPlay, requestedGeneration)
+                videoOutput.detach()
+                renditionKind = nextKind
+                videoNetworkPolicy = if (nextKind == "mv") nextNetworkPolicy else null
+                if (videoNetworkPolicy != null) watchVideoNetwork()
+                ownedVideoIdentity = if (nextKind == "mv") loadingTrackIdentity else null
+                ownedAudioReturnIdentity = if (mode == "restore-audio") loadingTrackIdentity else null
+                audioReturnPosition = if (mode == "restore-audio") explicitStart else null
+                outgoingAudioPosition = when {
+                    nextKind == "mv" && outgoingKind == "audio" -> capturedPosition
+                    nextKind == "mv" -> previousAudioPosition
+                    else -> null
+                }
+                val renditionStart = when (mode) {
+                    "restore-audio" -> explicitStart
+                    "preserve-mv" -> capturedPosition
+                    "start-zero" -> 0.0
+                    else -> null
+                }
+                renditionStart?.let { pendingSeek.defer(generation, it); positionSecs = it }
+                if (nextKind == "mv") MPVLib.setPropertyDouble("speed", 1.0)
+                else playbackRate?.let { MPVLib.setPropertyDouble("speed", it) }
                 if (autoPlay) {
                     startPlaybackService(foreground = true)
                 }
@@ -1286,11 +1533,59 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     MPVLib.setPropertyBoolean("pause", true)
                     emitState("paused", force = true)
                 }
-                operationPromise.resolve(restoredPosition)
+                if (mode != null) {
+                    // Bounded source transitions only; never log URLs, headers or plugin credentials.
+                    Log.d(TAG, "rendition committed[$generation]: kind=$nextKind mode=$mode " +
+                        "captured=$capturedPosition target=$renditionStart " +
+                        "instance=${mpvInstance?.let { System.identityHashCode(it) } ?: 0}")
+                }
+                operationPromise.resolve(if (mode == "start-zero") capturedPosition else renditionStart ?: restoredPosition)
             } catch (e: Exception) {
-                clearLoadingIdentity()
+                var rolledBack = false
+                // A rejected stale/invalid request has no ownership over another load's
+                // identity, seek or pending unpause. Roll back only work this call began.
+                if (!isRenditionRequest || renditionMutationStarted) {
+                    clearLoadingIdentity()
+                    if (readString(payload, "positionMode") != null && outgoingIdentity != null && currentPathMatches(outgoingIdentity.url)) {
+                        currentLoadGeneration = outgoingIdentity.loadGeneration
+                        loadingGeneration = -1L
+                        pendingUnpause.cancel()
+                        pendingSeek.reset()
+                        renditionKind = outgoingKind
+                        videoNetworkPolicy = previousNetworkPolicy
+                        ownedVideoIdentity = previousVideoOwner
+                        ownedAudioReturnIdentity = previousReturnOwner
+                        audioReturnPosition = previousReturnPosition
+                        outgoingAudioPosition = previousAudioPosition
+                        cachedTitle = previousTitle
+                        cachedArtist = previousArtist
+                        cachedAlbum = previousAlbum
+                        cachedArtwork = previousArtwork
+                        durationSecs = previousDuration
+                        positionSecs = MPVLib.getPropertyDouble("time-pos")?.takeIf { it.isFinite() && it >= 0.0 } ?: previousPosition
+                        readyGeneration = previousReadyGeneration
+                        previousRate?.let { MPVLib.setPropertyDouble("speed", it) }
+                        if (!wasPaused && !MpvServiceBridge.playbackHold.blocksAutoPlay) {
+                            MPVLib.setPropertyBoolean("pause", false)
+                        }
+                        videoOutput.refresh()
+                        syncMetadata()
+                        emitState(if (wasPaused) "paused" else previousState, force = true)
+                        rolledBack = true
+                    }
+                }
                 Log.e(TAG, "loadAndPlay failed", e)
-                operationPromise.reject("E_LOAD", e.message, e)
+                operationPromise.reject(
+                    if (rolledBack) "E_RENDITION_ROLLED_BACK" else if (isRenditionRequest && !renditionMutationStarted) "E_RENDITION_REJECTED" else "E_LOAD",
+                    e.message, e,
+                    Arguments.createMap().apply {
+                        outgoingIdentity?.let {
+                            putString("mediaId", it.mediaId)
+                            putDouble("loadGeneration", it.loadGeneration.toDouble())
+                        }
+                        capturedForFailure?.let { putDouble("outgoingAudioPosition", it) }
+                    },
+                )
             }
         }
     }
@@ -1313,7 +1608,35 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             album = readString(map, "album") ?: "",
             artwork = readString(map, "artwork"),
             duration = validDuration(readDouble(map, "duration")),
+            sourceMediaId = readString(map, "sourceMediaId"),
+            sourceLoadGeneration = readLong(map, "sourceLoadGeneration"),
         )
+
+    private fun requirePrepareOwner(mediaId: String?, generation: Long?) {
+        if (mediaId == null && generation == null) return // legacy audio callers
+        require(loadingTrackIdentity == null && activeTrackIdentity?.let {
+            it.mediaId == mediaId && it.loadGeneration == generation && generation == currentLoadGeneration
+        } == true) { "stale prepared source" }
+    }
+
+    private fun requirePrepareBatchOwners(payloads: ReadableArray?) {
+        if (payloads == null || payloads.size() == 0) return
+        val first = payloads.getMap(0) ?: return
+        requirePrepareOwner(readString(first, "sourceMediaId"), readLong(first, "sourceLoadGeneration"))
+        var previousId = activeTrackIdentity?.mediaId
+        var previousGeneration = activeTrackIdentity?.loadGeneration
+        for (index in 0 until payloads.size()) {
+            val entry = payloads.getMap(index) ?: continue
+            val sourceId = readString(entry, "sourceMediaId")
+            val sourceGeneration = readLong(entry, "sourceLoadGeneration")
+            if (sourceId != null || sourceGeneration != null) {
+                require(sourceId == previousId && sourceGeneration == previousGeneration &&
+                    !readString(entry, "url").isNullOrBlank()) { "stale prepared chain" }
+            }
+            previousId = readString(entry, "mediaId")
+            previousGeneration = readLong(entry, "loadGeneration")
+        }
+    }
 
     /**
      * prepareNext 与批量预备/原生自动接续共用的核心：把一首曲目追加进 mpv
@@ -1326,6 +1649,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         headerString: String,
         userAgent: String?,
     ) {
+        requirePrepareOwner(prepared.sourceMediaId, prepared.sourceLoadGeneration)
         MPVLib.setOptionString("http-header-fields", headerString)
         (userAgent ?: defaultUserAgent)?.let { MPVLib.setOptionString("user-agent", it) }
 
@@ -1351,12 +1675,15 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
 
         postPromise(promise, "E_PREPARE_NEXT") { operationPromise ->
+            var mutated = false
             try {
+                payload?.let { requirePrepareOwner(readString(it, "sourceMediaId"), readLong(it, "sourceLoadGeneration")) }
                 // 清空前先记下是否真的存在 runway：JS 提交空 url 时这里会把唯一的
                 // 预载项摘掉，而这条路径以前完全不打日志，导致「后台播到曲尾就停」
                 // 长期不可观测。
                 val hadPrepared = hasPlaylistPreparedTrack
                 val previousPreparedMediaId = preparedTrack?.mediaId
+                mutated = true
                 clearPreparedTrack(removeFromPlaylist = true)
                 val nextPayload = payload
                 val url = nextPayload?.let { readString(it, "url") }
@@ -1396,7 +1723,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 operationPromise.resolve(null)
             } catch (e: Exception) {
                 Log.w(TAG, "prepareNext failed", e)
-                clearPreparedTrack(removeFromPlaylist = false)
+                if (mutated) clearPreparedTrack(removeFromPlaylist = false)
                 operationPromise.reject("E_PREPARE_NEXT", e.message, e)
             }
         }
@@ -1417,9 +1744,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         }
 
         postPromise(promise, "E_PREPARE_NEXT_BATCH") { operationPromise ->
+            var mutated = false
             try {
+                requirePrepareBatchOwners(payloads)
                 val hadPrepared = hasPlaylistPreparedTrack
                 val previousPreparedMediaId = preparedTrack?.mediaId
+                mutated = true
                 clearPreparedTrack(removeFromPlaylist = true)
 
                 val count = payloads?.size() ?: 0
@@ -1486,7 +1816,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 operationPromise.resolve(null)
             } catch (e: Exception) {
                 Log.w(TAG, "prepareNextBatch failed", e)
-                clearPreparedTrack(removeFromPlaylist = false)
+                if (mutated) clearPreparedTrack(removeFromPlaylist = false)
                 operationPromise.reject("E_PREPARE_NEXT_BATCH", e.message, e)
             }
         }
@@ -1560,7 +1890,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             try {
                 // JS 的自动播放（补偿、回滚、打断结束）在外部暂停、系统打断之后不能
                 // 出声；用户明确要播时 JS 先调 claimPlayback 解除
-                if (MpvServiceBridge.playbackHold.blocksAutoPlay) {
+                if (MpvServiceBridge.playbackHold.blocksAutoPlay || (renditionKind == "mv" && !videoNetworkAllowed())) {
                     keepHeldPaused("resume")
                     operationPromise.resolve(null)
                     return@postPromise
@@ -1583,6 +1913,29 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     /** 用户明确要播：解除外部暂停、系统打断对自动出声的拦截（见 [PlaybackHold]）。 */
     @ReactMethod
+    fun resumeVideo(payload: ReadableMap, promise: Promise) {
+        postPromise(promise, "E_VIDEO_RESUME") { result ->
+            val owner = loadingTrackIdentity ?: activeTrackIdentity
+            val policy = readString(payload, "policy")
+            require(isInitialized.get() && renditionKind == "mv" && owner != null &&
+                owner.mediaId == readString(payload, "mediaId") &&
+                owner.loadGeneration == readLong(payload, "loadGeneration") &&
+                owner.loadGeneration == currentLoadGeneration) { "Video superseded" }
+            require(policy in listOf("unmetered", "allow-metered") && videoNetworkAllowed(policy)) { "Video network unavailable" }
+            videoNetworkPolicy = policy
+            watchVideoNetwork()
+            if (MpvServiceBridge.playbackHold.blocksAutoPlay) keepHeldPaused("video-resume")
+            else {
+                startPlaybackService(foreground = true)
+                pendingUnpause.arm(currentLoadGeneration)
+                scheduleUnpauseRetries(currentLoadGeneration)
+            }
+            result.resolve(null)
+        }
+    }
+
+    /** Explicit claim does not override the separate video network policy. */
+    @ReactMethod
     fun claimPlayback(promise: Promise) {
         postPromise(promise, "E_CLAIM") { operationPromise ->
             MpvServiceBridge.playbackHold.claim()
@@ -1603,6 +1956,8 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             }
             try {
                 stopRequested = true
+                videoOutput.detach()
+                renditionKind = "audio"
                 pendingPlaylistCompaction = false
                 pendingNaturalEnd = null
                 clearPreparedTrack(removeFromPlaylist = true)
@@ -1754,6 +2109,48 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     /** One read on the existing owner thread; no observers, playback commands or URL export. */
     @ReactMethod
+    fun getVideoInfo(promise: Promise) {
+        postPromise(promise, "E_MPV_VIDEO_QUERY") { result ->
+            val identity = loadingTrackIdentity ?: ownedVideoIdentity ?: activeTrackIdentity
+            result.resolve(Arguments.createMap().apply {
+                putString("mediaId", identity?.mediaId)
+                putDouble("loadGeneration", currentLoadGeneration.toDouble())
+                putString("kind", renditionKind)
+                putBoolean("completed", identity != null && completedVideoIdentity == identity)
+                outgoingAudioPosition?.let { putDouble("outgoingAudioPosition", it) }
+                putInt("instance", mpvInstance?.let { System.identityHashCode(it) } ?: 0)
+                putBoolean("surfaceAttached", videoOutput.isAttached)
+                videoOutput.owner?.let { putDouble("surfaceOwner", it.toDouble()) }
+                putString("codec", MPVLib.getPropertyString("video-codec"))
+                putString("vo", MPVLib.getPropertyString("current-vo"))
+                putString("hwdec", MPVLib.getPropertyString("hwdec-current"))
+                MPVLib.getPropertyInt("width")?.let { putInt("width", it) }
+                MPVLib.getPropertyInt("height")?.let { putInt("height", it) }
+            })
+        }
+    }
+
+    /** Paired clock/identity on the same owner thread, not two racing JS reads. */
+    @ReactMethod
+    fun getRenditionProgress(promise: Promise) {
+        postPromise(promise, "E_MPV_QUERY") { result ->
+            val identity = activeTrackIdentity
+            if (identity == null || loadingTrackIdentity != null || identity.loadGeneration != currentLoadGeneration) {
+                result.resolve(null)
+                return@postPromise
+            }
+            result.resolve(Arguments.createMap().apply {
+                putEventIdentity(this)
+                val raw = MPVLib.getPropertyDouble("time-pos")
+                putBoolean("ready", readyGeneration == currentLoadGeneration && raw != null && raw.isFinite() && raw >= 0.0)
+                putDouble("position", raw?.takeIf { it.isFinite() && it >= 0.0 } ?: positionSecs)
+                putDouble("duration", validDuration(MPVLib.getPropertyDouble("duration")).takeIf { it > 0.0 } ?: durationSecs)
+                putDouble("buffered", bufferedPositionSecs())
+            })
+        }
+    }
+
+    @ReactMethod
     fun getAudioInfo(promise: Promise) {
         postPromise(promise, "E_MPV_QUERY") { operationPromise ->
             try {
@@ -1812,34 +2209,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     override fun eventProperty(property: String, value: Long) {
-        runMpvCallbackOnMain {
-            when (property) {
-                "time-pos" -> {
-                    positionSecs = value.toDouble()
-                    markEngineProgress(positionSecs)
-                    emitProgress()
-                }
-                "duration" -> {
-                    if (value > 0) {
-                        durationSecs = value.toDouble()
-                        syncMetadata()
-                        emitProgress(force = true)
-                    }
-                }
-                "demuxer-cache-duration" -> {
-                    cacheAheadSecs = value.toDouble().coerceAtLeast(0.0)
-                    emitProgress()
-                }
-            }
-        }
+        readCurrentNumericProperty(property, value.toDouble())
     }
 
     override fun eventProperty(property: String, value: Boolean) {
-        runMpvCallbackOnMain {
+        runOwnedPropertyOnMain {
+            val currentValue = if (renditionTrackingEnabled) {
+                MPVLib.getPropertyBoolean(property) ?: return@runOwnedPropertyOnMain
+            } else value
             when (property) {
                 "pause" -> {
                     val idle = MPVLib.getPropertyBoolean("idle-active") ?: false
-                    if (value) {
+                    if (currentValue) {
                         if (!idle && currentState != "ended") {
                             // Same-track replacement stops the old file to capture its
                             // position. That stop is buffering, not a user pause.
@@ -1847,7 +2228,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                                 loadingGeneration == currentLoadGeneration &&
                                     pendingSeek.isPendingFor(currentLoadGeneration) &&
                                     pendingUnpause.isArmedFor(currentLoadGeneration) &&
-                                    !MpvServiceBridge.playbackHold.blocksAutoPlay
+                                    !MpvServiceBridge.playbackHold.blocksAutoPlay && (renditionKind != "mv" || videoNetworkAllowed())
                             emitState(if (restoringWhileLoading) "buffering" else "paused")
                         }
                     } else if (!idle || loadingGeneration == currentLoadGeneration) {
@@ -1855,14 +2236,14 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                 }
                 "idle-active" -> {
-                    if (value) {
+                    if (currentValue) {
                         val now = System.currentTimeMillis()
                         if (
                             now < suppressIdleUntilMs ||
                             loadingGeneration == currentLoadGeneration ||
                             currentState == "ended"
                         ) {
-                            return@runMpvCallbackOnMain
+                            return@runOwnedPropertyOnMain
                         }
                         emitState("idle")
                     } else if (currentState != "paused" && currentState != "ended") {
@@ -1870,7 +2251,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                 }
                 "paused-for-cache" -> {
-                    if (value) {
+                    if (currentValue) {
                         emitState("buffering")
                     } else {
                         val paused = MPVLib.getPropertyBoolean("pause") ?: false
@@ -1885,7 +2266,18 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     override fun eventProperty(property: String, value: Double) {
-        runMpvCallbackOnMain {
+        readCurrentNumericProperty(property, value)
+    }
+
+    private fun readCurrentNumericProperty(property: String, observed: Double) {
+        runOwnedPropertyOnMain {
+            if (renditionTrackingEnabled) {
+                val identity = loadingTrackIdentity ?: activeTrackIdentity ?: return@runOwnedPropertyOnMain
+                if (!currentPathMatches(identity.url)) return@runOwnedPropertyOnMain
+            }
+            val value = (if (renditionTrackingEnabled) MPVLib.getPropertyDouble(property) else observed)
+                ?.takeIf { it.isFinite() && it >= 0.0 }
+                ?: return@runOwnedPropertyOnMain
             when (property) {
                 "time-pos" -> {
                     if (!value.isNaN() && value >= 0) {
@@ -1912,13 +2304,16 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     override fun eventProperty(property: String, value: String) {
-        runMpvCallbackOnMain {
+        runOwnedPropertyOnMain {
             if (property == "playback-error") {
-                Log.e(TAG, "playback error: $value")
+                val currentError = (if (renditionTrackingEnabled) MPVLib.getPropertyString(property) else value)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@runOwnedPropertyOnMain
+                Log.e(TAG, "playback error")
                 sendEvent(
                     ON_MPV_ERROR,
                     Arguments.createMap().apply {
-                        putString("message", value)
+                        putString("message", currentError)
                         putString("code", "mpv-playback-error")
                     },
                 )
@@ -1928,6 +2323,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     override fun event(eventId: Int) {
+        // Latch the identity at callback receipt, before a queued new load can
+        // replace it on the main looper. Only MV terminal ownership uses this;
+        // ordinary prepared/audio end handling below retains its existing path.
+        val videoEndIdentity = if (eventId == MPVLib.MPV_EVENT_END_FILE) activeTrackIdentity else null
+        val callbackKind = renditionKind
         runMpvCallbackOnMain {
             when (eventId) {
                 MPVLib.MPV_EVENT_START_FILE -> {
@@ -1987,12 +2387,20 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                             MPVLib.command(arrayOf("seek", deferredSeek.toString(), "absolute"))
                         } catch (e: Exception) {
                             Log.w(TAG, "deferred seek failed", e)
+                            if (ownedAudioReturnIdentity?.loadGeneration == generation) {
+                                failedAudioReturnGeneration = generation
+                                pendingUnpause.cancel()
+                                MPVLib.setPropertyBoolean("pause", true)
+                                emitError("E_AUDIO_RETURN_SEEK", "Audio return seek failed")
+                                return@runMpvCallbackOnMain
+                            }
                         }
                     }
                     updateDurationFromMpv(seekingTo = deferredSeek)
                     explicitIdentity?.let { identity ->
                         replaceActiveIdentity(identity)
                         loadingTrackIdentity = null
+                        videoOutput.refresh()
                         emitActiveTrackChanged(identity, "loaded")
                     }
                     if (pendingUnpause.isArmedFor(generation)) {
@@ -2007,13 +2415,42 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     if (identity == null || !currentPathMatches(identity.url)) {
                         return@runMpvCallbackOnMain
                     }
+                    if (failedAudioReturnGeneration == currentLoadGeneration) return@runMpvCallbackOnMain
+                    completedVideoIdentity = null
+                    readyGeneration = currentLoadGeneration
+                    if (ownedAudioReturnIdentity == identity) {
+                        val raw = MPVLib.getPropertyDouble("time-pos")
+                        val target = audioReturnPosition
+                        if (raw == null || !raw.isFinite() || target == null || raw < target - 0.25) {
+                            failedAudioReturnGeneration = currentLoadGeneration
+                            readyGeneration = -1L
+                            pendingUnpause.cancel()
+                            MPVLib.setPropertyBoolean("pause", true)
+                            emitError("E_AUDIO_RETURN_POSITION", "Audio return is not at its saved position")
+                            return@runMpvCallbackOnMain
+                        }
+                        ownedAudioReturnIdentity = null
+                        audioReturnPosition = null
+                    }
                     updateDurationFromMpv()
                     val generation = currentLoadGeneration
                     if (pendingUnpause.isArmedFor(generation)) {
                         forceUnpause(generation)
                     }
+                    if (renditionTrackingEnabled) emitProgress(force = true)
+                    if (renditionTrackingEnabled) {
+                        Log.d(TAG, "rendition ready[$generation]: kind=$renditionKind " +
+                            "position=${MPVLib.getPropertyDouble("time-pos")} paused=${MPVLib.getPropertyBoolean("pause")} " +
+                            "videoCodec=${MPVLib.getPropertyString("video-codec")?.substringBefore(" ")} " +
+                            "width=${MPVLib.getPropertyInt("width")} height=${MPVLib.getPropertyInt("height")} " +
+                            "vo=${MPVLib.getPropertyString("current-vo")} hwdec=${MPVLib.getPropertyString("hwdec-current")}")
+                    }
                 }
                 MPVLib.MPV_EVENT_END_FILE -> {
+                    if (renditionTrackingEnabled && videoEndIdentity != activeTrackIdentity) {
+                        Log.d(TAG, "END_FILE ignored for replaced rendition owner")
+                        return@runMpvCallbackOnMain
+                    }
                     val now = System.currentTimeMillis()
                     if (
                         stopRequested ||
@@ -2026,10 +2463,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     }
                     pendingUnpause.cancel()
                     loadingGeneration = -1L
-                    val endedIdentity = activeTrackIdentity
+                    val endedIdentity = if (renditionTrackingEnabled) videoEndIdentity else activeTrackIdentity
                     val pending = PendingNaturalEnd(
                         serial = ++naturalEndSerial,
                         endedIdentity = endedIdentity,
+                        videoEndIdentity = videoEndIdentity,
+                        endedKind = callbackKind,
                     )
                     pendingNaturalEnd = pending
                     val promotedTrack = promotePreparedTrack(

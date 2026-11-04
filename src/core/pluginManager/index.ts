@@ -130,6 +130,7 @@ class PluginManager implements IPluginManager, IInjectable {
         plugins.forEach(it => {
             this.updatePluginCache(it);
         });
+        notifyPluginEnabledChanged();
     }
 
     private updatePluginCache(plugin: Plugin) {
@@ -900,6 +901,7 @@ class PluginManager implements IPluginManager, IInjectable {
 
     setUserVariables(plugin: Plugin, userVariables: Record<string, string>) {
         pluginMeta.setUserVariables(plugin.name, userVariables);
+        notifyPluginEnabledChanged();
     }
 
     getUserVariables(plugin: Plugin) {

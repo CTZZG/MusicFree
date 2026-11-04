@@ -80,6 +80,186 @@ class LiveUpdateEngineProgressTest {
     }
 
     @Test
+    fun ownedFailedVideoCanReturnTheCapturedAudioWithoutAMvClock() {
+        call { requireNotNull(module).pause(it) }
+        call { requireNotNull(module).seekTo(37.0, it) }
+        await("original stopped audio checkpoint") { onMain {
+            kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25
+        } }
+        val missingVideo = File(tone.parentFile, tone.name + ".missing.mp4")
+        assertTrue("controlled nonexistent video", !missingVideo.exists())
+        val captured = call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", missingVideo.absolutePath, "mediaId", "raw-progress", "loadGeneration", 2.0,
+            "autoPlay", false, "renditionKind", "mv", "positionMode", "start-zero",
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+        ), it) } as Number
+        await("failed video has no outgoing clock") { onMain {
+            engine.getPropertyBoolean("idle-active") == true && engine.getPropertyDouble("time-pos") == null
+        } }
+        val failed = call { requireNotNull(module).getVideoInfo(it) } as com.facebook.react.bridge.ReadableMap
+        assertEquals("mv", failed.getString("kind"))
+        assertEquals(2.0, failed.getDouble("loadGeneration"), 0.0)
+        assertEquals(captured.toDouble(), failed.getDouble("outgoingAudioPosition"), 0.0)
+        var rejectionCode: String? = null
+        assertThrows(AssertionError::class.java) {
+            call(onRejected = { rejectionCode = it }) { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured.toDouble(),
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) }
+        }
+        assertEquals("E_RENDITION_REJECTED", rejectionCode)
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 3.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio",
+            "startPosition", captured.toDouble(), "playbackRate", 1.5,
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 2.0,
+        ), it) }
+        await("original audio restored paused after owned video failure") { onMain {
+            engine.getPropertyString("path") == tone.absolutePath && engine.getPropertyBoolean("pause") == true &&
+                kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - captured.toDouble()) < .25
+        } }
+        val restored = call { requireNotNull(module).getRenditionProgress(it) } as com.facebook.react.bridge.ReadableMap
+        assertEquals("audio", restored.getString("renditionKind"))
+        assertEquals(3.0, restored.getDouble("loadGeneration"), 0.0)
+        assertEquals(captured.toDouble(), restored.getDouble("position"), .25)
+        onMain { assertEquals(1.5, requireNotNull(engine.getPropertyDouble("speed")), 0.0) }
+    }
+
+    @Test
+    fun failedAudioReturnRetriesOnlyItsSavedCheckpointAndReportsActualReadyClock() {
+        call { requireNotNull(module).pause(it) }
+        call { requireNotNull(module).seekTo(37.0, it) }
+        await("original checkpoint") { onMain { kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25 } }
+        val missing = File(tone.parentFile, tone.name + ".missing.mp4").absolutePath
+        val captured = (call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", missing, "mediaId", "raw-progress", "loadGeneration", 2.0,
+            "autoPlay", false, "renditionKind", "mv", "positionMode", "start-zero",
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+        ), it) } as Number).toDouble()
+        await("failed owned video") { onMain { engine.getPropertyBoolean("idle-active") == true && engine.getPropertyDouble("time-pos") == null } }
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", missing + ".audio", "mediaId", "raw-progress", "loadGeneration", 3.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured,
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 2.0,
+        ), it) }
+        await("failed owned audio return") { onMain { engine.getPropertyBoolean("idle-active") == true && engine.getPropertyDouble("time-pos") == null } }
+        for ((owner, position) in listOf(2.0 to captured, 3.0 to captured + 1.0)) {
+            var code: String? = null
+            assertThrows(AssertionError::class.java) {
+                call(onRejected = { code = it }) { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                    "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                    "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", position,
+                    "expectedMediaId", "raw-progress", "expectedLoadGeneration", owner,
+                ), it) }
+            }
+            assertEquals("E_RENDITION_REJECTED", code)
+        }
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 4.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured,
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 3.0,
+        ), it) }
+        await("actual playback restart at captured audio position") {
+            val progress = call { requireNotNull(module).getRenditionProgress(it) } as? com.facebook.react.bridge.ReadableMap
+                ?: return@await false
+            if (progress.getDouble("loadGeneration") != 4.0 || !progress.getBoolean("ready")) return@await false
+            assertTrue("first ready audio retains its captured position",
+                kotlin.math.abs(progress.getDouble("position") - captured) < .25)
+            true
+        }
+        onMain { assertTrue(engine.getPropertyBoolean("pause") == true) }
+        // A successfully ready audio file no longer owns a failed-return retry.
+        assertThrows(AssertionError::class.java) {
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 5.0,
+                "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", captured,
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 4.0,
+            ), it) }
+        }
+    }
+
+    @Test
+    fun ownedVideoEndCanRestoreAudioWithoutAnOutgoingRawClock() {
+        call { requireNotNull(module).pause(it) }
+        call { requireNotNull(module).seekTo(37.0, it) }
+        await("original audio stop") { onMain { kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25 } }
+        val captured = call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 2.0,
+            "autoPlay", true, "renditionKind", "mv", "positionMode", "start-zero",
+            "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+        ), it) } as Number
+        assertEquals(37.0, captured.toDouble(), .25)
+        awaitPlaying()
+        call { requireNotNull(module).seekTo(89.7, it) }
+        fun field(name: String) = MpvPlayerModule::class.java.getDeclaredField(name).apply { isAccessible = true }
+        await("confirmed unpromoted EOF of this MV generation") { onMain {
+            field("completedVideoIdentity").get(module) != null && engine.getPropertyBoolean("idle-active") == true
+        } }
+        val completed = onMain { field("completedVideoIdentity").get(module) }
+        assertThrows(AssertionError::class.java) {
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                "renditionKind", "audio", "positionMode", "restore-audio", "startPosition", 37.0,
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) }
+        }
+        onMain { assertTrue(field("completedVideoIdentity").get(module) === completed) }
+        call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+            "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 3.0,
+            "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio",
+            "startPosition", captured.toDouble(), "expectedMediaId", "raw-progress", "expectedLoadGeneration", 2.0,
+        ), it) }
+        await("returned audio at its stored stop") { onMain {
+            field("loadingTrackIdentity").get(module) == null && field("currentLoadGeneration").getLong(module) == 3L &&
+                engine.getPropertyBoolean("pause") == true && kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25
+        } }
+        onMain {
+            assertEquals("audio", field("renditionKind").get(module))
+            assertEquals(null, field("completedVideoIdentity").get(module))
+        }
+    }
+
+    @Test
+    fun rejectedRenditionLeavesAnotherGenerationAndItsDeferredWorkUntouched() {
+        call { requireNotNull(module).pause(it) }
+        fun field(name: String) = MpvPlayerModule::class.java.getDeclaredField(name).apply { isAccessible = true }
+        val loading = onMain {
+            val identity = MpvPlayerModule::class.java.declaredClasses.single { it.simpleName == "TrackIdentity" }
+                .getDeclaredConstructor(String::class.java, String::class.java, Long::class.javaPrimitiveType,
+                    Long::class.javaPrimitiveType, Long::class.javaPrimitiveType).apply { isAccessible = true }
+                .newInstance(tone.absolutePath + "/pending", "raw-progress", 42L, 0L, 1L)
+            // Deterministically hold the real loadfile-replace window: the current file
+            // is still the original audio, while the next generation owns deferred work.
+            field("loadingTrackIdentity").set(module, identity)
+            field("currentLoadGeneration").setLong(module, 42L)
+            field("loadingGeneration").setLong(module, 42L)
+            field("renditionKind").set(module, "mv")
+            (field("pendingSeek").get(module) as PendingSeek).defer(42L, 12.0)
+            (field("pendingUnpause").get(module) as PendingUnpause).arm(42L)
+            identity
+        }
+        val rejected = assertThrows(AssertionError::class.java) {
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 99.0,
+                "renditionKind", "mv", "positionMode", "start-zero",
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) }
+        }
+        assertTrue(rejected.message.orEmpty().contains("stale rendition replacement"))
+        onMain {
+            assertTrue("keep the exact pending identity", field("loadingTrackIdentity").get(module) === loading)
+            assertEquals(42L, field("currentLoadGeneration").getLong(module))
+            assertEquals(42L, field("loadingGeneration").getLong(module))
+            assertEquals("mv", field("renditionKind").get(module))
+            assertEquals(12.0, requireNotNull((field("pendingSeek").get(module) as PendingSeek).peek(42L)), 0.0)
+            assertTrue((field("pendingUnpause").get(module) as PendingUnpause).isArmedFor(42L))
+            assertEquals(tone.absolutePath, engine.getPropertyString("path"))
+            assertTrue(engine.getPropertyBoolean("pause") == true)
+        }
+    }
+
+    @Test
     fun queuedSourceReplacementPreservesTheStoppedPositionAndPause() {
         val fallback = requireNotNull(engine.getPropertyDouble("time-pos"))
         val entered = CountDownLatch(1)
@@ -275,14 +455,14 @@ class LiveUpdateEngineProgressTest {
         return requireNotNull(result).getOrThrow()
     }
 
-    private fun call(action: (Promise) -> Unit): Any? {
+    private fun call(onRejected: ((String?) -> Unit)? = null, action: (Promise) -> Unit): Any? {
         val completed = CountDownLatch(1)
         var failure: String? = null
         var result: Any? = null
         val promise = Proxy.newProxyInstance(Promise::class.java.classLoader, arrayOf(Promise::class.java)) { _, method, args ->
             when (method.name) {
                 "resolve" -> { result = args?.firstOrNull(); completed.countDown() }
-                "reject" -> { failure = args?.joinToString(); completed.countDown() }
+                "reject" -> { failure = args?.joinToString(); onRejected?.invoke(args?.firstOrNull() as? String); completed.countDown() }
                 else -> throw AssertionError("Unexpected Promise call: ${method.name}")
             }
             null

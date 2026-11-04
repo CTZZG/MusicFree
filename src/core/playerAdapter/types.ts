@@ -33,6 +33,7 @@ export type PlayerAdapterEvent =
     | "temporaryQueueChanged"
     | "queuesChanged"
     | "queueChanged"
+    | "renditionChanged"
     | "androidAutoConnectionChanged"
     | "remotePlay"
     | "remotePause"
@@ -56,6 +57,63 @@ export interface PlayerAdapterProgress {
     position: number;
     duration: number;
     buffered: number;
+    /** Native playback-restart/clock readiness, only needed by rendition consumers. */
+    ready?: boolean;
+}
+
+/** The actual native load, separately from the logical song in the queue. */
+export interface PlayerRenditionIdentity {
+    mediaId: string;
+    loadGeneration: number;
+    kind: "audio" | "mv";
+}
+
+/** Public read model: no temporary media URL, headers or original-song mutation. */
+export interface PlayerActiveRendition extends PlayerRenditionIdentity {
+    ready?: boolean;
+    videoId?: string;
+    providerKey?: string;
+    qualityId?: string;
+    qualityLabel?: string;
+    timelineId?: string;
+}
+
+export interface PlayerRenditionSource {
+    url: string;
+    headers?: Record<string, string>;
+    userAgent?: string;
+    allowInsecureHttpPlayback?: boolean;
+    trustedLocalMediaProxy?: boolean;
+}
+
+export type PlayerRenditionRequest = {
+    expected: PlayerRenditionIdentity;
+    source: PlayerRenditionSource;
+    autoPlay: boolean;
+    /** Internal host callback as soon as native schedules the load, before FILE_LOADED. */
+    onScheduled?: (receipt: PlayerRenditionReceipt) => void;
+    /** Host policy only; never copied from a plugin result. */
+    videoNetworkPolicy?: "unmetered" | "allow-metered";
+    requireForeground?: boolean;
+} & (
+    | {
+        kind: "mv";
+        video: Pick<PlayerActiveRendition,
+            "videoId" | "providerKey" | "qualityId" | "qualityLabel" | "timelineId">;
+        position: { mode: "start-zero" } | { mode: "preserve-mv"; timelineId: string };
+    }
+    | {
+        kind: "audio";
+        position: { mode: "restore-audio"; positionSeconds: number };
+    }
+);
+
+export interface PlayerRenditionReceipt {
+    rendition: PlayerActiveRendition;
+    /** Native pause/capture result; never a JS fallback or the new MV's position. */
+    outgoingPosition: number | null;
+    /** Exact native ready sample that passed the audio-return check, not a later reread. */
+    readyProgress?: PlayerAdapterProgress;
 }
 
 /** A generation-scoped snapshot of the decoded file, not the device/DAC output. */
@@ -243,6 +301,17 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
     seekTo(position: number): Promise<void>;
 
     getProgress(): Promise<PlayerAdapterProgress>;
+
+    getActiveRendition?(): PlayerActiveRendition | null;
+
+    /** Transition ownership, which may still be loading; not an active-file assertion. */
+    getRenditionOwner?(): PlayerRenditionIdentity | null;
+
+    replaceRendition?(request: PlayerRenditionRequest): Promise<PlayerRenditionReceipt>;
+
+    cancelRenditionTransition?(): void;
+    getVideoInfo?(): Promise<{ mediaId: string | null; loadGeneration: number; kind: string; outgoingAudioPosition?: number }>;
+    resumeVideo?(policy: "unmetered" | "allow-metered"): Promise<void>;
 
     getState(): Promise<PlayerBackendState>;
 

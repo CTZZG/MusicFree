@@ -70,8 +70,11 @@ class RealJsEngineProgressTest {
         onMain { host = (context.applicationContext as ReactApplication).reactHost }
         await("ReactHost-owned native module", 30000) {
             onMain {
-                // RN's class overload requires @ReactModule; this legacy module is registered by name.
                 val actual = host?.currentReactContext?.getNativeModule("MpvPlayer") as? MpvPlayerModule
+                if (actual != null) {
+                    assertTrue("Fabric view class lookup must use the ReactHost's same player",
+                        host?.currentReactContext?.getNativeModule(MpvPlayerModule::class.java) === actual)
+                }
                 val field = MpvPlayerModule::class.java.getDeclaredField("mpvInstance").apply { isAccessible = true }
                 val handle = actual?.let { field.get(it) as? MPVLib }
                 if (actual != null && handle != null) { module = actual; engine = handle; true } else false
@@ -209,10 +212,34 @@ class RealJsEngineProgressTest {
             }
             raw
         }
-        onMain { controller.transportControls.seekTo(15000) }
-        awaitEngine(hq, false, "JS Flow C", anchor = 15.0)
+        // time-pos can already expose the target while mpv is still seeking.
+        // Its later PLAYBACK_RESTART legitimately publishes playing, so do not
+        // inject the controlled buffering event until that real seek completes.
+        val seekObserved = AtomicBoolean(false)
+        val restarted = CountDownLatch(1)
+        val seekObserver = object : MPVLib.EventObserver {
+            override fun eventProperty(property: String) = Unit
+            override fun eventProperty(property: String, value: Long) = Unit
+            override fun eventProperty(property: String, value: Double) = Unit
+            override fun eventProperty(property: String, value: Boolean) = Unit
+            override fun eventProperty(property: String, value: String) = Unit
+            override fun event(eventId: Int) {
+                if (eventId == MPVLib.MpvEvent.MPV_EVENT_SEEK) seekObserved.set(true)
+                if (eventId == MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART && seekObserved.get()) restarted.countDown()
+            }
+        }
+        val seekDeadline = SystemClock.elapsedRealtime() + 30000
+        try {
+            onMain { engine.addObserver(seekObserver); controller.transportControls.seekTo(15000) }
+            await("spinner setup seek restart", deadline = seekDeadline) { restarted.count == 0L }
+            awaitEngine(hq, false, "JS Flow C", anchor = 15.0, deadline = seekDeadline)
+            assertEquals("spinner setup seek finished", false, onMain { engine.getPropertyBoolean("seeking") })
+        } finally {
+            onMain { engine.removeObserver(seekObserver) }
+        }
         android.util.Log.i("E2ELoadingSpinnerSetup", JSONObject()
             .put("beforeRawSeconds", before).put("targetSeconds", 15.0)
+            .put("seekObserved", seekObserved.get()).put("playbackRestartObserved", restarted.count == 0L)
             .put("afterRawSeconds", onMain { engine.getPropertyDouble("time-pos") }).toString())
         fun recordWindow(phase: String, paused: Boolean) {
             val samples = List(5) {

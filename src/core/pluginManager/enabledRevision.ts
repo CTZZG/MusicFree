@@ -1,9 +1,23 @@
 import { useEffect, useState } from "react";
 
 const listeners = new Set<() => void>();
+let runtimeRevision = 0;
+
+/** Includes disable/enable ABA and configuration changes while a request is in flight. */
+export function getPluginRuntimeRevision() {
+    return runtimeRevision;
+}
+
+export function subscribePluginRuntimeRevision(listener: () => void) {
+    listeners.add(listener);
+    return () => {
+        listeners.delete(listener);
+    };
+}
 
 /** 插件启用状态落盘之后调用 */
 export function notifyPluginEnabledChanged() {
+    runtimeRevision += 1;
     listeners.forEach(listener => listener());
 }
 

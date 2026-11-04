@@ -10,6 +10,11 @@ enum NetworkState {
 class Network {
     private _state: NetworkState = NetworkState.Wifi;
 
+    /** A fresh OS reading for an explicit, data-heavy action; not the startup default. */
+    getFreshState() {
+        return NetInfo.fetch();
+    }
+
     /** 获取网络状态 */
     get state() {
         return this._state;

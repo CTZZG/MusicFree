@@ -1,4 +1,11 @@
 import PlaybackSourceResolver from "./playbackSourceResolver";
+import { getPluginRuntimeRevision, usePluginEnabledRevision } from "../pluginManager/enabledRevision";
+import MusicVideoController, { type MusicVideoState } from "./musicVideoController";
+import { MusicVideoSources } from "../pluginManager/musicVideoSource";
+import { admitMusicVideoSource } from "./musicVideoAdmission";
+import { isMediaHttpAllowed } from "@/utils/mediaHttpCompatibilityPolicy";
+import { matchesMpvMediaId } from "@/core/playerAdapter/mpvMediaId";
+import type { IQualityChangeRequestToken } from "./qualityChangeCoordinator";
 import { AppState, AppStateStatus } from "react-native";
 import { localPluginPlatform, sortIndexSymbol, timeStampSymbol } from "@/constants/commonConst";
 import delay from "@/utils/delay";
@@ -116,6 +123,8 @@ type MusicFreePlayerTrack = PlayerAdapterTrack &
 
 interface IMpvManualSkipTransition {
     token: IMpvTrackTransitionToken;
+    sourceToken?: IQualityChangeRequestToken;
+    previousWasVideo?: boolean;
     expectedMusic: IMusic.IMusicItem;
     previousMusic: IMusic.IMusicItem | null;
     previousProgress: PlayerAdapterProgress;
@@ -245,6 +254,8 @@ interface IQueueUndoRecord {
     playbackIntent: number;
     currentKey: string | null;
 }
+const knownMusicVideoAtom = atom<{ key: string; available: boolean; revision: number } | null>(null);
+const musicVideoAtom = atom<MusicVideoState>({ phase: "audio" });
 const musicStateAtom = atom<PlayerBackendState>("idle");
 const playerReadyAtom = atom(false);
 const progressAtom = atom<PlayerAdapterProgress>({
@@ -315,6 +326,7 @@ function getMediaSourceResultFailure(
 
 class TrackPlayer
     extends EventEmitter<{
+        [TrackPlayerEvents.AudioTimelineChanged]: () => void;
         [TrackPlayerEvents.PlayEnd]: () => void;
         [TrackPlayerEvents.CurrentMusicChanged]: (
             musicItem: IMusic.IMusicItem | null,
@@ -414,6 +426,134 @@ class TrackPlayer
     } | null = null;
     private manualSkipGate = new ManualSkipOperationGate();
     private qualityChangeCoordinator = new QualityChangeCoordinator();
+    private musicVideo: MusicVideoController | null = null;
+    private audioTimelineSerial = 0;
+
+    /** Consumers of the original song must not observe the MV clock, including pending returns. */
+    get audioTimelineAvailable() {
+        const owner = this.backend?.getRenditionOwner?.();
+        const active = this.backend?.getActiveRendition?.();
+        return !this.musicVideo?.blocksAudioTimeline && owner?.kind !== "mv" &&
+            active?.ready !== false &&
+            (active?.ready === undefined || !owner || (active.mediaId === owner.mediaId && active.loadGeneration === owner.loadGeneration)) &&
+            (!owner?.mediaId || !this.currentMusic || owner.mediaId === getMediaUniqueKey(this.currentMusic));
+    }
+    get timelineSerial() {
+        return this.audioTimelineSerial;
+    }
+    get musicVideoState() {
+        return this.musicVideo?.snapshot ?? { phase: "audio" as const };
+    }
+    supportsMusicVideo() {
+        return this.musicVideo?.supportsCurrentSong() ?? false;
+    }
+    async findMusicVideos(signal?: AbortSignal) {
+        const key = this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null;
+        const revision = getPluginRuntimeRevision();
+        const items = await (this.musicVideo?.candidates(signal) ?? Promise.resolve([]));
+        if (key && !signal?.aborted && revision === getPluginRuntimeRevision() && this.currentMusic && key === getMediaUniqueKey(this.currentMusic)) getDefaultStore().set(knownMusicVideoAtom, { key, available: items.length > 0, revision });
+        return items;
+    }
+    get videoMobileApproved() {
+        return this.musicVideo?.hasMobileApproval ?? false;
+    }
+    get playbackIntentRevision() {
+        return this.playbackIntent.revision;
+    }
+    videoOutputFailed(owner: { mediaId: string; loadGeneration: number }) {
+        const current = this.backend.getRenditionOwner?.();
+        if (current?.kind === "mv" && current.mediaId === owner.mediaId && current.loadGeneration === owner.loadGeneration) this.musicVideo?.handlePlaybackError().catch(() => undefined);
+    }
+    watchMusicVideo(...args: Parameters<MusicVideoController["enter"]>) {
+        return this.musicVideo?.enter(...args) ?? Promise.resolve({ status: "cancelled" as const });
+    }
+    changeVideoQuality(...args: Parameters<MusicVideoController["changeQuality"]>) {
+        return this.musicVideo?.changeQuality(...args) ?? Promise.resolve({ status: "cancelled" as const });
+    }
+    returnToSong(explicitPlay = false) {
+        return this.musicVideo?.returnToAudio(explicitPlay) ?? Promise.resolve({ status: "cancelled" as const });
+    }
+    resumeMusicVideo(...args: Parameters<MusicVideoController["resume"]>) {
+        return this.musicVideo?.resume(...args) ?? Promise.resolve({ status: "cancelled" as const });
+    }
+    cancelVideoRequest() {
+        this.musicVideo?.cancelResolving();
+    }
+    private publishAudioTimeline() {
+        this.audioTimelineSerial += 1;
+        this.mpvActiveTrackSyncSerial += 1;
+        this.emit(TrackPlayerEvents.AudioTimelineChanged);
+    }
+    private initializeMusicVideo() {
+        this.musicVideo = new MusicVideoController({
+            sources: new MusicVideoSources(this.pluginManagerService), coordinator: this.qualityChangeCoordinator,
+            currentSong: () => this.currentMusic, owner: () => this.backend?.getRenditionOwner?.() ?? null,
+            active: () => this.backend?.getActiveRendition?.() ?? null,
+            foreground: () => AppState.currentState === "active",
+            audioSettings: () => ({ quality: this.quality, rate: Number(PersistStatus.get("music.rate") ?? 100) / 100,
+                wasPlaying: this.playbackIntent.mayAutoPlay() && ["playing", "buffering"].includes(getDefaultStore().get(musicStateAtom)) }),
+            mayAutoPlay: () => this.playbackIntent.mayAutoPlay(),
+            repeatCurrentVideo: () => this.repeatMode === MusicRepeatMode.SINGLE,
+            claimPlayback: async () => {
+                this.notePlayByUser(); await this.backend.claimPlayback?.();
+            },
+            videoNetwork: async approved => {
+                const state = await Network.getFreshState();
+                if (!state.isConnected || state.isInternetReachable === false || state.type === "unknown" || state.type === "none") throw new Error("Video network unavailable");
+                const unmetered = (state.type === "wifi" || state.type === "ethernet") && !state.details?.isConnectionExpensive;
+                if (!unmetered && (!this.configService.getConfig("basic.useCelluarNetworkPlay") || !approved)) throw new Error("Video mobile approval required");
+                return unmetered ? "unmetered" : "allow-metered";
+            },
+            resumeVideo: policy => this.backend.resumeVideo?.(policy) ?? Promise.reject(new Error("Video unavailable")),
+            resumeAudio: () => this.backend.play(),
+            admitVideo: source => admitMusicVideoSource(source, isMediaHttpAllowed(this.configService)),
+            resolveAudio: async (song, quality, current) => {
+                if (!getLocalPath(song) && !LocalMusicSheet.isLocalMusic(song)) {
+                    const network = await Network.getFreshState();
+                    if (!current() || (network.type === "cellular" && !this.configService.getConfig("basic.useCelluarNetworkPlay"))) throw new Error("Audio network unavailable");
+                }
+                let source: IPlugin.IMediaSourceResult | null = null;
+                const alternate = getRememberedAlternate(song);
+                if (alternate && getDefaultStore().get(alternateSourceInUseAtom)[getMediaUniqueKey(song)] === alternate.platform) {
+                    const restored = await this.sourceResolver.resolveSourceFromAlternate(alternate, [quality], current);
+                    if (restored && restored !== "inactive") source = restored.source;
+                }
+                if (!current()) throw new Error("Superseded audio return");
+                source ??= await this.sourceResolver.resolveDirectMediaSource(song, undefined, quality);
+                if (!current() || !source?.url) throw new Error("Original audio unavailable");
+                return { url: source.url, headers: source.headers, userAgent: source.userAgent || getAppUserAgent(),
+                    allowInsecureHttpPlayback: source.allowInsecureHttpPlayback, trustedLocalMediaProxy: source.trustedLocalMediaProxy };
+            },
+            replace: request => {
+                if (!this.backend.replaceRendition) throw new Error("Video unavailable");
+                return this.backend.replaceRendition(request);
+            },
+            cancelNativeWait: () => this.backend?.cancelRenditionTransition?.(),
+            videoInfo: () => this.backend.getVideoInfo?.() ?? Promise.reject(new Error("Video unavailable")),
+            publish: state => getDefaultStore().set(musicVideoAtom, state),
+            timelineChanged: blocked => {
+                this.publishAudioTimeline();
+                if (blocked) {
+                    this.crossfade.onPause(); LastfmScrobbler.onPaused();
+                } else if (this.audioTimelineAvailable && getDefaultStore().get(musicStateAtom) === "playing") {
+                    this.crossfade.onPlay(); LastfmScrobbler.onResumed();
+                }
+            },
+            saveAudioCheckpoint: checkpoint => {
+                if (this.currentMusic && checkpoint.songKey === getMediaUniqueKey(this.currentMusic)) {
+                    this.setPersistedPlaybackProgress(checkpoint.positionSeconds, Date.now(), true);
+                }
+            },
+            audioReturned: async (checkpoint, progress) => {
+                if (!this.currentMusic || getMediaUniqueKey(this.currentMusic) !== checkpoint.songKey || progress.ready !== true) throw new Error("Audio return superseded");
+                setPlayerProgress(progress, this.currentMusic.duration ?? 0);
+                this.setPersistedPlaybackProgress(checkpoint.positionSeconds, Date.now(), true);
+            },
+            videoActivated: () => {
+                this.syncPreparedNextTrack("mv-activated");
+            },
+        });
+    }
     private mpvTrackTransitionGate = new MpvTrackTransitionGate();
     private mpvManualSkipTransition: IMpvManualSkipTransition | null = null;
     // 播放队列索引map
@@ -505,6 +645,7 @@ class TrackPlayer
         this.configService = configService;
         this.musicHistoryService = musicHistoryService;
         this.pluginManagerService = pluginManager;
+        this.initializeMusicVideo();
     }
 
     lockBackend() {
@@ -592,6 +733,7 @@ class TrackPlayer
             track.userAgent = track.userAgent || getAppUserAgent();
 
             // 异步
+            const startupSourceToken = this.qualityChangeCoordinator.begin();
             this.sourceResolver.requestPluginMediaSource(
                 this.pluginManagerService.getByMedia(track),
                 track,
@@ -614,11 +756,11 @@ class TrackPlayer
                             .playbackSource || track.playbackSource;
                     track.userAgent = track.userAgent || getAppUserAgent();
 
-                    if (isSameMediaItem(this.currentMusic, track)) {
+                    if (this.qualityChangeCoordinator.isActive(startupSourceToken) && this.audioTimelineAvailable && isSameMediaItem(this.currentMusic, track)) {
                         await this.setTrackSource(
                             track as MusicFreePlayerTrack,
                             false,
-                            this.normalizeProgress(progress),
+                            this.normalizeProgress(progress), false, startupSourceToken,
                         );
                     }
                 })
@@ -644,6 +786,11 @@ class TrackPlayer
                     evt.reason,
                     evt.index,
                 );
+                if (syncedMusic && this.musicVideo?.snapshot.phase !== "audio") {
+                    const state = this.musicVideo?.snapshot;
+                    if (state && "songKey" in state && state.songKey !== getMediaUniqueKey(syncedMusic)) this.musicVideo?.leaveForSongChange();
+                }
+                this.publishAudioTimeline();
                 trace("播放队列切歌", {
                     index: evt.index,
                     reason: evt.reason,
@@ -678,9 +825,30 @@ class TrackPlayer
                     });
                     return;
                 }
+                if (evt.endedRenditionKind === "mv" && !evt.autoAdvanced && this.repeatMode === MusicRepeatMode.SINGLE) {
+                    await this.musicVideo?.replay();
+                    return;
+                }
+                if (evt.endedRenditionKind === "mv") this.musicVideo?.leaveForSongChange();
                 await this.handleMpvNaturalEnd(evt).catch(error => {
                     errorLog("处理 mpv 自然结束失败", error?.message ?? error);
                 });
+            });
+
+            this.addBackendListener("renditionChanged", () => {
+                this.publishAudioTimeline();
+                if (this.audioTimelineAvailable && getDefaultStore().get(musicStateAtom) === "playing") {
+                    this.crossfade.onPlay();
+                    LastfmScrobbler.onResumed();
+                }
+            });
+
+            this.addBackendListener("remotePlayFromId", ({ mediaId }) => {
+                if (this.musicVideo?.snapshot.phase === "audio" && this.audioTimelineAvailable && !this.qualityChangeCoordinator.hasPendingCommit()) return false;
+                const song = this.playList.find(item => matchesMpvMediaId(getMediaUniqueKey(item), String(item.id), mediaId));
+                if (!song) return false;
+                this.play(song).catch(() => errorLog("远程点播未完成", "Playback request failed"));
+                return true;
             });
 
             this.addBackendListener("tracksNeedUpdate", async evt => {
@@ -691,11 +859,17 @@ class TrackPlayer
             });
 
             this.addBackendListener("playbackError", async e => {
+                if (!this.audioTimelineAvailable) {
+                    await this.musicVideo?.handlePlaybackError();
+                    return;
+                }
+                const serial = this.audioTimelineSerial;
                 const recoveryRequest = playbackRecovery.currentRequest();
                 this.recordPlaybackError(e);
                 errorLog("播放出错", e.message);
                 // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
                 const currentTrack = await this.backend.getActiveTrack?.();
+                if (serial !== this.audioTimelineSerial || !this.audioTimelineAvailable) return;
                 if (
                     this.shouldIgnoreMpvPlaybackErrorDuringManualSkip(
                         currentTrack,
@@ -752,7 +926,7 @@ class TrackPlayer
                 // 耳机线控、音频焦点丢失这些暂停根本不经过 TrackPlayer.pause()，
                 // 只盯着那个方法会让淡出在暂停期间继续跑到 0，恢复播放后音量
                 // 卡在静音上。
-                if (normalizedState === "playing") {
+                if (normalizedState === "playing" && this.audioTimelineAvailable) {
                     this.crossfade.onPlay();
                     LastfmScrobbler.onResumed();
                 } else {
@@ -761,7 +935,7 @@ class TrackPlayer
                 }
                 if (
                     normalizedState === "paused" &&
-                    !this.shouldSuppressMpvProgressDuringManualSkip()
+                    !this.shouldSuppressMpvProgressDuringManualSkip() && this.audioTimelineAvailable
                 ) {
                     const syncSerial = this.mpvActiveTrackSyncSerial;
                     this.backend
@@ -770,7 +944,7 @@ class TrackPlayer
                             if (
                                 syncSerial !==
                                     this.mpvActiveTrackSyncSerial ||
-                                this.shouldSuppressMpvProgressDuringManualSkip()
+                                this.shouldSuppressMpvProgressDuringManualSkip() || !this.audioTimelineAvailable
                             ) {
                                 return;
                             }
@@ -797,8 +971,9 @@ class TrackPlayer
                 this.syncMpvActiveTrackFromProgress("progress");
                 const currentProgress = setPlayerProgress(
                     adapterProgress,
-                    this.currentMusic?.duration ?? 0,
+                    this.audioTimelineAvailable ? this.currentMusic?.duration ?? 0 : 0,
                 );
+                if (!this.audioTimelineAvailable) return;
                 this.persistPlaybackProgress(currentProgress.position);
                 this.crossfade.onProgress(currentProgress);
                 LastfmScrobbler.onProgressTick();
@@ -817,8 +992,9 @@ class TrackPlayer
                 }
                 const currentProgress = setPlayerProgress(
                     adapterProgress,
-                    this.currentMusic?.duration ?? 0,
+                    this.audioTimelineAvailable ? this.currentMusic?.duration ?? 0 : 0,
                 );
+                if (!this.audioTimelineAvailable) return;
                 this.persistPlaybackProgress(currentProgress.position, true);
                 this.crossfade.onSeeked(currentProgress);
             });
@@ -844,6 +1020,7 @@ class TrackPlayer
                             trace("应用进入后台，补充一次预备下一首", {
                                 nextAppState,
                             });
+                            this.musicVideo?.onBackground();
                             this.syncPreparedNextTrack("app-background");
                         }
                         lastAppState = nextAppState;
@@ -1278,6 +1455,25 @@ class TrackPlayer
             key: musicItem ? getMediaUniqueKey(musicItem) : "current",
             skip: !!mpvTransitionOwner,
         });
+        if (!mpvTransitionOwner && this.musicVideo && this.musicVideo.snapshot.phase !== "audio") {
+            if (!musicItem && this.musicVideo.snapshot.phase === "returning") {
+                this.notePlayByUser();
+                this.musicVideo.playPendingReturn();
+                return;
+            }
+            if (musicItem && this.isCurrentMusic(musicItem)) {
+                if (this.musicVideo.checkpoint) {
+                    await this.musicVideo.returnToAudio(true); return;
+                }
+                this.musicVideo.cancelResolving();
+            } else if (!musicItem && this.musicVideo.blocksAudioTimeline) {
+                this.notePlayByUser();
+                const state = await this.backend.getState();
+                if (state === "ended" || state === "idle") await this.musicVideo.replay(false);
+                else await this.musicVideo.resume(false, false);
+                return;
+            }
+        }
         if (!mpvTransitionOwner) {
             this.notePlayByUser();
             const transition = this.mpvManualSkipTransition;
@@ -1312,6 +1508,8 @@ class TrackPlayer
         requestedQuality?: IMusic.IQualityKey,
     ): Promise<void> {
         this.beginQueuePlaybackIntent();
+        let sourceToken = mpvTransitionOwner?.sourceToken;
+        if (musicItem && !this.isCurrentMusic(musicItem)) this.musicVideo?.leaveForSongChange();
         let resolvedSourceQuality: IMusic.IQualityKey | undefined;
         let playedAlternate: IMusic.IMusicItem | null = null;
         let loadingSource = false;
@@ -1319,8 +1517,9 @@ class TrackPlayer
         let sourceResolutionFailure: MediaSourceFailure | null = null;
         let recoveryRequest = playbackRecovery.currentRequest();
         let isPlayRequestActive = () => false;
-        this.crossfade.onPlay();
-        LastfmScrobbler.onResumed();
+        if (this.audioTimelineAvailable) {
+            this.crossfade.onPlay(); LastfmScrobbler.onResumed();
+        }
         try {
             trace("TrackPlayer.play start", {
                 backend: this.backend.name,
@@ -1394,6 +1593,7 @@ class TrackPlayer
                 );
                 return;
             }
+            sourceToken ??= this.qualityChangeCoordinator.begin();
             // 确认切歌超时后，confirmMpvManualSkip 会带着同一个事务重载目标歌曲。这次重载
             // 属于原来那次点歌，沿用它的请求：另起一个的话，原来那次点歌回到之前那首后
             // 报的失败会被当成过时的请求丢掉，用户什么提示都看不到
@@ -1433,6 +1633,7 @@ class TrackPlayer
             const shouldDeferMpvCurrentCommit =
                 !!(ownedMpvTransition || mpvTransitionOwner);
             isPlayRequestActive = () => {
+                if (!this.qualityChangeCoordinator.isActive((ownedMpvTransition?.sourceToken ?? sourceToken)!)) return false;
                 if (ownedMpvTransition) {
                     return this.isMpvManualSkipTransitionActive(
                         ownedMpvTransition,
@@ -1543,7 +1744,7 @@ class TrackPlayer
                         await this.setTrackSource(
                             currentTrack,
                             true,
-                            seekToTime,
+                            seekToTime, false, ownedMpvTransition?.sourceToken ?? sourceToken,
                         );
                         loadingSource = false;
                     }
@@ -1874,6 +2075,8 @@ class TrackPlayer
                 track as MusicFreePlayerTrack,
                 true,
                 seekToTime,
+                false,
+                ownedMpvTransition?.sourceToken ?? sourceToken,
             );
             loadingSource = false;
             if (
@@ -2150,6 +2353,7 @@ class TrackPlayer
             return;
         }
         this.isForceExiting = true;
+        const exitSerial = this.audioTimelineSerial;
         this.crossfade.dispose();
         // 退出前把当前这首结算掉，够阈值的话至少能进离线队列，下次启动补交。
         LastfmScrobbler.onPlaybackStopped();
@@ -2170,11 +2374,11 @@ class TrackPlayer
             }
 
             if (progress.position > 0) {
-                PersistStatus.set(
+                if (exitSerial === this.audioTimelineSerial && this.audioTimelineAvailable) PersistStatus.set(
                     "music.musicItem",
                     stripEphemeralLocalArtwork(currentMusic),
                 );
-                this.persistPlaybackProgress(progress.position, true);
+                if (exitSerial === this.audioTimelineSerial && this.audioTimelineAvailable) this.persistPlaybackProgress(progress.position, true);
             }
         }
         this.disposeServiceListeners();
@@ -2497,33 +2701,37 @@ class TrackPlayer
         }
         const expectedMpvNext = optimisticMpvNext ?? backendNextMusic;
         try {
-            if (
-                mpvTemporaryNextTrack &&
+            const commitToken = mpvManualTransition?.sourceToken ?? this.qualityChangeCoordinator.begin();
+            const committed = await this.qualityChangeCoordinator.runLatest(commitToken, async () => {
+                if (
+                    mpvTemporaryNextTrack &&
                 resolvedMpvNextTrack &&
                 this.backend.playTrack
-            ) {
-                const removedFromPlayNext =
+                ) {
+                    const removedFromPlayNext =
                     (await this.backend.removeFromPlayNext?.(
                         mpvTemporaryNextTrack as PlayerAdapterTrack,
                     )) ?? false;
-                if (!removedFromPlayNext) {
-                    await this.backend.removeFromUpNext?.(
+                    if (!removedFromPlayNext) {
+                        await this.backend.removeFromUpNext?.(
                         mpvTemporaryNextTrack as PlayerAdapterTrack,
-                    );
-                }
-                await this.backend.playTrack(resolvedMpvNextTrack);
-            } else if (mpvManualTransition && expectedMpvNext) {
-                const expectedIndex =
+                        );
+                    }
+                    await this.backend.playTrack(resolvedMpvNextTrack);
+                } else if (mpvManualTransition && expectedMpvNext) {
+                    const expectedIndex =
                     this.getMusicIndexInPlayList(expectedMpvNext);
-                const started = await this.backend.skipToIndex(expectedIndex, {
-                    autoPlay: this.playbackIntent.mayAutoPlay(),
-                });
-                if (!started) {
-                    throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
+                    const started = await this.backend.skipToIndex(expectedIndex, {
+                        autoPlay: this.playbackIntent.mayAutoPlay(),
+                    });
+                    if (!started) {
+                        throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
+                    }
+                } else {
+                    await this.backend.skipToNext();
                 }
-            } else {
-                await this.backend.skipToNext();
-            }
+            });
+            if (!committed.executed) return;
         } catch (error) {
             if (mpvManualTransition) {
                 await this.rollbackMpvManualSkipTransition(
@@ -2644,10 +2852,10 @@ class TrackPlayer
             buffered: 0,
         });
         try {
-            const started = await this.backend.skipToIndex(
-                previousIndexForSkip,
-                { autoPlay: this.playbackIntent.mayAutoPlay() },
-            );
+            const committed = await this.qualityChangeCoordinator.runLatest(mpvManualTransition.sourceToken!,
+                () => this.backend.skipToIndex(previousIndexForSkip, { autoPlay: this.playbackIntent.mayAutoPlay() }));
+            if (!committed.executed) return;
+            const started = committed.value;
             if (!started) {
                 throw new Error("MPV_TARGET_INDEX_UNAVAILABLE");
             }
@@ -2889,15 +3097,19 @@ class TrackPlayer
         previousMusic: IMusic.IMusicItem | null,
         reason: string,
     ): IMpvManualSkipTransition {
+        const checkpoint = this.musicVideo?.checkpoint;
+        const previousWasVideo = !this.audioTimelineAvailable;
+        this.musicVideo?.leaveForSongChange();
+        const sourceToken = this.qualityChangeCoordinator.begin();
         const token = this.mpvTrackTransitionGate.begin(
             getMediaUniqueKey(expectedMusic),
         );
         this.mpvActiveTrackSyncSerial += 1;
         const transition = {
-            token,
+            token, sourceToken, previousWasVideo,
             expectedMusic,
             previousMusic,
-            previousProgress: {
+            previousProgress: checkpoint ? { position: checkpoint.positionSeconds, duration: previousMusic?.duration ?? 0, buffered: checkpoint.positionSeconds } : {
                 ...getDefaultStore().get(progressAtom),
             },
             resumeOnRollback: false,
@@ -2956,7 +3168,8 @@ class TrackPlayer
         return (
             !!transition &&
             this.mpvManualSkipTransition?.token.id === transition.token.id &&
-            this.mpvTrackTransitionGate.isActive(transition.token)
+            this.mpvTrackTransitionGate.isActive(transition.token) &&
+            (!transition.sourceToken || this.qualityChangeCoordinator.isActive(transition.sourceToken))
         );
     }
 
@@ -3050,7 +3263,7 @@ class TrackPlayer
         if (!this.isMpvManualSkipTransitionActive(transition)) {
             return false;
         }
-        const backendProgress = activeMusic
+        const backendProgress = activeMusic && !transition.previousWasVideo
             ? await this.backend.getProgress().catch(() => null)
             : null;
         if (!this.isMpvManualSkipTransitionActive(transition)) {
@@ -3083,13 +3296,18 @@ class TrackPlayer
             !!activeMusic &&
             isSameMediaItem(activeMusic, transition.expectedMusic);
         let backendRestored = false;
+        if (transition.previousWasVideo && restoredMusic && !targetAlreadyActive) {
+            await this.setTrackSource(restoredMusic as MusicFreePlayerTrack, false, restoredProgress?.position, false, transition.sourceToken);
+            if (!this.isMpvManualSkipTransitionActive(transition)) return false;
+            backendRestored = true;
+        }
         // 切歌前在放、而且现在用户没暂停、系统没打断，才接着放原来那首
         const autoPlayOnRestore =
             transition.resumeOnRollback && this.playbackIntent.mayAutoPlay();
         if (
             restoredMusic &&
             !targetAlreadyActive &&
-            this.backend.restoreActiveTrack
+            !backendRestored && this.backend.restoreActiveTrack
         ) {
             backendRestored = await this.backend
                 .restoreActiveTrack({
@@ -3215,6 +3433,8 @@ class TrackPlayer
     async changeQualityWithResult(
         newQuality: IMusic.IQualityKey,
     ): Promise<IQualityChangeResult> {
+        if (!this.audioTimelineAvailable) return { success: false, requestedQuality: newQuality, superseded: true };
+        this.musicVideo?.cancelResolving();
         const requestToken = this.qualityChangeCoordinator.begin();
         const superseded = (): IQualityChangeResult => ({
             success: false,
@@ -3404,7 +3624,7 @@ class TrackPlayer
                                     ) as unknown as MusicFreePlayerTrack,
                                     playingState === "playing",
                                     resumePosition,
-                                    true,
+                                    true, requestToken, true,
                                 ),
                             isTargetCurrent: () =>
                                 this.isCurrentMusic(musicItem),
@@ -3511,7 +3731,8 @@ class TrackPlayer
     }
 
     async seekTo(progress: number) {
-        this.setPersistedPlaybackProgress(progress);
+        if (this.musicVideo?.snapshot.phase === "loading" || this.musicVideo?.snapshot.phase === "returning") return;
+        if (this.audioTimelineAvailable) this.setPersistedPlaybackProgress(progress);
         return this.backend.seekTo(progress);
     }
 
@@ -3528,6 +3749,8 @@ class TrackPlayer
     setReplayGain = (mode: ReplayGainMode) =>
         this.backend.setReplayGain?.(mode) ?? Promise.resolve();
     reset = () => {
+        this.musicVideo?.leaveForSongChange();
+        this.qualityChangeCoordinator.begin();
         this.manualSkipGate.cancelPending();
         this.cancelMpvManualSkipTransition("reset");
         return this.backend.reset();
@@ -3703,6 +3926,9 @@ class TrackPlayer
 
     private setCurrentMusic(musicItem?: IMusic.IMusicItem | null) {
         if ((musicItem ? getMediaUniqueKey(musicItem) : null) !== (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null)) {
+            this.audioTimelineSerial += 1;
+            this.mpvActiveTrackSyncSerial += 1;
+            this.musicVideo?.leaveForSongChange();
             this.beginQueuePlaybackIntent();
         }
         // 设置UI内部状态的musicitem
@@ -3711,7 +3937,7 @@ class TrackPlayer
             this.currentIndex = -1;
             getDefaultStore().set(currentMusicAtom, null);
             PersistStatus.set("music.musicItem", undefined);
-            this.setPersistedPlaybackProgress(0);
+            this.setPersistedPlaybackProgress(0, Date.now(), true);
 
             this.notifyPlaybackTrackChanged(null);
             this.emit(TrackPlayerEvents.CurrentMusicChanged, null);
@@ -3726,7 +3952,7 @@ class TrackPlayer
                 };
         this.currentIndex = this.getMusicIndexInPlayList(normalizedMusicItem);
         getDefaultStore().set(currentMusicAtom, normalizedMusicItem);
-        PersistStatus.set(
+        if (this.audioTimelineAvailable) PersistStatus.set(
             "music.musicItem",
             stripEphemeralLocalArtwork(normalizedMusicItem),
         );
@@ -3829,7 +4055,7 @@ class TrackPlayer
     }
 
     private persistPlaybackProgress(progress?: number | null, force = false) {
-        if (!this.currentMusic) {
+        if (!this.currentMusic || !this.audioTimelineAvailable) {
             return;
         }
         const normalizedProgress =
@@ -3858,13 +4084,18 @@ class TrackPlayer
 
         this.lastProgressPersistedAt = now;
         this.lastProgressPersistedPosition = normalizedProgress;
+        if (!isSameMediaItem(PersistStatus.get("music.musicItem"), this.currentMusic)) {
+            PersistStatus.set("music.musicItem", stripEphemeralLocalArtwork(this.currentMusic));
+        }
         this.setPersistedPlaybackProgress(normalizedProgress, now);
     }
 
     private setPersistedPlaybackProgress(
         progress: number,
         savedAt = Date.now(),
+        ownedAudioCheckpoint = false,
     ) {
+        if (!ownedAudioCheckpoint && !this.audioTimelineAvailable) return;
         PersistStatus.set("music.progress", progress);
         PersistStatus.set("music.progressSavedAt", savedAt);
     }
@@ -3924,6 +4155,7 @@ class TrackPlayer
 
     private async ensureAdapterAutoPlay(targetKey: string) {
         const retryDelays = [180, 520, 1100];
+        const serial = this.audioTimelineSerial;
         for (let retryDelay of retryDelays) {
             await delay(retryDelay);
 
@@ -3968,6 +4200,7 @@ class TrackPlayer
             }
 
             const state = await this.backend.getState().catch(() => "idle");
+            if (serial !== this.audioTimelineSerial || !this.audioTimelineAvailable) return;
             if (state === "playing") {
                 return;
             }
@@ -4010,7 +4243,16 @@ class TrackPlayer
         autoPlay = true,
         seekTo?: number,
         preservePosition = false,
-    ) {
+        sourceToken?: IQualityChangeRequestToken,
+        ownsCommit = false,
+    ): Promise<void> {
+        if (!ownsCommit) {
+            const token = sourceToken ?? this.qualityChangeCoordinator.begin();
+            await this.qualityChangeCoordinator.runLatest(token, () => this.setTrackSource(track, autoPlay, seekTo, preservePosition, token, true));
+            return;
+        }
+        const current = () => !sourceToken || this.qualityChangeCoordinator.isActive(sourceToken);
+        if (!current()) return;
         perfMark("track-load", {
             key: getMediaUniqueKey(track as unknown as IMusic.IMusicItem),
             autoPlay,
@@ -4051,12 +4293,14 @@ class TrackPlayer
             autoPlay: shouldAutoPlay,
             ...(preservePosition ? { preservePositionFallback: initialProgress } : {}),
         });
+        if (!current()) return;
         const nativeRestored = loadResult &&
             Number.isFinite(loadResult.restoredPosition) && loadResult.restoredPosition >= 0;
         if (nativeRestored) {
             initialProgress = loadResult.restoredPosition;
         }
         await this.syncBackendRepeatMode();
+        if (!current()) return;
         const startIndex = adapterQueue.startIndex;
         const lookaheadTracks = adapterQueue.tracks.slice(
             startIndex + 1,
@@ -4066,7 +4310,7 @@ class TrackPlayer
             errorLog("预解析下一首失败", error?.message ?? error);
         });
         this.syncPreparedNextTrack("track-source");
-        PersistStatus.set(
+        if (this.audioTimelineAvailable) PersistStatus.set(
             "music.musicItem",
             stripEphemeralLocalArtwork(track as IMusic.IMusicItem),
         );
@@ -4080,11 +4324,12 @@ class TrackPlayer
         // 先恢复位置再播放，避免重启恢复时短暂从 0 秒出声。
         if (initialProgress > 0 && !nativeRestored) {
             await delay(100);
+            if (!current()) return;
             await this.seekTo(initialProgress);
         }
         // 按装好时的意图：装载途中暂停了就不播；装载开始时系统打断着、途中还回了
         // 焦点（或用户又点了播放），照样接着播
-        if (autoPlay && this.playbackIntent.mayAutoPlay()) {
+        if (current() && autoPlay && this.playbackIntent.mayAutoPlay()) {
             await this.backend.play();
             if (adapterTargetKey) {
                 this.ensureAdapterAutoPlay(adapterTargetKey).catch(error => {
@@ -4817,6 +5062,9 @@ class TrackPlayer
             return false;
         }
 
+        if (!this.audioTimelineAvailable) return false;
+        const recoveryToken = this.qualityChangeCoordinator.begin();
+        const renditionSerial = this.audioTimelineSerial;
         this.sourceRecoveryAttemptedAt.set(key, now);
         this.sourceRecoveryInFlight.add(key);
         try {
@@ -4826,6 +5074,7 @@ class TrackPlayer
             const seekTo = this.normalizeProgress(progress?.position) ?? 0;
             const source = await this.sourceResolver.resolveFreshMediaSource(musicItem);
             if (
+                !this.qualityChangeCoordinator.isActive(recoveryToken) || renditionSerial !== this.audioTimelineSerial || !this.audioTimelineAvailable ||
                 playbackRecovery.currentRequest() !== recoveryRequest ||
                 !source?.url ||
                 !isSameMediaItem(this.currentMusic, musicItem)
@@ -4845,8 +5094,8 @@ class TrackPlayer
                 platform: musicItem.platform,
                 errorMessage: error?.message,
             });
-            await this.setTrackSource(recoveredTrack, true, seekTo);
-            if (playbackRecovery.currentRequest() !== recoveryRequest || !this.isCurrentMusic(musicItem)) {
+            await this.setTrackSource(recoveredTrack, true, seekTo, false, recoveryToken);
+            if (!this.qualityChangeCoordinator.isActive(recoveryToken) || !this.audioTimelineAvailable || playbackRecovery.currentRequest() !== recoveryRequest || !this.isCurrentMusic(musicItem)) {
                 return false;
             }
             this.setCurrentMusic(recoveredTrack as IMusic.IMusicItem);
@@ -5277,6 +5526,13 @@ class TrackPlayer
     }
 }
 
+export function useHasMusicVideo() {
+    usePluginEnabledRevision();
+    const current = useAtomValue(currentMusicAtom);
+    const known = useAtomValue(knownMusicVideoAtom);
+    return !!current && known?.key === getMediaUniqueKey(current) && known.available && known.revision === getPluginRuntimeRevision() && trackPlayer.supportsMusicVideo();
+}
+export const useMusicVideoState = () => useAtomValue(musicVideoAtom);
 export const usePlayList = () => useAtomValue(playListAtom);
 export const usePlayLaterQueue = () => useAtomValue(playLaterQueueAtom);
 export const useQueueUndo = () => useAtomValue(queueUndoAtom);
@@ -5325,13 +5581,14 @@ export function useProgress(_updateInterval?: number) {
             return;
         }
         let cancelled = false;
+        const serial = trackPlayer.timelineSerial;
         trackPlayer
             .getProgress()
             .then(currentProgress => {
-                if (!cancelled) {
+                if (!cancelled && serial === trackPlayer.timelineSerial) {
                     setPlayerProgress(
                         currentProgress,
-                        trackPlayer.currentMusic?.duration ?? 0,
+                        trackPlayer.audioTimelineAvailable ? trackPlayer.currentMusic?.duration ?? 0 : 0,
                     );
                 }
             })
