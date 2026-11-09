@@ -123,8 +123,13 @@ afterEach(() => {
 test("fullscreen resizes the same native View without dropping its first-frame evidence", async () => {
     await mount();
     await frame();
+    const videoRoot = tree.root.findByProps({ testID: "music-video-content" });
+    // Fabric must retain a stacking context even before fullscreen adds zIndex.
+    expect(videoRoot.props.collapsable).toBe(false);
     expect(mockMounts).toBe(1);
     await act(async () => tree.update(render(true)));
+    expect(tree.root.findByProps({ testID: "music-video-content" })).toBe(videoRoot);
+    expect(videoRoot.props.collapsable).toBe(false);
     expect(mockMounts).toBe(1);
     expect(surface().props.loadGeneration).toBe(2);
     await act(async () => {

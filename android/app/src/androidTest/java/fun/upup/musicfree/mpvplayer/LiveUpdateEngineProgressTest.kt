@@ -12,14 +12,20 @@ import android.support.v4.media.session.MediaControllerCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import com.facebook.react.bridge.JavaOnlyMap
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReadableMap
 import dev.jdtech.mpv.MPVLib
 import java.io.DataOutputStream
 import java.io.File
 import java.lang.reflect.Proxy
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.sin
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -29,8 +35,9 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 
-/** Real module -> libmpv -> playback service. No JS runtime, network or estimated raw reads. */
+/** Real module -> libmpv -> playback service, without a JS runtime or estimated raw reads. */
 class LiveUpdateEngineProgressTest {
+    private data class PlaybackError(val code: String?, val mediaId: String?, val generation: Double, val kind: String?, val at: Long)
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     private val notifications = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -38,6 +45,7 @@ class LiveUpdateEngineProgressTest {
     private lateinit var engine: MPVLib
     private lateinit var tone: File
     private lateinit var controller: MediaControllerCompat
+    private val playbackErrors = CopyOnWriteArrayList<PlaybackError>()
     private val service: MpvPlaybackService get() = requireNotNull(MpvServiceBridge.service)
 
     @Before
@@ -46,7 +54,12 @@ class LiveUpdateEngineProgressTest {
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         tone = File.createTempFile("engine-progress-", ".wav", context.cacheDir)
         writeTone(tone)
-        instrumentation.runOnMainSync { module = MpvPlayerModule(NativePlaybackTestContext(context)) }
+        instrumentation.runOnMainSync { module = MpvPlayerModule(NativePlaybackTestContext(context) { name, payload ->
+            if (name == "onMpvError" && payload is ReadableMap && payload.hasKey("loadGeneration")) {
+                playbackErrors.add(PlaybackError(payload.getString("code"), payload.getString("mediaId"),
+                    payload.getDouble("loadGeneration"), payload.getString("renditionKind"), SystemClock.elapsedRealtime()))
+            }
+        }) }
         call { requireNotNull(module).initialize(JavaOnlyMap.of("progressIntervalMs", 250.0), it) }
         await("playback service") { MpvServiceBridge.service != null }
         instrumentation.runOnMainSync {
@@ -80,6 +93,58 @@ class LiveUpdateEngineProgressTest {
     }
 
     @Test
+    fun failedVideoLoadReportsItsOwnerBeforeTheActivationTimeoutAndRestoresAudio() {
+        call { requireNotNull(module).pause(it) }
+        call { requireNotNull(module).seekTo(37.0, it) }
+        await("original audio checkpoint") { onMain {
+            kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - 37.0) < .25
+        } }
+        val server = MockWebServer()
+        val requested = CountDownLatch(1)
+        val respond = CountDownLatch(1)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                requested.countDown()
+                check(respond.await(8, TimeUnit.SECONDS)) { "404 test response was not released" }
+                return MockResponse().setResponseCode(404)
+            }
+        }
+        server.start()
+        try {
+            val url = server.url("/missing.mp4").toString()
+            val started = SystemClock.elapsedRealtime()
+            val captured = (call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", url, "mediaId", "raw-progress", "loadGeneration", 2.0,
+                "autoPlay", false, "renditionKind", "mv", "positionMode", "start-zero",
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) } as Number).toDouble()
+            assertTrue("actual MV request reached the server", requested.await(5, TimeUnit.SECONDS))
+            await("the engine is loading the controlled video") { onMain { engine.getPropertyString("path") == url } }
+            assertTrue("old replacement did not report a video failure", playbackErrors.none { it.code == "E_VIDEO_LOAD_FAILED" })
+            respond.countDown()
+            await("owned video load failure") { playbackErrors.any { it.code == "E_VIDEO_LOAD_FAILED" } }
+            val failure = playbackErrors.single { it.code == "E_VIDEO_LOAD_FAILED" }
+            assertEquals("raw-progress", failure.mediaId)
+            assertEquals(2.0, failure.generation, 0.0)
+            assertEquals("mv", failure.kind)
+            assertTrue("failure should not wait for the 15-second activation timeout", failure.at - started < 10000)
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 3.0,
+                "autoPlay", false, "renditionKind", "audio", "positionMode", "restore-audio",
+                "startPosition", captured, "expectedMediaId", "raw-progress", "expectedLoadGeneration", 2.0,
+            ), it) }
+            await("audio restored after the failed video") { onMain {
+                engine.getPropertyString("path") == tone.absolutePath && engine.getPropertyBoolean("pause") == true &&
+                    kotlin.math.abs((engine.getPropertyDouble("time-pos") ?: -1.0) - captured) < .25
+            } }
+            assertEquals(1, playbackErrors.count { it.code == "E_VIDEO_LOAD_FAILED" })
+        } finally {
+            respond.countDown()
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun ownedFailedVideoCanReturnTheCapturedAudioWithoutAMvClock() {
         call { requireNotNull(module).pause(it) }
         call { requireNotNull(module).seekTo(37.0, it) }
@@ -88,6 +153,7 @@ class LiveUpdateEngineProgressTest {
         } }
         val missingVideo = File(tone.parentFile, tone.name + ".missing.mp4")
         assertTrue("controlled nonexistent video", !missingVideo.exists())
+        val started = SystemClock.elapsedRealtime()
         val captured = call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
             "url", missingVideo.absolutePath, "mediaId", "raw-progress", "loadGeneration", 2.0,
             "autoPlay", false, "renditionKind", "mv", "positionMode", "start-zero",
@@ -96,6 +162,11 @@ class LiveUpdateEngineProgressTest {
         await("failed video has no outgoing clock") { onMain {
             engine.getPropertyBoolean("idle-active") == true && engine.getPropertyDouble("time-pos") == null
         } }
+        await("immediately failed video reports its owner") { playbackErrors.any { it.code == "E_VIDEO_LOAD_FAILED" } }
+        val failure = playbackErrors.single { it.code == "E_VIDEO_LOAD_FAILED" }
+        assertEquals("raw-progress", failure.mediaId)
+        assertEquals(2.0, failure.generation, 0.0)
+        assertTrue("missing video should fail before activation timeout", failure.at - started < 10000)
         val failed = call { requireNotNull(module).getVideoInfo(it) } as com.facebook.react.bridge.ReadableMap
         assertEquals("mv", failed.getString("kind"))
         assertEquals(2.0, failed.getDouble("loadGeneration"), 0.0)

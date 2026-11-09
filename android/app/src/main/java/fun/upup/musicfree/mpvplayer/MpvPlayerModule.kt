@@ -134,6 +134,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         val MPV_EVENT_FILE_LOADED = NativeMPVLib.MpvEvent.MPV_EVENT_FILE_LOADED
         val MPV_EVENT_PLAYBACK_RESTART = NativeMPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART
         val MPV_EVENT_END_FILE = NativeMPVLib.MpvEvent.MPV_EVENT_END_FILE
+        val MPV_EVENT_IDLE = NativeMPVLib.MpvEvent.MPV_EVENT_IDLE
         val MPV_EVENT_SHUTDOWN = NativeMPVLib.MpvEvent.MPV_EVENT_SHUTDOWN
 
         fun create(context: Context) {
@@ -292,6 +293,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     // has removed its path/time-pos. Never infer ownership from an idle player.
     private var completedVideoIdentity: TrackIdentity? = null
     private var loadingTrackIdentity: TrackIdentity? = null
+    // Identify the pending MV's START_FILE by its path or by the preceding
+    // outgoing END_FILE. This JNI interface exposes event IDs, not file IDs.
+    private var startedVideoLoadingIdentity: TrackIdentity? = null
+    private var videoLoadAwaitingOldEnd = false
+    private var videoLoadOldEndObserved = false
     private var loadingGeneration = -1L
     private val pendingUnpause = PendingUnpause()
     private var ignoreEndFileUntilMs = 0L
@@ -709,6 +715,20 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         })
     }
 
+    private fun failStartedVideoLoadIfIdle(): Boolean {
+        val identity = loadingTrackIdentity ?: return false
+        if (stopRequested || renditionKind != "mv" || identity != ownedVideoIdentity ||
+            identity != startedVideoLoadingIdentity || identity.loadGeneration != currentLoadGeneration ||
+            loadingGeneration != currentLoadGeneration ||
+            MPVLib.getPropertyBoolean("idle-active") != true ||
+            !MPVLib.getPropertyString("path").isNullOrBlank()) return false
+        // Consume before emitting: callbacks may synchronously schedule a return.
+        startedVideoLoadingIdentity = null
+        pendingUnpause.cancel()
+        emitError("E_VIDEO_LOAD_FAILED", "Video could not be loaded")
+        return true
+    }
+
     private fun forceUnpause(generation: Long) {
         // 排着的重试在明确暂停之后照样会到点执行：撤销过就什么都不做（见 PendingUnpause）
         if (
@@ -1005,15 +1025,24 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
 
     private fun setLoadingIdentity(identity: TrackIdentity) {
         completedVideoIdentity = null
+        startedVideoLoadingIdentity = null
+        videoLoadAwaitingOldEnd = false
+        videoLoadOldEndObserved = false
         loadingTrackIdentity = identity
     }
 
     private fun clearLoadingIdentity() {
+        startedVideoLoadingIdentity = null
+        videoLoadAwaitingOldEnd = false
+        videoLoadOldEndObserved = false
         loadingTrackIdentity = null
     }
 
     private fun replaceActiveIdentity(identity: TrackIdentity) {
         completedVideoIdentity = null
+        startedVideoLoadingIdentity = null
+        videoLoadAwaitingOldEnd = false
+        videoLoadOldEndObserved = false
         activeTrackIdentity = identity
     }
 
@@ -1472,6 +1501,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 videoNetworkPolicy = if (nextKind == "mv") nextNetworkPolicy else null
                 if (videoNetworkPolicy != null) watchVideoNetwork()
                 ownedVideoIdentity = if (nextKind == "mv") loadingTrackIdentity else null
+                // For a live outgoing file, its END_FILE must precede the new
+                // START_FILE. This also identifies a fast failure when mpv has
+                // already cleared its path by the time the main loop runs.
+                videoLoadAwaitingOldEnd = nextKind == "mv" && capturedPosition != null
                 ownedAudioReturnIdentity = if (mode == "restore-audio") loadingTrackIdentity else null
                 audioReturnPosition = if (mode == "restore-audio") explicitStart else null
                 outgoingAudioPosition = when {
@@ -2237,6 +2270,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 }
                 "idle-active" -> {
                     if (currentValue) {
+                        if (failStartedVideoLoadIfIdle()) return@runOwnedPropertyOnMain
                         val now = System.currentTimeMillis()
                         if (
                             now < suppressIdleUntilMs ||
@@ -2344,7 +2378,17 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         return@runMpvCallbackOnMain
                     }
                     val generation = currentLoadGeneration
-                    loadingGeneration = if (explicitLoading != null) generation else -1L
+                    val orderedVideoStart = loadingTrackIdentity?.takeIf {
+                        renditionKind == "mv" && videoLoadOldEndObserved &&
+                            it == ownedVideoIdentity && it.loadGeneration == generation
+                    }
+                    loadingGeneration = if (explicitLoading != null || orderedVideoStart != null) generation else -1L
+                    val videoStart = explicitLoading ?: orderedVideoStart
+                    if (renditionKind == "mv" && videoStart == ownedVideoIdentity &&
+                        videoStart?.loadGeneration == generation) {
+                        startedVideoLoadingIdentity = videoStart
+                        videoLoadOldEndObserved = false
+                    }
                     if (
                         explicitLoading != null &&
                         pendingUnpause.isArmedFor(generation)
@@ -2451,6 +2495,12 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         Log.d(TAG, "END_FILE ignored for replaced rendition owner")
                         return@runMpvCallbackOnMain
                     }
+                    if (renditionKind == "mv" && videoLoadAwaitingOldEnd &&
+                        loadingTrackIdentity == ownedVideoIdentity && videoEndIdentity != null &&
+                        videoEndIdentity == activeTrackIdentity && videoEndIdentity != loadingTrackIdentity) {
+                        videoLoadAwaitingOldEnd = false
+                        videoLoadOldEndObserved = true
+                    }
                     val now = System.currentTimeMillis()
                     if (
                         stopRequested ||
@@ -2489,6 +2539,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                     } else {
                         completeNaturalEnd(pending, null)
                     }
+                }
+                MPVLib.MPV_EVENT_IDLE -> {
+                    failStartedVideoLoadIfIdle()
                 }
                 MPVLib.MPV_EVENT_SHUTDOWN -> {
                     Log.e(TAG, "MPV_EVENT_SHUTDOWN")

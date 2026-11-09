@@ -139,6 +139,9 @@ export default function MusicVideoContent({
     const compact = window.height / Math.max(1, window.fontScale) < 500;
     return (
         <View
+            // Keep the same Fabric stacking context when fullscreen adds zIndex;
+            // reparenting a TextureView destroys its video Surface.
+            collapsable={false}
             style={[styles.root, fullscreen ? styles.fullscreen : null]}
             testID="music-video-content">
             <View

@@ -192,6 +192,29 @@ test("a bounded activation timeout rejects with the exact attempted owner", asyn
     expect(jest.getTimerCount()).toBe(0);
 });
 
+test("an owned native load failure rejects promptly while an older error is ignored", async () => {
+    jest.useFakeTimers();
+    const adapter = await setup();
+    const old = adapter.getActiveRendition()!;
+    const outcome = adapter.replaceRendition(video(old)).catch(error => error);
+    await Promise.resolve();
+    const target = last();
+    let settled = false;
+    outcome.then(() => {
+        settled = true;
+    });
+    mockEvents.error({ mediaId: old.mediaId, loadGeneration: old.loadGeneration, renditionKind: "audio", code: "E_VIDEO_LOAD_FAILED" });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    mockEvents.error({ ...identity(target), code: "E_VIDEO_LOAD_FAILED", message: "Video could not be loaded" });
+    const error = await outcome;
+    expect(error).toBeInstanceOf(RenditionTransitionFailure);
+    expect(error.target).toMatchObject({ kind: "mv", loadGeneration: target.loadGeneration });
+    expect(error.outgoingPosition).toBe(37.25);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(mockNative.stop).not.toHaveBeenCalled();
+});
+
 test("a newer song cancels confirmation and the old MV cannot reappear", async () => {
     const adapter = await setup();
     const pending = adapter.replaceRendition(video(adapter.getActiveRendition()!)).catch(error => error);
