@@ -1,0 +1,18 @@
+PASS	安装 APK	MusicFree-0.14.0-6e23b31-app-x86_64-release.apk
+PASS	启动后进入首页	
+PASS	确认外部插件安装请求 e2e-source-a.js	
+PASS	验证插件安装 e2e-source-a.js	E2E 测试源 A：已注册、启用，支持单曲搜索，SHA256符合固定源码
+PASS	确认外部插件安装请求 e2e-source-b.js	
+PASS	验证插件安装 e2e-source-b.js	E2E 测试源 B：已注册、启用，支持单曲搜索，SHA256符合固定源码
+PASS	MV：准备原歌曲队列	
+PASS	MV：明确选择H264出画	实际PNG帧检验通过，原歌曲身份保留，ready后暂停
+PASS	MV：同页全屏与返回	同一代际画面，Back只退出全屏
+PASS	MV：后台音轨与前台新画面	真实Home窗口Surface释放，原MV代际保持
+PASS	MV：同剪辑画质保留视频位置	独立核对native preserve-mv和实际360p画面
+PASS	MV：不同剪辑确认后重头	明确确认后才执行start-zero，没有把歌曲或旧MV秒数套入
+PASS	MV：返回歌曲原停点	在同一个mpv恢复原音频，稍后独立核对native捕获与ready
+PASS	MV：实际404后恢复原音频	原停点仍保留，不在错误页卡住，也不因回退自动播放
+PASS	MV：设置原歌曲1.5倍速	
+PASS	MV：明确选择HEVC出画	第二候选从头，不套原歌曲或上一MV时间
+PASS	MV：真实视频EOF进入预备歌曲	必须再由native autoAdvanced日志证明不是JS重新加载
+PASS	MV：正常App独立证据	真实按钮、帧、返回停点、后台与视频EOF接管；不代表物理声音
