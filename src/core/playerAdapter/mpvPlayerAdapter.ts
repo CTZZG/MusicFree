@@ -1748,7 +1748,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     async setRate(rate: number) {
         this.rate = rate;
-        if (this.activeRendition?.kind !== "mv") await NativeMpvPlayer.setRate(rate);
+        // Native stores the audio preference while keeping an MV at 1x, so
+        // prepared playback can restore it without waiting for JS to resume.
+        await NativeMpvPlayer.setRate(rate);
     }
 
     async setReplayGain(mode: ReplayGainMode) {

@@ -292,6 +292,52 @@ class LiveUpdateEngineProgressTest {
     }
 
     @Test
+    fun preparedAudioAfterVideoUsesTheOriginalSlowRate() {
+        assertPreparedAudioRateAfterVideo(.75, null, .75)
+    }
+
+    @Test
+    fun preparedAudioAfterVideoUsesTheLatestAudioRate() {
+        assertPreparedAudioRateAfterVideo(.75, 1.5, 1.5)
+    }
+
+    private fun assertPreparedAudioRateAfterVideo(initial: Double, updated: Double?, expected: Double) {
+        val next = File.createTempFile("prepared-audio-rate-", ".wav", context.cacheDir)
+        tone.copyTo(next, overwrite = true)
+        try {
+            call { requireNotNull(module).setRate(initial, it) }
+            call { requireNotNull(module).loadAndPlay(JavaOnlyMap.of(
+                "url", tone.absolutePath, "mediaId", "raw-progress", "loadGeneration", 2.0,
+                "autoPlay", true, "renditionKind", "mv", "positionMode", "start-zero",
+                "expectedMediaId", "raw-progress", "expectedLoadGeneration", 1.0,
+            ), it) }
+            awaitPlaying()
+            onMain { assertEquals("MV remains at normal speed", 1.0, engine.getPropertyDouble("speed") ?: -1.0, .001) }
+            if (updated != null) {
+                call { requireNotNull(module).setRate(updated, it) }
+                onMain { assertEquals("updating the audio preference does not change MV speed", 1.0,
+                    engine.getPropertyDouble("speed") ?: -1.0, .001) }
+            }
+            call { requireNotNull(module).prepareNext(JavaOnlyMap.of(
+                "url", next.absolutePath, "mediaId", "prepared-rate", "loadGeneration", 3.0,
+                "prepareToken", 1.0, "queueRevision", 1.0,
+                "sourceMediaId", "raw-progress", "sourceLoadGeneration", 2.0,
+            ), it) }
+            call { requireNotNull(module).seekTo(89.6, it) }
+            val kind = MpvPlayerModule::class.java.getDeclaredField("renditionKind").apply { isAccessible = true }
+            val generation = MpvPlayerModule::class.java.getDeclaredField("currentLoadGeneration").apply { isAccessible = true }
+            await("prepared audio promoted after MV EOF") { onMain {
+                engine.getPropertyString("path") == next.absolutePath && kind.get(module) == "audio" &&
+                    generation.getLong(module) == 3L
+            } }
+            onMain { assertEquals("prepared audio restores the saved rate", expected,
+                engine.getPropertyDouble("speed") ?: -1.0, .001) }
+        } finally {
+            next.delete()
+        }
+    }
+
+    @Test
     fun rejectedRenditionLeavesAnotherGenerationAndItsDeferredWorkUntouched() {
         call { requireNotNull(module).pause(it) }
         fun field(name: String) = MpvPlayerModule::class.java.getDeclaredField(name).apply { isAccessible = true }

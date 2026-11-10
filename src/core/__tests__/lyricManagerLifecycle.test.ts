@@ -150,3 +150,48 @@ it("same-song MV entry invalidates a late lyric response and audio return can pu
     expect(lyricManager.getLyricDiagnosticSnapshot().nativeOutput.text).toBe("Restored lyric");
     lyricManager.dispose();
 });
+
+it("ordinary same-song confirmations neither repeat an in-flight lyric fetch nor reset loaded lyrics", async () => {
+    const { TrackPlayerEvents } = require("@/constants/trackPlayerConst");
+    const listeners = new Map<string, () => void>();
+    const song = { id: "a", platform: "test", title: "Song", artist: "Artist" };
+    let release!: (value: unknown) => void;
+    const getLyric = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    const player: any = {
+        currentMusic: null, audioTimelineAvailable: true,
+        on: (event: string, fn: () => void) => listeners.set(event, fn), off: jest.fn(),
+        isCurrentMusic: (item: unknown) => item === song,
+        playerAdapter: { name: "mpv", getState: async () => "paused", addEventListener: () => ({ remove: jest.fn() }) },
+        getProgress: async () => ({ position: 2, duration: 300, buffered: 3 }),
+        getProgressSnapshot: () => ({ position: 2, duration: 300, buffered: 3, sequence: 0 }),
+    };
+    const plugin = { name: "test", methods: { getLyric }, supportedMethods: new Set(["getLyric"]) };
+    lyricManager.dispose();
+    lyricManager.injectDependencies(player, { getConfig: () => undefined } as any,
+        { getByMedia: () => plugin, getSearchablePlugins: () => [] } as any);
+    await lyricManager.setup();
+    const loading = jest.spyOn(lyricManager as any, "setLyricAsLoadingState");
+    const nativeOutput = jest.spyOn(lyricManager as any, "publishNativeLyricOutput");
+    try {
+        player.currentMusic = song;
+        listeners.get(TrackPlayerEvents.CurrentMusicChanged)!();
+        listeners.get(TrackPlayerEvents.CurrentMusicChanged)!();
+        listeners.get(TrackPlayerEvents.AudioTimelineChanged)!();
+        expect(getLyric).toHaveBeenCalledTimes(1);
+        release({ rawLrc: "[00:01.00]first line" });
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(lyricManager.lyricState.lyrics).toHaveLength(1);
+        const priorLoading = loading.mock.calls.length;
+        const priorOutput = nativeOutput.mock.calls.length;
+        listeners.get(TrackPlayerEvents.CurrentMusicChanged)!();
+        listeners.get(TrackPlayerEvents.AudioTimelineChanged)!();
+        expect(loading).toHaveBeenCalledTimes(priorLoading);
+        expect(nativeOutput).toHaveBeenCalledTimes(priorOutput);
+        expect(getLyric).toHaveBeenCalledTimes(1);
+    } finally {
+        lyricManager.dispose();
+        jest.restoreAllMocks();
+    }
+});

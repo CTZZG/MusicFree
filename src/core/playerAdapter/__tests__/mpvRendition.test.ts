@@ -169,12 +169,12 @@ test("audio return uses explicit captured position and original rate, without tr
     expect(await adapter.getRate()).toBe(1.5);
 });
 
-test("MV speed is session-local; changing audio preference does not speed up MV", async () => {
+test("MV speed is session-local; audio preference is sent to native for the next song", async () => {
     const adapter = await setup(); await enter(adapter);
     mockNative.setRate.mockClear();
     await adapter.setRate(1.75);
     expect(await adapter.getRate()).toBe(1);
-    expect(mockNative.setRate).not.toHaveBeenCalled();
+    expect(mockNative.setRate).toHaveBeenCalledWith(1.75);
 });
 
 test("a bounded activation timeout rejects with the exact attempted owner", async () => {

@@ -96,6 +96,56 @@ mv_start_video() {
     mv_capture "first-$tag" "$OUT/mv/ui-$tag-first-frame.txt" "$deadline" "$started" || return 1
     mv_pause || return 1
 }
+
+# The normal all suite must also exercise its existing audio checks after MV
+# tracking has been enabled in this same App process.
+run_post_mv_roundtrip_for_all() {
+    local before_pid after_pid ready_before
+    mkdir -p "$OUT/mv" || return 1
+    open_link "musicfree://search?keyword=e2e%20mv%20$REF"
+    flow '全量前提：准备MV原歌曲' mv/start.yaml || return 1
+    if ! prepare_public_ui_observer || ! adb root > "$OUT/mv/all-adb-root.txt" 2>&1 || ! adb wait-for-device; then
+        fail '全量前提：MV往返' '无法准备公开界面观察器或读取合成测试证据'
+        return 1
+    fi
+    before_pid=$(adb shell pidof "$PKG" | tr -d '\r')
+    if ! [[ "$before_pid" =~ ^[0-9]+$ ]] || ! mv_pause 'E2E MV Song A' ||
+        ! mv_tap '更多操作' all-more || ! mv_start_video 'E2E H264 MV' h264 '观看 MV'; then
+        fail '全量前提：MV往返' '没有在当前进程中取得并暂停真实MV画面'
+        return 1
+    fi
+    if ! ready_before=$(mv_ready_count) || ! [[ "$ready_before" =~ ^[0-9]+$ ]]; then
+        fail '全量前提：MV往返' '无法读取返回歌曲前的原生就绪计数'
+        return 1
+    fi
+    if ! mv_tap '返回歌曲' all-return || ! mv_wait_ready all-return "$ready_before" ||
+        ! wait_for_state PAUSED 'E2E MV Song A' 15 || ! mv_record_session all-return || ! mv_persist all-return; then
+        fail '全量前提：MV往返' '未确认返回原歌曲并保持暂停'
+        return 1
+    fi
+    shot mv-all-returned-audio
+    if ! adb shell input keyevent KEYCODE_BACK || ! mv_tap '首页' all-home ||
+        ! flow '全量前提：返回首页' home.yaml; then
+        fail '全量前提：MV往返' '无法返回首页继续普通回归'
+        return 1
+    fi
+    after_pid=$(adb shell pidof "$PKG" | tr -d '\r')
+    if [ "$before_pid" != "$after_pid" ]; then
+        fail '全量前提：MV往返' '应用进程已改变，无法证明后续普通回归位于MV之后'
+        return 1
+    fi
+    printf '%s\n' "$before_pid" > "$OUT/mv/all-process-id.txt"
+    pass '全量前提：MV往返后继续普通回归' '真实首帧及原歌曲暂停已确认，App进程未重启'
+}
+
+check_post_mv_all_process() {
+    local before_pid current_pid
+    [ -s "$OUT/mv/all-process-id.txt" ] || return 1
+    before_pid=$(cat "$OUT/mv/all-process-id.txt")
+    current_pid=$(adb shell pidof "$PKG" | tr -d '\r')
+    [[ "$before_pid" =~ ^[0-9]+$ ]] && [ "$before_pid" = "$current_pid" ]
+}
+
 run_mv_checks() {
     mkdir -p "$OUT/mv"
     local rotation recorder status=0 before after rotation_args
@@ -209,6 +259,10 @@ mv_app_scenarios() {
     mv_persist missing-restored || return 1
     shot mv-missing-restored
     pass 'MV：实际404后恢复原音频' '原停点仍保留，不在错误页卡住，也不因回退自动播放'
+    # Use the real audio-rate control before the final MV. Its native prepared
+    # successor must restore this value even if JS is not involved in promotion.
+    flow 'MV：设置原歌曲1.5倍速' mv/set-rate.yaml || return 1
+    prepare_public_ui_observer || return 1
     # The positive cover shortcut is only shown after actual candidate discovery.
     mv_start_video 'E2E HEVC MV' hevc '音乐视频' || return 1
     before=$(mv_ready_count); mv_seek .08 hevc || return 1; mv_wait_ready hevc-seek "$before" || return 1

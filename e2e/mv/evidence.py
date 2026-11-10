@@ -181,6 +181,10 @@ def verify_native(raw, first, returned):
         span = raw.split(begin, 1)[1].split(end, 1)[0]
         assert not re.search(r'Set property: (?:vid|vo)=|refresh seek|loadAndPlay\[\d+\]|rendition committed\[', span), 'layout reset the video chain or sought'
     assert re.search(r'END_FILE completed: endedMediaId=.*mv-audio-a.*promotedMediaId=.*mv-audio-b.*autoAdvanced=true', raw), 'no rendered-video-to-prepared-audio promotion'
+    rates = re.findall(r'prepared audio rate\[(\d+)\]: requested=([^ ]+) actual=([^ \r\n]+)', raw)
+    promoted = re.findall(r'prepared promotion accepted: mediaId=[^\r\n]*?mv-audio-b generation=(\d+)', raw)
+    assert len(rates) == len(promoted) == 1 and rates[0][0] == promoted[0], 'rate does not belong to the promoted song'
+    assert abs(float(rates[0][1]) - 1.5) < .001 and abs(float(rates[0][2]) - 1.5) < .001, 'prepared audio did not restore 1.5x'
     # A JS loadfile after native EOF would reset/reload the prepared successor.
     end = raw.rsplit('autoAdvanced=true', 1)[1]
     assert not re.search(r'loadAndPlay\[\d+\]', end), 'prepared audio was subsequently reloaded'
@@ -224,6 +228,7 @@ def verify(root):
     assert before['state'] == background['state'] == 'PLAYING' and background['position'] >= before['position'] + 500
     prepared = json.loads((root / 'session-prepared-audio.json').read_text())
     assert prepared['title'] == 'E2E MV Song B' and prepared['state'] == 'PLAYING'
+    assert json.loads((root / 'persist-hevc.json').read_text())['rate'] == 150, 'audio rate was not set through the UI'
     # Actual crop/frame decoding is repeated; edited summary JSON cannot replace the PNGs.
     for phase in phases:
         assert capture(root, phase)['frame'] == facts[phase]['frame']

@@ -258,6 +258,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
     private var ownedAudioReturnIdentity: TrackIdentity? = null
     private var audioReturnPosition: Double? = null
     private var outgoingAudioPosition: Double? = null
+    // Kept on the native playback thread so a prepared song can resume the
+    // user's rate even when JS is backgrounded after an MV ends.
+    private var audioPlaybackRate = 1.0
     @Volatile private var renditionTrackingEnabled = false
     private var readyGeneration = -1L
     private var failedAudioReturnGeneration = -1L
@@ -854,6 +857,11 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
         preparedPlaylistIndex = -1
         pendingPlaylistCompaction = true
         videoOutput.detach()
+        if (renditionKind == "mv") {
+            MPVLib.setPropertyDouble("speed", audioPlaybackRate)
+            Log.d(TAG, "prepared audio rate[${prepared.loadGeneration}]: requested=$audioPlaybackRate " +
+                "actual=${MPVLib.getPropertyDouble("speed")}")
+        }
         renditionKind = "audio"
         ownedVideoIdentity = null
         ownedAudioReturnIdentity = null
@@ -1386,6 +1394,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
             val previousPosition = positionSecs
             val previousState = currentState
             val previousRate = MPVLib.getPropertyDouble("speed")
+            val previousAudioRate = audioPlaybackRate
             val previousReadyGeneration = readyGeneration
             var capturedForFailure: Double? = null
             val wasPaused = MPVLib.getPropertyBoolean("pause") != false
@@ -1520,7 +1529,10 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 }
                 renditionStart?.let { pendingSeek.defer(generation, it); positionSecs = it }
                 if (nextKind == "mv") MPVLib.setPropertyDouble("speed", 1.0)
-                else playbackRate?.let { MPVLib.setPropertyDouble("speed", it) }
+                else playbackRate?.let {
+                    MPVLib.setPropertyDouble("speed", it)
+                    audioPlaybackRate = it
+                }
                 if (autoPlay) {
                     startPlaybackService(foreground = true)
                 }
@@ -1598,6 +1610,7 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                         positionSecs = MPVLib.getPropertyDouble("time-pos")?.takeIf { it.isFinite() && it >= 0.0 } ?: previousPosition
                         readyGeneration = previousReadyGeneration
                         previousRate?.let { MPVLib.setPropertyDouble("speed", it) }
+                        audioPlaybackRate = previousAudioRate
                         if (!wasPaused && !MpvServiceBridge.playbackHold.blocksAutoPlay) {
                             MPVLib.setPropertyBoolean("pause", false)
                         }
@@ -2071,7 +2084,9 @@ class MpvPlayerModule(private val reactContext: ReactApplicationContext) :
                 return@postPromise
             }
             try {
-                MPVLib.setPropertyDouble("speed", rate)
+                require(rate.isFinite() && rate > 0.0) { "invalid playback rate" }
+                if (renditionKind != "mv") MPVLib.setPropertyDouble("speed", rate)
+                audioPlaybackRate = rate
                 operationPromise.resolve(null)
             } catch (e: Exception) {
                 operationPromise.reject("E_RATE", e.message, e)

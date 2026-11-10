@@ -32,6 +32,8 @@ MpvPlayerModule rendition committed[4]: kind=mv mode=start-zero captured=37.125 
 MpvVideoOutput attached=true owner=2 generation=4 instance=7
 MpvPlayerModule rendition ready[4]: kind=mv position=0.0 paused=false
 MpvVideoOutput attached=false owner=2 generation=4 instance=7
+MpvPlayerModule prepared audio rate[5]: requested=1.5 actual=1.5
+MpvPlayerModule prepared promotion accepted: mediaId=E2E 测试源 A@mv-audio-b generation=5 token=9 queueRevision=1
 MpvPlayerModule END_FILE completed: endedMediaId=fixture@mv-audio-a promotedMediaId=fixture@mv-audio-b autoAdvanced=true
 '''
 FIRST = dict(title='E2E MV Song A', position=37125, state='PAUSED')
@@ -71,6 +73,15 @@ class Evidence(unittest.TestCase):
     def test_nullable_and_nonfinite_native_clock_not_a_ready_sample(self):
         for value in ['null', 'NaN', '-1', 'Infinity']:
             with self.assertRaises(ValueError): evidence.ready_rows(RAW.replace('position=37.125', f'position={value}'))
+
+    def test_prepared_audio_must_have_the_requested_native_rate(self):
+        for raw in [RAW.replace('actual=1.5', 'actual=1.0'),
+                    RAW.replace('requested=1.5', 'requested=1.0'),
+                    RAW.replace('MpvPlayerModule prepared audio rate[5]: requested=1.5 actual=1.5\n', ''),
+                    RAW.replace('rate[5]', 'rate[6]'),
+                    RAW.replace('actual=1.5', 'actual=NaN')]:
+            with self.assertRaises(AssertionError):
+                evidence.verify_native(raw, FIRST, FIRST)
 
     def test_filtered_persist_contains_only_the_synthetic_song_fields(self):
         song = dict(id='mv-audio-a', platform='E2E 测试源 A', duration=480)

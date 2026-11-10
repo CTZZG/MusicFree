@@ -1,0 +1,11 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "播放速度：1.0x，点按切换"
+- scrollUntilVisible:
+    element: "1.5x"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "1.5x"
+- extendedWaitUntil:
+    visible: "播放速度：1.5x，点按切换"
+    timeout: 10000

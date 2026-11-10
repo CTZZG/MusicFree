@@ -342,6 +342,10 @@ if [ "$E2E_SUITE" = mv ]; then
     run_mv_checks
     finish
 fi
+if [ "$E2E_SUITE" = all ]; then
+    source "$HERE/mv.sh"
+    run_post_mv_roundtrip_for_all || finish
+fi
 if [ "$E2E_SUITE" = backup ]; then
     source "$HERE/backup.sh"
     run_backup_checks
@@ -498,6 +502,14 @@ fi
 before=$(session)
 if flow "选了取不到的无损，标签保持 HQ" quality-unavailable.yaml; then
     expect_continued "取不到新音质时照常播" "E2E Tone A" "$before"
+fi
+
+if [ "$E2E_SUITE" = all ]; then
+    if check_post_mv_all_process; then
+        pass "MV后普通回归：冷启动前保持同一进程" "搜索、分享、后台切歌、错误恢复及音质切换均在MV往返后执行"
+    else
+        fail "MV后普通回归：冷启动前保持同一进程" "应用进程已变化，无法证明此前回归使用MV后的播放状态"
+    fi
 fi
 
 # 11. 冷启动：暂停后把应用彻底关掉（和被系统清掉一样）再打开。播放条要恢复上次那首，

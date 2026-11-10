@@ -33,6 +33,8 @@ mv_capture() { call "capture-$1"; }
 mv_record_session() { call "session-$1"; }
 mv_persist() { call "persist-$1"; }
 mv_ready_count() { echo 0; }
+flow() { call "flow-$2"; }
+prepare_public_ui_observer() { call observer; }
 clock() { echo 0; }
 mv_clock_ms() { echo 0; }
 adb() { call "adb-$*"; }
@@ -43,7 +45,7 @@ pass() { printf '%s\n' "$1" >> "$OUT/pass"; }
 mv_app_scenarios
 '''
 phases = ['first-h264', 'inline', 'fullscreen', 'returned-inline', 'landscape', 'portrait', 'before-home', 'foreground', 'quality', 'alternate', 'first-hevc', 'hevc']
-cases = [''] + ['capture-' + p for p in phases] + ['ready-h264-seek', 'tap-alternate-confirm', 'state-E2E MV Song B', 'snapshot-h264-first-frame', 'snapshot-hevc-first-frame']
+cases = [''] + ['capture-' + p for p in phases] + ['ready-h264-seek', 'tap-alternate-confirm', 'state-E2E MV Song B', 'snapshot-h264-first-frame', 'snapshot-hevc-first-frame', 'flow-mv/set-rate.yaml', 'observer']
 for fail in cases:
     with tempfile.TemporaryDirectory() as temp:
         code = script.replace('SOURCE', shlex.quote(str(source))).replace('OUTDIR', shlex.quote(temp))
@@ -73,6 +75,62 @@ for original, expected, ok in [('yes', 'E2E MV Song A', True),
                          env=dict(os.environ, EXPECTED_TITLE=expected, ORIGINAL_AUDIO=original), capture_output=True)
     assert (run.returncode == 0) is ok, (original, expected, run.stderr)
 print('Actual pause helper: 3 published-session title boundary cases passed')
+
+# Exercise the real all-suite MV prelude at the command boundaries. A failed
+# return or a changed App PID must not be recorded as a completed prelude.
+all_prelude = r'''
+source SOURCE
+OUT=OUTDIR; REF=fixture; PKG=fun.upup.musicfree
+call() { printf '%s\n' "$1" >> "$OUT/calls"; test "$1" != "$FAIL_AT"; }
+open_link() { call open; }
+flow() { call "flow-$2"; }
+prepare_public_ui_observer() { call observer; }
+mv_pause() { call pause; }
+mv_tap() { call "tap-$2"; }
+mv_start_video() { call first-frame; }
+mv_ready_count() { echo 1; }
+mv_wait_ready() { call return-ready; }
+wait_for_state() { call returned-paused; }
+mv_record_session() { call returned-session; }
+mv_persist() { call returned-persist; }
+shot() { call screenshot; }
+pass() { echo pass >> "$OUT/result"; }
+fail() { echo fail >> "$OUT/result"; }
+adb() {
+    if [ "$*" = "shell pidof $PKG" ]; then
+        if [ -e "$OUT/pid-read" ]; then echo "$AFTER_PID"; else touch "$OUT/pid-read"; echo 123; fi
+    else call "adb-$*"; fi
+}
+run_post_mv_roundtrip_for_all
+'''
+for failure, after_pid in [('', '123'), ('first-frame', '123'),
+                           ('return-ready', '123'), ('returned-paused', '123'),
+                           ('', '456')]:
+    with tempfile.TemporaryDirectory() as temp:
+        code = all_prelude.replace('SOURCE', shlex.quote(str(source))).replace('OUTDIR', shlex.quote(temp))
+        run = subprocess.run(['bash', '-c', code], env=dict(os.environ, FAIL_AT=failure, AFTER_PID=after_pid), capture_output=True, text=True)
+        result = (Path(temp) / 'result').read_text().splitlines()
+        if not failure and after_pid == '123':
+            calls = (Path(temp) / 'calls').read_text().splitlines()
+            assert run.returncode == 0 and result == ['pass'], (calls, result, run.stderr)
+            assert calls.index('first-frame') < calls.index('tap-all-return') < calls.index('tap-all-home') < calls.index('flow-home.yaml')
+        else:
+            assert run.returncode != 0 and result == ['fail'], (failure, after_pid, result, run.stderr)
+print('Actual all-after-MV prelude: 5 success/first-failure/process-identity cases passed')
+
+pid_check = r'''
+source SOURCE
+OUT=OUTDIR; PKG=fun.upup.musicfree; mkdir -p "$OUT/mv"
+echo 123 > "$OUT/mv/all-process-id.txt"
+adb() { printf '%s\n' "$CURRENT_PID"; }
+check_post_mv_all_process
+'''
+for current_pid, ok in [('123', True), ('456', False), ('', False)]:
+    with tempfile.TemporaryDirectory() as temp:
+        code = pid_check.replace('SOURCE', shlex.quote(str(source))).replace('OUTDIR', shlex.quote(temp))
+        run = subprocess.run(['bash', '-c', code], env=dict(os.environ, CURRENT_PID=current_pid), capture_output=True, text=True)
+        assert (run.returncode == 0) is ok, (current_pid, run.stderr)
+print('Actual all-after-MV continuity check: 3 process-identity cases passed')
 
 # adb shell reparses joined arguments on the device. In Beta246 the empty
 # absentLabelBase64 consumed the following -e; Android then treated timeoutMs

@@ -249,3 +249,104 @@ test("a new logical song cannot be persisted beside the outgoing MV's original-a
     expect(PersistStatus.set).toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "B" }));
     expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 0);
 });
+
+test("ordinary load confirmation does not cancel autoplay compensation or republish the timeline", async () => {
+    jest.useFakeTimers();
+    try {
+        mockBackend.active = { track: song, index: 0 };
+        mockBackend.getState = jest.fn(async () => "paused");
+        mockBackend.play = jest.fn(async () => undefined);
+        await player.setupTrackPlayer();
+        const callbacks = new Map<string, (...args: any[]) => any>(mockBackend.addEventListener.mock.calls.map(([event, fn]: any[]) => [event, fn]));
+        const timeline = jest.fn();
+        player.on(TrackPlayerEvents.AudioTimelineChanged, timeline);
+        const retry = player.ensureAdapterAutoPlay(getMediaUniqueKey(song));
+        await callbacks.get("trackChanged")!({ track: song, index: 0, reason: "manual", activationGeneration: 1 });
+        await jest.advanceTimersByTimeAsync(180);
+        expect(mockBackend.play).toHaveBeenCalledTimes(1);
+        expect(timeline).not.toHaveBeenCalled();
+        player.playbackIntent.pause();
+        await jest.advanceTimersByTimeAsync(520);
+        await retry;
+        player.off(TrackPlayerEvents.AudioTimelineChanged, timeline);
+    } finally {
+        player.disposeServiceListeners();
+        jest.useRealTimers();
+    }
+});
+
+test.each(["unready", "pending", "previous-owner"])("audio errors remain eligible for recovery while %s", async scenario => {
+    const next = { ...song, id: "B" };
+    const previous = { kind: "audio", mediaId: getMediaUniqueKey(song), loadGeneration: 1 };
+    const target = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+    mockBackend.getRenditionOwner = jest.fn(() => scenario === "previous-owner" ? previous : target);
+    mockBackend.getActiveRendition = jest.fn(() => scenario === "unready" ? { ...target, ready: false } : previous);
+    mockBackend.active = { track: next, index: 0 };
+    player.setCurrentMusic(next);
+    await player.setupTrackPlayer();
+    const callbacks = new Map<string, (...args: any[]) => any>(mockBackend.addEventListener.mock.calls.map(([event, fn]: any[]) => [event, fn]));
+    const record = jest.spyOn(player, "recordPlaybackError").mockImplementation(() => undefined);
+    const recover = jest.spyOn(player, "recoverCurrentSourceAfterPlaybackError").mockResolvedValue(true);
+    // A preceding test deliberately leaves a manual-skip transaction open;
+    // exercise error routing independently of that separate stale-event guard.
+    jest.spyOn(player, "shouldIgnoreMpvPlaybackErrorDuringManualSkip").mockReturnValue(false);
+    try {
+        await callbacks.get("playbackError")!({ code: "mpv-load-failed", message: "load failed" });
+        expect(record).toHaveBeenCalledTimes(1);
+        expect(recover).toHaveBeenCalledTimes(1);
+    } finally {
+        player.disposeServiceListeners();
+    }
+});
+
+test("an autoplay retry cannot resume the original audio after MV has taken ownership", async () => {
+    jest.useFakeTimers();
+    try {
+        mockBackend.active = { track: song, index: 0 };
+        mockBackend.getState = jest.fn(async () => "paused");
+        mockBackend.play = jest.fn(async () => undefined);
+        const retry = player.ensureAdapterAutoPlay(getMediaUniqueKey(song));
+        expect(await enter()).toEqual({ status: "playing" });
+        await jest.advanceTimersByTimeAsync(180);
+        await retry;
+        expect(mockBackend.play).not.toHaveBeenCalled();
+    } finally {
+        jest.useRealTimers();
+    }
+});
+
+test.each(["unready", "pending", "previous-owner"])("%s audio recovery resolves the selected song without using the previous audio clock", async scenario => {
+    const next = { ...song, id: `RECOVERY-${scenario}` };
+    const target = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 9 };
+    const previous = { kind: "audio", mediaId: getMediaUniqueKey(song), loadGeneration: 1 };
+    mockBackend.getRenditionOwner = jest.fn(() => scenario === "previous-owner" ? previous : target);
+    mockBackend.getActiveRendition = jest.fn(() => scenario === "unready" ? { ...target, ready: false } : previous);
+    mockBackend.getProgress = jest.fn(async () => ({ position: 88, duration: 300, buffered: 88 }));
+    player.setCurrentMusic(next);
+    const resolve = jest.spyOn(player.sourceResolver, "resolveFreshMediaSource").mockResolvedValue({ url: "https://example.test/recovered.mp3" });
+    const setSource = jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    expect(await player.recoverCurrentSourceAfterPlaybackError({ message: "failed" }, scenario === "unready" ? next : song)).toBe(true);
+    expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ id: next.id }));
+    expect(setSource).toHaveBeenCalledWith(expect.objectContaining({ id: next.id }), true, 0, false, expect.anything());
+});
+
+test("a late failed audio recovery cannot skip or replace a newly selected MV", async () => {
+    mockBackend.active = { track: song, index: 0 };
+    await player.setupTrackPlayer();
+    const callbacks = new Map<string, (...args: any[]) => any>(mockBackend.addEventListener.mock.calls.map(([event, fn]: any[]) => [event, fn]));
+    jest.spyOn(player, "shouldIgnoreMpvPlaybackErrorDuringManualSkip").mockReturnValue(false);
+    let finishRecovery!: (value: boolean) => void;
+    jest.spyOn(player, "recoverCurrentSourceAfterPlaybackError").mockImplementation(() => new Promise(resolve => {
+        finishRecovery = resolve;
+    }));
+    const fail = jest.spyOn(player, "handlePlayFail").mockImplementation(() => undefined);
+    const errorTask = callbacks.get("playbackError")!({ code: "mpv-load-failed", message: "failed" });
+    await tick();
+    expect(await enter()).toEqual({ status: "playing" });
+    finishRecovery(false);
+    await errorTask;
+    expect(fail).not.toHaveBeenCalled();
+    expect(trackPlayer.musicVideoState.phase).toBe("video");
+    player.disposeServiceListeners();
+});

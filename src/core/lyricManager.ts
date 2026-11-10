@@ -370,6 +370,9 @@ class LyricManager implements IInjectable {
     private initialized = false;
     private listenerLifecycleGeneration = 0;
     private currentMusicChangedListener: (() => void) | null = null;
+    private audioTimelineChangedListener: (() => void) | null = null;
+    private lastAudioTimelineAvailable = true;
+    private lastLyricMusicKey: string | null = null;
     private playerSubscriptions: PlayerAdapterSubscription[] = [];
 
     get currentLyricItem() {
@@ -597,8 +600,17 @@ class LyricManager implements IInjectable {
                 return;
             }
 
+            this.lastAudioTimelineAvailable = this.trackPlayer.audioTimelineAvailable !== false;
+            this.lastLyricMusicKey = this.trackPlayer.currentMusic
+                ? getMediaUniqueKey(this.trackPlayer.currentMusic) : null;
             // 更新歌词
             this.currentMusicChangedListener = () => {
+                const available = this.trackPlayer.audioTimelineAvailable !== false;
+                const musicKey = this.trackPlayer.currentMusic
+                    ? getMediaUniqueKey(this.trackPlayer.currentMusic) : null;
+                if (musicKey === this.lastLyricMusicKey && available === this.lastAudioTimelineAvailable) return;
+                this.lastLyricMusicKey = musicKey;
+                this.lastAudioTimelineAvailable = available;
                 this.renditionPublicationGeneration += 1;
                 this.playbackStateSyncGeneration += 1;
                 this.positionHydrationGeneration += 1;
@@ -625,7 +637,28 @@ class LyricManager implements IInjectable {
                 this.currentMusicChangedListener,
             );
 
-            this.trackPlayer.on(TrackPlayerEvents.AudioTimelineChanged, this.currentMusicChangedListener);
+            this.audioTimelineChangedListener = () => {
+                const available = this.trackPlayer.audioTimelineAvailable !== false;
+                if (available === this.lastAudioTimelineAvailable) return;
+                this.lastAudioTimelineAvailable = available;
+                this.renditionPublicationGeneration += 1;
+                const stateGeneration = ++this.playbackStateSyncGeneration;
+                this.positionHydrationGeneration += 1;
+                if (!available) {
+                    this.isPlaybackAdvancing = false;
+                    this.stopPositionClock(this.lastProgressPositionMs);
+                    this.setLyricAsNoLyricState("no-current-music");
+                    return;
+                }
+                this.refreshLyric(true, false);
+                this.trackPlayer.playerAdapter.getState().then(state => {
+                    if (stateGeneration !== this.playbackStateSyncGeneration ||
+                        this.trackPlayer.audioTimelineAvailable === false) return;
+                    this.isPlaybackAdvancing = state === "playing";
+                    this.hydrateCurrentPosition();
+                }).catch(() => undefined);
+            };
+            this.trackPlayer.on(TrackPlayerEvents.AudioTimelineChanged, this.audioTimelineChangedListener);
             const initialStateGeneration = this.playbackStateSyncGeneration;
             this.trackPlayer.playerAdapter
                 .getState()
@@ -772,8 +805,11 @@ class LyricManager implements IInjectable {
                 subscription.remove();
             } catch {}
         });
+        if (this.audioTimelineChangedListener) {
+            this.trackPlayer.off(TrackPlayerEvents.AudioTimelineChanged, this.audioTimelineChangedListener);
+            this.audioTimelineChangedListener = null;
+        }
         if (this.currentMusicChangedListener) {
-            this.trackPlayer.off(TrackPlayerEvents.AudioTimelineChanged, this.currentMusicChangedListener);
             this.trackPlayer.off(
                 TrackPlayerEvents.CurrentMusicChanged,
                 this.currentMusicChangedListener,

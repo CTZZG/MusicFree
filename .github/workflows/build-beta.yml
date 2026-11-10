@@ -502,7 +502,7 @@ jobs:
                   bash e2e/lib/power_scenario_test.sh
                   bash e2e/lib/crash_checks_test.sh
                   bash e2e/lib/audio_hardening_test.sh
-                  if [ "${{ inputs.e2e_suite }}" = mv ]; then
+                  if [ "${{ inputs.e2e_suite }}" = mv ] || [ "${{ inputs.e2e_suite }}" = all ]; then
                     python3 -I e2e/mv/test_evidence.py
                     python3 -I e2e/mv/test_driver.py
                   fi
