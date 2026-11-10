@@ -38,7 +38,9 @@ prepare_public_ui_observer() {
         return 1
     fi
     source "$HERE/lib/maestro_handoff.sh"
-    if ! stop_maestro_ui_driver "$OUT/ui-observer"; then
+    # The prior Maestro invocation may remove its drivers on exit. Accept that
+    # only after PackageManager and the process list both prove a safe handoff.
+    if ! stop_maestro_ui_driver "$OUT/ui-observer" allow-uninstalled; then
         fail "播放页观察：公共 UI 前提" "原测试驱动没有释放 UiAutomation"
         return 1
     fi

@@ -9,16 +9,22 @@ sleep() { :; }
 adb() {
     printf '%s\n' "$*" >> "$OUT/commands.txt"
     case "$*" in
+        'install -r -t '*) [ "$CASE" != install-failed ] ;;
         'shell pm list packages')
             [ "$CASE" != pm-disconnected ] || return 1
             if [ "$CASE" = pm-unsupported ]; then printf 'Unknown command\n'; return 0; fi
             if [ "$CASE" = pm-empty ]; then return 0; fi
             printf 'package:fun.upup.musicfree\npackage:android\n'
-            if [ "$CASE" != absent ] && [ "$CASE" != absent-active ]; then printf 'package:dev.mobile.maestro\npackage:dev.mobile.maestro.test\n'; fi ;;
+            if [ "$CASE" = partial ]; then
+                printf 'package:dev.mobile.maestro.test\n'
+            elif [ "$CASE" != absent ] && [ "$CASE" != absent-active ]; then
+                printf 'package:dev.mobile.maestro\npackage:dev.mobile.maestro.test\n'
+            fi ;;
         'shell pm path '*)
             [ "$CASE" != missing ] || return 1
+            if [ "$CASE" = absent ] || [ "$CASE" = absent-active ]; then return 0; fi
             printf 'package:/data/app/test-driver/base.apk\n' ;;
-        'shell am force-stop '*) return 0 ;;
+        'shell am force-stop '*) [ "$CASE" != stop-failed ] ;;
         'shell ps -A -o NAME')
             READS=$((READS + 1))
             [ "$CASE" != disconnected ] || return 1
@@ -56,6 +62,38 @@ for CASE in absent normal pm-disconnected pm-unsupported pm-empty absent-active;
     if [ "$CASE" = absent ]; then ! grep -q '^shell am force-stop' "$OUT/commands.txt"; fi
 done
 echo 'Maestro reentry:6 cases passed; valid uninstalled state accepted only with PackageManager and process proof'
+
+# Exercise the actual observer preparation when the preceding Maestro CLI
+# uninstalled its driver, as well as the failure-closed handoff boundaries.
+source <(sed -n '/^prepare_public_ui_observer() {/,/^}$/p' "$HERE/../player_continuity.sh")
+LIB_HERE=$HERE
+HERE="$(cd "$HERE/.." && pwd)"
+E2E_UI_OBSERVER_APK="$WORK/ui-observer.apk"
+printf 'synthetic observer' > "$E2E_UI_OBSERVER_APK"
+fail() { printf 'FAIL %s\n' "$1" >> "$OUT/results.txt"; }
+for CASE in absent partial normal delayed absent-active pm-empty pm-unsupported pm-disconnected unsupported disconnected missing install-failed stop-failed; do
+    OUT="$WORK/observer-$CASE"; mkdir -p "$OUT"; : > "$OUT/commands.txt"; : > "$OUT/results.txt"
+    READS=0; DRIVER_INSTALLED=1; result=0
+    prepare_public_ui_observer > "$OUT/output.txt" 2>&1 || result=$?
+    if [ "$CASE" = absent ] || [ "$CASE" = partial ] || [ "$CASE" = normal ] || [ "$CASE" = delayed ]; then
+        [ "$result" -eq 0 ] && [ "$DRIVER_INSTALLED" -eq 0 ] || { echo "observer rejected valid $CASE"; exit 1; }
+        grep -q '^shell pm list packages$' "$OUT/commands.txt"
+        grep -q '^shell ps -A -o NAME$' "$OUT/commands.txt"
+        if [ "$CASE" = delayed ]; then [ "$READS" -eq 2 ]; fi
+        if [ "$CASE" = absent ]; then ! grep -q '^shell am force-stop' "$OUT/commands.txt"; fi
+        if [ "$CASE" = partial ]; then
+            grep -q '^shell am force-stop dev.mobile.maestro.test$' "$OUT/commands.txt"
+            ! grep -q '^shell am force-stop dev.mobile.maestro$' "$OUT/commands.txt"
+        fi
+    else
+        [ "$result" -ne 0 ] && [ "$DRIVER_INSTALLED" -eq 1 ] || { echo "observer accepted invalid $CASE"; exit 1; }
+    fi
+    if grep '^shell am force-stop' "$OUT/commands.txt" | grep -Ev '^shell am force-stop dev[.]mobile[.]maestro([.]test)?$'; then
+        echo 'observer force-stopped an unrelated package'; exit 1
+    fi
+done
+HERE=$LIB_HERE
+echo 'Observer handoff: 13 installed/absent/process/transport boundary cases passed'
 
 # Exercise the actual run.sh wrapper: a second CLI must not launch while its
 # predecessor can still own the fixed server port. No assertion is retried.
