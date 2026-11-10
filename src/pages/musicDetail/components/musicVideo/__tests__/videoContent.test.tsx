@@ -140,6 +140,28 @@ test("fullscreen resizes the same native View without dropping its first-frame e
     expect(mockFullscreen).toHaveBeenCalledWith(false);
 });
 
+test("a transient empty layout preserves the mounted video surface", async () => {
+    await mount();
+    await frame();
+    const previousSurface = surface();
+    const stage = tree.root.findAll(
+        node => typeof node.props.onLayout === "function",
+    )[0];
+    expect(RN.StyleSheet.flatten(stage.props.style).overflow).toBe("hidden");
+    for (const layout of [
+        { width: 600, height: 0 },
+        { width: 0, height: 340 },
+        { width: 0, height: 0 },
+        { width: 800, height: 380 },
+    ]) {
+        await act(async () =>
+            stage.props.onLayout({ nativeEvent: { layout } }),
+        );
+        expect(surface()).toBe(previousSurface);
+    }
+    expect(mockMounts).toBe(1);
+});
+
 test("background and route blur release only video output, with no fabricated new frame or playback command", async () => {
     await mount();
     await frame();

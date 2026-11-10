@@ -148,12 +148,15 @@ export default function MusicVideoContent({
                 style={styles.stage}
                 onLayout={event => {
                     const { width, height } = event.nativeEvent.layout;
-                    setViewport(previous =>
-                        Math.abs(previous.width - width) < 0.5 &&
-                        Math.abs(previous.height - height) < 0.5
+                    setViewport(previous => {
+                        // A transient empty layout during rotation must not unmount
+                        // the TextureView and reset the paused video output.
+                        if (width <= 0 || height <= 0) return previous;
+                        return Math.abs(previous.width - width) < 0.5 &&
+                            Math.abs(previous.height - height) < 0.5
                             ? previous
-                            : { width, height },
-                    );
+                            : { width, height };
+                    });
                 }}>
                 {owner?.kind === "mv" && videoWidth > 0 && videoHeight > 0 ? (
                     <View
@@ -349,6 +352,7 @@ const styles = StyleSheet.create({
         minHeight: 0,
         alignItems: "center",
         justifyContent: "center",
+        overflow: "hidden",
     },
     waiting: {
         position: "absolute",
