@@ -2394,32 +2394,46 @@ class TrackPlayer
         this.isForceExiting = true;
         this.qualityIntentSerial += 1;
         this.qualityReadinessWait?.cancel();
-        const exitSerial = this.audioTimelineSerial;
+        const exitSongSerial = this.currentSongSerial;
+        const exitVideoSerial = this.videoOwnershipSerial;
         this.crossfade.dispose();
         // 退出前把当前这首结算掉，够阈值的话至少能进离线队列，下次启动补交。
         LastfmScrobbler.onPlaybackStopped();
 
         const currentMusic = this.currentMusic;
-        if (currentMusic) {
+        if (currentMusic && this.canReadAudioClockFor(currentMusic)) {
+            const owner = this.backend.getRenditionOwner?.() ?? null;
+            const active = this.backend.getActiveRendition?.() ?? null;
+            const clockStillOwned = () =>
+                exitSongSerial === this.currentSongSerial &&
+                exitVideoSerial === this.videoOwnershipSerial &&
+                this.canReadAudioClockFor(currentMusic) &&
+                this.sameAudioRendition(owner, this.backend.getRenditionOwner?.() ?? null) &&
+                this.sameAudioRendition(active, this.backend.getActiveRendition?.() ?? null);
             let progress = getDefaultStore().get(progressAtom);
+            let sampleUsable = true;
             try {
-                progress = normalizeAdapterProgress(
-                    await this.backend.getProgress(),
-                    currentMusic.duration ?? 0,
-                );
-                if (progress.position > 0) {
-                    setPlayerProgress(progress, currentMusic.duration ?? 0);
+                const sample = await this.backend.getProgress();
+                sampleUsable = clockStillOwned() && sample.ready !== false;
+                if (sampleUsable) {
+                    progress = normalizeAdapterProgress(
+                        sample,
+                        currentMusic.duration ?? 0,
+                    );
+                    if (progress.position > 0) {
+                        setPlayerProgress(progress, currentMusic.duration ?? 0);
+                    }
                 }
             } catch {
                 // Use the last UI progress if the native player is already stopping.
             }
 
-            if (progress.position > 0) {
-                if (exitSerial === this.audioTimelineSerial && this.audioTimelineAvailable) PersistStatus.set(
+            if (sampleUsable && progress.position > 0 && clockStillOwned()) {
+                PersistStatus.set(
                     "music.musicItem",
                     stripEphemeralLocalArtwork(currentMusic),
                 );
-                if (exitSerial === this.audioTimelineSerial && this.audioTimelineAvailable) this.persistPlaybackProgress(progress.position, true);
+                this.persistPlaybackProgress(progress.position, true);
             }
         }
         this.disposeServiceListeners();
@@ -3340,7 +3354,17 @@ class TrackPlayer
                 restoredMusic.duration ?? 0,
             );
             this.emit(TrackPlayerEvents.ProgressChanged, restoredProgress);
-            this.persistPlaybackProgress(restoredProgress.position, true);
+            if (this.canReadAudioClockFor(restoredMusic)) {
+                this.persistPlaybackProgress(restoredProgress.position, true);
+            } else if (!transition.previousWasVideo && !this.videoOwnsPlayback &&
+                transition.previousMusic && isSameMediaItem(restoredMusic, transition.previousMusic)) {
+                // The known checkpoint belongs to the original song even if its
+                // audio clock has not become ready again yet. Write a safe pair
+                // in order so a crash cannot attach it to the selected next song.
+                this.setPersistedPlaybackProgress(0, Date.now(), true);
+                PersistStatus.set("music.musicItem", stripEphemeralLocalArtwork(restoredMusic));
+                this.setPersistedPlaybackProgress(restoredProgress.position, Date.now(), true);
+            }
         }
 
         const targetAlreadyActive =
@@ -4069,7 +4093,11 @@ class TrackPlayer
     }
 
     private setCurrentMusic(musicItem?: IMusic.IMusicItem | null) {
-        if ((musicItem ? getMediaUniqueKey(musicItem) : null) !== (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null)) {
+        const songChanged = (musicItem ? getMediaUniqueKey(musicItem) : null) !==
+            (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null);
+        const wasVideo = this.videoOwnsPlayback ||
+            (this.hasActiveMpvManualSkipTransition() && !!this.mpvManualSkipTransition?.previousWasVideo);
+        if (songChanged) {
             this.currentSongSerial += 1;
             this.audioTimelineSerial += 1;
             this.mpvActiveTrackSyncSerial += 1;
@@ -4102,10 +4130,12 @@ class TrackPlayer
         // Remember its readiness so a later native confirmation only publishes a
         // timeline change when that readiness has actually changed.
         this.lastPublishedAudioTimelineAvailable = this.audioTimelineAvailable;
-        if (this.audioTimelineAvailable) PersistStatus.set(
-            "music.musicItem",
-            stripEphemeralLocalArtwork(normalizedMusicItem),
-        );
+        if (this.audioTimelineAvailable || (songChanged && !wasVideo && !this.videoOwnsPlayback)) {
+            if (songChanged && !isSameMediaItem(PersistStatus.get("music.musicItem"), normalizedMusicItem)) {
+                this.setPersistedPlaybackProgress(0, Date.now(), true);
+            }
+            PersistStatus.set("music.musicItem", stripEphemeralLocalArtwork(normalizedMusicItem));
+        }
 
         this.notifyPlaybackTrackChanged(normalizedMusicItem);
         this.emit(TrackPlayerEvents.CurrentMusicChanged, normalizedMusicItem);

@@ -771,3 +771,134 @@ it("still classifies a returning MV as video when its native owner is audio", ()
     const transition = player.beginMpvManualSkipTransition({ ...song, id: "B" }, song, "test-next");
     expect(transition.previousWasVideo).toBe(true);
 });
+
+it("persists owned audio on exit even if the same song is confirmed during the read", async () => {
+    let release!: (progress: any) => void;
+    mockBackend.getProgress = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    jest.spyOn(player, "disposeServiceListeners").mockImplementation(() => undefined);
+    jest.spyOn(player.crossfade, "dispose").mockImplementation(() => undefined);
+    player.isForceExiting = false;
+    jest.mocked(PersistStatus.set).mockClear();
+    try {
+        const exiting = player.prepareForAppExit();
+        player.publishAudioTimeline();
+        release({ position: 37, duration: 300, buffered: 37, ready: true });
+        await exiting;
+        expect(PersistStatus.set).toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "A" }));
+        expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 37);
+    } finally {
+        player.isForceExiting = false;
+    }
+});
+
+it("does not read or persist an unready audio clock during exit", async () => {
+    mockBackend.getActiveRendition = jest.fn(() => ({ ...owner, ready: false }));
+    jest.spyOn(player, "disposeServiceListeners").mockImplementation(() => undefined);
+    jest.spyOn(player.crossfade, "dispose").mockImplementation(() => undefined);
+    player.isForceExiting = false;
+    jest.mocked(PersistStatus.set).mockClear();
+    try {
+        await player.prepareForAppExit();
+        expect(mockBackend.getProgress).not.toHaveBeenCalled();
+        expect(PersistStatus.set).not.toHaveBeenCalledWith("music.progress", expect.anything());
+    } finally {
+        player.isForceExiting = false;
+    }
+});
+
+it("cleans up without applying a native exit sample reported as unready", async () => {
+    mockBackend.getProgress = jest.fn(async () => ({ position: 91, duration: 300, buffered: 91, ready: false }));
+    const dispose = jest.spyOn(player, "disposeServiceListeners").mockImplementation(() => undefined);
+    jest.spyOn(player.crossfade, "dispose").mockImplementation(() => undefined);
+    player.isForceExiting = false;
+    const before = player.getProgressSnapshot();
+    jest.mocked(PersistStatus.set).mockClear();
+    try {
+        await player.prepareForAppExit();
+        expect(dispose).toHaveBeenCalledTimes(1);
+        expect(PersistStatus.set).not.toHaveBeenCalledWith("music.progress", 91);
+        expect(player.getProgressSnapshot()).toEqual(before);
+    } finally {
+        player.isForceExiting = false;
+    }
+});
+
+it("does not pair the old song with another song's progress when exit races a song change", async () => {
+    let release!: (progress: any) => void;
+    mockBackend.getProgress = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    jest.spyOn(player, "disposeServiceListeners").mockImplementation(() => undefined);
+    jest.spyOn(player.crossfade, "dispose").mockImplementation(() => undefined);
+    player.isForceExiting = false;
+    try {
+        const exiting = player.prepareForAppExit();
+        const next = { ...song, id: "B" };
+        player.setCurrentMusic(next);
+        owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+        const snapshotBeforeLateRead = player.getProgressSnapshot();
+        jest.mocked(PersistStatus.set).mockClear();
+        release({ position: 91, duration: 300, buffered: 91, ready: true });
+        await exiting;
+        expect(PersistStatus.set).not.toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "A" }));
+        expect(PersistStatus.set).not.toHaveBeenCalledWith("music.progress", 91);
+        expect(player.getProgressSnapshot()).toEqual(snapshotBeforeLateRead);
+    } finally {
+        player.isForceExiting = false;
+    }
+});
+
+it("records a newly selected ordinary song with a zero checkpoint before its source loads", () => {
+    const next = { ...song, id: "B" };
+    player.cancelMpvManualSkipTransition("test-start");
+    jest.mocked(PersistStatus.set).mockClear();
+    player.setCurrentMusic(next);
+    const calls = jest.mocked(PersistStatus.set).mock.calls;
+    const zeroIndex = calls.findIndex(([key, value]) => key === "music.progress" && value === 0);
+    const songIndex = calls.findIndex(([key, value]) => key === "music.musicItem" && (value as any)?.id === "B");
+    expect(zeroIndex).toBeGreaterThanOrEqual(0);
+    expect(songIndex).toBeGreaterThan(zeroIndex);
+});
+
+it("restores the original checkpoint if an unready ordinary song change fails", async () => {
+    const next = { ...song, id: "B" };
+    player.cancelMpvManualSkipTransition("test-start");
+    mockBackend.active = { track: song, index: 0 };
+    mockBackend.getActiveRendition = jest.fn(() => ({ ...owner, ready: false }));
+    mockBackend.restoreActiveTrack = jest.fn(async () => true);
+    mockBackend.seekTo = jest.fn(async () => undefined);
+    player.setCurrentMusic(song);
+    const transition = player.beginMpvManualSkipTransition(next, song, "test-next");
+    transition.previousProgress = { position: 37, duration: 300, buffered: 37 };
+    player.setCurrentMusic(next);
+    jest.mocked(PersistStatus.set).mockClear();
+    await player.rollbackMpvManualSkipTransition(transition, "test-failure");
+    expect(PersistStatus.set).toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "A" }));
+    expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 37);
+});
+
+it("keeps the saved checkpoint when restoring the same song at startup", () => {
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic({ ...song, id: "B" });
+    jest.mocked(PersistStatus.get).mockReturnValueOnce(song);
+    jest.mocked(PersistStatus.set).mockClear();
+    player.setCurrentMusic(song);
+    expect(PersistStatus.set).toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "A" }));
+    expect(PersistStatus.set).not.toHaveBeenCalledWith("music.progress", 0);
+});
+
+it("preserves the audio checkpoint when leaving a returning MV for another song", () => {
+    player.cancelMpvManualSkipTransition("test-start");
+    player.initializeMusicVideo();
+    player.musicVideo.block(true);
+    player.musicVideo.publish({ phase: "returning", songKey: getMediaUniqueKey(song),
+        owner, video: { id: "clip", title: "Video", artist: "Artist", providerName: "test" }, canReturn: true });
+    const next = { ...song, id: "B" };
+    player.beginMpvManualSkipTransition(next, song, "test-next");
+    jest.mocked(PersistStatus.set).mockClear();
+    player.setCurrentMusic(next);
+    expect(PersistStatus.set).not.toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "B" }));
+    expect(PersistStatus.set).not.toHaveBeenCalledWith("music.progress", 0);
+});
