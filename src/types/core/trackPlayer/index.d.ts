@@ -119,6 +119,7 @@ export interface ITrackPlayer
     extends IInjectable,
         EventEmitter<{
             [TrackPlayerEvents.AudioTimelineChanged]: () => void;
+            [TrackPlayerEvents.MusicVideoOwnershipChanged]: () => void;
             [TrackPlayerEvents.PlayEnd]: () => void;
             [TrackPlayerEvents.CurrentMusicChanged]: (
                 musicItem: IMusic.IMusicItem | null,
@@ -145,6 +146,8 @@ export interface ITrackPlayer
      */
     readonly currentMusic: IMusic.IMusicItem | null;
     readonly audioTimelineAvailable?: boolean;
+    /** MV ownership is separate from readiness of the current audio clock. */
+    readonly videoOwnsPlayback?: boolean;
     readonly timelineSerial?: number;
 
     /**

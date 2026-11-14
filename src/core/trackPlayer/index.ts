@@ -327,6 +327,7 @@ function getMediaSourceResultFailure(
 class TrackPlayer
     extends EventEmitter<{
         [TrackPlayerEvents.AudioTimelineChanged]: () => void;
+        [TrackPlayerEvents.MusicVideoOwnershipChanged]: () => void;
         [TrackPlayerEvents.PlayEnd]: () => void;
         [TrackPlayerEvents.CurrentMusicChanged]: (
             musicItem: IMusic.IMusicItem | null,
@@ -432,7 +433,7 @@ class TrackPlayer
     private lastPublishedAudioTimelineAvailable = true;
 
     /** Whether the video rendition owns the engine, independent of audio readiness. */
-    private get videoOwnsPlayback() {
+    get videoOwnsPlayback() {
         return !!this.musicVideo?.blocksAudioTimeline ||
             this.backend?.getRenditionOwner?.()?.kind === "mv";
     }
@@ -494,7 +495,9 @@ class TrackPlayer
         if (available !== this.lastPublishedAudioTimelineAvailable) {
             this.lastPublishedAudioTimelineAvailable = available;
             this.emit(TrackPlayerEvents.AudioTimelineChanged);
+            return true;
         }
+        return false;
     }
     private initializeMusicVideo() {
         this.musicVideo = new MusicVideoController({
@@ -545,7 +548,9 @@ class TrackPlayer
             publish: state => getDefaultStore().set(musicVideoAtom, state),
             timelineChanged: blocked => {
                 if (blocked) this.videoOwnershipSerial += 1;
-                this.publishAudioTimeline();
+                // Ownership can change while an audio load already made its
+                // timeline unavailable. Notify lyric consumers in that case.
+                if (!this.publishAudioTimeline()) this.emit(TrackPlayerEvents.MusicVideoOwnershipChanged);
                 if (blocked) {
                     this.crossfade.onPause(); LastfmScrobbler.onPaused();
                 } else if (this.audioTimelineAvailable && getDefaultStore().get(musicStateAtom) === "playing") {

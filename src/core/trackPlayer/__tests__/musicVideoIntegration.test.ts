@@ -82,6 +82,7 @@ jest.mock("@/core/localMusicArtworkManager", () => ({
     stripEphemeralLocalArtwork: (item: unknown) => item,
 }));
 jest.mock("@/utils/log", () => mockAutoStub());
+jest.mock("@/utils/fileUtils", () => ({ checkAndCreateDir: jest.fn().mockResolvedValue(undefined) }));
 jest.mock("react-native-fs", () => mockAutoStub());
 jest.mock("@/utils/getOrCreateMMKV", () => {
     const store = () => ({
@@ -110,6 +111,14 @@ jest.mock("@/core/dislikeMusic", () => mockAutoStub());
 jest.mock("@/core/mediaCache", () => mockAutoStub());
 jest.mock("@/constants/assetsConst", () => mockAutoStub());
 jest.mock("@/native/utils", () => mockAutoStub());
+jest.mock("@/native/lyricUtil", () => ({ __esModule: true, default: {
+    setActivePlayerBackend: jest.fn().mockResolvedValue(undefined),
+    showStatusBarLyric: jest.fn().mockResolvedValue(undefined),
+    setStatusBarLyricText: jest.fn().mockResolvedValue(undefined),
+    setStatusBarLyricPayload: jest.fn().mockResolvedValue(undefined),
+    clearMediaNotificationLyricText: jest.fn().mockResolvedValue(undefined),
+    clearLiveUpdateLyricText: jest.fn().mockResolvedValue(undefined),
+} }));
 jest.mock("@/service/encryptedMediaProxy", () => mockAutoStub());
 jest.mock("@/core/lastfm", () => mockAutoStub());
 jest.mock("@/utils/androidMediaPermission", () => mockAutoStub());
@@ -272,6 +281,83 @@ test("ordinary load confirmation does not cancel autoplay compensation or republ
     } finally {
         player.disposeServiceListeners();
         jest.useRealTimers();
+    }
+});
+
+test("MV ownership is reported even when the audio timeline was already unavailable", () => {
+    mockBackend.getActiveRendition = jest.fn(() => ({ ...owner, ready: false }));
+    player.setCurrentMusic(song);
+    player.initializeMusicVideo();
+    const timeline = jest.fn();
+    const ownership = jest.fn();
+    player.on(TrackPlayerEvents.AudioTimelineChanged, timeline);
+    player.on(TrackPlayerEvents.MusicVideoOwnershipChanged, ownership);
+    try {
+        expect(player.audioTimelineAvailable).toBe(false);
+        player.musicVideo.block(true);
+        expect(player.videoOwnsPlayback).toBe(true);
+        expect(timeline).not.toHaveBeenCalled();
+        expect(ownership).toHaveBeenCalledTimes(1);
+    } finally {
+        player.off(TrackPlayerEvents.AudioTimelineChanged, timeline);
+        player.off(TrackPlayerEvents.MusicVideoOwnershipChanged, ownership);
+        player.musicVideo.block(false);
+    }
+});
+
+test("MV ownership does not duplicate an actual audio timeline change", () => {
+    player.initializeMusicVideo();
+    const timeline = jest.fn();
+    const ownership = jest.fn();
+    player.on(TrackPlayerEvents.AudioTimelineChanged, timeline);
+    player.on(TrackPlayerEvents.MusicVideoOwnershipChanged, ownership);
+    try {
+        expect(player.audioTimelineAvailable).toBe(true);
+        player.musicVideo.block(true);
+        expect(timeline).toHaveBeenCalledTimes(1);
+        expect(ownership).not.toHaveBeenCalled();
+        player.musicVideo.block(false);
+        expect(timeline).toHaveBeenCalledTimes(2);
+        expect(ownership).not.toHaveBeenCalled();
+    } finally {
+        player.off(TrackPlayerEvents.AudioTimelineChanged, timeline);
+        player.off(TrackPlayerEvents.MusicVideoOwnershipChanged, ownership);
+    }
+});
+
+test("real TrackPlayer and LyricManager fetch for the new song while the old audio still owns the engine", async () => {
+    const manager = require("@/core/lyricManager").default;
+    const next = { ...song, id: "B", title: "Song B" };
+    let finishNext!: (value: unknown) => void;
+    const nextLyrics = new Promise(resolve => {
+        finishNext = resolve;
+    });
+    const getLyric = jest.fn((item: IMusic.IMusicItem) => item.id === "B"
+        ? nextLyrics : Promise.resolve({ rawLrc: "[00:00.00]Song A" }));
+    const lyricPlugin = { name: "test", methods: { getLyric }, supportedMethods: new Set(["getLyric"]) };
+    manager.dispose();
+    manager.injectDependencies(trackPlayer, { getConfig: () => undefined },
+        { getByMedia: () => lyricPlugin, getSearchablePlugins: () => [] });
+    try {
+        await manager.setup();
+        await tick();
+        getLyric.mockClear();
+        mockBackend.getProgress.mockClear();
+        player.setCurrentMusic(next);
+        expect(trackPlayer.audioTimelineAvailable).toBe(false);
+        expect(trackPlayer.videoOwnsPlayback).toBe(false);
+        expect(getLyric).toHaveBeenCalledTimes(1);
+        expect(getLyric).toHaveBeenCalledWith(expect.objectContaining({ id: "B" }));
+        expect(mockBackend.getProgress).not.toHaveBeenCalled();
+        owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: ++generation };
+        player.setCurrentMusic(next);
+        expect(trackPlayer.audioTimelineAvailable).toBe(true);
+        expect(getLyric).toHaveBeenCalledTimes(1);
+        finishNext({ rawLrc: "[00:00.00]Song B" });
+        await tick();
+        expect(JSON.stringify(manager.lyricState.lyrics)).toContain("Song B");
+    } finally {
+        manager.dispose();
     }
 });
 

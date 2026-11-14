@@ -100,12 +100,12 @@ describe("LyricManager listener lifecycle", () => {
         const secondSetup = lyricManager.setup();
         await Promise.all([firstSetup, secondSetup]);
 
-        expect(trackPlayer.on).toHaveBeenCalledTimes(2);
+        expect(trackPlayer.on).toHaveBeenCalledTimes(3);
         expect(addEventListener).toHaveBeenCalledTimes(3);
 
         lyricManager.dispose();
 
-        expect(trackPlayer.off).toHaveBeenCalledTimes(2);
+        expect(trackPlayer.off).toHaveBeenCalledTimes(3);
         removeListeners.forEach(remove => {
             expect(remove).toHaveBeenCalledTimes(1);
         });
@@ -121,7 +121,7 @@ it("same-song MV entry invalidates a late lyric response and audio return can pu
         release = resolve;
     }));
     const player: any = {
-        currentMusic: null, audioTimelineAvailable: true,
+        currentMusic: null, audioTimelineAvailable: true, videoOwnsPlayback: false,
         on: (event: string, fn: () => void) => listeners.set(event, fn), off: jest.fn(),
         isCurrentMusic: (item: unknown) => item === song,
         playerAdapter: { name: "mpv", getState: async () => "paused", addEventListener: () => ({ remove: jest.fn() }) },
@@ -137,12 +137,14 @@ it("same-song MV entry invalidates a late lyric response and audio return can pu
     listeners.get(TrackPlayerEvents.CurrentMusicChanged)!();
     expect(getLyric).toHaveBeenCalledTimes(1);
     player.audioTimelineAvailable = false;
+    player.videoOwnsPlayback = true;
     listeners.get(TrackPlayerEvents.AudioTimelineChanged)!();
     release({ rawLrc: "[00:00]Late original lyric" });
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(lyricManager.lyricState.lyrics).toHaveLength(0);
     expect(lyricManager.getLyricDiagnosticSnapshot().nativeOutput.text).toBe("");
     getLyric.mockImplementationOnce(() => Promise.resolve({ rawLrc: "[00:00]Restored lyric" }));
+    player.videoOwnsPlayback = false;
     player.audioTimelineAvailable = true;
     listeners.get(TrackPlayerEvents.AudioTimelineChanged)!();
     await new Promise(resolve => setTimeout(resolve, 0));

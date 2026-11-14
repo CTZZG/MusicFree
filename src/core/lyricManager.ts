@@ -366,11 +366,14 @@ class LyricManager implements IInjectable {
     private playbackStateSyncGeneration = 0;
     private positionHydrationGeneration = 0;
     private renditionPublicationGeneration = 0;
+    private lyricRequestSequence = 0;
+    private activeLyricRequest: { key: string; sequence: number; publication: number } | null = null;
     private nativeStatusBarPayloadSequence = 0;
     private initialized = false;
     private listenerLifecycleGeneration = 0;
     private currentMusicChangedListener: (() => void) | null = null;
     private audioTimelineChangedListener: (() => void) | null = null;
+    private videoOwnershipChangedListener: (() => void) | null = null;
     private lastAudioTimelineAvailable = true;
     private lastLyricMusicKey: string | null = null;
     private playerSubscriptions: PlayerAdapterSubscription[] = [];
@@ -608,7 +611,14 @@ class LyricManager implements IInjectable {
                 const available = this.trackPlayer.audioTimelineAvailable !== false;
                 const musicKey = this.trackPlayer.currentMusic
                     ? getMediaUniqueKey(this.trackPlayer.currentMusic) : null;
-                if (musicKey === this.lastLyricMusicKey && available === this.lastAudioTimelineAvailable) return;
+                if (musicKey === this.lastLyricMusicKey) {
+                    if (available !== this.lastAudioTimelineAvailable) this.audioTimelineChangedListener?.();
+                    if (musicKey && !this.trackPlayer.videoOwnsPlayback &&
+                        !this.hasCurrentLyricParser() && !this.hasCurrentLyricRequest()) {
+                        this.refreshLyric(true, false);
+                    }
+                    return;
+                }
                 this.lastLyricMusicKey = musicKey;
                 this.lastAudioTimelineAvailable = available;
                 this.renditionPublicationGeneration += 1;
@@ -617,6 +627,7 @@ class LyricManager implements IInjectable {
                 this.lastProgressPositionMs = 0;
                 getDefaultStore().set(currentPositionMsAtom, 0);
                 this.stopPositionClock(0);
+                if (!available) this.isPlaybackAdvancing = false;
                 this.setLyricAsLoadingState();
                 // 先用新歌曲身份清空上一首逐字状态，再异步加载新歌词。
                 this.publishNativeLyricOutput({
@@ -624,7 +635,7 @@ class LyricManager implements IInjectable {
                     positionMs: 0,
                     isPlaying: this.isPlaybackAdvancing,
                 });
-                if (this.trackPlayer.audioTimelineAvailable === false) {
+                if (this.trackPlayer.videoOwnsPlayback) {
                     this.isPlaybackAdvancing = false;
                     this.setLyricAsNoLyricState("no-current-music");
                     this.publishNativeLyricOutput({ force: true, isPlaying: false });
@@ -641,16 +652,24 @@ class LyricManager implements IInjectable {
                 const available = this.trackPlayer.audioTimelineAvailable !== false;
                 if (available === this.lastAudioTimelineAvailable) return;
                 this.lastAudioTimelineAvailable = available;
-                this.renditionPublicationGeneration += 1;
                 const stateGeneration = ++this.playbackStateSyncGeneration;
                 this.positionHydrationGeneration += 1;
                 if (!available) {
                     this.isPlaybackAdvancing = false;
                     this.stopPositionClock(this.lastProgressPositionMs);
-                    this.setLyricAsNoLyricState("no-current-music");
+                    if (this.trackPlayer.videoOwnsPlayback) {
+                        this.renditionPublicationGeneration += 1;
+                        this.setLyricAsNoLyricState("no-current-music");
+                    } else {
+                        getDefaultStore().set(currentLyricItemAtom, null);
+                        this.publishNativeLyricOutput({ force: true, isPlaying: false });
+                    }
                     return;
                 }
-                this.refreshLyric(true, false);
+                if (!this.hasCurrentLyricRequest() &&
+                    (!this.hasCurrentLyricParser() || !this.lyricState.lyrics.length)) {
+                    this.refreshLyric(true, false);
+                }
                 this.trackPlayer.playerAdapter.getState().then(state => {
                     if (stateGeneration !== this.playbackStateSyncGeneration ||
                         this.trackPlayer.audioTimelineAvailable === false) return;
@@ -659,6 +678,16 @@ class LyricManager implements IInjectable {
                 }).catch(() => undefined);
             };
             this.trackPlayer.on(TrackPlayerEvents.AudioTimelineChanged, this.audioTimelineChangedListener);
+            this.videoOwnershipChangedListener = () => {
+                if (!this.trackPlayer.videoOwnsPlayback) return;
+                this.renditionPublicationGeneration += 1;
+                this.playbackStateSyncGeneration += 1;
+                this.positionHydrationGeneration += 1;
+                this.isPlaybackAdvancing = false;
+                this.stopPositionClock(this.lastProgressPositionMs);
+                this.setLyricAsNoLyricState("no-current-music");
+            };
+            this.trackPlayer.on(TrackPlayerEvents.MusicVideoOwnershipChanged, this.videoOwnershipChangedListener);
             const initialStateGeneration = this.playbackStateSyncGeneration;
             this.trackPlayer.playerAdapter
                 .getState()
@@ -798,6 +827,9 @@ class LyricManager implements IInjectable {
 
     dispose() {
         this.listenerLifecycleGeneration += 1;
+        this.renditionPublicationGeneration += 1;
+        this.lyricRequestSequence += 1;
+        this.activeLyricRequest = null;
         this.playbackStateSyncGeneration += 1;
         this.positionHydrationGeneration += 1;
         this.playerSubscriptions.splice(0).forEach(subscription => {
@@ -808,6 +840,10 @@ class LyricManager implements IInjectable {
         if (this.audioTimelineChangedListener) {
             this.trackPlayer.off(TrackPlayerEvents.AudioTimelineChanged, this.audioTimelineChangedListener);
             this.audioTimelineChangedListener = null;
+        }
+        if (this.videoOwnershipChangedListener) {
+            this.trackPlayer.off(TrackPlayerEvents.MusicVideoOwnershipChanged, this.videoOwnershipChangedListener);
+            this.videoOwnershipChangedListener = null;
         }
         if (this.currentMusicChangedListener) {
             this.trackPlayer.off(
@@ -1271,22 +1307,38 @@ class LyricManager implements IInjectable {
         this.publishNativeLyricOutput({ force: true });
     }
 
+    private hasCurrentLyricParser() {
+        return !!this.lyricParser && this.trackPlayer.isCurrentMusic(this.lyricParser.musicItem);
+    }
+
+    private hasCurrentLyricRequest() {
+        const music = this.trackPlayer.currentMusic;
+        const active = this.activeLyricRequest;
+        return !!music && !!active && active.key === getMediaUniqueKey(music) &&
+            active.publication === this.renditionPublicationGeneration &&
+            active.sequence === this.lyricRequestSequence;
+    }
+
     private async refreshLyric(
         skipFetchLyricSourceIfSame: boolean = true,
         ignoreProgress: boolean = false,
     ) {
-        if (this.trackPlayer.audioTimelineAvailable === false) return;
+        if (this.trackPlayer.videoOwnsPlayback) return;
         const publication = this.renditionPublicationGeneration;
         const currentMusicItem = this.trackPlayer.currentMusic;
+        const sequence = ++this.lyricRequestSequence;
         const current = () => publication === this.renditionPublicationGeneration &&
-            this.trackPlayer.audioTimelineAvailable !== false && !!currentMusicItem && this.trackPlayer.isCurrentMusic(currentMusicItem);
+            sequence === this.lyricRequestSequence && !this.trackPlayer.videoOwnsPlayback &&
+            !!currentMusicItem && this.trackPlayer.isCurrentMusic(currentMusicItem);
 
         // 如果没有当前音乐项，重置歌词状态
         if (!currentMusicItem) {
+            this.activeLyricRequest = null;
             this.setLyricAsNoLyricState("no-current-music");
             return;
         }
 
+        this.activeLyricRequest = { key: getMediaUniqueKey(currentMusicItem), sequence, publication };
         try {
             let lrcSource: ILyric.ILyricSource | null;
             let sourceStatus: ILyricSourceStatus | undefined;
@@ -1430,6 +1482,14 @@ class LyricManager implements IInjectable {
                 emptyReason: undefined,
             });
 
+            // The lyric data belongs to the new song, but the engine can still
+            // expose an earlier song's clock until its audio is confirmed.
+            if (this.trackPlayer.audioTimelineAvailable === false) {
+                getDefaultStore().set(currentLyricItemAtom, null);
+                this.publishNativeLyricOutput({ force: true, isPlaying: false });
+                return;
+            }
+
             const parser = this.lyricParser;
             const progressSnapshot = this.getCurrentProgressSnapshot();
             const snapshotPosition = Number(progressSnapshot?.position) || 0;
@@ -1462,6 +1522,8 @@ class LyricManager implements IInjectable {
                     isTimeoutError(err) ? "timeout" : "parse-failed",
                 );
             }
+        } finally {
+            if (this.activeLyricRequest?.sequence === sequence) this.activeLyricRequest = null;
         }
     }
 

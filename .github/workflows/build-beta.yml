@@ -58,6 +58,14 @@ on:
                 options:
                     - '14'
                     - '17'
+            e2e_all_prelude:
+                description: 'all 的起始状态：post-mv 保留 MV 往返；audio-first 验证首次安装后普通播放'
+                required: false
+                default: 'post-mv'
+                type: choice
+                options:
+                    - post-mv
+                    - audio-first
 
 jobs:
     check-version:
@@ -489,6 +497,7 @@ jobs:
                   python3 -I e2e/lib/playback_info_evidence.py --self-test
                   bash e2e/lib/experience_test.sh
                   bash e2e/lib/maestro_handoff_test.sh
+                  bash e2e/lib/all_prelude_test.sh
                   bash e2e/lib/boundary_environment_test.sh
                   bash e2e/lib/font_controls_test.sh
                   bash e2e/lib/share_receiver_test.sh
@@ -566,6 +575,7 @@ jobs:
               uses: reactivecircus/android-emulator-runner@v2
               env:
                   E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
+                  E2E_ALL_PRELUDE: ${{ inputs.e2e_all_prelude || 'post-mv' }}
                   E2E_AUDIO_HARDENING: ${{ inputs.e2e_android == '17' && 'throw' || '' }}
                   # 测的 APK 不是按这次的提交打包时，写进结果
                   E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}

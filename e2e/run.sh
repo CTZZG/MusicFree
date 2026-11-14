@@ -36,6 +36,7 @@ FOCUS_PKG=fun.upup.musicfree.e2e.focus
 E2E_LEGACY_APK=${E2E_LEGACY_APK:-}
 E2E_MMKV_SEED=${E2E_MMKV_SEED:-}
 E2E_SUITE=${E2E_SUITE:-all}
+E2E_ALL_PRELUDE=${E2E_ALL_PRELUDE:-post-mv}
 case "$E2E_SUITE" in
     all|experience|lyric-boundaries|playback-font|player-observation|storage|download-source|power|library|backup|perf|crash|mv) ;;
     *) echo "Unknown E2E_SUITE: $E2E_SUITE" >&2; exit 2 ;;
@@ -51,6 +52,11 @@ DRIVER_INSTALLED=0
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 pass() { printf 'PASS\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "PASS $1 ${2:-}"; }
 fail() { printf 'FAIL\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "FAIL $1 ${2:-}"; FAILED=$((FAILED + 1)); }
+source "$HERE/lib/all_prelude.sh"
+if ! validate_all_prelude; then
+    echo "Invalid all-suite prelude: $E2E_ALL_PRELUDE for $E2E_SUITE" >&2
+    exit 2
+fi
 shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; }
 # 播放会话、暂停、“视频”打断的判断（session、stays_paused、held_until_video_ends……）
 # shellcheck source=lib/pause_checks.sh
@@ -234,6 +240,8 @@ write_summary() {
         echo "- 测的 APK：$(basename "$APK")，打包的源码提交：\`${E2E_APK_COMMIT:-未知}\`${E2E_APK_SOURCE:+（$E2E_APK_SOURCE）}"
         if [ "$E2E_SUITE" != all ]; then
             echo "- 只跑了：$E2E_SUITE"
+        else
+            echo "- 全量前置模式：$E2E_ALL_PRELUDE"
         fi
         echo "- 设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
         echo "- 结果：$passed 项通过，$FAILED 项失败"
@@ -302,6 +310,10 @@ fi
 startup_capture_start
 
 # 1. 安装并启动。-g 直接给通知、音频读取等运行时权限，不在系统弹窗上卡住
+if [ "$E2E_SUITE" = all ] && [ "$E2E_ALL_PRELUDE" = audio-first ]; then
+    check_audio_first_install || finish
+fi
+if [ "$E2E_SUITE" = all ]; then printf '%s\n' "$E2E_ALL_PRELUDE" > "$OUT/all-prelude-mode.txt"; fi
 if adb_install "$OUT/install.log" -r -g "$APK"; then
     pass "安装 APK" "$(basename "$APK")"
 else
@@ -343,8 +355,7 @@ if [ "$E2E_SUITE" = mv ]; then
     finish
 fi
 if [ "$E2E_SUITE" = all ]; then
-    source "$HERE/mv.sh"
-    run_post_mv_roundtrip_for_all || finish
+    run_all_prelude || finish
 fi
 if [ "$E2E_SUITE" = backup ]; then
     source "$HERE/backup.sh"
@@ -505,11 +516,7 @@ if flow "选了取不到的无损，标签保持 HQ" quality-unavailable.yaml; t
 fi
 
 if [ "$E2E_SUITE" = all ]; then
-    if check_post_mv_all_process; then
-        pass "MV后普通回归：冷启动前保持同一进程" "搜索、分享、后台切歌、错误恢复及音质切换均在MV往返后执行"
-    else
-        fail "MV后普通回归：冷启动前保持同一进程" "应用进程已变化，无法证明此前回归使用MV后的播放状态"
-    fi
+    check_all_pre_cold_start
 fi
 
 # 11. 冷启动：暂停后把应用彻底关掉（和被系统清掉一样）再打开。播放条要恢复上次那首，
