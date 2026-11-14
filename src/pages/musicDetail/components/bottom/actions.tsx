@@ -8,7 +8,7 @@ import { useI18N } from "@/core/i18n";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import PluginManager from "@/core/pluginManager";
 import TrackPlayer, {
-    useCurrentMusic, useMusicVideoState,
+    useCurrentMusic, useMusicVideoView,
     useRepeatMode,
 } from "@/core/trackPlayer";
 import delay from "@/utils/delay";
@@ -59,8 +59,7 @@ interface IPlayerActionsProps {
 export default function PlayerActions(props: IPlayerActionsProps) {
     const { lyricTab } = props;
     const musicItem = useCurrentMusic();
-    const video = useMusicVideoState();
-    const isVideo = video.phase !== "audio" && (video.owner?.kind === "mv" || video.phase === "returning");
+    const { videoMode: isVideo } = useMusicVideoView();
     const repeatMode = useRepeatMode();
     const isDownloaded = LocalMusicSheet.useIsLocal(musicItem);
     const { t } = useI18N();

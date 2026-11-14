@@ -32,7 +32,7 @@ jest.mock("@/core/trackPlayer", () => ({
         },
     },
     useCurrentMusic: () => mockMusic,
-    useMusicVideoState: () => mockVideoState,
+    useMusicVideoView: () => jest.requireActual("@/core/trackPlayer/musicVideoView").describeMusicVideoView(mockVideoState),
     useMusicQuality: () => "128k",
     useAlternateSourceInUse: () => "Actual source B",
 }));

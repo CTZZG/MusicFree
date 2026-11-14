@@ -7,7 +7,7 @@ import TrackPlayer, {
     useCurrentMusic,
     useMusicQuality,
     useProgress,
-    useMusicVideoState,
+    useMusicVideoView,
 } from "@/core/trackPlayer";
 import i18n, { useI18N } from "@/core/i18n";
 import { showPanel } from "@/components/panels/usePanel";
@@ -51,9 +51,11 @@ function Badge(props: {
 function QualityBadge() {
     const musicItem = useCurrentMusic();
     const currentQuality = useMusicQuality();
-    const video = useMusicVideoState();
+    const { engineIsVideo, video } = useMusicVideoView();
     const { t } = useI18N();
-    const label = video.phase !== "audio" && video.owner?.kind === "mv" ? `MV ${video.video.qualities?.find(value => value.id === video.video.qualityId)?.label ?? video.video.qualityId ?? ""}` : currentQuality ? getQualityAbbr(currentQuality) : "—";
+    const label = engineIsVideo
+        ? `MV ${video?.qualities?.find(value => value.id === video.qualityId)?.label ?? video?.qualityId ?? ""}`
+        : currentQuality ? getQualityAbbr(currentQuality) : "—";
 
     return (
         <Badge
@@ -65,7 +67,7 @@ function QualityBadge() {
                 if (!musicItem) {
                     return;
                 }
-                if (video.phase !== "audio" && video.owner?.kind === "mv") {
+                if (engineIsVideo) {
                     showPanel("MusicVideo"); return;
                 }
                 showPanel("MusicQuality", {
@@ -120,9 +122,7 @@ function RateBadge() {
 /** iOS 播放页进度条：细轨道，下面左右是已播放与剩余时间 */
 export default function SeekBar() {
     const progress = useProgress(1000);
-    const video = useMusicVideoState();
-    const isVideo = video.phase !== "audio" && (video.owner?.kind === "mv" || video.phase === "returning");
-    const transitioning = video.phase === "loading" || video.phase === "returning";
+    const { videoMode: isVideo, transitioning, owner } = useMusicVideoView();
     const musicItem = useCurrentMusic();
     const { t } = useI18N();
     const [tmpProgress, setTmpProgress] = useState<number | null>(null);
@@ -145,7 +145,7 @@ export default function SeekBar() {
                 disabled={displayDuration <= 0 || transitioning}
                 onSlidingStart={() => {
                     slidingRef.current = true;
-                    gestureOwner.current = video.phase !== "audio" ? video.owner ?? null : null;
+                    gestureOwner.current = owner;
                 }}
                 onValueChange={val => {
                     if (slidingRef.current) {
@@ -155,7 +155,7 @@ export default function SeekBar() {
                 onSlidingComplete={val => {
                     slidingRef.current = false;
                     setTmpProgress(null);
-                    const expected = gestureOwner.current ?? (video.phase !== "audio" ? video.owner : null);
+                    const expected = gestureOwner.current ?? owner;
                     gestureOwner.current = null;
                     if (transitioning) return;
                     if (expected) {

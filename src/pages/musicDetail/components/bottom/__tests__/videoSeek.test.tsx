@@ -8,7 +8,7 @@ const mockSeek = jest.fn();
 jest.mock("@react-native-community/slider", () => "Slider");
 jest.mock("@/core/trackPlayer", () => ({ __esModule: true, default: {
     seekTo: (position: number) => mockSeek(position), playerAdapter: { getRenditionOwner: () => mockOwner },
-}, useMusicVideoState: () => mockState, useCurrentMusic: () => ({ id: "a", platform: "p", duration: 480 }),
+}, useMusicVideoView: () => jest.requireActual("@/core/trackPlayer/musicVideoView").describeMusicVideoView(mockState), useCurrentMusic: () => ({ id: "a", platform: "p", duration: 480 }),
 useMusicQuality: () => "128k", useProgress: () => ({ position: 6, duration: mockDuration }) }));
 jest.mock("@/core/i18n", () => ({ useI18N: () => ({ t: (key: string) => key }) }));
 jest.mock("@/components/panels/usePanel", () => ({ showPanel: jest.fn() }));
@@ -44,4 +44,14 @@ test("a drag begun on one rendition cannot seek a replacement generation", async
 test("a current MV drag uses the existing player seek and preserves the existing end guard", async () => {
     await mount(); act(() => slider().props.onSlidingStart()); act(() => slider().props.onSlidingComplete(48));
     expect(mockSeek).toHaveBeenCalledWith(46);
+});
+
+test("error view does not fall back to the song duration or rate", async () => {
+    mockDuration = 0;
+    mockState = { ...mockState, phase: "error", owner: { ...mockOwner, kind: "audio" } };
+    await mount();
+    expect(slider().props.disabled).toBe(true);
+    expect(slider().props.maximumValue).toBe(1);
+    const text = tree.root.findAll(node => typeof node.props.children === "string").map(node => node.props.children).join("\n");
+    expect(text).not.toContain("1.5x");
 });

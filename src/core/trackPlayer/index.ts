@@ -1,6 +1,7 @@
 import PlaybackSourceResolver from "./playbackSourceResolver";
 import { getPluginRuntimeRevision, usePluginEnabledRevision } from "../pluginManager/enabledRevision";
 import MusicVideoController, { type MusicVideoState } from "./musicVideoController";
+import { describeMusicVideoView } from "./musicVideoView";
 import { MusicVideoSources } from "../pluginManager/musicVideoSource";
 import { admitMusicVideoSource } from "./musicVideoAdmission";
 import { isMediaHttpAllowed } from "@/utils/mediaHttpCompatibilityPolicy";
@@ -29,7 +30,7 @@ import { convertToLegacyQuality, getQualityOrder } from "@/utils/qualities";
 import EventEmitter from "eventemitter3";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import shuffle from "@/utils/shuffle";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import LocalMusicSheet from "../localMusicSheet";
 import {
     getDirectArtworkUri,
@@ -5725,6 +5726,10 @@ export function useHasMusicVideo() {
     return !!current && known?.key === getMediaUniqueKey(current) && known.available && known.revision === getPluginRuntimeRevision() && trackPlayer.supportsMusicVideo();
 }
 export const useMusicVideoState = () => useAtomValue(musicVideoAtom);
+export function useMusicVideoView() {
+    const state = useMusicVideoState();
+    return useMemo(() => describeMusicVideoView(state), [state]);
+}
 export const usePlayList = () => useAtomValue(playListAtom);
 export const usePlayLaterQueue = () => useAtomValue(playLaterQueueAtom);
 export const useQueueUndo = () => useAtomValue(queueUndoAtom);

@@ -19,14 +19,13 @@ import Config, { useAppConfig } from "@/core/appConfig";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { MusicDetailArtworkProvider } from "./artworkContext";
 import { MusicDetailLayoutProvider } from "./layoutContext";
-import { useMusicVideoState } from "@/core/trackPlayer";
+import { useMusicVideoView } from "@/core/trackPlayer";
 import MusicVideoContent from "./components/musicVideo";
 import rpx from "@/utils/rpx";
 
 export default function MusicDetail() {
     const orientation = useOrientation();
-    const videoState = useMusicVideoState();
-    const videoMode = videoState.phase !== "audio" && (videoState.owner?.kind === "mv" || videoState.phase === "returning" || videoState.phase === "error");
+    const { videoMode } = useMusicVideoView();
     const [fullscreen, setFullscreen] = useState(false);
     useFocusEffect(useCallback(() => () => cancelPendingVideoAction(), []));
     useEffect(() => {

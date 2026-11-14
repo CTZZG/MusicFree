@@ -10,6 +10,7 @@ interface MockGesture {
     onUpdate(callback: unknown): MockGesture;
 }
 let mockPanEnd: End | undefined;
+let mockVideoMode = false;
 const mockCompletions: ((finished?: boolean) => void)[] = [];
 const mockNext = jest.fn(async () => undefined);
 const mockPrevious = jest.fn(async () => undefined);
@@ -52,7 +53,7 @@ jest.mock("@/core/trackPlayer", () => ({
         skipToNext: () => mockNext(),
         skipToPrevious: () => mockPrevious(),
     },
-    useMusicVideoState: () => ({ phase: "audio" }),
+    useMusicVideoView: () => ({ engineIsVideo: false, videoMode: mockVideoMode }),
     useHasMusicVideo: () => false,
     useCurrentMusic: () => mockSong,
     usePlayList: () => [mockSong],
@@ -84,6 +85,14 @@ function render(width = 200) {
 
 beforeEach(() => {
     mockNext.mockClear(); mockPrevious.mockClear(); mockCompletions.length = 0; mockPanEnd = undefined;
+    mockVideoMode = false;
+});
+
+it("keeps the MV indicator while the video view reports an error", () => {
+    mockVideoMode = true;
+    render();
+    const labels = tree!.root.findAll(node => typeof node.props.children === "string").map(node => node.props.children);
+    expect(labels).toContain("MV · Artist");
 });
 afterEach(() => {
     act(() => tree?.unmount()); tree = undefined;

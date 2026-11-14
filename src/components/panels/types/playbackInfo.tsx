@@ -4,7 +4,7 @@ import TrackPlayer, {
     useCurrentMusic,
     useMusicQuality,
     useAlternateSourceInUse,
-    useMusicVideoState,
+    useMusicVideoView,
 } from "@/core/trackPlayer";
 import type { PlayerAudioInfo } from "@/core/playerAdapter";
 import { useI18N } from "@/core/i18n";
@@ -53,9 +53,9 @@ export default function PlaybackInfo() {
     const music = useCurrentMusic();
     const quality = useMusicQuality();
     const alternate = useAlternateSourceInUse();
-    const videoState = useMusicVideoState();
-    const video = videoState.phase !== "audio" && videoState.owner?.kind === "mv" ? videoState.video : null;
-    const videoGeneration = videoState.phase !== "audio" ? videoState.owner?.loadGeneration : null;
+    const { engineIsVideo, video: selectedVideo, owner: videoOwner } = useMusicVideoView();
+    const video = engineIsVideo ? selectedVideo : null;
+    const videoGeneration = videoOwner?.loadGeneration ?? null;
     const qualityTranslations = useAppConfig("basic.qualityTranslations");
     const i18n = useI18N();
     const { t } = i18n;

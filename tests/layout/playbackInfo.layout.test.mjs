@@ -66,7 +66,7 @@ for (const device of [
                                 playerAdapter: adapter,
                             },
                             useCurrentMusic: () => song,
-                            useMusicVideoState: () => ({phase: 'audio'}),
+                            useMusicVideoView: () => ({engineIsVideo: false, video: null, owner: null}),
                             useMusicQuality: () => '128k',
                             useAlternateSourceInUse: () => 'Actual source B',
                         }),

@@ -115,6 +115,13 @@ function createPlayerStubs(env, options = {}) {
             useCurrentMusic: () => MUSIC,
             useHasMusicVideo: () => !!options.hasMusicVideo,
             useMusicVideoState: () => options.videoState ?? ({phase: "audio"}),
+            useMusicVideoView: () => {
+                const state = options.videoState ?? {phase: 'audio'};
+                const engineIsVideo = state.phase !== 'audio' && state.owner?.kind === 'mv';
+                return {state, owner: state.owner ?? null, video: state.video ?? null, engineIsVideo,
+                    videoMode: engineIsVideo || state.phase === 'returning' || state.phase === 'error',
+                    transitioning: state.phase === 'loading' || state.phase === 'returning'};
+            },
             useMusicState: () => 'playing',
             useProgress: () => ({position: 83, duration: MUSIC.duration}),
             useMusicQuality: () => 'standard',

@@ -11,7 +11,7 @@ import TrackPlayer, {
     useCurrentMusic,
     usePlayList,
     useProgress,
-    useMusicVideoState,
+    useMusicVideoView,
 } from "@/core/trackPlayer";
 import Animated, {
     SharedValue,
@@ -27,8 +27,7 @@ import { useI18N } from "@/core/i18n";
 function MiniProgress() {
     const colors = useColors();
     const progress = useProgress();
-    const video = useMusicVideoState();
-    const isVideo = video.phase !== "audio" && video.owner?.kind === "mv";
+    const { engineIsVideo: isVideo } = useMusicVideoView();
     const musicItem = useCurrentMusic();
     const duration =
         progress.duration > 0 ? progress.duration : isVideo ? 0 : musicItem?.duration ?? 0;
@@ -60,8 +59,8 @@ interface IBarMusicItemProps {
 function BarMusicItemInner(props: IBarMusicItemProps) {
     const { musicItem, activeIndex, transformSharedValue } = props;
     const colors = useColors();
-    const videoState = useMusicVideoState();
-    const showMV = activeIndex === 0 && videoState.phase !== "audio" && (videoState.owner?.kind === "mv" || videoState.phase === "returning");
+    const { videoMode } = useMusicVideoView();
+    const showMV = activeIndex === 0 && videoMode;
     const resolvedArtwork = useResolvedMusicArtwork(
         activeIndex === 0 ? musicItem : null,
     );
