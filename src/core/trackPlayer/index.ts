@@ -444,14 +444,24 @@ class TrackPlayer
             this.backend?.getRenditionOwner?.()?.kind === "mv";
     }
 
-    /** Consumers of the original song must not observe the MV clock, including pending returns. */
-    get audioTimelineAvailable() {
+    /** Ready is absent on legacy audio loads, where the existing clock remains usable. */
+    private get audioClockReady() {
+        if (this.videoOwnsPlayback) return false;
         const owner = this.backend?.getRenditionOwner?.();
         const active = this.backend?.getActiveRendition?.();
-        return !this.musicVideo?.blocksAudioTimeline && owner?.kind !== "mv" &&
-            active?.ready !== false &&
-            (active?.ready === undefined || !owner || (active.mediaId === owner.mediaId && active.loadGeneration === owner.loadGeneration)) &&
-            (!owner?.mediaId || !this.currentMusic || owner.mediaId === getMediaUniqueKey(this.currentMusic));
+        return active?.ready !== false && (active?.ready === undefined || !owner ||
+            (active.mediaId === owner.mediaId && active.loadGeneration === owner.loadGeneration));
+    }
+
+    private get engineMatchesCurrentSong() {
+        const owner = this.backend?.getRenditionOwner?.();
+        return !owner?.mediaId || !this.currentMusic ||
+            owner.mediaId === getMediaUniqueKey(this.currentMusic);
+    }
+
+    /** Consumers of the original song must not observe the MV clock, including pending returns. */
+    get audioTimelineAvailable() {
+        return this.audioClockReady && this.engineMatchesCurrentSong;
     }
     get timelineSerial() {
         return this.audioTimelineSerial;
