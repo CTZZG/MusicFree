@@ -478,9 +478,22 @@ class TrackPlayer
         const key = this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null;
         const revision = getPluginRuntimeRevision();
         const items = await (this.musicVideo?.candidates(signal) ?? Promise.resolve([]));
-        if (key && !signal?.aborted && revision === getPluginRuntimeRevision() && this.currentMusic && key === getMediaUniqueKey(this.currentMusic)) getDefaultStore().set(knownMusicVideoAtom, { key, available: items.length > 0, revision });
+        if (
+            key &&
+            !signal?.aborted &&
+            revision === getPluginRuntimeRevision() &&
+            this.currentMusic &&
+            key === getMediaUniqueKey(this.currentMusic)
+        ) {
+            getDefaultStore().set(knownMusicVideoAtom, {
+                key,
+                available: items.length > 0,
+                revision,
+            });
+        }
         return items;
     }
+
     get videoMobileApproved() {
         return this.musicVideo?.hasMobileApproval ?? false;
     }
@@ -521,69 +534,137 @@ class TrackPlayer
     }
     private initializeMusicVideo() {
         this.musicVideo = new MusicVideoController({
-            sources: new MusicVideoSources(this.pluginManagerService), coordinator: this.qualityChangeCoordinator,
-            currentSong: () => this.currentMusic, owner: () => this.backend?.getRenditionOwner?.() ?? null,
+            sources: new MusicVideoSources(this.pluginManagerService),
+            coordinator: this.qualityChangeCoordinator,
+            currentSong: () => this.currentMusic,
+            owner: () => this.backend?.getRenditionOwner?.() ?? null,
             active: () => this.backend?.getActiveRendition?.() ?? null,
             foreground: () => AppState.currentState === "active",
-            audioSettings: () => ({ quality: this.quality, rate: Number(PersistStatus.get("music.rate") ?? 100) / 100,
-                wasPlaying: this.playbackIntent.mayAutoPlay() && ["playing", "buffering"].includes(getDefaultStore().get(musicStateAtom)) }),
+            audioSettings: () => ({
+                quality: this.quality,
+                rate: Number(PersistStatus.get("music.rate") ?? 100) / 100,
+                wasPlaying:
+                    this.playbackIntent.mayAutoPlay() &&
+                    ["playing", "buffering"].includes(getDefaultStore().get(musicStateAtom)),
+            }),
             mayAutoPlay: () => this.playbackIntent.mayAutoPlay(),
             repeatCurrentVideo: () => this.repeatMode === MusicRepeatMode.SINGLE,
             claimPlayback: async () => {
-                this.notePlayByUser(); await this.backend.claimPlayback?.();
+                this.notePlayByUser();
+                await this.backend.claimPlayback?.();
             },
-            videoNetwork: async approved => {
+            videoNetwork: async (approved) => {
                 const state = await Network.getFreshState();
                 const network = classifyVideoNetwork(state);
-                if (network === "offline") throw new Error("Video network unavailable");
-                if (network === "metered" && (!this.configService.getConfig("basic.useCelluarNetworkPlay") || !approved)) throw new Error("Video mobile approval required");
+                if (network === "offline") {
+                    throw new Error("Video network unavailable");
+                }
+                if (
+                    network === "metered" &&
+                    (!this.configService.getConfig("basic.useCelluarNetworkPlay") || !approved)
+                ) {
+                    throw new Error("Video mobile approval required");
+                }
                 return network === "unmetered" ? "unmetered" : "allow-metered";
             },
-            resumeVideo: policy => this.backend.resumeVideo?.(policy) ?? Promise.reject(new Error("Video unavailable")),
+            resumeVideo: (policy) =>
+                this.backend.resumeVideo?.(policy) ??
+                Promise.reject(new Error("Video unavailable")),
             resumeAudio: () => this.backend.play(),
-            admitVideo: source => admitMusicVideoSource(source, isMediaHttpAllowed(this.configService)),
+            admitVideo: (source) =>
+                admitMusicVideoSource(source, isMediaHttpAllowed(this.configService)),
             resolveAudio: async (song, quality, current) => {
                 if (!getLocalPath(song) && !LocalMusicSheet.isLocalMusic(song)) {
                     const network = await Network.getFreshState();
-                    if (!current() || (network.type === "cellular" && !this.configService.getConfig("basic.useCelluarNetworkPlay"))) throw new Error("Audio network unavailable");
+                    if (
+                        !current() ||
+                        (network.type === "cellular" &&
+                            !this.configService.getConfig("basic.useCelluarNetworkPlay"))
+                    ) {
+                        throw new Error("Audio network unavailable");
+                    }
                 }
                 let source: IPlugin.IMediaSourceResult | null = null;
                 const alternate = getRememberedAlternate(song);
-                if (alternate && getDefaultStore().get(alternateSourceInUseAtom)[getMediaUniqueKey(song)] === alternate.platform) {
-                    const restored = await this.sourceResolver.resolveSourceFromAlternate(alternate, [quality], current);
-                    if (restored && restored !== "inactive") source = restored.source;
+                if (
+                    alternate &&
+                    getDefaultStore().get(alternateSourceInUseAtom)[getMediaUniqueKey(song)] ===
+                        alternate.platform
+                ) {
+                    const restored = await this.sourceResolver.resolveSourceFromAlternate(
+                        alternate,
+                        [quality],
+                        current,
+                    );
+                    if (restored && restored !== "inactive") {
+                        source = restored.source;
+                    }
                 }
-                if (!current()) throw new Error("Superseded audio return");
-                source ??= await this.sourceResolver.resolveDirectMediaSource(song, undefined, quality);
-                if (!current() || !source?.url) throw new Error("Original audio unavailable");
-                return { url: source.url, headers: source.headers, userAgent: source.userAgent || getAppUserAgent(),
-                    allowInsecureHttpPlayback: source.allowInsecureHttpPlayback, trustedLocalMediaProxy: source.trustedLocalMediaProxy };
+                if (!current()) {
+                    throw new Error("Superseded audio return");
+                }
+                source ??= await this.sourceResolver.resolveDirectMediaSource(
+                    song,
+                    undefined,
+                    quality,
+                );
+                if (!current() || !source?.url) {
+                    throw new Error("Original audio unavailable");
+                }
+                return {
+                    url: source.url,
+                    headers: source.headers,
+                    userAgent: source.userAgent || getAppUserAgent(),
+                    allowInsecureHttpPlayback: source.allowInsecureHttpPlayback,
+                    trustedLocalMediaProxy: source.trustedLocalMediaProxy,
+                };
             },
-            replace: request => {
-                if (!this.backend.replaceRendition) throw new Error("Video unavailable");
+            replace: (request) => {
+                if (!this.backend.replaceRendition) {
+                    throw new Error("Video unavailable");
+                }
                 return this.backend.replaceRendition(request);
             },
             cancelNativeWait: () => this.backend?.cancelRenditionTransition?.(),
-            videoInfo: () => this.backend.getVideoInfo?.() ?? Promise.reject(new Error("Video unavailable")),
-            publish: state => getDefaultStore().set(musicVideoAtom, state),
-            timelineChanged: blocked => {
-                if (blocked) this.videoOwnershipSerial += 1;
+            videoInfo: () =>
+                this.backend.getVideoInfo?.() ?? Promise.reject(new Error("Video unavailable")),
+            publish: (state) => getDefaultStore().set(musicVideoAtom, state),
+            timelineChanged: (blocked) => {
+                if (blocked) {
+                    this.videoOwnershipSerial += 1;
+                }
                 // Ownership can change while an audio load already made its
                 // timeline unavailable. Notify lyric consumers in that case.
-                if (!this.publishAudioTimeline()) this.emit(TrackPlayerEvents.MusicVideoOwnershipChanged);
+                if (!this.publishAudioTimeline()) {
+                    this.emit(TrackPlayerEvents.MusicVideoOwnershipChanged);
+                }
                 if (blocked) {
-                    this.crossfade.onPause(); LastfmScrobbler.onPaused();
-                } else if (this.audioTimelineAvailable && getDefaultStore().get(musicStateAtom) === "playing") {
-                    this.crossfade.onPlay(); LastfmScrobbler.onResumed();
+                    this.crossfade.onPause();
+                    LastfmScrobbler.onPaused();
+                } else if (
+                    this.audioTimelineAvailable &&
+                    getDefaultStore().get(musicStateAtom) === "playing"
+                ) {
+                    this.crossfade.onPlay();
+                    LastfmScrobbler.onResumed();
                 }
             },
-            saveAudioCheckpoint: checkpoint => {
-                if (this.currentMusic && checkpoint.songKey === getMediaUniqueKey(this.currentMusic)) {
+            saveAudioCheckpoint: (checkpoint) => {
+                if (
+                    this.currentMusic &&
+                    checkpoint.songKey === getMediaUniqueKey(this.currentMusic)
+                ) {
                     this.setPersistedPlaybackProgress(checkpoint.positionSeconds, Date.now(), true);
                 }
             },
             audioReturned: async (checkpoint, progress) => {
-                if (!this.currentMusic || getMediaUniqueKey(this.currentMusic) !== checkpoint.songKey || progress.ready !== true) throw new Error("Audio return superseded");
+                if (
+                    !this.currentMusic ||
+                    getMediaUniqueKey(this.currentMusic) !== checkpoint.songKey ||
+                    progress.ready !== true
+                ) {
+                    throw new Error("Audio return superseded");
+                }
                 setPlayerProgress(progress, this.currentMusic.duration ?? 0);
                 this.setPersistedPlaybackProgress(checkpoint.positionSeconds, Date.now(), true);
             },
@@ -592,6 +673,7 @@ class TrackPlayer
             },
         });
     }
+
     private mpvTrackTransitionGate = new MpvTrackTransitionGate();
     private mpvManualSkipTransition: IMpvManualSkipTransition | null = null;
     // 播放队列索引map
@@ -896,8 +978,8 @@ class TrackPlayer
                 await this.resolveAdapterQueuedTracks(evt?.tracks ?? []);
             });
 
-            this.addBackendListener("playbackError", async e => {
-                if (this.videoOwnsPlayback && await this.musicVideo?.handlePlaybackError()) {
+            this.addBackendListener("playbackError", async (e) => {
+                if (this.videoOwnsPlayback && (await this.musicVideo?.handlePlaybackError())) {
                     return;
                 }
                 const serial = this.videoOwnershipSerial;
@@ -907,13 +989,14 @@ class TrackPlayer
                 errorLog("播放出错", e.message);
                 // WARNING: 不稳定，报错的时候有可能track已经变到下一首歌去了
                 const currentTrack = await this.backend.getActiveTrack?.();
-                if (serial !== this.videoOwnershipSerial || this.videoOwnsPlayback ||
-                    songKey !== (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null)) return;
                 if (
-                    this.shouldIgnoreMpvPlaybackErrorDuringManualSkip(
-                        currentTrack,
-                    )
+                    serial !== this.videoOwnershipSerial ||
+                    this.videoOwnsPlayback ||
+                    songKey !== (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null)
                 ) {
+                    return;
+                }
+                if (this.shouldIgnoreMpvPlaybackErrorDuringManualSkip(currentTrack)) {
                     return;
                 }
                 if (currentTrack?.isInit) {
@@ -936,21 +1019,33 @@ class TrackPlayer
                         code: e.code,
                     });
 
-                    const recovered =
-                        await this.recoverCurrentSourceAfterPlaybackError(
-                            e,
-                            currentTrack as MusicFreePlayerTrack | null,
-                        );
+                    const recovered = await this.recoverCurrentSourceAfterPlaybackError(
+                        e,
+                        currentTrack as MusicFreePlayerTrack | null,
+                    );
                     if (!recovered) {
-                        if (serial !== this.videoOwnershipSerial || this.videoOwnsPlayback ||
-                            songKey !== (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null)) return;
+                        if (
+                            serial !== this.videoOwnershipSerial ||
+                            this.videoOwnsPlayback ||
+                            songKey !== (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null)
+                        ) {
+                            return;
+                        }
                         const failedMusic = this.currentMusic;
-                        if (failedMusic && currentTrack && isSameMediaItem(failedMusic, currentTrack as IMusic.IMusicItem)) {
-                            this.reportPlaybackFailure(recoveryRequest, failedMusic, createMediaSourceFailure("backend-error", {
-                                mediaKey: getMediaUniqueKey(failedMusic),
-                                pluginName: failedMusic.platform,
-                                quality: this.quality,
-                            }));
+                        if (
+                            failedMusic &&
+                            currentTrack &&
+                            isSameMediaItem(failedMusic, currentTrack as IMusic.IMusicItem)
+                        ) {
+                            this.reportPlaybackFailure(
+                                recoveryRequest,
+                                failedMusic,
+                                createMediaSourceFailure("backend-error", {
+                                    mediaKey: getMediaUniqueKey(failedMusic),
+                                    pluginName: failedMusic.platform,
+                                    quality: this.quality,
+                                }),
+                            );
                         }
                         this.handlePlayFail();
                     }
@@ -5211,8 +5306,10 @@ class TrackPlayer
         const activeMusic = this.resolveMusicFromAdapterTrack(activeTrack);
         // A failed next-song load can leave the previous file active. Resolve
         // the selected song instead of treating that old file as the target.
-        const musicItem = this.currentMusic && activeMusic && !isSameMediaItem(this.currentMusic, activeMusic)
-            ? this.currentMusic : activeMusic ?? this.currentMusic;
+        const musicItem =
+            this.currentMusic && activeMusic && !isSameMediaItem(this.currentMusic, activeMusic)
+                ? this.currentMusic
+                : activeMusic ?? this.currentMusic;
         if (!musicItem?.platform || !musicItem.id) {
             return false;
         }
@@ -5226,13 +5323,7 @@ class TrackPlayer
         this.pruneSourceRecoveryAttempts(now);
         const lastAttemptAt = this.sourceRecoveryAttemptedAt.get(key) ?? 0;
         if (now - lastAttemptAt < TrackPlayer.sourceRecoveryCooldownMs) {
-            if (
-                this.shouldEvictRecoveredSourceCacheAfterFailure(
-                    error,
-                    musicItem,
-                    activeTrack,
-                )
-            ) {
+            if (this.shouldEvictRecoveredSourceCacheAfterFailure(error, musicItem, activeTrack)) {
                 MediaCache.removeMediaCache(musicItem);
                 trace("播放源恢复跳过：冷却中，已清理疑似坏缓存", {
                     musicId: musicItem.id,
@@ -5250,25 +5341,38 @@ class TrackPlayer
             return false;
         }
 
-        if (this.videoOwnsPlayback) return false;
+        if (this.videoOwnsPlayback) {
+            return false;
+        }
         const recoveryToken = this.qualityChangeCoordinator.begin();
         const videoSerial = this.videoOwnershipSerial;
         const progressSerial = this.audioTimelineSerial;
         const owner = this.backend.getRenditionOwner?.();
         const active = this.backend.getActiveRendition?.();
-        const audioReady = this.audioTimelineAvailable && ((!owner && !active) || (!!owner && !!active &&
-            owner.mediaId === active.mediaId && owner.loadGeneration === active.loadGeneration));
+        const audioReady =
+            this.audioTimelineAvailable &&
+            ((!owner && !active) ||
+                (!!owner &&
+                    !!active &&
+                    owner.mediaId === active.mediaId &&
+                    owner.loadGeneration === active.loadGeneration));
         this.sourceRecoveryAttemptedAt.set(key, now);
         this.sourceRecoveryInFlight.add(key);
         try {
-            const progress = audioReady ? await this.backend
-                .getProgress()
-                .catch(() => getDefaultStore().get(progressAtom)) : null;
-            const seekTo = audioReady && progressSerial === this.audioTimelineSerial && this.audioTimelineAvailable
-                ? this.normalizeProgress(progress?.position) ?? 0 : 0;
+            const progress = audioReady
+                ? await this.backend.getProgress().catch(() => getDefaultStore().get(progressAtom))
+                : null;
+            const seekTo =
+                audioReady &&
+                progressSerial === this.audioTimelineSerial &&
+                this.audioTimelineAvailable
+                    ? this.normalizeProgress(progress?.position) ?? 0
+                    : 0;
             const source = await this.sourceResolver.resolveFreshMediaSource(musicItem);
             if (
-                !this.qualityChangeCoordinator.isActive(recoveryToken) || videoSerial !== this.videoOwnershipSerial || this.videoOwnsPlayback ||
+                !this.qualityChangeCoordinator.isActive(recoveryToken) ||
+                videoSerial !== this.videoOwnershipSerial ||
+                this.videoOwnsPlayback ||
                 playbackRecovery.currentRequest() !== recoveryRequest ||
                 !source?.url ||
                 !isSameMediaItem(this.currentMusic, musicItem)
@@ -5276,12 +5380,8 @@ class TrackPlayer
                 return false;
             }
 
-            const recoveredTrack = this.mergeTrackSource(
-                musicItem,
-                source,
-            ) as MusicFreePlayerTrack;
-            recoveredTrack.userAgent =
-                recoveredTrack.userAgent || getAppUserAgent();
+            const recoveredTrack = this.mergeTrackSource(musicItem, source) as MusicFreePlayerTrack;
+            recoveredTrack.userAgent = recoveredTrack.userAgent || getAppUserAgent();
             trace("播放源恢复：重新解析成功", {
                 backend: this.backend.name,
                 musicId: musicItem.id,
@@ -5289,7 +5389,13 @@ class TrackPlayer
                 errorMessage: error?.message,
             });
             await this.setTrackSource(recoveredTrack, true, seekTo, false, recoveryToken);
-            if (!this.qualityChangeCoordinator.isActive(recoveryToken) || videoSerial !== this.videoOwnershipSerial || this.videoOwnsPlayback || playbackRecovery.currentRequest() !== recoveryRequest || !this.isCurrentMusic(musicItem)) {
+            if (
+                !this.qualityChangeCoordinator.isActive(recoveryToken) ||
+                videoSerial !== this.videoOwnershipSerial ||
+                this.videoOwnsPlayback ||
+                playbackRecovery.currentRequest() !== recoveryRequest ||
+                !this.isCurrentMusic(musicItem)
+            ) {
                 return false;
             }
             this.setCurrentMusic(recoveredTrack as IMusic.IMusicItem);
@@ -5724,8 +5830,16 @@ export function useHasMusicVideo() {
     usePluginEnabledRevision();
     const current = useAtomValue(currentMusicAtom);
     const known = useAtomValue(knownMusicVideoAtom);
-    return !!current && known?.key === getMediaUniqueKey(current) && known.available && known.revision === getPluginRuntimeRevision() && trackPlayer.supportsMusicVideo();
+    return (
+        !!current &&
+        known?.key === getMediaUniqueKey(current) &&
+        known.available &&
+        known.revision === getPluginRuntimeRevision() &&
+        trackPlayer.supportsMusicVideo()
+    );
 }
+
+
 export const useMusicVideoState = () => useAtomValue(musicVideoAtom);
 export function useMusicVideoView() {
     const state = useMusicVideoState();
