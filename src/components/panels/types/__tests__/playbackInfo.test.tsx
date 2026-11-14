@@ -4,11 +4,14 @@ import PlaybackInfo, { audioInfoText } from "../playbackInfo";
 
 let mockMusic: any;
 let mockReady = true;
+let mockVideoState: any = { phase: "audio" };
+let mockOwner: any = null;
 const mockListeners: Record<string, () => void> = {};
 const mockRemove = jest.fn();
 const mockBackendAccess = jest.fn();
 const mockAdapter = {
     getAudioInfo: jest.fn(),
+    getRenditionOwner: () => mockOwner,
     addEventListener: jest.fn((name: string, listener: () => void) => {
         mockListeners[name] = listener;
         return { remove: mockRemove };
@@ -29,6 +32,7 @@ jest.mock("@/core/trackPlayer", () => ({
         },
     },
     useCurrentMusic: () => mockMusic,
+    useMusicVideoView: () => jest.requireActual("@/core/trackPlayer/musicVideoView").describeMusicVideoView(mockVideoState),
     useMusicQuality: () => "128k",
     useAlternateSourceInUse: () => "Actual source B",
 }));
@@ -83,7 +87,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     mockMusic = { id: "a", platform: "Original A", title: "Song A" };
-    mockReady = true;
+    mockReady = true; mockOwner = null; mockVideoState = { phase: "audio" };
     mockAdapter.getAudioInfo.mockResolvedValue(decoded);
 });
 afterEach(() => {
@@ -116,7 +120,7 @@ it("refreshes on the existing activation event and unsubscribes on close", async
     await act(async () => mockListeners.trackChanged());
     expect(text()).toContain("48 kHz");
     act(() => tree.unmount());
-    expect(mockRemove).toHaveBeenCalledTimes(2);
+    expect(mockRemove).toHaveBeenCalledTimes(3);
 });
 
 it("does not show a previous song's late reply after a track change", async () => {
@@ -201,4 +205,28 @@ it("formats only safe finite fields and keeps unknown parameters unknown", () =>
             "unknown",
         ),
     ).toMatchObject({ sampleRate: "44.1 kHz", bitrate: "192.1 kb/s" });
+});
+
+it("shows MV provider and video quality separately from actual decoded audio", async () => {
+    mockOwner = { kind: "mv", mediaId: "A", loadGeneration: 2 };
+    mockVideoState = { phase: "video", owner: mockOwner, video: { title: "The MV", providerName: "Video provider", qualityId: "720p", qualities: [{ id: "720p", label: "HD 720p" }] } };
+    mockAdapter.getAudioInfo.mockResolvedValue({ ...decoded, loadGeneration: 2, codec: "aac", sampleRate: 48000 });
+    await mount();
+    expect(text()).toContain("The MV · MV"); expect(text()).toContain("Video provider");
+    expect(text()).toContain("HD 720p"); expect(text()).toContain("aac"); expect(text()).toContain("48 kHz");
+    expect(text()).not.toContain("128k-plugin-label"); expect(text()).not.toContain("Actual source B");
+});
+
+it("rejects an old same-song rendition reply even before a refresh event arrives", async () => {
+    mockOwner = { kind: "audio", mediaId: "A", loadGeneration: 1 };
+    let resolve!: (value: any) => void;
+    mockAdapter.getAudioInfo.mockReturnValueOnce(new Promise(done => {
+        resolve = done;
+    })); await mount();
+    mockOwner = { kind: "mv", mediaId: "A", loadGeneration: 2 };
+    await act(async () => resolve(decoded));
+    expect(text()).not.toContain("16 kHz");
+    mockAdapter.getAudioInfo.mockResolvedValue({ ...decoded, loadGeneration: 2, sampleRate: 48000 });
+    await act(async () => mockListeners.renditionChanged());
+    expect(text()).toContain("48 kHz");
 });

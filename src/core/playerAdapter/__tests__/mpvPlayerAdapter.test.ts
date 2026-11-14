@@ -18,6 +18,7 @@ const mockNativeMpvPlayer = {
     getIsPlaying: jest.fn(async () => true),
     getPosition: jest.fn(async () => 0),
     getDuration: jest.fn(async () => 180),
+    getRenditionProgress: jest.fn(async (): Promise<any> => null),
     getAudioInfo: jest.fn(async (): Promise<any> => null),
     isAndroidAutoConnected: jest.fn(async () => false),
     updateQueueSnapshot: jest.fn(async () => undefined),
@@ -71,6 +72,10 @@ jest.mock("@/utils/mediaUtils", () => ({
 jest.mock("@/utils/log", () => ({
     trace: jest.fn(),
     errorLog: jest.fn(),
+}));
+jest.mock("react-native-background-timer", () => ({
+    __esModule: true,
+    default: { setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms), clearTimeout: (timer: any) => clearTimeout(timer) },
 }));
 
 import type { MpvTrack } from "../mpvPlayerAdapter";

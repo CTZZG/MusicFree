@@ -1,7 +1,9 @@
 import StatusBar from "@/components/base/statusBar";
 import globalStyle from "@/constants/globalStyle";
 import useOrientation from "@/hooks/useOrientation";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { cancelPendingVideoAction } from "@/components/musicVideo/actions";
 import { StyleSheet, View } from "react-native";
 import Animated, {
     useAnimatedStyle,
@@ -17,10 +19,18 @@ import Config, { useAppConfig } from "@/core/appConfig";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { MusicDetailArtworkProvider } from "./artworkContext";
 import { MusicDetailLayoutProvider } from "./layoutContext";
+import { useMusicVideoView } from "@/core/trackPlayer";
+import MusicVideoContent from "./components/musicVideo";
 import rpx from "@/utils/rpx";
 
 export default function MusicDetail() {
     const orientation = useOrientation();
+    const { videoMode } = useMusicVideoView();
+    const [fullscreen, setFullscreen] = useState(false);
+    useFocusEffect(useCallback(() => () => cancelPendingVideoAction(), []));
+    useEffect(() => {
+        if (!videoMode) setFullscreen(false);
+    }, [videoMode]);
     const immersiveMode =
         useAppConfig("basic.musicDetailImmersiveMode") ?? false;
     const coverStyle = useAppConfig("theme.coverStyle") ?? "square";
@@ -28,10 +38,10 @@ export default function MusicDetail() {
         Config.getConfig("basic.musicDetailDefault") || "album",
     );
     // 默认是 iOS 的圆角卡片封面；“沉浸大图”才把封面铺满顶部
-    const useHeroLayout = orientation === "vertical" && coverStyle === "hero";
+    const useHeroLayout = !videoMode && orientation === "vertical" && coverStyle === "hero";
     const showOverlayNav =
-        immersiveMode ||
-        (orientation === "vertical" && tab === "album");
+        !videoMode && (immersiveMode ||
+        (orientation === "vertical" && tab === "album"));
     const swipeProgress = useSharedValue(0);
     const pageSwipeLift = rpx(72);
     const backgroundSwipeLift = rpx(36);
@@ -83,7 +93,7 @@ export default function MusicDetail() {
                         }
                         style={globalStyle.fwflex1}>
                         <StatusBar
-                            hidden={immersiveMode}
+                            hidden={immersiveMode || (videoMode && fullscreen)}
                             backgroundColor={"transparent"}
                             barStyle="light-content"
                             translucent
@@ -91,7 +101,7 @@ export default function MusicDetail() {
                         <Animated.View
                             style={[style.bodyWrapper, pageSwipeAnimatedStyle]}>
                             <View style={globalStyle.flex1}>
-                                {showOverlayNav ? null : (
+                                {showOverlayNav || (videoMode && fullscreen) ? null : (
                                     <NavBar
                                         onTitlePress={
                                             tab === "lyric"
@@ -100,16 +110,18 @@ export default function MusicDetail() {
                                         }
                                     />
                                 )}
-                                <Content
-                                    immersiveMode={immersiveMode}
-                                    tab={tab}
-                                    onTabChange={setTab}
-                                />
-                                <Bottom
-                                    swipeProgress={swipeProgress}
-                                    tab={tab}
-                                    onTabChange={setTab}
-                                />
+                                <View style={[globalStyle.flex1, videoMode && orientation === "horizontal" && !fullscreen ? style.videoRow : null]}>
+                                    {videoMode ? <MusicVideoContent fullscreen={fullscreen} onFullscreen={setFullscreen} swipeProgress={swipeProgress} /> : <Content
+                                        immersiveMode={immersiveMode}
+                                        tab={tab}
+                                        onTabChange={setTab}
+                                    />}
+                                    {videoMode && fullscreen ? null : <View style={videoMode && orientation === "horizontal" ? style.videoSideControls : style.bottomWidth}><Bottom
+                                        swipeProgress={swipeProgress}
+                                        tab={tab}
+                                        onTabChange={setTab}
+                                    /></View>}
+                                </View>
                                 {showOverlayNav ? (
                                     <View
                                         pointerEvents="box-none"
@@ -118,7 +130,7 @@ export default function MusicDetail() {
                                     </View>
                                 ) : null}
                             </View>
-                            {orientation === "horizontal" ? (
+                            {orientation === "horizontal" && !videoMode ? (
                                 <View style={globalStyle.flex1}>
                                     <Lyric immersiveMode={immersiveMode} />
                                 </View>
@@ -132,6 +144,9 @@ export default function MusicDetail() {
 }
 
 const style = StyleSheet.create({
+    videoRow: { flexDirection: "row" },
+    videoSideControls: { width: "45%", justifyContent: "center" },
+    bottomWidth: { width: "100%" },
     root: {
         width: "100%",
         flex: 1,

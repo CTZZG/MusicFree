@@ -109,6 +109,34 @@ export interface MpvLoadPayload {
     autoPlay?: boolean;
     /** Preserve this media's stopped engine position at replacement; fallback if unavailable. */
     preservePositionFallback?: number;
+    /** Separate the outgoing audio capture from the new video's zero start. */
+    renditionKind?: "audio" | "mv";
+    videoNetworkPolicy?: "unmetered" | "allow-metered";
+    requireForeground?: boolean;
+    positionMode?: "start-zero" | "restore-audio" | "preserve-mv";
+    expectedMediaId?: string;
+    expectedLoadGeneration?: number;
+    startPosition?: number;
+    playbackRate?: number;
+    /** Prepared runway ownership; absent on legacy ordinary audio requests. */
+    sourceMediaId?: string;
+    sourceLoadGeneration?: number;
+}
+
+export interface MpvVideoInfo {
+    instance: number;
+    mediaId: string | null;
+    loadGeneration: number;
+    kind: "audio" | "mv";
+    completed: boolean;
+    surfaceAttached: boolean;
+    surfaceOwner?: number;
+    codec: string | null;
+    vo: string | null;
+    hwdec: string | null;
+    width?: number;
+    height?: number;
+    outgoingAudioPosition?: number;
 }
 
 export interface MpvQueueSnapshotTrack {
@@ -134,6 +162,9 @@ export type MpvMetadataPayload = Omit<
     | "prepareToken"
     | "queueRevision"
     | "preservePositionFallback"
+    | "renditionKind" | "positionMode" | "expectedMediaId" | "expectedLoadGeneration"
+    | "startPosition" | "playbackRate" | "sourceMediaId" | "sourceLoadGeneration"
+    | "videoNetworkPolicy" | "requireForeground"
 >;
 
 interface MpvPlayerNativeModule {
@@ -165,6 +196,9 @@ interface MpvPlayerNativeModule {
     getPosition(): Promise<number>;
     getDuration(): Promise<number>;
     getAudioInfo?(): Promise<PlayerAudioInfo | null>;
+    getVideoInfo(): Promise<MpvVideoInfo>;
+    resumeVideo(payload: { mediaId: string; loadGeneration: number; policy: "unmetered" | "allow-metered" }): Promise<void>;
+    getRenditionProgress?(): Promise<MpvRenditionProgress | null>;
     isAndroidAutoConnected(): Promise<boolean>;
     updateQueueSnapshot(payload: MpvQueueSnapshotPayload): Promise<void>;
     /** 仅更新 MediaSession 元数据（不重载音轨），用于 JS 切歌后刷新通知 */
@@ -193,13 +227,25 @@ export interface MpvBrowseRequestEvent {
     requestId: string;
 }
 
-export interface MpvStateChangedEvent {
+export interface MpvEventIdentity {
+    mediaId?: string | null;
+    loadGeneration?: number;
+    renditionKind?: "audio" | "mv";
+}
+export interface MpvRenditionProgress extends MpvEventIdentity {
+    position: number;
+    duration: number;
+    buffered: number;
+    ready?: boolean;
+}
+export interface MpvStateChangedEvent extends MpvEventIdentity {
     state: MpvPlayerState;
 }
-export interface MpvProgressEvent {
+export interface MpvProgressEvent extends MpvEventIdentity {
     position: number;
     duration: number;
     buffered?: number;
+    ready?: boolean;
 }
 export interface MpvEndedEvent {
     /** 自然播放结束 vs 出错中断 */
@@ -211,6 +257,8 @@ export interface MpvEndedEvent {
     prepareToken?: number;
     queueRevision?: number;
     loadGeneration?: number;
+    endedLoadGeneration?: number;
+    endedRenditionKind?: "audio" | "mv";
 }
 export interface MpvActiveTrackChangedEvent {
     mediaId: string;
@@ -218,8 +266,9 @@ export interface MpvActiveTrackChangedEvent {
     prepareToken: number;
     queueRevision: number;
     source: "loaded" | "prepared";
+    renditionKind?: "audio" | "mv";
 }
-export interface MpvErrorEvent {
+export interface MpvErrorEvent extends MpvEventIdentity {
     message: string;
     code?: string | number;
 }
@@ -273,6 +322,8 @@ function addListener<T>(
 }
 
 const NativeMpvPlayer = {
+    getVideoInfo: () => assertAvailable().getVideoInfo(),
+    resumeVideo: (payload: { mediaId: string; loadGeneration: number; policy: "unmetered" | "allow-metered" }) => assertAvailable().resumeVideo(payload),
     isAvailable: isMpvAvailable,
 
     initialize: (options: MpvInitializeOptions = {}) =>
@@ -302,6 +353,10 @@ const NativeMpvPlayer = {
     getIsPlaying: () => assertAvailable().getIsPlaying(),
     getPosition: () => assertAvailable().getPosition(),
     getDuration: () => assertAvailable().getDuration(),
+    getRenditionProgress: (): Promise<MpvRenditionProgress | null> => {
+        const module = assertAvailable();
+        return module.getRenditionProgress ? module.getRenditionProgress() : Promise.resolve(null);
+    },
     getAudioInfo: (): Promise<PlayerAudioInfo | null> => {
         const module = assertAvailable();
         return module.getAudioInfo ? module.getAudioInfo() : Promise.resolve(null);

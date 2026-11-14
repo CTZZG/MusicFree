@@ -7,6 +7,7 @@ import TrackPlayer, {
     useCurrentMusic,
     useMusicQuality,
     useProgress,
+    useMusicVideoView,
 } from "@/core/trackPlayer";
 import i18n, { useI18N } from "@/core/i18n";
 import { showPanel } from "@/components/panels/usePanel";
@@ -38,6 +39,7 @@ function Badge(props: {
                 pressed ? styles.pressed : null,
             ]}>
             <Text
+                numberOfLines={1}
                 maxFontSizeMultiplier={maxFontScaleConst.compact}
                 style={styles.badgeText}>
                 {props.label}
@@ -49,8 +51,11 @@ function Badge(props: {
 function QualityBadge() {
     const musicItem = useCurrentMusic();
     const currentQuality = useMusicQuality();
+    const { engineIsVideo, video } = useMusicVideoView();
     const { t } = useI18N();
-    const label = currentQuality ? getQualityAbbr(currentQuality) : "—";
+    const label = engineIsVideo
+        ? `MV ${video?.qualities?.find(value => value.id === video.qualityId)?.label ?? video?.qualityId ?? ""}`
+        : currentQuality ? getQualityAbbr(currentQuality) : "—";
 
     return (
         <Badge
@@ -61,6 +66,9 @@ function QualityBadge() {
             onPress={() => {
                 if (!musicItem) {
                     return;
+                }
+                if (engineIsVideo) {
+                    showPanel("MusicVideo"); return;
                 }
                 showPanel("MusicQuality", {
                     musicItem,
@@ -114,12 +122,14 @@ function RateBadge() {
 /** iOS 播放页进度条：细轨道，下面左右是已播放与剩余时间 */
 export default function SeekBar() {
     const progress = useProgress(1000);
+    const { videoMode: isVideo, transitioning, owner } = useMusicVideoView();
     const musicItem = useCurrentMusic();
     const { t } = useI18N();
     const [tmpProgress, setTmpProgress] = useState<number | null>(null);
     const slidingRef = useRef(false);
+    const gestureOwner = useRef<{ mediaId: string; loadGeneration: number } | null>(null);
     const displayDuration =
-        progress.duration > 0 ? progress.duration : musicItem?.duration ?? 0;
+        progress.duration > 0 ? progress.duration : isVideo ? 0 : musicItem?.duration ?? 0;
     const position = tmpProgress ?? progress.position;
 
     return (
@@ -131,9 +141,11 @@ export default function SeekBar() {
                 maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
                 thumbTintColor="#FFFFFF"
                 minimumValue={0}
-                maximumValue={displayDuration}
+                maximumValue={Math.max(1, displayDuration)}
+                disabled={displayDuration <= 0 || transitioning}
                 onSlidingStart={() => {
                     slidingRef.current = true;
+                    gestureOwner.current = owner;
                 }}
                 onValueChange={val => {
                     if (slidingRef.current) {
@@ -143,8 +155,15 @@ export default function SeekBar() {
                 onSlidingComplete={val => {
                     slidingRef.current = false;
                     setTmpProgress(null);
+                    const expected = gestureOwner.current ?? owner;
+                    gestureOwner.current = null;
+                    if (transitioning) return;
+                    if (expected) {
+                        const current = TrackPlayer.playerAdapter.getRenditionOwner?.();
+                        if (current?.mediaId !== expected.mediaId || current?.loadGeneration !== expected.loadGeneration) return;
+                    }
                     if (val >= displayDuration - 2) {
-                        val = displayDuration - 2;
+                        val = Math.max(0, displayDuration - 2);
                     }
                     TrackPlayer.seekTo(val);
                 }}
@@ -158,7 +177,7 @@ export default function SeekBar() {
                 </Text>
                 <View style={styles.badges}>
                     <QualityBadge />
-                    <RateBadge />
+                    {isVideo ? null : <RateBadge />}
                 </View>
                 <Text
                     maxFontSizeMultiplier={maxFontScaleConst.compact}
@@ -208,6 +227,7 @@ const styles = StyleSheet.create({
     badge: {
         height: 22,
         paddingHorizontal: 8,
+        maxWidth: 140,
         borderRadius: 6,
         justifyContent: "center",
         backgroundColor: "rgba(255, 255, 255, 0.16)",

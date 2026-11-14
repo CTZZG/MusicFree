@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
     React,
+    assertReadable,
     clippingAncestor,
     contains,
     createModuleLoader,
@@ -68,7 +69,11 @@ function createPlayerStubs(env, options = {}) {
         }),
         '@react-navigation/native': strictStub('@react-navigation/native', {
             useNavigation: () => ({goBack: noop, navigate: noop}),
+            useIsFocused: () => true, useFocusEffect: noop,
         }),
+        '@/components/musicVideo/actions': strictStub('MV action boundary', {cancelPendingVideoAction: noop, returnToSong: noop, resumeMusicVideo: noop}),
+        '@/components/mpvVideo': strictStub('native MV output only', {default: props => h('View', props)}),
+        'react-native': strictStub('RN + AppState', {...createCommonStubs(env)['react-native'], AppState: {currentState: 'active', addEventListener: () => ({remove: noop})}}),
         'react-native-share': strictStub('react-native-share', {
             default: {open: async () => {}},
         }),
@@ -96,6 +101,8 @@ function createPlayerStubs(env, options = {}) {
         }),
         '@/core/trackPlayer': strictStub('@/core/trackPlayer', {
             default: {
+                playerAdapter: {getRenditionOwner: () => options.videoState?.owner ?? null},
+                videoOutputFailed: noop, cancelVideoRequest: noop,
                 play: noop,
                 pause: noop,
                 seekTo: noop,
@@ -106,6 +113,15 @@ function createPlayerStubs(env, options = {}) {
                 changeQualityWithResult: async () => ({success: true}),
             },
             useCurrentMusic: () => MUSIC,
+            useHasMusicVideo: () => !!options.hasMusicVideo,
+            useMusicVideoState: () => options.videoState ?? ({phase: "audio"}),
+            useMusicVideoView: () => {
+                const state = options.videoState ?? {phase: 'audio'};
+                const engineIsVideo = state.phase !== 'audio' && state.owner?.kind === 'mv';
+                return {state, owner: state.owner ?? null, video: state.video ?? null, engineIsVideo,
+                    videoMode: engineIsVideo || state.phase === 'returning' || state.phase === 'error',
+                    transitioning: state.phase === 'loading' || state.phase === 'returning'};
+            },
             useMusicState: () => 'playing',
             useProgress: () => ({position: 83, duration: MUSIC.duration}),
             useMusicQuality: () => 'standard',
@@ -466,6 +482,75 @@ for (const device of LANDSCAPE) {
                     unmount();
                 }
             });
+        }
+    }
+}
+
+for (const device of [{width: 320, height: 640}, {width: 363, height: 806}, {width: 806, height: 363}, {width: 568, height: 320}]) {
+    for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+        for (const fontScale of [1, 1.5, 2]) {
+            test(`MV inline/fullscreen ${device.width}×${device.height} ${language} ${fontScale}×`, () => {
+                const env = createEnv({...device, language, fontScale, insets: {top: 24, bottom: 20, left: 0, right: 0}});
+                const owner = {kind: 'mv', mediaId: 'fixture@one', loadGeneration: 7};
+                const videoState = {phase: 'video', owner, songKey: owner.mediaId, canReturn: true,
+                    video: {id: 'v', title: 'A long music video title 含中文字幕', providerName: 'Video provider', qualityId: '720p', qualities: [{id: '720p', label: 'HD 720p'}]}};
+                const loader = createModuleLoader(createPlayerStubs(env, {videoState}));
+                const MusicDetail = loader.load('@/pages/musicDetail').default;
+                const t = loader.load('@/core/i18n').default.t;
+                const layout = renderLayout(inAppFontScaleScope(loader, {route: 'music-detail'}, h(MusicDetail)), {env, width: device.width, height: device.height});
+                try {
+                    const check = root => {
+                        const surface = findOne(root, r => r.props.testID === 'music-video-surface');
+                        assert.ok(surface.frame.width > 24 && surface.frame.height > 24, 'video retains drawable bounds');
+                        for (const r of findAll(root, isText)) {
+                            assertReadable(r, r.text);
+                            assert.ok(r.frame.x >= -1 && r.frame.x + r.frame.width <= device.width + 1, 'MV text stays within viewport width');
+                        }
+                        for (const key of ['musicVideo.options', 'musicVideo.returnToSong']) {
+                            const button = findOne(findOne(root, r => r.props.testID === 'music-video-content'), r => r.props.accessibilityLabel === t(key));
+                            assert.ok(button.frame.height >= 48 - .5, 'MV action remains 48dp');
+                            for (const text of findAll(button, isText)) assert.ok(contains(button.frame, text.frame, 1));
+                        }
+                    };
+                    const ready = layout.interact(() => findOne(layout.root, r => r.props.testID === 'music-video-surface').props.onVideoFrame({nativeEvent: owner}));
+                    check(ready);
+                    const full = layout.interact(() => findOne(ready, r => r.props.accessibilityLabel === t('musicVideo.fullscreen')).props.onPress());
+                    check(full);
+                    findOne(full, r => r.props.accessibilityLabel === t('musicVideo.exitFullscreen'));
+                } finally { layout.unmount(); }
+            });
+        }
+    }
+}
+
+for (const device of [{width: 320, height: 640}, {width: 806, height: 363}, {width: 568, height: 320}]) {
+    for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+        for (const fontScale of [1, 2]) {
+            for (const [error, key] of [['network', 'musicVideo.networkHeld'],
+                ['checkpoint-unavailable', 'musicVideo.checkpointUnavailable'],
+                ['audio-return', 'musicVideo.returnFailed'],
+                ['source', 'musicVideo.failed'], ['activation', 'musicVideo.failed']]) {
+                test(`MV ${error} ${device.width}×${device.height} ${language} ${fontScale}×`, () => {
+                    const env = createEnv({...device, language, fontScale, insets: {top: 24, bottom: 20, left: 0, right: 0}});
+                    const owner = {kind: 'mv', mediaId: 'fixture@one', loadGeneration: 7};
+                    const videoState = {phase: 'error', error, owner, songKey: owner.mediaId, canReturn: true,
+                        video: {id: 'v', title: 'Video', providerName: 'Provider'}};
+                    const loader = createModuleLoader(createPlayerStubs(env, {videoState}));
+                    const MusicDetail = loader.load('@/pages/musicDetail').default;
+                    const t = loader.load('@/core/i18n').default.t;
+                    const layout = renderLayout(inAppFontScaleScope(loader, {route: 'music-detail'}, h(MusicDetail)), {env, width: device.width, height: device.height});
+                    try {
+                        const message = findOne(layout.root, r => isText(r) && r.text === t(key));
+                        assertReadable(message, message.text);
+                        assert.equal(clippingAncestor(message), null, 'error message remains visible');
+                        if (error === 'network') {
+                            const action = findOne(layout.root, r => isText(r) && r.text === t('musicVideo.resumeOnMobile'));
+                            assertReadable(action, action.text);
+                            assert.equal(clippingAncestor(action), null, 'network action remains visible');
+                        }
+                    } finally { layout.unmount(); }
+                });
+            }
         }
     }
 }

@@ -326,6 +326,75 @@ class PluginMethodsWrapper implements IPlugin.IPluginInstanceMethods {
     }
 
 
+    private normalizeVideoSource(result: IPlugin.IVideoSourceResult | null): IPlugin.IVideoSourceResult | null {
+        if (!result) {
+            return null;
+        }
+        // Only the existing host URL policy can grant internal proxy/HTTP flags.
+        // Video never imports an audio decryption key from a plugin response.
+        if ((result as any).cek || (result as any).ekey) {
+            throw new MediaSourceResolutionError("encrypted-unsupported", "Encrypted video is unsupported");
+        }
+        if (result.headers && (typeof result.headers !== "object" || Array.isArray(result.headers) ||
+            Object.entries(result.headers).some(([key, value]) =>
+                !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key) || typeof value !== "string" || /[\r\n]/.test(value)))) {
+            throw new MediaSourceResolutionError("plugin-error", "Invalid video headers");
+        }
+        if (result.userAgent != null && (typeof result.userAgent !== "string" || /[\r\n]/.test(result.userAgent))) {
+            throw new MediaSourceResolutionError("plugin-error", "Invalid video user agent");
+        }
+        const normalized = result.url ? this.normalizeMediaSourceResult({
+            url: result.url,
+            headers: result.headers,
+            userAgent: result.userAgent,
+        }) : {};
+        return {
+            url: normalized.url,
+            headers: normalized.headers,
+            userAgent: normalized.userAgent,
+            quality: result.quality,
+            videoQuality: result.videoQuality,
+            availableVideoQualities: result.availableVideoQualities,
+            width: result.width,
+            height: result.height,
+            duration: result.duration,
+            mimeType: result.mimeType,
+            timelineId: result.timelineId,
+            expiresAt: result.expiresAt,
+            failure: result.failure,
+        };
+    }
+
+    async getMusicVideos(song: IMusic.IMusicItemBase) {
+        await this.ensurePluginReady("getMusicVideos");
+        try {
+            return await this.plugin.instance.getMusicVideos?.(resetMediaItem(song, undefined, true)) ?? [];
+        } catch (error) {
+            this.recordError("getMusicVideos", error);
+            throw error;
+        }
+    }
+
+    async getVideoSource(video: IPlugin.IVideoCandidate, quality?: string) {
+        await this.ensurePluginReady("getVideoSource");
+        try {
+            return this.normalizeVideoSource(await this.plugin.instance.getVideoSource?.(video, quality) ?? null);
+        } catch (error) {
+            this.recordError("getVideoSource", error);
+            throw error;
+        }
+    }
+
+    async getMvSource(song: IMusic.IMusicItemBase, quality?: string) {
+        await this.ensurePluginReady("getMvSource");
+        try {
+            return this.normalizeVideoSource(await this.plugin.instance.getMvSource?.(resetMediaItem(song, undefined, true), quality) ?? null);
+        } catch (error) {
+            this.recordError("getMvSource", error);
+            throw error;
+        }
+    }
+
     /** 搜索 */
     async search<T extends ICommon.SupportMediaType>(
         query: string,

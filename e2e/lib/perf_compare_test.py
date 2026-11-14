@@ -135,11 +135,34 @@ startup_capture_stop
         print('ok initial startup stream survives driver logcat clear')
 
 
-def workflow_command(name):
-    text = WORKFLOW.read_text().split('            - name: ' + name + '\n', 1)[1]
+def workflow_command(name, text=None):
+    text = (WORKFLOW.read_text() if text is None else text).split('            - name: ' + name + '\n', 1)[1]
     text = text.split('\n            - name:', 1)[0]
     lines = text.split('              run: |\n', 1)[1].splitlines()
-    return '\n'.join(line[18:] for line in lines)
+    command = []
+    for line in lines:
+        if not line.strip():
+            command.append('')
+        elif line.startswith(' ' * 18):
+            command.append(line[18:])
+        else:
+            break  # A comment or key outside the run block is not shell code.
+    assert any(line.strip() and not line.lstrip().startswith('#') for line in command)
+    return '\n'.join(command)
+
+
+fixture = '''            - name: Example
+              run: |
+                  echo selected
+                  # comment inside the shell block
+
+            # comment between workflow steps
+            - name: Next
+              run: |
+                  echo unrelated
+'''
+assert workflow_command('Example', fixture).splitlines() == [
+    'echo selected', '# comment inside the shell block']
 
 
 with tempfile.TemporaryDirectory() as directory:

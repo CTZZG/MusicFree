@@ -4,6 +4,7 @@ import TrackPlayer, {
     useCurrentMusic,
     useMusicQuality,
     useAlternateSourceInUse,
+    useMusicVideoView,
 } from "@/core/trackPlayer";
 import type { PlayerAudioInfo } from "@/core/playerAdapter";
 import { useI18N } from "@/core/i18n";
@@ -52,6 +53,9 @@ export default function PlaybackInfo() {
     const music = useCurrentMusic();
     const quality = useMusicQuality();
     const alternate = useAlternateSourceInUse();
+    const { engineIsVideo, video: selectedVideo, owner: videoOwner } = useMusicVideoView();
+    const video = engineIsVideo ? selectedVideo : null;
+    const videoGeneration = videoOwner?.loadGeneration ?? null;
     const qualityTranslations = useAppConfig("basic.qualityTranslations");
     const i18n = useI18N();
     const { t } = i18n;
@@ -74,6 +78,8 @@ export default function PlaybackInfo() {
         const adapter = TrackPlayer.playerAdapter;
         function refresh() {
             const request = ++sequence;
+            const owner = adapter.getRenditionOwner?.();
+            const ownerKey = JSON.stringify(owner ?? null);
             setResult(null);
             if (!adapter?.getAudioInfo) {
                 setLoading(false);
@@ -83,6 +89,7 @@ export default function PlaybackInfo() {
             const current = () =>
                 active &&
                 sequence === request &&
+                JSON.stringify(adapter.getRenditionOwner?.() ?? null) === ownerKey &&
                 TrackPlayer.currentMusic &&
                 getMediaUniqueKey(TrackPlayer.currentMusic) === key;
             withTimeout(
@@ -90,7 +97,7 @@ export default function PlaybackInfo() {
                 2000,
             )
                 .then(info => {
-                    if (current()) setResult(info ? { key: key!, info } : null);
+                    if (current()) setResult(info && (!owner || (info.mediaId === owner.mediaId && info.loadGeneration === owner.loadGeneration)) ? { key: key!, info } : null);
                 })
                 .catch(() => {
                     if (current()) setResult(null);
@@ -104,14 +111,16 @@ export default function PlaybackInfo() {
             "playbackStateChanged",
             refresh,
         );
+        const rendition = adapter?.addEventListener("renditionChanged", refresh);
         refresh();
         return () => {
             active = false;
             sequence++;
             track?.remove();
             state?.remove();
+            rendition?.remove();
         };
-    }, [key, quality, alternate, revision, ready]);
+    }, [key, quality, alternate, revision, ready, videoGeneration]);
     const info = result?.key === key ? result.info : null;
     const unknown = t("playbackInfo.unknown");
     const values = audioInfoText(info, unknown);
@@ -144,7 +153,7 @@ export default function PlaybackInfo() {
                         style={styles.scroll}
                         contentContainerStyle={styles.content}>
                         <ThemeText fontWeight="semibold">
-                            {music?.title || t("playbackInfo.noTrack")}
+                            {video ? `${video.title} · MV` : music?.title || t("playbackInfo.noTrack")}
                         </ThemeText>
                         <ThemeText fontColor="textSecondary">
                             {t("playbackInfo.note")}
@@ -161,12 +170,12 @@ export default function PlaybackInfo() {
                         {row(
                             t("playbackInfo.playbackSource"),
                             info
-                                ? alternate || music?.platform || unknown
+                                ? video?.providerName || alternate || music?.platform || unknown
                                 : unknown,
                         )}
                         {row(
                             t("playbackInfo.qualityLabel"),
-                            String(qualityText),
+                            video ? video.qualities?.find(value => value.id === video.qualityId)?.label ?? unknown : String(qualityText),
                         )}
                         {row(t("playbackInfo.codec"), values.codec)}
                         {row(t("playbackInfo.sampleRate"), values.sampleRate)}

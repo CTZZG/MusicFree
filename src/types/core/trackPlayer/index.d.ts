@@ -118,6 +118,8 @@ export interface IQualityChangeResult {
 export interface ITrackPlayer
     extends IInjectable,
         EventEmitter<{
+            [TrackPlayerEvents.AudioTimelineChanged]: () => void;
+            [TrackPlayerEvents.MusicVideoOwnershipChanged]: () => void;
             [TrackPlayerEvents.PlayEnd]: () => void;
             [TrackPlayerEvents.CurrentMusicChanged]: (
                 musicItem: IMusic.IMusicItem | null,
@@ -143,6 +145,10 @@ export interface ITrackPlayer
      * 当前播放的歌曲
      */
     readonly currentMusic: IMusic.IMusicItem | null;
+    readonly audioTimelineAvailable?: boolean;
+    /** MV ownership is separate from readiness of the current audio clock. */
+    readonly videoOwnsPlayback?: boolean;
+    readonly timelineSerial?: number;
 
     /**
      * 下一首歌曲

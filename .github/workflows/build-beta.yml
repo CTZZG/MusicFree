@@ -32,13 +32,14 @@ on:
                 default: ''
                 type: string
             e2e_suite:
-                description: '跑哪些自动测试：all 全部；lyric-boundaries 字宽/长音/重载；playback-font 大字体与刷新按钮；player-observation 播放页/迷你条1x/0x录屏；experience 首页/分享/播放信息；storage 下载/迁移故障；power 锁屏/省电；download-source 备用下载/WMA标签；backup 备份恢复/存储读取重试；library 本地音乐库；perf 性能基线（不设门限）；crash 本机崩溃记录'
+                description: '跑哪些自动测试：all 全部；mv 正常播放页视频/返回歌曲/EOF接管；lyric-boundaries 字宽/长音/重载；playback-font 大字体与刷新按钮；player-observation 播放页/迷你条1x/0x录屏；experience 首页/分享/播放信息；storage 下载/迁移故障；power 锁屏/省电；download-source 备用下载/WMA标签；backup 备份恢复/存储读取重试；library 本地音乐库；perf 性能基线（不设门限）；crash 本机崩溃记录'
                 required: false
                 default: 'all'
                 type: choice
                 options:
                     - all
                     - experience
+                    - mv
                     - lyric-boundaries
                     - playback-font
                     - player-observation
@@ -57,6 +58,14 @@ on:
                 options:
                     - '14'
                     - '17'
+            e2e_all_prelude:
+                description: 'all 的起始状态：post-mv 保留 MV 往返；audio-first 验证首次安装后普通播放'
+                required: false
+                default: 'post-mv'
+                type: choice
+                options:
+                    - post-mv
+                    - audio-first
 
 jobs:
     check-version:
@@ -410,6 +419,33 @@ jobs:
                   echo "E2E_APK_COMMIT=${commit}" >> "$GITHUB_ENV"
                   echo "APK source commit: ${commit:-unknown}"
 
+            # The MV suite installs only x86_64. Keep the original build artifact
+            # intact and remove just the other extracted copies from this runner.
+            - name: Free unused APK copies for MV
+              if: inputs.e2e_suite == 'mv'
+              run: |
+                  set -euo pipefail
+                  shopt -s nullglob
+                  [[ -d apk && ! -L apk ]]
+                  name=${E2E_APK#apk/}
+                  [[ "$E2E_APK" == "apk/$name" && "$name" != */* && "$name" == *-app-x86_64-release.apk ]]
+                  [[ -f "$E2E_APK" && ! -L "$E2E_APK" ]]
+                  unused=()
+                  for abi in arm64-v8a armeabi-v7a universal x86; do
+                    for candidate in apk/*-app-"$abi"-release.apk; do
+                      [[ -f "$candidate" && ! -L "$candidate" ]]
+                      unused+=("$candidate")
+                    done
+                  done
+                  bytes=0
+                  for candidate in "${unused[@]}"; do
+                    size=$(wc -c < "$candidate")
+                    bytes=$((bytes + size))
+                    rm -- "$candidate"
+                  done
+                  echo "Removed ${#unused[@]} unused extracted APK copies ($bytes bytes); retained $E2E_APK"
+                  df -Pk .
+
             - name: Download cold-start comparison baseline
               if: inputs.perf_baseline_apk_run_id != ''
               uses: actions/download-artifact@v8
@@ -442,6 +478,7 @@ jobs:
 
             - name: Self-test E2E helpers
               run: |
+                  python3 -I e2e/lib/ui_observer.py --self-test
                   python3 -I e2e/lib/media_session.py --self-test
                   python3 -I e2e/lib/dock.py --self-test
                   python3 -I e2e/lib/audio_focus.py --self-test
@@ -460,6 +497,7 @@ jobs:
                   python3 -I e2e/lib/playback_info_evidence.py --self-test
                   bash e2e/lib/experience_test.sh
                   bash e2e/lib/maestro_handoff_test.sh
+                  bash e2e/lib/all_prelude_test.sh
                   bash e2e/lib/boundary_environment_test.sh
                   bash e2e/lib/font_controls_test.sh
                   bash e2e/lib/share_receiver_test.sh
@@ -473,6 +511,10 @@ jobs:
                   bash e2e/lib/power_scenario_test.sh
                   bash e2e/lib/crash_checks_test.sh
                   bash e2e/lib/audio_hardening_test.sh
+                  if [ "${{ inputs.e2e_suite }}" = mv ] || [ "${{ inputs.e2e_suite }}" = all ]; then
+                    python3 -I e2e/mv/test_evidence.py
+                    python3 -I e2e/mv/test_driver.py
+                  fi
 
             - name: Enable KVM
               run: |
@@ -501,7 +543,7 @@ jobs:
                   echo "E2E_SHARE_RECEIVER_APK=$RUNNER_TEMP/e2e-share.apk" >> "$GITHUB_ENV"
 
             - name: Build the public UI observer
-              if: inputs.e2e_suite == 'all' || inputs.e2e_suite == 'experience' || inputs.e2e_suite == 'player-observation' || inputs.e2e_suite == 'lyric-boundaries' || inputs.e2e_suite == 'playback-font'
+              if: inputs.e2e_suite == 'all' || inputs.e2e_suite == 'experience' || inputs.e2e_suite == 'player-observation' || inputs.e2e_suite == 'lyric-boundaries' || inputs.e2e_suite == 'playback-font' || inputs.e2e_suite == 'mv'
               run: |
                   bash e2e/ui-observer/build.sh "$RUNNER_TEMP/e2e-ui-observer.apk"
                   echo "E2E_UI_OBSERVER_APK=$RUNNER_TEMP/e2e-ui-observer.apk" >> "$GITHUB_ENV"
@@ -510,6 +552,7 @@ jobs:
             # 编出往它的 MMKV 写测试数据的 mmkv-seed（见 e2e/mmkv-seed）。准备不好也接着跑其他检查，
             # 第 18 步会逐项记失败
             - name: Prepare the 0.7.3 upgrade test
+              if: inputs.e2e_suite != 'mv'
               continue-on-error: true
               env:
                   LEGACY_APK_URL: https://github.com/CTZZG/MusicFree/releases/download/v0.7.3/MusicFree-0.7.3-c35e6ba-app-x86_64-release.apk
@@ -532,6 +575,7 @@ jobs:
               uses: reactivecircus/android-emulator-runner@v2
               env:
                   E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
+                  E2E_ALL_PRELUDE: ${{ inputs.e2e_all_prelude || 'post-mv' }}
                   E2E_AUDIO_HARDENING: ${{ inputs.e2e_android == '17' && 'throw' || '' }}
                   # 测的 APK 不是按这次的提交打包时，写进结果
                   E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}

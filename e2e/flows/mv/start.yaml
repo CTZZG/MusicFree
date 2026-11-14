@@ -1,0 +1,14 @@
+appId: fun.upup.musicfree
+---
+- extendedWaitUntil:
+    visible: "E2E MV Song A"
+    timeout: 45000
+- tapOn: "E2E MV Song A, E2E Artist"
+- extendedWaitUntil:
+    visible: "歌曲: E2E MV Song A 歌手: E2E Artist"
+    timeout: 30000
+- tapOn: "歌曲: E2E MV Song A 歌手: E2E Artist"
+- extendedWaitUntil:
+    visible: "更多操作"
+    timeout: 15000
+- takeScreenshot: mv-original-audio

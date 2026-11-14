@@ -35,6 +35,7 @@ function loaderFor(env, dark) {
         '@/hooks/useResolvedMusicArtwork': strictStub('artwork', {default: () => MUSIC.artwork}),
         '@/core/trackPlayer': strictStub('trackPlayer', {
             default: {previousMusic: null, nextMusic: null},
+            useMusicVideoView: () => ({engineIsVideo: false, videoMode: false}),
             useCurrentMusic: () => MUSIC,
             useMusicState: () => 'playing',
             usePlayList: () => [],

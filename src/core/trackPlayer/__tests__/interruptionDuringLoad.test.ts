@@ -589,6 +589,12 @@ describe("quality reload uses the current position when committing", () => {
         expect(mockNative.state).toBe("buffering");
         const latest = trackPlayer.changeQualityWithResult("128k");
         await jest.advanceTimersByTimeAsync(150);
+        // The first native load must finish before its clock can be used as
+        // the anchor for the newer request. Then confirm the newer load too.
+        await fileLoaded();
+        expect(mockNative.active.url).toBe("https://test.example/A-320k.mp3");
+        await jest.advanceTimersByTimeAsync(150);
+        expect(mockNative.loading?.url).toBe("https://test.example/A-128k.mp3");
         await fileLoaded();
         await latest;
         await first;
@@ -672,7 +678,7 @@ describe("quality reload uses the current position when committing", () => {
         mockNativeMpvPlayer.getPosition.mockResolvedValue(position);
         await jest.advanceTimersByTimeAsync(1);
         await finishChange(changing);
-        expect(source).toHaveBeenLastCalledWith(expect.anything(), true, position, true);
+        expect(source).toHaveBeenLastCalledWith(expect.anything(), true, position, true, expect.objectContaining({ id: expect.any(Number) }), true);
     });
 
     it.each([NaN, Infinity, -1, undefined])("uses the request-time position if the latest read is %p", async position => {
