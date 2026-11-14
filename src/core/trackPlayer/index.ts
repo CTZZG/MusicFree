@@ -2,6 +2,7 @@ import PlaybackSourceResolver from "./playbackSourceResolver";
 import { getPluginRuntimeRevision, usePluginEnabledRevision } from "../pluginManager/enabledRevision";
 import MusicVideoController, { type MusicVideoState } from "./musicVideoController";
 import { describeMusicVideoView } from "./musicVideoView";
+import { classifyVideoNetwork } from "./videoNetworkPolicy";
 import { MusicVideoSources } from "../pluginManager/musicVideoSource";
 import { admitMusicVideoSource } from "./musicVideoAdmission";
 import { isMediaHttpAllowed } from "@/utils/mediaHttpCompatibilityPolicy";
@@ -533,10 +534,10 @@ class TrackPlayer
             },
             videoNetwork: async approved => {
                 const state = await Network.getFreshState();
-                if (!state.isConnected || state.isInternetReachable === false || state.type === "unknown" || state.type === "none") throw new Error("Video network unavailable");
-                const unmetered = (state.type === "wifi" || state.type === "ethernet") && !state.details?.isConnectionExpensive;
-                if (!unmetered && (!this.configService.getConfig("basic.useCelluarNetworkPlay") || !approved)) throw new Error("Video mobile approval required");
-                return unmetered ? "unmetered" : "allow-metered";
+                const network = classifyVideoNetwork(state);
+                if (network === "offline") throw new Error("Video network unavailable");
+                if (network === "metered" && (!this.configService.getConfig("basic.useCelluarNetworkPlay") || !approved)) throw new Error("Video mobile approval required");
+                return network === "unmetered" ? "unmetered" : "allow-metered";
             },
             resumeVideo: policy => this.backend.resumeVideo?.(policy) ?? Promise.reject(new Error("Video unavailable")),
             resumeAudio: () => this.backend.play(),

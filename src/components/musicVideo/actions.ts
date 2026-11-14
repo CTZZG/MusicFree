@@ -4,6 +4,7 @@ import type {
     MusicVideoAction,
     MusicVideoPreflight,
 } from "@/core/trackPlayer/musicVideoController";
+import { classifyVideoNetwork } from "@/core/trackPlayer/videoNetworkPolicy";
 import Config from "@/core/appConfig";
 import Network from "@/utils/network";
 import { getMediaUniqueKey } from "@/utils/mediaIdentity";
@@ -84,18 +85,12 @@ async function requestVideoAction(
             if (parentSignal.aborted || !current()) return null;
             const network = await Network.getFreshState();
             if (!current() || parentSignal.aborted) return null;
-            if (
-                !network.isConnected ||
-                network.isInternetReachable === false ||
-                network.type === "unknown" ||
-                network.type === "none"
-            ) {
+            const networkClass = classifyVideoNetwork(network);
+            if (networkClass === "offline") {
                 Toast.warn(i18n.t("musicVideo.failed"));
                 return null;
             }
-            const unmetered =
-                (network.type === "wifi" || network.type === "ethernet") &&
-                !network.details?.isConnectionExpensive;
+            const unmetered = networkClass === "unmetered";
             if (
                 !unmetered &&
                 !Config.getConfig("basic.useCelluarNetworkPlay")
