@@ -522,3 +522,35 @@ for (const device of [{width: 320, height: 640}, {width: 363, height: 806}, {wid
         }
     }
 }
+
+for (const device of [{width: 320, height: 640}, {width: 806, height: 363}, {width: 568, height: 320}]) {
+    for (const language of ['zh-CN', 'zh-TW', 'en-US']) {
+        for (const fontScale of [1, 2]) {
+            for (const [error, key] of [['network', 'musicVideo.networkHeld'],
+                ['checkpoint-unavailable', 'musicVideo.checkpointUnavailable'],
+                ['audio-return', 'musicVideo.returnFailed'],
+                ['source', 'musicVideo.failed'], ['activation', 'musicVideo.failed']]) {
+                test(`MV ${error} ${device.width}×${device.height} ${language} ${fontScale}×`, () => {
+                    const env = createEnv({...device, language, fontScale, insets: {top: 24, bottom: 20, left: 0, right: 0}});
+                    const owner = {kind: 'mv', mediaId: 'fixture@one', loadGeneration: 7};
+                    const videoState = {phase: 'error', error, owner, songKey: owner.mediaId, canReturn: true,
+                        video: {id: 'v', title: 'Video', providerName: 'Provider'}};
+                    const loader = createModuleLoader(createPlayerStubs(env, {videoState}));
+                    const MusicDetail = loader.load('@/pages/musicDetail').default;
+                    const t = loader.load('@/core/i18n').default.t;
+                    const layout = renderLayout(inAppFontScaleScope(loader, {route: 'music-detail'}, h(MusicDetail)), {env, width: device.width, height: device.height});
+                    try {
+                        const message = findOne(layout.root, r => isText(r) && r.text === t(key));
+                        assertReadable(message, message.text);
+                        assert.equal(clippingAncestor(message), null, 'error message remains visible');
+                        if (error === 'network') {
+                            const action = findOne(layout.root, r => isText(r) && r.text === t('musicVideo.resumeOnMobile'));
+                            assertReadable(action, action.text);
+                            assert.equal(clippingAncestor(action), null, 'network action remains visible');
+                        }
+                    } finally { layout.unmount(); }
+                });
+            }
+        }
+    }
+}

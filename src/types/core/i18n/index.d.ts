@@ -8,6 +8,9 @@ export interface ILanguageData {
     "musicVideo.empty": string;
     "musicVideo.failed": string;
     "musicVideo.returnFailed": string;
+    "musicVideo.checkpointUnavailable": string;
+    "musicVideo.networkHeld": string;
+    "musicVideo.resumeOnMobile": string;
     "musicVideo.returnToSong": string;
     "musicVideo.returning": string;
     "musicVideo.quality": string;

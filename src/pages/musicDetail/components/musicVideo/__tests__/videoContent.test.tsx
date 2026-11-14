@@ -120,6 +120,31 @@ afterEach(() => {
     jest.useRealTimers();
 });
 
+test.each([
+    ["audio-return", "musicVideo.returnFailed"],
+    ["checkpoint-unavailable", "musicVideo.checkpointUnavailable"],
+    ["network", "musicVideo.networkHeld"],
+    ["source", "musicVideo.failed"],
+    ["activation", "musicVideo.failed"],
+])("shows the relevant message for %s", async (error, message) => {
+    mockState = { ...mockState, phase: "error", error };
+    await mount();
+    const labels = tree.root.findAll(node => typeof node.props.children === "string").map(node => node.props.children);
+    expect(labels).toContain(message);
+    if (error === "network") {
+        expect(labels).toContain("musicVideo.resumeOnMobile");
+        expect(labels).not.toContain("musicVideo.mobileTitle");
+    }
+});
+
+test("shows the return-in-progress message before a previous error", async () => {
+    mockState = { ...mockState, phase: "returning", error: "audio-return" };
+    await mount();
+    const labels = tree.root.findAll(node => typeof node.props.children === "string").map(node => node.props.children);
+    expect(labels).toContain("musicVideo.returning");
+    expect(labels).not.toContain("musicVideo.returnFailed");
+});
+
 test("fullscreen resizes the same native View without dropping its first-frame evidence", async () => {
     await mount();
     await frame();

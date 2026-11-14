@@ -63,6 +63,15 @@ export default function MusicVideoContent({
     const visible = focused && appActive;
     const hasFrame = !!key && frameKey === key;
     const error = state.phase !== "audio" ? state.error : undefined;
+    const overlayText = getOverlayText();
+    function getOverlayText() {
+        if (state.phase === "returning") return t("musicVideo.returning");
+        if (error === "audio-return") return t("musicVideo.returnFailed");
+        if (error === "checkpoint-unavailable") return t("musicVideo.checkpointUnavailable");
+        if (error === "network") return t("musicVideo.networkHeld");
+        if (error === "source" || error === "activation") return t("musicVideo.failed");
+        return t("musicVideo.loadingVideo");
+    }
     const showControls = !fullscreen || controlsVisible || !hasFrame || !!error;
     useEffect(() => {
         const subscription = AppState.addEventListener("change", value =>
@@ -196,13 +205,7 @@ export default function MusicVideoContent({
                 {!hasFrame || returning ? (
                     <View pointerEvents="none" style={styles.waiting}>
                         <ThemeText color="white" style={styles.message}>
-                            {error
-                                ? t("musicVideo.returnFailed")
-                                : t(
-                                    returning
-                                        ? "musicVideo.returning"
-                                        : "musicVideo.loadingVideo",
-                                )}
+                            {overlayText}
                         </ThemeText>
                     </View>
                 ) : null}
@@ -311,7 +314,7 @@ export default function MusicVideoContent({
                                 resumeMusicVideo();
                             }}>
                             <ThemeText color="white">
-                                {t("musicVideo.mobileTitle")}
+                                {t("musicVideo.resumeOnMobile")}
                             </ThemeText>
                         </Pressable>
                     ) : null}
@@ -362,7 +365,8 @@ const styles = StyleSheet.create({
         bottom: 0,
         alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        paddingHorizontal: 8,
+        paddingVertical: 0,
     },
     tapSurface: { position: "absolute", left: 0, top: 0, right: 0, bottom: 0 },
     message: { textAlign: "center" },
