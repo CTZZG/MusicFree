@@ -4,16 +4,16 @@ jest.mock("@/core/pluginManager", () => ({
     default: { isPluginEnabled: jest.fn() },
     useSortedPlugins: jest.fn(),
     // 用真实的启用状态信号，验证 hook 自己会跟着重算
-    usePluginEnabledRevision: jest.requireActual(
+    usePluginRuntimeRevision: jest.requireActual(
         "@/core/pluginManager/enabledRevision",
-    ).usePluginEnabledRevision,
+    ).usePluginRuntimeRevision,
 }));
 
 import React from "react";
 import { act, create, ReactTestRenderer } from "react-test-renderer";
 import { useAppConfig } from "@/core/appConfig";
 import PluginManager, { useSortedPlugins } from "@/core/pluginManager";
-import { notifyPluginEnabledChanged } from "@/core/pluginManager/enabledRevision";
+import { notifyPluginRuntimeChanged } from "@/core/pluginManager/enabledRevision";
 import useHomeDiscoverySource, {
     resolveHomeDiscoverySource,
 } from "../useHomeDiscoverySource";
@@ -107,7 +107,7 @@ describe("useHomeDiscoverySource", () => {
 
         enabled.set("B", false);
         act(() => {
-            notifyPluginEnabledChanged();
+            notifyPluginRuntimeChanged();
         });
 
         expect(current?.plugin?.name).toBe("A");

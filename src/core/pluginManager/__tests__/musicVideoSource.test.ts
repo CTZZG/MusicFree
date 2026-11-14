@@ -1,6 +1,6 @@
 import { MusicVideoCancelled, MusicVideoSources, normalizeVideoQualities } from "../musicVideoSource";
 import type { Plugin } from "../plugin";
-import { notifyPluginEnabledChanged } from "../enabledRevision";
+import { notifyPluginRuntimeChanged } from "../enabledRevision";
 
 const song = { id: "song-a", platform: "QQ", title: "Song", artist: "Artist", mv: "mv-1" };
 const candidate = { id: "mv-1", title: "Song MV", qualities: [{ id: "720p", label: "720p" }] };
@@ -121,7 +121,7 @@ describe("optional music video sources", () => {
         plugin.methods.getVideoSource.mockReturnValueOnce(promise.promise);
         const [item] = await service.find(song, () => true);
         const result = service.resolve(item, undefined, () => true);
-        await Promise.resolve(); notifyPluginEnabledChanged();
+        await Promise.resolve(); notifyPluginRuntimeChanged();
         await expect(result).rejects.toBeInstanceOf(MusicVideoCancelled);
         promise.resolve(media);
     });

@@ -21,8 +21,8 @@ import { copyFile, readDir, readFile, unlink, writeFile } from "react-native-fs"
 import { devLog, errorLog, trace } from "../../utils/log";
 import pluginMeta from "./meta";
 import {
-    notifyPluginEnabledChanged,
-    usePluginEnabledRevision,
+    notifyPluginRuntimeChanged,
+    usePluginRuntimeRevision,
 } from "./enabledRevision";
 import {
     builtinLyricPlugins,
@@ -130,7 +130,7 @@ class PluginManager implements IPluginManager, IInjectable {
         plugins.forEach(it => {
             this.updatePluginCache(it);
         });
-        notifyPluginEnabledChanged();
+        notifyPluginRuntimeChanged();
     }
 
     private updatePluginCache(plugin: Plugin) {
@@ -874,7 +874,7 @@ class PluginManager implements IPluginManager, IInjectable {
         // 先落盘再通知：监听方会马上用 isPluginEnabled 重新算
         pluginMeta.setPluginEnabled(plugin.name, enabled);
         ee.emit("enabled-updated", plugin.name, enabled);
-        notifyPluginEnabledChanged();
+        notifyPluginRuntimeChanged();
     }
 
     /**
@@ -901,7 +901,7 @@ class PluginManager implements IPluginManager, IInjectable {
 
     setUserVariables(plugin: Plugin, userVariables: Record<string, string>) {
         pluginMeta.setUserVariables(plugin.name, userVariables);
-        notifyPluginEnabledChanged();
+        notifyPluginRuntimeChanged();
     }
 
     getUserVariables(plugin: Plugin) {
@@ -941,12 +941,12 @@ const pluginManager = new PluginManager();
 
 export const usePlugins = () => useAtomValue(pluginsAtom);
 
-export { usePluginEnabledRevision };
+export { usePluginRuntimeRevision };
 
 /** 排好序的插件；插件启用或停用时也会换成新数组，依赖它的计算会重新算 */
 export function useSortedPlugins() {
     const plugins = useAtomValue(pluginsAtom);
-    const enabledRevision = usePluginEnabledRevision();
+    const runtimeRevision = usePluginRuntimeRevision();
     const [sortedPlugins, setSortedPlugins] = useState<Plugin[]>(
         pluginManager.getSortedPlugins(),
     );
@@ -969,7 +969,7 @@ export function useSortedPlugins() {
         return () => {
             ee.off("order-updated", callback);
         };
-    }, [plugins, enabledRevision]);
+    }, [plugins, runtimeRevision]);
 
     return sortedPlugins;
 }

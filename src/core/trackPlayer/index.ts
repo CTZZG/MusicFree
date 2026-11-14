@@ -1,5 +1,5 @@
 import PlaybackSourceResolver from "./playbackSourceResolver";
-import { getPluginRuntimeRevision, usePluginEnabledRevision } from "../pluginManager/enabledRevision";
+import { getPluginRuntimeRevision, usePluginRuntimeRevision } from "../pluginManager/enabledRevision";
 import MusicVideoController, { type MusicVideoState } from "./musicVideoController";
 import { describeMusicVideoView } from "./musicVideoView";
 import { classifyVideoNetwork } from "./videoNetworkPolicy";
@@ -5827,7 +5827,7 @@ class TrackPlayer
 }
 
 export function useHasMusicVideo() {
-    usePluginEnabledRevision();
+    usePluginRuntimeRevision();
     const current = useAtomValue(currentMusicAtom);
     const known = useAtomValue(knownMusicVideoAtom);
     return (

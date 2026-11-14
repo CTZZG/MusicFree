@@ -15,18 +15,17 @@ export function subscribePluginRuntimeRevision(listener: () => void) {
     };
 }
 
-/** 插件启用状态落盘之后调用 */
-export function notifyPluginEnabledChanged() {
+/** 插件列表替换、启停状态变化或用户变量修改后调用。 */
+export function notifyPluginRuntimeChanged() {
     runtimeRevision += 1;
     listeners.forEach(listener => listener());
 }
 
 /**
- * 任一插件启用或停用时加一。凡是按「哪些插件启用」算出来的结果，都要把它放进
- * 依赖：停用插件时插件列表本身不变，只依赖列表的 useMemo 会一直沿用停用前的
- * 结果（例如首页还在用刚停用的音源）。
+ * 插件列表、启停状态或用户变量变化时更新。凡是依赖插件运行状态计算的结果都
+ * 要把它放进依赖：例如停用插件时，列表本身未变，旧 useMemo 仍会引用停用前的音源。
  */
-export function usePluginEnabledRevision() {
+export function usePluginRuntimeRevision() {
     const [revision, setRevision] = useState(0);
 
     useEffect(() => {
