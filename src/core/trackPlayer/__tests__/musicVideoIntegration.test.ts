@@ -436,3 +436,261 @@ test("a late failed audio recovery cannot skip or replace a newly selected MV", 
     expect(trackPlayer.musicVideoState.phase).toBe("video");
     player.disposeServiceListeners();
 });
+
+describe("quality selection while audio is not ready (plan A1)", () => {
+    it.each(["same-owner-unready", "previous-owner"])("waits for the correct clock in %s", async scenario => {
+        const next = { ...song, id: "B", title: "Song B" };
+        let ready = scenario !== "same-owner-unready";
+        owner = scenario === "same-owner-unready"
+            ? { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 }
+            : { kind: "audio", mediaId: getMediaUniqueKey(song), loadGeneration: 1 };
+        mockBackend.getActiveRendition = jest.fn(() => ({ ...owner, ready }));
+        mockBackend.getProgress = jest.fn(async () => ({
+            position: owner.mediaId === getMediaUniqueKey(next) ? 7 : 91,
+            duration: 300, buffered: 100, ready,
+        }));
+        player.cancelMpvManualSkipTransition("test-start");
+        player.setCurrentMusic(next);
+        player.setQuality("128k");
+        const ongoing = player.qualityChangeCoordinator.begin();
+        const setSource = jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+        let result: any;
+        const changing = trackPlayer.changeQualityWithResult("320k").then(value => {
+            result = value;
+            return value;
+        });
+        await tick();
+        expect(result).toBeUndefined();
+        expect(mockBackend.getProgress).not.toHaveBeenCalled();
+        expect(player.qualityChangeCoordinator.isActive(ongoing)).toBe(true);
+        owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+        ready = true;
+        player.setCurrentMusic(next);
+        await expect(changing).resolves.toMatchObject({ success: true });
+        expect(plugin.methods.getMediaSource).toHaveBeenCalled();
+        expect(setSource).toHaveBeenCalledWith(expect.anything(), true, 7, true, expect.anything(), true);
+    });
+
+    it("cancels a waiting quality selection when the logical song changes", async () => {
+        const next = { ...song, id: "B" };
+        owner = { kind: "audio", mediaId: getMediaUniqueKey(song), loadGeneration: 1 };
+        player.setCurrentMusic(next);
+        const changing = trackPlayer.changeQualityWithResult("320k");
+        await tick();
+        player.setCurrentMusic({ ...song, id: "C" });
+        await expect(changing).resolves.toMatchObject({ success: false, superseded: true });
+        expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
+        expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    });
+});
+
+it("never reads the outgoing audio clock as the newly selected song", async () => {
+    const next = { ...song, id: "B" };
+    owner = { kind: "audio", mediaId: getMediaUniqueKey(song), loadGeneration: 1 };
+    mockBackend.getProgress = jest.fn(async () => ({ position: 91, duration: 300, buffered: 91, ready: true }));
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(next);
+    jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+    player.setCurrentMusic(next);
+    await changing;
+});
+
+it("waits when a pending legacy audio owner differs from the still-active audio", async () => {
+    const next = { ...song, id: "B" };
+    const previous = { kind: "audio", mediaId: getMediaUniqueKey(song), loadGeneration: 1 };
+    owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+    let active = previous;
+    mockBackend.getActiveRendition = jest.fn(() => active);
+    mockBackend.getProgress = jest.fn(async () => ({ position: active === previous ? 91 : 7, duration: 300, buffered: 91 }));
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(next);
+    player.setQuality("128k");
+    jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    expect(trackPlayer.audioTimelineAvailable).toBe(true); // legacy audio has no ready field
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    active = owner;
+    player.setCurrentMusic(next);
+    await expect(changing).resolves.toMatchObject({ success: true });
+    expect(mockBackend.getProgress).toHaveBeenCalled();
+});
+
+it("keeps the newer pending quality request and cancels the older one", async () => {
+    const next = { ...song, id: "B" };
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(next);
+    player.setQuality("128k");
+    jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    const first = trackPlayer.changeQualityWithResult("192k");
+    const second = trackPlayer.changeQualityWithResult("320k");
+    await expect(first).resolves.toMatchObject({ success: false, superseded: true });
+    owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+    player.setCurrentMusic(next);
+    await expect(second).resolves.toMatchObject({ success: true, requestedQuality: "320k" });
+    expect(plugin.methods.getMediaSource).toHaveBeenCalledTimes(1);
+});
+
+it("does not commit an old source while the newer quality waits for readiness", async () => {
+    let release!: (value: any) => void;
+    let ready = true;
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(song);
+    player.setQuality("128k");
+    mockBackend.getActiveRendition = jest.fn(() => ({ ...owner, ready }));
+    plugin.methods.getMediaSource.mockImplementationOnce(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    const setSource = jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    const first = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    ready = false;
+    const latest = trackPlayer.changeQualityWithResult("192k");
+    // The native state can become ready before its event reaches the waiter.
+    ready = true;
+    release({ url: "https://example.test/stale.mp3" });
+    await expect(first).resolves.toMatchObject({ success: false, superseded: true });
+    expect(setSource).not.toHaveBeenCalled();
+    player.setCurrentMusic(song);
+    await expect(latest).resolves.toMatchObject({ success: true, requestedQuality: "192k" });
+    expect(setSource).toHaveBeenCalledTimes(1);
+});
+
+it("does not remove the next backend listener during a readiness event", async () => {
+    const next = { ...song, id: "B" };
+    const listeners: Array<() => void> = [];
+    mockBackend.addEventListener = jest.fn((event: string, callback: () => void) => {
+        if (event === "trackChanged") listeners.push(callback);
+        return { remove: () => {
+            const index = listeners.indexOf(callback);
+            if (index >= 0) listeners.splice(index, 1);
+        } };
+    });
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(next);
+    player.setQuality("128k");
+    jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    const other = jest.fn();
+    listeners.push(other);
+    owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+    listeners.forEach(listener => listener());
+    expect(other).toHaveBeenCalledTimes(1);
+    await expect(changing).resolves.toMatchObject({ success: true });
+    expect(listeners).toEqual([other]);
+});
+
+it("waits for the active manual transition instead of cancelling its source token", async () => {
+    const next = { ...song, id: "B" };
+    player.cancelMpvManualSkipTransition("test-start");
+    const transition = player.beginMpvManualSkipTransition(next, song, "test-next");
+    owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+    player.setCurrentMusic(next);
+    player.setQuality("128k");
+    jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    expect(player.isMpvManualSkipTransitionActive(transition)).toBe(true);
+    expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    player.completeMpvManualSkipTransition(transition, "test-complete");
+    await expect(changing).resolves.toMatchObject({ success: true });
+});
+
+it("cancels a waiting quality request when MV takes ownership", async () => {
+    const next = { ...song, id: "B" };
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(next);
+    player.initializeMusicVideo();
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    player.musicVideo.block(true);
+    await expect(changing).resolves.toMatchObject({ success: false, superseded: true });
+    expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
+    player.musicVideo.block(false);
+});
+
+it("rejects audio quality while returning even if the native owner is already audio", async () => {
+    player.cancelMpvManualSkipTransition("test-start");
+    player.initializeMusicVideo();
+    player.musicVideo.block(true);
+    player.musicVideo.publish({ phase: "returning", songKey: getMediaUniqueKey(song),
+        owner, video: { id: "clip", title: "Video", artist: "Artist", providerName: "test" }, canReturn: true });
+    expect(player.musicVideo.snapshot.phase).toBe("returning");
+    expect(owner.kind).toBe("audio");
+    await expect(trackPlayer.changeQualityWithResult("320k")).resolves.toMatchObject({ success: false, superseded: true });
+    expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
+    player.musicVideo.block(false);
+});
+
+it("rejects an old progress read after the audio load generation changes", async () => {
+    let release!: (value: any) => void;
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(song);
+    player.setQuality("128k");
+    mockBackend.getProgress = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    owner = { ...owner, loadGeneration: owner.loadGeneration + 1 };
+    release({ position: 91, duration: 300, buffered: 91, ready: true });
+    await expect(changing).resolves.toMatchObject({ success: false, superseded: true });
+    expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
+});
+
+it("reports an unready audio timeout instead of silently treating it as superseded", async () => {
+    jest.useFakeTimers();
+    try {
+        player.cancelMpvManualSkipTransition("test-start");
+        player.setCurrentMusic({ ...song, id: "B" });
+        const changing = trackPlayer.changeQualityWithResult("320k");
+        await jest.advanceTimersByTimeAsync(15_000);
+        await expect(changing).resolves.toMatchObject({ success: false, failure: { code: "backend-error" } });
+        expect(mockBackend.getProgress).not.toHaveBeenCalled();
+        expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
+        expect(player.qualityReadinessWait).toBeNull();
+    } finally {
+        jest.useRealTimers();
+    }
+});
+
+it("rejects an old progress read if MV entered and returned while it was pending", async () => {
+    let release!: (value: any) => void;
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(song);
+    player.setQuality("128k");
+    player.initializeMusicVideo();
+    mockBackend.getProgress = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    player.musicVideo.block(true);
+    player.musicVideo.block(false);
+    release({ position: 91, duration: 300, buffered: 91, ready: true });
+    await expect(changing).resolves.toMatchObject({ success: false, superseded: true });
+    expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
+});
+
+it("rejects an old progress read if the song changes away and back", async () => {
+    let release!: (value: any) => void;
+    player.cancelMpvManualSkipTransition("test-start");
+    player.setCurrentMusic(song);
+    player.setQuality("128k");
+    mockBackend.getProgress = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    const changing = trackPlayer.changeQualityWithResult("320k");
+    await tick();
+    player.setCurrentMusic({ ...song, id: "B" });
+    player.setCurrentMusic(song);
+    release({ position: 91, duration: 300, buffered: 91, ready: true });
+    await expect(changing).resolves.toMatchObject({ success: false, superseded: true });
+    expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
+});

@@ -589,6 +589,12 @@ describe("quality reload uses the current position when committing", () => {
         expect(mockNative.state).toBe("buffering");
         const latest = trackPlayer.changeQualityWithResult("128k");
         await jest.advanceTimersByTimeAsync(150);
+        // The first native load must finish before its clock can be used as
+        // the anchor for the newer request. Then confirm the newer load too.
+        await fileLoaded();
+        expect(mockNative.active.url).toBe("https://test.example/A-320k.mp3");
+        await jest.advanceTimersByTimeAsync(150);
+        expect(mockNative.loading?.url).toBe("https://test.example/A-128k.mp3");
         await fileLoaded();
         await latest;
         await first;

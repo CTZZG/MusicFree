@@ -61,6 +61,8 @@ import type {
     PlayerAdapterTrack,
     PlayerAdapterTrackSourceOrigin,
     PlayerAdapterEvent,
+    PlayerRenditionIdentity,
+    PlayerAdapterSubscription,
 } from "@/core/playerAdapter";
 import { resolvePlayerAdapter } from "@/core/playerAdapter";
 import type { ReplayGainMode } from "@/core/playerAdapter/replayGain";
@@ -69,6 +71,7 @@ import NativeUtils, { IPlaybackNativeDiagnostics } from "@/native/utils";
 import {
     isStaleManualSkipIntent,
     MediaSourceTimeoutError,
+    mediaSourceTimeoutMs,
     TimedOutSources,
 } from "./mediaSourceTimeoutPolicy";
 import { PlaybackIntent } from "./playbackIntent";
@@ -429,7 +432,10 @@ class TrackPlayer
     private qualityChangeCoordinator = new QualityChangeCoordinator();
     private musicVideo: MusicVideoController | null = null;
     private audioTimelineSerial = 0;
+    private currentSongSerial = 0;
     private videoOwnershipSerial = 0;
+    private qualityIntentSerial = 0;
+    private qualityReadinessWait: { check: () => void; cancel: () => void } | null = null;
     private lastPublishedAudioTimelineAvailable = true;
 
     /** Whether the video rendition owns the engine, independent of audio readiness. */
@@ -495,8 +501,10 @@ class TrackPlayer
         if (available !== this.lastPublishedAudioTimelineAvailable) {
             this.lastPublishedAudioTimelineAvailable = available;
             this.emit(TrackPlayerEvents.AudioTimelineChanged);
+            this.qualityReadinessWait?.check();
             return true;
         }
+        this.qualityReadinessWait?.check();
         return false;
     }
     private initializeMusicVideo() {
@@ -2374,6 +2382,8 @@ class TrackPlayer
             return;
         }
         this.isForceExiting = true;
+        this.qualityIntentSerial += 1;
+        this.qualityReadinessWait?.cancel();
         const exitSerial = this.audioTimelineSerial;
         this.crossfade.dispose();
         // 退出前把当前这首结算掉，够阈值的话至少能进离线队列，下次启动补交。
@@ -3138,6 +3148,7 @@ class TrackPlayer
             timedOutSources: new TimedOutSources(),
         };
         this.mpvManualSkipTransition = transition;
+        this.qualityReadinessWait?.check();
         trace("MPV 手动切歌事务开始", {
             id: token.id,
             reason,
@@ -3216,6 +3227,7 @@ class TrackPlayer
         this.mpvManualSkipTransition = null;
         this.mpvActiveTrackSyncSerial += 1;
         this.manualSkipGate.cancelPending();
+        this.qualityReadinessWait?.check();
         trace("MPV 手动切歌事务被新操作取消", {
             id: transition.token.id,
             reason,
@@ -3264,6 +3276,7 @@ class TrackPlayer
         this.mpvTrackTransitionGate.clear(transition.token);
         this.mpvManualSkipTransition = null;
         this.mpvActiveTrackSyncSerial += 1;
+        this.qualityReadinessWait?.check();
         trace("MPV 手动切歌事务完成", {
             id: transition.token.id,
             reason,
@@ -3381,6 +3394,7 @@ class TrackPlayer
         this.mpvTrackTransitionGate.clear(transition.token);
         this.mpvManualSkipTransition = null;
         this.mpvActiveTrackSyncSerial += 1;
+        this.qualityReadinessWait?.check();
         trace("MPV 手动切歌事务回滚", {
             id: transition.token.id,
             reason,
@@ -3451,24 +3465,114 @@ class TrackPlayer
         );
     }
 
+    private waitForQualityAudioReady(
+        musicItem: IMusic.IMusicItem,
+        isIntentCurrent: () => boolean,
+        timeoutMs: number,
+    ): Promise<"ready" | "cancelled" | "timeout"> {
+        return new Promise(resolve => {
+            let finished = false;
+            let timer: ReturnType<typeof BackgroundTimer.setTimeout> | undefined;
+            const subscriptions: PlayerAdapterSubscription[] = [];
+            const finish = (result: "ready" | "cancelled" | "timeout") => {
+                if (finished) return;
+                finished = true;
+                if (timer !== undefined) BackgroundTimer.clearTimeout(timer);
+                // A backend callback can resolve this while its listener array
+                // is being dispatched. Remove after that dispatch has finished.
+                Promise.resolve().then(() => subscriptions.forEach(subscription => {
+                    try {
+                        subscription.remove();
+                    } catch {}
+                }));
+                if (this.qualityReadinessWait === wait) this.qualityReadinessWait = null;
+                resolve(result);
+            };
+            const wait = {
+                check: () => {
+                    if (!isIntentCurrent()) return finish("cancelled");
+                    const transition = this.mpvManualSkipTransition;
+                    if (this.isMpvManualSkipTransitionActive(transition) &&
+                        transition!.token.expectedKey !== getMediaUniqueKey(musicItem)) {
+                        return finish("cancelled");
+                    }
+                    if (this.qualityAudioClockReady && !this.hasActiveMpvManualSkipTransition()) finish("ready");
+                },
+                cancel: () => finish("cancelled"),
+            };
+            this.qualityReadinessWait = wait;
+            for (const event of ["trackChanged", "renditionChanged"] as const) {
+                if (finished) break;
+                try {
+                    const subscription = this.backend.addEventListener(event, () => wait.check());
+                    subscriptions.push(subscription);
+                } catch {}
+            }
+            if (!finished) {
+                timer = BackgroundTimer.setTimeout(() => finish("timeout"), timeoutMs);
+                wait.check();
+            }
+        });
+    }
+
+    private sameAudioRendition(a: PlayerRenditionIdentity | null, b: PlayerRenditionIdentity | null) {
+        return a === null ? b === null : !!b && a.kind === b.kind &&
+            a.mediaId === b.mediaId && a.loadGeneration === b.loadGeneration;
+    }
+
+    private get qualityAudioClockReady() {
+        if (!this.audioTimelineAvailable) return false;
+        const owner = this.backend.getRenditionOwner?.() ?? null;
+        const active = this.backend.getActiveRendition?.() ?? null;
+        if (owner) return !!active && owner.kind === "audio" && active.kind === "audio" &&
+            this.sameAudioRendition(owner, active) && active.ready !== false;
+        return !active || (active.kind === "audio" && active.ready !== false &&
+            !!this.currentMusic && active.mediaId === getMediaUniqueKey(this.currentMusic));
+    }
+
     async changeQualityWithResult(
         newQuality: IMusic.IQualityKey,
     ): Promise<IQualityChangeResult> {
-        if (!this.audioTimelineAvailable) return { success: false, requestedQuality: newQuality, superseded: true };
+        const intent = ++this.qualityIntentSerial;
+        this.qualityReadinessWait?.cancel();
+        if (this.videoOwnsPlayback) return { success: false, requestedQuality: newQuality, superseded: true };
         this.musicVideo?.cancelResolving();
-        const requestToken = this.qualityChangeCoordinator.begin();
         const superseded = (): IQualityChangeResult => ({
             success: false,
             requestedQuality: newQuality,
             superseded: true,
         });
+        const musicItem = this.currentMusic;
+        if (!musicItem) return { success: false, requestedQuality: newQuality,
+            failure: createMediaSourceFailure("unavailable", { quality: newQuality }) };
+        const songSerial = this.currentSongSerial;
+        const videoSerial = this.videoOwnershipSerial;
+        const isIntentCurrent = () => intent === this.qualityIntentSerial && !this.isForceExiting &&
+            songSerial === this.currentSongSerial && videoSerial === this.videoOwnershipSerial &&
+            !this.videoOwnsPlayback && this.isCurrentMusic(musicItem);
+        const deadline = Date.now() + mediaSourceTimeoutMs;
+        while (!this.qualityAudioClockReady || this.hasActiveMpvManualSkipTransition()) {
+            if (!isIntentCurrent()) return superseded();
+            const remaining = deadline - Date.now();
+            const ready = remaining > 0
+                ? await this.waitForQualityAudioReady(musicItem, isIntentCurrent, remaining)
+                : "timeout";
+            if (ready === "cancelled" || !isIntentCurrent()) return superseded();
+            if (ready === "timeout") return { success: false, requestedQuality: newQuality,
+                failure: createMediaSourceFailure("backend-error", {
+                    mediaKey: getMediaUniqueKey(musicItem), quality: newQuality,
+                }) };
+        }
+        if (!isIntentCurrent()) return superseded();
+        const requestToken = this.qualityChangeCoordinator.begin();
+        const isRequestActive = () => isIntentCurrent() && this.qualityChangeCoordinator.isActive(requestToken);
         const fail = (
             failure: MediaSourceFailure,
-            musicItem?: IMusic.IMusicItem | null,
+            targetMusic?: IMusic.IMusicItem | null,
         ): IQualityChangeResult => {
             if (
-                !this.qualityChangeCoordinator.isActive(requestToken) ||
-                (musicItem && !this.isCurrentMusic(musicItem))
+                !isRequestActive() ||
+                (targetMusic && !this.isCurrentMusic(targetMusic))
             ) {
                 return superseded();
             }
@@ -3496,12 +3600,6 @@ class TrackPlayer
         }
 
         // 获取当前歌曲
-        const musicItem = this.currentMusic;
-        if (!musicItem) {
-            return fail(createMediaSourceFailure("unavailable", {
-                quality: newQuality,
-            }));
-        }
         // 正由其他来源播放时，换音质也在那个来源里换（原来源取不到地址）
         const alternatePlatform = getDefaultStore().get(alternateSourceInUseAtom)[
             getMediaUniqueKey(musicItem)
@@ -3520,6 +3618,9 @@ class TrackPlayer
         };
 
         let progress: PlayerAdapterProgress;
+        const clockOwner = this.backend.getRenditionOwner?.() ?? null;
+        const clockStillCurrent = () => isRequestActive() && this.qualityAudioClockReady &&
+            this.sameAudioRendition(clockOwner, this.backend.getRenditionOwner?.() ?? null);
         try {
             progress = await this.backend.getProgress();
         } catch {
@@ -3529,7 +3630,7 @@ class TrackPlayer
             ), musicItem);
         }
         if (
-            !this.qualityChangeCoordinator.isActive(requestToken) ||
+            !clockStillCurrent() ||
             !this.isCurrentMusic(musicItem)
         ) {
             return superseded();
@@ -3550,7 +3651,7 @@ class TrackPlayer
             );
         }
         if (
-            !this.qualityChangeCoordinator.isActive(requestToken) ||
+            !isRequestActive() ||
             !this.isCurrentMusic(musicItem)
         ) {
             return superseded();
@@ -3580,7 +3681,7 @@ class TrackPlayer
                 sourceItem === musicItem ? "plugin" : "similar-plugin",
             );
             if (
-                !this.qualityChangeCoordinator.isActive(requestToken) ||
+                !isRequestActive() ||
                 !this.isCurrentMusic(musicItem)
             ) {
                 return superseded();
@@ -3600,7 +3701,7 @@ class TrackPlayer
             const commit = await this.qualityChangeCoordinator.runLatest(
                 requestToken,
                 async (): Promise<IQualityChangeResult> => {
-                    if (!this.isCurrentMusic(musicItem)) {
+                    if (!this.isCurrentMusic(musicItem) || !clockStillCurrent()) {
                         return superseded();
                     }
                     const requestPosition = progress?.position;
@@ -3613,6 +3714,7 @@ class TrackPlayer
                         // Read again inside the commit queue, before replacing the old source.
                         const latestPosition = (await this.backend.getProgress())?.position;
                         if (
+                            clockStillCurrent() &&
                             typeof latestPosition === "number" &&
                             Number.isFinite(latestPosition) && latestPosition >= 0
                         ) {
@@ -3622,14 +3724,14 @@ class TrackPlayer
                         // Keep the request-time position if the backend cannot read it now.
                     }
                     if (
-                        !this.qualityChangeCoordinator.isActive(requestToken) ||
+                        !clockStillCurrent() ||
                         !this.isCurrentMusic(musicItem)
                     ) {
                         return superseded();
                     }
                     const playingState = await this.backend.getState();
                     if (
-                        !this.qualityChangeCoordinator.isActive(requestToken) ||
+                        !clockStillCurrent() ||
                         !this.isCurrentMusic(musicItem)
                     ) {
                         return superseded();
@@ -3650,9 +3752,7 @@ class TrackPlayer
                             isTargetCurrent: () =>
                                 this.isCurrentMusic(musicItem),
                             isRequestActive: () =>
-                                this.qualityChangeCoordinator.isActive(
-                                    requestToken,
-                                ),
+                                isRequestActive(),
                             applyQuality: () =>
                                 this.setQuality(resolvedQuality),
                         });
@@ -3947,6 +4047,7 @@ class TrackPlayer
 
     private setCurrentMusic(musicItem?: IMusic.IMusicItem | null) {
         if ((musicItem ? getMediaUniqueKey(musicItem) : null) !== (this.currentMusic ? getMediaUniqueKey(this.currentMusic) : null)) {
+            this.currentSongSerial += 1;
             this.audioTimelineSerial += 1;
             this.mpvActiveTrackSyncSerial += 1;
             this.musicVideo?.leaveForSongChange();
@@ -3962,6 +4063,7 @@ class TrackPlayer
 
             this.notifyPlaybackTrackChanged(null);
             this.emit(TrackPlayerEvents.CurrentMusicChanged, null);
+            this.qualityReadinessWait?.check();
             return;
         }
         const normalizedMusicItem =
@@ -3984,6 +4086,7 @@ class TrackPlayer
 
         this.notifyPlaybackTrackChanged(normalizedMusicItem);
         this.emit(TrackPlayerEvents.CurrentMusicChanged, normalizedMusicItem);
+        this.qualityReadinessWait?.check();
         this.syncLocalMusicArtwork(normalizedMusicItem).catch(error => {
             errorLog("同步本地音乐封面失败", error?.message ?? error);
         });
