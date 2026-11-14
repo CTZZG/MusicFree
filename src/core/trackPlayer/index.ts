@@ -3129,7 +3129,7 @@ class TrackPlayer
         reason: string,
     ): IMpvManualSkipTransition {
         const checkpoint = this.musicVideo?.checkpoint;
-        const previousWasVideo = !this.audioTimelineAvailable;
+        const previousWasVideo = this.videoOwnsPlayback;
         this.musicVideo?.leaveForSongChange();
         const sourceToken = this.qualityChangeCoordinator.begin();
         const token = this.mpvTrackTransitionGate.begin(
@@ -3297,11 +3297,18 @@ class TrackPlayer
         if (!this.isMpvManualSkipTransitionActive(transition)) {
             return false;
         }
-        const backendProgress = activeMusic && !transition.previousWasVideo
-            ? await this.backend.getProgress().catch(() => null)
-            : null;
+        const mayReadAudio = activeMusic && !transition.previousWasVideo && this.canReadAudioClockFor(activeMusic);
+        const clockOwner = mayReadAudio ? this.backend.getRenditionOwner?.() ?? null : null;
+        const clockActive = mayReadAudio ? this.backend.getActiveRendition?.() ?? null : null;
+        let backendProgress = mayReadAudio ? await this.backend.getProgress().catch(() => null) : null;
         if (!this.isMpvManualSkipTransitionActive(transition)) {
             return false;
+        }
+        if (backendProgress && (backendProgress.ready === false || !activeMusic ||
+            !this.canReadAudioClockFor(activeMusic) ||
+            !this.sameAudioRendition(clockOwner, this.backend.getRenditionOwner?.() ?? null) ||
+            !this.sameAudioRendition(clockActive, this.backend.getActiveRendition?.() ?? null))) {
+            backendProgress = null;
         }
 
         const restoredMusic = activeMusic ?? transition.previousMusic;
@@ -3520,14 +3527,20 @@ class TrackPlayer
             a.mediaId === b.mediaId && a.loadGeneration === b.loadGeneration;
     }
 
-    private get qualityAudioClockReady() {
-        if (!this.audioTimelineAvailable) return false;
+    private canReadAudioClockFor(musicItem: IMusic.IMusicItem) {
+        if (this.videoOwnsPlayback) return false;
         const owner = this.backend.getRenditionOwner?.() ?? null;
         const active = this.backend.getActiveRendition?.() ?? null;
         if (owner) return !!active && owner.kind === "audio" && active.kind === "audio" &&
-            this.sameAudioRendition(owner, active) && active.ready !== false;
+            this.sameAudioRendition(owner, active) && active.ready !== false &&
+            owner.mediaId === getMediaUniqueKey(musicItem);
         return !active || (active.kind === "audio" && active.ready !== false &&
-            !!this.currentMusic && active.mediaId === getMediaUniqueKey(this.currentMusic));
+            active.mediaId === getMediaUniqueKey(musicItem));
+    }
+
+    private get qualityAudioClockReady() {
+        const music = this.currentMusic;
+        return !!music && this.audioTimelineAvailable && this.canReadAudioClockFor(music);
     }
 
     async changeQualityWithResult(

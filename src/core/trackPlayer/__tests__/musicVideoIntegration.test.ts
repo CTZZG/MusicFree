@@ -694,3 +694,80 @@ it("rejects an old progress read if the song changes away and back", async () =>
     await expect(changing).resolves.toMatchObject({ success: false, superseded: true });
     expect(plugin.methods.getMediaSource).not.toHaveBeenCalled();
 });
+
+it("unready ordinary audio is not classified as an outgoing MV (plan A2)", () => {
+    mockBackend.getActiveRendition = jest.fn(() => ({ ...owner, ready: false }));
+    player.setCurrentMusic(song);
+    const transition = player.beginMpvManualSkipTransition({ ...song, id: "B" }, song, "test-next");
+    expect(transition.previousWasVideo).toBe(false);
+});
+
+it("rolls back unready ordinary audio without reading an unready clock", async () => {
+    const next = { ...song, id: "B" };
+    player.cancelMpvManualSkipTransition("test-start");
+    mockBackend.getActiveRendition = jest.fn(() => ({ ...owner, ready: false }));
+    mockBackend.active = { track: song, index: 0 };
+    mockBackend.getProgress = jest.fn(async () => ({ position: 0, duration: 300, buffered: 0, ready: false }));
+    mockBackend.restoreActiveTrack = jest.fn(async () => true);
+    mockBackend.seekTo = jest.fn(async () => undefined);
+    player.setCurrentMusic(song);
+    const transition = player.beginMpvManualSkipTransition(next, song, "test-next");
+    transition.previousProgress = { position: 37, duration: 300, buffered: 37 };
+    player.setCurrentMusic(next);
+    const setSource = jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+    await expect(player.rollbackMpvManualSkipTransition(transition, "test-failure")).resolves.toBe(true);
+    expect(transition.previousWasVideo).toBe(false);
+    expect(mockBackend.getProgress).not.toHaveBeenCalled();
+    expect(mockBackend.restoreActiveTrack).toHaveBeenCalledTimes(1);
+    expect(mockBackend.seekTo).toHaveBeenCalledWith(37);
+    expect(setSource).not.toHaveBeenCalled();
+});
+
+it("discards a rollback progress sample that becomes unready", async () => {
+    const next = { ...song, id: "B" };
+    player.cancelMpvManualSkipTransition("test-start");
+    mockBackend.active = { track: song, index: 0 };
+    mockBackend.getProgress = jest.fn(async () => ({ position: 0, duration: 300, buffered: 0, ready: false }));
+    mockBackend.restoreActiveTrack = jest.fn(async () => true);
+    mockBackend.seekTo = jest.fn(async () => undefined);
+    player.setCurrentMusic(song);
+    const transition = player.beginMpvManualSkipTransition(next, song, "test-next");
+    transition.previousProgress = { position: 37, duration: 300, buffered: 37 };
+    player.setCurrentMusic(next);
+    await expect(player.rollbackMpvManualSkipTransition(transition, "test-failure")).resolves.toBe(true);
+    expect(mockBackend.getProgress).toHaveBeenCalledTimes(1);
+    expect(mockBackend.seekTo).toHaveBeenCalledWith(37);
+});
+
+it("discards rollback progress if the native audio owner changes during the read", async () => {
+    const next = { ...song, id: "B" };
+    let release!: (value: any) => void;
+    player.cancelMpvManualSkipTransition("test-start");
+    mockBackend.active = { track: song, index: 0 };
+    mockBackend.getProgress = jest.fn(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    mockBackend.restoreActiveTrack = jest.fn(async () => true);
+    mockBackend.seekTo = jest.fn(async () => undefined);
+    player.setCurrentMusic(song);
+    const transition = player.beginMpvManualSkipTransition(next, song, "test-next");
+    transition.previousProgress = { position: 37, duration: 300, buffered: 37 };
+    player.setCurrentMusic(next);
+    const rollback = player.rollbackMpvManualSkipTransition(transition, "test-failure");
+    await tick();
+    owner = { kind: "audio", mediaId: getMediaUniqueKey(next), loadGeneration: 2 };
+    release({ position: 91, duration: 300, buffered: 91, ready: true });
+    await expect(rollback).resolves.toBe(true);
+    expect(mockBackend.seekTo).toHaveBeenCalledWith(37);
+});
+
+it("still classifies a returning MV as video when its native owner is audio", () => {
+    player.cancelMpvManualSkipTransition("test-start");
+    player.initializeMusicVideo();
+    player.musicVideo.block(true);
+    player.musicVideo.publish({ phase: "returning", songKey: getMediaUniqueKey(song),
+        owner, video: { id: "clip", title: "Video", artist: "Artist", providerName: "test" }, canReturn: true });
+    expect(player.musicVideo.snapshot.phase).toBe("returning");
+    const transition = player.beginMpvManualSkipTransition({ ...song, id: "B" }, song, "test-next");
+    expect(transition.previousWasVideo).toBe(true);
+});
