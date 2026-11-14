@@ -59,13 +59,14 @@ on:
                     - '14'
                     - '17'
             e2e_all_prelude:
-                description: 'all 的起始状态：post-mv 保留 MV 往返；audio-first 验证首次安装后普通播放'
+                description: 'all 的起始状态：both 依次验证首次安装及 MV 往返；也可选单个模式诊断'
                 required: false
                 default: 'post-mv'
                 type: choice
                 options:
                     - post-mv
                     - audio-first
+                    - both
 
 jobs:
     check-version:
@@ -74,9 +75,23 @@ jobs:
         outputs:
             should_build: ${{ steps.version_check.outputs.should_build }}
             version: ${{ steps.version_check.outputs.version }}
+            e2e_preludes: ${{ steps.e2e_plan.outputs.preludes }}
         steps:
             - name: Checkout
               uses: actions/checkout@v5
+
+            - name: Validate E2E starting states
+              id: e2e_plan
+              env:
+                  SELECTED_SUITE: ${{ inputs.e2e_suite || 'all' }}
+                  SELECTED_PRELUDE: ${{ inputs.e2e_all_prelude || 'post-mv' }}
+              run: |
+                  source e2e/lib/all_prelude.sh
+                  if ! preludes=$(resolve_workflow_preludes "$SELECTED_SUITE" "$SELECTED_PRELUDE"); then
+                    echo '::error title=E2E::The selected prelude is not valid for this suite.'
+                    exit 1
+                  fi
+                  echo "preludes=$preludes" >> "$GITHUB_OUTPUT"
 
             - name: Check version format
               id: version_check
@@ -363,11 +378,16 @@ jobs:
 
     # 在 Android 模拟器上装刚打出的 APK（默认 x86_64），跑 e2e/ 里的端到端测试（说明见 e2e/README.md）
     e2e:
-        name: Emulator E2E
+        name: ${{ inputs.e2e_all_prelude == 'both' && format('Emulator E2E ({0})', matrix.prelude) || 'Emulator E2E' }}
         needs: [check-version, build-beta]
         if: >-
-            !cancelled() && inputs.e2e &&
+            !cancelled() && needs.check-version.result == 'success' && inputs.e2e &&
             (needs.build-beta.result == 'success' || inputs.e2e_apk_run_id != '')
+        strategy:
+            fail-fast: false
+            max-parallel: 1
+            matrix:
+                prelude: ${{ fromJSON(needs.check-version.outputs.e2e_preludes) }}
         # Android 17（android-37.0）镜像在 ubuntu-24.04 主机上，SurfaceFlinger 每隔几十秒就在
         # GoldfishMapper::readFromHost 断言 hasReadColorBufferDma 失败退出，系统框架跟着重启（Beta #196）；
         # 别的项目报告同样的模拟器在 ubuntu-26.04 主机上不出现。Android 14 仍用 ubuntu-latest
@@ -575,7 +595,7 @@ jobs:
               uses: reactivecircus/android-emulator-runner@v2
               env:
                   E2E_SUITE: ${{ inputs.e2e_suite || 'all' }}
-                  E2E_ALL_PRELUDE: ${{ inputs.e2e_all_prelude || 'post-mv' }}
+                  E2E_ALL_PRELUDE: ${{ matrix.prelude }}
                   E2E_AUDIO_HARDENING: ${{ inputs.e2e_android == '17' && 'throw' || '' }}
                   # 测的 APK 不是按这次的提交打包时，写进结果
                   E2E_APK_SOURCE: ${{ inputs.e2e_apk_run_id != '' && format('Beta 运行 {0} 打出的 APK', inputs.e2e_apk_run_id) || (inputs.build_ref != '' && format('按提交 {0} 打包的 APK', inputs.build_ref) || '') }}
@@ -609,7 +629,7 @@ jobs:
               if: always()
               uses: actions/upload-artifact@v7
               with:
-                  name: e2e-results-${{ github.run_id }}
+                  name: ${{ inputs.e2e_all_prelude == 'both' && format('e2e-results-{0}-{1}', github.run_id, matrix.prelude) || format('e2e-results-{0}', github.run_id) }}
                   path: e2e-results
                   if-no-files-found: ignore
                   retention-days: 14
@@ -617,7 +637,7 @@ jobs:
             # 截图和结果另外推到一个不显示在分支列表里的引用（每次覆盖），
             # 不用下载 Actions 附件也能取到：git fetch origin refs/e2e/latest
             - name: Publish screenshots to refs/e2e/latest
-              if: always() && hashFiles('e2e-results/summary.md') != ''
+              if: always() && inputs.e2e_all_prelude != 'both' && hashFiles('e2e-results/summary.md') != ''
               env:
                   GH_TOKEN: ${{ github.token }}
               run: |

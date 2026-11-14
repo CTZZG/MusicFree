@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
 # The full suite has two explicit starting conditions. The audio-first mode is
 # only valid on a device where this app is not yet installed; never clear data.
+
+# The workflow expands "both" into separate jobs before launching an emulator.
+# The device script below still accepts exactly one concrete starting state.
+resolve_workflow_preludes() {
+    local suite="$1" prelude="$2"
+    case "$prelude" in
+        post-mv) printf '%s\n' '["post-mv"]' ;;
+        audio-first)
+            [ "$suite" = all ] || return 2
+            printf '%s\n' '["audio-first"]' ;;
+        both)
+            [ "$suite" = all ] || return 2
+            printf '%s\n' '["audio-first","post-mv"]' ;;
+        *) return 2 ;;
+    esac
+}
+
 validate_all_prelude() {
     case "$E2E_ALL_PRELUDE" in
         post-mv) return 0 ;;

@@ -16,6 +16,17 @@ adb() {
 
 E2E_SUITE=all E2E_ALL_PRELUDE=audio-first
 validate_all_prelude
+[ "$(resolve_workflow_preludes all both)" = '["audio-first","post-mv"]' ]
+[ "$(resolve_workflow_preludes all audio-first)" = '["audio-first"]' ]
+[ "$(resolve_workflow_preludes all post-mv)" = '["post-mv"]' ]
+[ "$(resolve_workflow_preludes mv post-mv)" = '["post-mv"]' ]
+if resolve_workflow_preludes mv both >/dev/null; then exit 1; fi
+if resolve_workflow_preludes mv audio-first >/dev/null; then exit 1; fi
+if resolve_workflow_preludes all unexpected >/dev/null; then exit 1; fi
+status=0
+E2E_SUITE=all E2E_ALL_PRELUDE=both bash "$HERE_TEST/../run.sh" dummy.apk abc "$OUT/invalid-both" > "$OUT/invalid-both.log" 2>&1 || status=$?
+[ "$status" -eq 2 ]
+grep -Fq 'Invalid all-suite prelude: both for all' "$OUT/invalid-both.log"
 check_audio_first_install
 grep -Fq 'PASS 普通首启：应用此前未安装' "$EVENTS"
 ADB_PACKAGES='package:fun.upup.musicfree'
@@ -65,4 +76,5 @@ cold_start = script.index('adb shell am force-stop "$PKG"')
 assert first_install_check < install < plugins < prelude < last_audio_check < pre_cold_check < cold_start
 assert 'E2E_ALL_PRELUDE=${E2E_ALL_PRELUDE:-post-mv}' in script
 PY
+python3 -I "$HERE_TEST/all_prelude_workflow_test.py"
 echo 'All-suite prelude host boundary checks passed'
