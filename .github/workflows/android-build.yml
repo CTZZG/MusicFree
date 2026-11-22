@@ -66,6 +66,12 @@ jobs:
                   java-version: ${{ env.JAVA_VERSION }}
                   cache: gradle
 
+            - name: Cache Robolectric runtime
+              uses: actions/cache@v5
+              with:
+                  path: ~/.m2/repository/org/robolectric
+                  key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
+
             - name: Generate build metadata
               run: |
                   INPUT_VERSION="${{ inputs.version_name }}"
@@ -209,12 +215,12 @@ jobs:
             - name: Android unit tests
               working-directory: ./android
               run: |
-                  if ! ./gradlew testReleaseUnitTest \
+                  if ! ./gradlew :app:testReleaseUnitTest \
                     --no-daemon \
                     --stacktrace \
                     --max-workers=2 \
                     -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"; then
-                    echo "::error title=Android unit tests failed::testReleaseUnitTest failed. The test report is attached as an artifact of this run."
+                    echo "::error title=Android unit tests failed::Gradle :app:testReleaseUnitTest failed. The test report is attached as an artifact of this run."
                     exit 1
                   fi
 

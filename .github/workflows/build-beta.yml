@@ -139,6 +139,12 @@ jobs:
                   distribution: 'temurin'
                   cache: 'gradle'
 
+            - name: Cache Robolectric runtime
+              uses: actions/cache@v5
+              with:
+                  path: ~/.m2/repository/org/robolectric
+                  key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
+
             # 与稳定版共用同一个质量门：安装依赖并通过检查后才进入 Android 构建
             - name: Quality gate
               uses: ./.github/actions/quality-gate
@@ -256,7 +262,7 @@ jobs:
             - name: Android unit tests
               run: |
                   cd android
-                  ./gradlew testReleaseUnitTest \
+                  ./gradlew :app:testReleaseUnitTest \
                     --no-daemon \
                     --stacktrace \
                     --max-workers=2 \

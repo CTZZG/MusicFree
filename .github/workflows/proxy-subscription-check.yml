@@ -67,6 +67,11 @@ jobs:
                   distribution: temurin
                   java-version: '17'
                   cache: gradle
+            - name: Cache Robolectric runtime
+              uses: actions/cache@v5
+              with:
+                  path: ~/.m2/repository/org/robolectric
+                  key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
             - run: npm ci --no-audit --no-fund
             - name: Check raw sample export failure paths
               run: |

@@ -2798,7 +2798,8 @@ class MpvPlayerModule internal constructor(
         // already-started automatic successor when its predecessor failed.
         stopOwnedPlayback()
         runCatching { videoOutput.detach() }.onFailure { Log.w(TAG, "failed file surface cleanup failed", it) }
-        emitError("E_MPV_FILE_END", "Playback failed (mpv error " + terminal.error + ")",
+        val errorCode = if (terminal.file.kind == "mv" && !terminal.file.loaded) "E_VIDEO_LOAD_FAILED" else "E_MPV_FILE_END"
+        emitError(errorCode, "Playback failed (mpv error " + terminal.error + ")",
             terminal.file.id, terminal.error, terminal.reason.name.lowercase())
     }
 

@@ -105,6 +105,13 @@ jobs:
                   distribution: 'temurin'
                   cache: 'gradle'
 
+            - name: Cache Robolectric runtime
+              if: steps.changes.outputs.native == 'true'
+              uses: actions/cache@v5
+              with:
+                  path: ~/.m2/repository/org/robolectric
+                  key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
+
             - name: Run Android unit tests
               if: steps.changes.outputs.native == 'true'
               working-directory: ./android
@@ -113,7 +120,7 @@ jobs:
                   # 同时只查 NewApi：minSdk 34 是支持的下限，新 API 要先判断系统版本。
                   # lint 的 K2 Kotlin 前端分析 react-native-worklets 时会崩（Cannot find a
                   # KaModule for the VirtualFile），用 K1
-                  ./gradlew testDebugUnitTest :app:lintDebug -PmusicfreeNewApiLint -Pandroid.lint.useK2Uast=false \
+                  ./gradlew :app:testDebugUnitTest :app:lintDebug -PmusicfreeNewApiLint -Pandroid.lint.useK2Uast=false \
                     --no-daemon \
                     --stacktrace \
                     --max-workers=2 \
@@ -140,7 +147,7 @@ jobs:
               if: always()
               run: |
                   if [ "${{ steps.changes.outputs.native }}" = "true" ]; then
-                    echo "Android unit tests and NewApi lint ran (testDebugUnitTest, lintDebug)." >> "$GITHUB_STEP_SUMMARY"
+                    echo "Android unit tests and NewApi lint ran (:app:testDebugUnitTest, :app:lintDebug)." >> "$GITHUB_STEP_SUMMARY"
                   else
                     echo "No native-related changes; Android unit tests skipped." >> "$GITHUB_STEP_SUMMARY"
                   fi

@@ -416,4 +416,35 @@ class MpvPlayerModuleRegressionTest {
         engine.failSeek = true
         assertEquals("E_MPV_RELOAD_REQUIRED", call { module.resume(it) }.code)
     }
+
+    @Test fun unloadedMvFailureReportsVideoLoadFailedAndAllowsAudioReturn() {
+        val mvId = video(ready = false)
+        events.clear(); engine.commands.clear()
+        end(mvId, 4, -13)
+        val error = errors().single().second
+        assertEquals("E_VIDEO_LOAD_FAILED", error["code"])
+        assertEquals("a", error["mediaId"])
+        assertEquals(2.0, error["loadGeneration"])
+        assertEquals("mv", error["renditionKind"])
+        assertEquals(-13.0, error["mpvError"])
+        assertEquals("error", error["mpvReason"])
+        val info = call { module.getVideoInfo(it) }.value as WritableMap
+        assertEquals("mv", info.getString("kind"))
+        assertEquals(2.0, info.getDouble("loadGeneration"), 0.0)
+        assertTrue(info.getBoolean("failed"))
+        assertFalse(info.getBoolean("suspended"))
+        assertEquals(37.25, info.getDouble("outgoingAudioPosition"), 0.0)
+        assertNull(call { module.loadAndPlay(map(
+            "url", "https://example.test/a", "mediaId", "a", "loadGeneration", 3.0,
+            "expectedMediaId", "a", "expectedLoadGeneration", 2.0, "renditionKind", "audio",
+            "positionMode", "restore-audio", "startPosition", 37.25, "autoPlay", false), it) }.code)
+
+        // Premature EOF before FILE_LOADED on an MV also reports E_VIDEO_LOAD_FAILED.
+        val mvEofId = video(ready = false)
+        events.clear()
+        end(mvEofId, 0, 0)
+        val eofError = errors().single().second
+        assertEquals("E_VIDEO_LOAD_FAILED", eofError["code"])
+        assertEquals("eof", eofError["mpvReason"])
+    }
 }
