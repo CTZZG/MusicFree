@@ -5,6 +5,8 @@ export enum TrackPlayerEvents {
     CurrentMusicChanged = "current-music-changed",
     // 进度更新
     ProgressChanged = "progress-changed",
+    AudioTimelineChanged = "audio-timeline-changed",
+    MusicVideoOwnershipChanged = "music-video-ownership-changed",
     // 非 WIFI 环境且未允许移动网络播放（UI 层应提示用户）
     CellularPlayForbidden = "cellular-play-forbidden",
     // 已自动跳过一首被标记为不喜欢的歌曲（UI 层应提示用户）

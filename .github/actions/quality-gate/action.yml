@@ -42,7 +42,10 @@ runs:
           run: |
               bash native/mpv/test-latency.sh
               python3 -I native/mpv/check-short-read.py
+              python3 -I native/mpv/check-surface-resize.py
               python3 -I native/mpv/verify-bundle.py
+              python3 -I native/mpv/bridge/check-events.py
+              python3 -I native/mpv/bridge/test-bundle.py
               python3 -I native/mpv/check-seek-clock.py --self-test
 
         - name: Check screens native listener ownership and concurrent initialization

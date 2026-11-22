@@ -199,6 +199,12 @@ class AppConfig implements IAppConfig {
         await this.migrateConfig();
     }
 
+    onConfigChanged(key: AppConfigPropertyKey, listener: () => void) {
+        return configStore.addOnValueChangedListener(changed => {
+            if (changed === key) listener();
+        });
+    }
+
     setConfig<K extends keyof IAppConfigProperties>(
         key: K,
         value?: IAppConfigProperties[K] | undefined,

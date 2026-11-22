@@ -8,7 +8,7 @@ import { useI18N } from "@/core/i18n";
 import LocalMusicSheet from "@/core/localMusicSheet";
 import PluginManager from "@/core/pluginManager";
 import TrackPlayer, {
-    useCurrentMusic,
+    useCurrentMusic, useMusicVideoView,
     useRepeatMode,
 } from "@/core/trackPlayer";
 import delay from "@/utils/delay";
@@ -59,6 +59,7 @@ interface IPlayerActionsProps {
 export default function PlayerActions(props: IPlayerActionsProps) {
     const { lyricTab } = props;
     const musicItem = useCurrentMusic();
+    const { videoMode: isVideo } = useMusicVideoView();
     const repeatMode = useRepeatMode();
     const isDownloaded = LocalMusicSheet.useIsLocal(musicItem);
     const { t } = useI18N();
@@ -84,7 +85,7 @@ export default function PlayerActions(props: IPlayerActionsProps) {
                     });
                 }}
             />
-            {lyricTab ? (
+            {lyricTab && !isVideo ? (
                 <ActionButton
                     icon="lyric"
                     selected={lyricTab.showingLyric}
@@ -101,7 +102,7 @@ export default function PlayerActions(props: IPlayerActionsProps) {
                 accessibilityLabel={
                     isDownloaded
                         ? t("panel.musicItemOptions.downloaded")
-                        : t("common.download")
+                        : t(isVideo ? "musicVideo.audioOnly" : "common.download")
                 }
                 onPress={() => {
                     if (musicItem && !isDownloaded) {

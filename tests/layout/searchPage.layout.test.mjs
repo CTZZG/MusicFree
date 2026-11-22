@@ -192,7 +192,7 @@ function renderSearch(env, {phase = 'idle', params = {}, allFailed = false} = {}
                 getByHash: () => null,
                 getByMedia: () => ({instance: {}}),
             },
-            usePluginEnabledRevision: () => 0,
+            usePluginRuntimeRevision: () => 0,
         }),
         'react-native-tab-view': createTabViewStub(),
         '@shopify/flash-list': strictStub('@shopify/flash-list', {FlashList: FlashListGrid}),

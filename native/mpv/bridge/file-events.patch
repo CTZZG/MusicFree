@@ -1,0 +1,226 @@
+--- a/libmpv/src/main/cpp/event.cpp
++++ b/libmpv/src/main/cpp/event.cpp
+@@ -72,6 +72,7 @@
+         return nullptr;
+     }
+ 
++    int64_t current_entry_id = -1;
+     while (true) {
+         mpv_event *mp_event;
+         mpv_event_property *mp_property;
+@@ -86,9 +87,36 @@
+             continue;
+ 
+         switch (mp_event->event_id) {
++        case MPV_EVENT_START_FILE: {
++            const auto *start = static_cast<mpv_event_start_file*>(mp_event->data);
++            current_entry_id = start ? start->playlist_entry_id : -1;
++            if (mpv_MPVLib_eventWithFile) env->CallVoidMethod(instance->javaObject, mpv_MPVLib_eventWithFile,
++                (jint)mp_event->event_id, (jlong)current_entry_id);
++            else sendEventToJava(env, instance, mp_event->event_id);
++            break;
++        }
++        case MPV_EVENT_FILE_LOADED:
++        case MPV_EVENT_PLAYBACK_RESTART:
++            if (mpv_MPVLib_eventWithFile) env->CallVoidMethod(instance->javaObject, mpv_MPVLib_eventWithFile,
++                (jint)mp_event->event_id, (jlong)current_entry_id);
++            else sendEventToJava(env, instance, mp_event->event_id);
++            break;
++        case MPV_EVENT_END_FILE: {
++            if (!mpv_MPVLib_eventEndFile) {
++                sendEventToJava(env, instance, mp_event->event_id);
++                break;
++            }
++            const auto *end = static_cast<mpv_event_end_file*>(mp_event->data);
++            if (end) {
++                // Copy the borrowed event data before the next mpv_wait_event.
++                env->CallVoidMethod(instance->javaObject, mpv_MPVLib_eventEndFile,
++                    (jint)end->reason, (jint)end->error, (jlong)end->playlist_entry_id,
++                    (jlong)end->playlist_insert_id, (jint)end->playlist_insert_num_entries);
++            }
++            break;
++        }
+         case MPV_EVENT_LOG_MESSAGE:
+             msg = (mpv_event_log_message*)mp_event->data;
+-            ALOGV("[%s:%s] %s", msg->prefix, msg->level, msg->text);
+             sendLogMessageToJava(env, instance, msg);
+             break;
+         case MPV_EVENT_PROPERTY_CHANGE:
+--- a/libmpv/src/main/cpp/jni_utils.cpp
++++ b/libmpv/src/main/cpp/jni_utils.cpp
+@@ -43,6 +43,10 @@
+         mpv_MPVLib_eventProperty_Sd = env->GetMethodID(mpv_MPVLib, "eventProperty", "(Ljava/lang/String;D)V"); // eventProperty(String, double)
+         mpv_MPVLib_eventProperty_SS = env->GetMethodID(mpv_MPVLib, "eventProperty", "(Ljava/lang/String;Ljava/lang/String;)V"); // eventProperty(String, String)
+         mpv_MPVLib_event = env->GetMethodID(mpv_MPVLib, "event", "(I)V"); // event(int)
++        mpv_MPVLib_eventWithFile = env->GetMethodID(mpv_MPVLib, "eventWithFile", "(IJ)V");
++        if (env->ExceptionCheck()) env->ExceptionClear(); // optional on older Java bridge
++        mpv_MPVLib_eventEndFile = env->GetMethodID(mpv_MPVLib, "eventEndFile", "(IIJJI)V");
++        if (env->ExceptionCheck()) env->ExceptionClear();
+         mpv_MPVLib_logMessage_SiS = env->GetMethodID(mpv_MPVLib, "logMessage", "(Ljava/lang/String;ILjava/lang/String;)V"); // logMessage(String, int, String)
+     });
+ }
+--- a/libmpv/src/main/cpp/jni_utils.h
++++ b/libmpv/src/main/cpp/jni_utils.h
+@@ -22,4 +22,6 @@
+         mpv_MPVLib_eventProperty_Sd,
+         mpv_MPVLib_eventProperty_SS,
+         mpv_MPVLib_event,
++        mpv_MPVLib_eventWithFile,
++        mpv_MPVLib_eventEndFile,
+         mpv_MPVLib_logMessage_SiS;
+--- a/libmpv/src/main/cpp/main.cpp
++++ b/libmpv/src/main/cpp/main.cpp
+@@ -4,6 +4,7 @@
+ #include <ctime>
+ #include <clocale>
+ #include <atomic>
++#include <cstring>
+ 
+ #include <mpv/client.h>
+ 
+@@ -27,6 +28,8 @@
+     jni_func(void, nativeInit, jlong instance);
+     jni_func(void, nativeDestroy, jlong instance);
+     jni_func(void, nativeCommand, jlong instance, jobjectArray jarray);
++    jni_func(jlong, nativeLoadFile, jlong instance, jobjectArray jarray);
++    jni_func(jint, nativeEventProtocolVersion);
+ };
+ 
+ static void prepare_environment(JNIEnv *env, MPVInstance* instance) {
+@@ -104,34 +107,62 @@
+     delete mpv_instance;
+ }
+ 
+-jni_func(void, nativeCommand, jlong instance, jobjectArray jarray) {
+-    auto mpv_instance = reinterpret_cast<MPVInstance*>(instance);
+-    if (!mpv_instance->mpv) {
+-        ALOGE("Cannot run command: mpv is not initialized");
+-        return;
++static jlong run_command(JNIEnv *env, jlong instance, jobjectArray jarray, bool load_file) {
++    auto player = reinterpret_cast<MPVInstance*>(instance);
++    if (!player || !player->mpv || !jarray) {
++        throw_java_exception(env, "mpv command has no player or arguments");
++        return -1;
+     }
+-
+-    const char *arguments[128] = { nullptr };
+-    jstring stringRefs[128] = { nullptr };
+-
+-    int len = env->GetArrayLength(jarray);
+-
+-    if (len >= ARRAYLEN(arguments)) {
+-        ALOGE("Cannot run command: too many arguments");
+-        return;
++    const int len = env->GetArrayLength(jarray);
++    if (len <= 0 || len >= 128) {
++        throw_java_exception(env, "invalid mpv command argument count");
++        return -1;
+     }
+-
++    const char *arguments[128] = {};
++    jstring refs[128] = {};
+     for (int i = 0; i < len; ++i) {
+-        stringRefs[i] = (jstring)env->GetObjectArrayElement(jarray, i);
+-        arguments[i] = env->GetStringUTFChars(stringRefs[i], nullptr);
++        refs[i] = static_cast<jstring>(env->GetObjectArrayElement(jarray, i));
++        if (!refs[i]) break;
++        arguments[i] = env->GetStringUTFChars(refs[i], nullptr);
++        if (!arguments[i]) break;
+     }
+-
+-    mpv_command(mpv_instance->mpv, arguments);
+-
+-    for (int i = 0; i < len; ++i) {
+-        if (stringRefs[i]) {
+-            env->ReleaseStringUTFChars(stringRefs[i], arguments[i]);
+-            env->DeleteLocalRef(stringRefs[i]);
++    int status = MPV_ERROR_INVALID_PARAMETER;
++    jlong entry_id = -1;
++    mpv_node result = {};
++    if (!env->ExceptionCheck() && arguments[len - 1]) {
++        if (load_file && std::strcmp(arguments[0], "loadfile") == 0) {
++            status = mpv_command_ret(player->mpv, arguments, &result);
++            if (status >= 0 && result.format == MPV_FORMAT_NODE_MAP) {
++                for (int n = 0; n < result.u.list->num; ++n) {
++                    const auto &value = result.u.list->values[n];
++                    if (std::strcmp(result.u.list->keys[n], "playlist_entry_id") == 0 &&
++                        value.format == MPV_FORMAT_INT64) entry_id = value.u.int64;
++                }
++            }
++        } else if (!load_file) {
++            status = mpv_command(player->mpv, arguments);
+         }
+     }
++    mpv_free_node_contents(&result);
++    for (int i = 0; i < len; ++i) {
++        if (arguments[i]) env->ReleaseStringUTFChars(refs[i], arguments[i]);
++        if (refs[i]) env->DeleteLocalRef(refs[i]);
++    }
++    if (!env->ExceptionCheck()) {
++        if (status < 0) throw_java_exception(env, mpv_error_string(status));
++        else if (load_file && entry_id < 0) throw_java_exception(env, "loadfile returned no playlist entry ID");
++    }
++    return entry_id;
+ }
++
++jni_func(void, nativeCommand, jlong instance, jobjectArray jarray) {
++    run_command(env, instance, jarray, false);
++}
++
++jni_func(jlong, nativeLoadFile, jlong instance, jobjectArray jarray) {
++    return run_command(env, instance, jarray, true);
++}
++
++jni_func(jint, nativeEventProtocolVersion) {
++    return mpv_MPVLib_eventWithFile && mpv_MPVLib_eventEndFile ? 2 : 0;
++}
+--- a/libmpv/src/main/java/dev/jdtech/mpv/MPVLib.kt
++++ b/libmpv/src/main/java/dev/jdtech/mpv/MPVLib.kt
+@@ -72,6 +72,16 @@
+     }
+     private external fun nativeCommand(instance: Long, cmd: Array<String>)
+ 
++    /** Native result keeps the exact 64-bit playlist entry ID. */
++    fun loadFile(cmd: Array<String>): Long {
++        checkCreated()
++        return nativeLoadFile(nativeInstance, cmd)
++    }
++    private external fun nativeLoadFile(instance: Long, cmd: Array<String>): Long
++
++    fun getEventProtocolVersion(): Int = nativeEventProtocolVersion()
++    private external fun nativeEventProtocolVersion(): Int
++
+     fun setOptionString(name: String, value: String): Int {
+         checkCreated()
+         return nativeSetOptionString(nativeInstance, name, value)
+@@ -176,6 +186,18 @@
+         synchronized(observers) {
+             for (o in observers)
+                 o.eventProperty(property)
++        }
++    }
++
++    fun eventWithFile(eventId: Int, entryId: Long) {
++        synchronized(observers) {
++            for (o in observers) o.eventWithFile(eventId, entryId)
++        }
++    }
++
++    fun eventEndFile(reason: Int, error: Int, entryId: Long, insertId: Long, insertCount: Int) {
++        synchronized(observers) {
++            for (o in observers) o.eventEndFile(reason, error, entryId, insertId, insertCount)
+         }
+     }
+ 
+@@ -212,6 +234,11 @@
+         fun eventProperty(property: String, value: Boolean)
+         fun eventProperty(property: String, value: String)
+         fun event(eventId: Int)
++        // Existing numeric-only observers still receive each event exactly once.
++        fun eventWithFile(eventId: Int, entryId: Long) { event(eventId) }
++        fun eventEndFile(reason: Int, error: Int, entryId: Long, insertId: Long, insertCount: Int) {
++            event(MpvEvent.MPV_EVENT_END_FILE)
++        }
+     }
+ 
+     interface LogObserver {

@@ -36,6 +36,11 @@ FOCUS_PKG=fun.upup.musicfree.e2e.focus
 E2E_LEGACY_APK=${E2E_LEGACY_APK:-}
 E2E_MMKV_SEED=${E2E_MMKV_SEED:-}
 E2E_SUITE=${E2E_SUITE:-all}
+E2E_ALL_PRELUDE=${E2E_ALL_PRELUDE:-post-mv}
+case "$E2E_SUITE" in
+    all|experience|lyric-boundaries|playback-font|player-observation|storage|download-source|power|library|backup|perf|crash|mv) ;;
+    *) echo "Unknown E2E_SUITE: $E2E_SUITE" >&2; exit 2 ;;
+esac
 E2E_AUDIO_HARDENING=${E2E_AUDIO_HARDENING:-}
 
 mkdir -p "$OUT/screens" "$OUT/maestro"
@@ -47,6 +52,11 @@ DRIVER_INSTALLED=0
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 pass() { printf 'PASS\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "PASS $1 ${2:-}"; }
 fail() { printf 'FAIL\t%s\t%s\n' "$1" "${2:-}" >> "$RESULTS"; log "FAIL $1 ${2:-}"; FAILED=$((FAILED + 1)); }
+source "$HERE/lib/all_prelude.sh"
+if ! validate_all_prelude; then
+    echo "Invalid all-suite prelude: $E2E_ALL_PRELUDE for $E2E_SUITE" >&2
+    exit 2
+fi
 shot() { adb exec-out screencap -p > "$OUT/screens/$1.png" 2>/dev/null || true; }
 # 播放会话、暂停、“视频”打断的判断（session、stays_paused、held_until_video_ends……）
 # shellcheck source=lib/pause_checks.sh
@@ -75,6 +85,13 @@ flow() {
         n=$((n + 1))
         tag="${file%.yaml}-$n"
     done
+    # Flows can live in a subdirectory (for example mv/start.yaml). The
+    # handoff and CLI both write beside this prefix before Maestro creates
+    # its own output directory, so establish the parent first.
+    if ! mkdir -p "$(dirname "$OUT/maestro/$tag")"; then
+        fail "$name" "无法创建测试日志目录，未启动测试驱动"
+        return 1
+    fi
     local args=(test --test-output-dir "$OUT/maestro/$tag" "$@")
     if [ "$DRIVER_INSTALLED" -eq 1 ]; then
         # Each CLI invocation owns one instrumentation server. A prior server
@@ -223,6 +240,8 @@ write_summary() {
         echo "- 测的 APK：$(basename "$APK")，打包的源码提交：\`${E2E_APK_COMMIT:-未知}\`${E2E_APK_SOURCE:+（$E2E_APK_SOURCE）}"
         if [ "$E2E_SUITE" != all ]; then
             echo "- 只跑了：$E2E_SUITE"
+        else
+            echo "- 全量前置模式：$E2E_ALL_PRELUDE"
         fi
         echo "- 设备：$(adb shell getprop ro.product.model | tr -d '\r')，Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
         echo "- 结果：$passed 项通过，$FAILED 项失败"
@@ -291,6 +310,10 @@ fi
 startup_capture_start
 
 # 1. 安装并启动。-g 直接给通知、音频读取等运行时权限，不在系统弹窗上卡住
+if [ "$E2E_SUITE" = all ] && [ "$E2E_ALL_PRELUDE" = audio-first ]; then
+    check_audio_first_install || finish
+fi
+if [ "$E2E_SUITE" = all ]; then printf '%s\n' "$E2E_ALL_PRELUDE" > "$OUT/all-prelude-mode.txt"; fi
 if adb_install "$OUT/install.log" -r -g "$APK"; then
     pass "安装 APK" "$(basename "$APK")"
 else
@@ -326,6 +349,14 @@ install_plugin e2e-source-a.js || finish
 install_plugin e2e-source-b.js || finish
 source "$HERE/experience.sh"
 source "$HERE/player_continuity.sh"
+if [ "$E2E_SUITE" = mv ]; then
+    source "$HERE/mv.sh"
+    run_mv_checks
+    finish
+fi
+if [ "$E2E_SUITE" = all ]; then
+    run_all_prelude || finish
+fi
 if [ "$E2E_SUITE" = backup ]; then
     source "$HERE/backup.sh"
     run_backup_checks
@@ -482,6 +513,10 @@ fi
 before=$(session)
 if flow "选了取不到的无损，标签保持 HQ" quality-unavailable.yaml; then
     expect_continued "取不到新音质时照常播" "E2E Tone A" "$before"
+fi
+
+if [ "$E2E_SUITE" = all ]; then
+    check_all_pre_cold_start
 fi
 
 # 11. 冷启动：暂停后把应用彻底关掉（和被系统清掉一样）再打开。播放条要恢复上次那首，

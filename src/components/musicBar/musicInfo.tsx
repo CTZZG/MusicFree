@@ -11,6 +11,7 @@ import TrackPlayer, {
     useCurrentMusic,
     usePlayList,
     useProgress,
+    useMusicVideoView,
 } from "@/core/trackPlayer";
 import Animated, {
     SharedValue,
@@ -26,9 +27,10 @@ import { useI18N } from "@/core/i18n";
 function MiniProgress() {
     const colors = useColors();
     const progress = useProgress();
+    const { engineIsVideo: isVideo } = useMusicVideoView();
     const musicItem = useCurrentMusic();
     const duration =
-        progress.duration > 0 ? progress.duration : musicItem?.duration ?? 0;
+        progress.duration > 0 ? progress.duration : isVideo ? 0 : musicItem?.duration ?? 0;
     const ratio = duration
         ? Math.min(1, Math.max(0, progress.position / duration))
         : 0;
@@ -57,6 +59,8 @@ interface IBarMusicItemProps {
 function BarMusicItemInner(props: IBarMusicItemProps) {
     const { musicItem, activeIndex, transformSharedValue } = props;
     const colors = useColors();
+    const { videoMode } = useMusicVideoView();
+    const showMV = activeIndex === 0 && videoMode;
     const resolvedArtwork = useResolvedMusicArtwork(
         activeIndex === 0 ? musicItem : null,
     );
@@ -93,13 +97,13 @@ function BarMusicItemInner(props: IBarMusicItemProps) {
                     color={colors.musicBarText}>
                     {musicItem.title}
                 </ThemeText>
-                {musicItem.artist ? (
+                {musicItem.artist || showMV ? (
                     <ThemeText
                         numberOfLines={1}
                         fontSize="description"
                         fontColor="textSecondary"
                         style={styles.artist}>
-                        {musicItem.artist}
+                        {showMV ? ["MV", musicItem.artist].filter(Boolean).join(" · ") : musicItem.artist}
                     </ThemeText>
                 ) : null}
                 {activeIndex === 0 ? <MiniProgress /> : null}

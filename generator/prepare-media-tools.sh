@@ -15,10 +15,11 @@ tools_root=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
 work=$(mktemp -d "$tools_root/mf-media-tools.XXXXXX")
 archive="$work/tools.tar.xz"
 trap 'rm -f "$archive"' EXIT
+# BtbN retains month-end builds for two years; daily builds expire after 14 days.
 curl -fsSL --connect-timeout 20 --max-time 120 --retry 1 --retry-max-time 250 \
-    https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-25-13-00/ffmpeg-n8.1.3-24-g92611900bb-linux64-gpl-8.1.tar.xz \
+    https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n8.1.3-27-g8dca1586f4-linux64-gpl-8.1.tar.xz \
     -o "$archive"
-echo "3300aa8c1d68e79e20d22117d3748a6121a49fe09b7eece3dcc38b84a1104e71  $archive" | sha256sum -c -
+echo "41e9c565594c390622cf968d82fa4135d9e9a11d06c1515644288cbc844e3380  $archive" | sha256sum -c -
 python3 - "$archive" "$work/bin" <<'PYTOOLS'
 import os, shutil, sys, tarfile
 from pathlib import Path, PurePosixPath

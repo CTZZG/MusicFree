@@ -85,6 +85,8 @@ export interface INativeCrashDiagnostics {
 }
 
 interface INativeUtils extends NativeModule {
+    /** Scoped to the visible MV page; restores the Activity's prior orientation on exit. */
+    setVideoFullscreen?: (enabled: boolean) => void;
     saveShareImage: (pngBase64: string) => Promise<string>;
     exitApp: () => void;
     getWindowDimensions: () => { width: number, height: number }; // Fix bug: https://github.com/facebook/react-native/issues/47080

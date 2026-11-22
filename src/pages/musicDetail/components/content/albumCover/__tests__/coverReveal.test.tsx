@@ -31,6 +31,8 @@ jest.mock("@/core/appConfig", () => ({
 }));
 
 jest.mock("@/core/trackPlayer", () => ({
+    useMusicVideoState: () => ({ phase: "audio" }),
+    useHasMusicVideo: () => false,
     useCurrentMusic: () => ({
         id: "1",
         platform: "测试音源",

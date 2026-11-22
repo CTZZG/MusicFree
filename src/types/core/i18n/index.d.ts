@@ -1,5 +1,37 @@
 // 国际化语言数据接口定义
 export interface ILanguageData {
+    "musicVideo.controls": string;
+    "musicVideo.title": string;
+    "musicVideo.browse": string;
+    "musicVideo.watch": string;
+    "musicVideo.retry": string;
+    "musicVideo.empty": string;
+    "musicVideo.failed": string;
+    "musicVideo.returnFailed": string;
+    "musicVideo.checkpointUnavailable": string;
+    "musicVideo.networkHeld": string;
+    "musicVideo.resumeOnMobile": string;
+    "musicVideo.returnToSong": string;
+    "musicVideo.returning": string;
+    "musicVideo.quality": string;
+    "musicVideo.options": string;
+    "musicVideo.mobileTitle": string;
+    "musicVideo.mobileContent": string;
+    "musicVideo.mobileDisabled": string;
+    "musicVideo.approveOnce": string;
+    "musicVideo.restartTitle": string;
+    "musicVideo.restartContent": string;
+    "musicVideo.restart": string;
+    "musicVideo.loadingVideo": string;
+    "musicVideo.fullscreen": string;
+    "musicVideo.exitFullscreen": string;
+    "musicVideo.surface": string;
+    "musicVideo.backgroundNotice": string;
+    "musicVideo.audioOnly": string;
+    "musicVideo.noLyrics": string;
+    "musicVideo.provider": string;
+    "musicVideo.labelQuality": string;
+
     "storage.readFailed.title": string;
     "storage.readFailed.message": string;
     "storage.readFailed.retry": string;

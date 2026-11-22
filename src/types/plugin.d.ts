@@ -53,6 +53,41 @@ declare namespace IPlugin {
         data: ICommon.SupportMediaItemBase[T][];
     }
 
+    export interface IVideoQuality {
+        id: string;
+        label: string;
+        height?: number;
+        bitrate?: number;
+    }
+
+    export interface IVideoCandidate {
+        id: string;
+        title: string;
+        artist?: string;
+        artwork?: string;
+        durationSeconds?: number;
+        version?: "official" | "live" | "other";
+        qualities?: ReadonlyArray<IVideoQuality>;
+        timelineId?: string;
+    }
+
+    export interface IVideoSourceResult {
+        url?: string;
+        headers?: Record<string, string>;
+        userAgent?: string;
+        quality?: IVideoQuality;
+        timelineId?: string;
+        expiresAt?: number;
+        failure?: IMediaSourceFailure;
+        /** Compatibility with existing QQ/Bilibili getMvSource plugins. */
+        videoQuality?: string;
+        availableVideoQualities?: Array<{ key: string; label: string; width?: number; height?: number }>;
+        width?: number;
+        height?: number;
+        duration?: number;
+        mimeType?: string;
+    }
+
     export type ISearchResultType = ICommon.SupportMediaType;
 
     type ISearchFunc = <T extends ICommon.SupportMediaType>(
@@ -123,6 +158,7 @@ declare namespace IPlugin {
         description?: string;
         /** 支持的音质列表 */
         supportedQualities?: IMusic.IQualityKey[];
+        supportedVideoQualities?: string[];
         /** 用户自定义输入 */
         userVariables?: IUserVariable[];
         /** 提示文本 */
@@ -134,6 +170,11 @@ declare namespace IPlugin {
             musicItem: IMusic.IMusicItemBase,
             quality: IMusic.IQualityKey,
         ) => Promise<IMediaSourceResult | null>;
+        /** Optional per-song MV association; does not extend general search types. */
+        getMusicVideos?: (song: IMusic.IMusicItemBase) => Promise<IVideoCandidate[]>;
+        getVideoSource?: (video: IVideoCandidate, quality?: string) => Promise<IVideoSourceResult | null>;
+        /** Existing provider contract, using the original song's mv/vid/bvid/cid fields. */
+        getMvSource?: (song: IMusic.IMusicItemBase, quality?: string) => Promise<IVideoSourceResult | null>;
         /** 根据主键去查询歌曲信息 */
         getMusicInfo?: (
             musicBase: ICommon.IMediaBase,

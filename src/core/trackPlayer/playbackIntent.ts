@@ -12,6 +12,10 @@
 export class PlaybackIntent {
     private pausedByUser = false;
     private interrupted = false;
+    private serial = 0;
+    get revision() {
+        return this.serial;
+    }
 
     /** 用户主动暂停了，还没再明确要播 */
     get isPausedByUser() {
@@ -25,6 +29,7 @@ export class PlaybackIntent {
 
     /** 用户主动暂停 */
     pause() {
+        this.serial += 1;
         this.pausedByUser = true;
     }
 
@@ -33,12 +38,14 @@ export class PlaybackIntent {
      * 也一并结束。
      */
     play() {
+        this.serial += 1;
         this.pausedByUser = false;
         this.interrupted = false;
     }
 
     /** 系统临时收回音频焦点 */
     interrupt() {
+        this.serial += 1;
         this.interrupted = true;
     }
 
@@ -48,6 +55,7 @@ export class PlaybackIntent {
      */
     endInterruption() {
         const wasInterrupted = this.interrupted;
+        if (wasInterrupted) this.serial += 1;
         this.interrupted = false;
         return wasInterrupted && !this.pausedByUser;
     }

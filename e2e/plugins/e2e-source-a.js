@@ -47,6 +47,13 @@ const BOUNDARY_SONGS = [
     { id: "boundary-delay", title: "E2E Delayed Lyrics", file: "tone-a.mp3", duration: 480 },
 ];
 
+// The MV suite has its own original-song queue. Never add these rows to normal searches.
+const MV_SONGS = [
+    { id: "mv-audio-a", title: "E2E MV Song A", file: "tone-a.mp3", duration: 480 },
+    { id: "mv-audio-b", title: "E2E MV Song B", file: "tone-b.mp3", duration: 180 },
+];
+const VIDEO_QUALITIES = [{ id: "720p", label: "720p" }, { id: "360p", label: "360p" }, { id: "alternate", label: "另一个剪辑" }];
+
 // 只有这几档音质，选无损之类的取不到：用来检查切换音质失败时，保持原来的音质接着播。
 // 应用先用新写法（192k）问，取不到再用旧写法（standard）问一遍
 const QUALITIES = ["128k", "192k", "320k", "low", "standard", "high"];
@@ -68,7 +75,8 @@ module.exports = {
         if (type !== "music" || page > 1 || !ref) {
             return { isEnd: true, data: [] };
         }
-        const songs = /(?:^|\s)boundaries(?:\s|$)/i.test(String(query)) ? BOUNDARY_SONGS :
+        const songs = /(?:^|\s)mv(?:\s|$)/i.test(String(query)) ? MV_SONGS :
+            /(?:^|\s)boundaries(?:\s|$)/i.test(String(query)) ? BOUNDARY_SONGS :
             /(?:^|\s)wma(?:\s|$)/i.test(String(query)) ? TAGGING_SONGS :
             /(?:^|\s)hang(?:\s|$)/i.test(String(query)) ? HANG_SONGS : SONGS;
         return {
@@ -92,6 +100,31 @@ module.exports = {
             return new Promise(() => undefined);
         }
         return Promise.resolve(resolveMediaSource(musicItem, quality));
+    },
+
+    getMusicVideos(musicItem) {
+        const ref = String(musicItem?.e2eRef || "");
+        if (musicItem?.id !== "mv-audio-a" || !/^[0-9a-f]{40}$/.test(ref)) return [];
+        return [
+            { id: `h264:${ref}`, title: "E2E H264 MV", artist: "E2E Artist", durationSeconds: 48, qualities: VIDEO_QUALITIES },
+            { id: `hevc:${ref}`, title: "E2E HEVC MV", artist: "E2E Artist", durationSeconds: 24, qualities: [{ id: "720p", label: "720p" }] },
+            { id: `missing:${ref}`, title: "E2E Unavailable MV", artist: "E2E Artist" },
+        ];
+    },
+    getVideoSource(video, quality) {
+        const match = /^(h264|hevc|missing):([0-9a-f]{40})$/.exec(String(video?.id || ""));
+        if (!match || (quality && !["720p", "360p", "alternate"].includes(quality))) return null;
+        const [, codec, ref] = match;
+        if (codec === "hevc" && quality && quality !== "720p") return null;
+        if (codec === "missing") return { url: `${RAW_BASE}/${ref}/e2e/fixtures/mv/does-not-exist.mp4` };
+        const selected = quality || "720p";
+        const actualCodec = selected === "alternate" ? "hevc" : codec;
+        return { url: `${RAW_BASE}/${ref}/e2e/fixtures/mv/${actualCodec}-${selected === "360p" ? "360" : "720"}.mp4`,
+            quality: { id: selected, label: selected }, width: selected === "360p" ? 640 : 1280,
+            height: selected === "360p" ? 360 : 720, duration: actualCodec === "hevc" ? 24 : 48,
+            // The two H264 resolutions are the same edit. HEVC is a separate candidate.
+            timelineId: actualCodec === "h264" ? "coded-h264-v1" : undefined,
+        };
     },
 
     // Deterministic share-card/lyric-tools UI fixture; normal playback/queue stay unchanged.

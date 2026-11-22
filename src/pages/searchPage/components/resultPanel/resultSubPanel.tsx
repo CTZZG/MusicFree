@@ -3,7 +3,7 @@ import { ALL_MUSIC_SOURCE_KEY } from "@/core/search/aggregateMusicResults";
 import { getCategoryTabMeta } from "../../common/searchResultMeta";
 import Empty from "@/components/base/empty";
 import { useI18N } from "@/core/i18n";
-import PluginManager, { usePluginEnabledRevision } from "@/core/pluginManager";
+import PluginManager, { usePluginRuntimeRevision } from "@/core/pluginManager";
 import useColors from "@/hooks/useColors";
 import { vw } from "@/utils/rpx";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -81,7 +81,7 @@ function ResultSubPanel(props: IResultSubPanelProps) {
     const typeResults = useSearchTypeResults(props.tab);
 
     // 搜索标签常驻不卸载：插件启用或停用后，来源标签要跟着变
-    const enabledRevision = usePluginEnabledRevision();
+    const runtimeRevision = usePluginRuntimeRevision();
     const routes = useMemo(
         () => {
             const sourceRoutes = PluginManager.getSortedSearchablePlugins(props.tab).map(plugin => ({ key: plugin.hash, title: plugin.name }));
@@ -89,9 +89,9 @@ function ResultSubPanel(props: IResultSubPanelProps) {
                 ? [{ key: ALL_MUSIC_SOURCE_KEY, title: t("searchPage.allMusic") }, ...sourceRoutes]
                 : sourceRoutes;
         },
-        // enabledRevision 只用来让结果在启用状态变化后重算
+        // 插件启停、列表或用户变量变化后重新计算。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [props.tab, enabledRevision, t],
+        [props.tab, runtimeRevision, t],
     );
     const initialIndex = useMemo(
         () =>

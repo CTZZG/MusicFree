@@ -59,6 +59,10 @@ react {
     //
     // Added by install-expo-modules
     entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", rootDir.getAbsoluteFile().getParentFile().getAbsolutePath(), "android", "absolute"].execute(null, rootDir).text.trim())
+    // Explicit diagnostic build only: normal product bundles contain no probe entry/menu.
+    if (findProperty("mvViewProbe") == "true") {
+        entryFile = file("../../e2e/mv-view-probe/index.js")
+    }
     cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
     bundleCommand = "export:embed"
 }
@@ -130,6 +134,9 @@ android {
 
     defaultConfig {
         applicationId "fun.upup.musicfree"
+        if (findProperty("mvViewProbe") == "true") {
+            applicationIdSuffix ".mvprobe"
+        }
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appVersionCode
@@ -196,6 +203,9 @@ android {
             if (hasReleaseKeystore) {
                 signingConfig = signingConfigs.release
             }
+            if (findProperty("mvViewProbe") == "true") {
+                signingConfig = signingConfigs.debug
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -204,6 +214,8 @@ android {
     sourceSets {
         // These JVM tests also run in the device suite.
         androidTest.java.srcDirs += "src/test/java"
+        // Android scheduling tests use Robolectric only on the host JVM.
+        test.java.srcDirs += "src/testRobolectric/java"
     }
 
     // minSdk 34 是产品支持下限；Android 15/16 的新 API 仍需版本保护。CI 用
@@ -241,6 +253,7 @@ dependencies {
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.10.0'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
     androidTestImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'

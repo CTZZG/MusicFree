@@ -101,6 +101,15 @@ object MpvServiceBridge {
     @Volatile
     var onCommand: ((command: String, position: Double?, mediaId: String?) -> Unit)? = null
 
+    /** MV play must finish JS consent/restart admission before releasing a hold. */
+    @Volatile
+    internal var deferRemotePlayClaim: (() -> Boolean)? = null
+
+    internal fun playFromOutside(command: String, mediaId: String? = null) {
+        if (command != "play" || deferRemotePlayClaim?.invoke() != true) playbackHold.claim()
+        onCommand?.invoke(command, null, mediaId)
+    }
+
     /**
      * Android Auto 打开“我喜欢”“最近播放”时向 JS 要内容（见 [MpvMediaBrowserService]）。
      * 由 [MpvPlayerModule] 在 initialize 时设置；JS 没起来时为 null，车机上显示空列表。

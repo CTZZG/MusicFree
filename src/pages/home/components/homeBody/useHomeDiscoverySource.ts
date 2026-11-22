@@ -1,6 +1,6 @@
 import { useAppConfig } from "@/core/appConfig";
 import PluginManager, {
-    usePluginEnabledRevision,
+    usePluginRuntimeRevision,
     useSortedPlugins,
 } from "@/core/pluginManager";
 import { useMemo } from "react";
@@ -38,15 +38,15 @@ export default function useHomeDiscoverySource() {
     const sortedPlugins = useSortedPlugins();
     const storedName = useAppConfig("theme.homeDiscoverySource");
     // 停用当前音源时插件列表不变，要靠它让选择重新算、退回下一个可用插件
-    const enabledRevision = usePluginEnabledRevision();
+    const runtimeRevision = usePluginRuntimeRevision();
 
     return useMemo(
         () =>
             resolveHomeDiscoverySource(sortedPlugins, storedName, plugin =>
                 PluginManager.isPluginEnabled(plugin),
             ),
-        // enabledRevision 只用来让结果在启用状态变化后重算
+        // 插件启停、列表或用户变量变化后重新计算。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [sortedPlugins, storedName, enabledRevision],
+        [sortedPlugins, storedName, runtimeRevision],
     );
 }

@@ -52,6 +52,15 @@
   `react-native-background-timer`。手动切歌的确认如果仍然醒得远晚于约定时间（JS 被挂起过），以原生实际在放的曲目为准，
   不再重载目标或回滚。
 
+## MV rendition（开发中，尚未发布）
+
+- `musicVideoController.ts` 使用现有 `QualityChangeCoordinator.commitTail` 提交转换，不创建第二个播放器、队列或进度时钟。逻辑歌曲/播放列表/备份继续是原音频；`PlayerRenditionIdentity` 的 kind、mediaId 与 loadGeneration 区分实际文件。
+- 进入 MV 时原生先暂停并捕获原音频实际停点；MV 从0开始。只有来源声明同 timeline 的视频画质才可保留位置，否则用户确认后重头。返回音频等待当前代际 PLAYBACK_RESTART 与首个实际位置，通过的 ready 样本随 receipt 传递，原 .25s 首读标准保留。
+- MV 期间歌词所有出口、Last.fm、原音频位置持久化与 crossfade 不消费视频时钟；返回成功后恢复。跳歌仍操作原歌曲队列，重复播放只重复当前 MV；prepared audio 的真实视频 EOF 接管仍属候选设备验收门。
+- `MusicVideo` 候选面板与原播放页共用 `MpvVideo`/现有控制。全屏调整同一 View 边界，owner/generation 与实际 RN 生命周期决定 Surface；不改全局导航冻结。页面隐藏允许 MV 音轨继续，须明确提示仍可能消耗视频流量。
+- 来源解析前查鲜活 NetInfo、原移动网络总开关及会话批准，原生在提交和 resume 前独立检查当前网络；确认期间的后续暂停/焦点与换曲仍优先。取消只关闭自己拥有的确认框。
+- 当前技术路径、真实来源宿主验证与正常产品 UI 的设备验收分别记录于 [MV交接](handoff/mv-playback-2026-11-01.md)，不能由诊断截图宣称整个 App 功能完成。
+
 ## 搜索
 
 - `SearchSession`（`src/core/search/searchSession.ts`）负责一次搜索的关键词、参与的来源，以及每个来源每种类型的页码与状态（加载中、有结果、无结果、失败）。

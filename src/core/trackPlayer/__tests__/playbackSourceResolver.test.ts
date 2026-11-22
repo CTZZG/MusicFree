@@ -106,3 +106,12 @@ it("discards a source that resolves after its playback request is invalidated", 
     expect(rememberAlternate).not.toHaveBeenCalled();
     expect(dependencies.onAlternateInUse).not.toHaveBeenCalled();
 });
+
+it("an audio return resolves the saved quality instead of the current global quality order", async () => {
+    request.mockResolvedValue({ url: "https://example.com/saved-quality.mp3" });
+    const result = await resolver.resolveDirectMediaSource(original, undefined, "flac");
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith(original, "flac");
+    expect(result).toMatchObject({ url: "https://example.com/saved-quality.mp3",
+        playbackSource: { quality: "flac" } });
+});

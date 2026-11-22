@@ -1,0 +1,70 @@
+--- a/video/out/opengl/context_android.c
++++ b/video/out/opengl/context_android.c
+@@ -28,6 +28,8 @@
+     EGLDisplay egl_display;
+     EGLContext egl_context;
+     EGLSurface egl_surface;
++    EGLConfig egl_config;
++    int surface_width, surface_height;
+ };
+
+ static void android_swap_buffers(struct ra_ctx *ctx)
+@@ -69,6 +71,7 @@
+     if (!mpegl_create_context(ctx, p->egl_display, &p->egl_context, &config))
+         goto fail;
+
++    p->egl_config = config;
+     ANativeWindow *native_window = vo_android_native_window(ctx->vo);
+     EGLint format;
+     eglGetConfigAttrib(p->egl_display, config, EGL_NATIVE_VISUAL_ID, &format);
+@@ -88,6 +91,9 @@
+         goto fail;
+     }
+
++    p->surface_width = ANativeWindow_getWidth(native_window);
++    p->surface_height = ANativeWindow_getHeight(native_window);
++
+     mpegl_load_functions(&p->gl, ctx->log);
+
+     struct ra_ctx_params params = {
+@@ -105,15 +111,36 @@
+
+ static bool android_reconfig(struct ra_ctx *ctx)
+ {
++    struct priv *p = ctx->priv;
+     int w, h;
+     if (!vo_android_surface_size(ctx->vo, &w, &h))
+         return false;
+
+-    // Update window geometry to prevent screen tearing
+     ANativeWindow *native_window = vo_android_native_window(ctx->vo);
+-    if (native_window) {
+-        int32_t current_format = ANativeWindow_getFormat(native_window);
+-        ANativeWindow_setBuffersGeometry(native_window, w, h, current_format);
++    if (!native_window)
++        return false;
++    int32_t format = ANativeWindow_getFormat(native_window);
++    if (ANativeWindow_setBuffersGeometry(native_window, w, h, format) < 0)
++        return false;
++
++    if (w != p->surface_width || h != p->surface_height) {
++        // A resized native window can leave the current EGL back buffer at its
++        // old extent. Rebind only the EGL window target, retaining the context,
++        // decoder and last video frame. Replacing the VO would seek while paused.
++        if (!eglMakeCurrent(p->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE,
++                            EGL_NO_CONTEXT))
++            return false;
++        if (!eglDestroySurface(p->egl_display, p->egl_surface))
++            return false;
++        p->egl_surface = EGL_NO_SURFACE;
++        p->egl_surface = eglCreateWindowSurface(p->egl_display, p->egl_config,
++                                              (EGLNativeWindowType)native_window, NULL);
++        if (p->egl_surface == EGL_NO_SURFACE ||
++            !eglMakeCurrent(p->egl_display, p->egl_surface, p->egl_surface,
++                            p->egl_context))
++            return false;
++        p->surface_width = w;
++        p->surface_height = h;
+     }
+
+     ctx->vo->dwidth = w;

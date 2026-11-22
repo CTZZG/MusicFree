@@ -1,0 +1,19 @@
+appId: fun.upup.musicfree
+---
+- tapOn: "播放速度：1.0x，点按切换"
+- extendedWaitUntil:
+    visible: "^播放速度$"
+    timeout: 10000
+# The rate list is a bottom sheet. A screen-centred swipe starts outside it
+# and dismisses the sheet before the 1.5x row can be reached.
+- swipe:
+    start: "50%, 94%"
+    end: "50%, 80%"
+    duration: 400
+- extendedWaitUntil:
+    visible: '^1\.5x$'
+    timeout: 10000
+- tapOn: '^1\.5x$'
+- extendedWaitUntil:
+    visible: "播放速度：1.5x，点按切换"
+    timeout: 10000

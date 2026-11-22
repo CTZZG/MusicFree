@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Standalone P0 diagnostic, never included in the MusicFree APK. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="fun.upup.musicfree.e2e.mvprobe">
+    <application android:label="MusicFree MV P0" android:debuggable="true"
+        android:allowBackup="false" android:extractNativeLibs="true">
+        <activity android:name=".ProbeActivity" android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+    </application>
+</manifest>
