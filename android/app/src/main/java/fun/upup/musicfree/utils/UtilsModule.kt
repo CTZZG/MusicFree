@@ -28,6 +28,7 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
 
     private val reactContext: ReactApplicationContext = context;
     private val exitHandler = Handler(Looper.getMainLooper())
+    private val videoFullscreen = VideoFullscreenSession()
     private val imageWriter = Executors.newSingleThreadExecutor { task ->
         Thread(task, "MusicFree-share-image")
     }
@@ -48,8 +49,21 @@ class UtilsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule
     }
 
     override fun invalidate() {
+        exitHandler.post { videoFullscreen.exit() }
         imageWriter.shutdownNow()
         super.invalidate()
+    }
+
+    @ReactMethod
+    fun setVideoFullscreen(enabled: Boolean) {
+        exitHandler.post {
+            val activity = reactContext.currentActivity
+            if (enabled && activity != null && !activity.isFinishing && !activity.isDestroyed) {
+                videoFullscreen.enter(activity)
+            } else {
+                videoFullscreen.exit()
+            }
+        }
     }
 
     @ReactMethod

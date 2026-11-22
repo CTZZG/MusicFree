@@ -3,11 +3,15 @@ import {
     cancelPendingVideoAction,
     changeMusicVideoQuality,
 } from "../actions";
+import { playCurrentMusic } from "@/core/trackPlayer/userPlayAction";
 
 let mockRevision = 1;
 let mockMusic: any;
 let mockEnabled = true;
 let mockApproval = false;
+let mockVideoState: any = { phase: "audio" };
+const mockPlay = jest.fn(async () => undefined);
+const mockResume = jest.fn();
 let mockDialog: any;
 let mockNextDialog = 0;
 const mockNetwork = jest.fn();
@@ -39,6 +43,11 @@ jest.mock("@/core/trackPlayer", () => ({
         get videoMobileApproved() {
             return mockApproval;
         },
+        get musicVideoState() {
+            return mockVideoState;
+        },
+        play: () => mockPlay(),
+        resumeMusicVideo: (...args: any[]) => mockResume(...args),
         watchMusicVideo: (...args: any[]) => (mockWatch as any)(...args),
         changeVideoQuality: (...args: any[]) => mockQuality(...args),
         cancelVideoRequest: () => mockCancel(),
@@ -84,8 +93,33 @@ const cellular = { ...wifi, type: "cellular" };
 const flush = async () => {
     for (let i = 0; i < 8; i++) await Promise.resolve();
 };
+test("visible main and remote play use MV preflight and restart confirmation", async () => {
+    mockVideoState = { phase: "video", owner: { kind: "mv" } };
+    mockNetwork.mockResolvedValue(wifi);
+    mockResume.mockImplementationOnce(async (_mobile: boolean, _explicit: boolean, preflight: any) => {
+        expect(await preflight(new AbortController().signal)).toMatchObject({ claimPlayback: true });
+        return { status: "restart-confirmation" };
+    }).mockResolvedValueOnce({ status: "playing" });
+    const result = playCurrentMusic(); await flush();
+    expect(mockDialog.payload.title).toBe("musicVideo.restartTitle");
+    mockDialog.payload.onOk(); await result;
+    expect(mockResume).toHaveBeenLastCalledWith(false, true, expect.any(Function), true);
+    expect(mockPlay).not.toHaveBeenCalled();
+});
+
+test("background remote play does not open a consent dialog", async () => {
+    require("react-native").AppState.currentState = "background";
+    mockVideoState = { phase: "video", owner: { kind: "mv" } };
+    await playCurrentMusic();
+    expect(mockPlay).toHaveBeenCalledTimes(1);
+    expect(mockResume).not.toHaveBeenCalled();
+    expect(mockNetwork).not.toHaveBeenCalled();
+});
+
 beforeEach(() => {
     jest.clearAllMocks();
+    require("react-native").AppState.currentState = "active";
+    mockVideoState = { phase: "audio" };
     mockRevision = 1;
     mockEnabled = true;
     mockApproval = false;

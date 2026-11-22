@@ -1,0 +1,19 @@
+{
+  "commit": "cd1a92a39ae78622925351226368075932927db2",
+  "files": {
+    "LICENSE": "a618084dcea6a9a555571ffc1c7dd828eb40c20c8287dc3c3cbf5831ce72c506",
+    "libmpv/src/main/cpp/CMakeLists.txt": "f35629ecf4d79469fe318760427cc9360a3516862967930585f8517e2b502efb",
+    "libmpv/src/main/cpp/event.cpp": "87dee6d87b82e99294f47f2670e875b4bd6ebcedc338434647d6d89b70d37552",
+    "libmpv/src/main/cpp/event.h": "906952620c7093a37136e3f3ccb06b9eb7f2e49f435bba76e8da8c038cc521f8",
+    "libmpv/src/main/cpp/globals.h": "0135741270491b68246d3431523c8126ce77e2870cb4cd7fda416c40f8f557e5",
+    "libmpv/src/main/cpp/jni_utils.cpp": "3c80731bd81b552cde07be6be51f2caacbf9063df09f9e45beae9c69aefe9b23",
+    "libmpv/src/main/cpp/jni_utils.h": "4542b3e38e43af081b56c8d78436724a4c0ef411bebb24b2e2154456bc59e120",
+    "libmpv/src/main/cpp/log.cpp": "f446e231faabf78d23f08c15c2f79d322461045b6bd9ce1d1c3bdb45644d1c8e",
+    "libmpv/src/main/cpp/log.h": "53381a0f23cb5508721f7120786aac9d1d3b88df7115a63241ee430e0ba4d41c",
+    "libmpv/src/main/cpp/main.cpp": "4503f62ec3775253ed63115d32cf0ea540faaf6dd90811d45cb26fa720c76cda",
+    "libmpv/src/main/cpp/property.cpp": "dd1005a186b35819099d2353fafe5e6b119203f7329b6927a254d321ddf31898",
+    "libmpv/src/main/cpp/render.cpp": "2f3c432c920419521b9ca06a5c1f667ec8823be42f1634946490d2e4c71d9f3e",
+    "libmpv/src/main/java/dev/jdtech/mpv/MPVLib.kt": "21100b6a28a42106609aa3c45ebe719f144796d62a105c104b5fdda9b8c60475"
+  },
+  "repository": "CTZZG/libmpv-android"
+}

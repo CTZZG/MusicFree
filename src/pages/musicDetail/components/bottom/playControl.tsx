@@ -20,6 +20,7 @@ import { timingConfig } from "@/constants/commonConst";
 import { maxFontScaleConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import TrackPlayer, { useMusicState } from "@/core/trackPlayer";
+import { playCurrentMusic } from "@/core/trackPlayer/userPlayAction";
 import useOrientation from "@/hooks/useOrientation";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 import {
@@ -237,7 +238,7 @@ export default function PlayControl(props: IPlayControlProps) {
                     }
                     onPress={() => {
                         if (paused) {
-                            TrackPlayer.play();
+                            playCurrentMusic().catch(() => undefined);
                         } else {
                             TrackPlayer.pause();
                         }

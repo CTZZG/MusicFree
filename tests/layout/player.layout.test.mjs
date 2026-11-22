@@ -73,6 +73,7 @@ function createPlayerStubs(env, options = {}) {
         }),
         '@/components/musicVideo/actions': strictStub('MV action boundary', {cancelPendingVideoAction: noop, returnToSong: noop, resumeMusicVideo: noop}),
         '@/components/mpvVideo': strictStub('native MV output only', {default: props => h('View', props)}),
+        '@/native/utils': strictStub('native utils', {default: {setVideoFullscreen: noop}}),
         'react-native': strictStub('RN + AppState', {...createCommonStubs(env)['react-native'], AppState: {currentState: 'active', addEventListener: () => ({remove: noop})}}),
         'react-native-share': strictStub('react-native-share', {
             default: {open: async () => {}},

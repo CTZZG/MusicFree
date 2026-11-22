@@ -1,0 +1,10 @@
+{
+  "libavcodec/jni.h": {
+    "sha256": "f98405ffb7ba26665cde92daef33bc4371c91aa6c85b522b36864ed289600ebc",
+    "url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/9047fa1b084f76b1b4d065af2d743df1b40dfb56/libavcodec/jni.h"
+  },
+  "mpv/client.h": {
+    "sha256": "3c073236a09cb456c6e80587d5523c8771c32fb22ca014e0f99cc3d43905b75c",
+    "url": "https://raw.githubusercontent.com/mpv-player/mpv/41f6a645068483470267271e1d09966ca3b9f413/include/mpv/client.h"
+  }
+}

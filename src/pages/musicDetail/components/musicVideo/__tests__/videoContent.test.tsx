@@ -12,6 +12,14 @@ const mockDeactivate = jest.fn();
 const mockActivate = jest.fn(async (_tag: string): Promise<void> => undefined);
 const mockFailure = jest.fn();
 const mockFullscreen = jest.fn();
+const mockNativeFullscreen = jest.fn();
+jest.mock("@/native/utils", () => ({
+    __esModule: true,
+    default: { setVideoFullscreen: (enabled: boolean) => mockNativeFullscreen(enabled) },
+}));
+jest.mock("react-native-safe-area-context", () => ({
+    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 24 }),
+}));
 jest.mock("@react-navigation/native", () => ({
     useIsFocused: () => mockFocused,
 }));
@@ -82,6 +90,13 @@ async function mount(fullscreen = false) {
             }),
     );
 }
+test.each(["paused", "buffering", "playing"])("no first-frame timeout runs during network suspension (%s)", async state => {
+    mockMusicState = state; mockState = { ...mockState, error: "network" };
+    await mount();
+    await act(async () => jest.advanceTimersByTime(16000));
+    expect(mockFailure).not.toHaveBeenCalled();
+});
+
 beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
@@ -185,6 +200,41 @@ test("a transient empty layout preserves the mounted video surface", async () =>
         expect(surface()).toBe(previousSurface);
     }
     expect(mockMounts).toBe(1);
+});
+
+test("fullscreen requests landscape only while visible and restores it on exit or background", async () => {
+    await mount();
+    expect(mockNativeFullscreen).not.toHaveBeenCalled();
+    await act(async () => tree.update(render(true)));
+    expect(mockNativeFullscreen.mock.calls).toEqual([[true]]);
+    await act(async () => mockAppChange("background"));
+    expect(mockNativeFullscreen.mock.calls).toEqual([[true], [false]]);
+    await act(async () => mockAppChange("active"));
+    expect(mockNativeFullscreen.mock.calls).toEqual([[true], [false], [true]]);
+    await act(async () => tree.update(render(false)));
+    expect(mockNativeFullscreen.mock.calls).toEqual([[true], [false], [true], [false]]);
+    expect(mockMounts).toBe(1);
+});
+
+test("landscape fullscreen fills the available height without remounting or changing ownership", async () => {
+    mockMusicState = "paused";
+    await mount();
+    await frame();
+    const previousSurface = surface();
+    await act(async () => tree.update(render(true)));
+    const stage = tree.root.findAll(node => typeof node.props.onLayout === "function")[0];
+    await act(async () => stage.props.onLayout({ nativeEvent: { layout: { width: 880, height: 390 } } }));
+    const bounds = RN.StyleSheet.flatten(tree.root.findByProps({ testID: "music-video-bounds" }).props.style);
+    expect(bounds.height).toBe(390);
+    expect(bounds.width).toBeCloseTo(390 * 16 / 9);
+    expect(surface()).toBe(previousSurface);
+    expect(surface().props.loadGeneration).toBe(2);
+    expect(mockMounts).toBe(1);
+    await act(async () => {
+        mockFocused = false;
+        tree.update(render(true));
+    });
+    expect(mockNativeFullscreen).toHaveBeenLastCalledWith(false);
 });
 
 test("background and route blur release only video output, with no fabricated new frame or playback command", async () => {

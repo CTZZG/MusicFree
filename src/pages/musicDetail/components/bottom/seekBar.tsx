@@ -122,7 +122,7 @@ function RateBadge() {
 /** iOS 播放页进度条：细轨道，下面左右是已播放与剩余时间 */
 export default function SeekBar() {
     const progress = useProgress(1000);
-    const { videoMode: isVideo, transitioning, owner } = useMusicVideoView();
+    const { videoMode: isVideo, transitioning, owner, error } = useMusicVideoView();
     const musicItem = useCurrentMusic();
     const { t } = useI18N();
     const [tmpProgress, setTmpProgress] = useState<number | null>(null);
@@ -130,7 +130,19 @@ export default function SeekBar() {
     const gestureOwner = useRef<{ mediaId: string; loadGeneration: number } | null>(null);
     const displayDuration =
         progress.duration > 0 ? progress.duration : isVideo ? 0 : musicItem?.duration ?? 0;
+    const seekDisabled = displayDuration <= 0 || transitioning || (isVideo && error === "network");
     const position = tmpProgress ?? progress.position;
+    const commitSeek = (val: number, expected: { mediaId: string; loadGeneration: number } | null) => {
+        if (seekDisabled || !Number.isFinite(val)) return;
+        if (expected) {
+            const current = TrackPlayer.playerAdapter.getRenditionOwner?.();
+            if (current?.mediaId !== expected.mediaId || current?.loadGeneration !== expected.loadGeneration) return;
+        }
+        if (val >= displayDuration - 2) {
+            val = Math.max(0, displayDuration - 2);
+        }
+        Promise.resolve(TrackPlayer.seekTo(Math.max(0, val))).catch(() => undefined);
+    };
 
     return (
         <View style={styles.wrapper}>
@@ -142,7 +154,7 @@ export default function SeekBar() {
                 thumbTintColor="#FFFFFF"
                 minimumValue={0}
                 maximumValue={Math.max(1, displayDuration)}
-                disabled={displayDuration <= 0 || transitioning}
+                disabled={seekDisabled}
                 onSlidingStart={() => {
                     slidingRef.current = true;
                     gestureOwner.current = owner;
@@ -150,6 +162,10 @@ export default function SeekBar() {
                 onValueChange={val => {
                     if (slidingRef.current) {
                         setTmpProgress(val);
+                    } else {
+                        // Native accessibility progress actions emit a user value
+                        // change without touch start/complete events.
+                        commitSeek(val, owner);
                     }
                 }}
                 onSlidingComplete={val => {
@@ -157,15 +173,7 @@ export default function SeekBar() {
                     setTmpProgress(null);
                     const expected = gestureOwner.current ?? owner;
                     gestureOwner.current = null;
-                    if (transitioning) return;
-                    if (expected) {
-                        const current = TrackPlayer.playerAdapter.getRenditionOwner?.();
-                        if (current?.mediaId !== expected.mediaId || current?.loadGeneration !== expected.loadGeneration) return;
-                    }
-                    if (val >= displayDuration - 2) {
-                        val = Math.max(0, displayDuration - 2);
-                    }
-                    TrackPlayer.seekTo(val);
+                    commitSeek(val, expected);
                 }}
                 value={progress.position}
             />

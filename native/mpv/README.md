@@ -56,13 +56,18 @@ paused position, ownership and audio return using the rebuilt candidate.
 
 - `sources.lock.json` pins all sources, API 26 and NDK 27.1.12297006. Dependency
   versions follow the referenced CTZZG/libmpv-android build recipe.
-- mpv and its static subtitle/rendering dependencies are rebuilt. The shared
-  FFmpeg 8.1 libraries, player JNI bridge, Java classes and bundled C++ runtime
-  are copied byte for byte from the reviewed base AAR. The app's existing NDK
-  runtime selection still applies.
-- Only the four `jni/<ABI>/libmpv.so` entries in the AAR change. `bundle.json`
-  records source/build inputs and every old/new entry digest. The shared quality
-  gate rejects stale inputs, a partial ABI update or changes to other payloads.
+- The engine rebuild changes the four `jni/<ABI>/libmpv.so` entries. The separate
+  file-event bridge rebuild changes all four `libplayer.so` entries together with
+  `classes.jar`. Its source, headers and compiler inputs are pinned under
+  `bridge/`; see `bridge/README.md` for its protocol and rebuild procedure.
+- The shared FFmpeg 8.1 libraries and bundled C++ runtime remain byte for byte
+  identical to the reviewed base AAR. The app's existing NDK runtime selection
+  still applies. Rebuilding only the bridge also preserves the four reviewed
+  engine libraries, including their existing AudioTrack and surface patches.
+- `bundle.json` records independent engine/bridge inputs and every old/new entry
+  digest. The shared quality gate rejects stale sources, partial ABI/Java updates,
+  wrong ELF architectures or alignment, unsupported Java targets and changes to
+  decoder/runtime payloads. Engine assembly retains the reviewed matching bridge.
 - The patch is against mpv commit
   `41f6a645068483470267271e1d09966ca3b9f413` (v0.41.0). It retains mpv's LGPL
   licensing; the additional helper is LGPL-2.1-or-later.
@@ -93,8 +98,12 @@ pinned commit; the script refuses to reset unrecognized work.
 python3 native/mpv/rebuild.py --work-dir /tmp/musicfree-mpv --sdk "$ANDROID_HOME"
 python3 native/mpv/assemble.py --work-dir /tmp/musicfree-mpv \
   --base-aar /tmp/musicfree-mpv/base.aar
+python3 native/mpv/rebuild-bridge.py --work-dir /tmp/musicfree-bridge \
+  --sdk "$ANDROID_HOME" --jdk "$JAVA_HOME" --kotlin-dir /path/to/locked-kotlin-jars
 bash native/mpv/test-latency.sh
 python3 -I native/mpv/verify-bundle.py
+python3 -I native/mpv/bridge/check-events.py
+python3 -I native/mpv/bridge/test-bundle.py
 ```
 
 The rebuild reads the original AAR from the pinned repository commit. A shallow
@@ -105,6 +114,12 @@ libraries use 16 KiB ELF segment alignment and retain the `libmpv.so` SONAME.
 Build paths and upstream timestamp metadata can affect binary reproducibility;
 the manifest verifies the reviewed payload rather than promising identical
 archive bytes from arbitrary host environments.
+
+For a bridge-only change, run `rebuild-bridge.py` without rebuilding mpv. It uses
+JDK 21 to compile Kotlin 2.1.20 to Java 17 bytecode, matching the CI runtime, and
+NDK 27.1.12297006 with API 26 for JNI. Every required JAR URL and SHA-256 is in
+`bridge/build.lock.json`. Supply those files in `--kotlin-dir`; the script checks
+them before compiling and does not download or globally install tools.
 
 ## Validation
 

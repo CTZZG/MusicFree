@@ -11,6 +11,8 @@ import {
 import { useIsFocused } from "@react-navigation/native";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import type { SharedValue } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import NativeUtils from "@/native/utils";
 import MpvVideo from "@/components/mpvVideo";
 import ThemeText from "@/components/base/themeText";
 import TrackPlayer, {
@@ -46,6 +48,7 @@ export default function MusicVideoContent({
     const musicState = useMusicState();
     const focused = useIsFocused();
     const window = useWindowDimensions();
+    const insets = useSafeAreaInsets();
     const [appActive, setAppActive] = useState(
         AppState.currentState === "active",
     );
@@ -73,6 +76,11 @@ export default function MusicVideoContent({
         return t("musicVideo.loadingVideo");
     }
     const showControls = !fullscreen || controlsVisible || !hasFrame || !!error;
+    useEffect(() => {
+        if (!fullscreen || !visible) return;
+        NativeUtils?.setVideoFullscreen?.(true);
+        return () => NativeUtils?.setVideoFullscreen?.(false);
+    }, [fullscreen, visible]);
     useEffect(() => {
         const subscription = AppState.addEventListener("change", value =>
             setAppActive(value === "active"),
@@ -116,14 +124,15 @@ export default function MusicVideoContent({
         return () => subscription.remove();
     }, [fullscreen, focused, onFullscreen]);
     useEffect(() => {
-        if (!visible || !key || hasFrame || !owner) return;
+        if (!visible || !key || hasFrame || !owner || error === "network" ||
+            (musicState !== "playing" && musicState !== "buffering")) return;
         const target = { ...owner };
         const timer = setTimeout(
             () => TrackPlayer.videoOutputFailed(target),
             15000,
         );
         return () => clearTimeout(timer);
-    }, [visible, key, hasFrame, owner]);
+    }, [visible, key, hasFrame, owner, error, musicState]);
     useEffect(() => {
         if (!visible || !hasFrame || musicState !== "playing") return;
         let active = true;
@@ -169,6 +178,7 @@ export default function MusicVideoContent({
                 }}>
                 {owner?.kind === "mv" && videoWidth > 0 && videoHeight > 0 ? (
                     <View
+                        testID="music-video-bounds"
                         style={[
                             styles.video,
                             fullscreen
@@ -246,6 +256,11 @@ export default function MusicVideoContent({
                     style={[
                         styles.toolbar,
                         fullscreen ? styles.overlayToolbar : null,
+                        fullscreen ? {
+                            paddingTop: insets.top,
+                            paddingLeft: insets.left,
+                            paddingRight: insets.right,
+                        } : null,
                     ]}
                     onTouchStart={() => setInteraction(value => value + 1)}>
                     <Pressable
@@ -324,7 +339,12 @@ export default function MusicVideoContent({
                 <ScrollView
                     style={[
                         styles.controls,
-                        { maxHeight: window.height * 0.5 },
+                        {
+                            maxHeight: window.height * 0.5,
+                            paddingBottom: Math.max(4, insets.bottom),
+                            paddingLeft: insets.left,
+                            paddingRight: insets.right,
+                        },
                     ]}
                     onTouchStart={() => setInteraction(value => value + 1)}>
                     <SeekBar />

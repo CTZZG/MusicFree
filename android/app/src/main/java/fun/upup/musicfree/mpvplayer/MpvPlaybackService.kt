@@ -196,10 +196,9 @@ class MpvPlaybackService : Service() {
         MpvServiceBridge.onCommand?.invoke(command, null, null)
     }
 
-    /** 用户在通知栏、锁屏上按了播放、点了歌：解除拦截再转给 JS。 */
+    /** MV 播放先由 JS 完成授权；普通音频保持原有的即时解除拦截行为。 */
     private fun playFromOutside(command: String, mediaId: String? = null) {
-        MpvServiceBridge.playbackHold.claim()
-        MpvServiceBridge.onCommand?.invoke(command, null, mediaId)
+        MpvServiceBridge.playFromOutside(command, mediaId)
     }
 
     override fun onCreate() {

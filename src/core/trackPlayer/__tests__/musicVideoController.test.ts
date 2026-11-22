@@ -20,7 +20,7 @@ function deferred<T>() {
 function fixture(wasPlaying = true) {
     let currentSong: IMusic.IMusicItem | null = song;
     let foreground = true, allowed = wasPlaying;
-    let generation = 1;
+    let generation = 1, intentRevision = 0;
     let owner: PlayerActiveRendition = { kind: "audio", mediaId: key, loadGeneration: generation };
     let active = owner;
     const coordinator = new QualityChangeCoordinator();
@@ -34,6 +34,7 @@ function fixture(wasPlaying = true) {
         foreground: () => foreground, repeatCurrentVideo: () => true,
         audioSettings: () => ({ quality: "standard" as IMusic.IQualityKey, rate: 1.5, wasPlaying }),
         mayAutoPlay: () => allowed,
+        playbackIntentRevision: () => intentRevision,
         claimPlayback: jest.fn(async () => {
             allowed = true;
         }),
@@ -67,9 +68,44 @@ function fixture(wasPlaying = true) {
         },
         pause: () => {
             allowed = false;
+            intentRevision++;
         },
     };
 }
+
+test("declining a suspended restart never claims playback or loses its network error", async () => {
+    const f = fixture(); await f.controller.enter(clip()); f.pause();
+    f.controller.handleNetworkBlocked(f.deps.owner()); f.deps.claimPlayback.mockClear();
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), suspended: true,
+        suspendedPositionAvailable: false, outgoingAudioPosition: 37.125 }));
+    expect(await f.controller.resume()).toEqual({ status: "restart-confirmation" });
+    expect(f.deps.claimPlayback).not.toHaveBeenCalled();
+    expect(f.controller.snapshot).toMatchObject({ phase: "video", error: "network" });
+    expect(f.deps.mayAutoPlay()).toBe(false);
+});
+
+test("a pause while suspended source resolution waits wins over an earlier resume", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), suspended: true,
+        suspendedPositionAvailable: true, outgoingAudioPosition: 37.125 }));
+    const source = deferred<ReturnType<typeof f.resolved>>();
+    f.sources.resolve.mockImplementationOnce(() => source.promise);
+    const result = f.controller.resume(); await tick(); f.pause();
+    f.deps.claimPlayback.mockClear(); source.resolve(f.resolved()); await result;
+    expect(f.deps.claimPlayback).not.toHaveBeenCalled();
+    expect(f.deps.replace.mock.calls.at(-1)![0].autoPlay).toBe(false);
+});
+
+test("mobile consent survives the restart confirmation in the same suspended session", async () => {
+    const f = fixture(); await f.controller.enter(clip()); f.pause();
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), suspended: true,
+        suspendedPositionAvailable: false, outgoingAudioPosition: 37.125 }));
+    expect(await f.controller.resume(false, true, async () => ({ mobileApproved: true, claimPlayback: true })))
+        .toEqual({ status: "restart-confirmation" });
+    expect(f.controller.hasMobileApproval).toBe(true);
+    expect(await f.controller.resume(false, true, undefined, true)).toEqual({ status: "playing" });
+    expect(f.deps.videoNetwork).toHaveBeenLastCalledWith(true);
+});
 
 test("browsing candidates does not supersede the existing audio quality request", async () => {
     const f = fixture();const old = f.coordinator.begin();
@@ -77,6 +113,136 @@ test("browsing candidates does not supersede the existing audio quality request"
     expect(f.coordinator.isActive(old)).toBe(true);
     expect(f.deps.claimPlayback).not.toHaveBeenCalled();
     expect(f.deps.replace).not.toHaveBeenCalled();
+});
+
+test("network denial during activation suspends without automatically fetching original audio", async () => {
+    const f = fixture(); const actual = f.deps.replace.getMockImplementation()!;
+    f.deps.replace.mockImplementationOnce(async request => {
+        await actual(request);
+        throw Object.assign(new Error("network"), { networkBlocked: true });
+    });
+    await expect(f.controller.enter(clip())).resolves.toEqual({ status: "error", error: "network" });
+    expect(f.controller.snapshot).toMatchObject({ phase: "video", error: "network" });
+    expect(f.deps.resolveAudio).not.toHaveBeenCalled();
+    expect(f.deps.replace).toHaveBeenCalledTimes(1);
+    expect(f.coordinator.hasPendingCommit()).toBe(false);
+});
+
+test("a late native receipt preserves a network suspension while still saving the audio checkpoint", async () => {
+    const f = fixture(); const actual = f.deps.replace.getMockImplementation()!;
+    f.deps.replace.mockImplementationOnce(async request => {
+        const receipt = await actual({ ...request, onScheduled: undefined });
+        f.controller.handleNetworkBlocked(receipt.rendition);
+        request.onScheduled?.(receipt);
+        return receipt;
+    });
+    await expect(f.controller.enter(clip())).resolves.toEqual({ status: "error", error: "network" });
+    expect(f.controller.snapshot).toMatchObject({ phase: "video", error: "network" });
+    expect(f.controller.checkpoint?.positionSeconds).toBe(37.125);
+    expect(f.deps.videoActivated).not.toHaveBeenCalled();
+    expect(f.deps.resolveAudio).not.toHaveBeenCalled();
+});
+
+test("suspended MV resumes through commitTail in a new generation without a JS position fallback", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    const old = f.deps.owner();
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), suspended: true,
+        suspendedPositionAvailable: true, outgoingAudioPosition: 37.125 }));
+    f.controller.handleNetworkBlocked(old);
+    await expect(f.controller.resume()).resolves.toEqual({ status: "playing" });
+    expect(f.deps.replace.mock.calls[1][0]).toMatchObject({ expected: old,
+        position: { mode: "resume-suspended-mv", timelineId: "same-cut" } });
+    expect(f.deps.owner().loadGeneration).toBeGreaterThan(old.loadGeneration);
+    expect(f.deps.resumeVideo).not.toHaveBeenCalled();
+    expect(f.controller.checkpoint?.positionSeconds).toBe(37.125);
+});
+
+test("a missing suspended checkpoint needs confirmation before an explicit zero restart", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), suspended: true,
+        suspendedPositionAvailable: false, outgoingAudioPosition: 37.125 }));
+    await expect(f.controller.resume()).resolves.toEqual({ status: "restart-confirmation" });
+    expect(f.deps.replace).toHaveBeenCalledTimes(1);
+    await expect(f.controller.resume(false, true, undefined, true)).resolves.toEqual({ status: "playing" });
+    expect(f.deps.replace.mock.calls[1][0].position.mode).toBe("start-zero");
+});
+
+test("a changed suspended timeline cannot borrow the old video's checkpoint", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), suspended: true,
+        suspendedPositionAvailable: true, outgoingAudioPosition: 37.125 }));
+    const changed = f.resolved(); changed.source.timelineId = "different-cut";
+    f.sources.resolve.mockResolvedValueOnce(changed);
+    await expect(f.controller.resume()).resolves.toEqual({ status: "restart-confirmation" });
+    expect(f.deps.replace).toHaveBeenCalledTimes(1);
+});
+
+test("network suspension does not cancel an already requested original-audio return", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    const audio = deferred<{url: string}>(); f.deps.resolveAudio.mockReturnValueOnce(audio.promise);
+    const returning = f.controller.returnToAudio(); await tick();
+    f.controller.handleNetworkBlocked(f.deps.owner());
+    expect(f.controller.snapshot.phase).toBe("returning");
+    audio.resolve({ url: "https://example.test/audio.mp3" });
+    await expect(returning).resolves.toEqual({ status: "audio" });
+});
+
+test("automatic focus recovery cannot reopen a network-suspended video", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), suspended: true,
+        suspendedPositionAvailable: true, outgoingAudioPosition: 37.125 }));
+    await expect(f.controller.resume(false, false)).resolves.toEqual({ status: "cancelled" });
+    expect(f.deps.replace).toHaveBeenCalledTimes(1);
+    expect(f.deps.resumeVideo).not.toHaveBeenCalled();
+});
+
+test("a replacement waits for the previous native scheduling receipt without waiting for file readiness", async () => {
+    const f = fixture(); const schedule = deferred<void>();
+    Object.assign(f.deps, { waitForNativeScheduling: jest.fn(() => schedule.promise) });
+    const watching = f.controller.enter(clip()); await tick();
+    expect(f.deps.replace).not.toHaveBeenCalled();
+    schedule.resolve(undefined);
+    await expect(watching).resolves.toEqual({ status: "playing" });
+});
+
+test("a later pause is not reclaimed by an older play waiting for native scheduling", async () => {
+    const f = fixture(); await f.controller.enter(clip());
+    const schedule = deferred<void>();
+    Object.assign(f.deps, { waitForNativeScheduling: jest.fn(() => schedule.promise) });
+    const resuming = f.controller.resume(); await tick();
+    f.pause(); schedule.resolve(undefined); await resuming;
+    expect(f.deps.resumeVideo).not.toHaveBeenCalled();
+});
+
+test("a rejected new video restores the old video's display and timeline", async () => {
+    const f = fixture(); await f.controller.enter(clip("old"));
+    f.deps.replace.mockRejectedValueOnce(Object.assign(new Error("preflight"), { rejectedBeforeMutation: true }));
+    await expect(f.controller.enter(clip("new"))).resolves.toMatchObject({ status: "error" });
+    expect(f.controller.snapshot).toMatchObject({ phase: "video", video: { id: "old" } });
+    expect(f.deps.resolveAudio).not.toHaveBeenCalled();
+});
+
+test("failure of the old video while a new request is rejected still recovers the original audio", async () => {
+    const f = fixture(); await f.controller.enter(clip("old"));
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), failed: true, outgoingAudioPosition: 37.125 }));
+    f.deps.replace.mockRejectedValueOnce(Object.assign(new Error("preflight"), { rejectedBeforeMutation: true }));
+    await expect(f.controller.enter(clip("new"))).resolves.toMatchObject({ status: "error", error: "activation" });
+    expect(f.controller.snapshot.phase).toBe("audio");
+    expect(f.deps.resolveAudio).toHaveBeenCalledTimes(1);
+    expect(f.deps.replace.mock.calls[2][0]).toMatchObject({ kind: "audio",
+        position: { mode: "restore-audio", positionSeconds: 37.125 } });
+});
+
+test.each([true, false])("network suspension remains stronger than an older file failure (snapshot=%p)", async snapshot => {
+    const f = fixture(); await f.controller.enter(clip("old"));
+    f.deps.videoInfo.mockImplementation(async () => ({ ...f.deps.owner(), failed: true,
+        suspended: snapshot, outgoingAudioPosition: 37.125 }));
+    if (!snapshot) f.controller.handleNetworkBlocked(f.deps.owner());
+    f.deps.replace.mockRejectedValueOnce(Object.assign(new Error("preflight"), { rejectedBeforeMutation: true }));
+    await expect(f.controller.enter(clip("new"))).resolves.toEqual({ status: "error", error: "network" });
+    expect(f.controller.snapshot).toMatchObject({ phase: "video", error: "network", video: { id: "old" } });
+    expect(f.deps.resolveAudio).not.toHaveBeenCalled();
+    expect(f.deps.replace).toHaveBeenCalledTimes(2);
 });
 
 test("watch uses the shared coordinator, native checkpoint and a URL-free UI state", async () => {
@@ -104,7 +270,7 @@ test("user pause during source resolution is not cleared by late source completi
     f.sources.resolve.mockReturnValueOnce(source.promise);
     const pending = f.controller.enter(clip());await tick();f.pause();source.resolve(f.resolved());
     await pending;
-    expect(f.deps.claimPlayback).toHaveBeenCalledTimes(1);
+    expect(f.deps.claimPlayback).not.toHaveBeenCalled();
     expect(f.deps.replace.mock.calls[0][0].autoPlay).toBe(false);
     await f.controller.returnToAudio();
     expect(f.deps.replace.mock.calls[1][0].autoPlay).toBe(false);

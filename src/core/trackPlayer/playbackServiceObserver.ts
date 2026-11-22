@@ -3,6 +3,7 @@ import PluginManager from "@/core/pluginManager";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import { normalizeMusicState } from "@/utils/trackUtils";
 import { errorLog } from "@/utils/log";
+import { playCurrentMusic } from "./userPlayAction";
 import {
     createPlaybackObserverSetupGuard,
     notifyPlaybackStateChangeSafely,
@@ -105,7 +106,7 @@ function setupPlaybackObserver() {
     // 停、直接放，TrackPlayer 不知道，切歌回滚、装载完成、自动播放补偿会把外部
     // 暂停盖掉。现在统一交给 TrackPlayer，分成用户主动暂停和系统临时打断
     TrackPlayer.playerAdapter.addEventListener("remotePlay", () => {
-        TrackPlayer.play().catch(error => {
+        playCurrentMusic().catch(error => {
             errorLog("远程播放处理失败", error?.message ?? error);
         });
     });

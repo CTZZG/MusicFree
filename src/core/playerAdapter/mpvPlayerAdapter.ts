@@ -95,6 +95,7 @@ export class RenditionTransitionFailure extends Error {
         readonly rejectedBeforeMutation = false,
         readonly cancelled = false,
         readonly rolledBack = false,
+        readonly networkBlocked = false,
     ) {
         super(message);
         this.name = "RenditionTransitionFailure";
@@ -199,15 +200,18 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         foreignPrepared?: MpvActiveTrackChangedEvent;
         loaded: boolean;
         failed: boolean;
+        failure?: Error;
         readyPosition?: number;
         readyProgress?: PlayerAdapterProgress;
         minimumPosition?: number;
     } | null = null;
     private renditionListeners = new Set<(...args: any[]) => void>();
+    private videoNetworkBlockedListeners = new Set<(...args: any[]) => void>();
     private queueRevision = 0;
     private loadGenerationSerial = Date.now() * 1000;
     private prepareTokenSerial = Date.now() * 1000;
     private pendingActivation: PendingActivation | null = null;
+    private renditionScheduling: Promise<void> = Promise.resolve();
     private recoveringIdentity = false;
     private repeatMode: PlayerAdapterRepeatMode = "off";
     private rate = 1;
@@ -373,13 +377,26 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         NativeMpvPlayer.addErrorListener(event => {
             if (!this.acceptsRenditionEvent(event)) return;
             const { message, code } = event;
+            if (code === "E_VIDEO_NETWORK_BLOCKED") {
+                const owner = this.expectedRendition();
+                if (owner?.kind !== "mv") return;
+                this.pendingRendition?.reject(Object.assign(new Error("Video network blocked"), { code }));
+                this.preparedNextTrack = null;
+                this.confirmedPromotion = null;
+                this.currentState = "paused";
+                this.videoNetworkBlockedListeners.forEach(listener => listener({ ...owner }));
+                return;
+            }
             this.pendingRendition?.reject(new Error("MV load failed"));
             this.currentState = "error";
+            if (this.hasUsedRendition) {
+                this.currentProgress = { ...this.currentProgress, ready: false };
+            }
             const error: PlayerAdapterPlaybackError = {
                 code: "mpv-playback-error",
                 message: message || "mpv playback error",
                 backend: this.name,
-                nativeCode: code,
+                nativeCode: event.mpvError ?? code,
                 nativeMessage: message,
             };
             errorLog("MpvPlayer 播放出错", message);
@@ -490,8 +507,16 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         await NativeMpvPlayer.resumeVideo({ mediaId: owner.mediaId, loadGeneration: owner.loadGeneration, policy });
     }
 
+    async setVideoNetworkPermission(allowed: boolean) {
+        await NativeMpvPlayer.setVideoNetworkPermission(allowed);
+    }
+
     cancelRenditionTransition() {
         this.pendingRendition?.reject(Object.assign(new Error("Rendition transition superseded"), { code: "E_RENDITION_SUPERSEDED" }));
+    }
+
+    waitForRenditionScheduling() {
+        return this.renditionScheduling;
     }
 
     async replaceRendition(request: PlayerRenditionRequest): Promise<PlayerRenditionReceipt> {
@@ -502,6 +527,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         }
         const index = this.queue.findIndex(item => keyOf(item) === expected.mediaId);
         if (index < 0 || !isPlayableUrl(request.source.url)) throw new Error("Rendition source unavailable");
+        if (request.kind === "mv" && expected.kind === "audio" && (this.pendingActivation ||
+            this.activeRendition?.mediaId !== expected.mediaId || this.activeRendition?.loadGeneration !== expected.loadGeneration)) {
+            throw new Error("Audio activation has not been confirmed");
+        }
         if (request.kind === "mv" && request.position.mode === "preserve-mv" && (
             expected.kind !== "mv" || !request.position.timelineId ||
             this.activeRendition?.timelineId !== request.position.timelineId ||
@@ -537,14 +566,16 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         let outgoingPosition: number | null = null;
         let rejectedBeforeMutation = false;
         let rolledBack = false;
+        let attempt!: NonNullable<MpvPlayerAdapter["pendingRendition"]>;
         const confirmation = new Promise<void>((resolve, reject) => {
-            const pending = { target, confirm: resolve,
+            const pending: NonNullable<MpvPlayerAdapter["pendingRendition"]> = { target, confirm: resolve,
                 reject: (error: Error) => {
-                    pending.failed = true; reject(error);
+                    pending.failed = true; pending.failure = error; reject(error);
                 },
                 loaded: false, failed: false,
                 minimumPosition: request.position.mode === "restore-audio" ? request.position.positionSeconds : undefined,
             };
+            attempt = pending;
             this.pendingRendition = pending;
             timer = BackgroundTimer.setTimeout(() => pending.reject(new Error("Rendition activation timed out")), 15000);
         });
@@ -558,6 +589,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             allowInsecureHttpPlayback: request.source.allowInsecureHttpPlayback === true,
             trustedLocalMediaProxy: request.source.trustedLocalMediaProxy === true,
             renditionKind: request.kind,
+            requireRenditionProgress: true,
+            ...(request.kind === "mv" ? { videoTimelineId: request.video.timelineId,
+                videoIdentity: request.video.providerKey && request.video.videoId ? JSON.stringify([request.video.providerKey, request.video.videoId]) : undefined } : {}),
             positionMode: request.position.mode,
             expectedMediaId: expected.mediaId,
             expectedLoadGeneration: expected.loadGeneration,
@@ -568,38 +602,65 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             playbackRate: request.kind === "mv" ? 1 : this.rate,
             ...(request.position.mode === "restore-audio" ? { startPosition: request.position.positionSeconds } : {}),
         };
+        // A native receipt can arrive after confirmation was already cancelled.
+        // Reconcile that receipt too, but never an owner selected in the meantime.
+        const reconcileRejectedAttempt = async (error: any) => {
+            let prepared = attempt.foreignPrepared;
+            const ownsPending = () => this.pendingActivation === activation &&
+                this.pendingRendition?.target === target;
+            const ownsCancelled = () => !this.pendingActivation && !this.pendingRendition &&
+                this.nativeRenditionAttempt === target &&
+                ((this.activeRendition?.mediaId === expected.mediaId && this.activeRendition?.loadGeneration === expected.loadGeneration) ||
+                    (previousNativeAttempt?.mediaId === expected.mediaId && previousNativeAttempt?.loadGeneration === expected.loadGeneration));
+            const matches = (value: any, owner: { mediaId: string; loadGeneration: number } | undefined) =>
+                !!owner && value?.mediaId === owner.mediaId && value?.loadGeneration === owner.loadGeneration;
+            if (!ownsPending()) {
+                if (!ownsCancelled() || (!matches(error?.userInfo, expected) && !matches(error?.userInfo, prepared))) return;
+                const progress = await NativeMpvPlayer.getRenditionProgress().catch(() => null);
+                const info = progress ? null : await Promise.resolve().then(() => NativeMpvPlayer.getVideoInfo?.()).catch(() => null);
+                const snapshot = progress ?? (info ? { ...info, renditionKind: info.kind } : null);
+                if (!ownsCancelled() || !snapshot) return;
+                if (matches(snapshot, prepared) && snapshot.renditionKind === "audio") {
+                    // This event was validated against our accepted runway when
+                    // received. Its closure survives cancellation of confirmation.
+                } else if (matches(snapshot, expected) && snapshot.renditionKind === expected.kind) prepared = undefined;
+                else return;
+            }
+            if (this.pendingActivation === activation) this.pendingActivation = null;
+            this.nativeRenditionAttempt = previousNativeAttempt;
+            if (prepared) await this.handleNativeActiveTrackChanged(prepared);
+            // Native enabled the protocol even if admission was rejected. A real,
+            // paired clock is required; restoring a boolean or inventing ready is unsafe.
+            await this.getProgress();
+        };
         try {
-            await Promise.all([
-                NativeMpvPlayer.loadAndPlay(payload).then(captured => {
-                    if (this.nativeRenditionAttempt === target) {
-                        this.preparedNextTrack = null;
-                        this.confirmedPromotion = null;
-                    }
-                    outgoingPosition = typeof captured === "number" && Number.isFinite(captured) && captured >= 0 ? captured : null;
-                    if (this.nativeRenditionAttempt === target) {
-                        request.onScheduled?.({ rendition: { ...target }, outgoingPosition });
-                    }
-                }, error => {
-                    rejectedBeforeMutation = error?.code === "E_RENDITION_REJECTED";
-                    rolledBack = error?.code === "E_RENDITION_ROLLED_BACK" &&
+            const scheduled = NativeMpvPlayer.loadAndPlay(payload).then(captured => {
+                if (this.nativeRenditionAttempt === target) {
+                    this.preparedNextTrack = null;
+                    this.confirmedPromotion = null;
+                }
+                outgoingPosition = typeof captured === "number" && Number.isFinite(captured) && captured >= 0 ? captured : null;
+                if (this.nativeRenditionAttempt === target) {
+                    request.onScheduled?.({ rendition: { ...target }, outgoingPosition });
+                }
+            }, async error => {
+                rejectedBeforeMutation = error?.code === "E_RENDITION_REJECTED";
+                rolledBack = error?.code === "E_RENDITION_ROLLED_BACK" &&
                         error?.userInfo?.mediaId === expected.mediaId && error?.userInfo?.loadGeneration === expected.loadGeneration;
-                    if (rolledBack && Number.isFinite(error.userInfo.outgoingAudioPosition) && error.userInfo.outgoingAudioPosition >= 0) outgoingPosition = error.userInfo.outgoingAudioPosition;
-                    throw error;
-                }),
-                confirmation,
-            ]);
+                if (rolledBack && Number.isFinite(error.userInfo.outgoingAudioPosition) && error.userInfo.outgoingAudioPosition >= 0) outgoingPosition = error.userInfo.outgoingAudioPosition;
+                if (rejectedBeforeMutation || rolledBack) await reconcileRejectedAttempt(error);
+                throw error;
+            });
+            this.renditionScheduling = scheduled.then(() => undefined, () => undefined);
+            await Promise.all([scheduled, confirmation]);
+            if (attempt.failed) throw attempt.failure ?? new Error("Rendition failed after loading");
             if (this.activeRendition?.loadGeneration !== target.loadGeneration) throw new Error("Rendition transition superseded");
             return { rendition: { ...target }, outgoingPosition,
                 readyProgress: this.pendingRendition?.target === target ? this.pendingRendition.readyProgress : undefined };
         } catch (error: any) {
-            if ((rejectedBeforeMutation || rolledBack) && this.pendingActivation === activation) {
-                const prepared = this.pendingRendition?.foreignPrepared;
-                this.pendingActivation = null;
-                this.nativeRenditionAttempt = previousNativeAttempt;
-                if (prepared) await this.handleNativeActiveTrackChanged(prepared);
-            }
             throw new RenditionTransitionFailure({ ...target }, outgoingPosition, "Rendition activation failed",
-                rejectedBeforeMutation, error?.code === "E_RENDITION_SUPERSEDED", rolledBack);
+                rejectedBeforeMutation, error?.code === "E_RENDITION_SUPERSEDED", rolledBack,
+                error?.code === "E_VIDEO_NETWORK_BLOCKED");
         } finally {
             if (timer !== undefined) BackgroundTimer.clearTimeout(timer);
             if (this.pendingRendition?.target === target) this.pendingRendition = null;
@@ -726,22 +787,29 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             if (preservePositionFallback !== undefined) {
                 payload.preservePositionFallback = preservePositionFallback;
             }
-            if (this.hasUsedRendition) payload.playbackRate = this.rate;
+            if (this.hasUsedRendition) {
+                payload.playbackRate = this.rate;
+                payload.requireRenditionProgress = true;
+            }
             const restoredPosition = await NativeMpvPlayer.loadAndPlay(payload);
+            if (this.pendingActivation?.loadGeneration !== loadGeneration && this.activeLoadGeneration !== loadGeneration) return;
             const hasRestoredPosition =
                 preservePositionFallback !== undefined &&
                 typeof restoredPosition === "number" &&
                 Number.isFinite(restoredPosition) && restoredPosition >= 0;
             this.hasLoaded = true;
-            this.currentProgress = {
-                position: hasRestoredPosition ? restoredPosition : 0,
-                duration: Number(track.duration) || 0,
-                buffered: 0,
-            };
+            if (this.activeLoadGeneration !== loadGeneration) {
+                this.currentProgress = { position: hasRestoredPosition ? restoredPosition : 0,
+                    duration: Number(track.duration) || 0, buffered: 0 };
+            } else if (hasRestoredPosition && this.currentProgress.ready !== true) {
+                this.currentProgress = { ...this.currentProgress, position: restoredPosition,
+                    buffered: Math.max(this.currentProgress.buffered, restoredPosition) };
+            }
             if (hasRestoredPosition) {
                 return { restoredPosition };
             }
         } catch (error: any) {
+            if (this.pendingActivation?.loadGeneration !== loadGeneration && this.activeLoadGeneration !== loadGeneration) return;
             if (this.pendingActivation?.loadGeneration === loadGeneration) {
                 this.pendingActivation = null;
                 this.pendingIndex = -1;
@@ -755,6 +823,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     backend: this.name,
                 } as PlayerAdapterPlaybackError),
             );
+            if (preservePositionFallback !== undefined) {
+                throw error;
+            }
         }
     }
 
@@ -868,7 +939,8 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                     prepareToken,
                     queueRevision: this.queueRevision,
                 }), sourceMediaId: this.activeMediaId ?? undefined,
-                sourceLoadGeneration: this.activeLoadGeneration ?? undefined },
+                sourceLoadGeneration: this.activeLoadGeneration ?? undefined,
+                ...(this.hasUsedRendition ? { requireRenditionProgress: true } : {}) },
             );
         } catch (error) {
             if (this.preparedNextTrack?.prepareToken === prepareToken) {
@@ -991,7 +1063,8 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                         prepareToken: entry.prepareToken,
                         queueRevision: entry.queueRevision,
                     }), sourceMediaId: entry.sourceMediaId ?? undefined,
-                    sourceLoadGeneration: entry.sourceLoadGeneration ?? undefined }),
+                    sourceLoadGeneration: entry.sourceLoadGeneration ?? undefined,
+                    ...(this.hasUsedRendition ? { requireRenditionProgress: true } : {}) }),
                 ),
             );
         } catch (error) {
@@ -1225,6 +1298,22 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             }
             return;
         }
+        const accepted = this.nativeRenditionAttempt;
+        if (!pending && event.source === "loaded" && accepted && event.mediaId === accepted.mediaId &&
+            event.loadGeneration === accepted.loadGeneration && event.renditionKind === accepted.kind) {
+            const index = this.queue.findIndex(track => keyOf(track) === event.mediaId);
+            if (index < 0) return;
+            this.activeIndex = index;
+            this.activeTrack = this.queue[index];
+            this.activeMediaId = event.mediaId;
+            this.activeLoadGeneration = event.loadGeneration;
+            this.activeRendition = { ...accepted };
+            this.hasLoaded = true;
+            this.renditionListeners.forEach(listener => listener(this.getActiveRendition()));
+            return;
+        }
+        if (this.hasUsedRendition && !pending && event.source === "loaded" &&
+            event.loadGeneration !== this.activeLoadGeneration) return;
         if (this.hasUsedRendition && (
             (this.pendingActivation && event.loadGeneration !== this.pendingActivation.loadGeneration && event.source === "loaded") ||
             (this.activeLoadGeneration != null && event.loadGeneration < this.activeLoadGeneration)
@@ -1281,6 +1370,18 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     /** 自然结束只确认原生 prepared promotion；其余下一首由 TrackPlayer 决定。 */
     private async handleNativeEnded(event: MpvEndedEvent) {
+        if (event.reason !== undefined && event.reason !== "end") {
+            if (event.reason === "error" && this.acceptsRenditionEvent({ mediaId: event.endedMediaId,
+                loadGeneration: event.endedLoadGeneration, renditionKind: event.endedRenditionKind })) {
+                this.pendingRendition?.reject(new Error("Native file failed"));
+                if (this.hasUsedRendition) {
+                    this.currentProgress = { ...this.currentProgress, ready: false };
+                }
+                this.playbackErrorListeners.forEach(listener => listener({ backend: this.name,
+                    code: "mpv-file-error", message: "Native file failed" }));
+            }
+            return;
+        }
         if (this.hasUsedRendition && event.endedLoadGeneration !== this.activeLoadGeneration &&
             event.endedLoadGeneration !== this.confirmedPromotion?.sourceLoadGeneration) return;
         if (this.hasUsedRendition && event.endedLoadGeneration != null) {
@@ -1332,6 +1433,9 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.confirmedPromotion = null;
             this.preparedNextTrack = null;
             this.suppressNativeEndedStateUntil = 0;
+            if (this.hasUsedRendition) {
+                this.currentProgress = { ...this.currentProgress, ready: false };
+            }
             this.emitPlaybackStateChanged("ended");
         }
 
@@ -1417,6 +1521,16 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     /**************** 基础控制 ****************/
 
     async play() {
+        const owner = this.expectedRendition();
+        if (owner?.kind === "mv") {
+            const info = await Promise.resolve().then(() => NativeMpvPlayer.getVideoInfo?.()).catch(() => null);
+            const current = this.expectedRendition();
+            if (!info || current?.mediaId !== owner.mediaId || current.loadGeneration !== owner.loadGeneration ||
+                info.mediaId !== owner.mediaId || info.loadGeneration !== owner.loadGeneration ||
+                info.suspended || info.failed || info.completed) return;
+            await NativeMpvPlayer.resume();
+            return;
+        }
         if (this.pendingActivation) {
             // 装载还没完成。按自动播放装载、原生也还在缓冲的，装好会自己出声，不用
             // 再发。按暂停装载的，或者装载途中被暂停、被系统打断过的，原生已经撤销
@@ -1450,7 +1564,16 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             await this.playIndex(this.desiredIndex, "playStart");
             break;
         case "resume":
-            await NativeMpvPlayer.resume();
+            try {
+                await NativeMpvPlayer.resume();
+            } catch (error: any) {
+                if (error?.code !== "E_MPV_RELOAD_REQUIRED") throw error;
+                const current = this.expectedRendition();
+                if (!this.pendingActivation && owner?.kind === "audio" &&
+                    current?.mediaId === owner.mediaId && current.loadGeneration === owner.loadGeneration) {
+                    await this.playIndex(this.desiredIndex, "playStart");
+                }
+            }
             break;
         case "none":
             break;
@@ -1463,6 +1586,10 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
     async claimPlayback() {
         await NativeMpvPlayer.claimPlayback();
+    }
+
+    async holdPlayback() {
+        await NativeMpvPlayer.holdPlayback();
     }
 
     async stop() {
@@ -1658,7 +1785,11 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
                 const progress = await NativeMpvPlayer.getRenditionProgress();
                 if (pending !== this.pendingActivation || generation !== this.expectedRendition()?.loadGeneration) return this.currentProgress;
                 if (progress && this.acceptsRenditionEvent(progress)) {
+                    const wasReady = this.currentProgress.ready === true;
                     this.currentProgress = { position: progress.position, duration: progress.duration, buffered: progress.buffered, ready: progress.ready === true };
+                    if (this.activeRendition?.kind === "audio" && progress.ready === true && !wasReady) {
+                        this.renditionListeners.forEach(listener => listener(this.getActiveRendition()));
+                    }
                 }
                 return this.currentProgress;
             }
@@ -2457,6 +2588,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         > = {
             trackChanged: this.trackChangedListeners,
             renditionChanged: this.renditionListeners,
+            videoNetworkBlocked: this.videoNetworkBlockedListeners,
             playbackStateChanged: this.playbackStateChangedListeners,
             progress: this.progressListeners,
             playbackSeeked: this.playbackSeekedListeners,

@@ -34,6 +34,7 @@ export type PlayerAdapterEvent =
     | "queuesChanged"
     | "queueChanged"
     | "renditionChanged"
+    | "videoNetworkBlocked"
     | "androidAutoConnectionChanged"
     | "remotePlay"
     | "remotePause"
@@ -100,7 +101,7 @@ export type PlayerRenditionRequest = {
         kind: "mv";
         video: Pick<PlayerActiveRendition,
             "videoId" | "providerKey" | "qualityId" | "qualityLabel" | "timelineId">;
-        position: { mode: "start-zero" } | { mode: "preserve-mv"; timelineId: string };
+        position: { mode: "start-zero" } | { mode: "preserve-mv" | "resume-suspended-mv"; timelineId: string };
     }
     | {
         kind: "audio";
@@ -297,6 +298,7 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
      * 能解除。
      */
     claimPlayback?(): Promise<void>;
+    holdPlayback?(): Promise<void>;
 
     seekTo(position: number): Promise<void>;
 
@@ -310,7 +312,10 @@ export interface PlayerAdapter<TTrack = PlayerAdapterTrack> {
     replaceRendition?(request: PlayerRenditionRequest): Promise<PlayerRenditionReceipt>;
 
     cancelRenditionTransition?(): void;
-    getVideoInfo?(): Promise<{ mediaId: string | null; loadGeneration: number; kind: string; outgoingAudioPosition?: number }>;
+    waitForRenditionScheduling?(): Promise<void>;
+    setVideoNetworkPermission?(allowed: boolean): Promise<void>;
+    getVideoInfo?(): Promise<{ mediaId: string | null; loadGeneration: number; kind: string; outgoingAudioPosition?: number;
+        suspended?: boolean; suspendedPositionAvailable?: boolean; failed?: boolean; positionPreservable?: boolean }>;
     resumeVideo?(policy: "unmetered" | "allow-metered"): Promise<void>;
 
     getState(): Promise<PlayerBackendState>;

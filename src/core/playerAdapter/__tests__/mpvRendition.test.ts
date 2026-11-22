@@ -13,20 +13,21 @@ const mockNative = {
     getPosition: jest.fn(async () => 37.25),
     getDuration: jest.fn(async () => 300),
     getRenditionProgress: jest.fn(async (): Promise<any> => null),
+    getVideoInfo: jest.fn(async (): Promise<any> => null),
     addStateChangedListener: (fn: any) => {
-        mockEvents.state = fn; 
+        mockEvents.state = fn;
     },
     addProgressListener: (fn: any) => {
-        mockEvents.progress = fn; 
+        mockEvents.progress = fn;
     },
     addActiveTrackChangedListener: (fn: any) => {
-        mockEvents.active = fn; 
+        mockEvents.active = fn;
     },
     addEndedListener: (fn: any) => {
-        mockEvents.ended = fn; 
+        mockEvents.ended = fn;
     },
     addErrorListener: (fn: any) => {
-        mockEvents.error = fn; 
+        mockEvents.error = fn;
     },
     addRemoteCommandListener: (fn: any) => {
         mockEvents.remote = fn;
@@ -81,9 +82,166 @@ beforeEach(() => {
     mockNative.loadAndPlay.mockResolvedValue(37.25);
     mockNative.getPosition.mockResolvedValue(37.25);
     mockNative.getDuration.mockResolvedValue(300);
-    mockNative.getRenditionProgress.mockResolvedValue(null);
+    mockNative.getRenditionProgress.mockReset().mockResolvedValue(null);
+    mockNative.getVideoInfo.mockReset().mockResolvedValue(null);
 });
 afterEach(() => jest.useRealTimers());
+
+const pairedAudio = (owner: PlayerRenditionIdentity, position = 39) => ({
+    mediaId: owner.mediaId, loadGeneration: owner.loadGeneration, renditionKind: "audio",
+    position, duration: 300, buffered: position, ready: true,
+});
+
+test("a rejected first MV reconciles the negotiated native audio clock and notifies waiters", async () => {
+    const adapter = await setup(); const old = adapter.getRenditionOwner()!;
+    const changed = jest.fn(); adapter.addEventListener("renditionChanged", changed);
+    mockNative.getRenditionProgress.mockResolvedValue(pairedAudio(old));
+    mockNative.loadAndPlay.mockRejectedValueOnce(Object.assign(new Error("network changed"), { code: "E_RENDITION_REJECTED" }));
+    await expect(adapter.replaceRendition(video(old))).rejects.toMatchObject({ rejectedBeforeMutation: true });
+    expect(adapter.getRenditionOwner()).toEqual(old);
+    expect(adapter.getActiveRendition()).toMatchObject({ kind: "audio", ready: true });
+    expect(changed).toHaveBeenCalled();
+    expect(mockNative.getRenditionProgress).toHaveBeenCalled();
+});
+
+test("a first MV explicitly negotiates progress before native admission", async () => {
+    const adapter = await setup(); const pending = adapter.replaceRendition(video(adapter.getRenditionOwner()!));
+    const payload = last();
+    confirm(); await pending;
+    expect(payload.requireRenditionProgress).toBe(true);
+});
+
+test("MV cannot overwrite an audio activation that has not yet been confirmed", async () => {
+    const adapter = new MpvPlayerAdapter(); await adapter.setup();
+    await adapter.loadQueue([a, b]); const audio = last();
+    await expect(adapter.replaceRendition(video(adapter.getRenditionOwner()!))).rejects.toThrow("not been confirmed");
+    expect(last()).toBe(audio);
+    confirm(); expect(adapter.getActiveRendition()).toMatchObject({ kind: "audio", mediaId: "a" });
+});
+
+test("source scheduling is settled before the next transaction borrows an owner", async () => {
+    const adapter = await setup(); let release!: (position: number) => void;
+    mockNative.loadAndPlay.mockImplementationOnce(() => new Promise(resolve => {
+        release = resolve;
+    }));
+    const cancelled = adapter.replaceRendition(video(adapter.getRenditionOwner()!)).catch(value => value);
+    const payload = last(); adapter.cancelRenditionTransition(); await cancelled;
+    let settled = false;
+    const scheduling = adapter.waitForRenditionScheduling().then(() => {
+        settled = true;
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    release(37.25); await scheduling;
+    mockEvents.active({ ...payload, ...identity(payload), source: "loaded" });
+    expect(adapter.getActiveRendition()).toMatchObject({ kind: "mv", loadGeneration: payload.loadGeneration });
+    expect(mockNative.stop).not.toHaveBeenCalled();
+});
+
+test("late rejection can restore an accepted but not yet file-loaded video owner", async () => {
+    const adapter = await setup();
+    const first = adapter.replaceRendition(video(adapter.getRenditionOwner()!)).catch(value => value);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    adapter.cancelRenditionTransition(); await first;
+    const accepted = adapter.getRenditionOwner()!;
+    let reject!: (error: Error) => void;
+    mockNative.loadAndPlay.mockImplementationOnce(() => new Promise((_resolve, fail) => {
+        reject = fail;
+    }));
+    const second = adapter.replaceRendition(video(accepted)).catch(value => value);
+    adapter.cancelRenditionTransition(); await second;
+    mockNative.getVideoInfo.mockResolvedValue({ ...accepted, outgoingAudioPosition: 37.25 });
+    reject(Object.assign(new Error("preflight"), { code: "E_RENDITION_REJECTED", userInfo: {
+        mediaId: accepted.mediaId, loadGeneration: accepted.loadGeneration,
+    } }));
+    await adapter.waitForRenditionScheduling();
+    expect(adapter.getRenditionOwner()).toEqual(accepted);
+    expect(adapter.getActiveRendition()?.kind).toBe("audio");
+});
+
+test("audio after a cancelled first MV explicitly requests the same native progress protocol", async () => {
+    const adapter = await setup(); let reject!: (error: Error) => void;
+    mockNative.loadAndPlay.mockImplementationOnce(() => new Promise((_resolve, fail) => {
+        reject = fail;
+    }));
+    const pending = adapter.replaceRendition(video(adapter.getRenditionOwner()!)).catch(value => value);
+    await adapter.skipToIndex(1); confirm(); ready(5);
+    const audio = last();
+    reject(Object.assign(new Error("preflight"), { code: "E_RENDITION_REJECTED" })); await pending;
+    expect(audio.requireRenditionProgress).toBe(true);
+    expect(adapter.getActiveRendition()).toMatchObject({ mediaId: "b", ready: true });
+});
+
+test("a cancelled attempt still reconciles a late native rejection against its real outgoing owner", async () => {
+    const adapter = await setup(); const old = adapter.getRenditionOwner()!;
+    let reject!: (error: Error) => void;
+    mockNative.loadAndPlay.mockImplementationOnce(() => new Promise((_resolve, fail) => {
+        reject = fail;
+    }));
+    const pending = adapter.replaceRendition(video(old)).catch(value => value);
+    adapter.cancelRenditionTransition(); await pending;
+    mockNative.getRenditionProgress.mockResolvedValue(pairedAudio(old, 42));
+    reject(Object.assign(new Error("preflight"), { code: "E_RENDITION_REJECTED", userInfo: {
+        mediaId: old.mediaId, loadGeneration: old.loadGeneration,
+    } }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(adapter.getRenditionOwner()).toEqual(old);
+    expect(adapter.getActiveRendition()).toMatchObject({ ready: true });
+});
+
+test("a delayed failure snapshot cannot overwrite a newer song or its progress", async () => {
+    const adapter = await setup(); const old = adapter.getRenditionOwner()!;
+    let resolve!: (value: any) => void;
+    mockNative.getRenditionProgress.mockImplementationOnce(() => new Promise(done => {
+        resolve = done;
+    }));
+    mockNative.loadAndPlay.mockRejectedValueOnce(Object.assign(new Error("preflight"), { code: "E_RENDITION_REJECTED" }));
+    const pending = adapter.replaceRendition(video(old)).catch(value => value);
+    await new Promise(done => setTimeout(done, 0));
+    await adapter.skipToIndex(1); confirm(); ready(7);
+    if (resolve) resolve(pairedAudio(old, 99));
+    await pending;
+    expect(adapter.getRenditionOwner()).toMatchObject({ mediaId: "b" });
+    expect(adapter.getActiveRendition()).toMatchObject({ ready: true });
+});
+
+test("a paired ready query wakes waiters only for the current audio generation", async () => {
+    const adapter = await setup(); await enter(adapter);
+    const returning = adapter.replaceRendition({ expected: adapter.getRenditionOwner()!, kind: "audio", autoPlay: false,
+        source: { url: a.url }, position: { mode: "restore-audio", positionSeconds: 37.25 } });
+    confirm(); await returning;
+    const owner = adapter.getRenditionOwner()!;
+    mockEvents.progress({ ...pairedAudio(owner), ready: false });
+    const changed = jest.fn(); adapter.addEventListener("renditionChanged", changed);
+    mockNative.getRenditionProgress.mockResolvedValue(pairedAudio(owner)); await adapter.getProgress();
+    expect(changed).toHaveBeenCalledTimes(1);
+    changed.mockClear();
+    mockNative.getRenditionProgress.mockResolvedValue(pairedAudio({ ...owner, loadGeneration: owner.loadGeneration - 1 }));
+    await adapter.getProgress(); expect(changed).not.toHaveBeenCalled();
+});
+
+test("a network-blocked load pauses as an owned suspension without generic recovery", async () => {
+    const adapter = await setup();
+    const errors = jest.fn(), blocked = jest.fn();
+    adapter.addEventListener("playbackError", errors); adapter.addEventListener("videoNetworkBlocked", blocked);
+    const pending = adapter.replaceRendition(video(adapter.getRenditionOwner()!)).catch(value => value);
+    const payload = last();
+    mockEvents.error({ ...identity(payload), code: "E_VIDEO_NETWORK_BLOCKED", message: "network" });
+    expect(await pending).toMatchObject({ networkBlocked: true });
+    expect(errors).not.toHaveBeenCalled();
+    expect(blocked).toHaveBeenCalledWith(expect.objectContaining({ kind: "mv", loadGeneration: payload.loadGeneration }));
+    expect(adapter.getRenditionOwner()).toMatchObject({ kind: "mv", loadGeneration: payload.loadGeneration });
+});
+
+test.each(["stop", "quit", "redirect", "unknown", "error"])("%s cannot be forwarded as natural MV completion", async reason => {
+    const adapter = await setup(); await enter(adapter);
+    const owner = adapter.getRenditionOwner()!;
+    const ended = jest.fn(); adapter.addEventListener("playEnd", ended);
+    mockEvents.ended({ reason, endedMediaId: owner.mediaId, endedLoadGeneration: owner.loadGeneration,
+        endedRenditionKind: "mv", autoAdvanced: false });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(ended).not.toHaveBeenCalled();
+});
 
 test("actual adapter separates native audio capture from MV zero, queue URL and metadata", async () => {
     const adapter = await setup();
@@ -146,7 +304,7 @@ test("an audio getProgress promise cannot overwrite a later MV snapshot", async 
     const adapter = await setup();
     let release!: (value: number) => void;
     mockNative.getPosition.mockImplementationOnce(() => new Promise(resolve => {
-        release = resolve; 
+        release = resolve;
     }));
     const old = adapter.getProgress();
     await enter(adapter);
@@ -269,7 +427,7 @@ test("native preflight rejection preserves a genuine prepared-audio promotion", 
     const prepared = (mockNative.prepareNext.mock.calls as any[]).at(-1)[0];
     let reject!: (error: Error & {code: string}) => void;
     mockNative.loadAndPlay.mockImplementationOnce(() => new Promise((_resolve, fail) => {
-        reject = fail; 
+        reject = fail;
     }));
     const pending = adapter.replaceRendition(video(adapter.getActiveRendition()!)).catch(error => error);
     mockEvents.active({ ...prepared, renditionKind: "audio", source: "prepared" });
@@ -285,7 +443,7 @@ test("a cancelled MV's late receipt cannot clear the new song's prepared audio",
     const adapter = await setup();
     let release!: (position: number) => void;
     mockNative.loadAndPlay.mockImplementationOnce(() => new Promise(resolve => {
-        release = resolve; 
+        release = resolve;
     }));
     const cancelled = adapter.replaceRendition(video(adapter.getActiveRendition()!)).catch(error => error);
     await adapter.skipToIndex(1);confirm();

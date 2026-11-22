@@ -69,6 +69,7 @@ interface Dependencies {
     foreground(): boolean;
     audioSettings(): { quality: IMusic.IQualityKey; rate: number; wasPlaying: boolean };
     mayAutoPlay(): boolean;
+    playbackIntentRevision?(): number;
     repeatCurrentVideo(): boolean;
     claimPlayback(): Promise<void>;
     videoNetwork(approvedMobile: boolean): Promise<"unmetered" | "allow-metered">;
@@ -82,12 +83,17 @@ interface Dependencies {
     ): Promise<PlayerRenditionSource>;
     replace(request: PlayerRenditionRequest): Promise<PlayerRenditionReceipt>;
     cancelNativeWait(): void;
+    waitForNativeScheduling?(): Promise<void>;
     videoInfo(): Promise<{
         mediaId: string | null;
         loadGeneration: number;
         kind: string;
         outgoingAudioPosition?: number;
         completed?: boolean;
+        suspended?: boolean;
+        suspendedPositionAvailable?: boolean;
+        failed?: boolean;
+        positionPreservable?: boolean;
     }>;
     publish(state: MusicVideoState): void;
     timelineChanged(blocked: boolean): void;
@@ -120,6 +126,7 @@ export default class MusicVideoController {
     } | null = null;
     private blocked = false;
     private failedGeneration: number | null = null;
+    private networkBlockedGeneration: number | null = null;
     private mobileApproved = false;
     private playOnReturn = false;
     private audioReturnTask: { key: string; promise: Promise<MusicVideoAction> } | null = null;
@@ -228,6 +235,7 @@ export default class MusicVideoController {
         if (!this.session || !this.currentVideo) {
             return;
         }
+        if (phase === "video" && this.networkBlockedGeneration === this.deps.owner()?.loadGeneration) error = "network";
         this.publish({
             phase,
             songKey: this.session.key,
@@ -281,7 +289,9 @@ export default class MusicVideoController {
             mobileApproved?: boolean;
             automaticRepeat?: boolean;
             existingSession?: boolean;
+            resumeSuspended?: boolean;
             preflight?: MusicVideoPreflight;
+            intentRevision?: number;
         } = {},
     ): Promise<MusicVideoAction> {
         const song = this.deps.currentSong(),
@@ -301,6 +311,7 @@ export default class MusicVideoController {
             this.mobileApproved = false;
         }
         const oldVideo = this.currentVideo;
+        const intentRevision = options.intentRevision ?? this.deps.playbackIntentRevision?.();
         const settings = this.deps.audioSettings();
         const session = this.session ?? {
             song: { ...song },
@@ -334,10 +345,6 @@ export default class MusicVideoController {
             if (preparation === null) {
                 throw new Superseded();
             }
-            if (options.explicit !== false && preparation?.claimPlayback !== false) {
-                await this.deps.claimPlayback();
-            }
-            this.guard(request, session.key, true);
             const networkPolicy = await this.deps.videoNetwork(
                 preparation?.mobileApproved === true ||
                     options.mobileApproved === true ||
@@ -362,7 +369,15 @@ export default class MusicVideoController {
             this.guard(request, session.key, true);
             const sameTimeline =
                 !!oldVideo?.timeline && oldVideo.timeline === resolved.source.timelineId;
-            if (options.preserve && !sameTimeline && !options.restartApproved) {
+            let preservable = true;
+            if (options.preserve && oldVideo) {
+                const info = await this.deps.videoInfo();
+                this.guard(request, session.key, true);
+                const owner = this.deps.owner();
+                if (owner?.mediaId !== info.mediaId || owner?.loadGeneration !== info.loadGeneration) throw new Superseded();
+                preservable = info.positionPreservable !== false;
+            }
+            if (options.preserve && (!sameTimeline || !preservable) && !options.restartApproved) {
                 if (oldVideo) {
                     this.currentVideo = oldVideo;
                     this.phase("video");
@@ -371,6 +386,8 @@ export default class MusicVideoController {
             }
             stage = "activation";
             const commit = await this.deps.coordinator.runLatest(request.token, async () => {
+                this.guard(request, session.key, true);
+                if (this.deps.waitForNativeScheduling) await this.deps.waitForNativeScheduling();
                 this.guard(request, session.key, true);
                 if (!resolved.isCurrent()) {
                     throw new Superseded();
@@ -381,6 +398,11 @@ export default class MusicVideoController {
                 }
                 await this.recoverCapture(session, owner, () => this.current(request, session.key));
                 this.guard(request, session.key, true);
+                if (options.explicit !== false && preparation?.claimPlayback !== false &&
+                    (intentRevision === undefined || this.deps.playbackIntentRevision?.() === intentRevision)) {
+                    await this.deps.claimPlayback();
+                    this.guard(request, session.key, true);
+                }
                 this.currentVideo = {
                     candidate: resolved.candidate,
                     quality: resolved.quality,
@@ -397,9 +419,11 @@ export default class MusicVideoController {
                     requireForeground: !request.allowBackground,
                     autoPlay: this.deps.mayAutoPlay(),
                     position:
-                        options.preserve && sameTimeline
-                            ? { mode: "preserve-mv", timelineId: resolved.source.timelineId! }
-                            : { mode: "start-zero" },
+                        options.resumeSuspended && sameTimeline && preservable
+                            ? { mode: "resume-suspended-mv", timelineId: resolved.source.timelineId! }
+                            : options.preserve && sameTimeline && preservable
+                                ? { mode: "preserve-mv", timelineId: resolved.source.timelineId! }
+                                : { mode: "start-zero" },
                     video: {
                         videoId: resolved.candidate.id,
                         providerKey: resolved.candidate.providerKey,
@@ -414,7 +438,8 @@ export default class MusicVideoController {
                             this.saveCapture(session, value.outgoingPosition);
                         }
                         if (this.current(request, session.key)) {
-                            this.phase("loading");
+                            if (this.networkBlockedGeneration === value.rendition.loadGeneration) this.phase("video", "network");
+                            else this.phase("loading");
                         }
                     },
                 });
@@ -422,7 +447,12 @@ export default class MusicVideoController {
                 if (owner.kind === "audio") {
                     this.saveCapture(session, receipt.outgoingPosition);
                 }
+                if (this.networkBlockedGeneration === receipt.rendition.loadGeneration) {
+                    throw Object.assign(new Error("Video network blocked"), { networkBlocked: true });
+                }
+                if (this.failedGeneration === receipt.rendition.loadGeneration) throw new Error("Video failed during activation");
                 this.phase("video");
+                this.networkBlockedGeneration = null;
                 this.failedGeneration = null;
                 this.deps.videoActivated();
             });
@@ -446,13 +476,31 @@ export default class MusicVideoController {
             ) {
                 return { status: "cancelled" };
             }
-            if (error?.rolledBack) {
-                if (initialOwner.kind === "audio") {
+            if (error?.networkBlocked) {
+                this.networkBlockedGeneration = this.deps.owner()?.loadGeneration ?? null;
+                this.phase("video", "network");
+                return { status: "error", error: "network" };
+            }
+            if (error?.rolledBack || error?.rejectedBeforeMutation) {
+                if (initialOwner.kind === "audio" && error?.rolledBack) {
                     this.saveCapture(session, error.outgoingPosition);
                 }
                 this.currentVideo = oldVideo;
                 if (oldVideo) {
                     this.phase("video", stage);
+                    const owner = this.deps.owner();
+                    const info = await this.deps.videoInfo().catch(() => null);
+                    if (this.current(request, session.key) && info && owner?.kind === "mv" &&
+                        info.mediaId === owner.mediaId && info.loadGeneration === owner.loadGeneration) {
+                        if (info.suspended || this.networkBlockedGeneration === owner.loadGeneration) {
+                            this.phase("video", "network");
+                            return { status: "error", error: "network" };
+                        }
+                        if (info.failed) {
+                            const restored = await this.returnToAudio(false, stage);
+                            return restored.status === "audio" ? { status: "error", error: stage } : restored;
+                        }
+                    }
                 } else {
                     this.block(false);
                     this.session = null;
@@ -530,6 +578,8 @@ export default class MusicVideoController {
                 await this.deps.claimPlayback();
             }
             this.guard(request, session.key);
+            if (this.deps.waitForNativeScheduling) await this.deps.waitForNativeScheduling();
+            this.guard(request, session.key);
             const owner = this.deps.owner();
             if (!owner || owner.mediaId !== session.key) {
                 throw new Superseded();
@@ -576,6 +626,7 @@ export default class MusicVideoController {
                 this.session = null;
                 this.currentVideo = null;
                 this.mobileApproved = false;
+                this.networkBlockedGeneration = null;
                 this.block(false);
                 this.publish({ phase: "audio", error: reason });
             });
@@ -626,7 +677,14 @@ export default class MusicVideoController {
         mobileApproved = false,
         explicit = true,
         preflight?: MusicVideoPreflight,
+        restartApproved = false,
     ): Promise<MusicVideoAction> {
+        const schedulingKey = this.currentKey();
+        if (!schedulingKey || this.deps.owner()?.kind !== "mv") return { status: "cancelled" };
+        const beforeScheduling = this.request;
+        const intentRevision = this.deps.playbackIntentRevision?.();
+        if (this.deps.waitForNativeScheduling) await this.deps.waitForNativeScheduling();
+        if (this.request !== beforeScheduling || this.currentKey() !== schedulingKey) return { status: "cancelled" };
         const key = this.currentKey(),
             owner = this.deps.owner();
         if (!key || owner?.kind !== "mv") {
@@ -644,12 +702,6 @@ export default class MusicVideoController {
             if (!current() || preparation === null) {
                 return { status: "cancelled" };
             }
-            if (explicit && preparation?.claimPlayback !== false) {
-                await this.deps.claimPlayback();
-            }
-            if (!current()) {
-                return { status: "cancelled" };
-            }
             const info = await this.deps.videoInfo();
             if (
                 !current() ||
@@ -658,14 +710,34 @@ export default class MusicVideoController {
             ) {
                 return { status: "cancelled" };
             }
-            if (info.completed && this.currentVideo) {
+            // Consent belongs to this session, including a subsequent restart dialog.
+            if (preparation?.mobileApproved === true) this.mobileApproved = true;
+            const reloadOptions = {
+                explicit: explicit && preparation?.claimPlayback !== false,
+                existingSession: true,
+                intentRevision,
+                mobileApproved: preparation?.mobileApproved === true || mobileApproved || this.mobileApproved,
+            };
+            if (info.suspended && this.currentVideo) {
+                this.networkBlockedGeneration = owner.loadGeneration;
+                this.phase("video", "network");
+                if (!explicit) return { status: "cancelled" };
+                if (info.suspendedPositionAvailable !== true && !restartApproved) return { status: "restart-confirmation" };
                 return this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
-                    explicit: false,
-                    existingSession: true,
-                    mobileApproved:
-                        preparation?.mobileApproved === true ||
-                        mobileApproved ||
-                        this.mobileApproved,
+                    ...reloadOptions, preserve: !restartApproved,
+                    resumeSuspended: !restartApproved, restartApproved,
+                });
+            }
+            if (info.failed && this.currentVideo) {
+                if (!explicit) return { status: "cancelled" };
+                return this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
+                    ...reloadOptions,
+                });
+            }
+            if (info.completed && this.currentVideo) {
+                if (!explicit) return { status: "cancelled" };
+                return this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
+                    ...reloadOptions,
                 });
             }
             const policy = await this.deps.videoNetwork(
@@ -677,10 +749,16 @@ export default class MusicVideoController {
             if (policy === "allow-metered") {
                 this.mobileApproved = true;
             }
+            if (explicit && preparation?.claimPlayback !== false &&
+                (intentRevision === undefined || this.deps.playbackIntentRevision?.() === intentRevision)) {
+                await this.deps.claimPlayback();
+            }
+            if (!current()) return { status: "cancelled" };
             if (this.deps.mayAutoPlay()) {
                 await this.deps.resumeVideo(policy);
             }
             if (current()) {
+                this.networkBlockedGeneration = null;
                 this.phase("video");
             }
             return { status: current() ? "playing" : "cancelled" };
@@ -697,6 +775,16 @@ export default class MusicVideoController {
         if (!this.request?.allowBackground) {
             this.cancelResolving();
         }
+    }
+
+    handleNetworkBlocked(owner: PlayerRenditionIdentity) {
+        const current = this.deps.owner();
+        if (!this.session || !current || owner.kind !== "mv" || current.mediaId !== owner.mediaId ||
+            current.loadGeneration !== owner.loadGeneration || this.currentKey() !== owner.mediaId) return;
+        this.networkBlockedGeneration = owner.loadGeneration;
+        if (this.state.phase === "returning") return;
+        this.block(true);
+        this.phase("video", "network");
     }
     playPendingReturn() {
         if (this.state.phase === "returning") {
@@ -725,6 +813,7 @@ export default class MusicVideoController {
         this.request = null;
     }
     leaveForSongChange() {
+        this.networkBlockedGeneration = null;
         this.audioReturnTask = null;
         this.mobileApproved = false;
         this.cancelRequest();
@@ -737,17 +826,17 @@ export default class MusicVideoController {
         if (!this.blocksAudioTimeline) {
             return false;
         }
-        if (this.state.phase === "loading" || this.state.phase === "returning") {
-            return true;
-        }
         const owner = this.deps.owner();
         if (owner?.kind !== "mv") {
             return true;
         }
+        if (this.networkBlockedGeneration === owner.loadGeneration || this.state.error === "network") return true;
+        if (this.state.phase === "returning") return true;
         if (this.failedGeneration === owner.loadGeneration) {
             return true;
         }
         this.failedGeneration = owner.loadGeneration;
+        if (this.state.phase === "loading") return true;
         await this.returnToAudio(false, "activation");
         return true;
     }

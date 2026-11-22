@@ -162,8 +162,8 @@ export const changeMusicVideoQuality = (quality: string) =>
         ),
     );
 export const resumeMusicVideo = () =>
-    requestVideoAction(preflight =>
-        TrackPlayer.resumeMusicVideo(false, true, preflight),
+    requestVideoAction((preflight, restartApproved) =>
+        TrackPlayer.resumeMusicVideo(false, true, preflight, restartApproved),
     );
 export async function returnToSong() {
     const result = await TrackPlayer.returnToSong();

@@ -89,7 +89,8 @@ export default function MusicDetail() {
                     </Animated.View>
                     <SafeAreaView
                         edges={
-                            immersiveMode ? ["left", "right", "bottom"] : undefined
+                            videoMode && fullscreen ? [] :
+                                immersiveMode ? ["left", "right", "bottom"] : undefined
                         }
                         style={globalStyle.fwflex1}>
                         <StatusBar

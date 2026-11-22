@@ -214,6 +214,8 @@ android {
     sourceSets {
         // These JVM tests also run in the device suite.
         androidTest.java.srcDirs += "src/test/java"
+        // Android scheduling tests use Robolectric only on the host JVM.
+        test.java.srcDirs += "src/testRobolectric/java"
     }
 
     // minSdk 34 是产品支持下限；Android 15/16 的新 API 仍需版本保护。CI 用
@@ -251,6 +253,7 @@ dependencies {
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.10.0'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
     androidTestImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'

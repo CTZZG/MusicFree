@@ -55,3 +55,55 @@ test("error view does not fall back to the song duration or rate", async () => {
     const text = tree.root.findAll(node => typeof node.props.children === "string").map(node => node.props.children).join("\n");
     expect(text).not.toContain("1.5x");
 });
+
+test("an accessibility progress action seeks a paused MV without touch callbacks", async () => {
+    await mount();
+    act(() => slider().props.onValueChange(18));
+    expect(mockSeek).toHaveBeenCalledWith(18);
+});
+
+test("touch value changes stay provisional until the gesture completes", async () => {
+    await mount();
+    act(() => slider().props.onSlidingStart());
+    act(() => slider().props.onValueChange(18));
+    expect(mockSeek).not.toHaveBeenCalled();
+    act(() => slider().props.onSlidingComplete(18));
+    expect(mockSeek).toHaveBeenCalledTimes(1);
+    expect(mockSeek).toHaveBeenCalledWith(18);
+});
+
+test("a stale accessibility callback cannot seek a replacement rendition", async () => {
+    await mount();
+    const previous = slider().props.onValueChange;
+    mockOwner = { ...mockOwner, loadGeneration: 3 };
+    mockState = { ...mockState, owner: mockOwner };
+    await act(async () => tree.update(<SeekBar />));
+    act(() => previous(18));
+    expect(mockSeek).not.toHaveBeenCalled();
+});
+
+test.each(["loading", "returning", "unknown-duration"])("accessibility cannot seek during %s", async phase => {
+    if (phase === "unknown-duration") mockDuration = 0;
+    else mockState = { ...mockState, phase };
+    await mount();
+    act(() => slider().props.onValueChange(18));
+    expect(mockSeek).not.toHaveBeenCalled();
+});
+
+test("network-suspended MV disables seek bar and blocks seek commits", async () => {
+    mockState = { ...mockState, phase: "video", error: "network" };
+    await mount();
+    expect(slider().props.disabled).toBe(true);
+    act(() => slider().props.onValueChange(18));
+    act(() => slider().props.onSlidingStart());
+    act(() => slider().props.onSlidingComplete(18));
+    expect(mockSeek).not.toHaveBeenCalled();
+});
+
+test("a rejected native seek does not surface an unhandled rejection", async () => {
+    mockSeek.mockRejectedValueOnce(new Error("Video network is suspended"));
+    await mount();
+    act(() => slider().props.onValueChange(18));
+    await Promise.resolve();
+    expect(mockSeek).toHaveBeenCalledWith(18);
+});

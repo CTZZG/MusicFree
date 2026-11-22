@@ -548,6 +548,7 @@ class TrackPlayer
                     ["playing", "buffering"].includes(getDefaultStore().get(musicStateAtom)),
             }),
             mayAutoPlay: () => this.playbackIntent.mayAutoPlay(),
+            playbackIntentRevision: () => this.playbackIntent.revision,
             repeatCurrentVideo: () => this.repeatMode === MusicRepeatMode.SINGLE,
             claimPlayback: async () => {
                 this.notePlayByUser();
@@ -626,6 +627,7 @@ class TrackPlayer
                 return this.backend.replaceRendition(request);
             },
             cancelNativeWait: () => this.backend?.cancelRenditionTransition?.(),
+            waitForNativeScheduling: () => this.backend?.waitForRenditionScheduling?.() ?? Promise.resolve(),
             videoInfo: () =>
                 this.backend.getVideoInfo?.() ?? Promise.reject(new Error("Video unavailable")),
             publish: (state) => getDefaultStore().set(musicVideoAtom, state),
@@ -891,6 +893,15 @@ class TrackPlayer
         }
 
         if (this.backendListenerLifecycle.begin()) {
+            const updateVideoPermission = () => {
+                Promise.resolve(this.backend.setVideoNetworkPermission?.(
+                    this.configService.getConfig("basic.useCelluarNetworkPlay") === true,
+                )).catch(() => errorLog("同步视频网络许可失败", "Video network permission unavailable"));
+            };
+            const videoPermission = this.configService.onConfigChanged?.("basic.useCelluarNetworkPlay", updateVideoPermission);
+            if (videoPermission) this.backendListenerLifecycle.addCleanup(() => () => videoPermission.remove());
+            updateVideoPermission();
+            this.addBackendListener("videoNetworkBlocked", owner => this.musicVideo?.handleNetworkBlocked(owner));
             /**
              * 此事件可能会被触发多次（比如直接替换queue） 参考代码：https://github.com/doublesymmetry/KotlinAudio
              */
@@ -1603,10 +1614,9 @@ class TrackPlayer
                 }
                 this.musicVideo.cancelResolving();
             } else if (!musicItem && this.musicVideo.blocksAudioTimeline) {
-                this.notePlayByUser();
-                const state = await this.backend.getState();
-                if (state === "ended" || state === "idle") await this.musicVideo.replay(false);
-                else await this.musicVideo.resume(false, false);
+                // Native suspension can be physically idle but still owns a
+                // checkpoint. Let the controller distinguish resume and replay.
+                await this.musicVideo.resume(false, true);
                 return;
             }
         }
@@ -2390,6 +2400,9 @@ class TrackPlayer
     private notePauseByUser() {
         this.beginQueuePlaybackIntent();
         this.playbackIntent.pause();
+        Promise.resolve(this.backend?.holdPlayback?.()).catch(() =>
+            errorLog("同步暂停意图失败", "Playback hold unavailable"),
+        );
         const transition = this.mpvManualSkipTransition;
         if (transition && this.isMpvManualSkipTransitionActive(transition)) {
             transition.resumeOnRollback = false;
@@ -2465,6 +2478,10 @@ class TrackPlayer
             return;
         }
         trace("系统打断结束，接着放", { state });
+        if (this.musicVideo?.blocksAudioTimeline) {
+            await this.musicVideo.resume(false, false);
+            return;
+        }
         await this.backend.play();
     }
 
@@ -3996,7 +4013,14 @@ class TrackPlayer
     }
 
     async seekTo(progress: number) {
-        if (this.musicVideo?.snapshot.phase === "loading" || this.musicVideo?.snapshot.phase === "returning") return;
+        const mvState = this.musicVideo?.snapshot;
+        if (
+            mvState?.phase === "loading" ||
+            mvState?.phase === "returning" ||
+            (mvState?.phase === "video" && mvState.error === "network")
+        ) {
+            return;
+        }
         if (this.audioTimelineAvailable) this.setPersistedPlaybackProgress(progress);
         return this.backend.seekTo(progress);
     }

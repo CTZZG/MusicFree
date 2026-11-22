@@ -902,3 +902,128 @@ it("preserves the audio checkpoint when leaving a returning MV for another song"
     expect(PersistStatus.set).not.toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "B" }));
     expect(PersistStatus.set).not.toHaveBeenCalledWith("music.progress", 0);
 });
+
+jest.mock("@/core/playerAdapter/nativeMpvPlayer", () => {
+    const events: Record<string, (event: any) => void> = {};
+    return { __esModule: true, default: {
+        events,
+        isAvailable: () => true,
+        initialize: jest.fn(async () => undefined),
+        isAndroidAutoConnected: jest.fn(async () => false),
+        loadAndPlay: jest.fn(async () => 37.25),
+        prepareNext: jest.fn(async () => undefined),
+        updateQueueSnapshot: jest.fn(async () => undefined),
+        updateMetadata: jest.fn(async () => undefined),
+        getPosition: jest.fn(async () => 42), getDuration: jest.fn(async () => 300),
+        getRenditionProgress: jest.fn(async () => null),
+        addStateChangedListener: (fn: any) => {
+            events.state = fn;
+        },
+        addProgressListener: (fn: any) => {
+            events.progress = fn;
+        },
+        addActiveTrackChangedListener: (fn: any) => {
+            events.active = fn;
+        },
+        addEndedListener: (fn: any) => {
+            events.ended = fn;
+        },
+        addErrorListener: (fn: any) => {
+            events.error = fn;
+        },
+        addRemoteCommandListener: (fn: any) => {
+            events.remote = fn;
+        },
+        addAndroidAutoConnectionChangedListener: () => undefined,
+        addBrowseRequestListener: () => undefined,
+    } };
+});
+const auditNative = require("@/core/playerAdapter/nativeMpvPlayer").default;
+const { MpvPlayerAdapter: AuditAdapter } = require("@/core/playerAdapter/mpvPlayerAdapter");
+
+test("real adapter preflight rejection preserves TrackPlayer persistence and quality", async () => {
+    player.disposeServiceListeners(); player.cancelMpvManualSkipTransition("regression-start");
+    const adapter = new AuditAdapter(); await adapter.setup();
+    const playable = { ...song, url: "https://example.test/original.mp3" };
+    await adapter.loadQueue([playable]);
+    const load = auditNative.loadAndPlay.mock.calls.at(-1)[0];
+    auditNative.getRenditionProgress.mockResolvedValue({ mediaId: load.mediaId, loadGeneration: load.loadGeneration,
+        renditionKind: "audio", position: 42, duration: 300, buffered: 43, ready: true });
+    auditNative.events.active({ ...load, source: "loaded", renditionKind: "audio" });
+    mockBackend.active = { track: playable, index: 0 };
+    mockBackend.getRenditionOwner = () => adapter.getRenditionOwner();
+    mockBackend.getActiveRendition = () => adapter.getActiveRendition();
+    mockBackend.getProgress = () => adapter.getProgress();
+    mockBackend.replaceRendition = (request: any) => adapter.replaceRendition(request);
+    await player.setupTrackPlayer();
+    try {
+        const callbacks = new Map<string, (...args: any[]) => any>(mockBackend.addEventListener.mock.calls.map(([event, fn]: any[]) => [event, fn]));
+        auditNative.loadAndPlay.mockRejectedValueOnce(Object.assign(new Error("native preflight"), { code: "E_RENDITION_REJECTED" }));
+        await expect(enter()).resolves.toMatchObject({ status: "error", error: "activation" });
+        expect(trackPlayer.audioTimelineAvailable).toBe(true);
+        auditNative.events.progress({ mediaId: load.mediaId, loadGeneration: load.loadGeneration,
+            renditionKind: "audio", position: 42, duration: 300, buffered: 43, ready: true });
+        expect(trackPlayer.musicVideoState.phase).toBe("audio");
+        expect(trackPlayer.audioTimelineAvailable).toBe(true);
+        jest.mocked(PersistStatus.set).mockClear();
+        callbacks.get("progress")!({ position: 42, duration: 300, buffered: 43 });
+        expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 42);
+        player.setQuality("128k");
+        jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+        await expect(trackPlayer.changeQualityWithResult("320k")).resolves.toMatchObject({ success: true });
+    } finally {
+        player.disposeServiceListeners();
+    }
+});
+
+
+test("current mobile permission is sent to native and all config subscriptions are released", async () => {
+    player.disposeServiceListeners(); player.cancelMpvManualSkipTransition("permission-test");
+    let allowed = true;
+    let notify!: () => void;
+    const remove = jest.fn();
+    mockBackend.setVideoNetworkPermission = jest.fn(async () => undefined);
+    player.injectDependencies({ getConfig: (key: string) => key === "basic.useCelluarNetworkPlay" ? allowed : undefined,
+        onConfigChanged: (_key: string, listener: () => void) => {
+            notify = listener; return { remove };
+        } },
+    { addMusic: jest.fn() }, { getByMedia: () => plugin, getByName: () => plugin, isPluginEnabled: () => true });
+    await player.setupTrackPlayer();
+    expect(mockBackend.setVideoNetworkPermission).toHaveBeenLastCalledWith(true);
+    allowed = false; notify(); await tick();
+    expect(mockBackend.setVideoNetworkPermission).toHaveBeenLastCalledWith(false);
+    player.disposeServiceListeners(); expect(remove).toHaveBeenCalledTimes(1);
+});
+
+test("explicit pause forwards a native hold even before a retired engine can resume", () => {
+    mockBackend.holdPlayback = jest.fn(async () => undefined);
+    player.notePauseByUser();
+    expect(mockBackend.holdPlayback).toHaveBeenCalledTimes(1);
+    expect(player.playbackIntent.mayAutoPlay()).toBe(false);
+});
+
+test.each(["paused", "idle"])("the main play action explicitly reloads a network-suspended MV from its checkpoint (state=%s)", async state => {
+    player.cancelMpvManualSkipTransition("network-play-test");
+    await enter();
+    mockBackend.getVideoInfo.mockImplementation(async () => ({ ...owner, suspended: true,
+        suspendedPositionAvailable: true, outgoingAudioPosition: 37.25 }));
+    mockBackend.getState.mockResolvedValue(state);
+    await trackPlayer.play();
+    expect(mockBackend.replaceRendition).toHaveBeenCalledTimes(2);
+    expect(mockBackend.replaceRendition.mock.calls[1][0]).toMatchObject({ kind: "mv",
+        position: { mode: "resume-suspended-mv", timelineId: "cut" } });
+    expect(mockBackend.resumeVideo).not.toHaveBeenCalled();
+});
+
+test("the real audio-focus recovery entry cannot resume or advance a suspended MV", async () => {
+    player.cancelMpvManualSkipTransition("focus-network-test"); await enter();
+    mockBackend.getVideoInfo.mockImplementation(async () => ({ ...owner, suspended: true,
+        suspendedPositionAvailable: true, outgoingAudioPosition: 37.25 }));
+    mockBackend.getState.mockResolvedValue("paused");
+    player.playbackIntent.interrupt();
+    await trackPlayer.handleSystemInterruptionEnded();
+    expect(mockBackend.play).not.toHaveBeenCalled();
+    expect(mockBackend.resumeVideo).not.toHaveBeenCalled();
+    expect(mockBackend.replaceRendition).toHaveBeenCalledTimes(1);
+    expect(trackPlayer.musicVideoState).toMatchObject({ phase: "video", error: "network" });
+});

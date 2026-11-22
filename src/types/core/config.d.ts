@@ -145,4 +145,5 @@ export interface IAppConfig<
     setConfig<K extends keyof T>(key: K, value?: T[K]): void;
 
     getConfig<K extends keyof T>(key: K): T[K] | undefined;
+    onConfigChanged?(key: keyof T, listener: () => void): {remove(): void};
 }
