@@ -257,17 +257,21 @@ class RealJsEngineProgressTest {
                     put("paused", sample.paused ?: JSONObject.NULL)
                     put("sessionMs", sample.sessionMs); put("sessionState", sample.sessionState)
                     put("sameTrack", sample.path == hq)
-                    put("nativeHold", onMain { MpvServiceBridge.playbackHold.blocksAutoPlay })
+                    onMain {
+                        val hold = MpvServiceBridge.playbackHold
+                        put("nativeHold", hold.blocksAutoPlay)
+                        put("externalHold", hold.heldExternally)
+                        put("appHold", hold.pausedInApp)
+                    }
                     put("foregroundPackage", automation.rootInActiveWindow?.packageName?.toString())
                     put("bufferingEventInjected", true)
                 }
                 spinnerSamplesFile.appendText("$row\n")
                 android.util.Log.i("E2ELoadingSpinner", row.toString())
                 assertEquals("spinner MusicFree stays foreground", context.packageName, row.getString("foregroundPackage"))
-                // UI pause is recorded by JS PlaybackIntent and cancels PendingUnpause.
-                // PlaybackHold belongs to external commands that can arrive before JS.
-                // A stale external hold must not mask a broken React pause button here.
-                assertFalse("UI pause is not masked by an external hold", row.getBoolean("nativeHold"))
+                assertFalse("UI pause is not masked by an external hold", row.getBoolean("externalHold"))
+                assertEquals("UI intent reaches the native app hold", paused, row.getBoolean("appHold"))
+                assertEquals("automatic playback follows the UI hold", paused, row.getBoolean("nativeHold"))
                 Thread.sleep(1100)
                 sample
             }

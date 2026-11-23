@@ -123,16 +123,19 @@ export default function MusicVideoContent({
         );
         return () => subscription.remove();
     }, [fullscreen, focused, onFullscreen]);
+    const waitingForFrame = owner?.kind === "mv" && visible && !hasFrame &&
+        error !== "network" && (musicState === "playing" || musicState === "buffering");
+    const mediaId = owner?.mediaId;
+    const loadGeneration = owner?.loadGeneration;
     useEffect(() => {
-        if (!visible || !key || hasFrame || !owner || error === "network" ||
-            (musicState !== "playing" && musicState !== "buffering")) return;
-        const target = { ...owner };
+        if (!waitingForFrame || mediaId == null || loadGeneration == null) return;
+        const target = { kind: "mv" as const, mediaId, loadGeneration };
         const timer = setTimeout(
             () => TrackPlayer.videoOutputFailed(target),
             15000,
         );
         return () => clearTimeout(timer);
-    }, [visible, key, hasFrame, owner, error, musicState]);
+    }, [waitingForFrame, mediaId, loadGeneration]);
     useEffect(() => {
         if (!visible || !hasFrame || musicState !== "playing") return;
         let active = true;

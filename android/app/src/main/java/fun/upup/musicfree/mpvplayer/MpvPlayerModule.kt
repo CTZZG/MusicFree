@@ -2336,7 +2336,7 @@ class MpvPlayerModule internal constructor(
     @ReactMethod
     fun holdPlayback(promise: Promise) {
         postPromise(promise, "E_HOLD") { result ->
-            MpvServiceBridge.playbackHold.pauseByUser()
+            MpvServiceBridge.playbackHold.pauseInApp()
             pendingUnpause.cancel()
             result.resolve(null)
         }
@@ -2832,6 +2832,10 @@ class MpvPlayerModule internal constructor(
         val callbackKind = eventKind ?: renditionKind
         runMpvCallbackOnMain {
             when (eventId) {
+                NativeMPVLib.MpvEvent.MPV_EVENT_SEEK -> {
+                    // Record the actual event without logging libmpv message text or media URLs.
+                    if (renditionKind == "mv") Log.i(TAG, "MV seek event")
+                }
                 MPVLib.MPV_EVENT_START_FILE -> {
                     val explicitLoading = loadingTrackIdentity
                         ?.takeIf { if (eventOwner != null) it == eventOwner else currentPathMatches(it.url) }

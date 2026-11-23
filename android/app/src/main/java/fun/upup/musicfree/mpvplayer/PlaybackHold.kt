@@ -15,12 +15,18 @@ package `fun`.upup.musicfree.mpvplayer
  * 只在主线程调用。
  */
 internal class PlaybackHold {
-    private var pausedByUser = false
+    var pausedInApp = false
+        private set
+    private var pausedExternally = false
     private var interrupted = false
+
+    fun pauseInApp() {
+        pausedInApp = true
+    }
 
     /** 用户在外部暂停了（含拔耳机、其他应用永久拿走音频焦点）。 */
     fun pauseByUser() {
-        pausedByUser = true
+        pausedExternally = true
     }
 
     /** 系统临时收回音频焦点。 */
@@ -40,14 +46,18 @@ internal class PlaybackHold {
 
     /** 用户明确要播：通知栏、锁屏上的播放，应用里的播放、点歌、切歌。 */
     fun claim() {
-        pausedByUser = false
+        pausedInApp = false
+        pausedExternally = false
         interrupted = false
     }
 
+    val heldExternally: Boolean
+        get() = pausedExternally || interrupted
+
     /** 装载完成、恢复后的自动取消暂停现在要不要拦下。 */
     val blocksAutoPlay: Boolean
-        get() = pausedByUser || interrupted
+        get() = pausedInApp || heldExternally
 
     override fun toString(): String =
-        "PlaybackHold(pausedByUser=$pausedByUser, interrupted=$interrupted)"
+        "PlaybackHold(pausedInApp=$pausedInApp, pausedExternally=$pausedExternally, interrupted=$interrupted)"
 }

@@ -15,6 +15,9 @@ spec.loader.exec_module(evidence)
 RAW = '''MpvPlayerModule rendition committed[2]: kind=mv mode=start-zero captured=37.125 target=0.0 instance=7
 MpvVideoOutput attached=true owner=1 generation=2 instance=7
 MpvPlayerModule rendition ready[2]: kind=mv position=0.0 paused=true
+MV_APP_SEEK_BEGIN
+I MpvPlayerModule: MV seek event
+MV_APP_SEEK_END
 MV_APP_LAYOUT_FULLSCREEN_BEGIN
 MV_APP_LAYOUT_FULLSCREEN_END
 MV_APP_LAYOUT_INLINE_BEGIN
@@ -47,12 +50,18 @@ class Evidence(unittest.TestCase):
         for layout in ('FULLSCREEN', 'INLINE', 'ROTATION'):
             for action in ['Set property: vid="no"', 'Set property: vo="null"',
                            'refresh seek to 4.25', 'loadAndPlay[9]',
-                           'rendition committed[9]']:
+                           'rendition committed[9]', 'I MpvPlayerModule: MV seek event',
+                           ('I MpvVideoOutput: attached=false owner=1 generation=2 instance=7\n'
+                            'I MpvVideoOutput: attached=true owner=1 generation=2 instance=7')]:
                 raw = RAW.replace(f'MV_APP_LAYOUT_{layout}_BEGIN',
                                   f'MV_APP_LAYOUT_{layout}_BEGIN\n{action}')
                 with self.assertRaises(AssertionError): evidence.verify_native(raw, FIRST, FIRST)
         with self.assertRaises(AssertionError):
             evidence.verify_native(RAW.replace('MV_APP_LAYOUT_INLINE_END', ''), FIRST, FIRST)
+
+    def test_missing_native_seek_positive_control_rejected(self):
+        with self.assertRaises(AssertionError):
+            evidence.verify_native(RAW.replace('I MpvPlayerModule: MV seek event', ''), FIRST, FIRST)
 
     def test_changed_audio_checkpoint_and_bad_first_ready_rejected(self):
         for raw in [RAW.replace('target=37.125', 'target=6.0'), RAW.replace('position=37.125', 'position=36.8')]:

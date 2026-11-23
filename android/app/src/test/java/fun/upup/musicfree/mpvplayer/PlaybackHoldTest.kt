@@ -25,6 +25,25 @@ class PlaybackHoldTest {
     }
 
     @Test
+    fun appPauseSurvivesFocusGainWithoutBecomingAnExternalPause() {
+        val hold = PlaybackHold()
+        hold.pauseInApp()
+        assertTrue(hold.blocksAutoPlay)
+        assertFalse(hold.heldExternally)
+        hold.interrupt()
+        assertTrue(hold.heldExternally)
+        assertTrue(hold.endInterruption())
+        assertTrue(hold.pausedInApp)
+        assertFalse(hold.heldExternally)
+        hold.pauseByUser()
+        assertTrue(hold.heldExternally)
+        hold.claim()
+        assertFalse(hold.pausedInApp)
+        assertFalse(hold.heldExternally)
+        assertFalse(hold.blocksAutoPlay)
+    }
+
+    @Test
     fun aTransientInterruptionEndsWhenTheSystemGivesFocusBack() {
         val hold = PlaybackHold()
         hold.interrupt()

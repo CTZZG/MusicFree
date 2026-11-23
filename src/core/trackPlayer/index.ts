@@ -2387,6 +2387,9 @@ class TrackPlayer
 
     async pause(): Promise<void> {
         this.notePauseByUser();
+        Promise.resolve(this.backend?.holdPlayback?.()).catch(() =>
+            errorLog("同步暂停意图失败", "Playback hold unavailable"),
+        );
         this.crossfade.onPause();
         LastfmScrobbler.onPaused();
         await this.backend.pause();
@@ -2400,9 +2403,6 @@ class TrackPlayer
     private notePauseByUser() {
         this.beginQueuePlaybackIntent();
         this.playbackIntent.pause();
-        Promise.resolve(this.backend?.holdPlayback?.()).catch(() =>
-            errorLog("同步暂停意图失败", "Playback hold unavailable"),
-        );
         const transition = this.mpvManualSkipTransition;
         if (transition && this.isMpvManualSkipTransitionActive(transition)) {
             transition.resumeOnRollback = false;
