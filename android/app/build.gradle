@@ -232,8 +232,9 @@ android {
 }
 
 // Gradle resolves this large host-test JAR before the Robolectric test JVM starts.
-// Route both its metadata and its artifact to the same Central mirror in the CI job.
-if (providers.gradleProperty("musicfreeCiRobolectricMirror").isPresent()) {
+// All Actions test variants use the mirror, including the emulator and Beta cold builds.
+if (providers.gradleProperty("musicfreeCiRobolectricMirror").isPresent() ||
+        providers.environmentVariable("GITHUB_ACTIONS").orNull == "true") {
     repositories {
         exclusiveContent {
             forRepository {
