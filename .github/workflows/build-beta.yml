@@ -614,7 +614,10 @@ jobs:
                   # its observer records 1x/0x boundaries and restores settings.
                   disable-animations: ${{ inputs.e2e_suite != 'player-observation' && inputs.e2e_suite != 'lyric-boundaries' }}
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
-                  script: >-
+                  # The fresh MV emulator otherwise puts Android's one-time
+                  # fullscreen tutorial over the app controls on first entry.
+                  script: |
+                      if [ "$E2E_SUITE" = mv ]; then adb shell 'settings put secure immersive_mode_confirmations confirmed && test "$(settings get secure immersive_mode_confirmations)" = confirmed'; fi
                       if [ -n "${E2E_PERF_BASELINE_APK:-}" ]; then bash e2e/perf-cold-compare.sh "$E2E_PERF_BASELINE_APK" "$E2E_APK" "$GITHUB_SHA" e2e-results; else bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results; fi
 
             - name: E2E summary
