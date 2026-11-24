@@ -486,3 +486,33 @@ test("a late audio-return source cannot replace a newly selected video or remove
     expect(f.controller.checkpoint?.positionSeconds).toBe(37.125);
     expect(await f.controller.returnToAudio()).toEqual({ status: "audio" });
 });
+
+test("changing quality directly after network suspension uses the held clock", async () => {
+    const f = fixture();
+    await f.controller.enter(clip());
+    const old = f.deps.owner();
+    f.controller.handleNetworkBlocked(old);
+    f.deps.videoInfo.mockImplementation(async () => ({ ...old, suspended: true, suspendedPositionAvailable: true,
+        positionPreservable: true, outgoingAudioPosition: 37.125 }));
+    const changed = f.resolved(); changed.quality = "360p";
+    f.sources.resolve.mockResolvedValueOnce(changed);
+    await expect(f.controller.changeQuality("360p")).resolves.toEqual({ status: "playing" });
+    const request = f.deps.replace.mock.calls[1][0];
+    expect(request.expected).toEqual(old);
+    expect(request).toMatchObject({ kind: "mv", video: { qualityId: "360p" } });
+    expect(request.position.mode).toBe("resume-suspended-mv");
+});
+
+test("a suspended quality change without a saved position waits for explicit restart", async () => {
+    const f = fixture();
+    await f.controller.enter(clip());
+    const old = f.deps.owner();
+    f.controller.handleNetworkBlocked(old);
+    f.deps.videoInfo.mockImplementation(async () => ({ ...old, suspended: true,
+        suspendedPositionAvailable: false, outgoingAudioPosition: 37.125 }));
+    await expect(f.controller.changeQuality("360p")).resolves.toEqual({ status: "restart-confirmation" });
+    expect(f.controller.snapshot.error).toBe("network");
+    expect(f.deps.replace).toHaveBeenCalledTimes(1);
+    await expect(f.controller.changeQuality("360p", true)).resolves.toEqual({ status: "playing" });
+    expect(f.deps.replace.mock.calls[1][0].position).toEqual({ mode: "start-zero" });
+});

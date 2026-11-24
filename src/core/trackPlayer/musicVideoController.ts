@@ -289,7 +289,6 @@ export default class MusicVideoController {
             mobileApproved?: boolean;
             automaticRepeat?: boolean;
             existingSession?: boolean;
-            resumeSuspended?: boolean;
             preflight?: MusicVideoPreflight;
             intentRevision?: number;
         } = {},
@@ -369,18 +368,24 @@ export default class MusicVideoController {
             this.guard(request, session.key, true);
             const sameTimeline =
                 !!oldVideo?.timeline && oldVideo.timeline === resolved.source.timelineId;
+            let suspended = false;
             let preservable = true;
             if (options.preserve && oldVideo) {
                 const info = await this.deps.videoInfo();
                 this.guard(request, session.key, true);
                 const owner = this.deps.owner();
-                if (owner?.mediaId !== info.mediaId || owner?.loadGeneration !== info.loadGeneration) throw new Superseded();
-                preservable = info.positionPreservable !== false;
+                if (owner?.kind !== "mv" || owner.mediaId !== info.mediaId ||
+                    owner.loadGeneration !== initialOwner.loadGeneration || owner.loadGeneration !== info.loadGeneration) {
+                    throw new Superseded();
+                }
+                suspended = info.suspended === true;
+                preservable = info.positionPreservable !== false &&
+                    (!suspended || info.suspendedPositionAvailable === true);
             }
             if (options.preserve && (!sameTimeline || !preservable) && !options.restartApproved) {
                 if (oldVideo) {
                     this.currentVideo = oldVideo;
-                    this.phase("video");
+                    this.phase("video", suspended ? "network" : undefined);
                 }
                 return { status: "restart-confirmation" };
             }
@@ -393,7 +398,8 @@ export default class MusicVideoController {
                     throw new Superseded();
                 }
                 const owner = this.deps.owner();
-                if (!owner || owner.mediaId !== session.key) {
+                if (!owner || owner.mediaId !== session.key ||
+                    (options.preserve && owner.loadGeneration !== initialOwner.loadGeneration)) {
                     throw new Superseded();
                 }
                 await this.recoverCapture(session, owner, () => this.current(request, session.key));
@@ -419,11 +425,9 @@ export default class MusicVideoController {
                     requireForeground: !request.allowBackground,
                     autoPlay: this.deps.mayAutoPlay(),
                     position:
-                        options.resumeSuspended && sameTimeline && preservable
-                            ? { mode: "resume-suspended-mv", timelineId: resolved.source.timelineId! }
-                            : options.preserve && sameTimeline && preservable
-                                ? { mode: "preserve-mv", timelineId: resolved.source.timelineId! }
-                                : { mode: "start-zero" },
+                        options.preserve && sameTimeline && preservable
+                            ? { mode: suspended ? "resume-suspended-mv" : "preserve-mv", timelineId: resolved.source.timelineId! }
+                            : { mode: "start-zero" },
                     video: {
                         videoId: resolved.candidate.id,
                         providerKey: resolved.candidate.providerKey,
@@ -725,7 +729,7 @@ export default class MusicVideoController {
                 if (info.suspendedPositionAvailable !== true && !restartApproved) return { status: "restart-confirmation" };
                 return this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
                     ...reloadOptions, preserve: !restartApproved,
-                    resumeSuspended: !restartApproved, restartApproved,
+                    restartApproved,
                 });
             }
             if (info.failed && this.currentVideo) {

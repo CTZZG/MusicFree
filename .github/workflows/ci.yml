@@ -81,6 +81,20 @@ jobs:
                   BEFORE_SHA: ${{ github.event.before }}
               run: node generator/detect-native-changes.mjs
 
+            - name: Setup Java
+              if: steps.changes.outputs.native == 'true'
+              uses: actions/setup-java@v5
+              with:
+                  java-version: '17'
+                  distribution: 'temurin'
+
+            - name: Setup Gradle dependency cache
+              if: steps.changes.outputs.native == 'true'
+              uses: gradle/actions/setup-gradle@v5
+              with:
+                  # feat/mpv-only 也需要保存本分支的 Gradle 模块缓存。
+                  cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
             - name: Setup Node.js
               if: steps.changes.outputs.native == 'true'
               uses: actions/setup-node@v6
@@ -97,20 +111,14 @@ jobs:
                   HUSKY: '0'
               run: npm ci --no-audit --no-fund
 
-            - name: Setup Java
-              if: steps.changes.outputs.native == 'true'
-              uses: actions/setup-java@v5
-              with:
-                  java-version: '17'
-                  distribution: 'temurin'
-                  cache: 'gradle'
-
+            # Robolectric 在测试 JVM 内单独下载 Android SDK JAR 到 Maven 本地仓库。
             - name: Cache Robolectric runtime
               if: steps.changes.outputs.native == 'true'
               uses: actions/cache@v5
               with:
                   path: ~/.m2/repository/org/robolectric
                   key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
+                  restore-keys: robolectric-sdk34-
 
             - name: Run Android unit tests
               if: steps.changes.outputs.native == 'true'

@@ -198,8 +198,10 @@ mv_app_scenarios() {
     mv_record_session original
     mv_tap '更多操作' original-more || return 1
     mv_start_video 'E2E H264 MV' h264 '观看 MV' || return 1
+    adb shell log -t MV_APP_GATE MV_APP_SEEK_BEGIN || return 1
     before=$(mv_ready_count); mv_seek .125 h264 || return 1; mv_wait_ready h264-seek "$before" || return 1
     mv_capture inline || return 1
+    adb shell log -t MV_APP_GATE MV_APP_SEEK_END || return 1
     pass 'MV：明确选择H264出画' '实际PNG帧检验通过，原歌曲身份保留，ready后暂停'
     adb shell log -t MV_APP_GATE MV_APP_LAYOUT_FULLSCREEN_BEGIN || return 1
     mv_tap '全屏' fullscreen || return 1

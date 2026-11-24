@@ -175,10 +175,16 @@ def verify_native(raw, first, returned):
     background = raw.split('MV_APP_HOME_BEGIN', 1)[1].split('MV_APP_HOME_END', 1)[0]
     assert re.search(r'MpvVideoOutput.*attached=false ', background), 'Surface not released inside Home window'
     assert not re.search(r'MpvVideoOutput.*attached=true ', background), 'Surface attached while Home visible'
+    seek_event = re.compile(r'(?m)\bMpvPlayerModule\s*:\s*MV seek event\s*$')
+    def window(begin, end):
+        assert raw.count(begin) == raw.count(end) == 1 and raw.index(begin) < raw.index(end), 'invalid observation window'
+        return raw.split(begin, 1)[1].split(end, 1)[0]
+    assert seek_event.search(window('MV_APP_SEEK_BEGIN', 'MV_APP_SEEK_END')), 'explicit UI seek did not produce a native seek event'
     for layout in ('FULLSCREEN', 'INLINE', 'ROTATION'):
         begin, end = f'MV_APP_LAYOUT_{layout}_BEGIN', f'MV_APP_LAYOUT_{layout}_END'
-        assert raw.count(begin) == raw.count(end) == 1, 'missing or duplicated layout window'
-        span = raw.split(begin, 1)[1].split(end, 1)[0]
+        span = window(begin, end)
+        assert not LEASE.search(span), 'layout replaced the video Surface'
+        assert not seek_event.search(span), 'layout triggered a native seek'
         assert not re.search(r'Set property: (?:vid|vo)=|refresh seek|loadAndPlay\[\d+\]|rendition committed\[', span), 'layout reset the video chain or sought'
     assert re.search(r'END_FILE completed: endedMediaId=.*mv-audio-a.*promotedMediaId=.*mv-audio-b.*autoAdvanced=true', raw), 'no rendered-video-to-prepared-audio promotion'
     rates = re.findall(r'prepared audio rate\[(\d+)\]: requested=([^ ]+) actual=([^ \r\n]+)', raw)

@@ -231,6 +231,23 @@ android {
     }
 }
 
+// Gradle resolves this large host-test JAR before the Robolectric test JVM starts.
+// All Actions test variants use the mirror, including the emulator and Beta cold builds.
+if (providers.gradleProperty("musicfreeCiRobolectricMirror").isPresent() ||
+        providers.environmentVariable("GITHUB_ACTIONS").orNull == "true") {
+    repositories {
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = "RobolectricNativeRuntimeMirror"
+                    url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                }
+            }
+            filter { includeModule("org.robolectric", "nativeruntime-dist-compat") }
+        }
+    }
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")

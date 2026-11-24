@@ -137,31 +137,24 @@ jobs:
               with:
                   java-version: ${{ env.JAVA_VERSION }}
                   distribution: 'temurin'
-                  cache: 'gradle'
+
+            - name: Setup Gradle dependency cache
+              uses: gradle/actions/setup-gradle@v5
+              with:
+                  cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
             - name: Cache Robolectric runtime
               uses: actions/cache@v5
               with:
                   path: ~/.m2/repository/org/robolectric
                   key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
+                  restore-keys: robolectric-sdk34-
 
             # 与稳定版共用同一个质量门：安装依赖并通过检查后才进入 Android 构建
             - name: Quality gate
               uses: ./.github/actions/quality-gate
               with:
                   node-version: ${{ env.NODE_VERSION }}
-
-            # npm ci 会先删除已有的 node_modules，因此这里只缓存 Gradle
-            - name: Cache Gradle dependencies
-              uses: actions/cache@v5
-              with:
-                  path: |
-                      ~/.gradle/caches
-                      ~/.gradle/wrapper
-                      android/.gradle
-                  key: ${{ runner.os }}-rn-${{ hashFiles('package-lock.json', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-                  restore-keys: |
-                      ${{ runner.os }}-rn-
 
             - name: Setup Keystore (if secrets available)
               if: env.RELEASE_KEYSTORE_BASE64 != ''
@@ -621,7 +614,10 @@ jobs:
                   # its observer records 1x/0x boundaries and restores settings.
                   disable-animations: ${{ inputs.e2e_suite != 'player-observation' && inputs.e2e_suite != 'lyric-boundaries' }}
                   emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none -camera-front none
-                  script: >-
+                  # The fresh MV emulator otherwise puts Android's one-time
+                  # fullscreen tutorial over the app controls on first entry.
+                  script: |
+                      if [ "$E2E_SUITE" = mv ]; then adb shell 'settings put secure immersive_mode_confirmations confirmed && test "$(settings get secure immersive_mode_confirmations)" = confirmed'; fi
                       if [ -n "${E2E_PERF_BASELINE_APK:-}" ]; then bash e2e/perf-cold-compare.sh "$E2E_PERF_BASELINE_APK" "$E2E_APK" "$GITHUB_SHA" e2e-results; else bash e2e/run.sh "$E2E_APK" "$GITHUB_SHA" e2e-results; fi
 
             - name: E2E summary

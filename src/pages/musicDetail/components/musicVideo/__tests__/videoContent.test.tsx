@@ -319,3 +319,14 @@ test("paused fullscreen controls remain available after the auto-hide duration",
         ),
     ).toHaveLength(1);
 });
+
+test("first-picture deadline survives a buffering-to-playing transition", async () => {
+    mockMusicState = "buffering";
+    await mount();
+    await act(async () => jest.advanceTimersByTime(14000));
+    mockMusicState = "playing";
+    mockState = { ...mockState, owner: { ...mockOwner } };
+    await act(async () => tree.update(render()));
+    await act(async () => jest.advanceTimersByTime(1000));
+    expect(mockFailure).toHaveBeenCalledTimes(1);
+});

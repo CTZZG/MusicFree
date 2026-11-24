@@ -995,10 +995,17 @@ test("current mobile permission is sent to native and all config subscriptions a
     player.disposeServiceListeners(); expect(remove).toHaveBeenCalledTimes(1);
 });
 
-test("explicit pause forwards a native hold even before a retired engine can resume", () => {
+test("explicit pause forwards a native hold even before a retired engine can resume", async () => {
     mockBackend.holdPlayback = jest.fn(async () => undefined);
-    player.notePauseByUser();
+    await player.pause();
     expect(mockBackend.holdPlayback).toHaveBeenCalledTimes(1);
+    expect(player.playbackIntent.mayAutoPlay()).toBe(false);
+});
+
+test("a remote pause already held by the service does not acquire an in-app hold", async () => {
+    mockBackend.holdPlayback = jest.fn(async () => undefined);
+    await player.pauseByExternalRequest("remote");
+    expect(mockBackend.holdPlayback).not.toHaveBeenCalled();
     expect(player.playbackIntent.mayAutoPlay()).toBe(false);
 });
 

@@ -30,7 +30,8 @@ def validate(rows):
                 raise ValueError("missing media-session position")
             # These are in-app taps, not external media commands. Requiring no
             # external hold ensures it cannot mask a broken JS pause path.
-            if (r["paused"] is not paused or r["nativeHold"] is not False or
+            if (r["paused"] is not paused or r["nativeHold"] is not paused or
+                    r["appHold"] is not paused or r["externalHold"] is not False or
                     r["sessionState"] != (2 if paused else 3) or r["sameTrack"] is not True or
                     r["foregroundPackage"] != "fun.upup.musicfree" or r["bufferingEventInjected"] is not True):
                 raise ValueError("UI/engine/intent evidence mismatch")
@@ -59,18 +60,21 @@ def self_test():
             position = (10 if block < 2 else 16) + (0 if paused else 0.4 + 1.1 * n)
             rows.append(dict(phase=phase, elapsedMs=block * 10_000 + n * 1100,
                              rawSeconds=position, sessionMs=round(position * 1000), paused=paused,
-                             nativeHold=False, sessionState=2 if paused else 3, sameTrack=True,
+                             nativeHold=paused, appHold=paused, externalHold=False, sessionState=2 if paused else 3, sameTrack=True,
                              foregroundPackage="fun.upup.musicfree", bufferingEventInjected=True))
     assert validate(rows) == dict.fromkeys(PHASES, 5)
     bad = [rows[:-1], rows[5:], list(reversed(rows))]
     for key, value in (("rawSeconds", None), ("rawSeconds", True), ("sessionMs", None),
-                       ("paused", False), ("nativeHold", True),
+                       ("paused", False),
                        ("sameTrack", False), ("sessionState", 3), ("foregroundPackage", "other"),
                        ("bufferingEventInjected", False)):
         altered = copy.deepcopy(rows); altered[0][key] = value; bad.append(altered)
     # External holds must be absent in both paused and resumed UI windows.
-    for index in (5, 10, 15):
-        altered = copy.deepcopy(rows); altered[index]["nativeHold"] = True; bad.append(altered)
+    for index in (0, 5, 10, 15):
+        for field in ("nativeHold", "appHold", "externalHold"):
+            altered = copy.deepcopy(rows)
+            altered[index][field] = not altered[index][field]
+            bad.append(altered)
     altered = copy.deepcopy(rows); altered[4]["rawSeconds"] += 0.5; bad.append(altered)
     altered = copy.deepcopy(rows)
     for r in altered[5:10]:

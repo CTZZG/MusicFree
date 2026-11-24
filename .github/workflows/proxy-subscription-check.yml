@@ -66,12 +66,6 @@ jobs:
               with:
                   distribution: temurin
                   java-version: '17'
-                  cache: gradle
-            - name: Cache Robolectric runtime
-              uses: actions/cache@v5
-              with:
-                  path: ~/.m2/repository/org/robolectric
-                  key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
             - run: npm ci --no-audit --no-fund
             - name: Check raw sample export failure paths
               run: |
@@ -92,6 +86,19 @@ jobs:
                       android/app/build/outputs/apk/debug/app-x86_64-debug.apk
                       android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
                   key: proxy-test-apks-${{ runner.os }}-${{ hashFiles('android/**', 'package.json', 'package-lock.json', 'patches/**', '.github/workflows/proxy-subscription-check.yml') }}
+            - name: Setup Gradle dependency cache
+              if: steps.native-apks.outputs.cache-hit != 'true'
+              uses: gradle/actions/setup-gradle@v5
+              with:
+                  cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
+            - name: Cache Robolectric runtime
+              if: steps.native-apks.outputs.cache-hit != 'true'
+              uses: actions/cache@v5
+              with:
+                  path: ~/.m2/repository/org/robolectric
+                  key: robolectric-sdk34-${{ hashFiles('android/app/build.gradle') }}
+                  restore-keys: robolectric-sdk34-
             - name: Build debug app and native test APK
               if: steps.native-apks.outputs.cache-hit != 'true'
               working-directory: android
