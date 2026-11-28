@@ -285,6 +285,155 @@ class DownloadExecutorTest {
         }
     }
 
+    @Test
+    fun http416WithMatchingValidatorCompletesWithoutRedownloadAndDeletesMeta() {
+        val tempDir = Files.createTempDirectory("mf-dl-416-ok-").toFile()
+        try {
+            val destFile = File(tempDir, "complete.part")
+            val expectedBytes = ByteArray(96) { idx -> (idx + 1).toByte() }
+            destFile.writeBytes(expectedBytes)
+
+            val server = newServer()
+            val url = server.url("/done.mp3").toString()
+            val metaFile = File("${destFile.absolutePath}.meta")
+            metaFile.writeText(
+                "resourceHash=${DownloadExecutor.canonicalResourceHash(url)}\n" +
+                    "strongEtag=\"v-done\"\ntotalBytes=96\n",
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(416)
+                    .setHeader("ETag", "\"v-done\"")
+                    .setHeader("Content-Range", "bytes */96"),
+            )
+
+            val executor = DownloadExecutor(OkHttpClient())
+            val result = executor.execute(
+                DownloadTask(taskId = "t-416-ok", url = url, destinationPath = destFile.absolutePath),
+                DownloadExecutor.ExecutionControl(),
+            ) { _, _ -> }
+
+            assertEquals(DownloadTaskStatus.COMPLETED, result.finalStatus)
+            assertEquals(96L, result.downloadedBytes)
+            assertEquals(96L, result.totalBytes)
+            assertEquals(1, server.requestCount)
+            assertArrayEquals(expectedBytes, destFile.readBytes())
+            assertFalse(metaFile.exists())
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun http206WithUnknownTotalOrMismatchedBodyLengthFailsInsteadOfFalseCompletion() {
+        val tempDir = Files.createTempDirectory("mf-dl-206-bounds-").toFile()
+        try {
+            val executor = DownloadExecutor(OkHttpClient())
+            val server = newServer()
+
+            // Case 1: Fresh request receives 206 with unknown total bytes 0-31/* -> must fail, not complete.
+            val freshFile = File(tempDir, "fresh-unknown.part")
+            val freshUrl = server.url("/fresh.mp3").toString()
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(206)
+                    .setHeader("Content-Range", "bytes 0-31/*")
+                    .setHeader("Content-Length", "32")
+                    .setBody(Buffer().write(ByteArray(32) { 1 })),
+            )
+            val freshResult = executor.execute(
+                DownloadTask(taskId = "t-206-star-fresh", url = freshUrl, destinationPath = freshFile.absolutePath),
+                DownloadExecutor.ExecutionControl(),
+            ) { _, _ -> }
+            assertEquals(DownloadTaskStatus.ERROR, freshResult.finalStatus)
+
+            // Case 2: Resumed request receives 206 with unknown total bytes 32-63/* -> must fail, not complete.
+            val resumeFile = File(tempDir, "resume-unknown.part")
+            val resumeUrl = server.url("/resume.mp3").toString()
+            resumeFile.writeBytes(ByteArray(32) { 2 })
+            File("${resumeFile.absolutePath}.meta").writeText(
+                "resourceHash=${DownloadExecutor.canonicalResourceHash(resumeUrl)}\n" +
+                    "strongEtag=\"v1\"\ntotalBytes=-1\n",
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(206)
+                    .setHeader("ETag", "\"v1\"")
+                    .setHeader("Content-Range", "bytes 32-63/*")
+                    .setBody(Buffer().write(ByteArray(32) { 3 })),
+            )
+            val resumeResult = executor.execute(
+                DownloadTask(taskId = "t-206-star-resume", url = resumeUrl, destinationPath = resumeFile.absolutePath),
+                DownloadExecutor.ExecutionControl(),
+            ) { _, _ -> }
+            assertEquals(DownloadTaskStatus.ERROR, resumeResult.finalStatus)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun http200ReplacementDoesNotPairNewValidatorWithOldPartialWhenTruncateFails() {
+        val tempDir = Files.createTempDirectory("mf-dl-200-meta-").toFile()
+        try {
+            val destFile = File(tempDir, "readonly.part")
+            val oldPrefix = ByteArray(48) { 4 }
+            val v2Payload = ByteArray(96) { 8 }
+            destFile.writeBytes(oldPrefix)
+
+            val server = newServer()
+            val url = server.url("/replace.mp3").toString()
+            val metaFile = File("${destFile.absolutePath}.meta")
+            metaFile.writeText(
+                "resourceHash=${DownloadExecutor.canonicalResourceHash(url)}\n" +
+                    "strongEtag=\"v1\"\ntotalBytes=96\n",
+            )
+            assertTrue(destFile.setWritable(false))
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("ETag", "\"v2\"")
+                    .setHeader("Content-Length", v2Payload.size.toString())
+                    .setBody(Buffer().write(v2Payload)),
+            )
+
+            val executor = DownloadExecutor(OkHttpClient())
+            val failed = executor.execute(
+                DownloadTask(taskId = "t-200-ro", url = url, destinationPath = destFile.absolutePath),
+                DownloadExecutor.ExecutionControl(),
+            ) { _, _ -> }
+
+            // If OS honors read-only file mode, open-for-truncate fails and v2 meta must NOT exist.
+            if (failed.finalStatus == DownloadTaskStatus.ERROR) {
+                assertFalse(metaFile.exists())
+                assertArrayEquals(oldPrefix, destFile.readBytes())
+                assertTrue(destFile.setWritable(true))
+
+                server.enqueue(
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("ETag", "\"v2\"")
+                        .setHeader("Content-Length", v2Payload.size.toString())
+                        .setBody(Buffer().write(v2Payload)),
+                )
+                val recovered = executor.execute(
+                    DownloadTask(taskId = "t-200-ro-retry", url = url, destinationPath = destFile.absolutePath),
+                    DownloadExecutor.ExecutionControl(),
+                ) { _, _ -> }
+                assertEquals(DownloadTaskStatus.COMPLETED, recovered.finalStatus)
+                assertArrayEquals(v2Payload, destFile.readBytes())
+            } else {
+                // Root container fallback where setWritable(false) is bypassed by CAP_DAC_OVERRIDE.
+                assertEquals(DownloadTaskStatus.COMPLETED, failed.finalStatus)
+                assertArrayEquals(v2Payload, destFile.readBytes())
+            }
+        } finally {
+            File(tempDir, "readonly.part").setWritable(true)
+            tempDir.deleteRecursively()
+        }
+    }
+
     private fun newServer(): MockWebServer = MockWebServer().also {
         it.start(loopbackAddress, 0)
         servers += it

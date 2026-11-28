@@ -33,21 +33,45 @@ class MpvAndroidAutoConnectionDetector(
     }
 
     internal class CarQueryCoalescer {
+        private var generation = 0L
         private var inFlight = false
         private var pending = false
 
         @Synchronized
-        fun tryAcquire(): Boolean {
-            if (inFlight) {
-                pending = true
-                return false
-            }
-            inFlight = true
-            return true
+        fun beginRegistration(): Long {
+            generation += 1L
+            inFlight = false
+            pending = false
+            return generation
         }
 
         @Synchronized
-        fun onComplete(registered: Boolean): Boolean {
+        fun endRegistration(): Long {
+            generation += 1L
+            inFlight = false
+            pending = false
+            return generation
+        }
+
+        @Synchronized
+        fun tryAcquire(): Long? {
+            if (inFlight) {
+                pending = true
+                return null
+            }
+            inFlight = true
+            return generation
+        }
+
+        @Synchronized
+        fun isCurrentActive(queryGeneration: Long, registered: Boolean): Boolean =
+            registered && queryGeneration == generation
+
+        @Synchronized
+        fun onComplete(queryGeneration: Long, registered: Boolean): Boolean {
+            if (queryGeneration != generation) {
+                return false
+            }
             inFlight = false
             val shouldRerun = registered && pending
             pending = false
@@ -56,8 +80,7 @@ class MpvAndroidAutoConnectionDetector(
 
         @Synchronized
         fun reset() {
-            inFlight = false
-            pending = false
+            endRegistration()
         }
     }
 
@@ -77,6 +100,7 @@ class MpvAndroidAutoConnectionDetector(
         try {
             val filter = IntentFilter(ACTION_CAR_CONNECTION_UPDATED)
             context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            queryCoalescer.beginRegistration()
             isRegistered = true
             queryForState()
         } catch (error: Exception) {
@@ -90,7 +114,7 @@ class MpvAndroidAutoConnectionDetector(
         val wasRegistered = isRegistered
         isRegistered = false
         onConnectionChanged = null
-        queryCoalescer.reset()
+        queryCoalescer.endRegistration()
         queryHandler.cancelOperation(QUERY_TOKEN)
         if (wasRegistered) {
             try {
@@ -103,11 +127,11 @@ class MpvAndroidAutoConnectionDetector(
 
     private fun queryForState() {
         if (!isRegistered) return
-        if (!queryCoalescer.tryAcquire()) return
+        val queryGeneration = queryCoalescer.tryAcquire() ?: return
         try {
             queryHandler.startQuery(
                 QUERY_TOKEN,
-                null,
+                queryGeneration,
                 PROJECTION_HOST_URI,
                 arrayOf(CAR_CONNECTION_STATE),
                 null,
@@ -115,7 +139,7 @@ class MpvAndroidAutoConnectionDetector(
                 null,
             )
         } catch (error: Exception) {
-            queryCoalescer.onComplete(registered = false)
+            queryCoalescer.onComplete(queryGeneration, registered = false)
             Log.w(TAG, "query failed", error)
             notifyDisconnected()
         }
@@ -143,9 +167,13 @@ class MpvAndroidAutoConnectionDetector(
             cookie: Any?,
             response: Cursor?,
         ) {
+            val queryGeneration = cookie as? Long ?: run {
+                response?.close()
+                return
+            }
             try {
                 response.use { cursor ->
-                    if (!isRegistered) {
+                    if (!queryCoalescer.isCurrentActive(queryGeneration, isRegistered)) {
                         return
                     }
                     if (cursor == null) {
@@ -167,7 +195,7 @@ class MpvAndroidAutoConnectionDetector(
                     }
                 }
             } finally {
-                if (queryCoalescer.onComplete(isRegistered)) {
+                if (queryCoalescer.onComplete(queryGeneration, isRegistered)) {
                     queryForState()
                 }
             }

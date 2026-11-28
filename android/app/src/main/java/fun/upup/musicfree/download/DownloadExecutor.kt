@@ -213,22 +213,19 @@ class DownloadExecutor(private val client: OkHttpClient) {
 
                 val contentRange = response.header("Content-Range")
                 if (response.code == 206) {
-                    if (existingSize <= 0L) {
-                        val range = parseContentRange(contentRange)
-                        if (range == null || range.start != 0L) {
-                            control.callRef.set(null)
-                            throw IOException("Unexpected HTTP 206 without Range request")
-                        }
-                    } else {
-                        val range = parseContentRange(contentRange)
-                        val validOffsets = range != null &&
-                            range.start == existingSize &&
-                            range.end >= range.start &&
-                            (range.total == null || (range.total > 0L && range.end == range.total - 1L))
-                        if (!validOffsets) {
-                            control.callRef.set(null)
-                            throw IOException("Invalid Content-Range for resume")
-                        }
+                    val range = parseContentRange(contentRange)
+                    val expectedStart = if (existingSize > 0L) existingSize else 0L
+                    val validOffsets = range != null &&
+                        range.start == expectedStart &&
+                        range.end >= range.start &&
+                        range.total != null &&
+                        range.total > 0L &&
+                        range.end == range.total - 1L
+                    if (!validOffsets) {
+                        control.callRef.set(null)
+                        throw IOException("Invalid Content-Range for partial response")
+                    }
+                    if (existingSize > 0L) {
                         val parsedTotal = range!!.total
                         val totalMismatch = meta != null &&
                             meta.totalBytes > 0L &&
@@ -256,6 +253,14 @@ class DownloadExecutor(private val client: OkHttpClient) {
 
                 val body = response.body ?: throw IOException("Empty body")
                 val responseBodyLength = body.contentLength()
+                if (response.code == 206 && responseBodyLength >= 0L) {
+                    val range = parseContentRange(contentRange)!!
+                    val expectedSliceLength = range.end - range.start + 1L
+                    if (responseBodyLength != expectedSliceLength) {
+                        control.callRef.set(null)
+                        throw IOException("Content-Length does not match Content-Range")
+                    }
+                }
                 val shouldAppend = existingSize > 0L && response.code == 206
                 val totalBytes = calculateTotalBytes(
                     existingSize = existingSize,
@@ -292,24 +297,31 @@ class DownloadExecutor(private val client: OkHttpClient) {
                 } else {
                     respLastModified
                 }
-                if (
+                val nextMeta = if (
                     currentResourceHash.isNotEmpty() &&
                     (nextStrongEtag.isNotEmpty() || nextLastModified.isNotEmpty())
                 ) {
-                    writeMeta(
-                        metaFile = metaFile,
-                        meta = PartialMeta(
-                            resourceHash = currentResourceHash,
-                            strongEtag = nextStrongEtag,
-                            lastModified = nextLastModified,
-                            totalBytes = totalBytes,
-                        ),
+                    PartialMeta(
+                        resourceHash = currentResourceHash,
+                        strongEtag = nextStrongEtag,
+                        lastModified = nextLastModified,
+                        totalBytes = totalBytes,
                     )
-                } else if (metaFile.exists()) {
+                } else {
+                    null
+                }
+                if (!shouldAppend && metaFile.exists()) {
                     runCatching { metaFile.delete() }
                 }
 
                 FileOutputStream(destinationFile, shouldAppend).use { fos ->
+                    if (nextMeta != null) {
+                        if (!shouldAppend || nextMeta != meta || !metaFile.isFile) {
+                            writeMeta(metaFile = metaFile, meta = nextMeta)
+                        }
+                    } else if (metaFile.exists()) {
+                        runCatching { metaFile.delete() }
+                    }
                     BufferedOutputStream(fos).use { bos ->
                         body.byteStream().use { input ->
                             BufferedInputStream(input).use { bis ->
@@ -349,9 +361,13 @@ class DownloadExecutor(private val client: OkHttpClient) {
 
                 control.callRef.set(null)
                 if (totalBytes > 0L && downloaded != totalBytes) {
+                    if (downloaded > totalBytes) {
+                        runCatching { metaFile.delete() }
+                        runCatching { destinationFile.delete() }
+                    }
                     return@responseScope ExecutionResult(
                         finalStatus = DownloadTaskStatus.ERROR,
-                        downloadedBytes = downloaded,
+                        downloadedBytes = if (destinationFile.exists()) destinationFile.length() else 0L,
                         totalBytes = totalBytes,
                         errorMessage = "Incomplete or mismatched download: $downloaded / $totalBytes",
                     )
@@ -434,14 +450,30 @@ class DownloadExecutor(private val client: OkHttpClient) {
     }
 
     private fun writeMeta(metaFile: File, meta: PartialMeta) {
-        runCatching {
+        val tempFile = File("${metaFile.absolutePath}.tmp")
+        try {
             val props = Properties().apply {
                 setProperty("resourceHash", meta.resourceHash)
                 setProperty("strongEtag", meta.strongEtag)
                 setProperty("lastModified", meta.lastModified)
                 setProperty("totalBytes", meta.totalBytes.toString())
             }
-            FileOutputStream(metaFile, false).use { props.store(it, null) }
+            FileOutputStream(tempFile, false).use { fos ->
+                props.store(fos, null)
+                fos.flush()
+                runCatching { fos.fd.sync() }
+            }
+            if (!tempFile.renameTo(metaFile)) {
+                if (metaFile.exists() && !metaFile.delete()) {
+                    throw IOException("Failed to replace partial meta file")
+                }
+                if (!tempFile.renameTo(metaFile)) {
+                    throw IOException("Failed to commit partial meta file")
+                }
+            }
+        } catch (_: Exception) {
+            runCatching { tempFile.delete() }
+            runCatching { metaFile.delete() }
         }
     }
 

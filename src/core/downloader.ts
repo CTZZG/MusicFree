@@ -775,6 +775,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         this.emit(DownloaderEvent.DownloadTaskUpdate, newValue);
         if (
             (patch.status !== undefined && patch.status !== previous?.status) ||
+            (newValue.status === DownloadStatus.Paused &&
+                (patch.downloadedSize !== undefined ||
+                    patch.fileSize !== undefined ||
+                    patch.progressText !== undefined)) ||
             patch.errorReason !== undefined ||
             patch.errorMessage !== undefined ||
             patch.startedAt !== undefined ||
@@ -800,6 +804,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         >,
         attemptId: string,
     ) {
+        if (this.isAttemptPaused(musicItem, attemptId)) {
+            return downloadTasks.get(getMediaUniqueKey(musicItem));
+        }
         return this.updateDownloadTask(
             musicItem,
             {
@@ -1501,7 +1508,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 ),
             commitJournal: () => downloadTasksStore.flush(),
             cleanupCache: async () => {
-                await this.unlinkFinalizationPath(journal.cachePath);
+                await this.unlinkPartialDownload(journal.cachePath);
             },
             reportCacheKept: () =>
                 errorLog("下载收尾日志没能落盘，保留缓存文件", {
@@ -1919,7 +1926,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     const progress = items.find(
                         (item: any) => item?.taskId === taskId,
                     );
-                    if (!progress || !getCurrentTask()) {
+                    if (
+                        !progress ||
+                        !getCurrentTask() ||
+                        isCurrentTaskPaused()
+                    ) {
                         return;
                     }
                     const downloaded =
@@ -2239,19 +2250,28 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         );
 
         // 真实下载地址
-        const rawTargetDownloadPath = await this.getAvailableDownloadPath(
-            `${taskFilename}.${extension}`,
-        );
-
-        // 检测下载位置是否存在
+        let rawTargetDownloadPath = "";
         try {
+            rawTargetDownloadPath = await this.getAvailableDownloadPath(
+                `${taskFilename}.${extension}`,
+            );
+            if (
+                !this.isCurrentDownloadAttempt(musicItem, attemptId) ||
+                this.isAttemptPaused(musicItem, attemptId)
+            ) {
+                this.releaseReservedDownloadPath(rawTargetDownloadPath);
+                this.releaseDownloadSlot(attemptId);
+                return;
+            }
             const folder = path.dirname(rawTargetDownloadPath);
             const folderExists = await exists(folder);
             if (!folderExists) {
                 await mkdirR(folder);
             }
         } catch (e: any) {
-            this.releaseReservedDownloadPath(rawTargetDownloadPath);
+            if (rawTargetDownloadPath) {
+                this.releaseReservedDownloadPath(rawTargetDownloadPath);
+            }
             this.markTaskAsError(
                 musicItem,
                 DownloadFailReason.NoWritePermission,

@@ -33,13 +33,17 @@ export function showDialog<T extends keyof IDialogType>(
             previousDialog.payload?.onDismiss ??
             previousDialog.payload?.onCancel;
         if (typeof settleSuperseded === "function") {
-            supersedingProtectedId = nextId;
+            const previousProtectedId = supersedingProtectedId;
+            supersedingProtectedId =
+                previousProtectedId === null
+                    ? nextId
+                    : Math.min(previousProtectedId, nextId);
             try {
                 settleSuperseded();
             } catch {
                 // Ignore callback failure so superseding dialog stays mounted.
             } finally {
-                supersedingProtectedId = null;
+                supersedingProtectedId = previousProtectedId;
             }
         }
     }
@@ -56,7 +60,7 @@ export function hideDialog(expectedDialogId?: number) {
     if (
         expectedDialogId === undefined &&
         supersedingProtectedId !== null &&
-        currentDialog.id === supersedingProtectedId
+        currentDialog.id >= supersedingProtectedId
     ) {
         return false;
     }

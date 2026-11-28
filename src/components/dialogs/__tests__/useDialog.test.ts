@@ -54,4 +54,33 @@ describe("dialog instance lifecycle", () => {
         });
         expect(onDismissFirst).toHaveBeenCalledTimes(1);
     });
+
+    it("keeps follow-up dialog mounted when superseded onDismiss re-enters showDialog and calls hideDialog", () => {
+        const onDismissSecond = jest.fn(() => {
+            hideDialog();
+        });
+        const onDismissFirst = jest.fn(() => {
+            showDialog("SimpleDialog", {
+                title: "follow-up",
+                content: "opened during dismiss",
+            });
+            hideDialog();
+        });
+
+        showDialog("SimpleDialog", {
+            title: "first",
+            content: "initial",
+            onDismiss: onDismissFirst,
+        });
+        showDialog("SimpleDialog", {
+            title: "second",
+            content: "superseding",
+            onDismiss: onDismissSecond,
+        });
+
+        expect(onDismissFirst).toHaveBeenCalledTimes(1);
+        expect(onDismissSecond).toHaveBeenCalledTimes(1);
+        expect(getCurrentDialog().name).toBe("SimpleDialog");
+        expect(getCurrentDialog().payload?.title).toBe("follow-up");
+    });
 });

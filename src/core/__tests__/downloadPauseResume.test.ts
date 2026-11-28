@@ -387,4 +387,150 @@ describe("Downloader post-commit tolerance and native pause/resume", () => {
         await flushMicrotasks(15);
         expect(downloader.getDownloadDiagnosticSnapshot().downloadingCount).toBe(0);
     });
+
+    it("persists final native paused byte count and ignores late progress batches after pause", async () => {
+        const song = makeSong("paused-persist-sync");
+        const addedTasks: Array<{ taskId: string; destinationPath: string }> = [];
+        mockNativeAddDownloadTask.mockImplementation(async (params: any) => {
+            addedTasks.push({
+                taskId: params.taskId,
+                destinationPath: params.destinationPath,
+            });
+            mockFiles.add(params.destinationPath);
+            queueMicrotask(() => {
+                emitNativeEvent("NativeDownloadProgressBatch", {
+                    items: [
+                        {
+                            taskId: params.taskId,
+                            downloaded: 1024,
+                            total: 4096,
+                            percent: 25,
+                            progressText: "25%",
+                        },
+                    ],
+                });
+            });
+            return true;
+        });
+
+        downloader.download(song);
+        await flushMicrotasks(20);
+        expect(addedTasks).toHaveLength(1);
+        const taskId = addedTasks[0].taskId;
+
+        expect(await downloader.pause(song)).toBe(true);
+
+        // Late queued progress batch must NOT flip Paused back to Downloading.
+        emitNativeEvent("NativeDownloadProgressBatch", {
+            items: [
+                {
+                    taskId,
+                    downloaded: 2560,
+                    total: 4096,
+                    percent: 62,
+                    progressText: "62%",
+                },
+            ],
+        });
+        expect(
+            downloader
+                .getDownloadDiagnosticSnapshot()
+                .tasks.find((item: any) => item.id === song.id)?.status,
+        ).toBe("Paused");
+
+        // Final synced byte count reported when native worker flushes must be persisted to disk.
+        emitNativeEvent("NativeDownloadTaskStatusChanged", {
+            taskId,
+            status: "PAUSED",
+            downloaded: 3072,
+            total: 4096,
+        });
+        await flushMicrotasks(15);
+
+        const persistedRaw = mockStores
+            .get("music.DownloadTasks")
+            ?.getString("activeTasks");
+        const persistedTasks = JSON.parse(persistedRaw ?? "[]");
+        const persistedSong = persistedTasks.find(
+            (item: any) => item?.musicItem?.id === song.id,
+        );
+        const { DownloadStatus } = require("@/core/downloader");
+        expect(persistedSong?.status).toBe(DownloadStatus.Paused);
+        expect(persistedSong?.downloadedSize).toBe(3072);
+        expect(persistedSong?.fileSize).toBe(4096);
+
+        // Start a second active download while song is paused, then deliver a late CANCELED for the paused attempt:
+        // slot count for the active second song must stay 1 (no double-decrement) and paused song stays Paused.
+        const concurrentSong = makeSong("concurrent-slot-guard");
+        mockNativeAddDownloadTask.mockImplementation(async (params: any) => {
+            mockFiles.add(params.destinationPath);
+            return true;
+        });
+        downloader.download(concurrentSong);
+        await flushMicrotasks(20);
+        expect(downloader.getDownloadDiagnosticSnapshot().downloadingCount).toBe(1);
+
+        emitNativeEvent("NativeDownloadTaskStatusChanged", {
+            taskId,
+            status: "CANCELED",
+            downloaded: 3072,
+            total: 4096,
+        });
+        await flushMicrotasks(10);
+        expect(downloader.getDownloadDiagnosticSnapshot().downloadingCount).toBe(1);
+        expect(
+            downloader
+                .getDownloadDiagnosticSnapshot()
+                .tasks.find((item: any) => item.id === song.id)?.status,
+        ).toBe("Paused");
+
+        downloader.remove(concurrentSong);
+        downloader.remove(song);
+        await flushMicrotasks(15);
+    });
+
+    it("releases download slot and marks task as error when target path reservation rejects", async () => {
+        const brokenSong = makeSong("broken-reserve");
+        const healthySong = makeSong("healthy-after-reserve-fail");
+        let rejectFirstTargetCheck = true;
+        RNFS.exists.mockImplementation(async (filePath: string) => {
+            if (rejectFirstTargetCheck && String(filePath).endsWith(".mp3")) {
+                rejectFirstTargetCheck = false;
+                throw new Error("EIO target storage failure");
+            }
+            return mockFiles.has(filePath);
+        });
+        try {
+            mockNativeAddDownloadTask.mockImplementation(async (params: any) => {
+                mockFiles.add(params.destinationPath);
+                queueMicrotask(() => {
+                    emitNativeEvent("NativeDownloadTaskStatusChanged", {
+                        taskId: params.taskId,
+                        status: "COMPLETED",
+                        downloaded: 4096,
+                        total: 4096,
+                    });
+                });
+                return true;
+            });
+
+            downloader.download([brokenSong, healthySong]);
+            await flushMicrotasks(35);
+
+            const diag = downloader.getDownloadDiagnosticSnapshot();
+            expect(diag.downloadingCount).toBe(0);
+            expect(
+                diag.tasks.find((item: any) => item.id === brokenSong.id)?.status,
+            ).toBe("Error");
+            expect(
+                diag.tasks.find((item: any) => item.id === healthySong.id)?.status,
+            ).toBe("Completed");
+        } finally {
+            RNFS.exists.mockImplementation(async (filePath: string) =>
+                mockFiles.has(filePath),
+            );
+            downloader.clearFailedTasks([brokenSong]);
+            downloader.clearCompletedTasks([healthySong]);
+        }
+    });
 });

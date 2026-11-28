@@ -109,6 +109,12 @@ class MpvPlaybackService : Service() {
             }
         }
 
+        internal fun shouldAbortPlaybackAfterForegroundFailure(
+            foregroundStartRequested: Boolean,
+            stoppingForFailedForeground: Boolean,
+            isForeground: Boolean,
+        ): Boolean = !isForeground && (foregroundStartRequested || stoppingForFailedForeground)
+
         private fun formatTime(ms: Long): String {
             val totalSec = max(0L, ms / 1000)
             return "${totalSec / 60}:${(totalSec % 60).toString().padStart(2, '0')}"
@@ -144,6 +150,7 @@ class MpvPlaybackService : Service() {
     private var audioFocusListener: AudioManager.OnAudioFocusChangeListener? = null
     private var isForeground = false
     private var foregroundStartRequested = false
+    private var stoppingForFailedForeground = false
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockReleaseScheduled = false
     private var noisyReceiverRegistered = false
@@ -260,6 +267,7 @@ class MpvPlaybackService : Service() {
         when (intent.action) {
             ACTION_START_FOREGROUND -> {
                 foregroundStartRequested = true
+                stoppingForFailedForeground = false
                 startForegroundSafely()
             }
             ACTION_PLAY_PAUSE -> {
@@ -352,7 +360,12 @@ class MpvPlaybackService : Service() {
             "playing" -> {
                 cachedState = PlaybackStateCompat.STATE_PLAYING
                 cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
-                startForegroundSafely()
+                if (!startForegroundSafely()) {
+                    cachedState = PlaybackStateCompat.STATE_PAUSED
+                    releaseWakeLock()
+                    abandonAudioFocus()
+                    return
+                }
                 requestAudioFocus()
                 acquireWakeLock()
                 artworkRetries.onPlaybackStarted()
@@ -361,7 +374,12 @@ class MpvPlaybackService : Service() {
             "buffering" -> {
                 cachedState = PlaybackStateCompat.STATE_BUFFERING
                 cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
-                startForegroundSafely()
+                if (!startForegroundSafely()) {
+                    cachedState = PlaybackStateCompat.STATE_PAUSED
+                    releaseWakeLock()
+                    abandonAudioFocus()
+                    return
+                }
                 requestAudioFocus()
                 acquireWakeLock()
                 updateAll()
@@ -1065,14 +1083,18 @@ class MpvPlaybackService : Service() {
         }
     }
 
-    private fun startForegroundSafely() {
+    private fun startForegroundSafely(): Boolean {
         if (isForeground) {
             foregroundStartRequested = false
+            stoppingForFailedForeground = false
             updateNotification()
-            return
+            return true
+        }
+        if (stoppingForFailedForeground && !foregroundStartRequested) {
+            return false
         }
 
-        try {
+        return try {
             startForeground(
                 NOTIFICATION_ID,
                 buildNotification(),
@@ -1080,16 +1102,27 @@ class MpvPlaybackService : Service() {
             )
             isForeground = true
             foregroundStartRequested = false
+            stoppingForFailedForeground = false
             notificationUpdates.onForegroundPosted()
             lastNotificationUpdateMs = System.currentTimeMillis()
+            true
         } catch (e: Exception) {
             Log.w(TAG, "startForeground failed", e)
-            if (foregroundStartRequested && !isForeground) {
+            if (
+                shouldAbortPlaybackAfterForegroundFailure(
+                    foregroundStartRequested = foregroundStartRequested,
+                    stoppingForFailedForeground = stoppingForFailedForeground,
+                    isForeground = isForeground,
+                )
+            ) {
                 foregroundStartRequested = false
+                stoppingForFailedForeground = true
                 stopSelf()
-                return
+                false
+            } else {
+                updateNotification()
+                true
             }
-            updateNotification()
         }
     }
 

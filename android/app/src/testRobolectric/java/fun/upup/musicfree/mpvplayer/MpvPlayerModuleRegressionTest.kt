@@ -36,11 +36,16 @@ class MpvPlayerModuleRegressionTest {
     private class Result {
         var settled = false
         var code: String? = null
+        var error: Throwable? = null
         var value: Any? = null
         val promise = Proxy.newProxyInstance(Promise::class.java.classLoader, arrayOf(Promise::class.java)) { _, method, args ->
             when (method.name) {
                 "resolve" -> { settled = true; value = args?.firstOrNull() }
-                "reject" -> { settled = true; code = args?.firstOrNull() as? String }
+                "reject" -> {
+                    settled = true
+                    code = args?.firstOrNull() as? String
+                    error = args?.firstOrNull { it is Throwable } as? Throwable
+                }
             }
             null
         } as Promise
@@ -495,5 +500,39 @@ class MpvPlayerModuleRegressionTest {
         assertEquals("E_LOAD", call { module.loadAndPlay(map("url", "edl://evil", "mediaId", "c", "loadGeneration", 3.0), it) }.code)
         assertEquals("E_LOAD", call { module.loadAndPlay(map("url", "http://127.0.0.1:8080/x.mp3", "mediaId", "c", "loadGeneration", 3.0, "trustedLocalMediaProxy", false), it) }.code)
         assertEquals(beforeCount, engine.loadCommands.size)
+    }
+
+    @Test fun setRateSnapshotsElapsedPositionAtOldSpeedBeforeUpdatingServiceSpeed() {
+        val serviceController = org.robolectric.Robolectric.buildService(MpvPlaybackService::class.java).create()
+        val service = serviceController.get()
+        MpvPlaybackService::class.java.getDeclaredField("notificationManager").apply {
+            isAccessible = true
+            set(service, null)
+        }
+        try {
+            audio(ready = true)
+            service.onMetadataChanged("Song A", "Artist", "Album", null, 60.0)
+            service.onProgressChanged(10.0, 60.0, 20.0)
+            service.onPlaybackStateChanged("playing")
+
+            assertNull(call { module.setRate(2.0, it) }.code)
+            assertEquals(2.0f, MpvServiceBridge.playbackSpeed, 0.0001f)
+
+            // Advance 4 seconds at 2.0x -> 10_000ms + 8_000ms = 18_000ms, then switch down to 1.0x.
+            idle(4_000)
+            assertNull(call { module.setRate(1.0, it) }.code)
+            assertEquals(1.0f, MpvServiceBridge.playbackSpeed, 0.0001f)
+
+            // Advance 3 seconds at 1.0x -> 18_000ms + 3_000ms = 21_000ms, then pause to freeze cachedPosition.
+            idle(3_000)
+            service.onPlaybackStateChanged("paused")
+
+            val cachedPosField = MpvPlaybackService::class.java.getDeclaredField("cachedPosition").apply {
+                isAccessible = true
+            }
+            assertEquals(21_000L, cachedPosField.getLong(service))
+        } finally {
+            serviceController.destroy()
+        }
     }
 }
