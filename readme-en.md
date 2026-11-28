@@ -38,7 +38,7 @@ For software download methods, plugin usage instructions, and plugin development
 
 ## About This Fork
 
-This is a personal Android-focused fork of [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) (current version: `0.15.0`, not an official upstream release). Key differences in this fork:
+This is a personal Android-focused fork of [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) (current version: `0.15.1`, not an official upstream release). Key differences in this fork:
 
 - **Minimum Android version**: Requires **Android 14 / API 34 or higher** since `v0.12.0` (both installation and runtime); Android 13 and earlier should use `v0.11.6` or earlier.
 - **mpv (libmpv) playback engine**: Replaces older audio backends with `mpv`/`libmpv`, integrated with Android media notifications, lock screen controls, headset/Bluetooth media keys, audio focus, queue management, and lyrics notifications.
