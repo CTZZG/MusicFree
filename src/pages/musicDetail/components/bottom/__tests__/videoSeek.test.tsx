@@ -107,3 +107,13 @@ test("a rejected native seek does not surface an unhandled rejection", async () 
     await Promise.resolve();
     expect(mockSeek).toHaveBeenCalledWith(18);
 });
+
+test("omits trailing whitespace on MV badge when quality label is absent", async () => {
+    mockState = { phase: "video", owner: mockOwner, video: { qualities: [] } };
+    await mount();
+    const texts = tree.root
+        .findAll(node => typeof node.props.children === "string")
+        .map(node => node.props.children);
+    expect(texts).toContain("MV");
+    expect(texts).not.toContain("MV ");
+});

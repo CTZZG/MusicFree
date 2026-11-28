@@ -25,7 +25,10 @@ jest.mock("@/core/router", () => ({
     useNavigate: () => mockNavigate,
 }));
 jest.mock("@/components/base/themeText", () => "Text");
-jest.mock("@/hooks/useColors", () => () => ({ primary: "blue" }));
+jest.mock("react-native-safe-area-context", () => ({
+    useSafeAreaInsets: () => ({ top: 0, bottom: 20, left: 0, right: 0 }),
+}));
+jest.mock("@/hooks/useColors", () => () => ({ primary: "blue", divider: "#8885" }));
 jest.mock("@/components/musicVideo/actions", () => ({
     watchMusicVideo: (value: any) => mockWatch(value),
     returnToSong: () => mockReturn(),
@@ -125,7 +128,10 @@ test("returning disables competing source selection and duplicate return buttons
     mockState.songKey = getMediaUniqueKey(mockSong);
     await mount();
     expect(button("One MV").props.disabled).toBe(true);
+    expect(button("One MV").props.accessibilityState).toMatchObject({ disabled: true });
+    expect(button("One MV").props.accessibilityLabel).toContain("musicVideo.watch");
     expect(button("musicVideo.returnToSong").props.disabled).toBe(true);
+    expect(button("musicVideo.returnToSong").props.accessibilityState).toMatchObject({ disabled: true });
     expect(mockReturn).not.toHaveBeenCalled();
     expect(mockQuality).not.toHaveBeenCalled();
 });

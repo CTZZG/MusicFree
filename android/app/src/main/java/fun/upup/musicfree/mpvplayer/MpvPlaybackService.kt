@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -78,6 +79,7 @@ class MpvPlaybackService : Service() {
          * setWakeMode(WAKE_MODE_NETWORK) 达到同样效果）。
          */
         private const val WAKE_LOCK_GRACE_MS = 45_000L
+        private const val WAKE_LOCK_MAX_HOLD_MS = 10 * 60 * 1000L
 
         private const val ACTION_PLAY_PAUSE = "mpv_play_pause"
         private const val ACTION_NEXT = "mpv_next"
@@ -303,7 +305,7 @@ class MpvPlaybackService : Service() {
         if (isNewTrack) {
             cachedPosition = 0L
             cachedBufferedPosition = 0L
-            cachedPositionUpdatedAtMs = System.currentTimeMillis()
+            cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
             setArtworkBitmap(null)
             cachedMediaNotificationLyric = ""
             MpvServiceBridge.liveUpdateLyric.clearLyric()
@@ -325,7 +327,7 @@ class MpvPlaybackService : Service() {
                 acquireWakeLock()
                 requestAudioFocus()
                 cachedState = PlaybackStateCompat.STATE_PLAYING
-                cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
                 startForegroundSafely()
                 artworkRetries.onPlaybackStarted()
                 updateAll()
@@ -334,24 +336,22 @@ class MpvPlaybackService : Service() {
                 acquireWakeLock()
                 requestAudioFocus()
                 cachedState = PlaybackStateCompat.STATE_BUFFERING
-                cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
                 startForegroundSafely()
                 updateAll()
             }
             "paused" -> {
-                // 手动切歌也会先经过一次 paused，所以这里同样走宽限期释放。
                 scheduleWakeLockRelease()
                 cachedPosition = currentNotificationPosition()
-                cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
                 cachedState = PlaybackStateCompat.STATE_PAUSED
                 updateAll()
             }
             "ended" -> {
-                // 自然结束后 JS 还要决策下一首，锁必须继续持有到宽限期结束。
                 acquireWakeLock()
                 scheduleWakeLockRelease()
                 cachedPosition = currentNotificationPosition()
-                cachedPositionUpdatedAtMs = System.currentTimeMillis()
+                cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
                 cachedState = PlaybackStateCompat.STATE_PAUSED
                 updateAll()
             }
@@ -373,7 +373,10 @@ class MpvPlaybackService : Service() {
     ) {
         cachedPosition = secondsToMillis(positionSecs)
         cachedBufferedPosition = secondsToMillis(bufferedSecs)
-        cachedPositionUpdatedAtMs = System.currentTimeMillis()
+        cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
+        if (cachedState == PlaybackStateCompat.STATE_PLAYING && wakeLock?.isHeld != true) {
+            acquireWakeLock()
+        }
         val nextDuration = secondsToMillis(durationSecs)
         val durationChanged = nextDuration > 0 && nextDuration != cachedDuration
         if (durationChanged) {
@@ -477,6 +480,15 @@ class MpvPlaybackService : Service() {
         mainHandler.removeCallbacks(liveUpdateProgressTicker)
     }
 
+    private fun effectivePlaybackSpeed(): Float =
+        MpvServiceBridge.playbackSpeed.takeIf { it.isFinite() && it > 0f } ?: 1.0f
+
+    fun onPlaybackSpeedChanged() {
+        cachedPosition = currentNotificationPosition()
+        cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
+        updateAll()
+    }
+
     private fun currentNotificationPosition(): Long {
         if (
             cachedState != PlaybackStateCompat.STATE_PLAYING ||
@@ -485,8 +497,9 @@ class MpvPlaybackService : Service() {
             return cachedPosition
         }
 
-        val elapsed = (System.currentTimeMillis() - cachedPositionUpdatedAtMs).coerceAtLeast(0L)
-        val estimated = cachedPosition + elapsed
+        val elapsed = (SystemClock.elapsedRealtime() - cachedPositionUpdatedAtMs).coerceAtLeast(0L)
+        val scaledElapsed = (elapsed * effectivePlaybackSpeed()).toLong()
+        val estimated = cachedPosition + scaledElapsed
         return if (cachedDuration > 0) {
             estimated.coerceIn(0L, cachedDuration)
         } else {
@@ -557,7 +570,7 @@ class MpvPlaybackService : Service() {
 
     private fun updatePlaybackState() {
         val speed =
-            if (cachedState == PlaybackStateCompat.STATE_PLAYING) 1.0f else 0.0f
+            if (cachedState == PlaybackStateCompat.STATE_PLAYING) effectivePlaybackSpeed() else 0.0f
         val position = currentNotificationPosition()
         val activeQueueItemId: Long =
             if (MpvServiceBridge.currentQueueIndex >= 0) {
@@ -567,7 +580,7 @@ class MpvPlaybackService : Service() {
             }
         mediaSession.setPlaybackState(
             PlaybackStateCompat.Builder()
-                .setState(cachedState, position, speed)
+                .setState(cachedState, position, speed, SystemClock.elapsedRealtime())
                 .setActions(allActions)
                 .setBufferedPosition(cachedBufferedPosition)
                 .setActiveQueueItemId(activeQueueItemId)
@@ -985,11 +998,9 @@ class MpvPlaybackService : Service() {
         } catch (_: Exception) {
             null
         } ?: return
-        if (!lock.isHeld) {
-            try {
-                lock.acquire()
-            } catch (_: Exception) {
-            }
+        try {
+            lock.acquire(WAKE_LOCK_MAX_HOLD_MS)
+        } catch (_: Exception) {
         }
     }
 
@@ -1020,11 +1031,16 @@ class MpvPlaybackService : Service() {
         }
 
         try {
-            startForeground(NOTIFICATION_ID, buildNotification())
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
             isForeground = true
             notificationUpdates.onForegroundPosted()
             lastNotificationUpdateMs = System.currentTimeMillis()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground failed", e)
             updateNotification()
         }
     }

@@ -50,6 +50,9 @@ jest.mock("@/core/i18n", () => ({
     }),
 }));
 jest.mock("@/utils/rpx", () => ({ vh: (value: number) => value * 10 }));
+jest.mock("react-native-safe-area-context", () => ({
+    useSafeAreaInsets: () => ({ top: 0, bottom: 20, left: 0, right: 0 }),
+}));
 jest.mock("@/components/base/themeText", () => "Text");
 jest.mock("../../base/panelHeader", () => () => null);
 jest.mock("../../base/panelBase", () => ({
@@ -213,6 +216,7 @@ it("shows MV provider and video quality separately from actual decoded audio", a
     mockAdapter.getAudioInfo.mockResolvedValue({ ...decoded, loadGeneration: 2, codec: "aac", sampleRate: 48000 });
     await mount();
     expect(text()).toContain("The MV · MV"); expect(text()).toContain("Video provider");
+    expect(text()).toContain("musicVideo.provider"); expect(text()).toContain("musicVideo.labelQuality");
     expect(text()).toContain("HD 720p"); expect(text()).toContain("aac"); expect(text()).toContain("48 kHz");
     expect(text()).not.toContain("128k-plugin-label"); expect(text()).not.toContain("Actual source B");
 });

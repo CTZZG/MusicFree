@@ -1803,16 +1803,20 @@ class MpvPlayerModule internal constructor(
                     else -> null
                 }
                 renditionStart?.let { pendingSeek.defer(generation, it); positionSecs = it }
-                if (nextKind == "mv") MPVLib.setPropertyDouble("speed", 1.0)
-                else {
+                if (nextKind == "mv") {
+                    MPVLib.setPropertyDouble("speed", 1.0)
+                    MpvServiceBridge.playbackSpeed = 1.0f
+                    MpvServiceBridge.service?.onPlaybackSpeedChanged()
+                } else {
                     val targetRate = playbackRate ?: audioPlaybackRate
+                    val resolvedRate =
+                        if (targetRate.isFinite() && targetRate > 0.0) targetRate else 1.0
+                    MpvServiceBridge.playbackSpeed = resolvedRate.toFloat()
+                    MpvServiceBridge.service?.onPlaybackSpeedChanged()
                     if (playbackRate != null || (targetRate.isFinite() && targetRate > 0.0 && targetRate != 1.0)) {
                         MPVLib.setPropertyDouble("speed", targetRate)
                         audioPlaybackRate = targetRate
                     }
-                }
-                if (autoPlay) {
-                    startPlaybackService(foreground = true)
                 }
                 if (!autoPlay) {
                     MPVLib.setPropertyBoolean("pause", true)
@@ -1867,6 +1871,7 @@ class MpvPlayerModule internal constructor(
                 suspendedVideo = null
                 if (nextKind != "mv") lastVideoClock = null
                 if (autoPlay) {
+                    startPlaybackService(foreground = true)
                     scheduleUnpauseRetries(generation)
                 } else {
                     MPVLib.setPropertyBoolean("pause", true)
@@ -2474,7 +2479,11 @@ class MpvPlayerModule internal constructor(
             }
             try {
                 require(rate.isFinite() && rate > 0.0) { "invalid playback rate" }
-                if (renditionKind != "mv") MPVLib.setPropertyDouble("speed", rate)
+                if (renditionKind != "mv") {
+                    MPVLib.setPropertyDouble("speed", rate)
+                    MpvServiceBridge.playbackSpeed = rate.toFloat()
+                    MpvServiceBridge.service?.onPlaybackSpeedChanged()
+                }
                 audioPlaybackRate = rate
                 operationPromise.resolve(null)
             } catch (e: Exception) {

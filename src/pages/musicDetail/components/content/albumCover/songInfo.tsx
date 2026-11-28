@@ -9,7 +9,7 @@ import {
 import Icon, { IIconName } from "@/components/base/icon.tsx";
 import Tag from "@/components/base/tag";
 import { showPanel } from "@/components/panels/usePanel";
-import { fontWeightConst } from "@/constants/uiConst";
+import { fontWeightConst, maxFontScaleConst } from "@/constants/uiConst";
 import { useI18N } from "@/core/i18n";
 import MusicSheet, { useFavorite } from "@/core/musicSheet";
 import pluginManager from "@/core/pluginManager";
@@ -304,7 +304,7 @@ export default function SongInfo(props: ISongInfoProps) {
                             {hasMusicVideo && !isLandscape ? <Pressable
                                 accessibilityRole="button" accessibilityLabel={t("musicVideo.title")}
                                 style={styles.mvShortcut} onPress={() => showPanel("MusicVideo")}>
-                                <Text style={styles.mvText}>MV</Text>
+                                <Text maxFontSizeMultiplier={maxFontScaleConst.compact} style={styles.mvText}>MV</Text>
                             </Pressable> : null}
                         </View>
                     ) : null}
@@ -407,7 +407,7 @@ function FavoriteButton(props: {
 }
 
 const styles = StyleSheet.create({
-    mvShortcut: { minWidth: 48, minHeight: 48, justifyContent: "center", alignItems: "center", paddingHorizontal: 8 },
+    mvShortcut: { minWidth: 48, minHeight: 48, marginVertical: -11, justifyContent: "center", alignItems: "center", paddingHorizontal: 8 },
     mvText: { color: "white", fontSize: 14, fontWeight: fontWeightConst.semibold },
     container: {
         alignSelf: "center",

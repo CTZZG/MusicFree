@@ -187,6 +187,7 @@ export default function MusicInfo(props: IMusicInfoProps) {
     const { musicItem } = props;
     const navigate = useNavigate();
     const { t } = useI18N();
+    const { videoMode } = useMusicVideoView();
     usePlayList();
     const siblingMusicItems = musicItem
         ? {
@@ -283,10 +284,10 @@ export default function MusicInfo(props: IMusicInfoProps) {
                 accessibilityRole="button"
                 accessibilityLabel={
                     musicItem
-                        ? t("musicBar.nowPlaying.a11y", {
+                        ? `${videoMode ? "MV · " : ""}${t("musicBar.nowPlaying.a11y", {
                             title: musicItem.title,
                             artist: musicItem.artist,
-                        })
+                        })}`
                         : undefined
                 }
                 accessibilityActions={[{ name: "activate" }]}

@@ -441,6 +441,7 @@ export interface ILanguageData {
     "musicDetail.playControl.pauseWhileLoading.a11y": string; // 正在加载，暂停
     "musicDetail.playControl.previous.a11y": string; // 上一首
     "musicDetail.playControl.next.a11y": string; // 下一首
+    "musicDetail.swipeNextHint": string; // 上滑切换下一首
     "musicDetail.seekBar.a11y": string; // 播放进度
     "musicDetail.nowPlaying": string; // 播放页顶部标题
     "musicDetail.collapse.a11y": string; // 收起播放页按钮

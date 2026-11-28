@@ -319,9 +319,8 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     @ReactMethod
     fun setLiveUpdateLyricText(lyric: String, promise: Promise) {
         try {
-            val handledByMpv =
-                MpvServiceBridge.service?.onLiveUpdateLyricChanged(lyric) == true
-            if (handledByMpv) {
+            if (routesToMpv()) {
+                MpvServiceBridge.service?.onLiveUpdateLyricChanged(lyric)
                 liveUpdateLyricNotifier.clear()
             } else {
                 liveUpdateLyricNotifier.show(lyric)

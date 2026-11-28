@@ -53,8 +53,13 @@ function QualityBadge() {
     const currentQuality = useMusicQuality();
     const { engineIsVideo, video } = useMusicVideoView();
     const { t } = useI18N();
+    const mvQualityLabel =
+        video?.qualities?.find(value => value.id === video.qualityId)?.label ??
+        video?.qualityId;
     const label = engineIsVideo
-        ? `MV ${video?.qualities?.find(value => value.id === video.qualityId)?.label ?? video?.qualityId ?? ""}`
+        ? mvQualityLabel
+            ? `MV ${mvQualityLabel}`
+            : "MV"
         : currentQuality ? getQualityAbbr(currentQuality) : "—";
 
     return (

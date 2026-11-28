@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
     Pressable,
     ScrollView,
@@ -6,6 +6,7 @@ import {
     View,
     useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import TrackPlayer, {
     useCurrentMusic,
     useMusicVideoState,
@@ -66,6 +67,22 @@ export default function MusicVideo() {
         hidePanel();
         action();
     };
+    const safeAreaInsets = useSafeAreaInsets();
+    const contentContainerStyle = useMemo(
+        () => [
+            styles.content,
+            {
+                paddingBottom: 24 + safeAreaInsets.bottom,
+                paddingLeft: 20 + safeAreaInsets.left,
+                paddingRight: 20 + safeAreaInsets.right,
+            },
+        ],
+        [safeAreaInsets.bottom, safeAreaInsets.left, safeAreaInsets.right],
+    );
+    const itemDividerStyle = useMemo(
+        () => ({ borderColor: colors.divider }),
+        [colors.divider],
+    );
     return (
         <PanelBase
             height={Math.min(height * 0.82, 620)}
@@ -74,7 +91,7 @@ export default function MusicVideo() {
                     <PanelHeader title={t("musicVideo.title")} />
                     <ScrollView
                         style={styles.scroll}
-                        contentContainerStyle={styles.content}>
+                        contentContainerStyle={contentContainerStyle}>
                         {video ? (
                             <>
                                 <ThemeText style={styles.heading}>
@@ -114,7 +131,12 @@ export default function MusicVideo() {
                                                         video.phase ===
                                                         "returning",
                                                 }}
-                                                style={styles.action}
+                                                style={[
+                                                    styles.action,
+                                                    video.phase === "returning"
+                                                        ? styles.disabled
+                                                        : null,
+                                                ]}
                                                 onPress={() =>
                                                     act(() =>
                                                         changeMusicVideoQuality(
@@ -140,8 +162,16 @@ export default function MusicVideo() {
                                 {video.canReturn ? (
                                     <Pressable
                                         accessibilityRole="button"
-                                        style={styles.action}
+                                        style={[
+                                            styles.action,
+                                            video.phase === "returning"
+                                                ? styles.disabled
+                                                : null,
+                                        ]}
                                         disabled={video.phase === "returning"}
+                                        accessibilityState={{
+                                            disabled: video.phase === "returning",
+                                        }}
                                         onPress={() => act(returnToSong)}>
                                         <ThemeText
                                             style={{ color: colors.primary }}>
@@ -197,11 +227,24 @@ export default function MusicVideo() {
                                     item.title,
                                     item.artist,
                                     item.providerName,
+                                    item.durationSeconds
+                                        ? timeformat(item.durationSeconds)
+                                        : null,
+                                    t("musicVideo.watch"),
                                 ]
                                     .filter(Boolean)
                                     .join(", ")}
                                 disabled={video?.phase === "returning"}
-                                style={styles.item}
+                                accessibilityState={{
+                                    disabled: video?.phase === "returning",
+                                }}
+                                style={[
+                                    styles.item,
+                                    itemDividerStyle,
+                                    video?.phase === "returning"
+                                        ? styles.disabled
+                                        : null,
+                                ]}
                                 onPress={() =>
                                     act(() => {
                                         navigate(ROUTE_PATH.MUSIC_DETAIL);
@@ -244,7 +287,7 @@ const styles = StyleSheet.create({
         minHeight: 72,
         paddingVertical: 12,
         borderTopWidth: StyleSheet.hairlineWidth,
-        borderColor: "#8885",
     },
+    disabled: { opacity: 0.5 },
     notice: { fontSize: 14, opacity: 0.7, marginVertical: 12 },
 });

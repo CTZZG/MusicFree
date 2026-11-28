@@ -93,6 +93,8 @@ it("keeps the MV indicator while the video view reports an error", () => {
     render();
     const labels = tree!.root.findAll(node => typeof node.props.children === "string").map(node => node.props.children);
     expect(labels).toContain("MV · Artist");
+    const container = tree!.root.findAll(node => node.props.accessibilityRole === "button")[0];
+    expect(container.props.accessibilityLabel).toMatch(/^MV · /);
 });
 afterEach(() => {
     act(() => tree?.unmount()); tree = undefined;

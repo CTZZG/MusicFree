@@ -327,6 +327,7 @@
     "musicDetail.playControl.pauseWhileLoading.a11y": "正在載入，暫停",
     "musicDetail.playControl.previous.a11y": "上一首",
     "musicDetail.playControl.next.a11y": "下一首",
+    "musicDetail.swipeNextHint": "上滑切換下一首",
     "musicDetail.seekBar.a11y": "播放進度",
     "musicDetail.nowPlaying": "正在播放",
     "musicDetail.collapse.a11y": "收起播放頁",

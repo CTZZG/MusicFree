@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import TrackPlayer, {
     useCurrentMusic,
     useMusicQuality,
@@ -139,6 +140,11 @@ export default function PlaybackInfo() {
             quality
         ] ?? quality
         : unknown;
+    const safeAreaInsets = useSafeAreaInsets();
+    const contentContainerStyle = useMemo(
+        () => [styles.content, { paddingBottom: 48 + safeAreaInsets.bottom }],
+        [safeAreaInsets.bottom],
+    );
     return (
         <PanelBase
             height={vh(75)}
@@ -151,7 +157,7 @@ export default function PlaybackInfo() {
                     />
                     <ScrollView
                         style={styles.scroll}
-                        contentContainerStyle={styles.content}>
+                        contentContainerStyle={contentContainerStyle}>
                         <ThemeText fontWeight="semibold">
                             {video ? `${video.title} · MV` : music?.title || t("playbackInfo.noTrack")}
                         </ThemeText>
@@ -168,13 +174,13 @@ export default function PlaybackInfo() {
                             music?.platform || unknown,
                         )}
                         {row(
-                            t("playbackInfo.playbackSource"),
+                            t(video ? "musicVideo.provider" : "playbackInfo.playbackSource"),
                             info
                                 ? video?.providerName || alternate || music?.platform || unknown
                                 : unknown,
                         )}
                         {row(
-                            t("playbackInfo.qualityLabel"),
+                            t(video ? "musicVideo.labelQuality" : "playbackInfo.qualityLabel"),
                             video ? video.qualities?.find(value => value.id === video.qualityId)?.label ?? unknown : String(qualityText),
                         )}
                         {row(t("playbackInfo.codec"), values.codec)}

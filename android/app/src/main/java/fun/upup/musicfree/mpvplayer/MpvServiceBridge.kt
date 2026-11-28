@@ -64,6 +64,9 @@ object MpvServiceBridge {
     @Volatile
     var currentQueueIndex: Int = -1
 
+    @Volatile
+    var playbackSpeed: Float = 1.0f
+
     private val queueLock = Any()
     private var queueSnapshot: List<MpvQueueTrack> = emptyList()
 
@@ -87,6 +90,7 @@ object MpvServiceBridge {
         // 开关是用户设置，不随播放会话重建清掉；上一首的歌词作废
         liveUpdateLyric.clearLyric()
         carLyric.clearLyric()
+        playbackSpeed = 1.0f
         service?.onQueueSnapshotChanged()
         MpvMediaBrowserService.getInstance()?.onQueueUpdated()
     }

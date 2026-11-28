@@ -311,7 +311,7 @@ export default function PlayControl(props: IPlayControlProps) {
                     <Animated.Text
                         maxFontSizeMultiplier={maxFontScaleConst.compact}
                         style={[styles.swipeHintText, hintTextAnimatedStyle]}>
-                        上滑切换下一首
+                        {t("musicDetail.swipeNextHint")}
                     </Animated.Text>
                 </Animated.View>
             </View>

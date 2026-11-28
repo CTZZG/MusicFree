@@ -46,7 +46,7 @@ class MpvAndroidAutoConnectionDetector(
 
         try {
             val filter = IntentFilter(ACTION_CAR_CONNECTION_UPDATED)
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
             isRegistered = true
             queryForState()
         } catch (error: Exception) {

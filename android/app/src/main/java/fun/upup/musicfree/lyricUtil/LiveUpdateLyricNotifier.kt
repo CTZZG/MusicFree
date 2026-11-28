@@ -113,7 +113,6 @@ class LiveUpdateLyricNotifier(private val appContext: Context) {
             .setShowWhen(false)
             .setColor(Color.TRANSPARENT)
             .setStyle(style)
-            .setProgress(100, 0, true)
             .setContentIntent(contentIntent)
             .requestPromotedOngoing()
             .setShortCriticalText(toChipText(lyric))
