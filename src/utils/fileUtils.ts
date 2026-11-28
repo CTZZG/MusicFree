@@ -15,6 +15,7 @@ import resolveAssetSource from 'react-native/Libraries/Image/resolveAssetSource'
 import { Image } from 'expo-image';
 
 const galleryBasePath = `${PicturesDirectoryPath}/MusicFree/`;
+const externalImportsPath = `${pathConst.basePath}/imports`;
 
 /**
  * 将图片保存到相册
@@ -93,7 +94,11 @@ export async function getCacheSize(
     type: 'music' | 'lyric' | 'image',
 ): Promise<number> {
     if (type === 'music') {
-        return getFolderSize(pathConst.musicCachePath);
+        const [musicSize, importsSize] = await Promise.all([
+            getFolderSize(pathConst.musicCachePath),
+            getFolderSize(externalImportsPath),
+        ]);
+        return musicSize + importsSize;
     } else if (type === 'lyric') {
         return getFolderSize(pathConst.lrcCachePath);
     } else if (type === 'image') {
@@ -106,7 +111,12 @@ export async function clearCache(type: 'music' | 'lyric' | 'image') {
     if (type === 'music') {
         try {
             if (await exists(pathConst.musicCachePath)) {
-                return unlink(pathConst.musicCachePath);
+                await unlink(pathConst.musicCachePath);
+            }
+        } catch {}
+        try {
+            if (await exists(externalImportsPath)) {
+                await unlink(externalImportsPath);
             }
         } catch {}
     } else if (type === 'lyric') {

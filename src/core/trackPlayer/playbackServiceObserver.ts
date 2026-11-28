@@ -50,6 +50,7 @@ function setupPlaybackObserver() {
     TrackPlayer.playerAdapter.addEventListener(
         "playbackStateChanged",
         state => {
+            if (!TrackPlayer.audioTimelineAvailable) return;
             const musicItem = TrackPlayer.currentMusic;
             if (!musicItem || !musicItem.platform) return;
 
@@ -70,6 +71,7 @@ function setupPlaybackObserver() {
 
     // 监听进度更新
     TrackPlayer.playerAdapter.addEventListener("progress", progress => {
+        if (!TrackPlayer.audioTimelineAvailable) return;
         const now = Date.now();
         if (now - lastProgressTime < PROGRESS_THROTTLE_MS) {
             return;
@@ -128,6 +130,18 @@ function setupPlaybackObserver() {
     });
     TrackPlayer.playerAdapter.addEventListener("remotePlayFromId", () => {
         TrackPlayer.notePlayRequestedFromOutside();
+    });
+    TrackPlayer.playerAdapter.addEventListener("remoteStop", () => {
+        TrackPlayer.stopByExternalRequest().catch(error => {
+            errorLog("远程停止处理失败", error?.message ?? error);
+        });
+    });
+    TrackPlayer.playerAdapter.addEventListener("remoteSeek", event => {
+        if (typeof event?.position === "number") {
+            TrackPlayer.seekTo(event.position).catch(error => {
+                errorLog("远程跳转处理失败", error?.message ?? error);
+            });
+        }
     });
 }
 

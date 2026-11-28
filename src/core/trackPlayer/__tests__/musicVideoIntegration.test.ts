@@ -1034,3 +1034,175 @@ test("the real audio-focus recovery entry cannot resume or advance a suspended M
     expect(mockBackend.replaceRendition).toHaveBeenCalledTimes(1);
     expect(trackPlayer.musicVideoState).toMatchObject({ phase: "video", error: "network" });
 });
+
+describe("Phase 2 MV and TrackPlayer state-machine regressions", () => {
+    beforeEach(() => {
+        player.disposeServiceListeners();
+        player.cancelMpvManualSkipTransition("phase2-start");
+        mockBackend.holdPlayback = jest.fn(async () => undefined);
+        mockBackend.skipToIndex = jest.fn(async () => true);
+        mockBackend.stop = jest.fn(async () => undefined);
+        mockBackend.reset = jest.fn(async () => undefined);
+        mockBackend.loadQueue = jest.fn(async () => undefined);
+        mockBackend.active = { track: song, index: 0 };
+    });
+
+    afterEach(() => {
+        player.disposeServiceListeners();
+        player.cancelMpvManualSkipTransition("phase2-end");
+    });
+
+    it("single-song queue skipToNext exits MV cleanly, reloads audio, and rolls back on failure", async () => {
+        await enter();
+        expect(trackPlayer.videoOwnsPlayback).toBe(true);
+        mockBackend.skipToIndex.mockImplementationOnce(async () => {
+            owner = { kind: "audio", mediaId: getMediaUniqueKey(song), loadGeneration: ++generation };
+            return true;
+        });
+
+        await trackPlayer.skipToNext();
+        expect(trackPlayer.musicVideoState.phase).toBe("audio");
+        expect(mockBackend.skipToIndex).toHaveBeenCalledWith(0, { autoPlay: true });
+
+        await enter();
+        expect(trackPlayer.videoOwnsPlayback).toBe(true);
+        mockBackend.loadQueue.mockClear();
+        mockBackend.skipToIndex.mockRejectedValueOnce(new Error("skip failed"));
+        await expect(trackPlayer.skipToNext()).rejects.toThrow("skip failed");
+        expect(mockBackend.loadQueue).toHaveBeenCalledWith(
+            expect.arrayContaining([expect.objectContaining({ id: "A", url: "https://example.test/audio.mp3" })]),
+            0,
+            expect.objectContaining({ autoPlay: true, preservePositionFallback: 37.25 }),
+        );
+    });
+
+    it("stopByExternalRequest and clearPlayList exit active MV while stopByExternalRequest preserves checkpoint", async () => {
+        await enter();
+        jest.mocked(PersistStatus.set).mockClear();
+
+        await player.stopByExternalRequest();
+        expect(trackPlayer.musicVideoState.phase).toBe("audio");
+        expect(player.playbackIntent.mayAutoPlay()).toBe(false);
+        expect(mockBackend.stop).toHaveBeenCalledTimes(1);
+        expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 37.25);
+
+        player.playbackIntent.play();
+        await enter();
+        expect(trackPlayer.musicVideoState.phase).toBe("video");
+        await trackPlayer.clearPlayList();
+        expect(trackPlayer.musicVideoState.phase).toBe("audio");
+        expect(trackPlayer.playList).toEqual([]);
+        expect(mockBackend.reset).toHaveBeenCalled();
+    });
+
+    it("MV manual skip rollback on online track resolves audio source, keeps checkpoint and auto-resumes", async () => {
+        const nextSong = { ...song, id: "B", title: "Song B" } as IMusic.IMusicItem;
+        player.setPlayList([song, nextSong]);
+        mockBackend.active = { track: song, index: 0 };
+        await enter();
+
+        mockBackend.loadQueue.mockClear();
+        mockBackend.skipToIndex.mockRejectedValueOnce(new Error("next unavailable"));
+        jest.mocked(PersistStatus.set).mockClear();
+
+        await expect(trackPlayer.skipToNext()).rejects.toThrow("next unavailable");
+        expect(mockBackend.loadQueue).toHaveBeenCalledWith(
+            expect.arrayContaining([expect.objectContaining({ id: "A", url: "https://example.test/audio.mp3" })]),
+            0,
+            expect.objectContaining({ autoPlay: true, preservePositionFallback: 37.25 }),
+        );
+        expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 37.25);
+        expect(trackPlayer.currentMusic?.id).toBe("A");
+    });
+
+    it("paused audio -> watch MV -> implicit return restores user pause hold against interruption end", async () => {
+        mockBackend.getState.mockResolvedValue("paused");
+        await player.pause();
+        expect(player.playbackIntent.isPausedByUser).toBe(true);
+
+        await enter();
+        expect(trackPlayer.musicVideoState.phase).toBe("video");
+        mockBackend.holdPlayback.mockClear();
+        mockBackend.play.mockClear();
+
+        await trackPlayer.returnToSong(false);
+        expect(trackPlayer.musicVideoState.phase).toBe("audio");
+        expect(mockBackend.holdPlayback).toHaveBeenCalled();
+        expect(player.playbackIntent.isPausedByUser).toBe(true);
+
+        player.handleSystemInterruptionBegan();
+        await trackPlayer.handleSystemInterruptionEnded();
+        expect(mockBackend.play).not.toHaveBeenCalled();
+        expect(mockBackend.resumeVideo).not.toHaveBeenCalled();
+    });
+
+    it("MV natural end (autoAdvanced=false) preserves audio checkpoint when queue stops", async () => {
+        await player.setupTrackPlayer();
+        const callbacks = new Map<string, (...args: any[]) => any>(
+            mockBackend.addEventListener.mock.calls.map(([event, fn]: any[]) => [event, fn]),
+        );
+        await enter();
+        jest.mocked(PersistStatus.set).mockClear();
+
+        await callbacks.get("playEnd")!({
+            endedRenditionKind: "mv",
+            autoAdvanced: false,
+            endedMediaId: getMediaUniqueKey(song),
+        });
+
+        expect(trackPlayer.musicVideoState.phase).toBe("audio");
+        expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 37.25);
+    });
+
+    it("hydrates qualityAtom at cold start and preserves user seek before startup source resolves", async () => {
+        let resolveStartup!: (src: any) => void;
+        plugin.methods.getMediaSource.mockImplementationOnce(
+            () => new Promise(resolve => {
+                resolveStartup = resolve;
+            }),
+        );
+        jest.mocked(PersistStatus.get).mockImplementation((key: string) => {
+            if (key === "music.quality") return "high";
+            if (key === "music.playList") return [song];
+            if (key === "music.musicItem") return song;
+            if (key === "music.progress") return 12;
+            return null;
+        });
+
+        await player.setupTrackPlayer();
+        expect(trackPlayer.quality).toBe("high");
+
+        await trackPlayer.seekTo(88);
+        mockBackend.loadQueue.mockClear();
+        resolveStartup({ url: "https://example.test/cold-high.mp3" });
+        await tick();
+        await tick();
+
+        expect(mockBackend.loadQueue).toHaveBeenCalledWith(
+            expect.arrayContaining([expect.objectContaining({ id: "A", url: "https://example.test/cold-high.mp3" })]),
+            0,
+            expect.objectContaining({ autoPlay: false }),
+        );
+        expect(PersistStatus.set).toHaveBeenCalledWith("music.progress", 88);
+    });
+
+    it("same-song play clears an uncheckpointed MV state instead of staying blocked", async () => {
+        mockBackend.replaceRendition.mockImplementationOnce(async () => {
+            owner = { mediaId: getMediaUniqueKey(song), loadGeneration: ++generation, kind: "mv" };
+            throw new Error("mv activation failed");
+        });
+        mockBackend.getVideoInfo.mockResolvedValue({ ...owner, kind: "mv", outgoingAudioPosition: undefined });
+        await enter();
+        expect(trackPlayer.musicVideoState).toMatchObject({ phase: "error" });
+        expect(trackPlayer.musicVideo.checkpoint).toBeNull();
+        expect(trackPlayer.videoOwnsPlayback).toBe(true);
+
+        mockBackend.getActiveTrack.mockResolvedValueOnce(null);
+        mockBackend.loadQueue.mockImplementationOnce(async () => {
+            owner = { mediaId: getMediaUniqueKey(song), loadGeneration: ++generation, kind: "audio" };
+        });
+        await trackPlayer.play(song);
+        expect(trackPlayer.musicVideoState.phase).toBe("audio");
+        expect(trackPlayer.videoOwnsPlayback).toBe(false);
+    });
+});

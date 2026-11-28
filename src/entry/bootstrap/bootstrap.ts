@@ -17,6 +17,7 @@ import PluginManager from "@/core/pluginManager";
 import { navigateToSearch, navigationRef } from "@/core/router";
 import Theme from "@/core/theme";
 import TrackPlayer from "@/core/trackPlayer";
+import { playCurrentMusic } from "@/core/trackPlayer/userPlayAction";
 import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import { getMediaSourceFailureI18nKey } from "@/core/pluginManager/mediaSourceFailure";
 import { maybeRunAutoWebdavBackup } from "@/core/webdavBackup";
@@ -42,7 +43,7 @@ import { setupAppFolders } from "./setupFolders";
 import { setupKeyValueStores } from "@/utils/keyValueStore/bootstrapStores";
 import { StoreReadError } from "@/utils/keyValueStore/readError";
 import StorageUri from "@/native/storageUri";
-import { addFileScheme, escapeCharacter } from "@/utils/fileUtils";
+import { addFileScheme, escapeCharacter, getFileName } from "@/utils/fileUtils";
 
 let linkingUrlSubscription: ReturnType<typeof Linking.addEventListener> | null =
     null;
@@ -403,6 +404,26 @@ async function extraMakeup() {
         });
     }
 
+    const confirmSearchAndPlay = (keyword: string) =>
+        new Promise<boolean>(resolve => {
+            let settled = false;
+            const settle = (value: boolean) => {
+                if (!settled) {
+                    settled = true;
+                    resolve(value);
+                }
+            };
+            showDialog("SimpleDialog", {
+                title: "确认外部搜索播放",
+                content: `外部链接请求搜索并播放「${keyword}」，是否继续？`,
+                okText: "继续播放",
+                cancelText: "取消",
+                onOk: () => settle(true),
+                onCancel: () => settle(false),
+                onDismiss: () => settle(false),
+            });
+        });
+
     async function handlePlayerSchemeUrl(url: string) {
         if (!url.startsWith("musicfree://")) {
             return false;
@@ -413,7 +434,7 @@ async function extraMakeup() {
             .replace(/\/$/, "");
 
         if (command === "play") {
-            await TrackPlayer.play();
+            await playCurrentMusic();
             return true;
         }
         if (command === "pause") {
@@ -422,10 +443,10 @@ async function extraMakeup() {
         }
         if (command === "toggle-play" || command === "toggle") {
             const state = await TrackPlayer.playerAdapter.getState();
-            if (state === "playing") {
+            if (state === "playing" || state === "buffering") {
                 await TrackPlayer.pause();
             } else {
-                await TrackPlayer.play();
+                await playCurrentMusic();
             }
             return true;
         }
@@ -442,7 +463,14 @@ async function extraMakeup() {
             return true;
         }
         if (command === "search-play") {
-            await searchAndPlayFirst(readSchemeQueryParam(url, "keyword"));
+            const keyword = readSchemeQueryParam(url, "keyword").trim();
+            if (!keyword) {
+                Toast.warn(i18n.t("scheme.searchPlayFailed"));
+                return true;
+            }
+            if (await confirmSearchAndPlay(keyword)) {
+                await searchAndPlayFirst(keyword);
+            }
             return true;
         }
         return false;
@@ -492,10 +520,11 @@ async function extraMakeup() {
                         resolve(value);
                     }
                 };
+                const fileName = getFileName(localUrl);
                 showDialog("SimpleDialog", {
                     title: "确认安装本地插件",
                     content:
-                        "外部应用请求安装一个本地 JavaScript 插件。安装后将执行第三方代码，请仅在确认文件来源可信时继续。",
+                        `外部应用请求安装本地 JavaScript 插件${fileName ? `「${fileName}」` : ""}。安装后将执行第三方代码，请仅在确认文件来源可信时继续。`,
                     okText: "确认安装",
                     cancelText: "取消",
                     onOk: () => settle(true),

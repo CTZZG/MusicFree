@@ -7,18 +7,31 @@ import { ActivityIndicator } from "react-native";
 import { act, create, ReactTestRenderer } from "react-test-renderer";
 
 let mockState = "buffering";
+let mockVideoState: any = { phase: "audio" };
 const mockPlay = jest.fn(async () => undefined);
 const mockPause = jest.fn(async () => undefined);
+const mockResumeMusicVideo = jest.fn(async () => ({ status: "playing" }));
 
 jest.mock("@/core/trackPlayer", () => ({
     __esModule: true,
-    default: { play: () => mockPlay(), pause: () => mockPause() },
+    default: {
+        get musicVideoState() {
+            return mockVideoState;
+        },
+        play: () => mockPlay(),
+        pause: () => mockPause(),
+    },
     useMusicState: () => mockState,
+}));
+jest.mock("@/components/musicVideo/actions", () => ({
+    __esModule: true,
+    resumeMusicVideo: () => mockResumeMusicVideo(),
 }));
 jest.mock("@/hooks/useColors", () => () => ({ musicBarText: "#fff" }));
 jest.mock("@/core/i18n", () => ({ useI18N: () => ({ t: (key: string) => key }) }));
 jest.mock("@/components/base/icon.tsx", () => "Icon");
 
+import { AppState } from "react-native";
 import MiniPlayButton from "../playButton";
 
 function render(state: string) {
@@ -48,6 +61,12 @@ function icons(tree: ReactTestRenderer) {
 beforeEach(() => {
     mockPlay.mockClear();
     mockPause.mockClear();
+    mockResumeMusicVideo.mockClear();
+    mockVideoState = { phase: "audio" };
+    Object.defineProperty(AppState, "currentState", {
+        configurable: true,
+        value: "active",
+    });
 });
 
 it("pauses from the spinner while buffering and tells screen readers it is loading", async () => {
@@ -78,4 +97,16 @@ it.each([
         await button(tree).props.onPress();
     });
     expect(action).toHaveBeenCalledTimes(1);
+});
+
+it("routes paused MV resume through MV consent flow instead of bypassing TrackPlayer.play", async () => {
+    mockVideoState = { phase: "video", owner: { kind: "mv" } };
+    const tree = render("paused");
+
+    await act(async () => {
+        await button(tree).props.onPress();
+    });
+
+    expect(mockResumeMusicVideo).toHaveBeenCalledTimes(1);
+    expect(mockPlay).not.toHaveBeenCalled();
 });

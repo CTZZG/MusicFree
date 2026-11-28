@@ -28,6 +28,7 @@ const mockWatch = jest.fn(
 );
 const mockQuality = jest.fn();
 const mockToast = jest.fn();
+const mockTrackListeners = new Map<string, Set<(item: any) => void>>();
 const mockHide = jest.fn((id: number) => {
     if (mockDialog.id === id) mockDialog = { ...mockDialog, name: null };
 });
@@ -45,6 +46,15 @@ jest.mock("@/core/trackPlayer", () => ({
         },
         get musicVideoState() {
             return mockVideoState;
+        },
+        on: (event: string, cb: (item: any) => void) => {
+            if (!mockTrackListeners.has(event)) {
+                mockTrackListeners.set(event, new Set());
+            }
+            mockTrackListeners.get(event)!.add(cb);
+        },
+        off: (event: string, cb: (item: any) => void) => {
+            mockTrackListeners.get(event)?.delete(cb);
         },
         play: () => mockPlay(),
         resumeMusicVideo: (...args: any[]) => mockResume(...args),
@@ -270,4 +280,41 @@ test("a previous session approval does not override a newly disabled mobile tota
     mockApproval = true; mockEnabled = false; mockNetwork.mockResolvedValue(cellular);
     await watchMusicVideo(candidate); expect(mockPreflightResults).toEqual([null]);
     expect(mockToast).toHaveBeenCalledWith("musicVideo.mobileDisabled");
+});
+
+test("aborts and hides open MV dialog immediately on song change or background transition", async () => {
+    const { TrackPlayerEvents } = require("@/constants/trackPlayerConst");
+    const { AppState } = require("react-native");
+    let appListener: ((state: string) => void) | undefined;
+    const origAdd = AppState.addEventListener;
+    AppState.addEventListener = jest.fn((_ev: string, cb: (s: string) => void) => {
+        appListener = cb;
+        return { remove: jest.fn() };
+    });
+    try {
+        mockNetwork.mockResolvedValue(cellular);
+        const first = watchMusicVideo(candidate);
+        await flush();
+        expect(mockDialog.name).toBe("SimpleDialog");
+        const firstId = mockDialog.id;
+        mockMusic = { id: "b", platform: "p" };
+        mockTrackListeners
+            .get(TrackPlayerEvents.CurrentMusicChanged)
+            ?.forEach(cb => cb(mockMusic));
+        await first;
+        expect(mockHide).toHaveBeenCalledWith(firstId);
+        expect(mockPreflightResults).toEqual([null]);
+
+        mockPreflightResults.length = 0;
+        const second = watchMusicVideo({ ...candidate, originalSongKey: "p@b" });
+        await flush();
+        expect(mockDialog.name).toBe("SimpleDialog");
+        const secondId = mockDialog.id;
+        appListener?.("background");
+        await second;
+        expect(mockHide).toHaveBeenCalledWith(secondId);
+        expect(mockPreflightResults).toEqual([null]);
+    } finally {
+        AppState.addEventListener = origAdd;
+    }
 });

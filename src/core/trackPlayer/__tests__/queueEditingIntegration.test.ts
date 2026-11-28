@@ -273,11 +273,15 @@ it("uses the newer playback state when a pause lands during the native state que
     mockBackend.getState.mockImplementation(async () => "paused");
     finish("playing");
     await removing;
-    // 暂停之后删掉正在放的歌：换到下一首但不播放
+    // 暂停之后删掉正在放的歌：换到下一首但不播放，且保留剩余后端队列
     expect(ids(trackPlayer.playList)).toEqual(["A", "C", "D", "E", "F"]);
     expect(trackPlayer.currentMusic.id).toBe("C");
     expect(play).not.toHaveBeenCalled();
-    expect(mockBackend.reset).toHaveBeenCalledTimes(1);
+    expect(mockBackend.stop).toHaveBeenCalledTimes(1);
+    expect(mockBackend.removeQueueTrack).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "B" }),
+    );
+    expect(mockBackend.reset).not.toHaveBeenCalled();
 });
 
 it("waits for a skip that is still in flight instead of starting another song over it", async () => {
@@ -317,4 +321,24 @@ it("does nothing more when the other edit already removed the song", async () =>
     expect(ids(trackPlayer.playList)).toEqual(["A", "C", "D", "E", "F"]);
     expect(play).not.toHaveBeenCalled();
     expect(mockBackend.reset).not.toHaveBeenCalled();
+});
+
+it("keeps backend queue when removing paused current track and resets only when last track is removed", async () => {
+    mockBackend.getState.mockImplementation(async () => "paused");
+    await trackPlayer.removeQueueItemWithUndo(songB);
+    expect(ids(trackPlayer.playList)).toEqual(["A", "C", "D", "E", "F"]);
+    expect(trackPlayer.currentMusic.id).toBe("C");
+    expect(mockBackend.stop).toHaveBeenCalledTimes(1);
+    expect(mockBackend.removeQueueTrack).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "B" }),
+    );
+    expect(mockBackend.reset).not.toHaveBeenCalled();
+
+    player.setPlayList([songC], false);
+    player.setCurrentMusic(songC);
+    jest.clearAllMocks();
+    await trackPlayer.removeQueueItemWithUndo(songC);
+    expect(trackPlayer.playList).toEqual([]);
+    expect(trackPlayer.currentMusic).toBeNull();
+    expect(mockBackend.reset).toHaveBeenCalledTimes(1);
 });

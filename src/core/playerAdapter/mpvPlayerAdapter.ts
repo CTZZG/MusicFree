@@ -251,6 +251,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     private pendingLoadIndex = -1;
     private pendingLoadReason: TrackChangeReason = "playStart";
     private pendingLoadAutoPlay = true;
+    private pendingLoadPreservePosition: number | undefined = undefined;
     private nativeListenersBound = false;
     private setupPromise: Promise<void> | null = null;
     private androidAutoConnected = false;
@@ -703,6 +704,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         }
         this.pendingActivation = null;
         this.pendingLoadIndex = -1;
+        this.pendingLoadPreservePosition = undefined;
         this.emitQueueChanged("update");
         this.emitTemporaryQueueChanged();
         trace("MpvPlayer.loadQueue", {
@@ -753,6 +755,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.pendingLoadIndex = index;
             this.pendingLoadReason = reason;
             this.pendingLoadAutoPlay = autoPlay;
+            this.pendingLoadPreservePosition = preservePositionFallback;
             trace("MpvPlayer.playIndex 等待音源解析", { index });
             this.tracksNeedUpdateListeners.forEach(l =>
                 l({ tracks: [track], lookahead: 0 }),
@@ -761,6 +764,7 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         }
 
         this.pendingLoadIndex = -1;
+        this.pendingLoadPreservePosition = undefined;
         const mediaId = keyOf(track);
         const loadGeneration = this.nextLoadGeneration();
         const activation: PendingActivation = {
@@ -1595,10 +1599,13 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
     async stop() {
         this.cancelRenditionTransition();
         await NativeMpvPlayer.stop().catch(() => undefined);
+        const hadRendition = this.activeRendition !== null;
         this.hasLoaded = false;
         this.preparedNextTrack = null;
         this.confirmedPromotion = null;
         this.pendingActivation = null;
+        this.pendingLoadIndex = -1;
+        this.pendingLoadPreservePosition = undefined;
         this.pendingIndex = -1;
         this.activeIndex = -1;
         this.activeTrack = null;
@@ -1606,17 +1613,23 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         this.activeLoadGeneration = null;
         this.activeRendition = null;
         this.nativeRenditionAttempt = null;
-        this.currentState = "stopped";
         this.currentProgress = {
             ...this.currentProgress,
             position: 0,
             buffered: 0,
         };
+        if (hadRendition) {
+            this.renditionListeners.forEach(listener =>
+                listener(this.getActiveRendition()),
+            );
+        }
+        this.emitPlaybackStateChanged("stopped");
     }
 
     async reset() {
         this.cancelRenditionTransition();
         await NativeMpvPlayer.stop().catch(() => undefined);
+        const hadRendition = this.activeRendition !== null;
         this.queue = [];
         this.bumpQueueRevision();
         this.desiredIndex = -1;
@@ -1629,13 +1642,19 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         this.nativeRenditionAttempt = null;
         this.pendingActivation = null;
         this.pendingLoadIndex = -1;
+        this.pendingLoadPreservePosition = undefined;
         this.hasLoaded = false;
         this.playNextQueue = [];
         this.upNextQueue = [];
         this.preparedNextTrack = null;
         this.confirmedPromotion = null;
-        this.currentState = "idle";
         this.currentProgress = { position: 0, duration: 0, buffered: 0 };
+        if (hadRendition) {
+            this.renditionListeners.forEach(listener =>
+                listener(this.getActiveRendition()),
+            );
+        }
+        this.emitPlaybackStateChanged("idle");
         this.emitQueueChanged("clear");
         this.emitTemporaryQueueChanged();
     }
@@ -1968,10 +1987,13 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
 
         // 若正在等待该曲目的音源，且现在已就绪 → 立即加载播放
         if (this.pendingLoadIndex === target && isPlayableUrl(merged.url)) {
+            const preservePosition = this.pendingLoadPreservePosition;
+            this.pendingLoadPreservePosition = undefined;
             await this.playIndex(
                 target,
                 this.pendingLoadReason,
                 this.pendingLoadAutoPlay,
+                preservePosition,
             );
         } else if (
             this.preparedNextTrack?.key === keyOf(merged) &&
@@ -2089,9 +2111,14 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
             this.activeIndex = this.activeMediaId
                 ? this.queue.findIndex(item => keyOf(item) === this.activeMediaId)
                 : -1;
-            this.desiredIndex = desiredMediaId
-                ? this.queue.findIndex(item => keyOf(item) === desiredMediaId)
-                : this.activeIndex;
+            if (desiredMediaId === removedMediaId) {
+                this.desiredIndex =
+                    this.queue.length > 0 ? index % this.queue.length : -1;
+            } else {
+                this.desiredIndex = desiredMediaId
+                    ? this.queue.findIndex(item => keyOf(item) === desiredMediaId)
+                    : this.activeIndex;
+            }
         }
         this.emitQueueChanged("remove");
     }
@@ -2359,13 +2386,28 @@ export class MpvPlayerAdapter implements PlayerAdapter<MpvTrack> {
         if (this.activeIndex >= 0) {
             this.activeTrack = this.queue[this.activeIndex];
         }
-        this.desiredIndex = desiredMediaId
-            ? this.queue.findIndex(t => keyOf(t) === desiredMediaId)
-            : resolveMpvCurrentIndexAfterQueueSync({
+        const desiredByOld =
+            desiredMediaId != null
+                ? this.queue.findIndex(t => keyOf(t) === desiredMediaId)
+                : -1;
+        const desiredByActive =
+            activeKey != null
+                ? this.queue.findIndex(t => keyOf(t) === activeKey)
+                : -1;
+        if (desiredByOld >= 0) {
+            this.desiredIndex = desiredByOld;
+        } else if (desiredByActive >= 0) {
+            this.desiredIndex = desiredByActive;
+        } else {
+            this.desiredIndex = resolveMpvCurrentIndexAfterQueueSync({
                 currentIndex: this.desiredIndex,
                 queueLength: this.queue.length,
-                activeIndex: this.activeIndex >= 0 ? this.activeIndex : undefined,
+                activeIndex:
+                    this.activeIndex >= 0
+                        ? this.activeIndex
+                        : undefined,
             });
+        }
 
         if (structureChanged) {
             this.bumpQueueRevision();

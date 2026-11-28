@@ -43,6 +43,38 @@ class StorageUriModule(
         private const val MAX_TEXT_BYTES = 32 * 1024 * 1024
         private const val MAX_DIRECTORY_ENTRIES = 50_000
         private const val MAX_DIRECTORY_DEPTH = 64
+        internal const val MAX_COPY_BYTES = 512L * 1024L * 1024L
+        private const val COPY_BUFFER_BYTES = 8 * 1024
+
+        internal fun copyStreamBounded(
+            input: InputStream,
+            output: java.io.OutputStream,
+            maxBytes: Long = MAX_COPY_BYTES,
+            isCancelled: () -> Boolean = { false }
+        ): Long {
+            val buffer = ByteArray(COPY_BUFFER_BYTES)
+            var totalBytes = 0L
+            while (true) {
+                if (isCancelled()) {
+                    throw IllegalStateException("Storage copy cancelled")
+                }
+                val read = input.read(buffer)
+                if (read < 0) {
+                    break
+                }
+                if (read == 0) {
+                    continue
+                }
+                totalBytes += read
+                if (totalBytes > maxBytes) {
+                    throw IllegalArgumentException(
+                        "Document exceeds maximum allowed copy size"
+                    )
+                }
+                output.write(buffer, 0, read)
+            }
+            return totalBytes
+        }
     }
 
     private sealed class PendingRequest(
@@ -478,7 +510,13 @@ class StorageUriModule(
                 try {
                     openInput(uri).use { input ->
                         temporary.outputStream().use { output ->
-                            input.copyTo(output)
+                            copyStreamBounded(
+                                input,
+                                output,
+                                MAX_COPY_BYTES
+                            ) {
+                                invalidated.get() || operationPromise.isSettled
+                            }
                             output.fd.sync()
                         }
                     }

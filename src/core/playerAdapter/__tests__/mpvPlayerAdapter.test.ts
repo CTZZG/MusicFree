@@ -1000,3 +1000,66 @@ describe("read-only decoded audio snapshots", () => {
         expect(await result).toBeNull();
     });
 });
+
+describe("MpvPlayerAdapter Phase 2 stop, reset, preservePosition and queue sync", () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        for (const key of Object.keys(mockListeners)) delete mockListeners[key];
+        mockNativeMpvPlayer.loadAndPlay.mockResolvedValue(undefined);
+    });
+
+    it("emits stopped/idle and renditionChanged(null) on stop and reset", async () => {
+        const adapter = await createAdapter();
+        const states: string[] = [];
+        const renditions: any[] = [];
+        adapter.addEventListener("playbackStateChanged", s => states.push(s));
+        adapter.addEventListener("renditionChanged", r => renditions.push(r));
+
+        await adapter.loadQueue([track("a")]);
+        await confirmLastExplicitLoad();
+        expect(adapter.getActiveRendition()).not.toBeNull();
+
+        await adapter.stop();
+        expect(states.at(-1)).toBe("stopped");
+        expect(renditions.at(-1)).toBeNull();
+
+        await adapter.loadQueue([track("b")]);
+        await confirmLastExplicitLoad();
+        await adapter.reset();
+        expect(states.at(-1)).toBe("idle");
+        expect(renditions.at(-1)).toBeNull();
+    });
+
+    it("preserves preservePositionFallback across tracksNeedUpdate URL hydration", async () => {
+        const adapter = await createAdapter();
+        const needUpdate = jest.fn();
+        adapter.addEventListener("tracksNeedUpdate", needUpdate);
+
+        await adapter.loadQueue([{ id: "a", title: "A", url: "" }], 0, {
+            autoPlay: false,
+            preservePositionFallback: 45,
+        });
+        expect(needUpdate).toHaveBeenCalledTimes(1);
+
+        await adapter.updateTrack({
+            id: "a",
+            title: "A",
+            url: "https://example.test/a.mp3",
+        });
+        expect(lastLoadPayload()).toMatchObject({
+            autoPlay: false,
+            preservePositionFallback: 45,
+        });
+    });
+
+    it("aligns desiredIndex to activeKey in syncQueueOrder when old track was removed", async () => {
+        const adapter = await createAdapter();
+        await adapter.loadQueue([track("a"), track("b"), track("c")], 1);
+        await confirmLastExplicitLoad();
+        await adapter.stop();
+        await adapter.syncQueueOrder([track("a"), track("c")], "c");
+
+        await adapter.skipToNext();
+        expect(lastLoadPayload().mediaId).toBe("a");
+    });
+});

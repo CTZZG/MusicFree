@@ -4,6 +4,7 @@ import BufferingPauseIcon from "@/components/base/bufferingPauseIcon";
 import Icon from "@/components/base/icon.tsx";
 import { useI18N } from "@/core/i18n";
 import TrackPlayer, { useMusicState } from "@/core/trackPlayer";
+import { playCurrentMusic } from "@/core/trackPlayer/userPlayAction";
 import useColors from "@/hooks/useColors";
 import { musicIsBuffering, musicIsPaused } from "@/utils/trackUtils";
 import { MUSIC_BAR_BUTTON_SIZE } from "./layout";
@@ -48,7 +49,7 @@ export default function MiniPlayButton() {
             ]}
             onPress={async () => {
                 if (isPaused) {
-                    await TrackPlayer.play();
+                    await playCurrentMusic();
                 } else {
                     await TrackPlayer.pause();
                 }

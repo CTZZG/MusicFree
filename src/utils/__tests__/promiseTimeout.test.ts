@@ -43,4 +43,22 @@ describe("withTimeout", () => {
         expect(isTimeoutError(new TimeoutError())).toBe(true);
         expect(isTimeoutError(new Error("TimeoutError"))).toBe(false);
     });
+
+    it("delegates timer scheduling and clearing to BackgroundTimer when available", async () => {
+        const BackgroundTimer = require("react-native-background-timer").default;
+        const origSet = BackgroundTimer.setTimeout;
+        const origClear = BackgroundTimer.clearTimeout;
+        const mockSet = jest.fn((fn: () => void) => setTimeout(fn, 0));
+        const mockClear = jest.fn((id: any) => clearTimeout(id));
+        BackgroundTimer.setTimeout = mockSet;
+        BackgroundTimer.clearTimeout = mockClear;
+        try {
+            await expect(withTimeout(Promise.resolve("done"), 500)).resolves.toBe("done");
+            expect(mockSet).toHaveBeenCalledTimes(1);
+            expect(mockClear).toHaveBeenCalledTimes(1);
+        } finally {
+            BackgroundTimer.setTimeout = origSet;
+            BackgroundTimer.clearTimeout = origClear;
+        }
+    });
 });

@@ -57,6 +57,7 @@ interface AudioSession {
     quality: IMusic.IQualityKey;
     rate: number;
     wasPlaying: boolean;
+    pausedByUser?: boolean;
     position: number | null;
 }
 
@@ -67,11 +68,17 @@ interface Dependencies {
     owner(): PlayerRenditionIdentity | null;
     active(): PlayerActiveRendition | null;
     foreground(): boolean;
-    audioSettings(): { quality: IMusic.IQualityKey; rate: number; wasPlaying: boolean };
+    audioSettings(): {
+        quality: IMusic.IQualityKey;
+        rate: number;
+        wasPlaying: boolean;
+        pausedByUser?: boolean;
+    };
     mayAutoPlay(): boolean;
     playbackIntentRevision?(): number;
     repeatCurrentVideo(): boolean;
     claimPlayback(): Promise<void>;
+    restorePauseHold?(): Promise<void> | void;
     videoNetwork(approvedMobile: boolean): Promise<"unmetered" | "allow-metered">;
     resumeVideo(policy: "unmetered" | "allow-metered"): Promise<void>;
     resumeAudio(): Promise<void>;
@@ -626,6 +633,14 @@ export default class MusicVideoController {
                 if (this.playOnReturn && this.deps.mayAutoPlay()) {
                     await this.deps.resumeAudio();
                     this.guard(request, session.key);
+                } else if (
+                    !explicitPlay &&
+                    !this.playOnReturn &&
+                    !session.wasPlaying &&
+                    session.pausedByUser
+                ) {
+                    await this.deps.restorePauseHold?.();
+                    this.guard(request, session.key);
                 }
                 this.session = null;
                 this.currentVideo = null;
@@ -694,6 +709,8 @@ export default class MusicVideoController {
         if (!key || owner?.kind !== "mv") {
             return { status: "cancelled" };
         }
+        const ownedRequest =
+            preflight || !this.request ? this.begin(false, false) : null;
         const request = this.request;
         const current = () =>
             this.request === request &&
@@ -727,20 +744,20 @@ export default class MusicVideoController {
                 this.phase("video", "network");
                 if (!explicit) return { status: "cancelled" };
                 if (info.suspendedPositionAvailable !== true && !restartApproved) return { status: "restart-confirmation" };
-                return this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
+                return await this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
                     ...reloadOptions, preserve: !restartApproved,
                     restartApproved,
                 });
             }
             if (info.failed && this.currentVideo) {
                 if (!explicit) return { status: "cancelled" };
-                return this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
+                return await this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
                     ...reloadOptions,
                 });
             }
             if (info.completed && this.currentVideo) {
                 if (!explicit) return { status: "cancelled" };
-                return this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
+                return await this.enter(this.currentVideo.candidate, this.currentVideo.quality, {
                     ...reloadOptions,
                 });
             }
@@ -772,12 +789,20 @@ export default class MusicVideoController {
             }
             this.phase("video", "network");
             return { status: "error", error: "network" };
+        } finally {
+            if (ownedRequest && this.request === ownedRequest) {
+                this.request = null;
+            }
         }
     }
 
     onBackground() {
         if (!this.request?.allowBackground) {
-            this.cancelResolving();
+            if (this.state.phase === "resolving") {
+                this.cancelResolving();
+            } else if (this.request) {
+                this.cancelRequest();
+            }
         }
     }
 

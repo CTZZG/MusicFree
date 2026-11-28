@@ -1,3 +1,5 @@
+import BackgroundTimer from "react-native-background-timer";
+
 export class TimeoutError extends Error {
     constructor(message = "Operation timed out") {
         super(message);
@@ -7,6 +9,21 @@ export class TimeoutError extends Error {
 
 export function isTimeoutError(error: unknown): error is TimeoutError {
     return error instanceof TimeoutError;
+}
+
+function scheduleTimeout(handler: () => void, timeoutMs: number): unknown {
+    if (typeof BackgroundTimer?.setTimeout === "function") {
+        return BackgroundTimer.setTimeout(handler, timeoutMs);
+    }
+    return setTimeout(handler, timeoutMs);
+}
+
+function clearScheduledTimeout(handle: unknown) {
+    if (typeof BackgroundTimer?.clearTimeout === "function") {
+        BackgroundTimer.clearTimeout(handle as number);
+    } else {
+        clearTimeout(handle as ReturnType<typeof setTimeout>);
+    }
 }
 
 export function withTimeout<T>(
@@ -19,17 +36,17 @@ export function withTimeout<T>(
     }
 
     return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => {
+        const timer = scheduleTimeout(() => {
             reject(new TimeoutError(message));
         }, timeoutMs);
 
         Promise.resolve(promise).then(
             value => {
-                clearTimeout(timer);
+                clearScheduledTimeout(timer);
                 resolve(value);
             },
             error => {
-                clearTimeout(timer);
+                clearScheduledTimeout(timer);
                 reject(error);
             },
         );

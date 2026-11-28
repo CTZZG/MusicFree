@@ -1,3 +1,5 @@
+import { AppState } from "react-native";
+import { TrackPlayerEvents } from "@/constants/trackPlayerConst";
 import TrackPlayer from "@/core/trackPlayer";
 import type { MusicVideoCandidate } from "@/core/pluginManager/musicVideoSource";
 import type {
@@ -140,11 +142,45 @@ async function requestVideoAction(
                 ),
             );
     };
+    const onTrackChanged = (nextMusic?: IMusic.IMusicItem | null) => {
+        if (!nextMusic || getMediaUniqueKey(nextMusic) !== key) {
+            consent.abort();
+        }
+    };
+    let appSub: {remove: () => void} | null = null;
     try {
+        if (typeof (TrackPlayer as {on?: unknown}).on === "function") {
+            (
+                TrackPlayer as {
+                    on: (
+                        event: string,
+                        cb: (nextMusic?: IMusic.IMusicItem | null) => void,
+                    ) => void;
+                }
+            ).on(TrackPlayerEvents.CurrentMusicChanged, onTrackChanged);
+        }
+        if (typeof AppState?.addEventListener === "function") {
+            appSub = AppState.addEventListener("change", nextState => {
+                if (nextState !== "active") {
+                    consent.abort();
+                }
+            });
+        }
         await run();
     } catch {
         if (current()) Toast.warn(i18n.t("musicVideo.failed"));
     } finally {
+        if (typeof (TrackPlayer as {off?: unknown}).off === "function") {
+            (
+                TrackPlayer as {
+                    off: (
+                        event: string,
+                        cb: (nextMusic?: IMusic.IMusicItem | null) => void,
+                    ) => void;
+                }
+            ).off(TrackPlayerEvents.CurrentMusicChanged, onTrackChanged);
+        }
+        appSub?.remove();
         if (pendingConsent === consent) pendingConsent = null;
     }
 }

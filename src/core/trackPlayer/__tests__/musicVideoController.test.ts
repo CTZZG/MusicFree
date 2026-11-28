@@ -516,3 +516,24 @@ test("a suspended quality change without a saved position waits for explicit res
     await expect(f.controller.changeQuality("360p", true)).resolves.toEqual({ status: "playing" });
     expect(f.deps.replace.mock.calls[1][0].position).toEqual({ mode: "start-zero" });
 });
+
+test("onBackground aborts interactive resume preflight even after a prior replay allowed background", async () => {
+    const f = fixture();
+    await f.controller.enter(clip());
+    await f.controller.replay(true);
+    let signalAborted = false;
+    const gate = deferred<{ mobileApproved: boolean; claimPlayback: boolean } | null>();
+    const pending = f.controller.resume(false, true, async signal => {
+        signal.addEventListener("abort", () => {
+            signalAborted = true;
+        });
+        return gate.promise;
+    });
+    await tick();
+    f.setForeground(false);
+    f.controller.onBackground();
+    expect(signalAborted).toBe(true);
+    gate.resolve({ mobileApproved: true, claimPlayback: true });
+    await expect(pending).resolves.toEqual({ status: "cancelled" });
+    expect(f.deps.resumeVideo).not.toHaveBeenCalled();
+});
