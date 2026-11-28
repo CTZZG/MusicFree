@@ -268,7 +268,133 @@ int main() {
         assert(res.error == "chunk offset underflow");
     }
 
-    std::cout << "{\"ok\":true,\"cases\":6}\n";
+    // Case 7: unsupported per-sample IV width (> 16) in tenc is rejected before sample copy
+    {
+        const uint32_t mdatOff = 600;
+        std::vector<uint8_t> tencBody(20, 0);
+        tencBody[2] = 1;
+        tencBody[3] = 32; // unsupported IV width
+        auto tenc = makeBox("tenc", makeFullBoxPayload(0, 0, tencBody));
+        auto schi = makeBox("schi", tenc);
+        auto frma = makeBox("frma", {'m', 'p', '4', 'a'});
+        auto sinf = makeBox("sinf", concat({frma, schi}));
+        std::vector<uint8_t> encaPayload(28, 0);
+        encaPayload[7] = 1;
+        pushBytes(encaPayload, sinf.data(), sinf.size());
+        auto enca = makeBox("enca", encaPayload);
+        std::vector<uint8_t> stsdBody;
+        pushU32(stsdBody, 1);
+        pushBytes(stsdBody, enca.data(), enca.size());
+        auto stsd = makeBox("stsd", makeFullBoxPayload(0, 0, stsdBody));
+        std::vector<uint8_t> stszBody;
+        pushU32(stszBody, 32);
+        pushU32(stszBody, 1);
+        auto stsz = makeBox("stsz", makeFullBoxPayload(0, 0, stszBody));
+        std::vector<uint8_t> stscBody;
+        pushU32(stscBody, 1);
+        pushU32(stscBody, 1);
+        pushU32(stscBody, 1);
+        pushU32(stscBody, 1);
+        auto stsc = makeBox("stsc", makeFullBoxPayload(0, 0, stscBody));
+        auto stco = makeBox("stco", makeStcoPayload(1, {mdatOff}));
+        std::vector<uint8_t> sencBody(4 + 32, 0);
+        sencBody[3] = 1;
+        auto senc = makeBox("senc", makeFullBoxPayload(0, 0, sencBody));
+        auto stbl = makeBox("stbl", concat({stsd, stsz, stsc, stco, senc}));
+        auto moov = makeBox("moov", makeTrack(stbl));
+        auto res = ence::parseAndRewrite(ftyp.data(), ftyp.size(), moov.data(), moov.size(), mdatOff, 32, cek);
+        assert(!res.ok);
+    }
+
+    // Case 8: truncated senc sample entries rejected instead of partial zero-IV acceptance
+    {
+        const uint32_t mdatOff = 600;
+        std::vector<uint8_t> tencBody(20, 0);
+        tencBody[2] = 1;
+        tencBody[3] = 8;
+        auto sinf = makeBox("sinf", concat({makeBox("frma", {'m','p','4','a'}), makeBox("schi", makeBox("tenc", makeFullBoxPayload(0, 0, tencBody)))}));
+        std::vector<uint8_t> encaPayload(28, 0);
+        encaPayload[7] = 1;
+        pushBytes(encaPayload, sinf.data(), sinf.size());
+        std::vector<uint8_t> stsdBody;
+        pushU32(stsdBody, 1);
+        auto enca = makeBox("enca", encaPayload);
+        pushBytes(stsdBody, enca.data(), enca.size());
+        auto stsd = makeBox("stsd", makeFullBoxPayload(0, 0, stsdBody));
+        std::vector<uint8_t> stszBody;
+        pushU32(stszBody, 16);
+        pushU32(stszBody, 2); // 2 samples
+        auto stsz = makeBox("stsz", makeFullBoxPayload(0, 0, stszBody));
+        std::vector<uint8_t> stscBody;
+        pushU32(stscBody, 1);
+        pushU32(stscBody, 1);
+        pushU32(stscBody, 2);
+        pushU32(stscBody, 1);
+        auto stsc = makeBox("stsc", makeFullBoxPayload(0, 0, stscBody));
+        auto stco = makeBox("stco", makeStcoPayload(1, {mdatOff}));
+        std::vector<uint8_t> sencBody;
+        pushU32(sencBody, 1); // only 1 senc sample for 2 stsz samples
+        pushBytes(sencBody, iv8, 8);
+        auto senc = makeBox("senc", makeFullBoxPayload(0, 0, sencBody));
+        auto stbl = makeBox("stbl", concat({stsd, stsz, stsc, stco, senc}));
+        auto moov = makeBox("moov", makeTrack(stbl));
+        auto res = ence::parseAndRewrite(ftyp.data(), ftyp.size(), moov.data(), moov.size(), mdatOff, 32, cek);
+        assert(!res.ok);
+    }
+
+    // Case 9: excessive container nesting rejected by depth guard
+    {
+        const uint32_t mdatOff = 600;
+        auto stbl = makeEncryptedAudioStbl(mdatOff, 32, iv8, 4, 28);
+        std::vector<uint8_t> deep = makeBox("free", {0, 0, 0, 0});
+        for (int d = 0; d < 24; ++d) {
+            deep = makeBox("trak", deep);
+        }
+        auto moov = makeBox("moov", concat({makeTrack(stbl), deep}));
+        auto res = ence::parseAndRewrite(ftyp.data(), ftyp.size(), moov.data(), moov.size(), mdatOff, 32, cek);
+        assert(!res.ok);
+        assert(res.error == "box nesting exceeds limit");
+    }
+
+    // Case 10: overlapping/non-monotonic multi-chunk sample offsets rejected
+    {
+        const uint32_t mdatOff = 600;
+        std::vector<uint8_t> tencBody(20, 0);
+        tencBody[2] = 1;
+        tencBody[3] = 8;
+        auto sinf = makeBox("sinf", concat({makeBox("frma", {'m','p','4','a'}), makeBox("schi", makeBox("tenc", makeFullBoxPayload(0, 0, tencBody)))}));
+        std::vector<uint8_t> encaPayload(28, 0);
+        encaPayload[7] = 1;
+        pushBytes(encaPayload, sinf.data(), sinf.size());
+        std::vector<uint8_t> stsdBody;
+        pushU32(stsdBody, 1);
+        auto enca = makeBox("enca", encaPayload);
+        pushBytes(stsdBody, enca.data(), enca.size());
+        auto stsd = makeBox("stsd", makeFullBoxPayload(0, 0, stsdBody));
+        std::vector<uint8_t> stszBody;
+        pushU32(stszBody, 16);
+        pushU32(stszBody, 2);
+        auto stsz = makeBox("stsz", makeFullBoxPayload(0, 0, stszBody));
+        std::vector<uint8_t> stscBody;
+        pushU32(stscBody, 1);
+        pushU32(stscBody, 1);
+        pushU32(stscBody, 1); // 1 sample per chunk across 2 chunks
+        pushU32(stscBody, 1);
+        auto stsc = makeBox("stsc", makeFullBoxPayload(0, 0, stscBody));
+        // chunk 2 starts BEFORE chunk 1 ends (608 < 600 + 16)
+        auto stco = makeBox("stco", makeStcoPayload(2, {mdatOff, mdatOff + 8}));
+        std::vector<uint8_t> sencBody;
+        pushU32(sencBody, 2);
+        pushBytes(sencBody, iv8, 8);
+        pushBytes(sencBody, iv8, 8);
+        auto senc = makeBox("senc", makeFullBoxPayload(0, 0, sencBody));
+        auto stbl = makeBox("stbl", concat({stsd, stsz, stsc, stco, senc}));
+        auto moov = makeBox("moov", makeTrack(stbl));
+        auto res = ence::parseAndRewrite(ftyp.data(), ftyp.size(), moov.data(), moov.size(), mdatOff, 32, cek);
+        assert(!res.ok);
+    }
+
+    std::cout << "{\"ok\":true,\"cases\":10}\n";
     return 0;
 }
 '''
@@ -306,7 +432,7 @@ def main():
         subprocess.run(cmd, check=True)
         run = subprocess.run([str(exe_path)], check=True, text=True, capture_output=True)
         data = json.loads(run.stdout.strip())
-        assert data.get("ok") is True and data.get("cases") == 6, data
+        assert data.get("ok") is True and data.get("cases") == 10, data
         print(json.dumps(data))
 
 

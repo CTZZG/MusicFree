@@ -78,10 +78,17 @@ extern "C" mpv_event* mpv_wait_event(mpv_handle*,double) {
     if(cursor==events.size()) {running->event_thread_request_exit=true;return &empty;}
     return &events[cursor++];
 }
+static std::vector<std::string> last_cmd;
 extern "C" const char* mpv_event_name(mpv_event_id) {return "file-event";}
-extern "C" int mpv_command(mpv_handle*,const char**) {return status;}
+extern "C" int mpv_command(mpv_handle*,const char** args) {
+    last_cmd.clear();
+    for (int i = 0; args && args[i]; ++i) last_cmd.emplace_back(args[i]);
+    return status;
+}
 extern "C" const char* mpv_error_string(int) {return "error";}
-extern "C" int mpv_command_ret(mpv_handle*,const char**,mpv_node* output) {
+extern "C" int mpv_command_ret(mpv_handle*,const char** args,mpv_node* output) {
+    last_cmd.clear();
+    for (int i = 0; args && args[i]; ++i) last_cmd.emplace_back(args[i]);
     static char key[]="playlist_entry_id";
     static char* keys[]={key};
     static mpv_node value={}; value.format=MPV_FORMAT_INT64; value.u.int64=9007199254740993LL;
@@ -137,7 +144,28 @@ int main() {
     environment.failed=false;
     run_command(&environment,reinterpret_cast<jlong>(&instance),&args,false);
     assert(environment.failed && environment.released==9 && freed==3);
-    puts("Bridge: lossless END/scoped events, legacy fallback, exact 64-bit ID, cleanup and error propagation passed");
+
+    // Supplementary Unicode (JNI Modified UTF-8 CESU-8 surrogate pair -> 4-byte standard UTF-8)
+    status=0; environment.failed=false;
+    std::vector<jstring> unicode_args={
+        "loadfile",
+        "https://example.test/\xED\xA0\xBC\xED\xBE\xB5.mp3",
+        "replace",
+        "-1",
+        "user-agent=%12%App \xED\xA0\xBC\xED\xBE\xB5 1.0"
+    };
+    assert(run_command(&environment,reinterpret_cast<jlong>(&instance),&unicode_args,true)==9007199254740993LL);
+    assert(!environment.failed && environment.released==14 && freed==4);
+    assert(last_cmd.size()==5);
+    assert(last_cmd[1]=="https://example.test/\xF0\x9F\x8E\xB5.mp3");
+    assert(last_cmd[4]=="user-agent=%12%App \xF0\x9F\x8E\xB5 1.0");
+
+    // Embedded Modified-UTF-8 NUL (0xC0 0x80) is rejected cleanly
+    last_cmd.clear();
+    std::vector<jstring> embedded_nul={"loadfile","https://example.test/a\xC0\x80z.mp3","replace"};
+    assert(run_command(&environment,reinterpret_cast<jlong>(&instance),&embedded_nul,true)==-1);
+    assert(environment.failed && last_cmd.empty() && environment.released==16);
+    puts("Bridge: lossless END/scoped events, legacy fallback, exact 64-bit ID, UTF-8 normalization, cleanup and error propagation passed");
 }
 '''
     (root/'test.cpp').write_text(harness)

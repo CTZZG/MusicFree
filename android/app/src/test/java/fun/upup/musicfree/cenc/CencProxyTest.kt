@@ -1,12 +1,18 @@
 package `fun`.upup.musicfree.cenc
 
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.EOFException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class CencProxyTest {
@@ -92,7 +98,7 @@ class CencProxyTest {
 
     @Test
     fun verifyContentRangeStartRejectsMissingOrMismatchedRangeOn206() {
-        CencProxy.verifyContentRangeStart("bytes 128-255/1024", 128L)
+        CencProxy.verifyContentRangeStart("bytes 128-255/1024", 128L, expectedMinEnd = 255L, expectedTotal = 1024L)
         CencProxy.verifyContentRangeStart("bytes 0-0/*", 0L)
 
         assertThrows(IllegalStateException::class.java) {
@@ -107,6 +113,12 @@ class CencProxyTest {
         assertThrows(IllegalStateException::class.java) {
             CencProxy.verifyContentRangeStart("items 128-255/1024", 128L)
         }
+        assertThrows(IllegalStateException::class.java) {
+            CencProxy.verifyContentRangeStart("bytes 128-200/1024", 128L, expectedMinEnd = 255L)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            CencProxy.verifyContentRangeStart("bytes 128-255/2048", 128L, expectedTotal = 1024L)
+        }
     }
 
     @Test
@@ -116,6 +128,56 @@ class CencProxyTest {
 
         assertThrows(IllegalStateException::class.java) {
             CencProxy.ensureAllowedRangeSkip(2L * 1024L * 1024L + 1L)
+        }
+    }
+
+    @Test
+    fun proxyLifecycleRejectsLateRegistrationAfterOwnerDetachAndClosesOrphanDecoder() {
+        val lifecycle = CencProxy.ProxyLifecycle()
+        val ownerId = lifecycle.attachOwner()
+        val snap = lifecycle.snapshotForRegistration(ownerId)
+        val shutdownCalled = AtomicBoolean(false)
+        lifecycle.detachOwner(ownerId) { shutdownCalled.set(true) }
+        assertTrue(shutdownCalled.get())
+
+        val orphan = FakeDecoder()
+        assertThrows(IllegalStateException::class.java) {
+            lifecycle.commitRegistration(
+                ownerId = ownerId,
+                expectedGeneration = snap,
+                onRejected = { orphan.close() },
+            ) {
+                "unreachable"
+            }
+        }
+        assertEquals(1, orphan.closeCount.get())
+    }
+
+    @Test
+    fun decryptingInputStreamFailsExplicitlyWhenUpstreamTruncatesEarly() {
+        val dummyResponse = Response.Builder()
+            .request(Request.Builder().url("https://cdn.example.com/a.m4a").build())
+            .protocol(Protocol.HTTP_1_1)
+            .code(206)
+            .message("Partial Content")
+            .body(ByteArray(0).toResponseBody(null))
+            .build()
+        val shortStream = ByteArrayInputStream(byteArrayOf(10, 20, 30))
+        val decoder = FakeDecoder()
+
+        CencProxy.DecryptingInputStream(
+            response = dummyResponse,
+            input = shortStream,
+            decoder = decoder,
+            relativeOffset = 0L,
+            remaining = 8L,
+        ).use { stream ->
+            val buf = ByteArray(8)
+            val firstRead = stream.read(buf, 0, 8)
+            assertEquals(3, firstRead)
+            assertThrows(EOFException::class.java) {
+                stream.read(buf, 3, 5)
+            }
         }
     }
 }

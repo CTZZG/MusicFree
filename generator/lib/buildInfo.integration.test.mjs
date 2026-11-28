@@ -120,6 +120,19 @@ test('reads the mpv version from a deflate-compressed AAR entry', t => {
     assert.equal(generate(root).player, 'mpv v0.41.0');
 });
 
+test('records unknown when the AAR entry has a corrupted CRC or truncated payload', t => {
+    const {root, write} = project(t, 'MusicFree');
+    const valid = deflatedZip('jni/arm64-v8a/libmpv.so', library);
+    const badCrc = Buffer.from(valid);
+    // Flip a bit in the payload without updating CRC32
+    badCrc[30 + 'jni/arm64-v8a/libmpv.so'.length] ^= 0xff;
+    write('android/app/libs/libmpv-release.aar', badCrc);
+    assert.equal(generate(root).player, 'unknown');
+
+    write('android/app/libs/libmpv-release.aar', valid.subarray(0, 12));
+    assert.equal(generate(root).player, 'unknown');
+});
+
 test('records unknown when the AAR is missing', t => {
     const {root} = project(t, 'MusicFree-$review');
 

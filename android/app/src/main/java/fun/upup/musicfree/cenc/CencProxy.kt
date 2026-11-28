@@ -9,6 +9,7 @@ import okhttp3.Response as OkHttpResponse
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.io.EOFException
 import java.io.InputStream
 import java.io.SequenceInputStream
 import java.util.UUID
@@ -24,9 +25,10 @@ internal object CencProxy {
     private const val IDLE_TIMEOUT_MS = 30L * 60L * 1000L
     private const val MAX_IGNORED_RANGE_SKIP = 2L * 1024L * 1024L
     private val contentRangeRegex =
-        Regex("""^bytes\s+(\d+)-(\d+)/(?:\d+|\*)$""", RegexOption.IGNORE_CASE)
+        Regex("""^bytes\s+(\d+)-(\d+)/(\d+|\*)$""", RegexOption.IGNORE_CASE)
 
     private val registry = SessionRegistry()
+    private val lifecycle = ProxyLifecycle()
     private val client = PublicHttpsNetworkPolicy.clientBuilder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -42,13 +44,73 @@ internal object CencProxy {
         val moov: ByteArray,
         val mdatPayloadOffset: Long,
         val mdatPayloadSize: Long,
+        val upstreamTotalSize: Long? = null,
     )
+
+    internal class ProxyLifecycle {
+        private val lock = Any()
+        private var nextOwnerId = 1L
+        private var generation = 1L
+        private val activeOwners = LinkedHashSet<Long>()
+
+        fun attachOwner(): Long = synchronized(lock) {
+            val id = nextOwnerId++
+            activeOwners.add(id)
+            id
+        }
+
+        fun detachOwner(ownerId: Long, onLastOwnerDetached: () -> Unit) {
+            val shouldShutdown = synchronized(lock) {
+                val removed = activeOwners.remove(ownerId)
+                if (removed && activeOwners.isEmpty()) {
+                    generation += 1L
+                    true
+                } else {
+                    false
+                }
+            }
+            if (shouldShutdown) {
+                onLastOwnerDetached()
+            }
+        }
+
+        fun snapshotForRegistration(ownerId: Long?): Long = synchronized(lock) {
+            if (ownerId != null && !activeOwners.contains(ownerId)) {
+                throw IllegalStateException("CENC proxy owner is no longer active")
+            }
+            generation
+        }
+
+        fun advanceGeneration() {
+            synchronized(lock) {
+                activeOwners.clear()
+                generation += 1L
+            }
+        }
+
+        fun <T> commitRegistration(
+            ownerId: Long?,
+            expectedGeneration: Long,
+            onRejected: () -> Unit,
+            block: () -> T,
+        ): T {
+            synchronized(lock) {
+                val ownerActive = ownerId == null || activeOwners.contains(ownerId)
+                if (!ownerActive || generation != expectedGeneration) {
+                    onRejected()
+                    throw IllegalStateException("CENC proxy lifecycle ended during stream registration")
+                }
+                return block()
+            }
+        }
+    }
 
     internal class StreamSession(
         val token: String,
         val src: String,
         val headers: Map<String, String>,
         val decoder: CencStreamDecoder,
+        val upstreamTotalSize: Long? = null,
         val createdAt: Long = System.currentTimeMillis(),
         var lastAccessAt: Long = createdAt,
         var activeStreams: Int = 0,
@@ -87,6 +149,7 @@ internal object CencProxy {
             src: String,
             headers: Map<String, String>,
             decoder: CencStreamDecoder,
+            upstreamTotalSize: Long? = null,
         ): StreamSession {
             val toClose = mutableListOf<CencStreamDecoder>()
             val session: StreamSession
@@ -110,6 +173,7 @@ internal object CencProxy {
                         src = src,
                         headers = headers,
                         decoder = decoder,
+                        upstreamTotalSize = upstreamTotalSize,
                         createdAt = currentTime,
                         lastAccessAt = currentTime,
                     )
@@ -241,14 +305,31 @@ internal object CencProxy {
         return "http://127.0.0.1:$listeningPort"
     }
 
-    fun register(src: String, cek: String, headers: Map<String, String>): String {
+    fun attachOwner(): Long = lifecycle.attachOwner()
+
+    fun detachOwner(ownerId: Long) {
+        lifecycle.detachOwner(ownerId, ::stopServerAndClear)
+    }
+
+    fun register(src: String, cek: String, headers: Map<String, String>): String =
+        registerInternal(ownerId = null, src = src, cek = cek, headers = headers)
+
+    fun register(ownerId: Long, src: String, cek: String, headers: Map<String, String>): String =
+        registerInternal(ownerId = ownerId, src = src, cek = cek, headers = headers)
+
+    private fun registerInternal(
+        ownerId: Long?,
+        src: String,
+        cek: String,
+        headers: Map<String, String>,
+    ): String {
+        val expectedGeneration = lifecycle.snapshotForRegistration(ownerId)
         PublicHttpsNetworkPolicy.requirePublicRemote(src)
         val normalizedCek = cek.trim()
         require(normalizedCek.matches(Regex("^[0-9a-fA-F]{32}$"))) {
             "invalid cek (expected 32 hexadecimal characters)"
         }
 
-        val baseUrl = ensureStarted()
         val layout = discoverLayout(src, headers)
         val decoder = CencDecoder(
             layout.ftyp,
@@ -258,16 +339,28 @@ internal object CencProxy {
             layout.mdatPayloadSize,
         )
         val token = UUID.randomUUID().toString().replace("-", "")
-        try {
-            registry.register(token, src, headers, decoder)
-        } catch (error: Throwable) {
-            runCatching { decoder.close() }
-            throw error
+        return lifecycle.commitRegistration(
+            ownerId = ownerId,
+            expectedGeneration = expectedGeneration,
+            onRejected = { runCatching { decoder.close() } },
+        ) {
+            try {
+                val baseUrl = ensureStarted()
+                registry.register(token, src, headers, decoder, layout.upstreamTotalSize)
+                "$baseUrl/l/$token.m4a"
+            } catch (error: Throwable) {
+                runCatching { decoder.close() }
+                throw error
+            }
         }
-        return "$baseUrl/l/$token.m4a"
     }
 
     fun shutdown() {
+        lifecycle.advanceGeneration()
+        stopServerAndClear()
+    }
+
+    private fun stopServerAndClear() {
         synchronized(this) {
             server?.stop()
             server = null
@@ -275,7 +368,12 @@ internal object CencProxy {
         registry.clear()
     }
 
-    internal fun verifyContentRangeStart(contentRange: String?, expectedStart: Long) {
+    internal fun verifyContentRangeStart(
+        contentRange: String?,
+        expectedStart: Long,
+        expectedMinEnd: Long? = null,
+        expectedTotal: Long? = null,
+    ) {
         val header = contentRange?.trim()
             ?: throw IllegalStateException("Unexpected Content-Range: missing header")
         val match = contentRangeRegex.matchEntire(header)
@@ -284,8 +382,24 @@ internal object CencProxy {
             ?: throw IllegalStateException("Unexpected Content-Range: $header")
         val actualEnd = match.groupValues[2].toLongOrNull()
             ?: throw IllegalStateException("Unexpected Content-Range: $header")
+        val totalToken = match.groupValues[3]
         if (actualStart != expectedStart || actualEnd < actualStart) {
             throw IllegalStateException("Unexpected Content-Range: $header (expected start $expectedStart)")
+        }
+        if (expectedMinEnd != null && actualEnd < expectedMinEnd) {
+            throw IllegalStateException("Unexpected Content-Range end: $header (expected end >= $expectedMinEnd)")
+        }
+        if (totalToken != "*") {
+            val actualTotal = totalToken.toLongOrNull()
+                ?: throw IllegalStateException("Unexpected Content-Range total: $header")
+            if (actualEnd >= actualTotal) {
+                throw IllegalStateException("Unexpected Content-Range bounds: $header")
+            }
+            if (expectedTotal != null && actualTotal != expectedTotal) {
+                throw IllegalStateException(
+                    "Upstream CENC representation size changed ($actualTotal != $expectedTotal)",
+                )
+            }
         }
     }
 
@@ -297,7 +411,8 @@ internal object CencProxy {
 
     private fun discoverLayout(src: String, headers: Map<String, String>): Layout {
         val first = fetchRange(src, headers, 0L, PROBE_SIZE.toLong() - 1L)
-        val totalSize = first.totalSize ?: first.body.size.toLong()
+        val knownTotal = first.totalSize
+        val totalSize = knownTotal ?: first.body.size.toLong()
         require(totalSize >= 8L) { "upstream CENC file is empty or truncated" }
 
         var ftyp: ByteArray? = null
@@ -308,14 +423,15 @@ internal object CencProxy {
         var guard = 0
 
         while (offset + 8L <= totalSize && guard++ < 4096) {
-            val headerBytes = bytesAt(src, headers, offset, 16, first.body)
+            val headerLen = min(16L, totalSize - offset).toInt()
+            val headerBytes = bytesAt(src, headers, offset, headerLen, first.body, knownTotal)
             val box = parseBoxHeader(headerBytes, totalSize - offset)
                 ?: throw IllegalArgumentException("invalid MP4 box at offset $offset")
             require(box.size >= box.headerSize) { "invalid ${box.type} box size" }
 
             when (box.type) {
-                "ftyp" -> ftyp = bytesAt(src, headers, offset, checkedBoxSize(box), first.body)
-                "moov" -> moov = bytesAt(src, headers, offset, checkedBoxSize(box), first.body)
+                "ftyp" -> ftyp = bytesAt(src, headers, offset, checkedBoxSize(box), first.body, knownTotal)
+                "moov" -> moov = bytesAt(src, headers, offset, checkedBoxSize(box), first.body, knownTotal)
                 "mdat" -> {
                     mdatPayloadOffset = offset + box.headerSize
                     mdatPayloadSize = box.size - box.headerSize
@@ -331,6 +447,7 @@ internal object CencProxy {
             requireNotNull(moov) { "failed to locate moov box" },
             requireNotNull(mdatPayloadOffset) { "failed to locate mdat box" },
             requireNotNull(mdatPayloadSize),
+            knownTotal,
         )
     }
 
@@ -345,12 +462,20 @@ internal object CencProxy {
         offset: Long,
         length: Int,
         initialCache: ByteArray,
+        expectedTotal: Long?,
     ): ByteArray {
         require(length >= 0)
+        if (length == 0) return ByteArray(0)
         if (offset >= 0L && offset + length <= initialCache.size.toLong()) {
             return initialCache.copyOfRange(offset.toInt(), offset.toInt() + length)
         }
-        val result = fetchRange(src, headers, offset, offset + length - 1L).body
+        val result = fetchRange(
+            src = src,
+            headers = headers,
+            start = offset,
+            end = offset + length - 1L,
+            expectedTotal = expectedTotal,
+        ).body
         require(result.size >= length) { "truncated upstream MP4 data at offset $offset" }
         return if (result.size == length) result else result.copyOf(length)
     }
@@ -376,6 +501,7 @@ internal object CencProxy {
         headers: Map<String, String>,
         start: Long,
         end: Long,
+        expectedTotal: Long? = null,
     ): RangeResult {
         require(start >= 0L && end >= start)
         val request = upstreamRequest(src, headers, "bytes=$start-$end")
@@ -384,9 +510,18 @@ internal object CencProxy {
                 "upstream returned HTTP ${response.code}"
             }
             if (response.code == 206) {
-                verifyContentRangeStart(response.header("Content-Range"), start)
+                verifyContentRangeStart(
+                    contentRange = response.header("Content-Range"),
+                    expectedStart = start,
+                    expectedTotal = expectedTotal,
+                )
             }
             val total = parseTotalSize(response)
+            if (expectedTotal != null && total != null && total != expectedTotal) {
+                throw IllegalStateException(
+                    "Upstream CENC representation size changed ($total != $expectedTotal)",
+                )
+            }
             val input = requireNotNull(response.body).byteStream()
             if (response.code == 200 && start > 0L) {
                 ensureAllowedRangeSkip(start)
@@ -552,10 +687,23 @@ internal object CencProxy {
             }
             if (response.code == 206) {
                 try {
-                    verifyContentRangeStart(response.header("Content-Range"), sourceStart)
+                    verifyContentRangeStart(
+                        contentRange = response.header("Content-Range"),
+                        expectedStart = sourceStart,
+                        expectedMinEnd = sourceEnd,
+                        expectedTotal = stream.upstreamTotalSize,
+                    )
                 } catch (error: Throwable) {
                     response.close()
                     throw error
+                }
+            } else {
+                val total = parseTotalSize(response)
+                if (stream.upstreamTotalSize != null && total != null && total != stream.upstreamTotalSize) {
+                    response.close()
+                    throw IllegalStateException(
+                        "Upstream CENC representation size changed ($total != ${stream.upstreamTotalSize})",
+                    )
                 }
             }
             val body = response.body ?: run {
@@ -630,7 +778,7 @@ internal object CencProxy {
         }
     }
 
-    private class DecryptingInputStream(
+    internal class DecryptingInputStream(
         private val response: OkHttpResponse,
         private val input: InputStream,
         private val decoder: CencStreamDecoder,
@@ -643,10 +791,14 @@ internal object CencProxy {
         }
 
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (length == 0) return 0
             if (remaining <= 0L) return -1
             val requested = min(length.toLong(), remaining).toInt()
             val read = input.read(buffer, offset, requested)
-            if (read <= 0) return -1
+            if (read < 0) {
+                throw EOFException("Upstream CENC stream ended prematurely ($remaining bytes remaining)")
+            }
+            if (read == 0) return 0
             decoder.decrypt(relativeOffset, buffer, offset, read)
             relativeOffset += read
             remaining -= read

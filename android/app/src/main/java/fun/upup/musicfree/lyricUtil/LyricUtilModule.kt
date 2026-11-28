@@ -15,6 +15,30 @@ import java.util.zip.Inflater
 
 private const val DEFAULT_MAX_ZLIB_INFLATE_BYTES = 4 * 1024 * 1024
 
+internal const val MAX_QRC_HEX_CHARS = 2 * 1024 * 1024
+
+internal fun decodeHexBounded(
+    hex: String,
+    maxHexChars: Int = MAX_QRC_HEX_CHARS,
+): ByteArray {
+    val trimmed = hex.trim()
+    require(trimmed.isNotEmpty()) { "Hex string must not be empty" }
+    require(trimmed.length <= maxHexChars) {
+        "Hex string exceeds maximum allowed length ($maxHexChars)"
+    }
+    require(trimmed.length % 2 == 0) { "Hex string must have even length" }
+    val out = ByteArray(trimmed.length ushr 1)
+    var i = 0
+    while (i < trimmed.length) {
+        val hi = Character.digit(trimmed[i], 16)
+        val lo = Character.digit(trimmed[i + 1], 16)
+        require(hi >= 0 && lo >= 0) { "Invalid hexadecimal character at index $i" }
+        out[i ushr 1] = ((hi shl 4) or lo).toByte()
+        i += 2
+    }
+    return out
+}
+
 internal fun zlibInflateBytes(
     data: ByteArray,
     maxOutputBytes: Int = DEFAULT_MAX_ZLIB_INFLATE_BYTES,
@@ -577,14 +601,9 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     // ==================== Helper Functions ====================
 
     /**
-     * Convert hex string to byte array
+     * Convert hex string to byte array with explicit length bound and zero boxing.
      */
-    private fun hexToByteArray(hex: String): ByteArray {
-        require(hex.length % 2 == 0) { "Hex string must have even length" }
-        return hex.chunked(2)
-            .map { it.toInt(16).toByte() }
-            .toByteArray()
-    }
+    private fun hexToByteArray(hex: String): ByteArray = decodeHexBounded(hex)
 
     /**
      * Zlib decompress (inflate)

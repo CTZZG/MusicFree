@@ -78,8 +78,9 @@ jobs:
                   restore-keys: robolectric-sdk34-
 
             - name: Generate build metadata
+              env:
+                  INPUT_VERSION: ${{ inputs.version_name }}
               run: |
-                  INPUT_VERSION="${{ inputs.version_name }}"
                   PACKAGE_VERSION="$(node -p "require('./package.json').version")"
                   if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "$PACKAGE_VERSION" ]; then
                     echo "::error title=Version mismatch::Manual version $INPUT_VERSION must match package.json version $PACKAGE_VERSION."

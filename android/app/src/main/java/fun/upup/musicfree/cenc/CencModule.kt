@@ -11,6 +11,7 @@ class CencModule(
     reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
     private val executor = Executors.newCachedThreadPool()
+    private val proxyOwnerId = CencProxy.attachOwner()
 
     override fun getName(): String = "Cenc"
 
@@ -24,7 +25,7 @@ class CencModule(
         val copiedHeaders = readableMapToStringMap(headers)
         executor.execute {
             try {
-                promise.resolve(CencProxy.register(src, cek, copiedHeaders))
+                promise.resolve(CencProxy.register(proxyOwnerId, src, cek, copiedHeaders))
             } catch (error: Throwable) {
                 promise.reject("CencRegistrationError", error)
             }
@@ -50,7 +51,7 @@ class CencModule(
 
     override fun invalidate() {
         executor.shutdownNow()
-        CencProxy.shutdown()
+        CencProxy.detachOwner(proxyOwnerId)
         super.invalidate()
     }
 

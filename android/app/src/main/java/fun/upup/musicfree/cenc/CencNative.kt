@@ -52,21 +52,29 @@ internal class CencDecoder(
         mdatPayloadSize,
     )
 
+    override val header: ByteArray
+    override val headerSize: Long
+    override val mdatFileOffset: Long
+    override val outputTotalSize: Long
+
     init {
         require(handle != 0L) { "failed to allocate CENC decoder" }
-        if (!CencNative.nativeIsValid(handle)) {
-            val error = CencNative.nativeGetError(handle)
+        try {
+            if (!CencNative.nativeIsValid(handle)) {
+                val error = CencNative.nativeGetError(handle)
+                throw IllegalArgumentException(error.ifBlank { "decoder initialization failed" })
+            }
+            header = requireNotNull(CencNative.nativeGetHeader(handle)) {
+                "decoder did not produce an MP4 header"
+            }
+            headerSize = CencNative.nativeGetHeaderSize(handle)
+            this.mdatFileOffset = CencNative.nativeGetMdatFileOffset(handle)
+            outputTotalSize = CencNative.nativeGetOutputTotalSize(handle)
+        } catch (error: Throwable) {
             close()
-            throw IllegalArgumentException(error.ifBlank { "decoder initialization failed" })
+            throw error
         }
     }
-
-    override val header: ByteArray = requireNotNull(CencNative.nativeGetHeader(handle)) {
-        "decoder did not produce an MP4 header"
-    }
-    override val headerSize: Long = CencNative.nativeGetHeaderSize(handle)
-    override val mdatFileOffset: Long = CencNative.nativeGetMdatFileOffset(handle)
-    override val outputTotalSize: Long = CencNative.nativeGetOutputTotalSize(handle)
 
     @Synchronized
     override fun decrypt(relativeOffset: Long, data: ByteArray, offset: Int, length: Int) {

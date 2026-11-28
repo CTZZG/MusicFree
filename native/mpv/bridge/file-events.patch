@@ -70,15 +70,16 @@
          mpv_MPVLib_logMessage_SiS;
 --- a/libmpv/src/main/cpp/main.cpp
 +++ b/libmpv/src/main/cpp/main.cpp
-@@ -4,6 +4,7 @@
+@@ -4,6 +4,8 @@
  #include <ctime>
  #include <clocale>
  #include <atomic>
 +#include <cstring>
++#include <string>
  
  #include <mpv/client.h>
  
-@@ -27,6 +28,8 @@
+@@ -27,6 +29,8 @@ extern "C" {
      jni_func(void, nativeInit, jlong instance);
      jni_func(void, nativeDestroy, jlong instance);
      jni_func(void, nativeCommand, jlong instance, jobjectArray jarray);
@@ -87,7 +88,7 @@
  };
  
  static void prepare_environment(JNIEnv *env, MPVInstance* instance) {
-@@ -104,34 +107,62 @@
+@@ -104,34 +108,95 @@ jni_func(void, nativeDestroy, jlong instance) {
      delete mpv_instance;
  }
  
@@ -117,15 +118,48 @@
 +        return -1;
      }
 -
++    const char *raw_args[128] = {};
 +    const char *arguments[128] = {};
++    std::string utf8_args[128];
 +    jstring refs[128] = {};
++    bool valid_utf8 = true;
      for (int i = 0; i < len; ++i) {
 -        stringRefs[i] = (jstring)env->GetObjectArrayElement(jarray, i);
 -        arguments[i] = env->GetStringUTFChars(stringRefs[i], nullptr);
 +        refs[i] = static_cast<jstring>(env->GetObjectArrayElement(jarray, i));
-+        if (!refs[i]) break;
-+        arguments[i] = env->GetStringUTFChars(refs[i], nullptr);
-+        if (!arguments[i]) break;
++        if (!refs[i]) { valid_utf8 = false; break; }
++        raw_args[i] = env->GetStringUTFChars(refs[i], nullptr);
++        if (!raw_args[i]) { valid_utf8 = false; break; }
++        const auto *bytes = reinterpret_cast<const unsigned char*>(raw_args[i]);
++        std::string &out = utf8_args[i];
++        for (size_t k = 0; bytes[k] != 0; ) {
++            if (bytes[k] == 0xC0u && bytes[k + 1] == 0x80u) {
++                valid_utf8 = false;
++                break;
++            }
++            if (bytes[k] == 0xEDu && (bytes[k + 1] >= 0xA0u && bytes[k + 1] <= 0xAFu) &&
++                (bytes[k + 2] >= 0x80u && bytes[k + 2] <= 0xBFu) &&
++                bytes[k + 3] == 0xEDu && (bytes[k + 4] >= 0xB0u && bytes[k + 4] <= 0xBFu) &&
++                (bytes[k + 5] >= 0x80u && bytes[k + 5] <= 0xBFu)) {
++                const unsigned int high = 0xD800u |
++                    (static_cast<unsigned int>(bytes[k + 1] & 0x0Fu) << 6) |
++                    static_cast<unsigned int>(bytes[k + 2] & 0x3Fu);
++                const unsigned int low = 0xDC00u |
++                    (static_cast<unsigned int>(bytes[k + 4] & 0x0Fu) << 6) |
++                    static_cast<unsigned int>(bytes[k + 5] & 0x3Fu);
++                const unsigned int cp = 0x10000u + (((high - 0xD800u) << 10) | (low - 0xDC00u));
++                out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
++                out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
++                out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
++                out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
++                k += 6;
++            } else {
++                out.push_back(static_cast<char>(bytes[k]));
++                k += 1;
++            }
++        }
++        if (!valid_utf8) break;
++        arguments[i] = out.c_str();
      }
 -
 -    mpv_command(mpv_instance->mpv, arguments);
@@ -137,7 +171,7 @@
 +    int status = MPV_ERROR_INVALID_PARAMETER;
 +    jlong entry_id = -1;
 +    mpv_node result = {};
-+    if (!env->ExceptionCheck() && arguments[len - 1]) {
++    if (!env->ExceptionCheck() && valid_utf8 && arguments[len - 1]) {
 +        if (load_file && std::strcmp(arguments[0], "loadfile") == 0) {
 +            status = mpv_command_ret(player->mpv, arguments, &result);
 +            if (status >= 0 && result.format == MPV_FORMAT_NODE_MAP) {
@@ -153,7 +187,7 @@
      }
 +    mpv_free_node_contents(&result);
 +    for (int i = 0; i < len; ++i) {
-+        if (arguments[i]) env->ReleaseStringUTFChars(refs[i], arguments[i]);
++        if (raw_args[i]) env->ReleaseStringUTFChars(refs[i], raw_args[i]);
 +        if (refs[i]) env->DeleteLocalRef(refs[i]);
 +    }
 +    if (!env->ExceptionCheck()) {
@@ -161,7 +195,7 @@
 +        else if (load_file && entry_id < 0) throw_java_exception(env, "loadfile returned no playlist entry ID");
 +    }
 +    return entry_id;
- }
++}
 +
 +jni_func(void, nativeCommand, jlong instance, jobjectArray jarray) {
 +    run_command(env, instance, jarray, false);
@@ -173,7 +207,7 @@
 +
 +jni_func(jint, nativeEventProtocolVersion) {
 +    return mpv_MPVLib_eventWithFile && mpv_MPVLib_eventEndFile ? 2 : 0;
-+}
+ }
 --- a/libmpv/src/main/java/dev/jdtech/mpv/MPVLib.kt
 +++ b/libmpv/src/main/java/dev/jdtech/mpv/MPVLib.kt
 @@ -72,6 +72,16 @@

@@ -91,5 +91,41 @@ class MpvHttpOptionsTest {
         assertThrows(IllegalArgumentException::class.java) {
             MpvHttpOptions.validateMediaUrl("https://cdn.example.com/a.mp3\r\n", "audio", false, false)
         }
+        // Self-hosted LAN audio servers (WebDAV/Subsonic) remain allowed when HTTP is permitted,
+        // while MV still requires public remote hosts and audio still blocks link-local/metadata/NAT64-loopback.
+        MpvHttpOptions.validateMediaUrl("http://192.168.1.50:4533/rest/stream?id=a", "audio", false, null)
+        assertThrows(IllegalArgumentException::class.java) {
+            MpvHttpOptions.validateMediaUrl("http://169.254.169.254/latest", "audio", false, true)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MpvHttpOptions.validateMediaUrl("https://[64:ff9b::127.0.0.1]/a.mp3", "audio", false, false)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MpvHttpOptions.validateMediaUrl("https://[64:ff9b::169.254.169.254]/a.mp3", "audio", false, false)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MpvHttpOptions.validateMediaUrl("https://[64:ff9b::10.0.0.1]/mv.mp4", "mv", false, false)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MpvHttpOptions.validateMediaUrl("https://speaker.local/mv.mp4", "mv", false, false)
+        }
+    }
+
+    @Test
+    fun encodeLengthPrefixedCountsStandardUtf8BytesForSupplementaryUnicode() {
+        val ua = "MusicFree/0.15 🎵 Player"
+        val headers = MpvHttpOptions.encodeHeaderFieldsOption(mapOf("X-Title" to "Song 🎶"))
+        val expectedHeaderEntry = "X-Title: Song 🎶"
+        assertEquals(
+            "%${expectedHeaderEntry.toByteArray(Charsets.UTF_8).size}%$expectedHeaderEntry",
+            headers,
+        )
+        val cmd = MpvHttpOptions.buildLoadFileCommand(
+            url = "https://cdn.example.com/🎵.mp3",
+            mode = "replace",
+            headerFieldsList = headers,
+            userAgent = ua,
+        )
+        assertTrue(cmd[4].contains("user-agent=%${ua.toByteArray(Charsets.UTF_8).size}%$ua"))
     }
 }

@@ -10,6 +10,7 @@ namespace {
 
 constexpr uint64_t kMaxReasonableSampleCount = 8'000'000;
 constexpr uint64_t kMaxReasonableChunkCount = 1'000'000;
+constexpr uint32_t kMaxBoxDepth = 16;
 
 static bool checkedTableSize(uint64_t base, uint64_t count, uint64_t itemSize, uint64_t& out) {
     if (itemSize != 0 && count > (std::numeric_limits<uint64_t>::max() - base) / itemSize) {
@@ -170,11 +171,16 @@ static bool isDeleted(const char* t) {
            std::memcmp(t, "saio", 4) == 0 || std::memcmp(t, "sinf", 4) == 0;
 }
 
-static void patchSize(std::vector<uint8_t>& out, size_t sizePos) {
-    wr32(&out[sizePos], static_cast<uint32_t>(out.size() - sizePos));
+static void patchSize(std::vector<uint8_t>& out, size_t sizePos, RewriteCtx& ctx) {
+    const size_t boxSize = out.size() - sizePos;
+    if (boxSize > std::numeric_limits<uint32_t>::max()) {
+        ctx.error = "rewritten box size overflow";
+        return;
+    }
+    wr32(&out[sizePos], static_cast<uint32_t>(boxSize));
 }
 
-static void emitBox(const BoxView& b, RewriteCtx& ctx);
+static void emitBox(const BoxView& b, RewriteCtx& ctx, uint32_t depth = 0);
 
 static void emitEnca(const BoxView& b, RewriteCtx& ctx) {
     if (!ctx.error.empty()) {
@@ -206,7 +212,7 @@ static void emitEnca(const BoxView& b, RewriteCtx& ctx) {
         }
         p += c.size;
     }
-    patchSize(ctx.out, sizePos);
+    patchSize(ctx.out, sizePos, ctx);
 }
 
 static void emitStsd(const BoxView& b, RewriteCtx& ctx) {
@@ -236,7 +242,7 @@ static void emitStsd(const BoxView& b, RewriteCtx& ctx) {
         }
         p += e.size;
     }
-    patchSize(ctx.out, sizePos);
+    patchSize(ctx.out, sizePos, ctx);
 }
 
 static void emitStcoLike(const BoxView& b, RewriteCtx& ctx) {
@@ -267,8 +273,12 @@ static void emitStcoLike(const BoxView& b, RewriteCtx& ctx) {
     ctx.stcoRefs.push_back(ref);
 }
 
-static void emitContainer(const BoxView& b, RewriteCtx& ctx) {
+static void emitContainer(const BoxView& b, RewriteCtx& ctx, uint32_t depth) {
     if (!ctx.error.empty()) {
+        return;
+    }
+    if (depth >= kMaxBoxDepth) {
+        ctx.error = "box nesting exceeds limit";
         return;
     }
     size_t sizePos = ctx.out.size();
@@ -278,25 +288,33 @@ static void emitContainer(const BoxView& b, RewriteCtx& ctx) {
     const uint8_t* p = b.payload;
     const uint8_t* end = b.payload + b.payloadSize;
     BoxView c;
-    while (p < end && readBox(p, end, c)) {
-        emitBox(c, ctx);
+    while (p < end) {
+        if (!readBox(p, end, c)) {
+            ctx.error = "malformed child box";
+            return;
+        }
+        emitBox(c, ctx, depth + 1);
         if (!ctx.error.empty()) {
             return;
         }
         p += c.size;
     }
-    patchSize(ctx.out, sizePos);
+    patchSize(ctx.out, sizePos, ctx);
 }
 
-static void emitBox(const BoxView& b, RewriteCtx& ctx) {
+static void emitBox(const BoxView& b, RewriteCtx& ctx, uint32_t depth) {
     if (!ctx.error.empty()) {
+        return;
+    }
+    if (depth >= kMaxBoxDepth) {
+        ctx.error = "box nesting exceeds limit";
         return;
     }
     if (isDeleted(b.type)) {
         return;
     }
     if (isContainer(b.type)) {
-        emitContainer(b, ctx);
+        emitContainer(b, ctx, depth);
     } else if (std::memcmp(b.type, "stsd", 4) == 0) {
         emitStsd(b, ctx);
     } else if (std::memcmp(b.type, "stco", 4) == 0 || std::memcmp(b.type, "co64", 4) == 0) {
@@ -353,16 +371,21 @@ static bool parseTenc(const BoxView& stbl, uint8_t& ivSize, uint8_t constIV[16],
     // [0]=version [1..3]=flags [4]=reserved [5]=reserved/cryptskip
     // [6]=default_isProtected [7]=default_per_sample_IV_size [8..23]=KID
     ivSize = t[7];
+    if (ivSize != 0 && ivSize != 8 && ivSize != 16) {
+        return false;
+    }
     if (ivSize == 0) {
         // constant IV follows KID
-        if (tenc.payloadSize >= 25) {
-            uint8_t n = t[24];
-            if (n <= 16 && tenc.payloadSize >= 25u + n) {
-                constIVSize = n;
-                std::memset(constIV, 0, 16);
-                std::memcpy(constIV, t + 25, n);
-            }
+        if (tenc.payloadSize < 25) {
+            return false;
         }
+        uint8_t n = t[24];
+        if ((n != 8 && n != 16) || tenc.payloadSize < 25u + n) {
+            return false;
+        }
+        constIVSize = n;
+        std::memset(constIV, 0, 16);
+        std::memcpy(constIV, t + 25, n);
     }
     return true;
 }
@@ -392,7 +415,10 @@ Mp4CencResult parseAndRewrite(
 
     // --- IV size from tenc ---
     uint8_t ivSize = 0, constIV[16] = {0}, constIVSize = 0;
-    parseTenc(stbl, ivSize, constIV, constIVSize);
+    if (!parseTenc(stbl, ivSize, constIV, constIVSize)) {
+        res.error = "invalid or unsupported tenc box";
+        return res;
+    }
 
     // --- sample sizes (stsz) ---
     BoxView stsz, stsc, stco, co64Box, senc;
@@ -460,15 +486,28 @@ Mp4CencResult parseAndRewrite(
         res.error = "truncated stsc";
         return res;
     }
+    if (sampleCount > 0 && (chunkCount == 0 || stscCount == 0)) {
+        res.error = "empty chunk or stsc table";
+        return res;
+    }
     std::vector<uint32_t> samplesPerChunk(chunkCount, 0);
+    uint32_t prevFirstChunk = 0;
     for (uint32_t e = 0; e < stscCount; ++e) {
         uint32_t firstChunk = rd32(stsc.payload + 8 + 12 * e);
         uint32_t spc = rd32(stsc.payload + 8 + 12 * e + 4);
-        uint32_t lastChunk = (e + 1 < stscCount)
+        if (firstChunk < 1 || (e == 0 && chunkCount > 0 && firstChunk != 1) ||
+            (e > 0 && firstChunk <= prevFirstChunk)) {
+            res.error = "invalid stsc first_chunk order";
+            return res;
+        }
+        prevFirstChunk = firstChunk;
+        uint32_t nextFirst = (e + 1 < stscCount)
             ? rd32(stsc.payload + 8 + 12 * (e + 1))
-            : chunkCount + 1;
-        if (firstChunk < 1) firstChunk = 1;
-        for (uint32_t ch = firstChunk; ch <= lastChunk - 1 && ch <= chunkCount; ++ch) {
+            : (chunkCount + 1);
+        uint32_t endChunk = (nextFirst > 0 && nextFirst - 1 < chunkCount)
+            ? (nextFirst - 1)
+            : chunkCount;
+        for (uint32_t ch = firstChunk; ch <= endChunk; ++ch) {
             samplesPerChunk[ch - 1] = spc;
         }
     }
@@ -481,17 +520,20 @@ Mp4CencResult parseAndRewrite(
     std::vector<uint64_t> sampleAbs(sampleCount, 0);
     {
         uint32_t sampleIdx = 0;
+        uint64_t prevSampleEnd = mdatPayloadFileOffset;
         for (uint32_t c = 0; c < chunkCount && sampleIdx < sampleCount; ++c) {
             uint64_t off = chunkOffsets[c];
             for (uint32_t j = 0; j < samplesPerChunk[c] && sampleIdx < sampleCount; ++j) {
                 if (off < mdatPayloadFileOffset ||
+                    (sampleIdx > 0 && off < prevSampleEnd) ||
                     sizes[sampleIdx] > mdatPayloadSize ||
                     (off - mdatPayloadFileOffset) > mdatPayloadSize - sizes[sampleIdx]) {
-                    res.error = "sample offset outside mdat";
+                    res.error = "sample offset outside mdat or non-monotonic";
                     return res;
                 }
                 sampleAbs[sampleIdx] = off;
                 off += sizes[sampleIdx];
+                prevSampleEnd = off;
                 ++sampleIdx;
             }
         }
@@ -513,37 +555,60 @@ Mp4CencResult parseAndRewrite(
         }
     }
 
-    if (hasSenc && ivSize > 0) {
+    if (hasSenc) {
+        if (senc.payloadSize < 8) {
+            res.error = "bad senc";
+            return res;
+        }
         const uint8_t* p = senc.payload;
         const uint8_t* end = senc.payload + senc.payloadSize;
-        if (senc.payloadSize >= 8) {
-            uint32_t flags = rd32(p) & 0x00FFFFFF;
-            uint32_t sencCount = rd32(p + 4);
-            p += 8;
-            uint32_t n = (sencCount < sampleCount) ? sencCount : sampleCount;
-            bool useSub = (flags & 0x000002) != 0;
-            for (uint32_t i = 0; i < n; ++i) {
-                if (end - p < ivSize) break;
+        uint32_t flags = rd32(p) & 0x00FFFFFF;
+        uint32_t sencCount = rd32(p + 4);
+        p += 8;
+        if (sampleCount > 0 && sencCount != sampleCount) {
+            res.error = "senc sample count mismatch";
+            return res;
+        }
+        bool useSub = (flags & 0x000002) != 0;
+        for (uint32_t i = 0; i < sampleCount; ++i) {
+            if (ivSize > 0) {
+                if (ivSize > sizeof(res.samples[i].iv) || static_cast<uint64_t>(end - p) < ivSize) {
+                    res.error = "truncated senc IV";
+                    return res;
+                }
                 std::memset(res.samples[i].iv, 0, 16);
                 std::memcpy(res.samples[i].iv, p, ivSize);
                 p += ivSize;
-                if (useSub) {
-                    if (end - p < 2) break;
-                    uint16_t subCount = rd16(p);
-                    p += 2;
-                    res.samples[i].hasSubsamples = true;
-                    for (uint16_t k = 0; k < subCount; ++k) {
-                        if (end - p < 6) break;
-                        SubSample ss;
-                        ss.clearBytes = rd16(p);
-                        ss.encryptedBytes = rd32(p + 2);
-                        res.samples[i].subsamples.push_back(ss);
-                        p += 6;
+            }
+            if (useSub) {
+                if (end - p < 2) {
+                    res.error = "truncated senc subsample count";
+                    return res;
+                }
+                uint16_t subCount = rd16(p);
+                p += 2;
+                if (subCount == 0 || static_cast<uint64_t>(end - p) < static_cast<uint64_t>(subCount) * 6u) {
+                    res.error = "truncated senc subsamples";
+                    return res;
+                }
+                res.samples[i].hasSubsamples = true;
+                res.samples[i].subsamples.reserve(subCount);
+                uint64_t subTotal = 0;
+                for (uint16_t k = 0; k < subCount; ++k) {
+                    SubSample ss;
+                    ss.clearBytes = rd16(p);
+                    ss.encryptedBytes = rd32(p + 2);
+                    subTotal += static_cast<uint64_t>(ss.clearBytes) + ss.encryptedBytes;
+                    if (subTotal > sizes[i]) {
+                        res.error = "senc subsample range exceeds sample size";
+                        return res;
                     }
+                    res.samples[i].subsamples.push_back(ss);
+                    p += 6;
                 }
             }
         }
-    } else if (!hasSenc && !(ivSize == 0 && constIVSize > 0)) {
+    } else if (!(ivSize == 0 && constIVSize > 0)) {
         // No senc and no constant IV: cannot recover per-sample IVs in this version.
         res.error = "senc not found (saiz/saio fallback not implemented)";
         return res;

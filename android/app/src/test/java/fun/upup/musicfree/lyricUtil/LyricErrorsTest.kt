@@ -71,4 +71,23 @@ class LyricErrorsTest {
             deflater.end()
         }
     }
+
+    @Test fun decodeHexBoundedDecodesValidHexAndRejectsMalformedOrOversizedInput() {
+        assertArrayEquals(
+            byteArrayOf(0x00, 0x7f, 0x80.toByte(), 0xff.toByte()),
+            decodeHexBounded("007f80FF"),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            decodeHexBounded("")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            decodeHexBounded("abc")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            decodeHexBounded("00zz")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            decodeHexBounded("aa".repeat(64), maxHexChars = 64)
+        }
+    }
 }

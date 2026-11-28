@@ -75,6 +75,24 @@ class StorageUriModule(
             }
             return totalBytes
         }
+
+        internal fun commitTemporaryFile(
+            temporary: File,
+            destination: File,
+            isCancelled: () -> Boolean,
+        ) {
+            if (isCancelled()) {
+                temporary.delete()
+                throw IllegalStateException("Storage copy cancelled")
+            }
+            check(temporary.renameTo(destination)) {
+                "Unable to commit copied document"
+            }
+            if (isCancelled()) {
+                destination.delete()
+                throw IllegalStateException("Storage copy cancelled")
+            }
+        }
     }
 
     private sealed class PendingRequest(
@@ -507,26 +525,26 @@ class StorageUriModule(
                     destination.parentFile,
                     ".${destination.name}.${System.nanoTime()}.tmp"
                 )
+                val isCancelled = { invalidated.get() || operationPromise.isSettled }
                 try {
                     openInput(uri).use { input ->
                         temporary.outputStream().use { output ->
                             copyStreamBounded(
                                 input,
                                 output,
-                                MAX_COPY_BYTES
-                            ) {
-                                invalidated.get() || operationPromise.isSettled
-                            }
+                                MAX_COPY_BYTES,
+                                isCancelled
+                            )
                             output.fd.sync()
                         }
                     }
-                    check(temporary.renameTo(destination)) {
-                        "Unable to commit copied document"
-                    }
+                    commitTemporaryFile(temporary, destination, isCancelled)
                 } finally {
                     temporary.delete()
                 }
-                operationPromise.resolve(null)
+                if (!operationPromise.resolveIfPending(null)) {
+                    destination.delete()
+                }
             } catch (error: Exception) {
                 rejectStorageError(
                     operationPromise,

@@ -1,5 +1,5 @@
 import {execSync} from 'node:child_process';
-import {existsSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, readFileSync, statSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import zlib from 'node:zlib';
@@ -64,8 +64,14 @@ function getAndroidVersionCode() {
 // （AAR 不在、格式异常）时记 unknown，不影响构建。直接用 Node 读取 ZIP 条目，
 // 不依赖外部 unzip CLI，也无需经过 shell，工程路径含空格、$ 或引号都能工作。
 const MPV_LIBRARY_ENTRY = 'jni/arm64-v8a/libmpv.so';
+const MAX_AAR_FILE_BYTES = 256 * 1024 * 1024;
+const MAX_MPV_ENTRY_BYTES = 128 * 1024 * 1024;
+const ZIP64_SENTINEL_U32 = 0xffffffff;
 
 function readZipEntry(zip, entryName) {
+    if (zip.length < 22 || zip.length > MAX_AAR_FILE_BYTES) {
+        return null;
+    }
     let eocdOffset = -1;
     const minOffset = Math.max(0, zip.length - 65557);
     for (let i = zip.length - 22; i >= minOffset; i -= 1) {
@@ -79,41 +85,79 @@ function readZipEntry(zip, entryName) {
     }
 
     const totalEntries = zip.readUInt16LE(eocdOffset + 10);
-    let offset = zip.readUInt32LE(eocdOffset + 16);
-    for (let i = 0; i < totalEntries && offset + 46 <= zip.length; i += 1) {
+    const cdSize = zip.readUInt32LE(eocdOffset + 12);
+    const cdOffset = zip.readUInt32LE(eocdOffset + 16);
+    if (
+        totalEntries === 0xffff ||
+        cdSize === ZIP64_SENTINEL_U32 ||
+        cdOffset === ZIP64_SENTINEL_U32 ||
+        cdOffset > eocdOffset ||
+        cdSize > eocdOffset - cdOffset
+    ) {
+        return null;
+    }
+
+    const cdEnd = cdOffset + cdSize;
+    let offset = cdOffset;
+    for (let i = 0; i < totalEntries && offset + 46 <= cdEnd; i += 1) {
         if (zip.readUInt32LE(offset) !== 0x02014b50) {
             return null;
         }
+        const flags = zip.readUInt16LE(offset + 8);
         const method = zip.readUInt16LE(offset + 10);
+        const expectedCrc = zip.readUInt32LE(offset + 16);
         const compressedSize = zip.readUInt32LE(offset + 20);
+        const uncompressedSize = zip.readUInt32LE(offset + 24);
         const nameLen = zip.readUInt16LE(offset + 28);
         const extraLen = zip.readUInt16LE(offset + 30);
         const commentLen = zip.readUInt16LE(offset + 32);
         const localHeaderOffset = zip.readUInt32LE(offset + 42);
+        const nextOffset = offset + 46 + nameLen + extraLen + commentLen;
+        if (nextOffset > cdEnd) {
+            return null;
+        }
         const name = zip.toString('utf8', offset + 46, offset + 46 + nameLen);
-        offset += 46 + nameLen + extraLen + commentLen;
+        offset = nextOffset;
 
         if (name !== entryName) {
             continue;
         }
-        if (localHeaderOffset + 30 > zip.length || zip.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+        if (
+            (flags & 0x01) !== 0 ||
+            compressedSize === ZIP64_SENTINEL_U32 ||
+            uncompressedSize === ZIP64_SENTINEL_U32 ||
+            localHeaderOffset === ZIP64_SENTINEL_U32 ||
+            uncompressedSize > MAX_MPV_ENTRY_BYTES ||
+            compressedSize > cdOffset
+        ) {
+            return null;
+        }
+        if (localHeaderOffset + 30 > cdOffset || zip.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
             return null;
         }
         const localNameLen = zip.readUInt16LE(localHeaderOffset + 26);
         const localExtraLen = zip.readUInt16LE(localHeaderOffset + 28);
         const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
         const dataEnd = dataStart + compressedSize;
-        if (dataEnd > zip.length) {
+        if (dataStart > cdOffset || dataEnd > cdOffset) {
             return null;
         }
         const compressedSlice = zip.subarray(dataStart, dataEnd);
+        let library = null;
         if (method === 0) {
-            return compressedSlice;
+            if (compressedSize !== uncompressedSize) {
+                return null;
+            }
+            library = compressedSlice;
+        } else if (method === 8) {
+            library = zlib.inflateRawSync(compressedSlice, {maxOutputLength: MAX_MPV_ENTRY_BYTES});
+        } else {
+            return null;
         }
-        if (method === 8) {
-            return zlib.inflateRawSync(compressedSlice);
+        if (library.length !== uncompressedSize || (zlib.crc32(library) >>> 0) !== expectedCrc) {
+            return null;
         }
-        return null;
+        return library;
     }
     return null;
 }
@@ -124,6 +168,10 @@ function getMpvVersion() {
         return 'unknown';
     }
     try {
+        const stats = statSync(aarPath);
+        if (!stats.isFile() || stats.size > MAX_AAR_FILE_BYTES) {
+            return 'unknown';
+        }
         const library = readZipEntry(readFileSync(aarPath), MPV_LIBRARY_ENTRY);
         return library ? (library.toString('latin1').match(/mpv v\d+\.\d+(?:\.\d+)?/)?.[0] ?? 'unknown') : 'unknown';
     } catch {
