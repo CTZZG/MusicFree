@@ -1373,6 +1373,18 @@ export interface ILanguageData {
     "repeatMode.SINGLE": string; // 单曲循环
 
     "scheme.searchPlayFailed": string; // Scheme 搜索播放失败
+    "scheme.confirmSearchPlayTitle": string;
+    "scheme.confirmSearchPlayContent": string;
+    "scheme.confirmSearchPlayOk": string;
+    "scheme.confirmRemoteInstallTitle": string;
+    "scheme.confirmRemoteInstallContent": string;
+    "scheme.confirmInstallOk": string;
+    "scheme.kindLxSource": string;
+    "scheme.kindPlugin": string;
+    "scheme.localPluginUnsupportedScheme": string;
+    "scheme.confirmLocalPluginTitle": string;
+    "scheme.confirmLocalPluginContent": string;
+    "scheme.confirmLocalPluginNamedContent": string;
     "shareCard.title": string;
     "shareCard.preview": string;
     "shareCard.select": string;

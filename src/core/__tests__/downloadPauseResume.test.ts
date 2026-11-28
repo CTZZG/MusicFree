@@ -330,4 +330,61 @@ describe("Downloader post-commit tolerance and native pause/resume", () => {
         expect(RNFS.unlink).toHaveBeenCalledWith(firstAttempt.destinationPath);
         expect(mockFiles.has(firstAttempt.destinationPath)).toBe(false);
     });
+
+    it("unlinks stale partialCachePath when resumed source changes asset path and allows rotated query tokens", async () => {
+        const song = makeSong("source-switch");
+        song.url = "https://cdn.example.com/v1/track.mp3?sig=alpha";
+        const addedTasks: Array<{ taskId: string; destinationPath: string }> = [];
+        mockNativeAddDownloadTask.mockImplementation(async (params: any) => {
+            addedTasks.push({
+                taskId: params.taskId,
+                destinationPath: params.destinationPath,
+            });
+            mockFiles.add(params.destinationPath);
+            return true;
+        });
+
+        downloader.download(song);
+        await flushMicrotasks(20);
+        expect(addedTasks).toHaveLength(1);
+        const initialPath = addedTasks[0].destinationPath;
+
+        await downloader.pause(song);
+        emitNativeEvent("NativeDownloadTaskStatusChanged", {
+            taskId: addedTasks[0].taskId,
+            status: "PAUSED",
+            downloaded: 1024,
+            total: 4096,
+        });
+        await flushMicrotasks(15);
+
+        // Rotating query signature on the same asset path reuses the partial file.
+        song.url = "https://cdn.example.com/v1/track.mp3?sig=beta";
+        await downloader.resume(song);
+        await flushMicrotasks(20);
+        expect(addedTasks).toHaveLength(2);
+        expect(addedTasks[1].destinationPath).toBe(initialPath);
+
+        // Switching to a different asset path on resume discards the old partial file.
+        await downloader.pause(song);
+        emitNativeEvent("NativeDownloadTaskStatusChanged", {
+            taskId: addedTasks[1].taskId,
+            status: "PAUSED",
+            downloaded: 2048,
+            total: 4096,
+        });
+        await flushMicrotasks(15);
+
+        RNFS.unlink.mockClear();
+        song.url = "https://cdn.example.com/v2/remaster.mp3?sig=gamma";
+        await downloader.resume(song);
+        await flushMicrotasks(20);
+        expect(addedTasks).toHaveLength(3);
+        expect(addedTasks[2].destinationPath).not.toBe(initialPath);
+        expect(RNFS.unlink).toHaveBeenCalledWith(initialPath);
+
+        downloader.remove(song);
+        await flushMicrotasks(15);
+        expect(downloader.getDownloadDiagnosticSnapshot().downloadingCount).toBe(0);
+    });
 });

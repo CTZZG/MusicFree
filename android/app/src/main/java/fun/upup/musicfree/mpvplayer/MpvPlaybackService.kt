@@ -80,12 +80,34 @@ class MpvPlaybackService : Service() {
          */
         private const val WAKE_LOCK_GRACE_MS = 45_000L
         private const val WAKE_LOCK_MAX_HOLD_MS = 10 * 60 * 1000L
+        private const val WAKE_LOCK_RENEW_INTERVAL_MS = 8 * 60 * 1000L
 
         private const val ACTION_PLAY_PAUSE = "mpv_play_pause"
         private const val ACTION_NEXT = "mpv_next"
         private const val ACTION_PREV = "mpv_prev"
         private const val ACTION_STOP = "mpv_stop"
         const val ACTION_START_FOREGROUND = "mpv_start_foreground"
+
+        internal fun estimateNotificationPositionMs(
+            cachedPosition: Long,
+            cachedDuration: Long,
+            isPlaying: Boolean,
+            updatedAtMs: Long,
+            nowElapsedMs: Long,
+            speed: Float,
+        ): Long {
+            if (!isPlaying || updatedAtMs <= 0L) {
+                return cachedPosition
+            }
+            val effectiveSpeed = speed.takeIf { it.isFinite() && it > 0f } ?: 1.0f
+            val elapsed = (nowElapsedMs - updatedAtMs).coerceAtLeast(0L)
+            val estimated = cachedPosition + (elapsed * effectiveSpeed).toLong()
+            return if (cachedDuration > 0L) {
+                estimated.coerceIn(0L, cachedDuration)
+            } else {
+                estimated.coerceAtLeast(0L)
+            }
+        }
 
         private fun formatTime(ms: Long): String {
             val totalSec = max(0L, ms / 1000)
@@ -121,6 +143,7 @@ class MpvPlaybackService : Service() {
     private var audioManager: AudioManager? = null
     private var audioFocusListener: AudioManager.OnAudioFocusChangeListener? = null
     private var isForeground = false
+    private var foregroundStartRequested = false
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockReleaseScheduled = false
     private var noisyReceiverRegistered = false
@@ -235,7 +258,10 @@ class MpvPlaybackService : Service() {
             return START_NOT_STICKY
         }
         when (intent.action) {
-            ACTION_START_FOREGROUND -> startForegroundSafely()
+            ACTION_START_FOREGROUND -> {
+                foregroundStartRequested = true
+                startForegroundSafely()
+            }
             ACTION_PLAY_PAUSE -> {
                 if (
                     cachedState == PlaybackStateCompat.STATE_PLAYING ||
@@ -324,20 +350,20 @@ class MpvPlaybackService : Service() {
     fun onPlaybackStateChanged(state: String) {
         when (state) {
             "playing" -> {
-                acquireWakeLock()
-                requestAudioFocus()
                 cachedState = PlaybackStateCompat.STATE_PLAYING
                 cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
                 startForegroundSafely()
+                requestAudioFocus()
+                acquireWakeLock()
                 artworkRetries.onPlaybackStarted()
                 updateAll()
             }
             "buffering" -> {
-                acquireWakeLock()
-                requestAudioFocus()
                 cachedState = PlaybackStateCompat.STATE_BUFFERING
                 cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
                 startForegroundSafely()
+                requestAudioFocus()
+                acquireWakeLock()
                 updateAll()
             }
             "paused" -> {
@@ -483,29 +509,24 @@ class MpvPlaybackService : Service() {
     private fun effectivePlaybackSpeed(): Float =
         MpvServiceBridge.playbackSpeed.takeIf { it.isFinite() && it > 0f } ?: 1.0f
 
-    fun onPlaybackSpeedChanged() {
+    fun onPlaybackSpeedChanged(nextSpeed: Float? = null) {
         cachedPosition = currentNotificationPosition()
         cachedPositionUpdatedAtMs = SystemClock.elapsedRealtime()
+        if (nextSpeed != null) {
+            MpvServiceBridge.playbackSpeed = nextSpeed
+        }
         updateAll()
     }
 
-    private fun currentNotificationPosition(): Long {
-        if (
-            cachedState != PlaybackStateCompat.STATE_PLAYING ||
-            cachedPositionUpdatedAtMs <= 0L
-        ) {
-            return cachedPosition
-        }
-
-        val elapsed = (SystemClock.elapsedRealtime() - cachedPositionUpdatedAtMs).coerceAtLeast(0L)
-        val scaledElapsed = (elapsed * effectivePlaybackSpeed()).toLong()
-        val estimated = cachedPosition + scaledElapsed
-        return if (cachedDuration > 0) {
-            estimated.coerceIn(0L, cachedDuration)
-        } else {
-            estimated.coerceAtLeast(0L)
-        }
-    }
+    private fun currentNotificationPosition(): Long =
+        estimateNotificationPositionMs(
+            cachedPosition = cachedPosition,
+            cachedDuration = cachedDuration,
+            isPlaying = cachedState == PlaybackStateCompat.STATE_PLAYING,
+            updatedAtMs = cachedPositionUpdatedAtMs,
+            nowElapsedMs = SystemClock.elapsedRealtime(),
+            speed = effectivePlaybackSpeed(),
+        )
 
     private fun secondsToMillis(seconds: Double): Long =
         if (!seconds.isNaN() && !seconds.isInfinite() && seconds > 0) {
@@ -980,6 +1001,16 @@ class MpvPlaybackService : Service() {
         updateLiveUpdateProgressTicker()
     }
 
+    private val wakeLockRenewRunnable = Runnable {
+        if (
+            !destroyed &&
+            (cachedState == PlaybackStateCompat.STATE_PLAYING ||
+                cachedState == PlaybackStateCompat.STATE_BUFFERING)
+        ) {
+            acquireWakeLock()
+        }
+    }
+
     private val wakeLockReleaseRunnable = Runnable {
         wakeLockReleaseScheduled = false
         releaseWakeLock()
@@ -987,6 +1018,7 @@ class MpvPlaybackService : Service() {
 
     private fun acquireWakeLock() {
         mainHandler.removeCallbacks(wakeLockReleaseRunnable)
+        mainHandler.removeCallbacks(wakeLockRenewRunnable)
         wakeLockReleaseScheduled = false
         val lock = wakeLock ?: try {
             val powerManager =
@@ -1002,9 +1034,17 @@ class MpvPlaybackService : Service() {
             lock.acquire(WAKE_LOCK_MAX_HOLD_MS)
         } catch (_: Exception) {
         }
+        if (
+            !destroyed &&
+            (cachedState == PlaybackStateCompat.STATE_PLAYING ||
+                cachedState == PlaybackStateCompat.STATE_BUFFERING)
+        ) {
+            mainHandler.postDelayed(wakeLockRenewRunnable, WAKE_LOCK_RENEW_INTERVAL_MS)
+        }
     }
 
     private fun scheduleWakeLockRelease() {
+        mainHandler.removeCallbacks(wakeLockRenewRunnable)
         if (wakeLock?.isHeld != true || wakeLockReleaseScheduled) {
             return
         }
@@ -1014,6 +1054,7 @@ class MpvPlaybackService : Service() {
 
     private fun releaseWakeLock() {
         mainHandler.removeCallbacks(wakeLockReleaseRunnable)
+        mainHandler.removeCallbacks(wakeLockRenewRunnable)
         wakeLockReleaseScheduled = false
         val lock = wakeLock ?: return
         if (lock.isHeld) {
@@ -1026,6 +1067,7 @@ class MpvPlaybackService : Service() {
 
     private fun startForegroundSafely() {
         if (isForeground) {
+            foregroundStartRequested = false
             updateNotification()
             return
         }
@@ -1037,10 +1079,16 @@ class MpvPlaybackService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
             )
             isForeground = true
+            foregroundStartRequested = false
             notificationUpdates.onForegroundPosted()
             lastNotificationUpdateMs = System.currentTimeMillis()
         } catch (e: Exception) {
             Log.w(TAG, "startForeground failed", e)
+            if (foregroundStartRequested && !isForeground) {
+                foregroundStartRequested = false
+                stopSelf()
+                return
+            }
             updateNotification()
         }
     }

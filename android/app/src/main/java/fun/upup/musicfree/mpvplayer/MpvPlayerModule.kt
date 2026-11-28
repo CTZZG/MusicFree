@@ -1619,6 +1619,7 @@ class MpvPlayerModule internal constructor(
             val previousState = currentState
             val previousRate = MPVLib.getPropertyDouble("speed")
             val previousAudioRate = audioPlaybackRate
+            val previousBridgeSpeed = MpvServiceBridge.playbackSpeed
             val previousReadyGeneration = readyGeneration
             val previousFailedReturnGeneration = failedAudioReturnGeneration
             val previousLoadingGeneration = loadingGeneration
@@ -1805,14 +1806,12 @@ class MpvPlayerModule internal constructor(
                 renditionStart?.let { pendingSeek.defer(generation, it); positionSecs = it }
                 if (nextKind == "mv") {
                     MPVLib.setPropertyDouble("speed", 1.0)
-                    MpvServiceBridge.playbackSpeed = 1.0f
-                    MpvServiceBridge.service?.onPlaybackSpeedChanged()
+                    syncServicePlaybackSpeed(1.0f)
                 } else {
                     val targetRate = playbackRate ?: audioPlaybackRate
                     val resolvedRate =
                         if (targetRate.isFinite() && targetRate > 0.0) targetRate else 1.0
-                    MpvServiceBridge.playbackSpeed = resolvedRate.toFloat()
-                    MpvServiceBridge.service?.onPlaybackSpeedChanged()
+                    syncServicePlaybackSpeed(resolvedRate.toFloat())
                     if (playbackRate != null || (targetRate.isFinite() && targetRate > 0.0 && targetRate != 1.0)) {
                         MPVLib.setPropertyDouble("speed", targetRate)
                         audioPlaybackRate = targetRate
@@ -1939,6 +1938,7 @@ class MpvPlayerModule internal constructor(
                         readyGeneration = previousReadyGeneration
                         previousRate?.let { MPVLib.setPropertyDouble("speed", it) }
                         audioPlaybackRate = previousAudioRate
+                        syncServicePlaybackSpeed(previousBridgeSpeed)
                         if (previousPendingUnpause && !MpvServiceBridge.playbackHold.blocksAutoPlay) {
                             pendingUnpause.arm(outgoingIdentity.loadGeneration)
                             scheduleUnpauseRetries(outgoingIdentity.loadGeneration)
@@ -2481,14 +2481,22 @@ class MpvPlayerModule internal constructor(
                 require(rate.isFinite() && rate > 0.0) { "invalid playback rate" }
                 if (renditionKind != "mv") {
                     MPVLib.setPropertyDouble("speed", rate)
-                    MpvServiceBridge.playbackSpeed = rate.toFloat()
-                    MpvServiceBridge.service?.onPlaybackSpeedChanged()
+                    syncServicePlaybackSpeed(rate.toFloat())
                 }
                 audioPlaybackRate = rate
                 operationPromise.resolve(null)
             } catch (e: Exception) {
                 operationPromise.reject("E_RATE", e.message, e)
             }
+        }
+    }
+
+    private fun syncServicePlaybackSpeed(speed: Float) {
+        val service = MpvServiceBridge.service
+        if (service != null) {
+            service.onPlaybackSpeedChanged(speed)
+        } else {
+            MpvServiceBridge.playbackSpeed = speed
         }
     }
 

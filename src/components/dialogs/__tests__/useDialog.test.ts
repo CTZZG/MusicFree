@@ -27,4 +27,31 @@ describe("dialog instance lifecycle", () => {
         expect(hideDialog(newDialog.id)).toBe(true);
         expect(getCurrentDialog().name).toBeNull();
     });
+
+    it("settles superseded dialog onDismiss once without closing the replacement dialog", () => {
+        const onDismissFirst = jest.fn(() => {
+            hideDialog();
+        });
+        showDialog("SimpleDialog", {
+            title: "first",
+            content: "awaiting confirmation",
+            onDismiss: onDismissFirst,
+        });
+
+        showDialog("SimpleDialog", {
+            title: "second",
+            content: "replacement",
+        });
+
+        expect(onDismissFirst).toHaveBeenCalledTimes(1);
+        expect(getCurrentDialog().name).toBe("SimpleDialog");
+        expect(getCurrentDialog().payload?.title).toBe("second");
+
+        hideDialog();
+        showDialog("SimpleDialog", {
+            title: "third",
+            content: "after normal hide",
+        });
+        expect(onDismissFirst).toHaveBeenCalledTimes(1);
+    });
 });

@@ -15,16 +15,34 @@ export const dialogInfoStore = new GlobalState<IDialogInfo>({
 });
 
 let nextDialogId = 0;
+let supersedingProtectedId: number | null = null;
 
 export function showDialog<T extends keyof IDialogType>(
     name: T,
     payload?: Parameters<IDialogType[T]>[0],
 ) {
+    const previousDialog = dialogInfoStore.getValue();
+    const nextId = ++nextDialogId;
     dialogInfoStore.setValue({
-        id: ++nextDialogId,
+        id: nextId,
         name,
         payload,
     });
+    if (previousDialog.name !== null) {
+        const settleSuperseded =
+            previousDialog.payload?.onDismiss ??
+            previousDialog.payload?.onCancel;
+        if (typeof settleSuperseded === "function") {
+            supersedingProtectedId = nextId;
+            try {
+                settleSuperseded();
+            } catch {
+                // Ignore callback failure so superseding dialog stays mounted.
+            } finally {
+                supersedingProtectedId = null;
+            }
+        }
+    }
 }
 
 export function hideDialog(expectedDialogId?: number) {
@@ -32,6 +50,13 @@ export function hideDialog(expectedDialogId?: number) {
     if (
         expectedDialogId !== undefined &&
         currentDialog.id !== expectedDialogId
+    ) {
+        return false;
+    }
+    if (
+        expectedDialogId === undefined &&
+        supersedingProtectedId !== null &&
+        currentDialog.id === supersedingProtectedId
     ) {
         return false;
     }

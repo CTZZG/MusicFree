@@ -173,11 +173,16 @@ class DownloadManager(
     fun removeTask(taskId: String): Boolean {
         synchronized(lock) {
             val task = tasks[taskId] ?: return false
+            val running = runningTasks[taskId]
+            val pausedInFlight = running?.control?.paused?.get() == true
             val shouldKeepArtifact =
                 task.status == DownloadTaskStatus.COMPLETED ||
-                    task.status == DownloadTaskStatus.PAUSED
+                    task.status == DownloadTaskStatus.PAUSED ||
+                    pausedInFlight
             removeFromQueue(taskId)
-            runningTasks[taskId]?.control?.cancel()
+            if (!pausedInFlight) {
+                running?.control?.cancel()
+            }
             if (!shouldKeepArtifact) {
                 updateTaskStatus(
                     task = task,
@@ -246,6 +251,8 @@ class DownloadManager(
         dispatcherExecutor.shutdownNow()
         workerExecutor.shutdownNow()
         progressFlushExecutor.shutdownNow()
+        runCatching { workerExecutor.awaitTermination(500, TimeUnit.MILLISECONDS) }
+        runCatching { progressFlushExecutor.awaitTermination(200, TimeUnit.MILLISECONDS) }
         notificationManager.shutdown()
         runCatching { database.close() }
     }
@@ -328,70 +335,95 @@ class DownloadManager(
     }
 
     private fun runTask(taskId: String, control: DownloadExecutor.ExecutionControl) {
-        val task = synchronized(lock) { tasks[taskId] } ?: return
+        val task = synchronized(lock) {
+            val found = tasks[taskId]
+            if (found == null) {
+                runningTasks.remove(taskId)
+                progressCache.remove(taskId)
+            }
+            found
+        } ?: return
 
-        val result = downloadExecutor.execute(
-            task = task,
-            control = control,
-        ) { downloaded, total ->
-            // 共享的 DownloadTask 字段写入必须持锁，与 flushProgressBatch 的读写互斥
+        var result: DownloadExecutor.ExecutionResult? = null
+        var uncaughtFailure: Throwable? = null
+        try {
+            result = downloadExecutor.execute(
+                task = task,
+                control = control,
+            ) { downloaded, total ->
+                // 共享的 DownloadTask 字段写入必须持锁，与 flushProgressBatch 的读写互斥
+                synchronized(lock) {
+                    val currentTask = tasks[taskId] ?: return@execute
+                    currentTask.downloadedBytes = downloaded
+                    currentTask.totalBytes = total
+                    currentTask.updatedAt = System.currentTimeMillis()
+                }
+                progressCache[taskId] = ProgressSnapshot(
+                    taskId = taskId,
+                    downloaded = downloaded,
+                    total = total,
+                    percent = calculatePercent(downloaded, total),
+                    progressText = buildProgressText(downloaded, total),
+                )
+            }
+        } catch (error: Throwable) {
+            uncaughtFailure = error
+        } finally {
             synchronized(lock) {
-                val currentTask = tasks[taskId] ?: return@execute
-                currentTask.downloadedBytes = downloaded
-                currentTask.totalBytes = total
-                currentTask.updatedAt = System.currentTimeMillis()
+                runningTasks.remove(taskId)
+                progressCache.remove(taskId)
+                val finalResult = result ?: DownloadExecutor.ExecutionResult(
+                    finalStatus = when {
+                        control.canceled.get() -> DownloadTaskStatus.CANCELED
+                        control.paused.get() -> DownloadTaskStatus.PAUSED
+                        else -> DownloadTaskStatus.ERROR
+                    },
+                    downloadedBytes = task.downloadedBytes,
+                    totalBytes = task.totalBytes,
+                    errorMessage = uncaughtFailure?.message ?: "unexpected worker error",
+                )
+                val currentTask = tasks[taskId]
+                if (currentTask == null) {
+                    if (
+                        !control.paused.get() &&
+                        finalResult.finalStatus != DownloadTaskStatus.PAUSED &&
+                        finalResult.finalStatus != DownloadTaskStatus.COMPLETED
+                    ) {
+                        deletePartialArtifact(task)
+                    }
+                } else {
+                    currentTask.downloadedBytes = finalResult.downloadedBytes
+                    currentTask.totalBytes = finalResult.totalBytes
+                    currentTask.updatedAt = System.currentTimeMillis()
+
+                    when (finalResult.finalStatus) {
+                        DownloadTaskStatus.COMPLETED -> {
+                            updateTaskStatus(currentTask, DownloadTaskStatus.COMPLETED, null)
+                        }
+                        DownloadTaskStatus.CANCELED -> {
+                            updateTaskStatus(currentTask, DownloadTaskStatus.CANCELED, null)
+                            tasks.remove(taskId)
+                            database.deleteTask(taskId)
+                            deletePartialArtifact(currentTask)
+                        }
+                        DownloadTaskStatus.PAUSED -> {
+                            updateTaskStatus(currentTask, DownloadTaskStatus.PAUSED, null)
+                        }
+                        DownloadTaskStatus.ERROR -> {
+                            updateTaskStatus(
+                                currentTask,
+                                DownloadTaskStatus.ERROR,
+                                finalResult.errorMessage ?: "unknown error",
+                            )
+                        }
+                        else -> {
+                            updateTaskStatus(currentTask, DownloadTaskStatus.ERROR, "unexpected state")
+                        }
+                    }
+                }
             }
-            progressCache[taskId] = ProgressSnapshot(
-                taskId = taskId,
-                downloaded = downloaded,
-                total = total,
-                percent = calculatePercent(downloaded, total),
-                progressText = buildProgressText(downloaded, total),
-            )
+            dispatchAsync()
         }
-
-        synchronized(lock) {
-            runningTasks.remove(taskId)
-            progressCache.remove(taskId)
-            val currentTask = tasks[taskId]
-            if (currentTask == null) {
-                // A JS-side remove can race with a worker that has not opened
-                // its destination yet. Clean up again after the worker exits so
-                // it cannot leave a newly-created zero-byte/partial artifact.
-                deletePartialArtifact(task)
-                return@synchronized
-            }
-            currentTask.downloadedBytes = result.downloadedBytes
-            currentTask.totalBytes = result.totalBytes
-            currentTask.updatedAt = System.currentTimeMillis()
-
-            when (result.finalStatus) {
-                DownloadTaskStatus.COMPLETED -> {
-                    updateTaskStatus(currentTask, DownloadTaskStatus.COMPLETED, null)
-                }
-                DownloadTaskStatus.CANCELED -> {
-                    updateTaskStatus(currentTask, DownloadTaskStatus.CANCELED, null)
-                    tasks.remove(taskId)
-                    database.deleteTask(taskId)
-                    deletePartialArtifact(currentTask)
-                }
-                DownloadTaskStatus.PAUSED -> {
-                    updateTaskStatus(currentTask, DownloadTaskStatus.PAUSED, null)
-                }
-                DownloadTaskStatus.ERROR -> {
-                    updateTaskStatus(
-                        currentTask,
-                        DownloadTaskStatus.ERROR,
-                        result.errorMessage ?: "unknown error",
-                    )
-                }
-                else -> {
-                    updateTaskStatus(currentTask, DownloadTaskStatus.ERROR, "unexpected state")
-                }
-            }
-        }
-
-        dispatchAsync()
     }
 
     private fun flushProgressBatch() {
@@ -472,6 +504,10 @@ class DownloadManager(
 
     private fun deletePartialArtifact(task: DownloadTask) {
         try {
+            val meta = File("${task.destinationPath}.meta")
+            if (meta.exists()) {
+                meta.delete()
+            }
             val file = File(task.destinationPath)
             if (file.exists()) {
                 file.delete()

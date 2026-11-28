@@ -32,8 +32,38 @@ class MpvAndroidAutoConnectionDetector(
                 .build()
     }
 
+    internal class CarQueryCoalescer {
+        private var inFlight = false
+        private var pending = false
+
+        @Synchronized
+        fun tryAcquire(): Boolean {
+            if (inFlight) {
+                pending = true
+                return false
+            }
+            inFlight = true
+            return true
+        }
+
+        @Synchronized
+        fun onComplete(registered: Boolean): Boolean {
+            inFlight = false
+            val shouldRerun = registered && pending
+            pending = false
+            return shouldRerun
+        }
+
+        @Synchronized
+        fun reset() {
+            inFlight = false
+            pending = false
+        }
+    }
+
     private val receiver = CarConnectionBroadcastReceiver()
     private val queryHandler = CarConnectionQueryHandler(context.contentResolver)
+    private val queryCoalescer = CarQueryCoalescer()
     @Volatile
     private var isRegistered = false
 
@@ -60,6 +90,7 @@ class MpvAndroidAutoConnectionDetector(
         val wasRegistered = isRegistered
         isRegistered = false
         onConnectionChanged = null
+        queryCoalescer.reset()
         queryHandler.cancelOperation(QUERY_TOKEN)
         if (wasRegistered) {
             try {
@@ -72,6 +103,7 @@ class MpvAndroidAutoConnectionDetector(
 
     private fun queryForState() {
         if (!isRegistered) return
+        if (!queryCoalescer.tryAcquire()) return
         try {
             queryHandler.startQuery(
                 QUERY_TOKEN,
@@ -83,6 +115,7 @@ class MpvAndroidAutoConnectionDetector(
                 null,
             )
         } catch (error: Exception) {
+            queryCoalescer.onComplete(registered = false)
             Log.w(TAG, "query failed", error)
             notifyDisconnected()
         }
@@ -110,26 +143,32 @@ class MpvAndroidAutoConnectionDetector(
             cookie: Any?,
             response: Cursor?,
         ) {
-            response.use { cursor ->
-                if (!isRegistered) {
-                    return
-                }
-                if (cursor == null) {
-                    notifyDisconnected()
-                    return
-                }
+            try {
+                response.use { cursor ->
+                    if (!isRegistered) {
+                        return
+                    }
+                    if (cursor == null) {
+                        notifyDisconnected()
+                        return
+                    }
 
-                val stateColumn = cursor.getColumnIndex(CAR_CONNECTION_STATE)
-                if (stateColumn < 0 || !cursor.moveToNext()) {
-                    notifyDisconnected()
-                    return
-                }
+                    val stateColumn = cursor.getColumnIndex(CAR_CONNECTION_STATE)
+                    if (stateColumn < 0 || !cursor.moveToNext()) {
+                        notifyDisconnected()
+                        return
+                    }
 
-                val connectionType = cursor.getInt(stateColumn)
-                if (connectionType == CONNECTION_TYPE_NOT_CONNECTED) {
-                    notifyDisconnected()
-                } else {
-                    notifyConnected(connectionType)
+                    val connectionType = cursor.getInt(stateColumn)
+                    if (connectionType == CONNECTION_TYPE_NOT_CONNECTED) {
+                        notifyDisconnected()
+                    } else {
+                        notifyConnected(connectionType)
+                    }
+                }
+            } finally {
+                if (queryCoalescer.onComplete(isRegistered)) {
+                    queryForState()
                 }
             }
         }

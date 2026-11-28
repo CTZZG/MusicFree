@@ -428,10 +428,10 @@ async function extraMakeup() {
                 }
             };
             showDialog("SimpleDialog", {
-                title: "确认外部搜索播放",
-                content: `外部链接请求搜索并播放「${keyword}」，是否继续？`,
-                okText: "继续播放",
-                cancelText: "取消",
+                title: i18n.t("scheme.confirmSearchPlayTitle"),
+                content: i18n.t("scheme.confirmSearchPlayContent", { keyword }),
+                okText: i18n.t("scheme.confirmSearchPlayOk"),
+                cancelText: i18n.t("common.cancel"),
                 onOk: () => settle(true),
                 onCancel: () => settle(false),
                 onDismiss: () => settle(false),
@@ -491,7 +491,7 @@ async function extraMakeup() {
     }
 
     async function handleLinkingUrl(url: string) {
-        const confirmRemoteInstall = (kind: "插件" | "LX 音源", remoteUrl: string) =>
+        const confirmRemoteInstall = (kind: string, remoteUrl: string) =>
             new Promise<boolean>(resolve => {
                 const validation = validateRemoteInstallUrl(remoteUrl);
                 if (!validation.ok) {
@@ -508,10 +508,14 @@ async function extraMakeup() {
                     }
                 };
                 showDialog("SimpleDialog", {
-                    title: `确认安装${kind}`,
-                    content: `外部链接请求安装${kind}。\n\n来源：${validation.hostname}\n地址：${validation.url}\n\n安装后将执行第三方代码，请仅在信任来源时继续。`,
-                    okText: "确认安装",
-                    cancelText: "取消",
+                    title: i18n.t("scheme.confirmRemoteInstallTitle", { kind }),
+                    content: i18n.t("scheme.confirmRemoteInstallContent", {
+                        kind,
+                        hostname: validation.hostname,
+                        url: validation.url,
+                    }),
+                    okText: i18n.t("scheme.confirmInstallOk"),
+                    cancelText: i18n.t("common.cancel"),
                     onOk: () => settle(true),
                     onCancel: () => settle(false),
                     onDismiss: () => settle(false),
@@ -522,7 +526,7 @@ async function extraMakeup() {
                 const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(localUrl)?.[1]
                     ?.toLowerCase();
                 if (scheme && scheme !== "file" && scheme !== "content") {
-                    Toast.warn("插件安装已阻止：不支持此外部链接类型");
+                    Toast.warn(i18n.t("scheme.localPluginUnsupportedScheme"));
                     resolve(false);
                     return;
                 }
@@ -536,11 +540,14 @@ async function extraMakeup() {
                 };
                 const fileName = getFileName(localUrl);
                 showDialog("SimpleDialog", {
-                    title: "确认安装本地插件",
-                    content:
-                        `外部应用请求安装本地 JavaScript 插件${fileName ? `「${fileName}」` : ""}。安装后将执行第三方代码，请仅在确认文件来源可信时继续。`,
-                    okText: "确认安装",
-                    cancelText: "取消",
+                    title: i18n.t("scheme.confirmLocalPluginTitle"),
+                    content: fileName
+                        ? i18n.t("scheme.confirmLocalPluginNamedContent", {
+                            name: fileName,
+                        })
+                        : i18n.t("scheme.confirmLocalPluginContent"),
+                    okText: i18n.t("scheme.confirmInstallOk"),
+                    cancelText: i18n.t("common.cancel"),
                     onOk: () => settle(true),
                     onCancel: () => settle(false),
                     onDismiss: () => settle(false),
@@ -553,7 +560,7 @@ async function extraMakeup() {
                 const sourceUrl = decodeURIComponent(
                     url.slice("musicfree://install-lx-source/".length),
                 );
-                if (!await confirmRemoteInstall("LX 音源", sourceUrl)) {
+                if (!await confirmRemoteInstall(i18n.t("scheme.kindLxSource"), sourceUrl)) {
                     return;
                 }
                 const result = await LxSource.installFromUrl(sourceUrl);
@@ -574,7 +581,7 @@ async function extraMakeup() {
                     .split(",")
                     .map(decodeURIComponent);
                 for (const pluginUrl of plugins) {
-                    if (!await confirmRemoteInstall("插件", pluginUrl)) {
+                    if (!await confirmRemoteInstall(i18n.t("scheme.kindPlugin"), pluginUrl)) {
                         continue;
                     }
                     await PluginManager.installPluginFromUrl(pluginUrl)
@@ -582,7 +589,7 @@ async function extraMakeup() {
                 }
             } else if (getComparableMediaUrl(url).endsWith(".js")) {
                 if (/^https?:\/\//i.test(url)) {
-                    if (!await confirmRemoteInstall("插件", url)) {
+                    if (!await confirmRemoteInstall(i18n.t("scheme.kindPlugin"), url)) {
                         return;
                     }
                     const result = await PluginManager.installPluginFromUrl(

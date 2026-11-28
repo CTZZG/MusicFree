@@ -34,6 +34,7 @@ import {
 } from "@/utils/fileNamingFormatter";
 import { createDownloadHeaders } from "@/utils/downloadHeaders";
 import { getQualityOrder } from "@/utils/qualities";
+import CryptoJs from "crypto-js";
 import EventEmitter from "eventemitter3";
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { nanoid } from "nanoid";
@@ -183,6 +184,7 @@ interface IDownloadTaskInfo extends IDownloadAttemptIdentity {
     resolvedSource?: DownloadSourceIdentity;
     // 暂停保留的缓存分片路径，恢复时用于断点续传
     partialCachePath?: string;
+    partialSourceHash?: string;
     // 下载收尾事务日志，用于取消回滚与进程重启恢复
     finalization?: IDownloadFinalizationJournal;
 }
@@ -231,6 +233,34 @@ const NATIVE_DOWNLOAD_PAUSED_ERROR = "Native download paused";
 const DOWNLOAD_TASK_SNAPSHOT_THROTTLE_MS = 500;
 const NATIVE_DOWNLOAD_BRIDGE_TIMEOUT_MS = 5000;
 
+function buildPartialSourceHash(
+    identity: DownloadSourceIdentity,
+    extension: string,
+    rawUrl: string,
+) {
+    const match = /^(https?):\/\/(?:[^@/?#]*@)?([^/:?#]+)(?::(\d+))?(\/[^?#]*)?/i.exec(
+        rawUrl.trim(),
+    );
+    if (!match) {
+        return undefined;
+    }
+    const scheme = match[1].toLowerCase();
+    const host = match[2].toLowerCase();
+    const port = match[3] || (scheme === "https" ? "443" : "80");
+    const pathname = match[4] || "/";
+    const endpoint = `${scheme}://${host}:${port}${pathname}`;
+    return CryptoJs.SHA256(
+        JSON.stringify([
+            identity.kind,
+            identity.platform,
+            identity.id,
+            identity.quality ?? "",
+            extension,
+            endpoint,
+        ]),
+    ).toString();
+}
+
 function normalizeRestoredDownloadTask(
     task: Partial<IDownloadTaskInfo> | null,
 ) {
@@ -277,6 +307,10 @@ function normalizeRestoredDownloadTask(
         status: restoredStatus,
         finalization: resumableFinalizing ? validFinalization : undefined,
         partialCachePath: keepPartialCachePath ? task.partialCachePath : undefined,
+        partialSourceHash:
+            keepPartialCachePath && typeof task.partialSourceHash === "string"
+                ? task.partialSourceHash
+                : undefined,
         jobId: undefined,
         downloadedSize: shouldResumeAsPending ? undefined : task.downloadedSize,
         fileSize: shouldResumeAsPending ? undefined : task.fileSize,
@@ -417,6 +451,20 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
     private pluginManagerService!: IPluginManager;
 
     private downloadingCount = 0;
+    private readonly activeDownloadSlots = new Set<string>();
+
+    private acquireDownloadSlot(attemptId: string) {
+        if (!this.activeDownloadSlots.has(attemptId)) {
+            this.activeDownloadSlots.add(attemptId);
+            this.downloadingCount += 1;
+        }
+    }
+
+    private releaseDownloadSlot(attemptId: string) {
+        if (this.activeDownloadSlots.delete(attemptId)) {
+            this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+        }
+    }
     private downloadPathReservation = new DownloadPathReservation({
         resolvePath: fileName => this.getDownloadPath(fileName),
         exists,
@@ -736,6 +784,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             patch.attemptId !== undefined ||
             patch.logicalKey !== undefined ||
             Object.prototype.hasOwnProperty.call(patch, "partialCachePath") ||
+            Object.prototype.hasOwnProperty.call(patch, "partialSourceHash") ||
             Object.prototype.hasOwnProperty.call(patch, "finalization")
         ) {
             persistDownloadState();
@@ -781,7 +830,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             { status: DownloadStatus.Paused },
             attemptId,
         );
-        this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+        this.releaseDownloadSlot(attemptId);
         this.downloadNextPendingTask();
         return true;
     }
@@ -806,7 +855,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             return;
         }
-        this.downloadingCount++;
+        this.acquireDownloadSlot(attemptId);
         this.updateDownloadTask(
             musicItem,
             {
@@ -827,7 +876,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             return;
         }
-        this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+        this.releaseDownloadSlot(attemptId);
         this.updateDownloadTask(
             musicItem,
             {
@@ -836,6 +885,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 errorMessage: undefined,
                 completedAt: Date.now(),
                 partialCachePath: undefined,
+                partialSourceHash: undefined,
                 finalization: undefined,
             },
             attemptId,
@@ -851,7 +901,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             return;
         }
-        this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+        this.releaseDownloadSlot(attemptId);
+        if (this.isAttemptPaused(musicItem, attemptId)) {
+            return;
+        }
         this.updateDownloadTask(
             musicItem,
             {
@@ -860,6 +913,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 errorMessage: getDownloadErrorMessage(error),
                 completedAt: Date.now(),
                 partialCachePath: undefined,
+                partialSourceHash: undefined,
                 finalization: undefined,
             },
             attemptId,
@@ -1120,6 +1174,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
     }
 
+    private async unlinkPartialDownload(filePath: string) {
+        await this.unlinkFinalizationPath(filePath);
+        await this.unlinkFinalizationPath(`${filePath}.meta`);
+    }
+
     private async rollbackFinalization(
         musicItem: IMusic.IMusicItem,
         journal: IDownloadFinalizationJournal,
@@ -1174,7 +1233,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         if (!task || !isSameDownloadAttempt(task, { logicalKey, attemptId })) {
             return;
         }
-        this.downloadingCount = Math.max(0, this.downloadingCount - 1);
+        this.releaseDownloadSlot(attemptId);
         downloadTasks.delete(logicalKey);
         setDownloadQueue(
             getDefaultStore()
@@ -1739,6 +1798,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     task.status === "PAUSED" ||
                     (task.status === "CANCELED" && isCurrentTaskPaused())
                 ) {
+                    if (task.downloaded > 0) {
+                        this.updateDownloadTask(
+                            musicItem,
+                            {
+                                downloadedSize: task.downloaded,
+                                ...(task.total > 0 ? { fileSize: task.total } : {}),
+                            },
+                            attemptId,
+                        );
+                    }
                     this.markTaskAsPaused(musicItem, attemptId);
                     rejectAsPaused();
                     return;
@@ -1984,11 +2053,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
 
         const musicItem = nextTask.musicItem;
         const attemptId = nextTask.attemptId;
+        const previousSource = nextTask.resolvedSource;
+        const previousPartialSourceHash = nextTask.partialSourceHash;
         let taskQuality = nextTask.quality;
         let taskFilename = nextTask.filename;
         // 更新下载状态
         this.markTaskAsStarted(musicItem, attemptId);
 
+        let resolvedIdentity: DownloadSourceIdentity | undefined;
         let url = "";
         let headers: Record<string, string> | undefined;
         let ekey: string | undefined;
@@ -2035,6 +2107,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 !this.isCurrentDownloadAttempt(musicItem, attemptId) ||
                 this.isAttemptPaused(musicItem, attemptId)
             ) {
+                this.releaseDownloadSlot(attemptId);
                 return;
             }
             if (!resolved?.source.url) {
@@ -2043,6 +2116,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     : DownloadFailReason.FailToFetchSource);
             }
             url = resolved.source.url;
+            resolvedIdentity = resolved.identity;
             ({ headers, ekey, cek } = resolved.source);
             qmcStreamInfo = resolved.source.qmcInfo;
             const resolvedQuality = resolved.identity.quality ?? taskQuality;
@@ -2101,6 +2175,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             !this.isCurrentDownloadAttempt(musicItem, attemptId) ||
             this.isAttemptPaused(musicItem, attemptId)
         ) {
+            this.releaseDownloadSlot(attemptId);
             return;
         }
 
@@ -2130,13 +2205,24 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         // 缓存下载地址：保留同一任务暂停时的分片路径以支持断点续传
         const existingTask = downloadTasks.get(getMediaUniqueKey(musicItem));
         const cacheSuffix = `.${cacheExtension}`;
+        const partialSourceHash = resolvedIdentity
+            ? buildPartialSourceHash(resolvedIdentity, cacheExtension, url)
+            : undefined;
         const reusablePartialPath =
             existingTask?.partialCachePath &&
-            existingTask.partialCachePath.endsWith(cacheSuffix)
+            existingTask.partialCachePath.endsWith(cacheSuffix) &&
+            Boolean(previousSource) &&
+            Boolean(resolvedIdentity) &&
+            previousSource?.kind === resolvedIdentity?.kind &&
+            previousSource?.platform === resolvedIdentity?.platform &&
+            previousSource?.id === resolvedIdentity?.id &&
+            (previousSource?.quality ?? "") === (resolvedIdentity?.quality ?? "") &&
+            Boolean(partialSourceHash) &&
+            previousPartialSourceHash === partialSourceHash
                 ? existingTask.partialCachePath
                 : undefined;
         if (existingTask?.partialCachePath && !reusablePartialPath) {
-            this.unlinkFinalizationPath(existingTask.partialCachePath).catch(
+            this.unlinkPartialDownload(existingTask.partialCachePath).catch(
                 () => false,
             );
         }
@@ -2145,7 +2231,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             this.getCacheDownloadPath(`${nanoid()}.${cacheExtension}`);
         this.updateDownloadTask(
             musicItem,
-            { partialCachePath: rawCacheDownloadPath },
+            {
+                partialCachePath: rawCacheDownloadPath,
+                partialSourceHash,
+            },
             attemptId,
         );
 
@@ -2274,15 +2363,17 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         if (!finalizationJournal) {
             const currentTask = downloadTasks.get(getMediaUniqueKey(musicItem));
             const keepPausedPartial =
-                isSameDownloadAttempt(currentTask, {
-                    logicalKey: getMediaUniqueKey(musicItem),
-                    attemptId,
-                }) && currentTask?.status === DownloadStatus.Paused;
+                currentTask?.partialCachePath === rawCacheDownloadPath &&
+                (currentTask.status === DownloadStatus.Paused ||
+                    currentTask.attemptId !== attemptId);
             if (!keepPausedPartial) {
-                await this.unlinkFinalizationPath(rawCacheDownloadPath);
+                await this.unlinkPartialDownload(rawCacheDownloadPath);
                 this.updateDownloadTask(
                     musicItem,
-                    { partialCachePath: undefined },
+                    {
+                        partialCachePath: undefined,
+                        partialSourceHash: undefined,
+                    },
                     attemptId,
                 );
             }
@@ -2291,6 +2382,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             }
             this.releaseReservedDownloadPath(rawTargetDownloadPath);
         }
+        this.releaseDownloadSlot(attemptId);
         this.downloadNextPendingTask();
     }
 
@@ -2404,6 +2496,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 fileSize: task.fileSize,
                 progressText: task.progressText,
                 partialCachePath: task.partialCachePath,
+                partialSourceHash: task.partialSourceHash,
                 jobId: undefined,
             },
             task.attemptId,
@@ -2520,7 +2613,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             ).catch(() => false);
             void downloadNotificationManager.cancelNotification(task.attemptId);
             if (task.partialCachePath) {
-                this.unlinkFinalizationPath(task.partialCachePath).catch(
+                this.unlinkPartialDownload(task.partialCachePath).catch(
                     () => false,
                 );
             }
@@ -2556,6 +2649,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             startedAt: undefined,
             completedAt: undefined,
             partialCachePath: undefined,
+            partialSourceHash: undefined,
             finalization: undefined,
             resolvedSource: undefined,
         };
@@ -2576,7 +2670,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
 
         if (task.partialCachePath) {
-            this.unlinkFinalizationPath(task.partialCachePath).catch(
+            this.unlinkPartialDownload(task.partialCachePath).catch(
                 () => false,
             );
         }
@@ -2673,7 +2767,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
             void downloadNotificationManager.cancelNotification(task.attemptId);
             if (task.partialCachePath) {
-                this.unlinkFinalizationPath(task.partialCachePath).catch(
+                this.unlinkPartialDownload(task.partialCachePath).catch(
                     () => false,
                 );
             }
@@ -2711,16 +2805,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
             void downloadNotificationManager.cancelNotification(task.attemptId);
             if (task.partialCachePath) {
-                this.unlinkFinalizationPath(task.partialCachePath).catch(
+                this.unlinkPartialDownload(task.partialCachePath).catch(
                     () => false,
                 );
             }
-            if (task.status !== DownloadStatus.Paused) {
-                this.downloadingCount = Math.max(
-                    0,
-                    this.downloadingCount - 1,
-                );
-            }
+            this.releaseDownloadSlot(task.attemptId);
             downloadTasks.delete(key);
             const downloadQueue = getDefaultStore().get(downloadQueueAtom);
             setDownloadQueue(
@@ -2787,7 +2876,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     task.attemptId,
                 );
                 if (task.partialCachePath) {
-                    this.unlinkFinalizationPath(task.partialCachePath).catch(
+                    this.unlinkPartialDownload(task.partialCachePath).catch(
                         () => false,
                     );
                 }
