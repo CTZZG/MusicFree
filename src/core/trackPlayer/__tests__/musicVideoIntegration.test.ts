@@ -1136,6 +1136,48 @@ describe("Phase 2 MV and TrackPlayer state-machine regressions", () => {
         expect(mockBackend.resumeVideo).not.toHaveBeenCalled();
     });
 
+    it("restores the audio checkpoint and transport flags when MV EOF cannot advance", async () => {
+        const nextSong = { ...song, id: "B" };
+        player.setPlayList([song, nextSong]);
+        player.setPlayLaterQueue([]);
+        await enter();
+        plugin.methods.getMediaSource.mockImplementation(async (item?: IMusic.IMusicItem) => ({
+            url: item?.id === "B" ? "" : "https://example.test/audio.mp3",
+        }));
+        const resolveAudio = jest.spyOn(player.sourceResolver, "resolveDirectMediaSource").mockResolvedValue({
+            url: "https://example.test/audio.mp3",
+            allowInsecureHttpPlayback: true,
+            trustedLocalMediaProxy: true,
+        });
+        const restore = jest.spyOn(player, "setTrackSource").mockResolvedValue(undefined);
+        try {
+            await player.handleMpvNaturalEnd({ endedRenditionKind: "mv", endedMediaId: getMediaUniqueKey(song) });
+            expect(resolveAudio).toHaveBeenCalledWith(song, undefined, expect.any(String));
+            expect(restore).toHaveBeenCalledWith(
+                expect.objectContaining({ id: "A", allowInsecureHttpPlayback: true, trustedLocalMediaProxy: true }),
+                expect.any(Boolean), 37.25, true, expect.anything(),
+            );
+        } finally {
+            plugin.methods.getMediaSource.mockImplementation(async () => ({ url: "https://example.test/audio.mp3" }));
+        }
+    });
+
+    it("does not clear a replacement MV session when an earlier EOF finishes", async () => {
+        await enter();
+        let finish!: (value: boolean) => void;
+        jest.spyOn(player, "playNextLaterQueue").mockReturnValueOnce(new Promise<boolean>(resolve => {
+            finish = resolve;
+        }));
+        const originalSession = player.musicVideo.activeSession;
+        const pendingEnd = player.handleMpvNaturalEnd({ endedRenditionKind: "mv", endedMediaId: getMediaUniqueKey(song) });
+        await trackPlayer.returnToSong();
+        await enter();
+        expect(player.musicVideo.activeSession).not.toBe(originalSession);
+        finish(true);
+        await pendingEnd;
+        expect(trackPlayer.musicVideoState.phase).toBe("video");
+    });
+
     it("MV natural end (autoAdvanced=false) preserves audio checkpoint when queue stops", async () => {
         await player.setupTrackPlayer();
         const callbacks = new Map<string, (...args: any[]) => any>(

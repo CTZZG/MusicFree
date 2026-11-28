@@ -1,6 +1,6 @@
 import PlaybackSourceResolver from "./playbackSourceResolver";
 import { getPluginRuntimeRevision, usePluginRuntimeRevision } from "../pluginManager/enabledRevision";
-import MusicVideoController, { type MusicVideoState } from "./musicVideoController";
+import MusicVideoController, { type MusicVideoAudioCheckpoint, type MusicVideoState } from "./musicVideoController";
 import { describeMusicVideoView } from "./musicVideoView";
 import { classifyVideoNetwork } from "./videoNetworkPolicy";
 import { MusicVideoSources } from "../pluginManager/musicVideoSource";
@@ -1587,6 +1587,9 @@ class TrackPlayer
             completion = this.backend.reset();
         } else if (shouldPlayCurrent === false && currentMusic) {
             this.musicVideo?.leaveForSongChange();
+            const normalizedCurrent = getDefaultStore().get(currentMusicAtom) ?? currentMusic;
+            this.setPersistedPlaybackProgress(0, Date.now(), true);
+            PersistStatus.set("music.musicItem", stripEphemeralLocalArtwork(normalizedCurrent));
             setPlayerProgress(
                 {
                     position: 0,
@@ -1691,7 +1694,10 @@ class TrackPlayer
     ): Promise<void> {
         this.beginQueuePlaybackIntent();
         let sourceToken = mpvTransitionOwner?.sourceToken;
-        if (musicItem && !this.isCurrentMusic(musicItem)) this.musicVideo?.leaveForSongChange();
+        const leavingMvForSongChange = Boolean(musicItem && !this.isCurrentMusic(musicItem));
+        const preLeaveMvCheckpoint = leavingMvForSongChange ? this.musicVideo?.checkpoint ?? null : null;
+        const preLeaveWasVideo = leavingMvForSongChange && this.videoOwnsPlayback;
+        if (leavingMvForSongChange) this.musicVideo?.leaveForSongChange();
         let resolvedSourceQuality: IMusic.IQualityKey | undefined;
         let playedAlternate: IMusic.IMusicItem | null = null;
         let loadingSource = false;
@@ -1796,6 +1802,7 @@ class TrackPlayer
                     musicItem,
                     previousMusicBeforePlay,
                     "explicit-play",
+                    { checkpoint: preLeaveMvCheckpoint, wasVideo: preLeaveWasVideo },
                 );
                 ownedMpvTransition.recoveryRequest = recoveryRequest;
                 await this.pauseMpvActiveTrackForTransition(
@@ -3339,9 +3346,10 @@ class TrackPlayer
         expectedMusic: IMusic.IMusicItem,
         previousMusic: IMusic.IMusicItem | null,
         reason: string,
+        mvFallback?: { checkpoint: MusicVideoAudioCheckpoint | null; wasVideo: boolean },
     ): IMpvManualSkipTransition {
-        const checkpoint = this.musicVideo?.checkpoint;
-        const previousWasVideo = this.videoOwnsPlayback;
+        const checkpoint = this.musicVideo?.checkpoint ?? mvFallback?.checkpoint ?? null;
+        const previousWasVideo = this.videoOwnsPlayback || Boolean(mvFallback?.wasVideo);
         this.musicVideo?.leaveForSongChange();
         const sourceToken = this.qualityChangeCoordinator.begin();
         const token = this.mpvTrackTransitionGate.begin(
@@ -3598,23 +3606,7 @@ class TrackPlayer
                         return false;
                     }
                     if (resolvedAudio?.url) {
-                        restoredTrack = {
-                            ...restoredTrack,
-                            url: resolvedAudio.url,
-                            headers:
-                                resolvedAudio.headers ?? restoredTrack.headers,
-                            userAgent:
-                                resolvedAudio.userAgent ??
-                                restoredTrack.userAgent,
-                            playbackSource:
-                                (
-                                    resolvedAudio as Pick<
-                                        IMusic.IMusicItem,
-                                        "playbackSource"
-                                    >
-                                ).playbackSource ??
-                                restoredTrack.playbackSource,
-                        };
+                        restoredTrack = this.mergeTrackSource(restoredMusic, resolvedAudio) as MusicFreePlayerTrack;
                     }
                 }
             }
@@ -4998,6 +4990,8 @@ class TrackPlayer
                 : null;
         const mvSongAtEnd =
             evt.endedRenditionKind === "mv" ? this.currentMusic : null;
+        const mvSessionAtEnd =
+            evt.endedRenditionKind === "mv" ? this.musicVideo?.activeSession ?? null : null;
         try {
             this.emit(TrackPlayerEvents.PlayEnd);
             trace("统一处理 mpv 自然结束", {
@@ -5135,8 +5129,9 @@ class TrackPlayer
             // 到这里已经不是 owner，必须什么都不做。
             if (this.mpvNaturalEndOwner === owner) {
                 if (
-                    evt.endedRenditionKind === "mv" &&
-                    this.musicVideo &&
+                    mvSessionAtEnd !== null &&
+                    this.musicVideo?.activeSession === mvSessionAtEnd &&
+                    isSameMediaItem(this.currentMusic, mvSongAtEnd) &&
                     this.musicVideo.snapshot.phase !== "audio"
                 ) {
                     const remainingCheckpoint =

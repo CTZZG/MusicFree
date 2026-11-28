@@ -32,11 +32,12 @@ jest.mock("../log", () => ({
     errorLog: jest.fn(),
 }));
 
-import { clearCache, getCacheSize } from "../fileUtils";
+import { clearCache, getCacheSize, setProtectedExternalImportPathsProvider } from "../fileUtils";
 
 describe("fileUtils music cache & external imports cleanup", () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        setProtectedExternalImportPathsProvider(null);
     });
 
     it("clearCache('music') removes both track cache and external imports directory", async () => {
@@ -47,6 +48,23 @@ describe("fileUtils music cache & external imports cleanup", () => {
 
         expect(mockUnlink).toHaveBeenCalledWith("/cache/TrackPlayer");
         expect(mockUnlink).toHaveBeenCalledWith("/app/imports");
+    });
+
+    it("only counts and removes orphan imports in nested directories", async () => {
+        setProtectedExternalImportPathsProvider(() => ["file:///app/imports/nested/./active.mp3"]);
+        const asFile = (path: string, size: number) => ({ path, size, isFile: () => true, isDirectory: () => false });
+        mockReadDir.mockImplementation(async (dir: string) => {
+            if (dir === "/app/imports") {
+                return [{ path: "/app/imports/nested", isFile: () => false, isDirectory: () => true }];
+            }
+            if (dir === "/app/imports/nested") {
+                return [asFile(`${dir}/active.mp3`, 120), asFile(`${dir}/orphan.mp3`, 80)];
+            }
+            return [];
+        });
+        await expect(getCacheSize("music")).resolves.toBe(80);
+        await clearCache("music");
+        expect(mockUnlink.mock.calls).toEqual([["/cache/TrackPlayer"], ["/app/imports/nested/orphan.mp3"]]);
     });
 
     it("getCacheSize('music') includes temporary external imports", async () => {

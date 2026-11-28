@@ -517,6 +517,40 @@ test("a suspended quality change without a saved position waits for explicit res
     expect(f.deps.replace.mock.calls[1][0].position).toEqual({ mode: "start-zero" });
 });
 
+test("backgrounding does not interrupt a committed MV load", async () => {
+    const f = fixture();
+    const gate = deferred<void>();
+    const replace = f.deps.replace.getMockImplementation()!;
+    f.deps.replace.mockImplementationOnce(async request => {
+        await gate.promise;
+        return replace(request);
+    });
+
+    const pending = f.controller.enter(clip());
+    await tick();
+    expect(f.controller.snapshot.phase).toBe("loading");
+    f.setForeground(false);
+    f.controller.onBackground();
+    gate.resolve();
+    await expect(pending).resolves.toEqual({ status: "playing" });
+    expect(f.controller.snapshot.phase).toBe("video");
+});
+
+test("backgrounding lets an audio return finish and unblock the timeline", async () => {
+    const f = fixture();
+    await f.controller.enter(clip());
+    const source = deferred<{ url: string }>();
+    f.deps.resolveAudio.mockReturnValueOnce(source.promise);
+    const pending = f.controller.returnToAudio();
+    await tick();
+    expect(f.controller.snapshot.phase).toBe("returning");
+    f.setForeground(false);
+    f.controller.onBackground();
+    source.resolve({ url: "https://example.test/audio.mp3" });
+    await expect(pending).resolves.toEqual({ status: "audio" });
+    expect(f.controller.blocksAudioTimeline).toBe(false);
+});
+
 test("onBackground aborts interactive resume preflight even after a prior replay allowed background", async () => {
     const f = fixture();
     await f.controller.enter(clip());

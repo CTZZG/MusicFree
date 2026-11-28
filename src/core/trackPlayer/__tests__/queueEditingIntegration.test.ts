@@ -75,7 +75,10 @@ jest.mock("@/utils/persistStatus", () => mockAutoStub());
 jest.mock("@/core/localMusicSheet", () => mockAutoStub());
 jest.mock("@/core/dislikeMusic", () => mockAutoStub());
 jest.mock("@/core/mediaCache", () => mockAutoStub());
-jest.mock("@/core/localMusicArtworkManager", () => mockAutoStub());
+jest.mock("@/core/localMusicArtworkManager", () => ({
+    ...mockAutoStub(),
+    stripEphemeralLocalArtwork: (item: unknown) => item,
+}));
 jest.mock("@/constants/assetsConst", () => mockAutoStub());
 jest.mock("@/native/utils", () => mockAutoStub());
 jest.mock("@/service/encryptedMediaProxy", () => mockAutoStub());
@@ -321,6 +324,19 @@ it("does nothing more when the other edit already removed the song", async () =>
     expect(ids(trackPlayer.playList)).toEqual(["A", "C", "D", "E", "F"]);
     expect(play).not.toHaveBeenCalled();
     expect(mockBackend.reset).not.toHaveBeenCalled();
+});
+
+it("persists the replacement and zero progress when removing a paused MV", async () => {
+    const persist = require("@/utils/persistStatus").default;
+    mockBackend.getState.mockResolvedValue("paused");
+    mockBackend.getRenditionOwner.mockReturnValue({ kind: "mv" });
+    try {
+        await trackPlayer.removeQueueItemWithUndo(songB);
+        expect(persist.set).toHaveBeenCalledWith("music.progress", 0);
+        expect(persist.set).toHaveBeenCalledWith("music.musicItem", expect.objectContaining({ id: "C" }));
+    } finally {
+        mockBackend.getRenditionOwner.mockReset();
+    }
 });
 
 it("keeps backend queue when removing paused current track and resets only when last track is removed", async () => {

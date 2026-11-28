@@ -27,6 +27,7 @@ const mockTrackPlayer: Record<string, any> = {
     skipToNext: jest.fn(async () => undefined),
     skipToPrevious: jest.fn(async () => undefined),
     playerAdapter: {
+        getState: jest.fn(async () => "paused"),
         addEventListener: jest.fn(
             (event: string, cb: (payload?: any) => any) => {
                 if (!mockAdapterListeners.has(event)) {
@@ -97,6 +98,24 @@ describe("playbackServiceObserver", () => {
             musicItem: mockTrackPlayer.currentMusic,
             event: "progress",
             data: { currentTime: 37.25, duration: 200 },
+        });
+    });
+
+    it("reconciles a missed paused event when audio becomes available again", async () => {
+        mockTrackPlayer.audioTimelineAvailable = false;
+        emitAdapterEvent("playbackStateChanged", "paused");
+        expect(mockPluginCallback).not.toHaveBeenCalled();
+
+        mockTrackPlayer.audioTimelineAvailable = true;
+        for (const callback of mockPlayerListeners.get(TrackPlayerEvents.AudioTimelineChanged) ?? []) {
+            callback();
+        }
+        await Promise.resolve();
+
+        expect(mockPluginCallback).toHaveBeenCalledTimes(1);
+        expect(mockPluginCallback).toHaveBeenCalledWith({
+            musicItem: mockTrackPlayer.currentMusic,
+            event: "pause",
         });
     });
 

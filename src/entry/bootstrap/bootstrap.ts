@@ -43,7 +43,8 @@ import { setupAppFolders } from "./setupFolders";
 import { setupKeyValueStores } from "@/utils/keyValueStore/bootstrapStores";
 import { StoreReadError } from "@/utils/keyValueStore/readError";
 import StorageUri from "@/native/storageUri";
-import { addFileScheme, escapeCharacter, getFileName } from "@/utils/fileUtils";
+import { addFileScheme, escapeCharacter, getFileName, setProtectedExternalImportPathsProvider } from "@/utils/fileUtils";
+import { getLocalPath } from "@/utils/mediaUtils";
 
 let linkingUrlSubscription: ReturnType<typeof Linking.addEventListener> | null =
     null;
@@ -59,6 +60,19 @@ telemetry.injectDependencies(Config);
 
 
 async function bootstrapImpl() {
+    setProtectedExternalImportPathsProvider(function* () {
+        for (const item of [
+            TrackPlayer.currentMusic,
+            ...TrackPlayer.playList,
+            PersistStatus.get("music.musicItem"),
+            ...LocalMusicSheet.getMusicList(),
+        ]) {
+            if (item) {
+                yield getLocalPath(item);
+                yield item.url;
+            }
+        }
+    });
     await SplashScreen.preventAutoHideAsync()
         .then(result =>
             console.log(

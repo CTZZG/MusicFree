@@ -17,6 +17,28 @@ import { Image } from 'expo-image';
 const galleryBasePath = `${PicturesDirectoryPath}/MusicFree/`;
 const externalImportsPath = `${pathConst.basePath}/imports`;
 
+type ExternalImportPathProvider = () => Iterable<string | null | undefined>;
+let protectedExternalImportPaths: ExternalImportPathProvider | null = null;
+
+export function setProtectedExternalImportPathsProvider(provider: ExternalImportPathProvider | null) {
+    protectedExternalImportPaths = provider;
+}
+
+function normalizeLocalFsPath(value: string) {
+    return path.normalize(removeFileScheme(value).replace(/\\/g, "/")).replace(/\/$/, "");
+}
+
+function getProtectedImportPaths() {
+    const prefix = `${normalizeLocalFsPath(externalImportsPath)}/`;
+    const protectedPaths = new Set<string>();
+    for (const value of protectedExternalImportPaths?.() ?? []) {
+        if (!value || (!value.startsWith("/") && !value.startsWith("file://"))) continue;
+        const localPath = normalizeLocalFsPath(value);
+        if (localPath.startsWith(prefix)) protectedPaths.add(localPath);
+    }
+    return protectedPaths;
+}
+
 /**
  * 将图片保存到相册
  * @param src 图片地址
@@ -73,30 +95,41 @@ export async function checkAndCreateDir(dirPath: string) {
     }
 }
 
-async function getFolderSize(dirPath: string): Promise<number> {
+async function getFolderSize(dirPath: string, protectedPaths?: ReadonlySet<string>): Promise<number> {
     let size = 0;
     try {
         const fns = await readDir(dirPath);
         for (let fn of fns) {
-            if (fn.isFile()) {
+            if (fn.isFile() && (!protectedPaths || !protectedPaths.has(normalizeLocalFsPath(fn.path)))) {
                 size += fn.size;
             }
             // todo: 可以改成并行 promise.all
             if (fn.isDirectory()) {
-                size += await getFolderSize(fn.path);
+                size += await getFolderSize(fn.path, protectedPaths);
             }
         }
     } catch {}
     return size;
 }
 
+async function clearOrphanImports(dirPath: string, protectedPaths: ReadonlySet<string>) {
+    for (const entry of await readDir(dirPath).catch(() => [])) {
+        if (entry.isDirectory()) {
+            await clearOrphanImports(entry.path, protectedPaths);
+        } else if (entry.isFile() && !protectedPaths.has(normalizeLocalFsPath(entry.path))) {
+            await unlink(entry.path).catch(() => undefined);
+        }
+    }
+}
+
 export async function getCacheSize(
     type: 'music' | 'lyric' | 'image',
 ): Promise<number> {
     if (type === 'music') {
+        const protectedPaths = getProtectedImportPaths();
         const [musicSize, importsSize] = await Promise.all([
             getFolderSize(pathConst.musicCachePath),
-            getFolderSize(externalImportsPath),
+            getFolderSize(externalImportsPath, protectedPaths.size ? protectedPaths : undefined),
         ]);
         return musicSize + importsSize;
     } else if (type === 'lyric') {
@@ -115,7 +148,10 @@ export async function clearCache(type: 'music' | 'lyric' | 'image') {
             }
         } catch {}
         try {
-            if (await exists(externalImportsPath)) {
+            const protectedPaths = getProtectedImportPaths();
+            if (protectedPaths.size) {
+                await clearOrphanImports(externalImportsPath, protectedPaths);
+            } else if (await exists(externalImportsPath)) {
                 await unlink(externalImportsPath);
             }
         } catch {}

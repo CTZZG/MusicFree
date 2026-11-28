@@ -34,8 +34,13 @@ function setupPlaybackObserver() {
         return;
     }
 
+    let timelineRevision = 0;
+    let notifiedSinceTimelineUnblock = false;
+
     // 监听歌曲切换
     TrackPlayer.on(TrackPlayerEvents.CurrentMusicChanged, musicItem => {
+        timelineRevision++;
+        notifiedSinceTimelineUnblock = false;
         if (previousMusicItem && previousMusicItem.platform) {
             const plugin = PluginManager.getByMedia(previousMusicItem);
             notifyPluginPlaybackStateChange(plugin, {
@@ -46,28 +51,36 @@ function setupPlaybackObserver() {
         previousMusicItem = musicItem;
     });
 
-    // 监听播放/暂停/停止状态
-    TrackPlayer.playerAdapter.addEventListener(
-        "playbackStateChanged",
-        state => {
-            if (!TrackPlayer.audioTimelineAvailable) return;
-            const musicItem = TrackPlayer.currentMusic;
-            if (!musicItem || !musicItem.platform) return;
+    type AdapterState = Awaited<ReturnType<typeof TrackPlayer.playerAdapter.getState>>;
+    const notifyState = (state: AdapterState) => {
+        const musicItem = TrackPlayer.currentMusic;
+        if (!musicItem?.platform) return;
+        const plugin = PluginManager.getByMedia(musicItem);
+        if (!plugin?.instance.onPlaybackStateChange) return;
+        const event = resolvePlaybackObserverEvent(normalizeMusicState(state));
+        if (event) {
+            notifiedSinceTimelineUnblock = true;
+            notifyPluginPlaybackStateChange(plugin, { musicItem, event });
+        }
+    };
 
-            const plugin = PluginManager.getByMedia(musicItem);
-            if (!plugin?.instance.onPlaybackStateChange) return;
-
-            const normalizedState = normalizeMusicState(state);
-            const eventType = resolvePlaybackObserverEvent(normalizedState);
-
-            if (eventType) {
-                notifyPluginPlaybackStateChange(plugin, {
-                    musicItem,
-                    event: eventType,
-                });
+    TrackPlayer.playerAdapter.addEventListener("playbackStateChanged", state => {
+        if (TrackPlayer.audioTimelineAvailable) {
+            notifyState(state);
+        } else {
+            notifiedSinceTimelineUnblock = false;
+        }
+    });
+    TrackPlayer.on(TrackPlayerEvents.AudioTimelineChanged, () => {
+        const revision = ++timelineRevision;
+        notifiedSinceTimelineUnblock = false;
+        if (!TrackPlayer.audioTimelineAvailable) return;
+        TrackPlayer.playerAdapter.getState?.()?.then(state => {
+            if (timelineRevision === revision && TrackPlayer.audioTimelineAvailable && !notifiedSinceTimelineUnblock) {
+                notifyState(state);
             }
-        },
-    );
+        }).catch(() => undefined);
+    });
 
     // 监听进度更新
     TrackPlayer.playerAdapter.addEventListener("progress", progress => {

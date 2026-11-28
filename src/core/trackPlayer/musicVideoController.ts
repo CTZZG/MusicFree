@@ -130,6 +130,7 @@ export default class MusicVideoController {
         abort: AbortController;
         automaticRepeat: boolean;
         allowBackground: boolean;
+        committed: boolean;
     } | null = null;
     private blocked = false;
     private failedGeneration: number | null = null;
@@ -149,6 +150,9 @@ export default class MusicVideoController {
     }
     get blocksAudioTimeline() {
         return this.blocked || this.deps.active()?.kind === "mv";
+    }
+    get activeSession(): object | null {
+        return this.session;
     }
     get checkpoint(): MusicVideoAudioCheckpoint | null {
         const s = this.session;
@@ -193,6 +197,7 @@ export default class MusicVideoController {
             abort: new AbortController(),
             automaticRepeat,
             allowBackground,
+            committed: false,
         };
         this.request = request;
         return request;
@@ -422,6 +427,7 @@ export default class MusicVideoController {
                     timeline: resolved.source.timelineId,
                 };
                 commitStarted = true;
+                request.committed = true;
                 this.block(true);
                 this.phase("loading");
                 const receipt = await this.deps.replace({
@@ -582,7 +588,7 @@ export default class MusicVideoController {
         if (!session || this.currentKey() !== session.key) {
             return { status: "cancelled" };
         }
-        const request = this.begin();
+        const request = this.begin(false, true);
         this.playOnReturn = explicitPlay;
         try {
             if (explicitPlay) {
@@ -797,12 +803,11 @@ export default class MusicVideoController {
     }
 
     onBackground() {
-        if (!this.request?.allowBackground) {
-            if (this.state.phase === "resolving") {
-                this.cancelResolving();
-            } else if (this.request) {
-                this.cancelRequest();
-            }
+        if (!this.request || this.request.allowBackground || this.request.committed) return;
+        if (this.state.phase === "resolving") {
+            this.cancelResolving();
+        } else {
+            this.cancelRequest();
         }
     }
 
@@ -829,6 +834,7 @@ export default class MusicVideoController {
             this.phase("video");
         } else {
             this.session = null;
+            this.block(false);
             this.publish({ phase: "audio" });
         }
     }
