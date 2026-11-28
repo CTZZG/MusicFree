@@ -12,7 +12,11 @@ class NativeDownloadModule(
     private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
 
+    @Volatile
+    private var managerInitialized = false
+
     private val manager: DownloadManager by lazy {
+        managerInitialized = true
         DownloadManager(reactContext, object : DownloadManager.Listener {
             override fun onTaskStatusChanged(task: DownloadTask) {
                 emitEvent(EVENT_STATUS_CHANGED, taskToWritableMap(task))
@@ -229,6 +233,9 @@ class NativeDownloadModule(
 
     override fun invalidate() {
         super.invalidate()
+        if (!managerInitialized) {
+            return
+        }
         try {
             manager.shutdown()
         } catch (_: Exception) {

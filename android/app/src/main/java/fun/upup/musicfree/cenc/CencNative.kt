@@ -29,13 +29,21 @@ internal object CencNative {
     external fun nativeDestroy(handle: Long)
 }
 
+internal interface CencStreamDecoder : AutoCloseable {
+    val header: ByteArray
+    val headerSize: Long
+    val mdatFileOffset: Long
+    val outputTotalSize: Long
+    fun decrypt(relativeOffset: Long, data: ByteArray, offset: Int, length: Int)
+}
+
 internal class CencDecoder(
     ftyp: ByteArray,
     moov: ByteArray,
     cek: ByteArray,
     mdatFileOffset: Long,
     mdatPayloadSize: Long,
-) : AutoCloseable {
+) : CencStreamDecoder {
     private var handle = CencNative.nativeCreate(
         ftyp,
         moov,
@@ -53,15 +61,15 @@ internal class CencDecoder(
         }
     }
 
-    val header: ByteArray = requireNotNull(CencNative.nativeGetHeader(handle)) {
+    override val header: ByteArray = requireNotNull(CencNative.nativeGetHeader(handle)) {
         "decoder did not produce an MP4 header"
     }
-    val headerSize: Long = CencNative.nativeGetHeaderSize(handle)
-    val mdatFileOffset: Long = CencNative.nativeGetMdatFileOffset(handle)
-    val outputTotalSize: Long = CencNative.nativeGetOutputTotalSize(handle)
+    override val headerSize: Long = CencNative.nativeGetHeaderSize(handle)
+    override val mdatFileOffset: Long = CencNative.nativeGetMdatFileOffset(handle)
+    override val outputTotalSize: Long = CencNative.nativeGetOutputTotalSize(handle)
 
     @Synchronized
-    fun decrypt(relativeOffset: Long, data: ByteArray, offset: Int, length: Int) {
+    override fun decrypt(relativeOffset: Long, data: ByteArray, offset: Int, length: Int) {
         check(handle != 0L) { "decoder is closed" }
         CencNative.nativeDecrypt(handle, relativeOffset, data, offset, length)
     }

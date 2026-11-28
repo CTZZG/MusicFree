@@ -173,10 +173,12 @@ class DownloadManager(
     fun removeTask(taskId: String): Boolean {
         synchronized(lock) {
             val task = tasks[taskId] ?: return false
-            val wasCompleted = task.status == DownloadTaskStatus.COMPLETED
+            val shouldKeepArtifact =
+                task.status == DownloadTaskStatus.COMPLETED ||
+                    task.status == DownloadTaskStatus.PAUSED
             removeFromQueue(taskId)
             runningTasks[taskId]?.control?.cancel()
-            if (!wasCompleted) {
+            if (!shouldKeepArtifact) {
                 updateTaskStatus(
                     task = task,
                     status = DownloadTaskStatus.CANCELED,
@@ -185,7 +187,7 @@ class DownloadManager(
             }
             tasks.remove(taskId)
             database.deleteTask(taskId)
-            if (!wasCompleted) {
+            if (!shouldKeepArtifact) {
                 deletePartialArtifact(task)
             }
             return true
@@ -245,6 +247,7 @@ class DownloadManager(
         workerExecutor.shutdownNow()
         progressFlushExecutor.shutdownNow()
         notificationManager.shutdown()
+        runCatching { database.close() }
     }
 
     private fun restoreTasksFromDb() {

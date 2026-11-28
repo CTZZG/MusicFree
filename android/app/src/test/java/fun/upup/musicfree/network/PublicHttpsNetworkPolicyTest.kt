@@ -268,6 +268,11 @@ class PublicHttpsNetworkPolicyTest {
             "http://[fe80::1]/a.jpg",
             // fake-ip addresses are only accepted as DNS answers, never as literals
             "http://198.18.0.42/a.jpg",
+            "https://[64:ff9b::192.168.1.1]/a.jpg",
+            "https://[64:ff9b::127.0.0.1]/a.jpg",
+            "https://[64:ff9b:1::1]/a.jpg",
+            "https://[2002:c0a8:0101::1]/a.jpg",
+            "https://[0100::1234]/a.jpg",
         )) {
             assertThrows(url, IllegalArgumentException::class.java) {
                 PublicHttpsNetworkPolicy.requirePublicRemote(url)
@@ -276,6 +281,10 @@ class PublicHttpsNetworkPolicyTest {
         assertEquals(
             "93.184.216.34",
             PublicHttpsNetworkPolicy.requirePublicRemote("http://93.184.216.34/a.jpg").host,
+        )
+        assertEquals(
+            "64:ff9b::5db8:d822",
+            PublicHttpsNetworkPolicy.requirePublicRemote("https://[64:ff9b::93.184.216.34]/a.jpg").host,
         )
         assertEquals(
             "2606:2800:220:1:248:1893:25c8:1946",

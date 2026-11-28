@@ -45,12 +45,20 @@ static inline void wr32(uint8_t* p, uint32_t v) {
     p[2] = static_cast<uint8_t>(v >> 8);
     p[3] = static_cast<uint8_t>(v);
 }
+static inline void wr64(uint8_t* p, uint64_t v) {
+    wr32(p, static_cast<uint32_t>(v >> 32));
+    wr32(p + 4, static_cast<uint32_t>(v));
+}
 
 static inline void appendU32(std::vector<uint8_t>& out, uint32_t v) {
     out.push_back(static_cast<uint8_t>(v >> 24));
     out.push_back(static_cast<uint8_t>(v >> 16));
     out.push_back(static_cast<uint8_t>(v >> 8));
     out.push_back(static_cast<uint8_t>(v));
+}
+static inline void appendU64(std::vector<uint8_t>& out, uint64_t v) {
+    appendU32(out, static_cast<uint32_t>(v >> 32));
+    appendU32(out, static_cast<uint32_t>(v));
 }
 static inline void appendBytes(std::vector<uint8_t>& out, const uint8_t* p, size_t n) {
     out.insert(out.end(), p, p + n);
@@ -149,6 +157,7 @@ struct StcoRef {
 struct RewriteCtx {
     std::vector<uint8_t> out;
     std::vector<StcoRef> stcoRefs;
+    std::string error;
 };
 
 static bool isContainer(const char* t) {
@@ -168,6 +177,9 @@ static void patchSize(std::vector<uint8_t>& out, size_t sizePos) {
 static void emitBox(const BoxView& b, RewriteCtx& ctx);
 
 static void emitEnca(const BoxView& b, RewriteCtx& ctx) {
+    if (!ctx.error.empty()) {
+        return;
+    }
     uint32_t childStart = audioSampleEntryHeaderLen(b.payload, b.payloadSize);
 
     // Recover original codec fourcc from sinf->frma (default to mp4a).
@@ -198,6 +210,13 @@ static void emitEnca(const BoxView& b, RewriteCtx& ctx) {
 }
 
 static void emitStsd(const BoxView& b, RewriteCtx& ctx) {
+    if (!ctx.error.empty()) {
+        return;
+    }
+    if (b.payloadSize < 8) {
+        ctx.error = "bad stsd";
+        return;
+    }
     size_t sizePos = ctx.out.size();
     appendU32(ctx.out, 0);
     appendBytes(ctx.out, b.start + 4, 4); // type 'stsd'
@@ -212,22 +231,46 @@ static void emitStsd(const BoxView& b, RewriteCtx& ctx) {
         } else {
             appendBytes(ctx.out, e.start, static_cast<size_t>(e.size));
         }
+        if (!ctx.error.empty()) {
+            return;
+        }
         p += e.size;
     }
     patchSize(ctx.out, sizePos);
 }
 
 static void emitStcoLike(const BoxView& b, RewriteCtx& ctx) {
+    if (!ctx.error.empty()) {
+        return;
+    }
+    if (b.payloadSize < 8) {
+        ctx.error = "bad stco";
+        return;
+    }
+    bool is64 = std::memcmp(b.type, "co64", 4) == 0;
+    uint32_t count = rd32(b.payload + 4);
+    if (!countFitsVector(count) || count > kMaxReasonableChunkCount) {
+        ctx.error = "chunk offset count is too large";
+        return;
+    }
+    uint64_t need = 0;
+    if (!checkedTableSize(8, count, is64 ? 8 : 4, need) || b.payloadSize < need) {
+        ctx.error = "truncated stco";
+        return;
+    }
     size_t startInOut = ctx.out.size();
     appendBytes(ctx.out, b.start, static_cast<size_t>(b.size));
     StcoRef ref;
-    ref.is64 = std::memcmp(b.type, "co64", 4) == 0;
-    ref.count = (b.payloadSize >= 8) ? rd32(b.payload + 4) : 0;
+    ref.is64 = is64;
+    ref.count = count;
     ref.dataOffsetInOut = startInOut + b.headerSize + 8;
     ctx.stcoRefs.push_back(ref);
 }
 
 static void emitContainer(const BoxView& b, RewriteCtx& ctx) {
+    if (!ctx.error.empty()) {
+        return;
+    }
     size_t sizePos = ctx.out.size();
     appendU32(ctx.out, 0);
     appendBytes(ctx.out, b.start + 4, 4); // type
@@ -237,12 +280,18 @@ static void emitContainer(const BoxView& b, RewriteCtx& ctx) {
     BoxView c;
     while (p < end && readBox(p, end, c)) {
         emitBox(c, ctx);
+        if (!ctx.error.empty()) {
+            return;
+        }
         p += c.size;
     }
     patchSize(ctx.out, sizePos);
 }
 
 static void emitBox(const BoxView& b, RewriteCtx& ctx) {
+    if (!ctx.error.empty()) {
+        return;
+    }
     if (isDeleted(b.type)) {
         return;
     }
@@ -425,16 +474,30 @@ Mp4CencResult parseAndRewrite(
     }
 
     // --- absolute file offset of each sample ---
+    if (mdatPayloadFileOffset > std::numeric_limits<uint64_t>::max() - mdatPayloadSize) {
+        res.error = "invalid mdat bounds";
+        return res;
+    }
     std::vector<uint64_t> sampleAbs(sampleCount, 0);
     {
         uint32_t sampleIdx = 0;
         for (uint32_t c = 0; c < chunkCount && sampleIdx < sampleCount; ++c) {
             uint64_t off = chunkOffsets[c];
             for (uint32_t j = 0; j < samplesPerChunk[c] && sampleIdx < sampleCount; ++j) {
+                if (off < mdatPayloadFileOffset ||
+                    sizes[sampleIdx] > mdatPayloadSize ||
+                    (off - mdatPayloadFileOffset) > mdatPayloadSize - sizes[sampleIdx]) {
+                    res.error = "sample offset outside mdat";
+                    return res;
+                }
                 sampleAbs[sampleIdx] = off;
                 off += sizes[sampleIdx];
                 ++sampleIdx;
             }
+        }
+        if (sampleIdx < sampleCount) {
+            res.error = "stsc does not cover all samples";
+            return res;
         }
     }
 
@@ -489,22 +552,42 @@ Mp4CencResult parseAndRewrite(
     // --- rebuild plaintext moov ---
     RewriteCtx ctx;
     emitBox(moovBox, ctx);
+    if (!ctx.error.empty()) {
+        res.error = ctx.error;
+        return res;
+    }
 
     // --- assemble plaintext header: ftyp + rewritten moov + mdat box header ---
+    const bool largeMdat = mdatPayloadSize > std::numeric_limits<uint32_t>::max() - 8;
+    const uint64_t mdatHeaderLen = largeMdat ? 16 : 8;
     res.mdatPayloadSize = mdatPayloadSize;
-    uint64_t mdatBoxSize = mdatPayloadSize + 8; // 32-bit mdat header (audio < 4GB)
-    res.headerSize = static_cast<uint64_t>(ftypLen) + ctx.out.size() + 8;
+    res.headerSize = static_cast<uint64_t>(ftypLen) + ctx.out.size() + mdatHeaderLen;
     res.outputTotalSize = res.headerSize + mdatPayloadSize;
 
     // fix stco/co64 chunk offsets to point into the output mdat
     for (const StcoRef& ref : ctx.stcoRefs) {
+        const uint64_t entrySize = ref.is64 ? 8 : 4;
         for (uint32_t i = 0; i < ref.count; ++i) {
-            uint8_t* slot = &ctx.out[ref.dataOffsetInOut + static_cast<uint64_t>(i) * (ref.is64 ? 8 : 4)];
+            const uint64_t pos = ref.dataOffsetInOut + static_cast<uint64_t>(i) * entrySize;
+            if (pos + entrySize > ctx.out.size()) {
+                res.error = "corrupted stco rewrite offset";
+                return res;
+            }
+            uint8_t* slot = &ctx.out[static_cast<size_t>(pos)];
             uint64_t oldOff = ref.is64 ? rd64(slot) : rd32(slot);
-            uint64_t newOff = res.headerSize + (oldOff - mdatPayloadFileOffset);
+            if (oldOff < mdatPayloadFileOffset && (mdatPayloadFileOffset - oldOff) > res.headerSize) {
+                res.error = "chunk offset underflow";
+                return res;
+            }
+            uint64_t newOff = (oldOff >= mdatPayloadFileOffset)
+                ? (res.headerSize + (oldOff - mdatPayloadFileOffset))
+                : (res.headerSize - (mdatPayloadFileOffset - oldOff));
+            if (!ref.is64 && newOff > std::numeric_limits<uint32_t>::max()) {
+                res.error = "stco chunk offset overflow";
+                return res;
+            }
             if (ref.is64) {
-                wr32(slot, static_cast<uint32_t>(newOff >> 32));
-                wr32(slot + 4, static_cast<uint32_t>(newOff));
+                wr64(slot, newOff);
             } else {
                 wr32(slot, static_cast<uint32_t>(newOff));
             }
@@ -514,11 +597,20 @@ Mp4CencResult parseAndRewrite(
     res.plaintextHeader.reserve(static_cast<size_t>(res.headerSize));
     appendBytes(res.plaintextHeader, ftyp, ftypLen);
     res.plaintextHeader.insert(res.plaintextHeader.end(), ctx.out.begin(), ctx.out.end());
-    appendU32(res.plaintextHeader, static_cast<uint32_t>(mdatBoxSize));
-    res.plaintextHeader.push_back('m');
-    res.plaintextHeader.push_back('d');
-    res.plaintextHeader.push_back('a');
-    res.plaintextHeader.push_back('t');
+    if (largeMdat) {
+        appendU32(res.plaintextHeader, 1);
+        res.plaintextHeader.push_back('m');
+        res.plaintextHeader.push_back('d');
+        res.plaintextHeader.push_back('a');
+        res.plaintextHeader.push_back('t');
+        appendU64(res.plaintextHeader, mdatPayloadSize + 16);
+    } else {
+        appendU32(res.plaintextHeader, static_cast<uint32_t>(mdatPayloadSize + 8));
+        res.plaintextHeader.push_back('m');
+        res.plaintextHeader.push_back('d');
+        res.plaintextHeader.push_back('a');
+        res.plaintextHeader.push_back('t');
+    }
 
     res.ok = true;
     return res;

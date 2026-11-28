@@ -1658,6 +1658,12 @@ class MpvPlayerModule internal constructor(
                 val trustedLocalProxy = readBoolean(payload, "trustedLocalMediaProxy") == true &&
                     sourceUri.scheme?.lowercase() == "http" && sourceUri.userInfo == null && sourceUri.port in 1..65535 &&
                     sourceUri.host?.lowercase() in listOf("127.0.0.1", "localhost")
+                MpvHttpOptions.validateMediaUrl(
+                    rawUrl = url,
+                    renditionKind = nextKind,
+                    trustedLocalProxy = trustedLocalProxy,
+                    allowInsecureHttpExplicit = readBoolean(payload, "allowInsecureHttpPlayback"),
+                )
                 val networkRetry = readBoolean(payload, "retryAfterVideoNetworkRetirement") == true &&
                     !trustedLocalProxy && sourceUri.scheme?.lowercase() in listOf("http", "https")
                 require(!networkRetry || (if (nextKind == "mv") videoNetworkAllowed("allow-metered") else audioNetworkRetryAllowed())) {
@@ -1734,13 +1740,13 @@ class MpvPlayerModule internal constructor(
                     }
                 val trackUserAgent = readString(payload, "userAgent")
                     ?.takeIf { it.isNotBlank() }
+                val headerFieldsList = buildHeaderString(headers)
+                val effectiveUserAgent = trackUserAgent ?: defaultUserAgent
                 renditionMutationStarted = true
-                MPVLib.setOptionString(
-                    "http-header-fields",
-                    buildHeaderString(headers),
-                )
-                (trackUserAgent ?: defaultUserAgent)
-                    ?.let { MPVLib.setOptionString("user-agent", it) }
+                if (!fileEventProtocol) {
+                    MPVLib.setOptionString("http-header-fields", headerFieldsList)
+                    effectiveUserAgent?.let { MPVLib.setOptionString("user-agent", it) }
+                }
 
                 durationSecs = validDuration(readDouble(payload, "duration"))
                 // 外部暂停、系统打断着：按暂停装载，等用户明确要播或系统还回焦点
@@ -1846,7 +1852,12 @@ class MpvPlayerModule internal constructor(
                 require(!networkRetry || (if (nextKind == "mv") videoNetworkAllowed("allow-metered") else audioNetworkRetryAllowed())) {
                     "Network changed before engine retry"
                 }
-                MPVLib.loadFile(arrayOf("loadfile", url, "replace"))?.let { entryId ->
+                val loadCommand = if (fileEventProtocol) {
+                    MpvHttpOptions.buildLoadFileCommand(url, "replace", headerFieldsList, effectiveUserAgent)
+                } else {
+                    arrayOf("loadfile", url, "replace")
+                }
+                MPVLib.loadFile(loadCommand)?.let { entryId ->
                     val identity = loadingTrackIdentity ?: error("Missing committed file owner")
                     fileEvents.replace(entryId, identity, nextKind)
                     ownedFileEntryId = entryId
@@ -1891,8 +1902,10 @@ class MpvPlayerModule internal constructor(
                         pendingNaturalEnd = previousNaturalEnd
                         pendingPlaylistCompaction = previousCompaction
                         completedVideoIdentity = previousCompletedVideo
-                        MPVLib.setOptionString("http-header-fields", previousHeaders)
-                        previousUserAgent?.let { MPVLib.setOptionString("user-agent", it) }
+                        if (!fileEventProtocol) {
+                            MPVLib.setOptionString("http-header-fields", previousHeaders)
+                            previousUserAgent?.let { MPVLib.setOptionString("user-agent", it) }
+                        }
                         renditionKind = outgoingKind
                         videoNetworkPolicy = previousNetworkPolicy
                         videoNetworkOwner = previousNetworkOwner
@@ -1953,8 +1966,18 @@ class MpvPlayerModule internal constructor(
     }
 
     /** 从 payload 解析出一个 PreparedTrack；url 已经在调用方校验过非空。 */
-    private fun parsePreparedTrack(map: ReadableMap, url: String): PreparedTrack =
-        PreparedTrack(
+    private fun parsePreparedTrack(map: ReadableMap, url: String): PreparedTrack {
+        val sourceUri = Uri.parse(url)
+        val trustedLocalProxy = readBoolean(map, "trustedLocalMediaProxy") == true &&
+            sourceUri.scheme?.lowercase() == "http" && sourceUri.userInfo == null && sourceUri.port in 1..65535 &&
+            sourceUri.host?.lowercase() in listOf("127.0.0.1", "localhost")
+        MpvHttpOptions.validateMediaUrl(
+            rawUrl = url,
+            renditionKind = "audio",
+            trustedLocalProxy = trustedLocalProxy,
+            allowInsecureHttpExplicit = readBoolean(map, "allowInsecureHttpPlayback"),
+        )
+        return PreparedTrack(
             url = url,
             mediaId = readString(map, "mediaId")
                 ?.takeIf { it.isNotBlank() }
@@ -1973,6 +1996,7 @@ class MpvPlayerModule internal constructor(
             sourceMediaId = readString(map, "sourceMediaId"),
             sourceLoadGeneration = readLong(map, "sourceLoadGeneration"),
         )
+    }
 
     private fun requirePrepareOwner(mediaId: String?, generation: Long?) {
         require(suspendedVideo == null) { "Video network is suspended" }
@@ -2014,11 +2038,19 @@ class MpvPlayerModule internal constructor(
         userAgent: String?,
     ) {
         requirePrepareOwner(prepared.sourceMediaId, prepared.sourceLoadGeneration)
-        MPVLib.setOptionString("http-header-fields", headerString)
-        (userAgent ?: defaultUserAgent)?.let { MPVLib.setOptionString("user-agent", it) }
+        val effectiveUserAgent = userAgent ?: defaultUserAgent
+        if (!fileEventProtocol) {
+            MPVLib.setOptionString("http-header-fields", headerString)
+            effectiveUserAgent?.let { MPVLib.setOptionString("user-agent", it) }
+        }
 
         val appendIndex = readPlaylistCount()
-        MPVLib.loadFile(arrayOf("loadfile", prepared.url, "append"))?.let { entryId ->
+        val appendCommand = if (fileEventProtocol) {
+            MpvHttpOptions.buildLoadFileCommand(prepared.url, "append", headerString, effectiveUserAgent)
+        } else {
+            arrayOf("loadfile", prepared.url, "append")
+        }
+        MPVLib.loadFile(appendCommand)?.let { entryId ->
             val sourceId = ownedFileEntryId ?: error("Prepared source has no file ID")
             fileEvents.append(entryId, TrackIdentity(prepared.url, prepared.mediaId, prepared.loadGeneration,
                 prepared.prepareToken, prepared.queueRevision), sourceId)
@@ -2594,16 +2626,13 @@ class MpvPlayerModule internal constructor(
         if (headers == null) {
             return ""
         }
-        val builder = StringBuilder()
+        val raw = linkedMapOf<String, String?>()
         val iterator = headers.keySetIterator()
         while (iterator.hasNextKey()) {
             val key = iterator.nextKey()
-            val value = readString(headers, key)
-            if (key.isNotBlank() && value != null) {
-                builder.append(key).append(": ").append(value).append("\r\n")
-            }
+            raw[key] = readString(headers, key)
         }
-        return builder.toString()
+        return MpvHttpOptions.encodeHeaderFieldsOption(raw)
     }
 
     override fun eventProperty(property: String) {

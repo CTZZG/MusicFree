@@ -50,6 +50,7 @@ class MpvPlayerModuleRegressionTest {
         val properties = mutableMapOf<String, Any?>("pause" to true, "speed" to 1.0, "idle-active" to true)
         val playlist = linkedMapOf<Long, String>()
         val commands = mutableListOf<List<String>>()
+        val loadCommands = mutableListOf<List<String>>()
         lateinit var observer: MPVLib.EventObserver
         var nextId = 1L
         var failStop = false
@@ -69,6 +70,7 @@ class MpvPlayerModuleRegressionTest {
             if (command[0] == "stop") { select(null); properties["idle-active"] = true }
         }
         override fun loadFile(command: Array<String>): Long {
+            loadCommands.add(command.toList())
             if (command[2] == "replace") { playlist.clear(); select(null); properties["idle-active"] = true }
             val id = nextId++
             playlist[id] = command[1]
@@ -446,5 +448,52 @@ class MpvPlayerModuleRegressionTest {
         val eofError = errors().single().second
         assertEquals("E_VIDEO_LOAD_FAILED", eofError["code"])
         assertEquals("eof", eofError["mpvReason"])
+    }
+
+    @Test fun prepareNextUsesPerFileOptionsWithoutOverwritingActiveTrackHeaders() {
+        val trackAHeaders = map("Referer", "https://a.example/", "Accept", "audio/mpeg, */*")
+        assertNull(call { module.loadAndPlay(map(
+            "url", "https://example.test/a.mp3",
+            "mediaId", "a",
+            "loadGeneration", 1.0,
+            "headers", trackAHeaders,
+            "userAgent", "PlayerA/1.0 (Linux, Android 14)",
+            "autoPlay", false,
+        ), it) }.code)
+        val idA = engine.nextId - 1
+        ready(idA)
+
+        val trackBHeaders = map("Referer", "https://b.example/")
+        assertNull(call { module.prepareNext(map(
+            "url", "https://example.test/b.mp3",
+            "mediaId", "b",
+            "loadGeneration", 2.0,
+            "prepareToken", 1.0,
+            "queueRevision", 1.0,
+            "sourceMediaId", "a",
+            "sourceLoadGeneration", 1.0,
+            "headers", trackBHeaders,
+            "userAgent", "PlayerB/2.0",
+        ), it) }.code)
+
+        assertNull(engine.properties["http-header-fields"])
+        assertEquals(2, engine.loadCommands.size)
+        val cmdA = engine.loadCommands[0]
+        val cmdB = engine.loadCommands[1]
+        assertEquals("replace", cmdA[2])
+        assertEquals("-1", cmdA[3])
+        assertTrue(cmdA[4].contains("https://a.example/"))
+        assertTrue(cmdA[4].contains("audio/mpeg, */*"))
+        assertTrue(cmdA[4].contains("PlayerA/1.0"))
+        assertEquals("append", cmdB[2])
+        assertEquals("-1", cmdB[3])
+        assertTrue(cmdB[4].contains("https://b.example/"))
+        assertFalse(cmdB[4].contains("https://a.example/"))
+
+        // Invalid schemes or unapproved loopback URLs must be rejected before touching active playback.
+        val beforeCount = engine.loadCommands.size
+        assertEquals("E_LOAD", call { module.loadAndPlay(map("url", "edl://evil", "mediaId", "c", "loadGeneration", 3.0), it) }.code)
+        assertEquals("E_LOAD", call { module.loadAndPlay(map("url", "http://127.0.0.1:8080/x.mp3", "mediaId", "c", "loadGeneration", 3.0, "trustedLocalMediaProxy", false), it) }.code)
+        assertEquals(beforeCount, engine.loadCommands.size)
     }
 }

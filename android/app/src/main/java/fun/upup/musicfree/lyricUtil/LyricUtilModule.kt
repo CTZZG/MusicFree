@@ -13,6 +13,54 @@ import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.zip.Inflater
 
+private const val DEFAULT_MAX_ZLIB_INFLATE_BYTES = 4 * 1024 * 1024
+
+internal fun zlibInflateBytes(
+    data: ByteArray,
+    maxOutputBytes: Int = DEFAULT_MAX_ZLIB_INFLATE_BYTES,
+): ByteArray {
+    require(maxOutputBytes > 0) { "maxOutputBytes must be positive" }
+    if (data.isEmpty()) {
+        throw IllegalArgumentException("Empty zlib input")
+    }
+    val inflater = Inflater()
+    try {
+        inflater.setInput(data)
+
+        val outputStream = ByteArrayOutputStream(minOf(data.size, maxOutputBytes))
+        val buffer = ByteArray(8192)
+        var totalBytes = 0
+        var zeroProgressCount = 0
+
+        while (!inflater.finished()) {
+            val count = inflater.inflate(buffer)
+            if (count > 0) {
+                zeroProgressCount = 0
+                if (totalBytes + count > maxOutputBytes) {
+                    throw IllegalArgumentException("Zlib output exceeds limit ($maxOutputBytes bytes)")
+                }
+                totalBytes += count
+                outputStream.write(buffer, 0, count)
+            } else if (inflater.needsDictionary()) {
+                throw IllegalArgumentException("Zlib preset dictionary is not supported")
+            } else if (inflater.needsInput()) {
+                throw IllegalArgumentException("Truncated zlib stream")
+            } else {
+                zeroProgressCount += 1
+                if (zeroProgressCount > 4) {
+                    throw IllegalStateException("Zlib inflate stalled")
+                }
+            }
+        }
+
+        return outputStream.toByteArray()
+    } catch (e: Exception) {
+        throw Exception("Zlib inflate failed: ${e.message}", e)
+    } finally {
+        inflater.end()
+    }
+}
+
 class LyricUtilModule(private val reactContext: ReactApplicationContext):
     ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
     private companion object {
@@ -542,28 +590,7 @@ class LyricUtilModule(private val reactContext: ReactApplicationContext):
     /**
      * Zlib decompress (inflate)
      */
-    private fun zlibInflate(data: ByteArray): ByteArray {
-        val inflater = Inflater()
-        try {
-            inflater.setInput(data)
-
-            val outputStream = ByteArrayOutputStream(data.size)
-            val buffer = ByteArray(8192)
-
-            while (!inflater.finished()) {
-                val count = inflater.inflate(buffer)
-                if (count > 0) {
-                    outputStream.write(buffer, 0, count)
-                }
-            }
-
-            return outputStream.toByteArray()
-        } catch (e: Exception) {
-            throw Exception("Zlib inflate failed: ${e.message}", e)
-        } finally {
-            inflater.end()
-        }
-    }
+    private fun zlibInflate(data: ByteArray): ByteArray = zlibInflateBytes(data)
 
     // ==================== Custom DES Implementation ====================
     // NOTE: This is NOT standard DES! It's QQ Music's custom variant.

@@ -101,6 +101,10 @@ function isBlockedIpv6(hostname: string) {
         return true;
     }
 
+    const groupsToIpv4 = (g1: number, g2: number) =>
+        `${Math.floor(g1 / 256)}.${g1 % 256}.${Math.floor(g2 / 256)}.${
+            g2 % 256
+        }`;
     const allZero = groups.every(group => group === 0);
     const loopback =
         groups.slice(0, 7).every(group => group === 0) &&
@@ -110,14 +114,28 @@ function isBlockedIpv6(hostname: string) {
     const siteLocal = groups[0] >= 0xfec0 && groups[0] <= 0xfeff;
     const multicast = groups[0] >= 0xff00;
     const documentation = groups[0] === 0x2001 && groups[1] === 0x0db8;
+    const discardOnly =
+        groups[0] === 0x0100 &&
+        groups[1] === 0 &&
+        groups[2] === 0 &&
+        groups[3] === 0;
     const ipv4Mapped =
         groups.slice(0, 5).every(group => group === 0) &&
         groups[5] === 0xffff;
-    const mappedPrivate = ipv4Mapped && isBlockedIpv4(
-        `${Math.floor(groups[6] / 256)}.${groups[6] % 256}.${
-            Math.floor(groups[7] / 256)
-        }.${groups[7] % 256}`,
-    );
+    const mappedPrivate =
+        ipv4Mapped && isBlockedIpv4(groupsToIpv4(groups[6], groups[7]));
+    const nat64WellKnown =
+        groups[0] === 0x0064 &&
+        groups[1] === 0xff9b &&
+        groups.slice(2, 6).every(group => group === 0) &&
+        isBlockedIpv4(groupsToIpv4(groups[6], groups[7]));
+    const nat64LocalUse =
+        groups[0] === 0x0064 &&
+        groups[1] === 0xff9b &&
+        groups[2] === 0x0001;
+    const sixToFour =
+        groups[0] === 0x2002 &&
+        isBlockedIpv4(groupsToIpv4(groups[1], groups[2]));
 
     return (
         allZero ||
@@ -127,7 +145,11 @@ function isBlockedIpv6(hostname: string) {
         siteLocal ||
         multicast ||
         documentation ||
-        mappedPrivate
+        discardOnly ||
+        mappedPrivate ||
+        nat64WellKnown ||
+        nat64LocalUse ||
+        sixToFour
     );
 }
 

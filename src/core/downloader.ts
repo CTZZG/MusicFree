@@ -181,6 +181,8 @@ interface IDownloadTaskInfo extends IDownloadAttemptIdentity {
     completedAt?: number;
     // 实际取源身份；不保存地址、请求头或解密密钥
     resolvedSource?: DownloadSourceIdentity;
+    // 暂停保留的缓存分片路径，恢复时用于断点续传
+    partialCachePath?: string;
     // 下载收尾事务日志，用于取消回滚与进程重启恢复
     finalization?: IDownloadFinalizationJournal;
 }
@@ -263,12 +265,18 @@ function normalizeRestoredDownloadTask(
                 ? DownloadStatus.Error
                 : status;
 
+    const keepPartialCachePath =
+        (shouldResumeAsPending || status === DownloadStatus.Paused) &&
+        typeof task.partialCachePath === "string" &&
+        task.partialCachePath.length > 0;
+
     return {
         ...task,
         logicalKey,
         attemptId,
         status: restoredStatus,
         finalization: resumableFinalizing ? validFinalization : undefined,
+        partialCachePath: keepPartialCachePath ? task.partialCachePath : undefined,
         jobId: undefined,
         downloadedSize: shouldResumeAsPending ? undefined : task.downloadedSize,
         fileSize: shouldResumeAsPending ? undefined : task.fileSize,
@@ -673,6 +681,18 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         });
     }
 
+    private isAttemptPaused(
+        musicItem: IMusic.IMusicItem,
+        attemptId: string,
+    ) {
+        const logicalKey = getMediaUniqueKey(musicItem);
+        const task = downloadTasks.get(logicalKey);
+        return (
+            isSameDownloadAttempt(task, { logicalKey, attemptId }) &&
+            task?.status === DownloadStatus.Paused
+        );
+    }
+
     private updateDownloadTask(
         musicItem: IMusic.IMusicItem,
         patch: Partial<IDownloadTaskInfo>,
@@ -715,6 +735,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             patch.quality !== undefined ||
             patch.attemptId !== undefined ||
             patch.logicalKey !== undefined ||
+            Object.prototype.hasOwnProperty.call(patch, "partialCachePath") ||
             Object.prototype.hasOwnProperty.call(patch, "finalization")
         ) {
             persistDownloadState();
@@ -814,6 +835,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 errorReason: undefined,
                 errorMessage: undefined,
                 completedAt: Date.now(),
+                partialCachePath: undefined,
                 finalization: undefined,
             },
             attemptId,
@@ -837,6 +859,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 errorReason: reason,
                 errorMessage: getDownloadErrorMessage(error),
                 completedAt: Date.now(),
+                partialCachePath: undefined,
                 finalization: undefined,
             },
             attemptId,
@@ -1194,6 +1217,19 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         })
             ? taskBeforeRollback?.finalization ?? journal
             : journal;
+        if (
+            latestJournal.stage === "completed" &&
+            !latestJournal.cancelRequested &&
+            error.message !== "Download finalization cancelled"
+        ) {
+            errorLog("下载已完成，跳过回滚以保留成品文件", {
+                attemptId,
+                targetPath: latestJournal.targetPath,
+                error: error.message,
+            });
+            this.markTaskAsCompleted(musicItem, attemptId);
+            return;
+        }
         try {
             await this.rollbackFinalization(musicItem, latestJournal);
         } catch (rollbackError) {
@@ -1416,18 +1452,23 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             releaseReservation: () =>
                 this.releaseReservedDownloadPath(journal.targetPath),
             publishCompletion: () =>
-                downloadNotificationManager.showCompleted(
-                    attemptId,
-                    musicItem,
-                    targetPath,
-                ),
+                downloadNotificationManager
+                    .showCompleted(attemptId, musicItem, targetPath)
+                    .catch(error => {
+                        errorLog("发布下载完成通知失败", error?.message ?? error);
+                    }),
             cancelPublishedCompletion: () =>
                 downloadNotificationManager.cancelNotification(attemptId),
             removeNativeTask: async () => {
                 await this.runNativeDownloadOperation(
                     () => Mp3Util.removeDownloadTask(attemptId),
                     "确认原生下载任务完成超时",
-                );
+                ).catch(error => {
+                    errorLog(
+                        "确认原生下载任务完成失败",
+                        error?.message ?? error,
+                    );
+                });
             },
             completeTask: () => this.markTaskAsCompleted(musicItem, attemptId),
         });
@@ -1589,6 +1630,9 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         const identity = { logicalKey, attemptId };
         const taskId = attemptId;
         await downloadNotificationManager.prepareForDownload();
+        if (this.isAttemptPaused(musicItem, attemptId)) {
+            throw new Error(NATIVE_DOWNLOAD_PAUSED_ERROR);
+        }
         if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             throw new Error("Download task removed");
         }
@@ -1600,6 +1644,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             () => Mp3Util.removeDownloadTask(taskId),
             "重置原生下载任务超时",
         ).catch(() => false);
+        if (this.isAttemptPaused(musicItem, attemptId)) {
+            await downloadNotificationManager.cancelNotification(taskId);
+            throw new Error(NATIVE_DOWNLOAD_PAUSED_ERROR);
+        }
         if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
             await downloadNotificationManager.cancelNotification(taskId);
             throw new Error("Download task removed");
@@ -1853,6 +1901,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 },
             );
 
+            if (isCurrentTaskPaused()) {
+                rejectAsPaused();
+                return;
+            }
             this.runNativeDownloadOperation(
                 () =>
                     Mp3Util.addDownloadTask({
@@ -1979,7 +2031,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                     return { ...source, headers: sourceHeaders, qmcInfo };
                 },
             });
-            if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
+            if (
+                !this.isCurrentDownloadAttempt(musicItem, attemptId) ||
+                this.isAttemptPaused(musicItem, attemptId)
+            ) {
                 return;
             }
             if (!resolved?.source.url) {
@@ -2042,7 +2097,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return;
         }
 
-        if (!this.isCurrentDownloadAttempt(musicItem, attemptId)) {
+        if (
+            !this.isCurrentDownloadAttempt(musicItem, attemptId) ||
+            this.isAttemptPaused(musicItem, attemptId)
+        ) {
             return;
         }
 
@@ -2069,9 +2127,26 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             supportedExtensions: supportLocalMediaType,
         });
 
-        // 缓存下载地址
-        const rawCacheDownloadPath = this.getCacheDownloadPath(
-            `${nanoid()}.${cacheExtension}`,
+        // 缓存下载地址：保留同一任务暂停时的分片路径以支持断点续传
+        const existingTask = downloadTasks.get(getMediaUniqueKey(musicItem));
+        const cacheSuffix = `.${cacheExtension}`;
+        const reusablePartialPath =
+            existingTask?.partialCachePath &&
+            existingTask.partialCachePath.endsWith(cacheSuffix)
+                ? existingTask.partialCachePath
+                : undefined;
+        if (existingTask?.partialCachePath && !reusablePartialPath) {
+            this.unlinkFinalizationPath(existingTask.partialCachePath).catch(
+                () => false,
+            );
+        }
+        const rawCacheDownloadPath =
+            reusablePartialPath ??
+            this.getCacheDownloadPath(`${nanoid()}.${cacheExtension}`);
+        this.updateDownloadTask(
+            musicItem,
+            { partialCachePath: rawCacheDownloadPath },
+            attemptId,
         );
 
         // 真实下载地址
@@ -2197,7 +2272,20 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         }
 
         if (!finalizationJournal) {
-            await this.unlinkFinalizationPath(rawCacheDownloadPath);
+            const currentTask = downloadTasks.get(getMediaUniqueKey(musicItem));
+            const keepPausedPartial =
+                isSameDownloadAttempt(currentTask, {
+                    logicalKey: getMediaUniqueKey(musicItem),
+                    attemptId,
+                }) && currentTask?.status === DownloadStatus.Paused;
+            if (!keepPausedPartial) {
+                await this.unlinkFinalizationPath(rawCacheDownloadPath);
+                this.updateDownloadTask(
+                    musicItem,
+                    { partialCachePath: undefined },
+                    attemptId,
+                );
+            }
             if (!downloadSucceeded) {
                 await this.unlinkFinalizationPath(rawTargetDownloadPath);
             }
@@ -2263,12 +2351,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             () => Mp3Util.pauseDownloadTask(task.attemptId),
             "暂停原生下载任务超时",
         ).catch(() => false);
-        if (paused && this.isCurrentDownloadAttempt(musicItem, task.attemptId)) {
+        const latestTask = downloadTasks.get(key);
+        const canPausePreparing = latestTask?.status === DownloadStatus.Preparing;
+        if (
+            (paused || canPausePreparing) &&
+            this.isCurrentDownloadAttempt(musicItem, task.attemptId)
+        ) {
             this.markTaskAsPaused(musicItem, task.attemptId);
-            void this.runNativeDownloadOperation(
-                () => Mp3Util.removeDownloadTask(task.attemptId),
-                "清理已暂停原生下载任务超时",
-            ).catch(() => false);
+            return true;
         }
         return paused;
     }
@@ -2310,9 +2400,10 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             {
                 ...nextIdentity,
                 status: DownloadStatus.Pending,
-                downloadedSize: undefined,
-                fileSize: undefined,
-                progressText: undefined,
+                downloadedSize: task.downloadedSize,
+                fileSize: task.fileSize,
+                progressText: task.progressText,
+                partialCachePath: task.partialCachePath,
                 jobId: undefined,
             },
             task.attemptId,
@@ -2428,6 +2519,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
                 "重下载前清理原生下载任务超时",
             ).catch(() => false);
             void downloadNotificationManager.cancelNotification(task.attemptId);
+            if (task.partialCachePath) {
+                this.unlinkFinalizationPath(task.partialCachePath).catch(
+                    () => false,
+                );
+            }
         }
         if (nextTask) {
             this.emit(DownloaderEvent.DownloadTaskUpdate, nextTask);
@@ -2459,6 +2555,7 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             errorMessage: undefined,
             startedAt: undefined,
             completedAt: undefined,
+            partialCachePath: undefined,
             finalization: undefined,
             resolvedSource: undefined,
         };
@@ -2478,6 +2575,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             return false;
         }
 
+        if (task.partialCachePath) {
+            this.unlinkFinalizationPath(task.partialCachePath).catch(
+                () => false,
+            );
+        }
         void this.runNativeDownloadOperation(
             () => Mp3Util.removeDownloadTask(task.attemptId),
             "重试前清理原生下载任务超时",
@@ -2567,8 +2669,14 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             task.status === DownloadStatus.Pending ||
             task.status === DownloadStatus.Error
         ) {
+            Mp3Util.cancelDownloadTask(task.attemptId).catch(() => {});
             void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
             void downloadNotificationManager.cancelNotification(task.attemptId);
+            if (task.partialCachePath) {
+                this.unlinkFinalizationPath(task.partialCachePath).catch(
+                    () => false,
+                );
+            }
             downloadTasks.delete(key);
             const downloadQueue = getDefaultStore().get(downloadQueueAtom);
             setDownloadQueue(
@@ -2602,6 +2710,11 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
             void Mp3Util.cancelDownloadTask(task.attemptId).catch(() => {});
             void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
             void downloadNotificationManager.cancelNotification(task.attemptId);
+            if (task.partialCachePath) {
+                this.unlinkFinalizationPath(task.partialCachePath).catch(
+                    () => false,
+                );
+            }
             if (task.status !== DownloadStatus.Paused) {
                 this.downloadingCount = Math.max(
                     0,
@@ -2668,10 +2781,16 @@ class Downloader extends EventEmitter<IEvents> implements IInjectable {
         failedKeys.forEach(key => {
             const task = downloadTasks.get(key);
             if (task) {
+                Mp3Util.cancelDownloadTask(task.attemptId).catch(() => {});
                 void Mp3Util.removeDownloadTask(task.attemptId).catch(() => {});
                 void downloadNotificationManager.cancelNotification(
                     task.attemptId,
                 );
+                if (task.partialCachePath) {
+                    this.unlinkFinalizationPath(task.partialCachePath).catch(
+                        () => false,
+                    );
+                }
             }
             downloadTasks.delete(key);
         });

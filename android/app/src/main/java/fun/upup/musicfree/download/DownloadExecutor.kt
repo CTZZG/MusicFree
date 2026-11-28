@@ -70,6 +70,24 @@ class DownloadExecutor(private val client: OkHttpClient) {
         return try {
             val call = client.newCall(request)
             control.callRef.set(call)
+            if (control.canceled.get()) {
+                call.cancel()
+                control.callRef.set(null)
+                return ExecutionResult(
+                    finalStatus = DownloadTaskStatus.CANCELED,
+                    downloadedBytes = existingSize,
+                    totalBytes = task.totalBytes,
+                )
+            }
+            if (control.paused.get()) {
+                call.cancel()
+                control.callRef.set(null)
+                return ExecutionResult(
+                    finalStatus = DownloadTaskStatus.PAUSED,
+                    downloadedBytes = existingSize,
+                    totalBytes = task.totalBytes,
+                )
+            }
             val response = call.execute()
             if (response.code == 416 && existingSize > 0) {
                 // Range 起点不小于文件总长：要么本地文件其实已完整，要么残片与
@@ -116,6 +134,24 @@ class DownloadExecutor(private val client: OkHttpClient) {
             )
 
             var downloaded = if (shouldAppend) existingSize else 0L
+            if (control.canceled.get()) {
+                control.callRef.set(null)
+                response.close()
+                return ExecutionResult(
+                    finalStatus = DownloadTaskStatus.CANCELED,
+                    downloadedBytes = existingSize,
+                    totalBytes = totalBytes,
+                )
+            }
+            if (control.paused.get()) {
+                control.callRef.set(null)
+                response.close()
+                return ExecutionResult(
+                    finalStatus = DownloadTaskStatus.PAUSED,
+                    downloadedBytes = existingSize,
+                    totalBytes = totalBytes,
+                )
+            }
             val outFileStream = FileOutputStream(destinationFile, shouldAppend)
             body.byteStream().use { input ->
                 BufferedInputStream(input).use { bis ->
@@ -131,6 +167,8 @@ class DownloadExecutor(private val client: OkHttpClient) {
                                     )
                                 }
                                 if (control.paused.get()) {
+                                    bos.flush()
+                                    runCatching { fos.fd.sync() }
                                     return ExecutionResult(
                                         finalStatus = DownloadTaskStatus.PAUSED,
                                         downloadedBytes = downloaded,
@@ -147,6 +185,7 @@ class DownloadExecutor(private val client: OkHttpClient) {
                                 onProgress(downloaded, totalBytes)
                             }
                             bos.flush()
+                            runCatching { fos.fd.sync() }
                         }
                     }
                 }

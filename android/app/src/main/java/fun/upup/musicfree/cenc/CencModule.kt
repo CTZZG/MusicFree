@@ -50,6 +50,7 @@ class CencModule(
 
     override fun invalidate() {
         executor.shutdownNow()
+        CencProxy.shutdown()
         super.invalidate()
     }
 

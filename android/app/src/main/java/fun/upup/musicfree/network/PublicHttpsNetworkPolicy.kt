@@ -313,13 +313,27 @@ object PublicHttpsNetworkPolicy {
             bytes[0] == 0x20 && bytes[1] == 0x01 &&
                 bytes[2] == 0x0d && bytes[3] == 0xb8
         val discardOnly =
-            bytes[0] == 0x01 && bytes.drop(1).all { it == 0 }
+            bytes[0] == 0x01 && bytes[1] == 0x00 &&
+                (2..7).all { bytes[it] == 0 }
         val ipv4Mapped =
             bytes.take(10).all { it == 0 } &&
                 bytes[10] == 0xff && bytes[11] == 0xff
         val mappedBlocked = ipv4Mapped && isBlockedIpv4(bytes.drop(12))
+        val nat64WellKnown =
+            bytes[0] == 0x00 && bytes[1] == 0x64 &&
+                bytes[2] == 0xff && bytes[3] == 0x9b &&
+                (4..11).all { bytes[it] == 0 } &&
+                isBlockedIpv4(bytes.drop(12))
+        val nat64LocalUse =
+            bytes[0] == 0x00 && bytes[1] == 0x64 &&
+                bytes[2] == 0xff && bytes[3] == 0x9b &&
+                bytes[4] == 0x00 && bytes[5] == 0x01
+        val sixToFour =
+            bytes[0] == 0x20 && bytes[1] == 0x02 &&
+                isBlockedIpv4(bytes.slice(2..5))
         return allZero || loopback || uniqueLocal || linkLocal || siteLocal ||
-            multicast || documentation || discardOnly || mappedBlocked
+            multicast || documentation || discardOnly || mappedBlocked ||
+            nat64WellKnown || nat64LocalUse || sixToFour
     }
 
     private class PublicRedirectInterceptor(
