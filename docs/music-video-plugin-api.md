@@ -1,6 +1,6 @@
 # 可选 MV 插件接口
 
-本接口是 MV 接入的分阶段契约；当前 wrapper 已实现，App 播放转换与入口仍在验收中。原有纯音频插件无需修改。
+本接口是 MV 接入的分阶段契约；当前可信 MV 源发现与播放形态切换能力已随 `v0.15.0` 交付（纯音频插件无需修改）。
 
 插件可选择提供 `getMusicVideos(song)` 和 `getVideoSource(video, quality?)`，或沿用真实 QQ、Bilibili 插件已有的 `getMvSource(song, quality?)`。两个新方法必须成对存在。宿主仍使用现有插件变量、启用状态及媒体 URL 策略，不另建密钥配置。
 

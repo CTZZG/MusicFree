@@ -139,7 +139,7 @@ export function createModuleLoader(stubs) {
             file = resolveSourceFile(base);
             if (!file) {
                 throw new Error(
-                    `Cannot resolve "${specifier}" imported by ${path.relative(rootDir, importer)}`,
+                    `Cannot resolve "${specifier}" imported by ${path.relative(rootDir, importer).replaceAll('\\', '/')}`,
                 );
             }
             id = moduleIdOf(file);
@@ -149,7 +149,7 @@ export function createModuleLoader(stubs) {
         }
         if (!file) {
             throw new Error(
-                `"${specifier}" (imported by ${path.relative(rootDir, importer)}) needs a stub; ` +
+                `"${specifier}" (imported by ${path.relative(rootDir, importer).replaceAll('\\', '/')}) needs a stub; ` +
                     'the layout harness only loads repository sources and React',
             );
         }

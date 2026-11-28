@@ -15,7 +15,8 @@ const marker = 'mf-store-crash-';
 
 function modules(directory, stage) {
     const cache = new Map();
-    const primary = path.join(directory, 'kvstore', 's.json');
+    const norm = p => path.resolve(p);
+    const primary = norm(path.join(directory, 'kvstore', 's.json'));
     const checkpoint = name => { if (stage === name) process.exit(81); };
     const rnfs = {
         DocumentDirectoryPath: directory,
@@ -28,15 +29,15 @@ function modules(directory, stage) {
             checkpoint('temp-complete');
         },
         moveFile: async (from, to) => {
-            if (stage === 'temp-promotion-partial' && to === `${primary}.bak`) {
+            if (stage === 'temp-promotion-partial' && norm(to) === `${primary}.bak`) {
                 await fsp.writeFile(to, '{partial'); process.exit(81);
             }
-            if (stage === 'primary-partial' && to === primary) {
+            if (stage === 'primary-partial' && norm(to) === primary) {
                 await fsp.writeFile(to, '{partial'); process.exit(81);
             }
             await fsp.rename(from, to);
-            if (from === primary) checkpoint('primary-rotated');
-            if (to === primary) checkpoint('committed');
+            if (norm(from) === primary) checkpoint('primary-rotated');
+            if (norm(to) === primary) checkpoint('committed');
         },
         unlink: async file => { await fsp.unlink(file); checkpoint('backup-removed'); },
     };

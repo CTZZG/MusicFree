@@ -29,6 +29,7 @@
 - mpv 后端已接入通知栏、锁屏、蓝牙/耳机键、音频焦点、自动下一曲、列表循环和歌词展示。
 - 支持媒体通知歌词，以及 Android 16 Live Update 歌词。Live Update 使用 Android 标准通知接口，不是 Honor 私有接口；已在 Honor 灵动胶囊上验证，其他支持类似 promoted ongoing 通知的 Android 16+ 设备也有机会使用。
 - Live Update 通知支持歌曲封面、播放按钮、进度和时间显示；播放中进度会按秒刷新，不只跟随歌词换句刷新。
+- 支持可选 MV 播放与音频/MV rendition 一体切换：纯音频插件无需修改即可继续使用，提供 MV 方法的插件支持从播放页打开 MV 并切换画质（从 Wi-Fi 切换到移动网络时会暂停等待确认）。
 
 ### 与上游的区别
 
@@ -129,7 +130,7 @@
 
 ## 下载地址
 
-请转到发布页查看：[指路](https://github.com/maotoumao/MusicFree/releases) (如果打不开可以把 github 换成 gitcode)，公众号回复 Musicfree 也可以。
+请转到发布页查看：[指路](https://github.com/CTZZG/MusicFree/releases)（原上游发布页见 [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree/releases)）。
 
 ## Q&A
 

@@ -31,7 +31,7 @@
 
 | 模块 | 入口 | 职责边界 |
 | --- | --- | --- |
-| 播放 | `src/core/trackPlayer/index.ts`（`TrackPlayer` 门面）→ `src/core/playerAdapter/mpvPlayerAdapter.ts` → `android/app/src/main/java/fun/upup/musicfree/mpvplayer/` | JS 负责用户意图、队列与播放规则；native 负责实际加载与播放、进度、通知、锁屏和媒体键 |
+| 播放 | `src/core/trackPlayer/index.ts`（`TrackPlayer` 门面）、`src/core/musicVideoController.ts` → `src/core/playerAdapter/mpvPlayerAdapter.ts` → `android/app/src/main/java/fun/upup/musicfree/mpvplayer/`（含 `src/components/mpvVideo/` 与 `src/components/panels/types/musicVideo.tsx`） | JS 负责用户意图、队列、音视频 rendition 协调与播放规则；native 负责实际加载与播放、视频渲染视图、进度、通知、锁屏和媒体键 |
 | 插件与音源 | `src/core/pluginManager` | 插件按可信代码对待（提交 `c46675b0`）；插件方法经 `PluginMethodsWrapper` 包装，取源走统一的音质兼容层；播放备用来源与下载候选共用 `src/core/mediaSource/resolveCandidate.ts`。原来源播放、恢复等编排仍由 TrackPlayer 负责 |
 | 搜索 | `src/core/search`（`SearchSession`）← `src/pages/searchPage/hooks/useSearchSession.ts` | 会话负责请求编排与各来源状态；页面只订阅快照、调用会话操作，见下文 |
 | 下载 | `src/core/downloader.ts`、`src/core/downloadFinalizationRunner.ts`、`src/core/downloadFinalizationJournal.ts` | 任务调度与传输；`src/core/mediaSource/downloadSource.ts` 负责原来源、歌曲直链和已记住来源的取源。独立开关 `basic.tryRememberedSourceWhenDownloadFail` 默认开启，只复用曾播放成功且仍通过版本匹配的记录，不发起新搜索。插件调用和 QMC 探测共用 15 秒预算，单次插件上限 6 秒；下载某音质取源或探测超时后在剩余预算内尝试下一档，明确的插件访问拒绝结束该候选；有效备用来源存在时原来源阶段最多 9 秒，为备用阶段预留 6 秒。计时沿用下载的 JS 定时器，后台定时器受系统调度影响的实际触发时刻尚未验收。任务记录保留原歌曲身份，并保存实际候选平台/歌曲 ID/插件声明的音质，不保存地址或密钥；列表和详情展示备用来源。最终化按日志阶段推进（产物就绪含解密、写标签、写歌词、加入音乐库、提交附加信息），中断后从记录的阶段继续 |
@@ -52,7 +52,7 @@
   `react-native-background-timer`。手动切歌的确认如果仍然醒得远晚于约定时间（JS 被挂起过），以原生实际在放的曲目为准，
   不再重载目标或回滚。
 
-## MV rendition（开发中，尚未发布）
+## MV rendition（自 v0.15.0 起提供）
 
 - `musicVideoController.ts` 使用现有 `QualityChangeCoordinator.commitTail` 提交转换，不创建第二个播放器、队列或进度时钟。逻辑歌曲/播放列表/备份继续是原音频；`PlayerRenditionIdentity` 的 kind、mediaId 与 loadGeneration 区分实际文件。
 - 进入 MV 时原生先暂停并捕获原音频实际停点；MV 从0开始。只有来源声明同 timeline 的视频画质才可保留位置，否则用户确认后重头。返回音频等待当前代际 PLAYBACK_RESTART 与首个实际位置，通过的 ready 样本随 receipt 传递，原 .25s 首读标准保留。
@@ -137,8 +137,8 @@
     推荐歌单页（`recommend-sheets`）和它的歌单类别面板（`SheetTags`）、榜单页（`top-list`）、
     歌单详情（`plugin-sheet-detail`）、榜单详情（`top-list-detail`）、专辑详情（`album-detail`）和自己的歌单详情
     （`local-sheet-detail`）、歌手详情（`artist-detail`），从歌曲行点出来的选项面板（`MusicItemOptions`）和加入歌单
-    面板（`AddToMusicSheet`），主页的搜索标签（`search-page`），以及播放页点出来的音质（`MusicQuality`）、播放
-    失败处理（`PlaybackRecovery`）、播放队列（`PlayList`）和歌词字号（`SetFontSize`）面板。
+    面板（`AddToMusicSheet`）、分享面板（`MusicShare`）、歌词工具（`LyricTools`），主页的搜索标签（`search-page`）和精选分区（`HomeSections`），以及播放页点出来的音质（`MusicQuality`）、
+    播放失败处理（`PlaybackRecovery`）、播放状态信息（`PlaybackInfo`）、MV 选择（`MusicVideo`）、播放队列（`PlayList`）和歌词字号（`SetFontSize`）面板。
   - `ListItem` 在跟随系统字体的页面、面板里用最小行高（字体放大时跟着变高），没迁移的地方保持固定行高。
   - 推荐歌单：分类标签条按标签定高（最小 `rpx(100)`），也不再被下面的长列表压矮（以前横屏时 1.3 倍字体就裁掉标签）。
     共用的列表底部提示（`ListFooter`）改为最小高度，没有插件的提示（`NoPlugin`）占满宽度、留页边距（以前横屏时偏在左边）。

@@ -197,4 +197,18 @@ describe("optional music video sources", () => {
             jest.useRealTimers();
         }
     });
+
+    it("discovers associated MV via legacy cid when mv/vid/bvid are absent without eagerly calling getMvSource", async () => {
+        const { service, plugin } = setup(true);
+        const cidSong = { id: "song-cid", platform: "QQ", title: "Song", artist: "Artist", mv: "", cid: "cid-1" };
+        const list = await service.find(cidSong, () => true);
+        expect(plugin.methods.getMvSource).not.toHaveBeenCalled();
+        expect(list).toHaveLength(1);
+        expect(list[0]).toMatchObject({
+            id: "cid-1",
+            originalSongKey: "QQ@song-cid",
+            providerKey: "fixed-plugin-hash",
+            version: "other",
+        });
+    });
 });

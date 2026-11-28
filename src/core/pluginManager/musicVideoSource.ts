@@ -153,7 +153,8 @@ export class MusicVideoSources {
         let raw: unknown;
         if (owner.legacy) {
             const fields = song as Record<string, unknown>;
-            const associatedId = stableId(fields.mv) ?? stableId(fields.vid) ?? stableId(fields.bvid);
+            const associatedId =
+                stableId(fields.mv) ?? stableId(fields.vid) ?? stableId(fields.bvid) ?? stableId(fields.cid);
             // QQ exposes song.mv; Bilibili's selected video is already an explicit identity.
             // A generic old plugin without such metadata must actually resolve before claiming availability.
             const discovered = associatedId ? null : await this.request(() => plugin.methods.getMvSource(owner.song), signal);

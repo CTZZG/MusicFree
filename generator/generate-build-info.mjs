@@ -1,7 +1,8 @@
-import {execFileSync, execSync} from 'node:child_process';
+import {execSync} from 'node:child_process';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import zlib from 'node:zlib';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -60,20 +61,71 @@ function getAndroidVersionCode() {
 }
 
 // 播放内核 libmpv 的版本写在 libmpv.so 里（形如 "mpv v0.41.0"）。读不到
-// （本机没有 unzip、AAR 不在）时记 unknown，不影响构建。路径作为参数直接交给
-// unzip，不经过 shell：工程路径里有 $、引号、反引号也照样读得到。
+// （AAR 不在、格式异常）时记 unknown，不影响构建。直接用 Node 读取 ZIP 条目，
+// 不依赖外部 unzip CLI，也无需经过 shell，工程路径含空格、$ 或引号都能工作。
+const MPV_LIBRARY_ENTRY = 'jni/arm64-v8a/libmpv.so';
+
+function readZipEntry(zip, entryName) {
+    let eocdOffset = -1;
+    const minOffset = Math.max(0, zip.length - 65557);
+    for (let i = zip.length - 22; i >= minOffset; i -= 1) {
+        if (zip.readUInt32LE(i) === 0x06054b50 && zip.readUInt16LE(i + 20) === zip.length - i - 22) {
+            eocdOffset = i;
+            break;
+        }
+    }
+    if (eocdOffset < 0) {
+        return null;
+    }
+
+    const totalEntries = zip.readUInt16LE(eocdOffset + 10);
+    let offset = zip.readUInt32LE(eocdOffset + 16);
+    for (let i = 0; i < totalEntries && offset + 46 <= zip.length; i += 1) {
+        if (zip.readUInt32LE(offset) !== 0x02014b50) {
+            return null;
+        }
+        const method = zip.readUInt16LE(offset + 10);
+        const compressedSize = zip.readUInt32LE(offset + 20);
+        const nameLen = zip.readUInt16LE(offset + 28);
+        const extraLen = zip.readUInt16LE(offset + 30);
+        const commentLen = zip.readUInt16LE(offset + 32);
+        const localHeaderOffset = zip.readUInt32LE(offset + 42);
+        const name = zip.toString('utf8', offset + 46, offset + 46 + nameLen);
+        offset += 46 + nameLen + extraLen + commentLen;
+
+        if (name !== entryName) {
+            continue;
+        }
+        if (localHeaderOffset + 30 > zip.length || zip.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+            return null;
+        }
+        const localNameLen = zip.readUInt16LE(localHeaderOffset + 26);
+        const localExtraLen = zip.readUInt16LE(localHeaderOffset + 28);
+        const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen;
+        const dataEnd = dataStart + compressedSize;
+        if (dataEnd > zip.length) {
+            return null;
+        }
+        const compressedSlice = zip.subarray(dataStart, dataEnd);
+        if (method === 0) {
+            return compressedSlice;
+        }
+        if (method === 8) {
+            return zlib.inflateRawSync(compressedSlice);
+        }
+        return null;
+    }
+    return null;
+}
+
 function getMpvVersion() {
     const aarPath = path.join(rootDir, 'android', 'app', 'libs', 'libmpv-release.aar');
     if (!existsSync(aarPath)) {
         return 'unknown';
     }
     try {
-        const library = execFileSync('unzip', ['-p', aarPath, 'jni/arm64-v8a/libmpv.so'], {
-            cwd: rootDir,
-            maxBuffer: 64 * 1024 * 1024,
-            stdio: ['ignore', 'pipe', 'ignore'],
-        });
-        return library.toString('latin1').match(/mpv v\d+\.\d+(?:\.\d+)?/)?.[0] ?? 'unknown';
+        const library = readZipEntry(readFileSync(aarPath), MPV_LIBRARY_ENTRY);
+        return library ? (library.toString('latin1').match(/mpv v\d+\.\d+(?:\.\d+)?/)?.[0] ?? 'unknown') : 'unknown';
     } catch {
         return 'unknown';
     }

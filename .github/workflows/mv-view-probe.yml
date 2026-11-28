@@ -35,10 +35,15 @@ jobs:
               timeout-minutes: 5
               run: |
                   if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
-                    sudo apt-get install -y --no-install-recommends ffmpeg
+                    sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
                   fi
                   ffmpeg -version
                   ffprobe -version
+
+            - name: Generate app build info
+              if: inputs.apk_run_id == ''
+              run: npm run generate-build-info
+
             - name: Build isolated Fabric Release variant with product module and ViewManager
               if: inputs.apk_run_id == ''
               working-directory: android

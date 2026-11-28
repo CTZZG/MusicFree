@@ -34,6 +34,20 @@ For software download methods, plugin usage instructions, and plugin development
 > - **Please do not promote with VIP/cracked version as a gimmick**. The example repository is based on public internet API wrappers and **filters out all VIP, preview, and paid songs**. The example repository will **not provide plugins with cracking functionality** in the future;
 > - Information about this software **will only be actively published in Git repositories and the WeChat official account "一只猫头猫"**. If you wish to write articles introducing this software, feel free to do so, but please **describe truthfully, and please blur the plugin sources when involving the example repository**. Don't add unreal features to the software (although I wish it had them); in case of conflicting descriptions, this repository shall prevail.
 
+---
+
+## About This Fork
+
+This is a personal Android-focused fork of [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree) (current version: `0.15.0`, not an official upstream release). Key differences in this fork:
+
+- **Minimum Android version**: Requires **Android 14 / API 34 or higher** since `v0.12.0` (both installation and runtime); Android 13 and earlier should use `v0.11.6` or earlier.
+- **mpv (libmpv) playback engine**: Replaces older audio backends with `mpv`/`libmpv`, integrated with Android media notifications, lock screen controls, headset/Bluetooth media keys, audio focus, queue management, and lyrics notifications.
+- **Optional MV playback**: Supports seamlessly switching between audio and music video renditions on the playback screen when backed by compatible plugins, while pure-audio plugins work unchanged.
+- **Android 16+ Live Update lyrics**: Uses standard Android `promoted ongoing` notification APIs to render synchronized lyrics, progress, controls, and artwork on supported Android 16+ devices.
+- **Privacy-first diagnostics**: Optional local diagnostics and crash logs stay off by default unless explicitly enabled by the user.
+
+For architecture details, supported scope, quality gates, and verification status, see [docs/architecture.md](./docs/architecture.md).
+
 ## Project Usage Agreement:
 This project is open sourced under the AGPL 3.0 license. Please comply with the open source license when using this project.
 In addition, please ensure you understand the following additional notes when using the code:
@@ -74,7 +88,7 @@ Please note:
 
 ### Plugin Usage
 
-After downloading the app, you just need to install plugins in the sidebar Settings - Plugin Settings. Supports installing local plugins and installing plugins from the network (supports parsing .js files and .json description files; several example plugins have been written: [link to this repository](https://github.com/maotoumao/MusicFreePlugins), though functionality may not be very complete);
+After downloading the app, you just need to install plugins in the bottom "Settings" tab -> "Plugin Management". Supports installing local plugins and installing plugins from the network (supports parsing .js files and .json description files; several example plugins have been written: [link to this repository](https://github.com/maotoumao/MusicFreePlugins), though functionality may not be very complete);
 
 You can directly click "Install plugin from network", then enter <https://gitee.com/maotoumao/MusicFreePlugins/raw/master/plugins.json> and click confirm to install.
 
@@ -82,7 +96,7 @@ For detailed usage instructions with images, please refer to the WeChat official
 
 ## Download
 
-Please go to the release page: [Link](https://github.com/maotoumao/MusicFree/releases) (if you can't open it, you can replace github with gitee). You can also reply "Musicfree" on the WeChat official account.
+Please go to the release page: [Link](https://github.com/CTZZG/MusicFree/releases) (upstream releases: [maotoumao/MusicFree](https://github.com/maotoumao/MusicFree/releases)).
 
 ## Q&A
 

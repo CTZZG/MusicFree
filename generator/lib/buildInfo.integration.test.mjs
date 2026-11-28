@@ -38,6 +38,37 @@ function storedZip(name, data) {
     return Buffer.concat([local, fileName, data, central, fileName, end]);
 }
 
+function deflatedZip(name, data) {
+    const fileName = Buffer.from(name);
+    const crc = zlib.crc32(data);
+    const compressed = zlib.deflateRawSync(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(fileName.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(compressed.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(fileName.length, 28);
+    const centralOffset = local.length + fileName.length + compressed.length;
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(1, 8);
+    end.writeUInt16LE(1, 10);
+    end.writeUInt32LE(central.length + fileName.length, 12);
+    end.writeUInt32LE(centralOffset, 16);
+    return Buffer.concat([local, fileName, compressed, central, fileName, end]);
+}
+
 // 在一份单独的工程里跑真正的生成器，只放它要读的文件
 function project(t, dirName) {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'musicfree-build-info-'));
@@ -71,7 +102,9 @@ const library = Buffer.concat([
     Buffer.from('libmpv\0mpv v0.41.0 Copyright\0', 'latin1'),
 ]);
 
-for (const dirName of ['MusicFree', 'MusicFree-$review', 'Music Free "x" `y`']) {
+const quoteDirName = process.platform === 'win32' ? "Music Free 'x' `y`" : 'Music Free "x" `y`';
+
+for (const dirName of ['MusicFree', 'MusicFree-$review', quoteDirName]) {
     test(`reads the mpv version from the AAR in a project at ${dirName}`, t => {
         const {root, write} = project(t, dirName);
         write('android/app/libs/libmpv-release.aar', storedZip('jni/arm64-v8a/libmpv.so', library));
@@ -79,6 +112,13 @@ for (const dirName of ['MusicFree', 'MusicFree-$review', 'Music Free "x" `y`']) 
         assert.equal(generate(root).player, 'mpv v0.41.0');
     });
 }
+
+test('reads the mpv version from a deflate-compressed AAR entry', t => {
+    const {root, write} = project(t, 'MusicFree');
+    write('android/app/libs/libmpv-release.aar', deflatedZip('jni/arm64-v8a/libmpv.so', library));
+
+    assert.equal(generate(root).player, 'mpv v0.41.0');
+});
 
 test('records unknown when the AAR is missing', t => {
     const {root} = project(t, 'MusicFree-$review');
@@ -114,7 +154,7 @@ function workflowGenerateCommand() {
         fileURLToPath(new URL('../../.github/workflows/build-beta.yml', import.meta.url)),
         'utf8',
     );
-    const step = workflow.match(/- name: Generate app build info\n(?:[ \t]*#.*\n)*[ \t]*run: (.+)\n/);
+    const step = workflow.match(/- name: Generate app build info\r?\n(?:[ \t]*#.*\r?\n)*[ \t]*run: ([^\r\n]+)\r?\n/);
     assert.ok(step, 'build-beta.yml 里找不到 Generate app build info 这一步');
     return step[1];
 }
@@ -125,6 +165,18 @@ function oldGenerator() {
     const old = current.replace('process.env.BUILD_SOURCE_SHA ||', '');
     assert.notEqual(old, current, '生成器读 BUILD_SOURCE_SHA 的写法变了，这里要跟着改');
     return old;
+}
+
+function resolveBashCommand() {
+    if (process.platform !== 'win32') {
+        return 'bash';
+    }
+    const candidates = [
+        path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'),
+        'C:\\Program Files\\Git\\bin\\bash.exe',
+        'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+    ];
+    return candidates.find(candidate => fs.existsSync(candidate)) ?? 'bash';
 }
 
 function generateLikeBetaWorkflow(t, generatorSource, env) {
@@ -138,7 +190,7 @@ function generateLikeBetaWorkflow(t, generatorSource, env) {
         scripts: {'generate-build-info': scripts['generate-build-info']},
     }));
     write('generator/generate-build-info.mjs', generatorSource);
-    const result = spawnSync('bash', ['-c', workflowGenerateCommand()], {
+    const result = spawnSync(resolveBashCommand(), ['-c', workflowGenerateCommand()], {
         cwd: root,
         encoding: 'utf8',
         env: {...process.env, ...env},

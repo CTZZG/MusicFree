@@ -1,5 +1,5 @@
 import {spawnSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseNpmViewVersions} from './lib/npmView.mjs';
@@ -53,6 +53,17 @@ function report(level, message) {
     console.log(`${prefix}${message}`);
 }
 
+function resolveNpmCliPath() {
+    if (process.env.npm_execpath && existsSync(process.env.npm_execpath)) {
+        return process.env.npm_execpath;
+    }
+    const candidates = [
+        path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        path.resolve(path.dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    ];
+    return candidates.find(candidate => existsSync(candidate)) ?? null;
+}
+
 function runNpm(args) {
     const options = {
         cwd: rootDir,
@@ -60,9 +71,9 @@ function runNpm(args) {
         maxBuffer: 64 * 1024 * 1024,
     };
     // 经 npm run 运行时直接用当前 npm 的 CLI 脚本，避免在 Windows 上经 shell 转义参数
-    const npmExecPath = process.env.npm_execpath;
-    const result = npmExecPath
-        ? spawnSync(process.execPath, [npmExecPath, ...args], options)
+    const npmCliPath = resolveNpmCliPath();
+    const result = npmCliPath
+        ? spawnSync(process.execPath, [npmCliPath, ...args], options)
         : spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, {
               ...options,
               shell: process.platform === 'win32',

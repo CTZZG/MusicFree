@@ -344,7 +344,7 @@ Beta 构建（`build-beta.yml`）打包成功后默认接着跑，结果在这�
 
 - 只改了测试、不想重新打包：手动运行 Beta 构建，`e2e_apk_run_id` 填之前某次 Beta 构建的运行 ID，
   会直接测那次打出的 APK（30 天内的都在）。
-- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`；只跑性能基线：选 `perf`；只跑本机崩溃记录：选 `crash`。
+- 只跑下载、旧版数据迁移的故障注入：`e2e_suite` 选 `storage`；只跑锁屏和省电：选 `power`；只跑本地音乐库：选 `library`；只跑性能基线：选 `perf`；只跑本机崩溃记录：选 `crash`；只跑 MV 探针：选 `mv`（见 [mv/README.md](./mv/README.md)）；只跑多源下载：选 `download-source`。
 - 在 Android 17 上、打开后台音频加固跑：`e2e_android` 选 `17`（见上面“Android 17：后台音频加固”）。
 - 拿修复前的代码对照：`build_ref` 填那个提交的完整提交号，打包那份代码，测试脚本和测试音源仍用触发的分支。
   APK 文件名、构建信息（`android-build-info.txt`、应用里的构建信息）记的是打包的源码提交和它的版本号，
